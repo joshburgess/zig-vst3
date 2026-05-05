@@ -119,4 +119,10 @@ pub fn build(b: *std.Build) void {
 
     const multi_interface_abi_step = b.step("multi-interface-abi", "Run the C ABI harness for multi-interface query dispatch");
     multi_interface_abi_step.dependOn(&b.addRunArtifact(multi_interface_harness).step);
+
+    const phase1_step = b.step("phase1", "Run Phase 1 COM/vtable integration checks");
+    phase1_step.dependOn(test_step);
+    phase1_step.dependOn(tuid_abi_step);
+    phase1_step.dependOn(funknown_abi_step);
+    phase1_step.dependOn(multi_interface_abi_step);
 }
