@@ -1,0 +1,55 @@
+const std = @import("std");
+const note_expression = @import("vst3-zig").pluginterfaces.vst.ivstnoteexpression;
+
+pub fn main() !void {
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print("NoteExpressionTypeIDs.kVolumeTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kVolumeTypeID)});
+    try stdout.print("NoteExpressionTypeIDs.kCustomStart {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kCustomStart)});
+    try stdout.print("NoteExpressionTypeIDs.kInvalidTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kInvalidTypeID)});
+    try stdout.print("NoteExpressionTypeInfo.kIsBipolar {}\n", .{note_expression.NoteExpressionTypeInfo.NoteExpressionTypeFlags.kIsBipolar});
+    try stdout.print("NoteExpressionTypeInfo.kAssociatedParameterIDValid {}\n", .{note_expression.NoteExpressionTypeInfo.NoteExpressionTypeFlags.kAssociatedParameterIDValid});
+    try stdout.print("KeyswitchTypeIDs.kNoteOnKeyswitchTypeID {}\n", .{@intFromEnum(note_expression.KeyswitchTypeIDs.kNoteOnKeyswitchTypeID)});
+    try stdout.print("KeyswitchTypeIDs.kKeyRangeTypeID {}\n", .{@intFromEnum(note_expression.KeyswitchTypeIDs.kKeyRangeTypeID)});
+
+    try printType(stdout, "NoteExpressionValueDescription", note_expression.NoteExpressionValueDescription);
+    try printOffset(stdout, "NoteExpressionValueDescription", "defaultValue", note_expression.NoteExpressionValueDescription, "defaultValue");
+    try printOffset(stdout, "NoteExpressionValueDescription", "minimum", note_expression.NoteExpressionValueDescription, "minimum");
+    try printOffset(stdout, "NoteExpressionValueDescription", "maximum", note_expression.NoteExpressionValueDescription, "maximum");
+    try printOffset(stdout, "NoteExpressionValueDescription", "stepCount", note_expression.NoteExpressionValueDescription, "stepCount");
+
+    try printType(stdout, "NoteExpressionTypeInfo", note_expression.NoteExpressionTypeInfo);
+    try printOffset(stdout, "NoteExpressionTypeInfo", "typeId", note_expression.NoteExpressionTypeInfo, "typeId");
+    try printOffset(stdout, "NoteExpressionTypeInfo", "title", note_expression.NoteExpressionTypeInfo, "title");
+    try printOffset(stdout, "NoteExpressionTypeInfo", "shortTitle", note_expression.NoteExpressionTypeInfo, "shortTitle");
+    try printOffset(stdout, "NoteExpressionTypeInfo", "units", note_expression.NoteExpressionTypeInfo, "units");
+    try printOffset(stdout, "NoteExpressionTypeInfo", "unitId", note_expression.NoteExpressionTypeInfo, "unitId");
+    try printOffset(stdout, "NoteExpressionTypeInfo", "valueDesc", note_expression.NoteExpressionTypeInfo, "valueDesc");
+    try printOffset(stdout, "NoteExpressionTypeInfo", "associatedParameterId", note_expression.NoteExpressionTypeInfo, "associatedParameterId");
+    try printOffset(stdout, "NoteExpressionTypeInfo", "flags", note_expression.NoteExpressionTypeInfo, "flags");
+
+    try printType(stdout, "KeyswitchInfo", note_expression.KeyswitchInfo);
+    try printOffset(stdout, "KeyswitchInfo", "typeId", note_expression.KeyswitchInfo, "typeId");
+    try printOffset(stdout, "KeyswitchInfo", "title", note_expression.KeyswitchInfo, "title");
+    try printOffset(stdout, "KeyswitchInfo", "shortTitle", note_expression.KeyswitchInfo, "shortTitle");
+    try printOffset(stdout, "KeyswitchInfo", "keyswitchMin", note_expression.KeyswitchInfo, "keyswitchMin");
+    try printOffset(stdout, "KeyswitchInfo", "flags", note_expression.KeyswitchInfo, "flags");
+
+    try printTuid(stdout, "INoteExpressionController", note_expression.inote_expression_controller_iid);
+    try printTuid(stdout, "IKeyswitchController", note_expression.ikeyswitch_controller_iid);
+}
+
+fn printType(writer: anytype, comptime name: []const u8, comptime Type: type) !void {
+    try writer.print("{s} size {} align {}\n", .{ name, @sizeOf(Type), @alignOf(Type) });
+}
+
+fn printOffset(writer: anytype, comptime type_name: []const u8, comptime field_label: []const u8, comptime Type: type, comptime field_name: []const u8) !void {
+    try writer.print("{s}.{s} offset {}\n", .{ type_name, field_label, @offsetOf(Type, field_name) });
+}
+
+fn printTuid(writer: anytype, comptime name: []const u8, bytes: [16]u8) !void {
+    try writer.print("{s} iid", .{name});
+    for (bytes) |byte| {
+        try writer.print(" {X:0>2}", .{byte});
+    }
+    try writer.writeByte('\n');
+}

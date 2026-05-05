@@ -64,6 +64,9 @@ jobs:
       - name: Check MIDI mapping ABI
         if: runner.os != 'Windows'
         run: zig build midi-mapping-abi
+      - name: Check note expression ABI
+        if: runner.os != 'Windows'
+        run: zig build note-expression-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi
