@@ -8,6 +8,16 @@ The project is at the repository scaffold stage. The current tree contains:
 - `zig-plug/`: higher-level plugin framework layer
 - `PROJECT_BUILD_PLAN.md`: staged implementation plan
 
+## Current Status
+
+Phase 1 COM/vtable groundwork is in progress:
+
+- TUID/FUID byte layout with SDK fixture comparison
+- Explicit `FUnknown` vtable prototype
+- Atomic reference counting with allocator-backed destruction tests
+- Synthetic multi-interface query dispatch
+- C ABI harnesses for `FUnknown` and multi-interface dispatch
+
 ## Development
 
 Required toolchain:
@@ -19,4 +29,5 @@ Run the local checks:
 ```sh
 zig build
 zig build test
+zig build phase1
 ```
