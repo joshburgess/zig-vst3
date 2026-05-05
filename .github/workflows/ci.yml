@@ -31,6 +31,9 @@ jobs:
       - name: Check TUID ABI
         if: runner.os != 'Windows'
         run: zig build tuid-abi
+      - name: Check FUnknown C ABI
+        if: runner.os != 'Windows'
+        run: zig build funknown-abi
       - name: Build
         run: zig build
       - name: Test
