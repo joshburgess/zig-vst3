@@ -61,4 +61,8 @@ pub fn build(b: *std.Build) void {
     const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
     validator_step.dependOn(&build_validator.step);
+
+    const tuid_abi_step = b.step("tuid-abi", "Compare Zig TUID bytes against the pinned VST3 SDK");
+    const check_tuid_abi = b.addSystemCommand(&.{"scripts/check_tuid_abi.sh"});
+    tuid_abi_step.dependOn(&check_tuid_abi.step);
 }
