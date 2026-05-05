@@ -1,0 +1,12 @@
+.zig-cache/
+zig-out/
+zig-cache/
+
+# Local SDK checkouts and generated host-test artifacts.
+.vst3-sdk/
+vendor/VST3_SDK/
+host-test-results/
+
+# OS/editor noise.
+.DS_Store
+*.swp
