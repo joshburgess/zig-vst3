@@ -110,6 +110,10 @@ pub fn build(b: *std.Build) void {
     const check_midi_mapping_abi = b.addSystemCommand(&.{"scripts/check_midi_mapping_abi.sh"});
     midi_mapping_abi_step.dependOn(&check_midi_mapping_abi.step);
 
+    const note_expression_abi_step = b.step("note-expression-abi", "Compare Zig note expression declarations against the pinned VST3 SDK");
+    const check_note_expression_abi = b.addSystemCommand(&.{"scripts/check_note_expression_abi.sh"});
+    note_expression_abi_step.dependOn(&check_note_expression_abi.step);
+
     const funknown_harness_zig = b.addObject(.{
         .name = "funknown_harness_zig",
         .root_module = b.createModule(.{
@@ -178,6 +182,7 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(plugview_abi_step);
     phase1_step.dependOn(units_abi_step);
     phase1_step.dependOn(midi_mapping_abi_step);
+    phase1_step.dependOn(note_expression_abi_step);
     phase1_step.dependOn(funknown_abi_step);
     phase1_step.dependOn(multi_interface_abi_step);
 }
