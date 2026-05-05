@@ -70,6 +70,9 @@ jobs:
       - name: Check capability/state ABI
         if: runner.os != 'Windows'
         run: zig build capability-state-abi
+      - name: Check parameter helpers ABI
+        if: runner.os != 'Windows'
+        run: zig build parameter-helpers-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi
