@@ -22,6 +22,12 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.14.0
+      - name: Verify pinned VST3 SDK checkout
+        if: runner.os != 'Windows'
+        run: scripts/fetch_sdk.sh
+      - name: Verify pinned VST3 SDK checkout
+        if: runner.os == 'Windows'
+        run: .\scripts\fetch_sdk.ps1
       - name: Build
         run: zig build
       - name: Test
@@ -52,3 +58,16 @@ jobs:
           version: 0.14.0
       - name: Build target
         run: zig build -Dtarget=${{ matrix.target }}
+
+  validator:
+    name: Build VST3 validator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.0
+      - name: Fetch pinned VST3 SDK
+        run: scripts/fetch_sdk.sh
+      - name: Build validator
+        run: zig build validator

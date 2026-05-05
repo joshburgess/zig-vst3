@@ -48,4 +48,17 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(vst3_tests).step);
     test_step.dependOn(&b.addRunArtifact(zig_plug_tests).step);
+
+    const validate_step = b.step("validate", "Run the VST3 SDK validator for -Dplugin=path/to/Plugin.vst3");
+    if (b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate")) |plugin_path| {
+        const validate = b.addSystemCommand(&.{ "scripts/validate.sh", plugin_path });
+        validate_step.dependOn(&validate.step);
+    } else {
+        const missing_plugin = b.addFail("pass -Dplugin=path/to/Plugin.vst3");
+        validate_step.dependOn(&missing_plugin.step);
+    }
+
+    const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
+    const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
+    validator_step.dependOn(&build_validator.step);
 }
