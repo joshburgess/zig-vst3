@@ -105,6 +105,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IEditController`, `IComponentHandler`, `IMidiMapping`, and adjacent edit-controller extensions | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build edit-controller-abi` |
 | `IParameterChanges`, `IParamValueQueue` | Initial vtable translation complete; IIDs checked with `zig build parameter-changes-abi` |
 | `IEventList`, `Event`, and event payload structs | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build events-abi` |
+| `IConnectionPoint`, `IMessage`, `IAttributeList`, `IHostApplication`, and adjacent host/wrapper interfaces | Initial vtable translation complete; IIDs checked with `zig build host-message-abi` |
 
 ## Phase 2 P0 Seed List
 
