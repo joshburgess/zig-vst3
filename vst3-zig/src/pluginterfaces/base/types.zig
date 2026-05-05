@@ -1,0 +1,19 @@
+pub const int8 = i8;
+pub const uint8 = u8;
+pub const int16 = i16;
+pub const uint16 = u16;
+pub const int32 = i32;
+pub const uint32 = u32;
+pub const int64 = i64;
+pub const uint64 = u64;
+pub const TSize = int64;
+pub const tresult = int32;
+pub const TBool = uint8;
+pub const char8 = u8;
+pub const char16 = u16;
+pub const FIDString = [*:0]const char8;
+
+pub const kResultOk: tresult = 0;
+pub const kResultTrue: tresult = 1;
+pub const kResultFalse: tresult = 0;
+pub const kNoInterface: tresult = -1;
