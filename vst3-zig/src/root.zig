@@ -1,5 +1,6 @@
 const std = @import("std");
 
+pub const tuid = @import("tuid.zig");
 pub const version = "0.1.0-dev";
 
 pub fn targetName() []const u8 {
