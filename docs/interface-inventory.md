@@ -99,6 +99,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IPluginBase` | Initial vtable translation complete |
 | `IPluginFactory`, `IPluginFactory2`, `IPluginFactory3` | Initial vtable and struct translation complete |
 | `PFactoryInfo`, `PClassInfo`, `PClassInfo2`, `PClassInfoW` | Layout checked against the pinned SDK with `zig build pluginbase-abi` |
+| `IBStream`, `ISizeableStream` | Initial vtable translation complete; IIDs and seek constants checked with `zig build ibstream-abi` |
 
 ## Phase 2 P0 Seed List
 

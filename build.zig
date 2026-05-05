@@ -70,6 +70,10 @@ pub fn build(b: *std.Build) void {
     const check_pluginbase_abi = b.addSystemCommand(&.{"scripts/check_pluginbase_abi.sh"});
     pluginbase_abi_step.dependOn(&check_pluginbase_abi.step);
 
+    const ibstream_abi_step = b.step("ibstream-abi", "Compare Zig IBStream declarations against the pinned VST3 SDK");
+    const check_ibstream_abi = b.addSystemCommand(&.{"scripts/check_ibstream_abi.sh"});
+    ibstream_abi_step.dependOn(&check_ibstream_abi.step);
+
     const funknown_harness_zig = b.addObject(.{
         .name = "funknown_harness_zig",
         .root_module = b.createModule(.{
@@ -128,6 +132,7 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(test_step);
     phase1_step.dependOn(tuid_abi_step);
     phase1_step.dependOn(pluginbase_abi_step);
+    phase1_step.dependOn(ibstream_abi_step);
     phase1_step.dependOn(funknown_abi_step);
     phase1_step.dependOn(multi_interface_abi_step);
 }
