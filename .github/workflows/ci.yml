@@ -55,6 +55,9 @@ jobs:
       - name: Check host/message ABI
         if: runner.os != 'Windows'
         run: zig build host-message-abi
+      - name: Check plug view ABI
+        if: runner.os != 'Windows'
+        run: zig build plugview-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi
