@@ -17,6 +17,7 @@ Phase 1 COM/vtable groundwork is in progress:
 - Atomic reference counting with allocator-backed destruction tests
 - Synthetic multi-interface query dispatch
 - C ABI harnesses for `FUnknown` and multi-interface dispatch
+- Initial `pluginterfaces/base` translations for `FUnknown`, `IPluginBase`, and plugin factory structs
 
 ## Development
 
@@ -30,4 +31,5 @@ Run the local checks:
 zig build
 zig build test
 zig build phase1
+zig build pluginbase-abi
 ```

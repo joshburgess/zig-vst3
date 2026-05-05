@@ -91,6 +91,15 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `ITestPlugProvider` | `pluginterfaces/vst/ivsttestplugprovider.h` | `0x86BE70EE, 0x4E99430F, 0x978F1E6E, 0xD68FB5BA` | `FUnknown` | test | P3 |
 | `ITestPlugProvider2` | `pluginterfaces/vst/ivsttestplugprovider.h` | `0xC7C75364, 0x7B8343AC, 0xA4495B0A, 0x3E5A46C7` | `ITestPlugProvider` | test | P3 |
 
+## Translation Status
+
+| Interface group | Status |
+|---|---|
+| `FUnknown` | Initial translation and C ABI harness complete |
+| `IPluginBase` | Initial vtable translation complete |
+| `IPluginFactory`, `IPluginFactory2`, `IPluginFactory3` | Initial vtable and struct translation complete |
+| `PFactoryInfo`, `PClassInfo`, `PClassInfo2`, `PClassInfoW` | Layout checked against the pinned SDK with `zig build pluginbase-abi` |
+
 ## Phase 2 P0 Seed List
 
 Translate these first:
