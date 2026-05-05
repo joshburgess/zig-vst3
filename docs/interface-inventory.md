@@ -101,6 +101,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `PFactoryInfo`, `PClassInfo`, `PClassInfo2`, `PClassInfoW` | Layout checked against the pinned SDK with `zig build pluginbase-abi` |
 | `IBStream`, `ISizeableStream` | Initial vtable translation complete; IIDs and seek constants checked with `zig build ibstream-abi` |
 | `IComponent`, `BusInfo`, `RoutingInfo` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build component-abi` |
+| `IAudioProcessor`, `IAudioPresentationLatency`, `IProcessContextRequirements` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build audio-processor-abi` |
 
 ## Phase 2 P0 Seed List
 
