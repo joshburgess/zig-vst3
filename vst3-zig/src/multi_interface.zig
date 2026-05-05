@@ -143,27 +143,33 @@ fn releaseFromUnknown(ptr: *anyopaque) callconv(.C) funknown.uint32 {
 }
 
 fn addRefFromA(ptr: *anyopaque) callconv(.C) funknown.uint32 {
-    return objectFromA(ptr).unknown.vtable.addRef(&objectFromA(ptr).unknown);
+    const object = objectFromA(ptr);
+    return object.unknown.vtable.addRef(&object.unknown);
 }
 
 fn releaseFromA(ptr: *anyopaque) callconv(.C) funknown.uint32 {
-    return objectFromA(ptr).unknown.vtable.release(&objectFromA(ptr).unknown);
+    const object = objectFromA(ptr);
+    return object.unknown.vtable.release(&object.unknown);
 }
 
 fn addRefFromB(ptr: *anyopaque) callconv(.C) funknown.uint32 {
-    return objectFromB(ptr).unknown.vtable.addRef(&objectFromB(ptr).unknown);
+    const object = objectFromB(ptr);
+    return object.unknown.vtable.addRef(&object.unknown);
 }
 
 fn releaseFromB(ptr: *anyopaque) callconv(.C) funknown.uint32 {
-    return objectFromB(ptr).unknown.vtable.release(&objectFromB(ptr).unknown);
+    const object = objectFromB(ptr);
+    return object.unknown.vtable.release(&object.unknown);
 }
 
 fn addRefFromC(ptr: *anyopaque) callconv(.C) funknown.uint32 {
-    return objectFromC(ptr).unknown.vtable.addRef(&objectFromC(ptr).unknown);
+    const object = objectFromC(ptr);
+    return object.unknown.vtable.addRef(&object.unknown);
 }
 
 fn releaseFromC(ptr: *anyopaque) callconv(.C) funknown.uint32 {
-    return objectFromC(ptr).unknown.vtable.release(&objectFromC(ptr).unknown);
+    const object = objectFromC(ptr);
+    return object.unknown.vtable.release(&object.unknown);
 }
 
 fn callA(ptr: *anyopaque) callconv(.C) funknown.uint32 {
@@ -205,4 +211,5 @@ test "queryInterface returns distinct interface pointers for one object" {
     try std.testing.expectEqual(@as(funknown.uint32, 1), object.a_calls);
     try std.testing.expectEqual(@as(funknown.uint32, 1), object.b_calls);
     try std.testing.expectEqual(@as(funknown.uint32, 1), object.c_calls);
+    try std.testing.expectEqual(@as(funknown.uint32, 4), object.unknown.ref_count.load(.monotonic));
 }
