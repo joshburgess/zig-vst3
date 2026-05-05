@@ -34,6 +34,9 @@ jobs:
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi
+      - name: Check multi-interface C ABI
+        if: runner.os != 'Windows'
+        run: zig build multi-interface-abi
       - name: Build
         run: zig build
       - name: Test
