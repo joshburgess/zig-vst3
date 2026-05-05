@@ -92,4 +92,31 @@ pub fn build(b: *std.Build) void {
 
     const funknown_abi_step = b.step("funknown-abi", "Run the C ABI harness for the FUnknown prototype");
     funknown_abi_step.dependOn(&b.addRunArtifact(funknown_harness).step);
+
+    const multi_interface_harness_zig = b.addObject(.{
+        .name = "multi_interface_harness_zig",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/abi/multi_interface_harness.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    multi_interface_harness_zig.root_module.addImport("vst3-zig", vst3_zig);
+
+    const multi_interface_harness = b.addExecutable(.{
+        .name = "multi_interface_harness",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    multi_interface_harness.root_module.addCSourceFile(.{
+        .file = b.path("tests/abi/multi_interface_harness.c"),
+        .flags = &.{},
+    });
+    multi_interface_harness.root_module.addObject(multi_interface_harness_zig);
+
+    const multi_interface_abi_step = b.step("multi-interface-abi", "Run the C ABI harness for multi-interface query dispatch");
+    multi_interface_abi_step.dependOn(&b.addRunArtifact(multi_interface_harness).step);
 }
