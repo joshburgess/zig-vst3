@@ -20,12 +20,20 @@ pub const IBStreamVTable = extern struct {
     tell: *const fn (*anyopaque, *types.int64) callconv(.C) types.tresult,
 };
 
+pub const IBStream = extern struct {
+    vtable: *const IBStreamVTable,
+};
+
 pub const ISizeableStreamVTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) types.uint32,
     release: *const fn (*anyopaque) callconv(.C) types.uint32,
     getStreamSize: *const fn (*anyopaque, *types.int64) callconv(.C) types.tresult,
     setStreamSize: *const fn (*anyopaque, types.int64) callconv(.C) types.tresult,
+};
+
+pub const ISizeableStream = extern struct {
+    vtable: *const ISizeableStreamVTable,
 };
 
 test "stream vtable slot counts include FUnknown prefix" {
