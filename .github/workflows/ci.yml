@@ -58,6 +58,9 @@ jobs:
       - name: Check plug view ABI
         if: runner.os != 'Windows'
         run: zig build plugview-abi
+      - name: Check units ABI
+        if: runner.os != 'Windows'
+        run: zig build units-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi

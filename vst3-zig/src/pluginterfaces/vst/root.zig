@@ -8,3 +8,4 @@ pub const ivsthostapplication = @import("ivsthostapplication.zig");
 pub const ivstmessage = @import("ivstmessage.zig");
 pub const ivstnoteexpression = @import("ivstnoteexpression.zig");
 pub const ivstparameterchanges = @import("ivstparameterchanges.zig");
+pub const ivstunits = @import("ivstunits.zig");
