@@ -49,6 +49,9 @@ jobs:
       - name: Check parameter changes ABI
         if: runner.os != 'Windows'
         run: zig build parameter-changes-abi
+      - name: Check events ABI
+        if: runner.os != 'Windows'
+        run: zig build events-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi

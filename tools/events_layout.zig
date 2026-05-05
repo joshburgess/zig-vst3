@@ -1,0 +1,61 @@
+const std = @import("std");
+const events = @import("vst3-zig").pluginterfaces.vst.ivstevents;
+const noteexpression = @import("vst3-zig").pluginterfaces.vst.ivstnoteexpression;
+
+pub fn main() !void {
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print("NoteIDUserRange.kNoteIDUserRangeLowerBound {}\n", .{@intFromEnum(events.NoteIDUserRange.kNoteIDUserRangeLowerBound)});
+    try stdout.print("NoteIDUserRange.kNoteIDUserRangeUpperBound {}\n", .{@intFromEnum(events.NoteIDUserRange.kNoteIDUserRangeUpperBound)});
+    try stdout.print("DataEvent.kMidiSysEx {}\n", .{@intFromEnum(events.DataEvent.DataTypes.kMidiSysEx)});
+    try stdout.print("Event.kIsLive {}\n", .{events.Event.EventFlags.kIsLive});
+    try stdout.print("Event.kUserReserved1 {}\n", .{events.Event.EventFlags.kUserReserved1});
+    try stdout.print("Event.kUserReserved2 {}\n", .{events.Event.EventFlags.kUserReserved2});
+    try stdout.print("Event.kNoteOnEvent {}\n", .{@intFromEnum(events.Event.EventTypes.kNoteOnEvent)});
+    try stdout.print("Event.kNoteOffEvent {}\n", .{@intFromEnum(events.Event.EventTypes.kNoteOffEvent)});
+    try stdout.print("Event.kDataEvent {}\n", .{@intFromEnum(events.Event.EventTypes.kDataEvent)});
+    try stdout.print("Event.kPolyPressureEvent {}\n", .{@intFromEnum(events.Event.EventTypes.kPolyPressureEvent)});
+    try stdout.print("Event.kNoteExpressionValueEvent {}\n", .{@intFromEnum(events.Event.EventTypes.kNoteExpressionValueEvent)});
+    try stdout.print("Event.kNoteExpressionTextEvent {}\n", .{@intFromEnum(events.Event.EventTypes.kNoteExpressionTextEvent)});
+    try stdout.print("Event.kChordEvent {}\n", .{@intFromEnum(events.Event.EventTypes.kChordEvent)});
+    try stdout.print("Event.kScaleEvent {}\n", .{@intFromEnum(events.Event.EventTypes.kScaleEvent)});
+    try stdout.print("Event.kNoteExpressionIntValueEvent {}\n", .{@intFromEnum(events.Event.EventTypes.kNoteExpressionIntValueEvent)});
+    try stdout.print("Event.kLegacyMIDICCOutEvent {}\n", .{@intFromEnum(events.Event.EventTypes.kLegacyMIDICCOutEvent)});
+
+    try printType(stdout, "NoteOnEvent", events.NoteOnEvent);
+    try printType(stdout, "NoteOffEvent", events.NoteOffEvent);
+    try printType(stdout, "DataEvent", events.DataEvent);
+    try printType(stdout, "PolyPressureEvent", events.PolyPressureEvent);
+    try printType(stdout, "ChordEvent", events.ChordEvent);
+    try printType(stdout, "ScaleEvent", events.ScaleEvent);
+    try printType(stdout, "LegacyMIDICCOutEvent", events.LegacyMIDICCOutEvent);
+    try printType(stdout, "NoteExpressionValueEvent", noteexpression.NoteExpressionValueEvent);
+    try printType(stdout, "NoteExpressionIntValueEvent", noteexpression.NoteExpressionIntValueEvent);
+    try printType(stdout, "NoteExpressionTextEvent", noteexpression.NoteExpressionTextEvent);
+    try printType(stdout, "Event", events.Event);
+    try printOffset(stdout, "Event", "busIndex", events.Event, "busIndex");
+    try printOffset(stdout, "Event", "sampleOffset", events.Event, "sampleOffset");
+    try printOffset(stdout, "Event", "ppqPosition", events.Event, "ppqPosition");
+    try printOffset(stdout, "Event", "flags", events.Event, "flags");
+    try printOffset(stdout, "Event", "type", events.Event, "type");
+    try printOffset(stdout, "Event", "noteOn", events.Event, "data");
+    try printOffset(stdout, "Event", "noteExpressionText", events.Event, "data");
+    try printOffset(stdout, "Event", "midiCCOut", events.Event, "data");
+
+    try printTuid(stdout, "IEventList", events.ievent_list_iid);
+}
+
+fn printType(writer: anytype, comptime name: []const u8, comptime Type: type) !void {
+    try writer.print("{s} size {} align {}\n", .{ name, @sizeOf(Type), @alignOf(Type) });
+}
+
+fn printOffset(writer: anytype, comptime type_name: []const u8, comptime field_label: []const u8, comptime Type: type, comptime field_name: []const u8) !void {
+    try writer.print("{s}.{s} offset {}\n", .{ type_name, field_label, @offsetOf(Type, field_name) });
+}
+
+fn printTuid(writer: anytype, comptime name: []const u8, bytes: [16]u8) !void {
+    try writer.print("{s} iid", .{name});
+    for (bytes) |byte| {
+        try writer.print(" {X:0>2}", .{byte});
+    }
+    try writer.writeByte('\n');
+}

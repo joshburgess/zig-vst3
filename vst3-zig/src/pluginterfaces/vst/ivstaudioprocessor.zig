@@ -1,4 +1,6 @@
 const base_types = @import("../base/types.zig");
+const events = @import("ivstevents.zig");
+const parameter_changes = @import("ivstparameterchanges.zig");
 const tuid = @import("../../tuid.zig");
 const vsttypes = @import("vsttypes.zig");
 
@@ -55,10 +57,10 @@ pub const ProcessData = extern struct {
     numOutputs: base_types.int32 = 0,
     inputs: ?[*]AudioBusBuffers = null,
     outputs: ?[*]AudioBusBuffers = null,
-    inputParameterChanges: ?*anyopaque = null,
-    outputParameterChanges: ?*anyopaque = null,
-    inputEvents: ?*anyopaque = null,
-    outputEvents: ?*anyopaque = null,
+    inputParameterChanges: ?*parameter_changes.IParameterChanges = null,
+    outputParameterChanges: ?*parameter_changes.IParameterChanges = null,
+    inputEvents: ?*events.IEventList = null,
+    outputEvents: ?*events.IEventList = null,
     processContext: ?*anyopaque = null,
 };
 

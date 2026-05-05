@@ -90,6 +90,10 @@ pub fn build(b: *std.Build) void {
     const check_parameter_changes_abi = b.addSystemCommand(&.{"scripts/check_parameter_changes_abi.sh"});
     parameter_changes_abi_step.dependOn(&check_parameter_changes_abi.step);
 
+    const events_abi_step = b.step("events-abi", "Compare Zig event declarations against the pinned VST3 SDK");
+    const check_events_abi = b.addSystemCommand(&.{"scripts/check_events_abi.sh"});
+    events_abi_step.dependOn(&check_events_abi.step);
+
     const funknown_harness_zig = b.addObject(.{
         .name = "funknown_harness_zig",
         .root_module = b.createModule(.{
@@ -153,6 +157,7 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(audio_processor_abi_step);
     phase1_step.dependOn(edit_controller_abi_step);
     phase1_step.dependOn(parameter_changes_abi_step);
+    phase1_step.dependOn(events_abi_step);
     phase1_step.dependOn(funknown_abi_step);
     phase1_step.dependOn(multi_interface_abi_step);
 }
