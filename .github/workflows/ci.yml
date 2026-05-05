@@ -37,6 +37,9 @@ jobs:
       - name: Check multi-interface C ABI
         if: runner.os != 'Windows'
         run: zig build multi-interface-abi
+      - name: Phase 1 integration
+        if: runner.os != 'Windows'
+        run: zig build phase1
       - name: Build
         run: zig build
       - name: Test
