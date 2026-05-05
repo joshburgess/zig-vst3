@@ -66,6 +66,10 @@ pub fn build(b: *std.Build) void {
     const check_tuid_abi = b.addSystemCommand(&.{"scripts/check_tuid_abi.sh"});
     tuid_abi_step.dependOn(&check_tuid_abi.step);
 
+    const pluginbase_abi_step = b.step("pluginbase-abi", "Compare Zig pluginbase layouts against the pinned VST3 SDK");
+    const check_pluginbase_abi = b.addSystemCommand(&.{"scripts/check_pluginbase_abi.sh"});
+    pluginbase_abi_step.dependOn(&check_pluginbase_abi.step);
+
     const funknown_harness_zig = b.addObject(.{
         .name = "funknown_harness_zig",
         .root_module = b.createModule(.{
@@ -123,6 +127,7 @@ pub fn build(b: *std.Build) void {
     const phase1_step = b.step("phase1", "Run Phase 1 COM/vtable integration checks");
     phase1_step.dependOn(test_step);
     phase1_step.dependOn(tuid_abi_step);
+    phase1_step.dependOn(pluginbase_abi_step);
     phase1_step.dependOn(funknown_abi_step);
     phase1_step.dependOn(multi_interface_abi_step);
 }
