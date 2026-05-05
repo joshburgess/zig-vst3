@@ -113,6 +113,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IPlugInterfaceSupport`, `IPrefetchableSupport`, `IAutomationState` | Initial vtable translation complete; constants and IIDs checked with `zig build capability-state-abi` |
 | `IParameterFinder`, `IParameterFunctionName`, `IRemapParamID` | Initial vtable translation complete; constants and IIDs checked with `zig build parameter-helpers-abi` |
 | `IComponentHandler3`, `IContextMenu`, `IContextMenuTarget`, `IContextMenuItem` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build context-menu-abi` |
+| `INoteExpressionPhysicalUIMapping`, `IInfoListener`, `PhysicalUIMap`, and channel context keys | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build physical-channel-abi` |
 
 ## Phase 2 P0 Seed List
 
