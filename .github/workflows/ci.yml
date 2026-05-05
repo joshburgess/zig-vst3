@@ -28,6 +28,9 @@ jobs:
       - name: Verify pinned VST3 SDK checkout
         if: runner.os == 'Windows'
         run: .\scripts\fetch_sdk.ps1
+      - name: Check TUID ABI
+        if: runner.os != 'Windows'
+        run: zig build tuid-abi
       - name: Build
         run: zig build
       - name: Test
