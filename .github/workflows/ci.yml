@@ -34,6 +34,9 @@ jobs:
       - name: Check pluginbase ABI
         if: runner.os != 'Windows'
         run: zig build pluginbase-abi
+      - name: Check IBStream ABI
+        if: runner.os != 'Windows'
+        run: zig build ibstream-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi
