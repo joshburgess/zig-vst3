@@ -3,6 +3,7 @@ pub const ivstattributes = @import("ivstattributes.zig");
 pub const ivstautomationstate = @import("ivstautomationstate.zig");
 pub const ivstaudioprocessor = @import("ivstaudioprocessor.zig");
 pub const ivstcomponent = @import("ivstcomponent.zig");
+pub const ivstcontextmenu = @import("ivstcontextmenu.zig");
 pub const ivsteditcontroller = @import("ivsteditcontroller.zig");
 pub const ivstevents = @import("ivstevents.zig");
 pub const ivsthostapplication = @import("ivsthostapplication.zig");

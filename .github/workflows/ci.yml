@@ -73,6 +73,9 @@ jobs:
       - name: Check parameter helpers ABI
         if: runner.os != 'Windows'
         run: zig build parameter-helpers-abi
+      - name: Check context menu ABI
+        if: runner.os != 'Windows'
+        run: zig build context-menu-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi
