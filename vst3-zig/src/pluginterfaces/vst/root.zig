@@ -1,5 +1,6 @@
 pub const vsttypes = @import("vsttypes.zig");
 pub const ivstattributes = @import("ivstattributes.zig");
+pub const ivstautomationstate = @import("ivstautomationstate.zig");
 pub const ivstaudioprocessor = @import("ivstaudioprocessor.zig");
 pub const ivstcomponent = @import("ivstcomponent.zig");
 pub const ivsteditcontroller = @import("ivsteditcontroller.zig");
@@ -10,4 +11,6 @@ pub const ivstmidilearn = @import("ivstmidilearn.zig");
 pub const ivstmidimapping2 = @import("ivstmidimapping2.zig");
 pub const ivstnoteexpression = @import("ivstnoteexpression.zig");
 pub const ivstparameterchanges = @import("ivstparameterchanges.zig");
+pub const ivstpluginterfacesupport = @import("ivstpluginterfacesupport.zig");
+pub const ivstprefetchablesupport = @import("ivstprefetchablesupport.zig");
 pub const ivstunits = @import("ivstunits.zig");
