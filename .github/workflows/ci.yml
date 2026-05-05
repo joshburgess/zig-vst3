@@ -40,6 +40,9 @@ jobs:
       - name: Check IComponent ABI
         if: runner.os != 'Windows'
         run: zig build component-abi
+      - name: Check IAudioProcessor ABI
+        if: runner.os != 'Windows'
+        run: zig build audio-processor-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi

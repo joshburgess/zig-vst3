@@ -17,3 +17,5 @@ pub const kResultOk: tresult = 0;
 pub const kResultTrue: tresult = 1;
 pub const kResultFalse: tresult = 0;
 pub const kNoInterface: tresult = -1;
+
+pub const kMaxInt32u: uint32 = 0xFFFFFFFF;
