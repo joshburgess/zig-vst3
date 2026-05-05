@@ -37,6 +37,9 @@ jobs:
       - name: Check IBStream ABI
         if: runner.os != 'Windows'
         run: zig build ibstream-abi
+      - name: Check IComponent ABI
+        if: runner.os != 'Windows'
+        run: zig build component-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi
