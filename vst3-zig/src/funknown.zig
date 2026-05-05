@@ -17,15 +17,29 @@ pub const VTable = extern struct {
 
 pub const Header = extern struct {
     vtable: *const VTable,
+    ref_count: std.atomic.Value(uint32),
+    destroy: ?*const fn (*anyopaque) callconv(.C) void,
+
+    pub fn init(vtable: *const VTable, destroy: ?*const fn (*anyopaque) callconv(.C) void) Header {
+        return .{
+            .vtable = vtable,
+            .ref_count = std.atomic.Value(uint32).init(1),
+            .destroy = destroy,
+        };
+    }
 };
 
 pub const TestObject = extern struct {
-    unknown: Header = .{ .vtable = &test_vtable },
-    ref_count: uint32 = 1,
+    unknown: Header = Header.init(&test_vtable, null),
     query_count: uint32 = 0,
+    destroy_count: uint32 = 0,
 
     pub fn asUnknown(self: *TestObject) *Header {
         return &self.unknown;
+    }
+
+    pub fn refCount(self: *const TestObject) uint32 {
+        return @constCast(&self.unknown.ref_count).load(.monotonic);
     }
 };
 
@@ -45,7 +59,7 @@ fn testQueryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*
     self.query_count += 1;
 
     if (std.mem.eql(u8, requested_iid, &iid)) {
-        _ = testAddRef(ptr);
+        _ = addRef(ptr);
         out.* = ptr;
         return kResultOk;
     }
@@ -54,16 +68,60 @@ fn testQueryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*
     return kNoInterface;
 }
 
+pub fn addRef(ptr: *anyopaque) callconv(.C) uint32 {
+    const header: *Header = @ptrCast(@alignCast(ptr));
+    return header.ref_count.fetchAdd(1, .monotonic) + 1;
+}
+
+pub fn release(ptr: *anyopaque) callconv(.C) uint32 {
+    const header: *Header = @ptrCast(@alignCast(ptr));
+    const previous = header.ref_count.fetchSub(1, .release);
+    std.debug.assert(previous > 0);
+
+    const next = previous - 1;
+    if (next == 0) {
+        _ = header.ref_count.load(.acquire);
+        if (header.destroy) |destroy| destroy(ptr);
+    }
+
+    return next;
+}
+
 fn testAddRef(ptr: *anyopaque) callconv(.C) uint32 {
-    const self = ownerFromUnknown(ptr);
-    self.ref_count += 1;
-    return self.ref_count;
+    return addRef(ptr);
 }
 
 fn testRelease(ptr: *anyopaque) callconv(.C) uint32 {
-    const self = ownerFromUnknown(ptr);
-    self.ref_count -= 1;
-    return self.ref_count;
+    return release(ptr);
+}
+
+fn testDestroy(ptr: *anyopaque) callconv(.C) void {
+    ownerFromUnknown(ptr).destroy_count += 1;
+}
+
+pub const AllocatedTestObject = struct {
+    unknown: Header = Header.init(&test_vtable, allocatedTestDestroy),
+    allocator: std.mem.Allocator,
+    query_count: uint32 = 0,
+    destroy_count: uint32 = 0,
+
+    pub fn create(allocator: std.mem.Allocator) !*AllocatedTestObject {
+        const object = try allocator.create(AllocatedTestObject);
+        object.* = .{ .allocator = allocator };
+        return object;
+    }
+
+    pub fn asUnknown(self: *AllocatedTestObject) *Header {
+        return &self.unknown;
+    }
+};
+
+fn allocatedTestDestroy(ptr: *anyopaque) callconv(.C) void {
+    const header: *Header = @ptrCast(@alignCast(ptr));
+    const object: *AllocatedTestObject = @fieldParentPtr("unknown", header);
+    const allocator = object.allocator;
+    object.destroy_count += 1;
+    allocator.destroy(object);
 }
 
 test "queryInterface returns FUnknown pointer and increments refcount" {
@@ -75,7 +133,7 @@ test "queryInterface returns FUnknown pointer and increments refcount" {
 
     try std.testing.expectEqual(kResultOk, result);
     try std.testing.expectEqual(@as(?*anyopaque, @ptrCast(unknown)), out);
-    try std.testing.expectEqual(@as(uint32, 2), object.ref_count);
+    try std.testing.expectEqual(@as(uint32, 2), object.refCount());
     try std.testing.expectEqual(@as(uint32, 1), object.query_count);
 }
 
@@ -89,13 +147,58 @@ test "queryInterface rejects unknown IID" {
 
     try std.testing.expectEqual(kNoInterface, result);
     try std.testing.expectEqual(@as(?*anyopaque, null), out);
-    try std.testing.expectEqual(@as(uint32, 1), object.ref_count);
+    try std.testing.expectEqual(@as(uint32, 1), object.refCount());
 }
 
-test "addRef and release update the prototype refcount" {
+test "addRef and release update the atomic refcount" {
     var object = TestObject{};
     const unknown = object.asUnknown();
 
     try std.testing.expectEqual(@as(uint32, 2), unknown.vtable.addRef(unknown));
     try std.testing.expectEqual(@as(uint32, 1), unknown.vtable.release(unknown));
+}
+
+test "release calls destroy when refcount reaches zero" {
+    var object = TestObject{
+        .unknown = Header.init(&test_vtable, testDestroy),
+    };
+    const unknown = object.asUnknown();
+
+    try std.testing.expectEqual(@as(uint32, 0), unknown.vtable.release(unknown));
+    try std.testing.expectEqual(@as(uint32, 1), object.destroy_count);
+}
+
+test "atomic refcount tolerates concurrent add and release pairs" {
+    const worker_count = 8;
+    const iterations = 20_000;
+
+    const Worker = struct {
+        fn run(unknown: *Header) void {
+            for (0..iterations) |_| {
+                _ = unknown.vtable.addRef(unknown);
+                _ = unknown.vtable.release(unknown);
+            }
+        }
+    };
+
+    var object = TestObject{};
+    const unknown = object.asUnknown();
+    var threads: [worker_count]std.Thread = undefined;
+
+    for (&threads) |*thread| {
+        thread.* = try std.Thread.spawn(.{}, Worker.run, .{unknown});
+    }
+    for (threads) |thread| {
+        thread.join();
+    }
+
+    try std.testing.expectEqual(@as(uint32, 1), object.refCount());
+}
+
+test "allocator-owned object is destroyed at refcount zero" {
+    const allocator = std.testing.allocator;
+    const object = try AllocatedTestObject.create(allocator);
+    const unknown = object.asUnknown();
+
+    try std.testing.expectEqual(@as(uint32, 0), unknown.vtable.release(unknown));
 }

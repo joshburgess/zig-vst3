@@ -10,7 +10,7 @@ export fn funknown_iid() *const [16]u8 {
 }
 
 export fn test_object_ref_count(object: *const funknown.TestObject) u32 {
-    return object.ref_count;
+    return object.refCount();
 }
 
 export fn test_object_query_count(object: *const funknown.TestObject) u32 {

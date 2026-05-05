@@ -75,6 +75,13 @@ The initial implementation should:
 - Define the exact `FUnknown` vtable layout
 - Provide an `FUnknown.Header` that can be embedded as the first field of prototype objects
 - Implement `queryInterface`, `addRef`, and `release` for a test object
-- Keep destruction out of the prototype until Phase 1.3 defines allocator ownership and refcount policy
+- Store the reference count in the ABI header as `std.atomic.Value(u32)`
+- Call an optional destroy callback when `release` reaches zero
 
 This is intentionally narrower than the final multi-interface design. Phase 1.4 will add pointer fixup and query dispatch for objects exposing more than one interface.
+
+## Refcount Policy
+
+`addRef` uses a monotonic atomic increment and returns the new count. `release` uses a release decrement; when the count reaches zero it performs an acquire load before calling the destroy callback. Debug builds assert on release below zero.
+
+Objects that own an allocator store it in their concrete object and release themselves from their destroy callback. This keeps allocator ownership outside the ABI header while giving the raw COM helper a single destruction hook.
