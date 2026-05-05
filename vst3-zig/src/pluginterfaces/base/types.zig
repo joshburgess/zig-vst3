@@ -7,6 +7,7 @@ pub const uint32 = u32;
 pub const int64 = i64;
 pub const uint64 = u64;
 pub const TSize = int64;
+pub const UCoord = int32;
 pub const tresult = int32;
 pub const TBool = uint8;
 pub const char8 = u8;

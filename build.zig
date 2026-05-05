@@ -122,6 +122,10 @@ pub fn build(b: *std.Build) void {
     const check_parameter_helpers_abi = b.addSystemCommand(&.{"scripts/check_parameter_helpers_abi.sh"});
     parameter_helpers_abi_step.dependOn(&check_parameter_helpers_abi.step);
 
+    const context_menu_abi_step = b.step("context-menu-abi", "Compare Zig context menu declarations against the pinned VST3 SDK");
+    const check_context_menu_abi = b.addSystemCommand(&.{"scripts/check_context_menu_abi.sh"});
+    context_menu_abi_step.dependOn(&check_context_menu_abi.step);
+
     const funknown_harness_zig = b.addObject(.{
         .name = "funknown_harness_zig",
         .root_module = b.createModule(.{
@@ -193,6 +197,7 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(note_expression_abi_step);
     phase1_step.dependOn(capability_state_abi_step);
     phase1_step.dependOn(parameter_helpers_abi_step);
+    phase1_step.dependOn(context_menu_abi_step);
     phase1_step.dependOn(funknown_abi_step);
     phase1_step.dependOn(multi_interface_abi_step);
 }
