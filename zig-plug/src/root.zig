@@ -7,6 +7,6 @@ pub fn backendVersion() []const u8 {
     return vst3.version;
 }
 
-test "nih-zig sees vst3-zig" {
+test "zig-plug sees vst3-zig" {
     try std.testing.expectEqualStrings("0.1.0-dev", backendVersion());
 }

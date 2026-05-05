@@ -9,7 +9,7 @@ A staged plan for building a VST3 plugin framework in Zig, structured for delega
 **Goal.** Build a reusable VST3 plugin framework in Zig that lets developers ship audio plugins on Linux, macOS, and Windows. Two layers, mirroring the Rust ecosystem split:
 
 - **Layer 1: `vst3-zig`**: Raw bindings to the VST3 COM API. Hand-translated interface definitions, comptime vtable scaffolding, GUID/TUID handling, factory entry points. Useful on its own.
-- **Layer 2: `nih-zig`**: A higher-level framework with a clean `Plugin` interface, parameter system, state save/load, bundler tooling, sample-accurate automation. Builds on Layer 1.
+- **Layer 2: `zig-plug`**: A higher-level framework with a clean `Plugin` interface, parameter system, state save/load, bundler tooling, sample-accurate automation. Builds on Layer 1.
 
 **Targets from day one.** Linux, macOS, Windows on x86_64 and aarch64. The repository should compile on all three platforms from the first CI pipeline. Validator and host-load checks become required only after their harnesses exist.
 
@@ -84,7 +84,7 @@ Each phase is broken into **work units**. A work unit is sized so that one agent
 **Inputs.** None.
 
 **Deliverables.**
-- Monorepo with two top-level crates/packages: `vst3-zig/` and `nih-zig/` (the latter empty for now)
+- Monorepo with two top-level crates/packages: `vst3-zig/` and `zig-plug/` (the latter empty for now)
 - `build.zig` at root that builds a stub shared library on each target
 - `.gitignore`, `LICENSE` (MIT), `README.md` with project status badge
 - `CONTRIBUTING.md` describing the work-unit model and PR conventions
@@ -506,7 +506,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
   - Allocator passing convention
   - Real-time safety: how the API keeps allocation, locks, logging, and unbounded work out of `process`
   - Debug instrumentation for detecting allocator use and lock acquisition on the audio thread
-- Prototype in `nih-zig/src/plugin.zig` sufficient to express a gain plugin in 30 lines or fewer
+- Prototype in `zig-plug/src/plugin.zig` sufficient to express a gain plugin in 30 lines or fewer
 
 **Exit criteria.**
 - Three external Zig developers review the design and at least two find the API natural
