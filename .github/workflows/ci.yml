@@ -67,6 +67,9 @@ jobs:
       - name: Check note expression ABI
         if: runner.os != 'Windows'
         run: zig build note-expression-abi
+      - name: Check capability/state ABI
+        if: runner.os != 'Windows'
+        run: zig build capability-state-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi
