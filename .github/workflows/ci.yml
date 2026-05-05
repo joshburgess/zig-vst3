@@ -46,6 +46,9 @@ jobs:
       - name: Check IEditController ABI
         if: runner.os != 'Windows'
         run: zig build edit-controller-abi
+      - name: Check parameter changes ABI
+        if: runner.os != 'Windows'
+        run: zig build parameter-changes-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi
