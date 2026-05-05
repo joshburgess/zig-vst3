@@ -4,6 +4,7 @@ pub const funknown = @import("funknown.zig");
 pub const multi_interface = @import("multi_interface.zig");
 pub const pluginterfaces = struct {
     pub const base = @import("pluginterfaces/base/root.zig");
+    pub const gui = @import("pluginterfaces/gui/root.zig");
     pub const vst = @import("pluginterfaces/vst/root.zig");
 };
 pub const tuid = @import("tuid.zig");

@@ -1,4 +1,5 @@
 const base_types = @import("../base/types.zig");
+const iplugview = @import("../gui/iplugview.zig");
 const ibstream = @import("../base/ibstream.zig");
 const tuid = @import("../../tuid.zig");
 const vsttypes = @import("vsttypes.zig");
@@ -141,7 +142,7 @@ pub const IEditControllerVTable = extern struct {
     getParamNormalized: *const fn (*anyopaque, vsttypes.ParamID) callconv(.C) vsttypes.ParamValue,
     setParamNormalized: *const fn (*anyopaque, vsttypes.ParamID, vsttypes.ParamValue) callconv(.C) base_types.tresult,
     setComponentHandler: *const fn (*anyopaque, ?*anyopaque) callconv(.C) base_types.tresult,
-    createView: *const fn (*anyopaque, base_types.FIDString) callconv(.C) ?*anyopaque,
+    createView: *const fn (*anyopaque, base_types.FIDString) callconv(.C) ?*iplugview.IPlugView,
 };
 
 pub const KnobMode = base_types.int32;
