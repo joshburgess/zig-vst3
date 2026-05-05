@@ -10,12 +10,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const nih_zig = b.addModule("nih-zig", .{
-        .root_source_file = b.path("nih-zig/src/root.zig"),
+    const zig_plug = b.addModule("zig-plug", .{
+        .root_source_file = b.path("zig-plug/src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
-    nih_zig.addImport("vst3-zig", vst3_zig);
+    zig_plug.addImport("vst3-zig", vst3_zig);
 
     const stub = b.addLibrary(.{
         .linkage = .dynamic,
@@ -36,16 +36,16 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    const nih_tests = b.addTest(.{
+    const zig_plug_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("nih-zig/src/root.zig"),
+            .root_source_file = b.path("zig-plug/src/root.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
-    nih_tests.root_module.addImport("vst3-zig", vst3_zig);
+    zig_plug_tests.root_module.addImport("vst3-zig", vst3_zig);
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(vst3_tests).step);
-    test_step.dependOn(&b.addRunArtifact(nih_tests).step);
+    test_step.dependOn(&b.addRunArtifact(zig_plug_tests).step);
 }
