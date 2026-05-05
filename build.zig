@@ -65,4 +65,31 @@ pub fn build(b: *std.Build) void {
     const tuid_abi_step = b.step("tuid-abi", "Compare Zig TUID bytes against the pinned VST3 SDK");
     const check_tuid_abi = b.addSystemCommand(&.{"scripts/check_tuid_abi.sh"});
     tuid_abi_step.dependOn(&check_tuid_abi.step);
+
+    const funknown_harness_zig = b.addObject(.{
+        .name = "funknown_harness_zig",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/abi/funknown_harness.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    funknown_harness_zig.root_module.addImport("vst3-zig", vst3_zig);
+
+    const funknown_harness = b.addExecutable(.{
+        .name = "funknown_harness",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    funknown_harness.root_module.addCSourceFile(.{
+        .file = b.path("tests/abi/funknown_harness.c"),
+        .flags = &.{},
+    });
+    funknown_harness.root_module.addObject(funknown_harness_zig);
+
+    const funknown_abi_step = b.step("funknown-abi", "Run the C ABI harness for the FUnknown prototype");
+    funknown_abi_step.dependOn(&b.addRunArtifact(funknown_harness).step);
 }
