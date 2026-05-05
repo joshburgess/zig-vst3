@@ -17,12 +17,14 @@ struct FUnknownVTable {
 
 struct FUnknownHeader {
 	const FUnknownVTable* vtable;
+	uint32 ref_count;
+	void* destroy;
 };
 
 typedef struct TestObject {
 	FUnknownHeader unknown;
-	uint32 ref_count;
 	uint32 query_count;
+	uint32 destroy_count;
 } TestObject;
 
 extern FUnknownHeader* make_test_object (TestObject* out);
