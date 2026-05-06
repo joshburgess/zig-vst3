@@ -109,7 +109,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IEditController`, `IComponentHandler`, `IMidiMapping`, and adjacent edit-controller extensions | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build edit-controller-abi` |
 | `IProgress`, `IEditController2`, `IComponentHandler2`, `IComponentHandlerBusActivation`, `IEditControllerHostEditing`, `IComponentHandlerSystemTime` | Initial vtable translation complete; IIDs checked with `zig build edit-controller-abi` |
 | `IParameterChanges`, `IParamValueQueue` | Initial vtable translation complete; IIDs checked with `zig build parameter-changes-abi` |
-| `IEventList`, `Event`, and event payload structs | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build events-abi` |
+| `IEventList`, `Event`, event payload structs, and event helper functions | Initial vtable, struct, and helper translation complete; layout checked against the pinned SDK with `zig build events-abi` |
 | `IConnectionPoint`, `IMessage`, `IAttributeList`, `IHostApplication`, and adjacent host/wrapper interfaces | Initial vtable translation complete; IIDs checked with `zig build host-message-abi` |
 | `IVst3ToVst2Wrapper`, `IVst3ToAUWrapper`, `IVst3ToAAXWrapper`, `IVst3WrapperMPESupport` | Initial vtable translation complete; IIDs checked with `zig build host-message-abi` |
 | `IPlugView`, `IPlugFrame`, `IPlugViewContentScaleSupport`, and Linux run loop interfaces | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build plugview-abi` |

@@ -1,4 +1,5 @@
 #include "pluginterfaces/vst/ivstevents.h"
+#include "public.sdk/source/vst/vsteventshelper.h"
 
 #include <cstddef>
 #include <cstdio>
@@ -53,6 +54,29 @@ int main ()
 	PRINT_OFFSET (Event, noteOn);
 	PRINT_OFFSET (Event, noteExpressionText);
 	PRINT_OFFSET (Event, midiCCOut);
+
+	Steinberg::Vst::Event event {};
+	Steinberg::Vst::Helpers::init (event, Steinberg::Vst::Event::kDataEvent, 2, 64, 12.5, Steinberg::Vst::Event::kIsLive);
+	std::printf ("Helpers.init.busIndex %d\n", event.busIndex);
+	std::printf ("Helpers.init.sampleOffset %d\n", event.sampleOffset);
+	std::printf ("Helpers.init.ppqPosition %.6f\n", event.ppqPosition);
+	std::printf ("Helpers.init.flags %u\n", event.flags);
+	std::printf ("Helpers.init.type %u\n", event.type);
+	std::printf ("Helpers.getMIDINormValue.64 %.12f\n", Steinberg::Vst::Helpers::getMIDINormValue (64));
+	std::printf ("Helpers.getMIDICCOutValue.1 %d\n", Steinberg::Vst::Helpers::getMIDICCOutValue (1.0));
+	std::printf ("Helpers.getMIDI14BitValue.1 %d\n", Steinberg::Vst::Helpers::getMIDI14BitValue (1.0));
+	std::printf ("Helpers.getMIDI14BitNormValue.8192 %.12f\n", Steinberg::Vst::Helpers::getMIDI14BitNormValue (8192));
+	auto& midi = Steinberg::Vst::Helpers::initLegacyMIDICCOutEvent (event, 10, 2, 64, 1);
+	std::printf ("Helpers.initLegacy.type %u\n", event.type);
+	std::printf ("Helpers.initLegacy.controlNumber %u\n", midi.controlNumber);
+	std::printf ("Helpers.initLegacy.channel %d\n", midi.channel);
+	std::printf ("Helpers.initLegacy.value %d\n", midi.value);
+	std::printf ("Helpers.initLegacy.value2 %d\n", midi.value2);
+	Steinberg::Vst::Helpers::setPitchBendValue (midi, 1.0);
+	std::printf ("Helpers.pitchBend.value %d\n", midi.value);
+	std::printf ("Helpers.pitchBend.value2 %d\n", midi.value2);
+	std::printf ("Helpers.getPitchBendValue %d\n", Steinberg::Vst::Helpers::getPitchBendValue (midi));
+	std::printf ("Helpers.getNormPitchBendValue %.12f\n", Steinberg::Vst::Helpers::getNormPitchBendValue (midi));
 
 	print_iid ("IEventList", Steinberg::Vst::IEventList_iid);
 	return 0;
