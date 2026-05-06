@@ -79,6 +79,9 @@ int main ()
 	PRINT_OFFSET (KeyswitchInfo, unitId);
 	PRINT_OFFSET (KeyswitchInfo, flags);
 
+	PRINT_TYPE (INoteExpressionController);
+	PRINT_TYPE (IKeyswitchController);
+
 	print_iid ("INoteExpressionController", Steinberg::Vst::INoteExpressionController_iid);
 	print_iid ("IKeyswitchController", Steinberg::Vst::IKeyswitchController_iid);
 	return 0;

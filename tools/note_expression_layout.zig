@@ -65,6 +65,9 @@ pub fn main() !void {
     try printOffset(stdout, "KeyswitchInfo", "unitId", note_expression.KeyswitchInfo, "unitId");
     try printOffset(stdout, "KeyswitchInfo", "flags", note_expression.KeyswitchInfo, "flags");
 
+    try printType(stdout, "INoteExpressionController", note_expression.INoteExpressionController);
+    try printType(stdout, "IKeyswitchController", note_expression.IKeyswitchController);
+
     try printTuid(stdout, "INoteExpressionController", note_expression.inote_expression_controller_iid);
     try printTuid(stdout, "IKeyswitchController", note_expression.ikeyswitch_controller_iid);
 }
