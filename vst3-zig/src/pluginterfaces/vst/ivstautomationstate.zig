@@ -26,5 +26,6 @@ pub const IAutomationState = extern struct {
 };
 
 test "automation state vtable slot count includes FUnknown prefix" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IAutomationState));
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IAutomationStateVTable).@"struct".fields.len);
 }
