@@ -14,6 +14,10 @@ pub fn main() !void {
     try stdout.print("offsetof.Entry.offset {}\n", .{@offsetOf(preset_file.Entry, "offset")});
     try stdout.print("offsetof.Entry.size {}\n", .{@offsetOf(preset_file.Entry, "size")});
     try stdout.print("PresetFile.kMaxEntries {}\n", .{preset_file.kMaxEntries});
+    try stdout.print("PresetFile.kFormatVersion {}\n", .{preset_file.kFormatVersion});
+    try stdout.print("PresetFile.kClassIDSize {}\n", .{preset_file.kClassIDSize});
+    try stdout.print("PresetFile.kHeaderSize {}\n", .{preset_file.kHeaderSize});
+    try stdout.print("PresetFile.kListOffsetPos {}\n", .{preset_file.kListOffsetPos});
     try stdout.print("ChunkType.kHeader {}\n", .{@intFromEnum(preset_file.ChunkType.kHeader)});
     try stdout.print("ChunkType.kComponentState {}\n", .{@intFromEnum(preset_file.ChunkType.kComponentState)});
     try stdout.print("ChunkType.kControllerState {}\n", .{@intFromEnum(preset_file.ChunkType.kControllerState)});

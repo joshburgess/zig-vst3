@@ -14,6 +14,10 @@ pub const ChunkType = enum(base.int32) {
 };
 
 pub const kMaxEntries: base.int32 = 128;
+pub const kFormatVersion: base.int32 = 1;
+pub const kClassIDSize: base.int32 = 32;
+pub const kHeaderSize: base.int32 = @sizeOf(ChunkID) + @sizeOf(base.int32) + kClassIDSize + @sizeOf(base.TSize);
+pub const kListOffsetPos: base.int32 = kHeaderSize - @sizeOf(base.TSize);
 
 pub const Entry = extern struct {
     id: ChunkID,
@@ -54,4 +58,6 @@ test "preset chunk helpers match expected IDs" {
     try std.testing.expect(!isEqualID(chunk_ids.kChunkList, getChunkID(.kMetaInfo)));
     try std.testing.expectEqual(@as(usize, 24), @sizeOf(Entry));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(Entry));
+    try std.testing.expectEqual(@as(base.int32, 48), kHeaderSize);
+    try std.testing.expectEqual(@as(base.int32, 40), kListOffsetPos);
 }
