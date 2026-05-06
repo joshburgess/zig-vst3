@@ -222,6 +222,15 @@ pub const IComponentHandlerSystemTime = extern struct {
 
 test "edit controller struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 800), @sizeOf(ParameterInfo));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IComponentHandler));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IComponentHandler2));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IComponentHandlerBusActivation));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IProgress));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IEditController));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IEditController2));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IMidiMapping));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IEditControllerHostEditing));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IComponentHandlerSystemTime));
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IComponentHandlerVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 18), @typeInfo(IEditControllerVTable).@"struct".fields.len);
 }
