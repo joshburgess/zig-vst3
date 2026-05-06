@@ -38,5 +38,6 @@ pub const INoteExpressionPhysicalUIMapping = extern struct {
 test "physical UI mapping struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 8), @sizeOf(PhysicalUIMap));
     try @import("std").testing.expectEqual(@as(usize, 16), @sizeOf(PhysicalUIMapList));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(INoteExpressionPhysicalUIMapping));
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(INoteExpressionPhysicalUIMappingVTable).@"struct".fields.len);
 }
