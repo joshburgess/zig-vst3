@@ -101,12 +101,20 @@ pub const INoteExpressionControllerVTable = extern struct {
     getNoteExpressionValueByString: *const fn (*anyopaque, base_types.int32, base_types.int16, NoteExpressionTypeID, [*:0]const vsttypes.TChar, *NoteExpressionValue) callconv(.C) base_types.tresult,
 };
 
+pub const INoteExpressionController = extern struct {
+    vtable: *const INoteExpressionControllerVTable,
+};
+
 pub const IKeyswitchControllerVTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     getKeyswitchCount: *const fn (*anyopaque, base_types.int32, base_types.int16) callconv(.C) base_types.int32,
     getKeyswitchInfo: *const fn (*anyopaque, base_types.int32, base_types.int16, base_types.int32, *KeyswitchInfo) callconv(.C) base_types.tresult,
+};
+
+pub const IKeyswitchController = extern struct {
+    vtable: *const IKeyswitchControllerVTable,
 };
 
 test "note expression event struct sizes match SDK layout" {
