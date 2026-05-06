@@ -11,6 +11,10 @@ pub const IRemapParamIDVTable = extern struct {
     getCompatibleParamID: *const fn (*anyopaque, *const tuid.TUID, vsttypes.ParamID, *vsttypes.ParamID) callconv(.C) base_types.tresult,
 };
 
+pub const IRemapParamID = extern struct {
+    vtable: *const IRemapParamIDVTable,
+};
+
 test "remap param ID vtable slot count includes FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IRemapParamIDVTable).@"struct".fields.len);
 }
