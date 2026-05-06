@@ -4,11 +4,23 @@ const note_expression = @import("vst3-zig").pluginterfaces.vst.ivstnoteexpressio
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("NoteExpressionTypeIDs.kVolumeTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kVolumeTypeID)});
+    try stdout.print("NoteExpressionTypeIDs.kPanTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kPanTypeID)});
+    try stdout.print("NoteExpressionTypeIDs.kTuningTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kTuningTypeID)});
+    try stdout.print("NoteExpressionTypeIDs.kVibratoTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kVibratoTypeID)});
+    try stdout.print("NoteExpressionTypeIDs.kExpressionTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kExpressionTypeID)});
+    try stdout.print("NoteExpressionTypeIDs.kBrightnessTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kBrightnessTypeID)});
+    try stdout.print("NoteExpressionTypeIDs.kTextTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kTextTypeID)});
+    try stdout.print("NoteExpressionTypeIDs.kPhonemeTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kPhonemeTypeID)});
     try stdout.print("NoteExpressionTypeIDs.kCustomStart {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kCustomStart)});
+    try stdout.print("NoteExpressionTypeIDs.kCustomEnd {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kCustomEnd)});
     try stdout.print("NoteExpressionTypeIDs.kInvalidTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kInvalidTypeID)});
     try stdout.print("NoteExpressionTypeInfo.kIsBipolar {}\n", .{note_expression.NoteExpressionTypeInfo.NoteExpressionTypeFlags.kIsBipolar});
+    try stdout.print("NoteExpressionTypeInfo.kIsOneShot {}\n", .{note_expression.NoteExpressionTypeInfo.NoteExpressionTypeFlags.kIsOneShot});
+    try stdout.print("NoteExpressionTypeInfo.kIsAbsolute {}\n", .{note_expression.NoteExpressionTypeInfo.NoteExpressionTypeFlags.kIsAbsolute});
     try stdout.print("NoteExpressionTypeInfo.kAssociatedParameterIDValid {}\n", .{note_expression.NoteExpressionTypeInfo.NoteExpressionTypeFlags.kAssociatedParameterIDValid});
     try stdout.print("KeyswitchTypeIDs.kNoteOnKeyswitchTypeID {}\n", .{@intFromEnum(note_expression.KeyswitchTypeIDs.kNoteOnKeyswitchTypeID)});
+    try stdout.print("KeyswitchTypeIDs.kOnTheFlyKeyswitchTypeID {}\n", .{@intFromEnum(note_expression.KeyswitchTypeIDs.kOnTheFlyKeyswitchTypeID)});
+    try stdout.print("KeyswitchTypeIDs.kOnReleaseKeyswitchTypeID {}\n", .{@intFromEnum(note_expression.KeyswitchTypeIDs.kOnReleaseKeyswitchTypeID)});
     try stdout.print("KeyswitchTypeIDs.kKeyRangeTypeID {}\n", .{@intFromEnum(note_expression.KeyswitchTypeIDs.kKeyRangeTypeID)});
 
     try printType(stdout, "NoteExpressionValueDescription", note_expression.NoteExpressionValueDescription);
@@ -32,6 +44,9 @@ pub fn main() !void {
     try printOffset(stdout, "KeyswitchInfo", "title", note_expression.KeyswitchInfo, "title");
     try printOffset(stdout, "KeyswitchInfo", "shortTitle", note_expression.KeyswitchInfo, "shortTitle");
     try printOffset(stdout, "KeyswitchInfo", "keyswitchMin", note_expression.KeyswitchInfo, "keyswitchMin");
+    try printOffset(stdout, "KeyswitchInfo", "keyswitchMax", note_expression.KeyswitchInfo, "keyswitchMax");
+    try printOffset(stdout, "KeyswitchInfo", "keyRemapped", note_expression.KeyswitchInfo, "keyRemapped");
+    try printOffset(stdout, "KeyswitchInfo", "unitId", note_expression.KeyswitchInfo, "unitId");
     try printOffset(stdout, "KeyswitchInfo", "flags", note_expression.KeyswitchInfo, "flags");
 
     try printTuid(stdout, "INoteExpressionController", note_expression.inote_expression_controller_iid);
