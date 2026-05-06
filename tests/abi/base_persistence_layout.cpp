@@ -29,6 +29,10 @@ int main ()
 	PRINT_TYPE (FVariant);
 	PRINT_OFFSET (FVariant, type);
 	PRINT_OFFSET (FVariant, intValue);
+	PRINT_OFFSET (FVariant, floatValue);
+	PRINT_OFFSET (FVariant, string8);
+	PRINT_OFFSET (FVariant, string16);
+	PRINT_OFFSET (FVariant, object);
 
 	print_iid ("ICloneable", Steinberg::ICloneable_iid);
 	print_iid ("IPersistent", Steinberg::IPersistent_iid);

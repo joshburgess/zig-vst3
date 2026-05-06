@@ -13,6 +13,10 @@ pub fn main() !void {
     try printType(stdout, "FVariant", base.fvariant.FVariant);
     try printOffset(stdout, "FVariant", "type", base.fvariant.FVariant, "type");
     try printOffset(stdout, "FVariant", "intValue", base.fvariant.FVariant, "value");
+    try printOffset(stdout, "FVariant", "floatValue", base.fvariant.FVariant, "value");
+    try printOffset(stdout, "FVariant", "string8", base.fvariant.FVariant, "value");
+    try printOffset(stdout, "FVariant", "string16", base.fvariant.FVariant, "value");
+    try printOffset(stdout, "FVariant", "object", base.fvariant.FVariant, "value");
 
     try printTuid(stdout, "ICloneable", base.icloneable.icloneable_iid);
     try printTuid(stdout, "IPersistent", base.ipersistent.ipersistent_iid);
