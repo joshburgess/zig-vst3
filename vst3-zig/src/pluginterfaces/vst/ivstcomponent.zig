@@ -77,7 +77,10 @@ pub const IComponent = extern struct {
 
 test "component struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 276), @sizeOf(BusInfo));
+    try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(BusInfo));
     try @import("std").testing.expectEqual(@as(usize, 12), @sizeOf(RoutingInfo));
+    try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(RoutingInfo));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IComponent));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IComponent));
     try @import("std").testing.expectEqual(@as(usize, 14), @typeInfo(IComponentVTable).@"struct".fields.len);
 }
