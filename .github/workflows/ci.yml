@@ -109,6 +109,9 @@ jobs:
       - name: Check test plug provider ABI
         if: runner.os != 'Windows'
         run: zig build test-plug-provider-abi
+      - name: Check test interfaces ABI
+        if: runner.os != 'Windows'
+        run: zig build test-interfaces-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi

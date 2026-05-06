@@ -170,6 +170,10 @@ pub fn build(b: *std.Build) void {
     const check_test_plug_provider_abi = b.addSystemCommand(&.{"scripts/check_test_plug_provider_abi.sh"});
     test_plug_provider_abi_step.dependOn(&check_test_plug_provider_abi.step);
 
+    const test_interfaces_abi_step = b.step("test-interfaces-abi", "Compare Zig test interface declarations against the pinned VST3 SDK");
+    const check_test_interfaces_abi = b.addSystemCommand(&.{"scripts/check_test_interfaces_abi.sh"});
+    test_interfaces_abi_step.dependOn(&check_test_interfaces_abi.step);
+
     const funknown_harness_zig = b.addObject(.{
         .name = "funknown_harness_zig",
         .root_module = b.createModule(.{
@@ -253,6 +257,7 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(wayland_frame_abi_step);
     phase1_step.dependOn(inter_app_audio_abi_step);
     phase1_step.dependOn(test_plug_provider_abi_step);
+    phase1_step.dependOn(test_interfaces_abi_step);
     phase1_step.dependOn(funknown_abi_step);
     phase1_step.dependOn(multi_interface_abi_step);
 }
