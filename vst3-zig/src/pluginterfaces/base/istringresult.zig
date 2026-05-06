@@ -32,6 +32,8 @@ pub const IString = extern struct {
 };
 
 test "string result vtable sizes match SDK layout" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IStringResult));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IString));
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IStringResultVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 9), @typeInfo(IStringVTable).@"struct".fields.len);
 }
