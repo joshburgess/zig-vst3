@@ -8,6 +8,7 @@ const vsttypes = @import("vst3-zig").pluginterfaces.vst.vsttypes;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
+    try stdout.print("kVstAudioEffectClass {s}\n", .{audio_processor.kVstAudioEffectClass});
     try stdout.print("ComponentFlags.kDistributable {}\n", .{audio_processor.ComponentFlags.kDistributable});
     try stdout.print("ComponentFlags.kSimpleModeSupported {}\n", .{audio_processor.ComponentFlags.kSimpleModeSupported});
     try stdout.print("SymbolicSampleSizes.kSample32 {}\n", .{@intFromEnum(audio_processor.SymbolicSampleSizes.kSample32)});
