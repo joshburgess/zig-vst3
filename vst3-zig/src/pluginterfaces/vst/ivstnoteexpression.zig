@@ -124,6 +124,8 @@ test "note expression event struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 32), @sizeOf(NoteExpressionValueDescription));
     try @import("std").testing.expectEqual(@as(usize, 824), @sizeOf(NoteExpressionTypeInfo));
     try @import("std").testing.expectEqual(@as(usize, 540), @sizeOf(KeyswitchInfo));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(INoteExpressionController));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IKeyswitchController));
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(INoteExpressionControllerVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IKeyswitchControllerVTable).@"struct".fields.len);
 }
