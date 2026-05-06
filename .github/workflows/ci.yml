@@ -82,6 +82,9 @@ jobs:
       - name: Check data exchange ABI
         if: runner.os != 'Windows'
         run: zig build data-exchange-abi
+      - name: Check XML representation ABI
+        if: runner.os != 'Windows'
+        run: zig build representation-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi

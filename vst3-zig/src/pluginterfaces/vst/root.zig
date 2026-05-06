@@ -19,5 +19,6 @@ pub const ivstphysicalui = @import("ivstphysicalui.zig");
 pub const ivstpluginterfacesupport = @import("ivstpluginterfacesupport.zig");
 pub const ivstplugview = @import("ivstplugview.zig");
 pub const ivstprefetchablesupport = @import("ivstprefetchablesupport.zig");
+pub const ivstrepresentation = @import("ivstrepresentation.zig");
 pub const ivstremapparamid = @import("ivstremapparamid.zig");
 pub const ivstunits = @import("ivstunits.zig");
