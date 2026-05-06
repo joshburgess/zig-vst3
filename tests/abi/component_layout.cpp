@@ -17,6 +17,7 @@ static void print_iid (const char* name, const T& tuid)
 
 int main ()
 {
+	std::printf ("kDefaultFactoryFlags %d\n", Steinberg::Vst::kDefaultFactoryFlags);
 	std::printf ("MediaTypes.kAudio %d\n", Steinberg::Vst::kAudio);
 	std::printf ("MediaTypes.kEvent %d\n", Steinberg::Vst::kEvent);
 	std::printf ("MediaTypes.kNumMediaTypes %d\n", Steinberg::Vst::kNumMediaTypes);
