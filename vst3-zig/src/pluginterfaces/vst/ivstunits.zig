@@ -101,6 +101,11 @@ pub const IUnitData = extern struct {
 test "unit struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 268), @sizeOf(UnitInfo));
     try @import("std").testing.expectEqual(@as(usize, 264), @sizeOf(ProgramListInfo));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IUnitHandler));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IUnitHandler2));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IUnitInfo));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IProgramListData));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IUnitData));
     try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IUnitHandlerVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IUnitHandler2VTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 15), @typeInfo(IUnitInfoVTable).@"struct".fields.len);
