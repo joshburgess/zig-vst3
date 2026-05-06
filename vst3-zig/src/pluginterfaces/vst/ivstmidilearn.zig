@@ -16,5 +16,6 @@ pub const IMidiLearn = extern struct {
 };
 
 test "MIDI learn vtable slot count includes FUnknown prefix" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IMidiLearn));
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IMidiLearnVTable).@"struct".fields.len);
 }
