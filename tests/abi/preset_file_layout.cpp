@@ -24,6 +24,10 @@ int main ()
 	std::printf ("offsetof.Entry.offset %zu\n", offsetof (Steinberg::Vst::PresetFile::Entry, offset));
 	std::printf ("offsetof.Entry.size %zu\n", offsetof (Steinberg::Vst::PresetFile::Entry, size));
 	std::printf ("PresetFile.kMaxEntries %d\n", 128);
+	std::printf ("PresetFile.kFormatVersion %d\n", 1);
+	std::printf ("PresetFile.kClassIDSize %d\n", 32);
+	std::printf ("PresetFile.kHeaderSize %zu\n", sizeof (Steinberg::Vst::ChunkID) + sizeof (Steinberg::int32) + 32 + sizeof (Steinberg::TSize));
+	std::printf ("PresetFile.kListOffsetPos %zu\n", sizeof (Steinberg::Vst::ChunkID) + sizeof (Steinberg::int32) + 32);
 	std::printf ("ChunkType.kHeader %d\n", Steinberg::Vst::kHeader);
 	std::printf ("ChunkType.kComponentState %d\n", Steinberg::Vst::kComponentState);
 	std::printf ("ChunkType.kControllerState %d\n", Steinberg::Vst::kControllerState);
