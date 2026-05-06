@@ -16,5 +16,6 @@ pub const IRemapParamID = extern struct {
 };
 
 test "remap param ID vtable slot count includes FUnknown prefix" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IRemapParamID));
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IRemapParamIDVTable).@"struct".fields.len);
 }
