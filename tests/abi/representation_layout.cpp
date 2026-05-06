@@ -46,6 +46,7 @@ int main ()
 	std::printf ("Style.switchLatch %s\n", Steinberg::Vst::AttributesStyle::kSwitchLatchStyle);
 	std::printf ("Flag.hideable %s\n", Steinberg::Vst::AttributesFlags::kHideableFlag);
 
+	PRINT_TYPE (IXmlRepresentationController);
 	print_iid ("IXmlRepresentationController", Steinberg::Vst::IXmlRepresentationController_iid);
 	return 0;
 }
