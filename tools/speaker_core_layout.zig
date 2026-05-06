@@ -105,6 +105,10 @@ pub fn main() !void {
     try stdout.print("convertAmbi1234.ACN4 {}\n", .{speaker.convertSpeakerAmbi1234OrderToAmbi567Order(speaker.kSpeakerACN4)});
     try stdout.print("convertAmbi567.ACN4 {}\n", .{speaker.convertSpeakerAmbi567OrderToAmbi1234Order(speaker.kSpeakerACN4)});
     try stdout.print("convertAmbi567.L {}\n", .{speaker.convertSpeakerAmbi567OrderToAmbi1234Order(speaker.kSpeakerL)});
+    try stdout.print("getArrangementFromString.71CineOld {}\n", .{speaker.getSpeakerArrangementFromString(speaker.SpeakerArrStrings.kString71CineOld)});
+    try stdout.print("getArrangementFromString.51_2TopSide {}\n", .{speaker.getSpeakerArrangementFromString(speaker.SpeakerArrStrings.kString51_2TopSide)});
+    try stdout.print("getArrangementFromString.Ambi7 {}\n", .{speaker.getSpeakerArrangementFromString(speaker.SpeakerArrStrings.kStringAmbi7thOrder)});
+    try stdout.print("getArrangementFromString.unknown {}\n", .{speaker.getSpeakerArrangementFromString("unknown")});
     var speaker_array = speaker.SpeakerArray.init(speaker.SpeakerArr.k51);
     try stdout.print("SpeakerArray.total.51 {}\n", .{speaker_array.total()});
     try stdout.print("SpeakerArray.at.51.0 {}\n", .{speaker_array.at(0)});

@@ -108,6 +108,10 @@ int main ()
 	std::printf ("convertAmbi1234.ACN4 %llu\n", static_cast<unsigned long long> (Steinberg::Vst::SpeakerArr::convertSpeaker_Ambi_1234Order_to_Ambi567Order (Steinberg::Vst::kSpeakerACN4)));
 	std::printf ("convertAmbi567.ACN4 %llu\n", static_cast<unsigned long long> (Steinberg::Vst::SpeakerArr::convertSpeaker_Ambi_567Order_to_Ambi1234Order (Steinberg::Vst::kSpeakerACN4)));
 	std::printf ("convertAmbi567.L %llu\n", static_cast<unsigned long long> (Steinberg::Vst::SpeakerArr::convertSpeaker_Ambi_567Order_to_Ambi1234Order (Steinberg::Vst::kSpeakerL)));
+	std::printf ("getArrangementFromString.71CineOld %llu\n", static_cast<unsigned long long> (Steinberg::Vst::SpeakerArr::getSpeakerArrangementFromString (Steinberg::Vst::SpeakerArr::kString71CineOld)));
+	std::printf ("getArrangementFromString.51_2TopSide %llu\n", static_cast<unsigned long long> (Steinberg::Vst::SpeakerArr::getSpeakerArrangementFromString (Steinberg::Vst::SpeakerArr::kString51_2TopSide)));
+	std::printf ("getArrangementFromString.Ambi7 %llu\n", static_cast<unsigned long long> (Steinberg::Vst::SpeakerArr::getSpeakerArrangementFromString (Steinberg::Vst::SpeakerArr::kStringAmbi7thOrder)));
+	std::printf ("getArrangementFromString.unknown %llu\n", static_cast<unsigned long long> (Steinberg::Vst::SpeakerArr::getSpeakerArrangementFromString ("unknown")));
 	Steinberg::Vst::SpeakerArray speakerArray (Steinberg::Vst::SpeakerArr::k51);
 	std::printf ("SpeakerArray.total.51 %d\n", speakerArray.total ());
 	std::printf ("SpeakerArray.at.51.0 %llu\n", static_cast<unsigned long long> (speakerArray.at (0)));
