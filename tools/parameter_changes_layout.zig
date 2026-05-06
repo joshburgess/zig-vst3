@@ -3,8 +3,15 @@ const parameter_changes = @import("vst3-zig").pluginterfaces.vst.ivstparameterch
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
+    try printType(stdout, "IParamValueQueue", parameter_changes.IParamValueQueue);
+    try printType(stdout, "IParameterChanges", parameter_changes.IParameterChanges);
+
     try printTuid(stdout, "IParamValueQueue", parameter_changes.iparam_value_queue_iid);
     try printTuid(stdout, "IParameterChanges", parameter_changes.iparameter_changes_iid);
+}
+
+fn printType(writer: anytype, comptime name: []const u8, comptime Type: type) !void {
+    try writer.print("{s} size {} align {}\n", .{ name, @sizeOf(Type), @alignOf(Type) });
 }
 
 fn printTuid(writer: anytype, comptime name: []const u8, bytes: [16]u8) !void {
