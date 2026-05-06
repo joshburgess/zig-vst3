@@ -162,5 +162,6 @@ pub const AttributesFlags = struct {
 test "representation struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 256), @sizeOf(RepresentationInfo));
     try @import("std").testing.expectEqual(@as(usize, 1), @alignOf(RepresentationInfo));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IXmlRepresentationController));
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IXmlRepresentationControllerVTable).@"struct".fields.len);
 }
