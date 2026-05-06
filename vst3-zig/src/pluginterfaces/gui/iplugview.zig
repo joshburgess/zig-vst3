@@ -99,11 +99,17 @@ pub const Linux = struct {
 
 test "plug view struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 16), @sizeOf(ViewRect));
+    try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(ViewRect));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IPlugView));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IPlugFrame));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(Linux.IEventHandler));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(Linux.ITimerHandler));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(Linux.IRunLoop));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IPlugView));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IPlugFrame));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(Linux.IEventHandler));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(Linux.ITimerHandler));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(Linux.IRunLoop));
     try @import("std").testing.expectEqual(@as(usize, 15), @typeInfo(IPlugViewVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IPlugFrameVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(Linux.IEventHandlerVTable).@"struct".fields.len);
