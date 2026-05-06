@@ -39,6 +39,8 @@ pub const IDependent = extern struct {
 };
 
 test "update handler vtable sizes match SDK layout" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IUpdateHandler));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IDependent));
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IUpdateHandlerVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IDependentVTable).@"struct".fields.len);
 }
