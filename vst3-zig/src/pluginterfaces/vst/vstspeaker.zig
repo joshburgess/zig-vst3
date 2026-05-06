@@ -429,6 +429,17 @@ pub fn isSubsetOf(subset: vsttypes.SpeakerArrangement, arrangement: vsttypes.Spe
     return subset == (subset & arrangement);
 }
 
+pub fn isAuro(arrangement: vsttypes.SpeakerArrangement) bool {
+    return arrangement == SpeakerArr.k90 or
+        arrangement == SpeakerArr.k91 or
+        arrangement == SpeakerArr.k100 or
+        arrangement == SpeakerArr.k101 or
+        arrangement == SpeakerArr.k110 or
+        arrangement == SpeakerArr.k111 or
+        arrangement == SpeakerArr.k130 or
+        arrangement == SpeakerArr.k131;
+}
+
 pub fn hasTopSpeakers(arrangement: vsttypes.SpeakerArrangement) bool {
     const top = kSpeakerTc | kSpeakerTfl | kSpeakerTfc | kSpeakerTfr | kSpeakerTrl | kSpeakerTrc | kSpeakerTrr | kSpeakerTsl | kSpeakerTsr;
     return (arrangement & top) != 0;
@@ -463,6 +474,18 @@ pub fn isAmbisonics(arrangement: vsttypes.SpeakerArrangement) bool {
         arrangement == SpeakerArr.kAmbi5thOrderACN or
         arrangement == SpeakerArr.kAmbi6thOrderACN or
         arrangement == SpeakerArr.kAmbi7thOrderACN;
+}
+
+pub fn convertSpeakerAmbi1234OrderToAmbi567Order(speaker: vsttypes.Speaker) vsttypes.Speaker {
+    const index = getSpeakerIndex(speaker, SpeakerArr.kAmbi4thOrderACN);
+    if (index < 0) return 0;
+    return @as(vsttypes.Speaker, 1) << @intCast(index);
+}
+
+pub fn convertSpeakerAmbi567OrderToAmbi1234Order(speaker: vsttypes.Speaker) vsttypes.Speaker {
+    const index = getSpeakerIndex(speaker, SpeakerArr.kAmbi7thOrderACN);
+    if (index < 0) return 0;
+    return getSpeaker(SpeakerArr.kAmbi4thOrderACN, index);
 }
 
 pub const SpeakerArray = struct {
@@ -528,7 +551,10 @@ test "speaker helpers match expected core behavior" {
     try @import("std").testing.expect(hasTopSpeakers(SpeakerArr.k50_4));
     try @import("std").testing.expect(hasLfe(SpeakerArr.k51));
     try @import("std").testing.expect(is3D(SpeakerArr.k50_4));
+    try @import("std").testing.expect(isAuro(SpeakerArr.k51_5));
     try @import("std").testing.expect(isAmbisonics(SpeakerArr.kAmbi1stOrderACN));
+    try @import("std").testing.expectEqual(kSpeakerACN4, convertSpeakerAmbi1234OrderToAmbi567Order(kSpeakerACN4));
+    try @import("std").testing.expectEqual(kSpeakerACN4, convertSpeakerAmbi567OrderToAmbi1234Order(kSpeakerACN4));
     const speakers = SpeakerArray.init(SpeakerArr.k51);
     try @import("std").testing.expectEqual(@as(base.int32, 6), speakers.total());
     try @import("std").testing.expectEqual(SpeakerArr.k51, speakers.getArrangement());

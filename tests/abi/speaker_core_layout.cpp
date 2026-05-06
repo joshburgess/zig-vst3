@@ -97,12 +97,17 @@ int main ()
 	std::printf ("getSpeakerIndex.R.stereo %d\n", Steinberg::Vst::SpeakerArr::getSpeakerIndex (Steinberg::Vst::kSpeakerR, Steinberg::Vst::SpeakerArr::kStereo));
 	std::printf ("getSpeaker.k51.2 %llu\n", static_cast<unsigned long long> (Steinberg::Vst::SpeakerArr::getSpeaker (Steinberg::Vst::SpeakerArr::k51, 2)));
 	std::printf ("isSubsetOf.stereo.51 %d\n", Steinberg::Vst::SpeakerArr::isSubsetOf (Steinberg::Vst::SpeakerArr::kStereo, Steinberg::Vst::SpeakerArr::k51));
+	std::printf ("isAuro.51_5 %d\n", Steinberg::Vst::SpeakerArr::isAuro (Steinberg::Vst::SpeakerArr::k51_5));
+	std::printf ("isAuro.51 %d\n", Steinberg::Vst::SpeakerArr::isAuro (Steinberg::Vst::SpeakerArr::k51));
 	std::printf ("hasTopSpeakers.50_4 %d\n", Steinberg::Vst::SpeakerArr::hasTopSpeakers (Steinberg::Vst::SpeakerArr::k50_4));
 	std::printf ("hasBottomSpeakers.50_4 %d\n", Steinberg::Vst::SpeakerArr::hasBottomSpeakers (Steinberg::Vst::SpeakerArr::k50_4));
 	std::printf ("hasMiddleSpeakers.50_4 %d\n", Steinberg::Vst::SpeakerArr::hasMiddleSpeakers (Steinberg::Vst::SpeakerArr::k50_4));
 	std::printf ("hasLfe.51 %d\n", Steinberg::Vst::SpeakerArr::hasLfe (Steinberg::Vst::SpeakerArr::k51));
 	std::printf ("is3D.50_4 %d\n", Steinberg::Vst::SpeakerArr::is3D (Steinberg::Vst::SpeakerArr::k50_4));
 	std::printf ("isAmbisonics.ambi1 %d\n", Steinberg::Vst::SpeakerArr::isAmbisonics (Steinberg::Vst::SpeakerArr::kAmbi1stOrderACN));
+	std::printf ("convertAmbi1234.ACN4 %llu\n", static_cast<unsigned long long> (Steinberg::Vst::SpeakerArr::convertSpeaker_Ambi_1234Order_to_Ambi567Order (Steinberg::Vst::kSpeakerACN4)));
+	std::printf ("convertAmbi567.ACN4 %llu\n", static_cast<unsigned long long> (Steinberg::Vst::SpeakerArr::convertSpeaker_Ambi_567Order_to_Ambi1234Order (Steinberg::Vst::kSpeakerACN4)));
+	std::printf ("convertAmbi567.L %llu\n", static_cast<unsigned long long> (Steinberg::Vst::SpeakerArr::convertSpeaker_Ambi_567Order_to_Ambi1234Order (Steinberg::Vst::kSpeakerL)));
 	Steinberg::Vst::SpeakerArray speakerArray (Steinberg::Vst::SpeakerArr::k51);
 	std::printf ("SpeakerArray.total.51 %d\n", speakerArray.total ());
 	std::printf ("SpeakerArray.at.51.0 %llu\n", static_cast<unsigned long long> (speakerArray.at (0)));

@@ -94,12 +94,17 @@ pub fn main() !void {
     try stdout.print("getSpeakerIndex.R.stereo {}\n", .{speaker.getSpeakerIndex(speaker.kSpeakerR, speaker.SpeakerArr.kStereo)});
     try stdout.print("getSpeaker.k51.2 {}\n", .{speaker.getSpeaker(speaker.SpeakerArr.k51, 2)});
     try stdout.print("isSubsetOf.stereo.51 {}\n", .{@intFromBool(speaker.isSubsetOf(speaker.SpeakerArr.kStereo, speaker.SpeakerArr.k51))});
+    try stdout.print("isAuro.51_5 {}\n", .{@intFromBool(speaker.isAuro(speaker.SpeakerArr.k51_5))});
+    try stdout.print("isAuro.51 {}\n", .{@intFromBool(speaker.isAuro(speaker.SpeakerArr.k51))});
     try stdout.print("hasTopSpeakers.50_4 {}\n", .{@intFromBool(speaker.hasTopSpeakers(speaker.SpeakerArr.k50_4))});
     try stdout.print("hasBottomSpeakers.50_4 {}\n", .{@intFromBool(speaker.hasBottomSpeakers(speaker.SpeakerArr.k50_4))});
     try stdout.print("hasMiddleSpeakers.50_4 {}\n", .{@intFromBool(speaker.hasMiddleSpeakers(speaker.SpeakerArr.k50_4))});
     try stdout.print("hasLfe.51 {}\n", .{@intFromBool(speaker.hasLfe(speaker.SpeakerArr.k51))});
     try stdout.print("is3D.50_4 {}\n", .{@intFromBool(speaker.is3D(speaker.SpeakerArr.k50_4))});
     try stdout.print("isAmbisonics.ambi1 {}\n", .{@intFromBool(speaker.isAmbisonics(speaker.SpeakerArr.kAmbi1stOrderACN))});
+    try stdout.print("convertAmbi1234.ACN4 {}\n", .{speaker.convertSpeakerAmbi1234OrderToAmbi567Order(speaker.kSpeakerACN4)});
+    try stdout.print("convertAmbi567.ACN4 {}\n", .{speaker.convertSpeakerAmbi567OrderToAmbi1234Order(speaker.kSpeakerACN4)});
+    try stdout.print("convertAmbi567.L {}\n", .{speaker.convertSpeakerAmbi567OrderToAmbi1234Order(speaker.kSpeakerL)});
     var speaker_array = speaker.SpeakerArray.init(speaker.SpeakerArr.k51);
     try stdout.print("SpeakerArray.total.51 {}\n", .{speaker_array.total()});
     try stdout.print("SpeakerArray.at.51.0 {}\n", .{speaker_array.at(0)});
