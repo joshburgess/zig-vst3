@@ -26,6 +26,14 @@ pub fn main() !void {
     try stdout.print("MusicalInstrument.kSynthPadMotion {s}\n", .{preset_keys.MusicalInstrument.kSynthPadMotion});
     try stdout.print("MusicalInstrument.kVocalSpoken {s}\n", .{preset_keys.MusicalInstrument.kVocalSpoken});
     try stdout.print("MusicalInstrument.kWoodwindsBassoon {s}\n", .{preset_keys.MusicalInstrument.kWoodwindsBassoon});
+    try stdout.print("MusicalStyle.kAlternativeIndieCollegeRock {s}\n", .{preset_keys.MusicalStyle.kAlternativeIndieCollegeRock});
+    try stdout.print("MusicalStyle.kAmbientChillOutNewAgeMeditation {s}\n", .{preset_keys.MusicalStyle.kAmbientChillOutNewAgeMeditation});
+    try stdout.print("MusicalStyle.kCountryNorthAmericanFolk {s}\n", .{preset_keys.MusicalStyle.kCountryNorthAmericanFolk});
+    try stdout.print("MusicalStyle.kElectronicaDanceDrumNBassJungle {s}\n", .{preset_keys.MusicalStyle.kElectronicaDanceDrumNBassJungle});
+    try stdout.print("MusicalStyle.kPop80sPop {s}\n", .{preset_keys.MusicalStyle.kPop80sPop});
+    try stdout.print("MusicalStyle.kRockMetalRockRoll {s}\n", .{preset_keys.MusicalStyle.kRockMetalRockRoll});
+    try stdout.print("MusicalStyle.kUrbanHipHopRBClassic {s}\n", .{preset_keys.MusicalStyle.kUrbanHipHopRBClassic});
+    try stdout.print("MusicalStyle.kWorldEthnicAustralia {s}\n", .{preset_keys.MusicalStyle.kWorldEthnicAustralia});
     try stdout.print("MusicalCharacter.kMono {s}\n", .{preset_keys.MusicalCharacter.kMono});
     try stdout.print("MusicalCharacter.kPoly {s}\n", .{preset_keys.MusicalCharacter.kPoly});
     try stdout.print("MusicalCharacter.kSplit {s}\n", .{preset_keys.MusicalCharacter.kSplit});

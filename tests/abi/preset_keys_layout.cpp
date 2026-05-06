@@ -27,6 +27,14 @@ int main ()
 	std::printf ("MusicalInstrument.kSynthPadMotion %s\n", Steinberg::Vst::MusicalInstrument::kSynthPadMotion);
 	std::printf ("MusicalInstrument.kVocalSpoken %s\n", Steinberg::Vst::MusicalInstrument::kVocalSpoken);
 	std::printf ("MusicalInstrument.kWoodwindsBassoon %s\n", Steinberg::Vst::MusicalInstrument::kWoodwindsBassoon);
+	std::printf ("MusicalStyle.kAlternativeIndieCollegeRock %s\n", Steinberg::Vst::MusicalStyle::kAlternativeIndieCollegeRock);
+	std::printf ("MusicalStyle.kAmbientChillOutNewAgeMeditation %s\n", Steinberg::Vst::MusicalStyle::kAmbientChillOutNewAgeMeditation);
+	std::printf ("MusicalStyle.kCountryNorthAmericanFolk %s\n", Steinberg::Vst::MusicalStyle::kCountryNorthAmericanFolk);
+	std::printf ("MusicalStyle.kElectronicaDanceDrumNBassJungle %s\n", Steinberg::Vst::MusicalStyle::kElectronicaDanceDrumNBassJungle);
+	std::printf ("MusicalStyle.kPop80sPop %s\n", Steinberg::Vst::MusicalStyle::kPop80sPop);
+	std::printf ("MusicalStyle.kRockMetalRockRoll %s\n", Steinberg::Vst::MusicalStyle::kRockMetalRockRoll);
+	std::printf ("MusicalStyle.kUrbanHipHopRBClassic %s\n", Steinberg::Vst::MusicalStyle::kUrbanHipHopRBClassic);
+	std::printf ("MusicalStyle.kWorldEthnicAustralia %s\n", Steinberg::Vst::MusicalStyle::kWorldEthnicAustralia);
 	std::printf ("MusicalCharacter.kMono %s\n", Steinberg::Vst::MusicalCharacter::kMono);
 	std::printf ("MusicalCharacter.kPoly %s\n", Steinberg::Vst::MusicalCharacter::kPoly);
 	std::printf ("MusicalCharacter.kSplit %s\n", Steinberg::Vst::MusicalCharacter::kSplit);

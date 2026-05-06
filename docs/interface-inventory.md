@@ -117,7 +117,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IMidiLearn`, `IMidiMapping2`, `IMidiLearn2`, and MIDI controller mapping structs | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build midi-mapping-abi` |
 | MIDI controller constants | Initial constant translation complete; values checked against the pinned SDK with `zig build midi-controllers-abi` |
 | Speaker constants, core speaker arrangements, and speaker helper functions | Initial constant and helper translation complete; values checked against the pinned SDK with `zig build speaker-core-abi` |
-| Preset attribute keys, state type keys, musical instrument keys, and musical character keys | Initial string constant translation complete; values checked against the pinned SDK with `zig build preset-keys-abi` |
+| Preset attribute keys, state type keys, musical instrument keys, musical style keys, and musical character keys | Initial string constant translation complete; values checked against the pinned SDK with `zig build preset-keys-abi` |
 | `INoteExpressionController`, `IKeyswitchController`, `NoteExpressionTypeInfo`, `KeyswitchInfo` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build note-expression-abi` |
 | `IPlugInterfaceSupport`, `IPrefetchableSupport`, `IAutomationState` | Initial vtable translation complete; constants and IIDs checked with `zig build capability-state-abi` |
 | `IParameterFinder`, `IParameterFunctionName`, `IRemapParamID` | Initial vtable translation complete; constants and IIDs checked with `zig build parameter-helpers-abi` |
