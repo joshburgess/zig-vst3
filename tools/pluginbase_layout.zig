@@ -3,6 +3,24 @@ const pluginbase = @import("vst3-zig").pluginterfaces.base.ipluginbase;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
+    try stdout.print("PFactoryInfo.kURLSize {}\n", .{pluginbase.PFactoryInfo.kURLSize});
+    try stdout.print("PFactoryInfo.kEmailSize {}\n", .{pluginbase.PFactoryInfo.kEmailSize});
+    try stdout.print("PFactoryInfo.kNameSize {}\n", .{pluginbase.PFactoryInfo.kNameSize});
+    try stdout.print("PFactoryInfo.kNoFlags {}\n", .{pluginbase.PFactoryInfo.kNoFlags});
+    try stdout.print("PFactoryInfo.kClassesDiscardable {}\n", .{pluginbase.PFactoryInfo.kClassesDiscardable});
+    try stdout.print("PFactoryInfo.kLicenseCheck {}\n", .{pluginbase.PFactoryInfo.kLicenseCheck});
+    try stdout.print("PFactoryInfo.kComponentNonDiscardable {}\n", .{pluginbase.PFactoryInfo.kComponentNonDiscardable});
+    try stdout.print("PFactoryInfo.kUnicode {}\n", .{pluginbase.PFactoryInfo.kUnicode});
+    try stdout.print("PClassInfo.kManyInstances {}\n", .{pluginbase.PClassInfo.kManyInstances});
+    try stdout.print("PClassInfo.kCategorySize {}\n", .{pluginbase.PClassInfo.kCategorySize});
+    try stdout.print("PClassInfo.kNameSize {}\n", .{pluginbase.PClassInfo.kNameSize});
+    try stdout.print("PClassInfo2.kVendorSize {}\n", .{pluginbase.PClassInfo2.kVendorSize});
+    try stdout.print("PClassInfo2.kVersionSize {}\n", .{pluginbase.PClassInfo2.kVersionSize});
+    try stdout.print("PClassInfo2.kSubCategoriesSize {}\n", .{pluginbase.PClassInfo2.kSubCategoriesSize});
+    try stdout.print("PClassInfoW.kVendorSize {}\n", .{pluginbase.PClassInfoW.kVendorSize});
+    try stdout.print("PClassInfoW.kVersionSize {}\n", .{pluginbase.PClassInfoW.kVersionSize});
+    try stdout.print("PClassInfoW.kSubCategoriesSize {}\n", .{pluginbase.PClassInfoW.kSubCategoriesSize});
+
     try printType(stdout, "PFactoryInfo", pluginbase.PFactoryInfo);
     try printOffset(stdout, "PFactoryInfo", "vendor", pluginbase.PFactoryInfo, "vendor");
     try printOffset(stdout, "PFactoryInfo", "url", pluginbase.PFactoryInfo, "url");
