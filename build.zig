@@ -94,6 +94,10 @@ pub fn build(b: *std.Build) void {
     const check_audio_processor_abi = b.addSystemCommand(&.{"scripts/check_audio_processor_abi.sh"});
     audio_processor_abi_step.dependOn(&check_audio_processor_abi.step);
 
+    const bypass_processor_abi_step = b.step("bypass-processor-abi", "Compare Zig bypass processor helper declarations against the pinned VST3 SDK");
+    const check_bypass_processor_abi = b.addSystemCommand(&.{"scripts/check_bypass_processor_abi.sh"});
+    bypass_processor_abi_step.dependOn(&check_bypass_processor_abi.step);
+
     const process_context_abi_step = b.step("process-context-abi", "Compare Zig process context declarations against the pinned VST3 SDK");
     const check_process_context_abi = b.addSystemCommand(&.{"scripts/check_process_context_abi.sh"});
     process_context_abi_step.dependOn(&check_process_context_abi.step);
@@ -246,6 +250,7 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(base_update_compatibility_abi_step);
     phase1_step.dependOn(component_abi_step);
     phase1_step.dependOn(audio_processor_abi_step);
+    phase1_step.dependOn(bypass_processor_abi_step);
     phase1_step.dependOn(process_context_abi_step);
     phase1_step.dependOn(edit_controller_abi_step);
     phase1_step.dependOn(parameter_changes_abi_step);
