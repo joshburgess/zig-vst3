@@ -19,6 +19,8 @@ static void print_iid (const char* name, const T& tuid)
 int main ()
 {
 	std::printf ("PhysicalUITypeIDs.kPUIXMovement %u\n", Steinberg::Vst::kPUIXMovement);
+	std::printf ("PhysicalUITypeIDs.kPUIYMovement %u\n", Steinberg::Vst::kPUIYMovement);
+	std::printf ("PhysicalUITypeIDs.kPUIPressure %u\n", Steinberg::Vst::kPUIPressure);
 	std::printf ("PhysicalUITypeIDs.kPUITypeCount %u\n", Steinberg::Vst::kPUITypeCount);
 	std::printf ("PhysicalUITypeIDs.kInvalidPUITypeID %u\n", Steinberg::Vst::kInvalidPUITypeID);
 	std::printf ("ChannelPluginLocation.kPreVolumeFader %d\n", Steinberg::Vst::ChannelContext::kPreVolumeFader);
