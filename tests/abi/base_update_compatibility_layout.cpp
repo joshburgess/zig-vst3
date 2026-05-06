@@ -1,7 +1,10 @@
 #include "pluginterfaces/base/iplugincompatibility.h"
 #include "pluginterfaces/base/iupdatehandler.h"
 
+#include <cstddef>
 #include <cstdio>
+
+#define PRINT_TYPE(Type) std::printf (#Type " size %zu align %zu\n", sizeof (Steinberg::Type), alignof (Steinberg::Type))
 
 template <typename T>
 static void print_iid (const char* name, const T& tuid)
@@ -20,6 +23,10 @@ int main ()
 	std::printf ("IDependent.kWillDestroy %d\n", Steinberg::IDependent::kWillDestroy);
 	std::printf ("IDependent.kStdChangeMessageLast %d\n", Steinberg::IDependent::kStdChangeMessageLast);
 	std::printf ("kPluginCompatibilityClass %s\n", kPluginCompatibilityClass);
+
+	PRINT_TYPE (IUpdateHandler);
+	PRINT_TYPE (IDependent);
+	PRINT_TYPE (IPluginCompatibility);
 
 	print_iid ("IUpdateHandler", Steinberg::IUpdateHandler_iid);
 	print_iid ("IDependent", Steinberg::IDependent_iid);
