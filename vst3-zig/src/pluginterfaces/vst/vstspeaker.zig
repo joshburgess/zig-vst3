@@ -727,6 +727,74 @@ pub fn getSpeakerArrangementString(arrangement: vsttypes.SpeakerArrangement, wit
     return SpeakerArrStrings.kStringEmpty;
 }
 
+pub fn getSpeakerShortName(arrangement: vsttypes.SpeakerArrangement, index: base.int32) vsttypes.CString {
+    const speaker = getSpeaker(arrangement, index);
+    return switch (speaker) {
+        kSpeakerL => "L",
+        kSpeakerR => "R",
+        kSpeakerC => "C",
+        kSpeakerLfe => "LFE",
+        kSpeakerLs => "Ls",
+        kSpeakerRs => "Rs",
+        kSpeakerLc => "Lc",
+        kSpeakerRc => "Rc",
+        kSpeakerCs => "S",
+        kSpeakerSl => "Sl",
+        kSpeakerSr => "Sr",
+        kSpeakerTc => "Tc",
+        kSpeakerTfl => "Tfl",
+        kSpeakerTfc => "Tfc",
+        kSpeakerTfr => "Tfr",
+        kSpeakerTrl => "Trl",
+        kSpeakerTrc => "Trc",
+        kSpeakerTrr => "Trr",
+        kSpeakerLfe2 => "LFE2",
+        kSpeakerM => "M",
+        kSpeakerACN0 => "0",
+        kSpeakerACN1 => "1",
+        kSpeakerACN2 => "2",
+        kSpeakerACN3 => "3",
+        kSpeakerACN4 => "4",
+        kSpeakerACN5 => "5",
+        kSpeakerACN6 => "6",
+        kSpeakerACN7 => "7",
+        kSpeakerACN8 => "8",
+        kSpeakerACN9 => "9",
+        kSpeakerACN10 => "10",
+        kSpeakerACN11 => "11",
+        kSpeakerACN12 => "12",
+        kSpeakerACN13 => "13",
+        kSpeakerACN14 => "14",
+        kSpeakerACN15 => "15",
+        kSpeakerACN16 => "16",
+        kSpeakerACN17 => "17",
+        kSpeakerACN18 => "18",
+        kSpeakerACN19 => "19",
+        kSpeakerACN20 => "20",
+        kSpeakerACN21 => "21",
+        kSpeakerACN22 => "22",
+        kSpeakerACN23 => "23",
+        kSpeakerACN24 => "24",
+        kSpeakerTsl => "Tsl",
+        kSpeakerTsr => "Tsr",
+        kSpeakerLcs => "Lcs",
+        kSpeakerRcs => "Rcs",
+        kSpeakerBfl => "Bfl",
+        kSpeakerBfc => "Bfc",
+        kSpeakerBfr => "Bfr",
+        kSpeakerPl => "Pl",
+        kSpeakerPr => "Pr",
+        kSpeakerBsl => "Bsl",
+        kSpeakerBsr => "Bsr",
+        kSpeakerBrl => "Brl",
+        kSpeakerBrc => "Brc",
+        kSpeakerBrr => "Brr",
+        kSpeakerLw => "Lw",
+        kSpeakerRw => "Rw",
+        else => "",
+    };
+}
+
 pub const SpeakerArray = struct {
     pub const kMaxSpeakers = 64;
     pub const SpeakerType = base.uint64;
@@ -796,6 +864,8 @@ test "speaker helpers match expected core behavior" {
     try @import("std").testing.expectEqual(kSpeakerACN4, convertSpeakerAmbi567OrderToAmbi1234Order(kSpeakerACN4));
     try @import("std").testing.expectEqual(SpeakerArr.k71Cine, getSpeakerArrangementFromString(SpeakerArrStrings.kString71CineOld));
     try @import("std").testing.expectEqual(SpeakerArr.kEmpty, getSpeakerArrangementFromString("unknown"));
+    try @import("std").testing.expectEqualStrings("LFE", std.mem.span(getSpeakerShortName(SpeakerArr.k51, 3)));
+    try @import("std").testing.expectEqualStrings("", std.mem.span(getSpeakerShortName(SpeakerArr.k51, 99)));
     const speakers = SpeakerArray.init(SpeakerArr.k51);
     try @import("std").testing.expectEqual(@as(base.int32, 6), speakers.total());
     try @import("std").testing.expectEqual(SpeakerArr.k51, speakers.getArrangement());

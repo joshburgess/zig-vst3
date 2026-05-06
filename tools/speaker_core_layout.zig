@@ -115,6 +115,10 @@ pub fn main() !void {
     try stdout.print("getArrangementString.222.named {s}\n", .{speaker.getSpeakerArrangementString(speaker.SpeakerArr.k222, true)});
     try stdout.print("getArrangementString.ambi7 {s}\n", .{speaker.getSpeakerArrangementString(speaker.SpeakerArr.kAmbi7thOrderACN, false)});
     try stdout.print("getArrangementString.unknown {s}\n", .{speaker.getSpeakerArrangementString(0x4000000000000000, false)});
+    try stdout.print("getSpeakerShortName.51.3 {s}\n", .{speaker.getSpeakerShortName(speaker.SpeakerArr.k51, 3)});
+    try stdout.print("getSpeakerShortName.ambi1.2 {s}\n", .{speaker.getSpeakerShortName(speaker.SpeakerArr.kAmbi1stOrderACN, 2)});
+    try stdout.print("getSpeakerShortName.50_4_4.10 {s}\n", .{speaker.getSpeakerShortName(speaker.SpeakerArr.k50_4_4, 10)});
+    try stdout.print("getSpeakerShortName.51.99 {s}\n", .{speaker.getSpeakerShortName(speaker.SpeakerArr.k51, 99)});
     var speaker_array = speaker.SpeakerArray.init(speaker.SpeakerArr.k51);
     try stdout.print("SpeakerArray.total.51 {}\n", .{speaker_array.total()});
     try stdout.print("SpeakerArray.at.51.0 {}\n", .{speaker_array.at(0)});
