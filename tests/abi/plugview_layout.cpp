@@ -31,6 +31,13 @@ int main ()
 	PRINT_OFFSET (ViewRect, right);
 	PRINT_OFFSET (ViewRect, bottom);
 
+	PRINT_TYPE (IPlugView);
+	PRINT_TYPE (IPlugFrame);
+	PRINT_TYPE (Linux::IEventHandler);
+	PRINT_TYPE (Linux::ITimerHandler);
+	PRINT_TYPE (Linux::IRunLoop);
+	PRINT_TYPE (IPlugViewContentScaleSupport);
+
 	print_iid ("IPlugView", Steinberg::IPlugView_iid);
 	print_iid ("IPlugFrame", Steinberg::IPlugFrame_iid);
 	print_iid ("IEventHandler", Steinberg::Linux::IEventHandler_iid);

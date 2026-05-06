@@ -17,6 +17,13 @@ pub fn main() !void {
     try printOffset(stdout, "ViewRect", "right", plugview.ViewRect, "right");
     try printOffset(stdout, "ViewRect", "bottom", plugview.ViewRect, "bottom");
 
+    try printType(stdout, "IPlugView", plugview.IPlugView);
+    try printType(stdout, "IPlugFrame", plugview.IPlugFrame);
+    try printType(stdout, "Linux::IEventHandler", plugview.Linux.IEventHandler);
+    try printType(stdout, "Linux::ITimerHandler", plugview.Linux.ITimerHandler);
+    try printType(stdout, "Linux::IRunLoop", plugview.Linux.IRunLoop);
+    try printType(stdout, "IPlugViewContentScaleSupport", scale.IPlugViewContentScaleSupport);
+
     try printTuid(stdout, "IPlugView", plugview.iplug_view_iid);
     try printTuid(stdout, "IPlugFrame", plugview.iplug_frame_iid);
     try printTuid(stdout, "IEventHandler", plugview.ievent_handler_iid);
