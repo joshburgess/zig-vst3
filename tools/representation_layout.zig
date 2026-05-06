@@ -32,6 +32,7 @@ pub fn main() !void {
     try stdout.print("Style.switchLatch {s}\n", .{representation.AttributesStyle.kSwitchLatchStyle});
     try stdout.print("Flag.hideable {s}\n", .{representation.AttributesFlags.kHideableFlag});
 
+    try printType(stdout, "IXmlRepresentationController", representation.IXmlRepresentationController);
     try printTuid(stdout, "IXmlRepresentationController", representation.ixml_representation_controller_iid);
 }
 
