@@ -88,6 +88,9 @@ jobs:
       - name: Check preset keys ABI
         if: runner.os != 'Windows'
         run: zig build preset-keys-abi
+      - name: Check preset file ABI
+        if: runner.os != 'Windows'
+        run: zig build preset-file-abi
       - name: Check note expression ABI
         if: runner.os != 'Windows'
         run: zig build note-expression-abi

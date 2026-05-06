@@ -142,6 +142,10 @@ pub fn build(b: *std.Build) void {
     const check_preset_keys_abi = b.addSystemCommand(&.{"scripts/check_preset_keys_abi.sh"});
     preset_keys_abi_step.dependOn(&check_preset_keys_abi.step);
 
+    const preset_file_abi_step = b.step("preset-file-abi", "Compare Zig preset file chunk declarations against the pinned VST3 SDK");
+    const check_preset_file_abi = b.addSystemCommand(&.{"scripts/check_preset_file_abi.sh"});
+    preset_file_abi_step.dependOn(&check_preset_file_abi.step);
+
     const note_expression_abi_step = b.step("note-expression-abi", "Compare Zig note expression declarations against the pinned VST3 SDK");
     const check_note_expression_abi = b.addSystemCommand(&.{"scripts/check_note_expression_abi.sh"});
     note_expression_abi_step.dependOn(&check_note_expression_abi.step);
@@ -262,6 +266,7 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(midi_controllers_abi_step);
     phase1_step.dependOn(speaker_core_abi_step);
     phase1_step.dependOn(preset_keys_abi_step);
+    phase1_step.dependOn(preset_file_abi_step);
     phase1_step.dependOn(note_expression_abi_step);
     phase1_step.dependOn(capability_state_abi_step);
     phase1_step.dependOn(parameter_helpers_abi_step);
