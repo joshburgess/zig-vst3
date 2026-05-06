@@ -3,6 +3,7 @@ const component = @import("vst3-zig").pluginterfaces.vst.ivstcomponent;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
+    try stdout.print("kDefaultFactoryFlags {}\n", .{component.kDefaultFactoryFlags});
     try stdout.print("MediaTypes.kAudio {}\n", .{@intFromEnum(component.MediaTypes.kAudio)});
     try stdout.print("MediaTypes.kEvent {}\n", .{@intFromEnum(component.MediaTypes.kEvent)});
     try stdout.print("MediaTypes.kNumMediaTypes {}\n", .{@intFromEnum(component.MediaTypes.kNumMediaTypes)});
