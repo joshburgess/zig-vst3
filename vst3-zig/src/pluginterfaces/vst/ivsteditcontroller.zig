@@ -232,5 +232,12 @@ test "edit controller struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IEditControllerHostEditing));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IComponentHandlerSystemTime));
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IComponentHandlerVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IComponentHandler2VTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IComponentHandlerBusActivationVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IProgressVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 18), @typeInfo(IEditControllerVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IEditController2VTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IMidiMappingVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IEditControllerHostEditingVTable).@"struct".fields.len);
+    try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IComponentHandlerSystemTimeVTable).@"struct".fields.len);
 }
