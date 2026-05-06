@@ -44,6 +44,7 @@ int main ()
 	PRINT_OFFSET (RoutingInfo, busIndex);
 	PRINT_OFFSET (RoutingInfo, channel);
 
+	PRINT_TYPE (IComponent);
 	print_iid ("IComponent", Steinberg::Vst::IComponent_iid);
 	return 0;
 }

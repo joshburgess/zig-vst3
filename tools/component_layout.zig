@@ -30,6 +30,7 @@ pub fn main() !void {
     try printOffset(stdout, "RoutingInfo", "busIndex", component.RoutingInfo, "busIndex");
     try printOffset(stdout, "RoutingInfo", "channel", component.RoutingInfo, "channel");
 
+    try printType(stdout, "IComponent", component.IComponent);
     try printTuid(stdout, "IComponent", component.icomponent_iid);
 }
 
