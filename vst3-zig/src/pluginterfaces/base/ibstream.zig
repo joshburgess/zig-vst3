@@ -39,6 +39,8 @@ pub const ISizeableStream = extern struct {
 test "stream vtable slot counts include FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IBStream));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(ISizeableStream));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IBStream));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(ISizeableStream));
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IBStreamVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(ISizeableStreamVTable).@"struct".fields.len);
 }
