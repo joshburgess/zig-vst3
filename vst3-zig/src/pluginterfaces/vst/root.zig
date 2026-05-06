@@ -9,6 +9,7 @@ pub const ivstdataexchange = @import("ivstdataexchange.zig");
 pub const ivsteditcontroller = @import("ivsteditcontroller.zig");
 pub const ivstevents = @import("ivstevents.zig");
 pub const ivsthostapplication = @import("ivsthostapplication.zig");
+pub const ivstinterappaudio = @import("ivstinterappaudio.zig");
 pub const ivstmessage = @import("ivstmessage.zig");
 pub const ivstmidilearn = @import("ivstmidilearn.zig");
 pub const ivstmidimapping2 = @import("ivstmidimapping2.zig");
