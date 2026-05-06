@@ -1,4 +1,6 @@
 #include "pluginterfaces/vst/vstspeaker.h"
+#include <cstring>
+#include "public.sdk/source/vst/vstspeakerarray.h"
 
 #include <cstdio>
 
@@ -28,5 +30,14 @@ int main ()
 	std::printf ("hasLfe.51 %d\n", Steinberg::Vst::SpeakerArr::hasLfe (Steinberg::Vst::SpeakerArr::k51));
 	std::printf ("is3D.50_4 %d\n", Steinberg::Vst::SpeakerArr::is3D (Steinberg::Vst::SpeakerArr::k50_4));
 	std::printf ("isAmbisonics.ambi1 %d\n", Steinberg::Vst::SpeakerArr::isAmbisonics (Steinberg::Vst::SpeakerArr::kAmbi1stOrderACN));
+	Steinberg::Vst::SpeakerArray speakerArray (Steinberg::Vst::SpeakerArr::k51);
+	std::printf ("SpeakerArray.total.51 %d\n", speakerArray.total ());
+	std::printf ("SpeakerArray.at.51.0 %llu\n", static_cast<unsigned long long> (speakerArray.at (0)));
+	std::printf ("SpeakerArray.at.51.3 %llu\n", static_cast<unsigned long long> (speakerArray.at (3)));
+	std::printf ("SpeakerArray.getArrangement.51 %llu\n", static_cast<unsigned long long> (speakerArray.getArrangement ()));
+	std::printf ("SpeakerArray.getSpeakerIndex.Lfe %d\n", speakerArray.getSpeakerIndex (Steinberg::Vst::kSpeakerLfe));
+	speakerArray.setArrangement (Steinberg::Vst::SpeakerArr::k50_4);
+	std::printf ("SpeakerArray.total.50_4 %d\n", speakerArray.total ());
+	std::printf ("SpeakerArray.getArrangement.50_4 %llu\n", static_cast<unsigned long long> (speakerArray.getArrangement ()));
 	return 0;
 }
