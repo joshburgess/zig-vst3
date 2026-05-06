@@ -8,13 +8,23 @@ pub fn main() !void {
     try stdout.print("PhysicalUITypeIDs.kPUITypeCount {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kPUITypeCount)});
     try stdout.print("PhysicalUITypeIDs.kInvalidPUITypeID {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kInvalidPUITypeID)});
     try stdout.print("ChannelPluginLocation.kPreVolumeFader {}\n", .{@intFromEnum(channel.ChannelContext.ChannelPluginLocation.kPreVolumeFader)});
+    try stdout.print("ChannelPluginLocation.kPostVolumeFader {}\n", .{@intFromEnum(channel.ChannelContext.ChannelPluginLocation.kPostVolumeFader)});
     try stdout.print("ChannelPluginLocation.kUsedAsPanner {}\n", .{@intFromEnum(channel.ChannelContext.ChannelPluginLocation.kUsedAsPanner)});
     try stdout.print("ChannelContext.GetBlue {}\n", .{channel.ChannelContext.getBlue(0x11223344)});
     try stdout.print("ChannelContext.GetGreen {}\n", .{channel.ChannelContext.getGreen(0x11223344)});
     try stdout.print("ChannelContext.GetRed {}\n", .{channel.ChannelContext.getRed(0x11223344)});
     try stdout.print("ChannelContext.GetAlpha {}\n", .{channel.ChannelContext.getAlpha(0x11223344)});
     try stdout.print("ChannelContext.kChannelUIDKey {s}\n", .{std.mem.span(channel.ChannelContext.kChannelUIDKey)});
+    try stdout.print("ChannelContext.kChannelUIDLengthKey {s}\n", .{std.mem.span(channel.ChannelContext.kChannelUIDLengthKey)});
+    try stdout.print("ChannelContext.kChannelRuntimeIDKey {s}\n", .{std.mem.span(channel.ChannelContext.kChannelRuntimeIDKey)});
     try stdout.print("ChannelContext.kChannelNameKey {s}\n", .{std.mem.span(channel.ChannelContext.kChannelNameKey)});
+    try stdout.print("ChannelContext.kChannelNameLengthKey {s}\n", .{std.mem.span(channel.ChannelContext.kChannelNameLengthKey)});
+    try stdout.print("ChannelContext.kChannelColorKey {s}\n", .{std.mem.span(channel.ChannelContext.kChannelColorKey)});
+    try stdout.print("ChannelContext.kChannelIndexKey {s}\n", .{std.mem.span(channel.ChannelContext.kChannelIndexKey)});
+    try stdout.print("ChannelContext.kChannelIndexNamespaceOrderKey {s}\n", .{std.mem.span(channel.ChannelContext.kChannelIndexNamespaceOrderKey)});
+    try stdout.print("ChannelContext.kChannelIndexNamespaceKey {s}\n", .{std.mem.span(channel.ChannelContext.kChannelIndexNamespaceKey)});
+    try stdout.print("ChannelContext.kChannelIndexNamespaceLengthKey {s}\n", .{std.mem.span(channel.ChannelContext.kChannelIndexNamespaceLengthKey)});
+    try stdout.print("ChannelContext.kChannelImageKey {s}\n", .{std.mem.span(channel.ChannelContext.kChannelImageKey)});
     try stdout.print("ChannelContext.kChannelPluginLocationKey {s}\n", .{std.mem.span(channel.ChannelContext.kChannelPluginLocationKey)});
 
     try printType(stdout, "PhysicalUIMap", physical.PhysicalUIMap);
