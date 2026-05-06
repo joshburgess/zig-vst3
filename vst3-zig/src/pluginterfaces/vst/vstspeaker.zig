@@ -1,0 +1,168 @@
+const base = @import("../base/types.zig");
+const vsttypes = @import("vsttypes.zig");
+
+pub const kSpeakerL: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 0;
+pub const kSpeakerR: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 1;
+pub const kSpeakerC: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 2;
+pub const kSpeakerLfe: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 3;
+pub const kSpeakerLs: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 4;
+pub const kSpeakerRs: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 5;
+pub const kSpeakerLc: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 6;
+pub const kSpeakerRc: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 7;
+pub const kSpeakerS: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 8;
+pub const kSpeakerCs = kSpeakerS;
+pub const kSpeakerSl: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 9;
+pub const kSpeakerSr: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 10;
+pub const kSpeakerTc: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 11;
+pub const kSpeakerTfl: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 12;
+pub const kSpeakerTfc: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 13;
+pub const kSpeakerTfr: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 14;
+pub const kSpeakerTrl: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 15;
+pub const kSpeakerTrc: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 16;
+pub const kSpeakerTrr: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 17;
+pub const kSpeakerLfe2: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 18;
+pub const kSpeakerM: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 19;
+pub const kSpeakerACN0: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 20;
+pub const kSpeakerACN1: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 21;
+pub const kSpeakerACN2: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 22;
+pub const kSpeakerACN3: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 23;
+pub const kSpeakerTsl: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 24;
+pub const kSpeakerTsr: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 25;
+pub const kSpeakerLcs: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 26;
+pub const kSpeakerRcs: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 27;
+pub const kSpeakerBfl: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 28;
+pub const kSpeakerBfc: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 29;
+pub const kSpeakerBfr: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 30;
+pub const kSpeakerPl: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 31;
+pub const kSpeakerPr: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 32;
+pub const kSpeakerBsl: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 33;
+pub const kSpeakerBsr: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 34;
+pub const kSpeakerBrl: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 35;
+pub const kSpeakerBrc: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 36;
+pub const kSpeakerBrr: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 37;
+pub const kSpeakerACN4: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 38;
+pub const kSpeakerACN5: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 39;
+pub const kSpeakerACN6: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 40;
+pub const kSpeakerACN7: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 41;
+pub const kSpeakerACN8: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 42;
+pub const kSpeakerACN9: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 43;
+pub const kSpeakerACN10: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 44;
+pub const kSpeakerACN11: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 45;
+pub const kSpeakerACN12: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 46;
+pub const kSpeakerACN13: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 47;
+pub const kSpeakerACN14: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 48;
+pub const kSpeakerACN15: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 49;
+pub const kSpeakerACN16: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 50;
+pub const kSpeakerACN17: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 51;
+pub const kSpeakerACN18: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 52;
+pub const kSpeakerACN19: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 53;
+pub const kSpeakerACN20: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 54;
+pub const kSpeakerACN21: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 55;
+pub const kSpeakerACN22: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 56;
+pub const kSpeakerACN23: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 57;
+pub const kSpeakerACN24: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 58;
+pub const kSpeakerLw: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 59;
+pub const kSpeakerRw: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 60;
+
+pub const SpeakerArr = struct {
+    pub const kEmpty: vsttypes.SpeakerArrangement = 0;
+    pub const kMono: vsttypes.SpeakerArrangement = kSpeakerM;
+    pub const kStereo: vsttypes.SpeakerArrangement = kSpeakerL | kSpeakerR;
+    pub const kStereoSurround: vsttypes.SpeakerArrangement = kSpeakerLs | kSpeakerRs;
+    pub const kStereoSide: vsttypes.SpeakerArrangement = kSpeakerSl | kSpeakerSr;
+    pub const k30Cine: vsttypes.SpeakerArrangement = kSpeakerL | kSpeakerR | kSpeakerC;
+    pub const k31Cine: vsttypes.SpeakerArrangement = k30Cine | kSpeakerLfe;
+    pub const k40Music: vsttypes.SpeakerArrangement = kSpeakerL | kSpeakerR | kSpeakerLs | kSpeakerRs;
+    pub const k41Music: vsttypes.SpeakerArrangement = k40Music | kSpeakerLfe;
+    pub const k50: vsttypes.SpeakerArrangement = kSpeakerL | kSpeakerR | kSpeakerC | kSpeakerLs | kSpeakerRs;
+    pub const k51: vsttypes.SpeakerArrangement = k50 | kSpeakerLfe;
+    pub const k70Music: vsttypes.SpeakerArrangement = kSpeakerL | kSpeakerR | kSpeakerC | kSpeakerLs | kSpeakerRs | kSpeakerSl | kSpeakerSr;
+    pub const k71Music: vsttypes.SpeakerArrangement = k70Music | kSpeakerLfe;
+    pub const kAmbi1stOrderACN: vsttypes.SpeakerArrangement = kSpeakerACN0 | kSpeakerACN1 | kSpeakerACN2 | kSpeakerACN3;
+    pub const kAmbi2cdOrderACN: vsttypes.SpeakerArrangement = kAmbi1stOrderACN | kSpeakerACN4 | kSpeakerACN5 | kSpeakerACN6 | kSpeakerACN7 | kSpeakerACN8;
+    pub const kAmbi3rdOrderACN: vsttypes.SpeakerArrangement = kAmbi2cdOrderACN | kSpeakerACN9 | kSpeakerACN10 | kSpeakerACN11 | kSpeakerACN12 | kSpeakerACN13 | kSpeakerACN14 | kSpeakerACN15;
+    pub const kAmbi4thOrderACN: vsttypes.SpeakerArrangement = kAmbi3rdOrderACN | kSpeakerACN16 | kSpeakerACN17 | kSpeakerACN18 | kSpeakerACN19 | kSpeakerACN20 | kSpeakerACN21 | kSpeakerACN22 | kSpeakerACN23 | kSpeakerACN24;
+    pub const kAmbi5thOrderACN: vsttypes.SpeakerArrangement = 0x000FFFFFFFFF;
+    pub const kAmbi6thOrderACN: vsttypes.SpeakerArrangement = 0x0001FFFFFFFFFFFF;
+    pub const kAmbi7thOrderACN: vsttypes.SpeakerArrangement = 0xFFFFFFFFFFFFFFFF;
+    pub const k50_4: vsttypes.SpeakerArrangement = kSpeakerL | kSpeakerR | kSpeakerC | kSpeakerLs | kSpeakerRs | kSpeakerTfl | kSpeakerTfr | kSpeakerTrl | kSpeakerTrr;
+    pub const k51_4: vsttypes.SpeakerArrangement = k50_4 | kSpeakerLfe;
+    pub const k70_4: vsttypes.SpeakerArrangement = k70Music | kSpeakerTfl | kSpeakerTfr | kSpeakerTrl | kSpeakerTrr;
+    pub const k71_4: vsttypes.SpeakerArrangement = k70_4 | kSpeakerLfe;
+};
+
+pub fn getChannelCount(arrangement: vsttypes.SpeakerArrangement) base.int32 {
+    return @intCast(@popCount(arrangement));
+}
+
+pub fn getSpeakerIndex(speaker: vsttypes.Speaker, arrangement: vsttypes.SpeakerArrangement) base.int32 {
+    if (speaker == 0) return -1;
+    if ((arrangement & speaker) == 0) return -1;
+    return @intCast(@popCount(arrangement & (speaker - 1)));
+}
+
+pub fn getSpeaker(arrangement: vsttypes.SpeakerArrangement, index: base.int32) vsttypes.Speaker {
+    if (index < 0) return 0;
+    var remaining = arrangement;
+    var current_index: base.int32 = -1;
+    var pos: u6 = 0;
+    while (remaining != 0) {
+        if ((remaining & 1) != 0) current_index += 1;
+        if (current_index == index) return @as(vsttypes.Speaker, 1) << pos;
+        remaining >>= 1;
+        if (remaining == 0) break;
+        pos += 1;
+    }
+    return 0;
+}
+
+pub fn isSubsetOf(subset: vsttypes.SpeakerArrangement, arrangement: vsttypes.SpeakerArrangement) bool {
+    return subset == (subset & arrangement);
+}
+
+pub fn hasTopSpeakers(arrangement: vsttypes.SpeakerArrangement) bool {
+    const top = kSpeakerTc | kSpeakerTfl | kSpeakerTfc | kSpeakerTfr | kSpeakerTrl | kSpeakerTrc | kSpeakerTrr | kSpeakerTsl | kSpeakerTsr;
+    return (arrangement & top) != 0;
+}
+
+pub fn hasBottomSpeakers(arrangement: vsttypes.SpeakerArrangement) bool {
+    const bottom = kSpeakerBfl | kSpeakerBfc | kSpeakerBfr | kSpeakerBsl | kSpeakerBsr | kSpeakerBrr | kSpeakerBrl | kSpeakerBrc;
+    return (arrangement & bottom) != 0;
+}
+
+pub fn hasMiddleSpeakers(arrangement: vsttypes.SpeakerArrangement) bool {
+    const middle = kSpeakerL | kSpeakerR | kSpeakerC | kSpeakerLs | kSpeakerRs | kSpeakerLc | kSpeakerRc | kSpeakerCs | kSpeakerSl | kSpeakerSr | kSpeakerM | kSpeakerPl | kSpeakerPr | kSpeakerLcs | kSpeakerRcs | kSpeakerLw | kSpeakerRw;
+    return (arrangement & middle) != 0;
+}
+
+pub fn hasLfe(arrangement: vsttypes.SpeakerArrangement) bool {
+    return (arrangement & (kSpeakerLfe | kSpeakerLfe2)) != 0;
+}
+
+pub fn is3D(arrangement: vsttypes.SpeakerArrangement) bool {
+    const top = hasTopSpeakers(arrangement);
+    const bottom = hasBottomSpeakers(arrangement);
+    const middle = hasMiddleSpeakers(arrangement);
+    return ((top or bottom) and middle) or (top and bottom);
+}
+
+pub fn isAmbisonics(arrangement: vsttypes.SpeakerArrangement) bool {
+    return arrangement == SpeakerArr.kAmbi1stOrderACN or
+        arrangement == SpeakerArr.kAmbi2cdOrderACN or
+        arrangement == SpeakerArr.kAmbi3rdOrderACN or
+        arrangement == SpeakerArr.kAmbi4thOrderACN or
+        arrangement == SpeakerArr.kAmbi5thOrderACN or
+        arrangement == SpeakerArr.kAmbi6thOrderACN or
+        arrangement == SpeakerArr.kAmbi7thOrderACN;
+}
+
+test "speaker helpers match expected core behavior" {
+    try @import("std").testing.expectEqual(@as(base.int32, 2), getChannelCount(SpeakerArr.kStereo));
+    try @import("std").testing.expectEqual(@as(base.int32, 1), getSpeakerIndex(kSpeakerR, SpeakerArr.kStereo));
+    try @import("std").testing.expectEqual(kSpeakerC, getSpeaker(SpeakerArr.k51, 2));
+    try @import("std").testing.expect(isSubsetOf(SpeakerArr.kStereo, SpeakerArr.k51));
+    try @import("std").testing.expect(hasTopSpeakers(SpeakerArr.k50_4));
+    try @import("std").testing.expect(hasLfe(SpeakerArr.k51));
+    try @import("std").testing.expect(is3D(SpeakerArr.k50_4));
+    try @import("std").testing.expect(isAmbisonics(SpeakerArr.kAmbi1stOrderACN));
+}
