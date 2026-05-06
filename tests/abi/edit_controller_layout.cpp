@@ -55,6 +55,15 @@ int main ()
 	PRINT_OFFSET (ParameterInfo, unitId);
 	PRINT_OFFSET (ParameterInfo, flags);
 
+	PRINT_TYPE (IComponentHandler);
+	PRINT_TYPE (IComponentHandler2);
+	PRINT_TYPE (IComponentHandlerBusActivation);
+	PRINT_TYPE (IProgress);
+	PRINT_TYPE (IEditController);
+	PRINT_TYPE (IEditController2);
+	PRINT_TYPE (IMidiMapping);
+	PRINT_TYPE (IEditControllerHostEditing);
+	PRINT_TYPE (IComponentHandlerSystemTime);
 	print_iid ("IComponentHandler", Steinberg::Vst::IComponentHandler_iid);
 	print_iid ("IComponentHandler2", Steinberg::Vst::IComponentHandler2_iid);
 	print_iid ("IComponentHandlerBusActivation", Steinberg::Vst::IComponentHandlerBusActivation_iid);

@@ -41,6 +41,15 @@ pub fn main() !void {
     try printOffset(stdout, "ParameterInfo", "unitId", edit_controller.ParameterInfo, "unitId");
     try printOffset(stdout, "ParameterInfo", "flags", edit_controller.ParameterInfo, "flags");
 
+    try printType(stdout, "IComponentHandler", edit_controller.IComponentHandler);
+    try printType(stdout, "IComponentHandler2", edit_controller.IComponentHandler2);
+    try printType(stdout, "IComponentHandlerBusActivation", edit_controller.IComponentHandlerBusActivation);
+    try printType(stdout, "IProgress", edit_controller.IProgress);
+    try printType(stdout, "IEditController", edit_controller.IEditController);
+    try printType(stdout, "IEditController2", edit_controller.IEditController2);
+    try printType(stdout, "IMidiMapping", edit_controller.IMidiMapping);
+    try printType(stdout, "IEditControllerHostEditing", edit_controller.IEditControllerHostEditing);
+    try printType(stdout, "IComponentHandlerSystemTime", edit_controller.IComponentHandlerSystemTime);
     try printTuid(stdout, "IComponentHandler", edit_controller.icomponent_handler_iid);
     try printTuid(stdout, "IComponentHandler2", edit_controller.icomponent_handler2_iid);
     try printTuid(stdout, "IComponentHandlerBusActivation", edit_controller.icomponent_handler_bus_activation_iid);
