@@ -120,6 +120,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IDataExchangeHandler`, `IDataExchangeReceiver`, `DataExchangeBlock` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build data-exchange-abi` |
 | `IXmlRepresentationController`, `RepresentationInfo`, and XML representation constants | Initial vtable, struct, and constant translation complete; layout checked against the pinned SDK with `zig build representation-abi` |
 | `IWaylandHost`, `IWaylandFrame` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build wayland-frame-abi` |
+| `IInterAppAudioHost`, `IInterAppAudioConnectionNotification`, `IInterAppAudioPresetManager` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build inter-app-audio-abi` |
 
 ## Phase 2 P0 Seed List
 

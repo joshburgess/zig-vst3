@@ -97,6 +97,9 @@ jobs:
       - name: Check Wayland frame ABI
         if: runner.os != 'Windows'
         run: zig build wayland-frame-abi
+      - name: Check Inter-App Audio ABI
+        if: runner.os != 'Windows'
+        run: zig build inter-app-audio-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi
