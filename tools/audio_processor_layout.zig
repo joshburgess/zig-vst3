@@ -56,6 +56,10 @@ pub fn main() !void {
     try printOffset(stdout, "ProcessData", "outputEvents", audio_processor.ProcessData, "outputEvents");
     try printOffset(stdout, "ProcessData", "processContext", audio_processor.ProcessData, "processContext");
 
+    try printType(stdout, "IAudioProcessor", audio_processor.IAudioProcessor);
+    try printType(stdout, "IAudioPresentationLatency", audio_processor.IAudioPresentationLatency);
+    try printType(stdout, "IProcessContextRequirements", audio_processor.IProcessContextRequirements);
+
     var setup32 = audio_processor.ProcessSetup{ .symbolicSampleSize = @intFromEnum(audio_processor.SymbolicSampleSizes.kSample32) };
     var setup64 = audio_processor.ProcessSetup{ .symbolicSampleSize = @intFromEnum(audio_processor.SymbolicSampleSizes.kSample64) };
     var channel32 = [_]f32{0} ** 4;
