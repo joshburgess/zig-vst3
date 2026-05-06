@@ -37,6 +37,22 @@ int main ()
 	std::printf ("KeyswitchTypeIDs.kOnReleaseKeyswitchTypeID %u\n", Steinberg::Vst::kOnReleaseKeyswitchTypeID);
 	std::printf ("KeyswitchTypeIDs.kKeyRangeTypeID %u\n", Steinberg::Vst::kKeyRangeTypeID);
 
+	PRINT_TYPE (NoteExpressionValueEvent);
+	PRINT_OFFSET (NoteExpressionValueEvent, typeId);
+	PRINT_OFFSET (NoteExpressionValueEvent, noteId);
+	PRINT_OFFSET (NoteExpressionValueEvent, value);
+
+	PRINT_TYPE (NoteExpressionIntValueEvent);
+	PRINT_OFFSET (NoteExpressionIntValueEvent, typeId);
+	PRINT_OFFSET (NoteExpressionIntValueEvent, noteId);
+	PRINT_OFFSET (NoteExpressionIntValueEvent, value);
+
+	PRINT_TYPE (NoteExpressionTextEvent);
+	PRINT_OFFSET (NoteExpressionTextEvent, typeId);
+	PRINT_OFFSET (NoteExpressionTextEvent, noteId);
+	PRINT_OFFSET (NoteExpressionTextEvent, textLen);
+	PRINT_OFFSET (NoteExpressionTextEvent, text);
+
 	PRINT_TYPE (NoteExpressionValueDescription);
 	PRINT_OFFSET (NoteExpressionValueDescription, defaultValue);
 	PRINT_OFFSET (NoteExpressionValueDescription, minimum);

@@ -23,6 +23,22 @@ pub fn main() !void {
     try stdout.print("KeyswitchTypeIDs.kOnReleaseKeyswitchTypeID {}\n", .{@intFromEnum(note_expression.KeyswitchTypeIDs.kOnReleaseKeyswitchTypeID)});
     try stdout.print("KeyswitchTypeIDs.kKeyRangeTypeID {}\n", .{@intFromEnum(note_expression.KeyswitchTypeIDs.kKeyRangeTypeID)});
 
+    try printType(stdout, "NoteExpressionValueEvent", note_expression.NoteExpressionValueEvent);
+    try printOffset(stdout, "NoteExpressionValueEvent", "typeId", note_expression.NoteExpressionValueEvent, "typeId");
+    try printOffset(stdout, "NoteExpressionValueEvent", "noteId", note_expression.NoteExpressionValueEvent, "noteId");
+    try printOffset(stdout, "NoteExpressionValueEvent", "value", note_expression.NoteExpressionValueEvent, "value");
+
+    try printType(stdout, "NoteExpressionIntValueEvent", note_expression.NoteExpressionIntValueEvent);
+    try printOffset(stdout, "NoteExpressionIntValueEvent", "typeId", note_expression.NoteExpressionIntValueEvent, "typeId");
+    try printOffset(stdout, "NoteExpressionIntValueEvent", "noteId", note_expression.NoteExpressionIntValueEvent, "noteId");
+    try printOffset(stdout, "NoteExpressionIntValueEvent", "value", note_expression.NoteExpressionIntValueEvent, "value");
+
+    try printType(stdout, "NoteExpressionTextEvent", note_expression.NoteExpressionTextEvent);
+    try printOffset(stdout, "NoteExpressionTextEvent", "typeId", note_expression.NoteExpressionTextEvent, "typeId");
+    try printOffset(stdout, "NoteExpressionTextEvent", "noteId", note_expression.NoteExpressionTextEvent, "noteId");
+    try printOffset(stdout, "NoteExpressionTextEvent", "textLen", note_expression.NoteExpressionTextEvent, "textLen");
+    try printOffset(stdout, "NoteExpressionTextEvent", "text", note_expression.NoteExpressionTextEvent, "text");
+
     try printType(stdout, "NoteExpressionValueDescription", note_expression.NoteExpressionValueDescription);
     try printOffset(stdout, "NoteExpressionValueDescription", "defaultValue", note_expression.NoteExpressionValueDescription, "defaultValue");
     try printOffset(stdout, "NoteExpressionValueDescription", "minimum", note_expression.NoteExpressionValueDescription, "minimum");
