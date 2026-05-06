@@ -134,6 +134,10 @@ pub fn build(b: *std.Build) void {
     const check_data_exchange_abi = b.addSystemCommand(&.{"scripts/check_data_exchange_abi.sh"});
     data_exchange_abi_step.dependOn(&check_data_exchange_abi.step);
 
+    const representation_abi_step = b.step("representation-abi", "Compare Zig XML representation declarations against the pinned VST3 SDK");
+    const check_representation_abi = b.addSystemCommand(&.{"scripts/check_representation_abi.sh"});
+    representation_abi_step.dependOn(&check_representation_abi.step);
+
     const funknown_harness_zig = b.addObject(.{
         .name = "funknown_harness_zig",
         .root_module = b.createModule(.{
@@ -208,6 +212,7 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(context_menu_abi_step);
     phase1_step.dependOn(physical_channel_abi_step);
     phase1_step.dependOn(data_exchange_abi_step);
+    phase1_step.dependOn(representation_abi_step);
     phase1_step.dependOn(funknown_abi_step);
     phase1_step.dependOn(multi_interface_abi_step);
 }
