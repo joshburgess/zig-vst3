@@ -4,6 +4,7 @@ pub const vstpresetkeys = @import("vstpresetkeys.zig");
 pub const ivstattributes = @import("ivstattributes.zig");
 pub const ivstautomationstate = @import("ivstautomationstate.zig");
 pub const ivstaudioprocessor = @import("ivstaudioprocessor.zig");
+pub const vstaudioprocessoralgo = @import("vstaudioprocessoralgo.zig");
 pub const ivstchannelcontextinfo = @import("ivstchannelcontextinfo.zig");
 pub const ivstcomponent = @import("ivstcomponent.zig");
 pub const ivstcontextmenu = @import("ivstcontextmenu.zig");

@@ -1,5 +1,6 @@
 const std = @import("std");
 const audio_processor = @import("vst3-zig").pluginterfaces.vst.ivstaudioprocessor;
+const audio_processor_algo = @import("vst3-zig").pluginterfaces.vst.vstaudioprocessoralgo;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
@@ -48,6 +49,22 @@ pub fn main() !void {
     try printOffset(stdout, "ProcessData", "inputEvents", audio_processor.ProcessData, "inputEvents");
     try printOffset(stdout, "ProcessData", "outputEvents", audio_processor.ProcessData, "outputEvents");
     try printOffset(stdout, "ProcessData", "processContext", audio_processor.ProcessData, "processContext");
+
+    var setup32 = audio_processor.ProcessSetup{ .symbolicSampleSize = @intFromEnum(audio_processor.SymbolicSampleSizes.kSample32) };
+    var setup64 = audio_processor.ProcessSetup{ .symbolicSampleSize = @intFromEnum(audio_processor.SymbolicSampleSizes.kSample64) };
+    var channel32 = [_]f32{0} ** 4;
+    var channel64 = [_]f64{0} ** 4;
+    var channels32 = [_][*]f32{&channel32};
+    var channels64 = [_][*]f64{&channel64};
+    var buffers32 = audio_processor.AudioBusBuffers{ .channelBuffers = .{ .channelBuffers32 = &channels32 } };
+    var buffers64 = audio_processor.AudioBusBuffers{ .channelBuffers = .{ .channelBuffers64 = &channels64 } };
+    try stdout.print("AudioProcessorAlgo.getChannelBuffersPointer.32 {}\n", .{@intFromBool(audio_processor_algo.getChannelBuffersPointer(&setup32, &buffers32) == @as(?*anyopaque, @ptrCast(&channels32)))});
+    try stdout.print("AudioProcessorAlgo.getChannelBuffersPointer.64 {}\n", .{@intFromBool(audio_processor_algo.getChannelBuffersPointer(&setup64, &buffers64) == @as(?*anyopaque, @ptrCast(&channels64)))});
+    try stdout.print("AudioProcessorAlgo.getSampleFramesSizeInBytes.32 {}\n", .{audio_processor_algo.getSampleFramesSizeInBytes(&setup32, 8)});
+    try stdout.print("AudioProcessorAlgo.getSampleFramesSizeInBytes.64 {}\n", .{audio_processor_algo.getSampleFramesSizeInBytes(&setup64, 8)});
+    try stdout.print("AudioProcessorAlgo.getChannelMask.0 {}\n", .{audio_processor_algo.getChannelMask(0)});
+    try stdout.print("AudioProcessorAlgo.getChannelMask.6 {}\n", .{audio_processor_algo.getChannelMask(6)});
+    try stdout.print("AudioProcessorAlgo.getChannelMask.64 {}\n", .{audio_processor_algo.getChannelMask(64)});
 
     try printTuid(stdout, "IAudioProcessor", audio_processor.iaudio_processor_iid);
     try printTuid(stdout, "IAudioPresentationLatency", audio_processor.iaudio_presentation_latency_iid);
