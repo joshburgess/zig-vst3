@@ -8,6 +8,12 @@ fn printChunkID(writer: anytype, label: []const u8, id: preset_file.ChunkID) !vo
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("sizeof.ChunkID {}\n", .{@sizeOf(preset_file.ChunkID)});
+    try stdout.print("sizeof.Entry {}\n", .{@sizeOf(preset_file.Entry)});
+    try stdout.print("alignof.Entry {}\n", .{@alignOf(preset_file.Entry)});
+    try stdout.print("offsetof.Entry.id {}\n", .{@offsetOf(preset_file.Entry, "id")});
+    try stdout.print("offsetof.Entry.offset {}\n", .{@offsetOf(preset_file.Entry, "offset")});
+    try stdout.print("offsetof.Entry.size {}\n", .{@offsetOf(preset_file.Entry, "size")});
+    try stdout.print("PresetFile.kMaxEntries {}\n", .{preset_file.kMaxEntries});
     try stdout.print("ChunkType.kHeader {}\n", .{@intFromEnum(preset_file.ChunkType.kHeader)});
     try stdout.print("ChunkType.kComponentState {}\n", .{@intFromEnum(preset_file.ChunkType.kComponentState)});
     try stdout.print("ChunkType.kControllerState {}\n", .{@intFromEnum(preset_file.ChunkType.kControllerState)});
