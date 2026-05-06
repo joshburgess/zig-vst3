@@ -221,7 +221,8 @@ pub const IComponentHandlerSystemTime = extern struct {
 };
 
 test "edit controller struct sizes match SDK layout" {
-    try @import("std").testing.expectEqual(@as(usize, 800), @sizeOf(ParameterInfo));
+    try @import("std").testing.expectEqual(@as(usize, 792), @sizeOf(ParameterInfo));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(ParameterInfo));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IComponentHandler));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IComponentHandler2));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IComponentHandlerBusActivation));
@@ -231,6 +232,15 @@ test "edit controller struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IMidiMapping));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IEditControllerHostEditing));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IComponentHandlerSystemTime));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IComponentHandler));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IComponentHandler2));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IComponentHandlerBusActivation));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IProgress));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IEditController));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IEditController2));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IMidiMapping));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IEditControllerHostEditing));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IComponentHandlerSystemTime));
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IComponentHandlerVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IComponentHandler2VTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IComponentHandlerBusActivationVTable).@"struct".fields.len);
