@@ -105,7 +105,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IUpdateHandler`, `IDependent`, `IPluginCompatibility` | Initial vtable translation complete; constants and IIDs checked against the pinned SDK with `zig build base-update-compatibility-abi` |
 | `IComponent`, `BusInfo`, `RoutingInfo` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build component-abi` |
 | `IAudioProcessor`, `IAudioPresentationLatency`, `IProcessContextRequirements`, and audio processor helpers | Initial vtable, struct, buffer, and iteration helper translation complete; layout checked against the pinned SDK with `zig build audio-processor-abi` |
-| Bypass processor constants and delay helper | Initial helper translation complete; behavior checked against the pinned SDK with `zig build bypass-processor-abi` |
+| Bypass processor constants and delay helpers | Initial helper translation complete; behavior checked against the pinned SDK with `zig build bypass-processor-abi` |
 | `ProcessContext`, `FrameRate`, `Chord` | Initial struct and constant translation complete; layout checked against the pinned SDK with `zig build process-context-abi` |
 | `IEditController`, `IComponentHandler`, `IMidiMapping`, and adjacent edit-controller extensions | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build edit-controller-abi` |
 | `IProgress`, `IEditController2`, `IComponentHandler2`, `IComponentHandlerBusActivation`, `IEditControllerHostEditing`, `IComponentHandlerSystemTime` | Initial vtable translation complete; IIDs checked with `zig build edit-controller-abi` |
