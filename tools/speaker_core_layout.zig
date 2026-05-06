@@ -27,4 +27,13 @@ pub fn main() !void {
     try stdout.print("hasLfe.51 {}\n", .{@intFromBool(speaker.hasLfe(speaker.SpeakerArr.k51))});
     try stdout.print("is3D.50_4 {}\n", .{@intFromBool(speaker.is3D(speaker.SpeakerArr.k50_4))});
     try stdout.print("isAmbisonics.ambi1 {}\n", .{@intFromBool(speaker.isAmbisonics(speaker.SpeakerArr.kAmbi1stOrderACN))});
+    var speaker_array = speaker.SpeakerArray.init(speaker.SpeakerArr.k51);
+    try stdout.print("SpeakerArray.total.51 {}\n", .{speaker_array.total()});
+    try stdout.print("SpeakerArray.at.51.0 {}\n", .{speaker_array.at(0)});
+    try stdout.print("SpeakerArray.at.51.3 {}\n", .{speaker_array.at(3)});
+    try stdout.print("SpeakerArray.getArrangement.51 {}\n", .{speaker_array.getArrangement()});
+    try stdout.print("SpeakerArray.getSpeakerIndex.Lfe {}\n", .{speaker_array.getSpeakerIndex(speaker.kSpeakerLfe)});
+    speaker_array.setArrangement(speaker.SpeakerArr.k50_4);
+    try stdout.print("SpeakerArray.total.50_4 {}\n", .{speaker_array.total()});
+    try stdout.print("SpeakerArray.getArrangement.50_4 {}\n", .{speaker_array.getArrangement()});
 }

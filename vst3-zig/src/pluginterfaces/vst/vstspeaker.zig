@@ -156,6 +156,61 @@ pub fn isAmbisonics(arrangement: vsttypes.SpeakerArrangement) bool {
         arrangement == SpeakerArr.kAmbi7thOrderACN;
 }
 
+pub const SpeakerArray = struct {
+    pub const kMaxSpeakers = 64;
+    pub const SpeakerType = base.uint64;
+
+    count: base.int32 = 0,
+    speaker: [kMaxSpeakers]SpeakerType = [_]SpeakerType{0} ** kMaxSpeakers,
+
+    pub fn init(arrangement: vsttypes.SpeakerArrangement) SpeakerArray {
+        var result = SpeakerArray{};
+        result.setArrangement(arrangement);
+        return result;
+    }
+
+    pub fn total(self: *const SpeakerArray) base.int32 {
+        return self.count;
+    }
+
+    pub fn at(self: *const SpeakerArray, index: base.int32) SpeakerType {
+        return self.speaker[@intCast(index)];
+    }
+
+    pub fn setArrangement(self: *SpeakerArray, arrangement: vsttypes.SpeakerArrangement) void {
+        self.count = 0;
+        self.speaker = [_]SpeakerType{0} ** kMaxSpeakers;
+
+        var index: u6 = 0;
+        while (true) {
+            const mask: SpeakerType = @as(SpeakerType, 1) << index;
+            if ((arrangement & mask) != 0) {
+                self.speaker[@intCast(self.count)] = mask;
+                self.count += 1;
+            }
+            if (index == kMaxSpeakers - 1) break;
+            index += 1;
+        }
+    }
+
+    pub fn getArrangement(self: *const SpeakerArray) vsttypes.SpeakerArrangement {
+        var arrangement: vsttypes.SpeakerArrangement = 0;
+        var index: base.int32 = 0;
+        while (index < self.count) : (index += 1) {
+            arrangement |= self.speaker[@intCast(index)];
+        }
+        return arrangement;
+    }
+
+    pub fn getSpeakerIndex(self: *const SpeakerArray, which: SpeakerType) base.int32 {
+        var index: base.int32 = 0;
+        while (index < self.count) : (index += 1) {
+            if (self.speaker[@intCast(index)] == which) return index;
+        }
+        return -1;
+    }
+};
+
 test "speaker helpers match expected core behavior" {
     try @import("std").testing.expectEqual(@as(base.int32, 2), getChannelCount(SpeakerArr.kStereo));
     try @import("std").testing.expectEqual(@as(base.int32, 1), getSpeakerIndex(kSpeakerR, SpeakerArr.kStereo));
@@ -165,4 +220,8 @@ test "speaker helpers match expected core behavior" {
     try @import("std").testing.expect(hasLfe(SpeakerArr.k51));
     try @import("std").testing.expect(is3D(SpeakerArr.k50_4));
     try @import("std").testing.expect(isAmbisonics(SpeakerArr.kAmbi1stOrderACN));
+    const speakers = SpeakerArray.init(SpeakerArr.k51);
+    try @import("std").testing.expectEqual(@as(base.int32, 6), speakers.total());
+    try @import("std").testing.expectEqual(SpeakerArr.k51, speakers.getArrangement());
+    try @import("std").testing.expectEqual(@as(base.int32, 3), speakers.getSpeakerIndex(kSpeakerLfe));
 }
