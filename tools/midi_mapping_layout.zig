@@ -23,6 +23,10 @@ pub fn main() !void {
     try printOffset(stdout, "Midi1ControllerParamIDAssignmentList", "count", mapping2.Midi1ControllerParamIDAssignmentList, "count");
     try printOffset(stdout, "Midi1ControllerParamIDAssignmentList", "map", mapping2.Midi1ControllerParamIDAssignmentList, "map");
 
+    try printType(stdout, "IMidiLearn", learn.IMidiLearn);
+    try printType(stdout, "IMidiMapping2", mapping2.IMidiMapping2);
+    try printType(stdout, "IMidiLearn2", mapping2.IMidiLearn2);
+
     try printTuid(stdout, "IMidiLearn", learn.imidi_learn_iid);
     try printTuid(stdout, "IMidiMapping2", mapping2.imidi_mapping2_iid);
     try printTuid(stdout, "IMidiLearn2", mapping2.imidi_learn2_iid);

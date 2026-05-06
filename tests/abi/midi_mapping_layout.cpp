@@ -37,6 +37,10 @@ int main ()
 	PRINT_OFFSET (Midi1ControllerParamIDAssignmentList, count);
 	PRINT_OFFSET (Midi1ControllerParamIDAssignmentList, map);
 
+	PRINT_TYPE (IMidiLearn);
+	PRINT_TYPE (IMidiMapping2);
+	PRINT_TYPE (IMidiLearn2);
+
 	print_iid ("IMidiLearn", Steinberg::Vst::IMidiLearn_iid);
 	print_iid ("IMidiMapping2", Steinberg::Vst::IMidiMapping2_iid);
 	print_iid ("IMidiLearn2", Steinberg::Vst::IMidiLearn2_iid);
