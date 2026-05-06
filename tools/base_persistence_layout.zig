@@ -18,6 +18,10 @@ pub fn main() !void {
     try printOffset(stdout, "FVariant", "string16", base.fvariant.FVariant, "value");
     try printOffset(stdout, "FVariant", "object", base.fvariant.FVariant, "value");
 
+    try printType(stdout, "ICloneable", base.icloneable.ICloneable);
+    try printType(stdout, "IPersistent", base.ipersistent.IPersistent);
+    try printType(stdout, "IAttributes", base.ipersistent.IAttributes);
+    try printType(stdout, "IAttributes2", base.ipersistent.IAttributes2);
     try printTuid(stdout, "ICloneable", base.icloneable.icloneable_iid);
     try printTuid(stdout, "IPersistent", base.ipersistent.ipersistent_iid);
     try printTuid(stdout, "IAttributes", base.ipersistent.iattributes_iid);
