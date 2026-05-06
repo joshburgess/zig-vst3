@@ -18,5 +18,6 @@ pub const IPluginCompatibility = extern struct {
 };
 
 test "plugin compatibility vtable size matches SDK layout" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IPluginCompatibility));
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IPluginCompatibilityVTable).@"struct".fields.len);
 }
