@@ -5,6 +5,7 @@ pub const ivstaudioprocessor = @import("ivstaudioprocessor.zig");
 pub const ivstchannelcontextinfo = @import("ivstchannelcontextinfo.zig");
 pub const ivstcomponent = @import("ivstcomponent.zig");
 pub const ivstcontextmenu = @import("ivstcontextmenu.zig");
+pub const ivstdataexchange = @import("ivstdataexchange.zig");
 pub const ivsteditcontroller = @import("ivsteditcontroller.zig");
 pub const ivstevents = @import("ivstevents.zig");
 pub const ivsthostapplication = @import("ivsthostapplication.zig");
