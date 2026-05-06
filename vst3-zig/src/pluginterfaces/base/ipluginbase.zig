@@ -122,6 +122,9 @@ pub const PClassInfoW = extern struct {
 };
 
 test "pluginbase struct sizes match SDK layout" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IPluginFactory));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IPluginFactory2));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IPluginFactory3));
     try @import("std").testing.expectEqual(@as(usize, 452), @sizeOf(PFactoryInfo));
     try @import("std").testing.expectEqual(@as(usize, 116), @sizeOf(PClassInfo));
     try @import("std").testing.expectEqual(@as(usize, 440), @sizeOf(PClassInfo2));
