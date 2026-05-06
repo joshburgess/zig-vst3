@@ -64,6 +64,9 @@ pub const IAttributes2 = extern struct {
 };
 
 test "persistent vtable sizes match SDK layout" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IPersistent));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IAttributes));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IAttributes2));
     try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IPersistentVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 13), @typeInfo(IAttributesVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 15), @typeInfo(IAttributes2VTable).@"struct".fields.len);
