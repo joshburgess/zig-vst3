@@ -43,6 +43,9 @@ jobs:
       - name: Check base persistence ABI
         if: runner.os != 'Windows'
         run: zig build base-persistence-abi
+      - name: Check base update/compatibility ABI
+        if: runner.os != 'Windows'
+        run: zig build base-update-compatibility-abi
       - name: Check IComponent ABI
         if: runner.os != 'Windows'
         run: zig build component-abi

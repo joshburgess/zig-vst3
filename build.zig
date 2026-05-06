@@ -82,6 +82,10 @@ pub fn build(b: *std.Build) void {
     const check_base_persistence_abi = b.addSystemCommand(&.{"scripts/check_base_persistence_abi.sh"});
     base_persistence_abi_step.dependOn(&check_base_persistence_abi.step);
 
+    const base_update_compatibility_abi_step = b.step("base-update-compatibility-abi", "Compare Zig base update and compatibility declarations against the pinned VST3 SDK");
+    const check_base_update_compatibility_abi = b.addSystemCommand(&.{"scripts/check_base_update_compatibility_abi.sh"});
+    base_update_compatibility_abi_step.dependOn(&check_base_update_compatibility_abi.step);
+
     const component_abi_step = b.step("component-abi", "Compare Zig IComponent declarations against the pinned VST3 SDK");
     const check_component_abi = b.addSystemCommand(&.{"scripts/check_component_abi.sh"});
     component_abi_step.dependOn(&check_component_abi.step);
@@ -211,6 +215,7 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(ibstream_abi_step);
     phase1_step.dependOn(base_strings_error_abi_step);
     phase1_step.dependOn(base_persistence_abi_step);
+    phase1_step.dependOn(base_update_compatibility_abi_step);
     phase1_step.dependOn(component_abi_step);
     phase1_step.dependOn(audio_processor_abi_step);
     phase1_step.dependOn(edit_controller_abi_step);
