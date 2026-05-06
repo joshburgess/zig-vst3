@@ -52,6 +52,9 @@ jobs:
       - name: Check IAudioProcessor ABI
         if: runner.os != 'Windows'
         run: zig build audio-processor-abi
+      - name: Check process context ABI
+        if: runner.os != 'Windows'
+        run: zig build process-context-abi
       - name: Check IEditController ABI
         if: runner.os != 'Windows'
         run: zig build edit-controller-abi
