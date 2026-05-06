@@ -17,6 +17,8 @@ static void print_iid (const char* name, const T& tuid)
 
 int main ()
 {
+	std::printf ("kVstComponentControllerClass %s\n", kVstComponentControllerClass);
+	std::printf ("ViewType.kEditor %s\n", Steinberg::Vst::ViewType::kEditor);
 	std::printf ("ParameterInfo.kNoFlags %d\n", Steinberg::Vst::ParameterInfo::kNoFlags);
 	std::printf ("ParameterInfo.kCanAutomate %d\n", Steinberg::Vst::ParameterInfo::kCanAutomate);
 	std::printf ("ParameterInfo.kIsReadOnly %d\n", Steinberg::Vst::ParameterInfo::kIsReadOnly);

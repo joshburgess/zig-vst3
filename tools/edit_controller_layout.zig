@@ -3,6 +3,8 @@ const edit_controller = @import("vst3-zig").pluginterfaces.vst.ivsteditcontrolle
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
+    try stdout.print("kVstComponentControllerClass {s}\n", .{edit_controller.kVstComponentControllerClass});
+    try stdout.print("ViewType.kEditor {s}\n", .{edit_controller.ViewType.kEditor});
     try stdout.print("ParameterInfo.kNoFlags {}\n", .{edit_controller.ParameterInfo.ParameterFlags.kNoFlags});
     try stdout.print("ParameterInfo.kCanAutomate {}\n", .{edit_controller.ParameterInfo.ParameterFlags.kCanAutomate});
     try stdout.print("ParameterInfo.kIsReadOnly {}\n", .{edit_controller.ParameterInfo.ParameterFlags.kIsReadOnly});
