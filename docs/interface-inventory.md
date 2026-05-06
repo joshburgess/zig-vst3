@@ -116,6 +116,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `INoteExpressionPhysicalUIMapping`, `IInfoListener`, `PhysicalUIMap`, and channel context keys | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build physical-channel-abi` |
 | `IDataExchangeHandler`, `IDataExchangeReceiver`, `DataExchangeBlock` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build data-exchange-abi` |
 | `IXmlRepresentationController`, `RepresentationInfo`, and XML representation constants | Initial vtable, struct, and constant translation complete; layout checked against the pinned SDK with `zig build representation-abi` |
+| `IWaylandHost`, `IWaylandFrame` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build wayland-frame-abi` |
 
 ## Phase 2 P0 Seed List
 

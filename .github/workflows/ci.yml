@@ -85,6 +85,9 @@ jobs:
       - name: Check XML representation ABI
         if: runner.os != 'Windows'
         run: zig build representation-abi
+      - name: Check Wayland frame ABI
+        if: runner.os != 'Windows'
+        run: zig build wayland-frame-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi
