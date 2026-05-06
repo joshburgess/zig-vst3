@@ -91,6 +91,10 @@ pub const IComponentHandlerVTable = extern struct {
     restartComponent: *const fn (*anyopaque, base_types.int32) callconv(.C) base_types.tresult,
 };
 
+pub const IComponentHandler = extern struct {
+    vtable: *const IComponentHandlerVTable,
+};
+
 pub const IComponentHandler2VTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
@@ -101,11 +105,19 @@ pub const IComponentHandler2VTable = extern struct {
     finishGroupEdit: *const fn (*anyopaque) callconv(.C) base_types.tresult,
 };
 
+pub const IComponentHandler2 = extern struct {
+    vtable: *const IComponentHandler2VTable,
+};
+
 pub const IComponentHandlerBusActivationVTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     requestBusActivation: *const fn (*anyopaque, vsttypes.MediaType, vsttypes.BusDirection, base_types.int32, base_types.TBool) callconv(.C) base_types.tresult,
+};
+
+pub const IComponentHandlerBusActivation = extern struct {
+    vtable: *const IComponentHandlerBusActivationVTable,
 };
 
 pub const ProgressType = enum(base_types.uint32) {
@@ -122,6 +134,10 @@ pub const IProgressVTable = extern struct {
     start: *const fn (*anyopaque, base_types.uint32, ?[*]const base_types.char16, *ProgressID) callconv(.C) base_types.tresult,
     update: *const fn (*anyopaque, ProgressID, vsttypes.ParamValue) callconv(.C) base_types.tresult,
     finish: *const fn (*anyopaque, ProgressID) callconv(.C) base_types.tresult,
+};
+
+pub const IProgress = extern struct {
+    vtable: *const IProgressVTable,
 };
 
 pub const IEditControllerVTable = extern struct {
@@ -166,11 +182,19 @@ pub const IEditController2VTable = extern struct {
     openAboutBox: *const fn (*anyopaque, base_types.TBool) callconv(.C) base_types.tresult,
 };
 
+pub const IEditController2 = extern struct {
+    vtable: *const IEditController2VTable,
+};
+
 pub const IMidiMappingVTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     getMidiControllerAssignment: *const fn (*anyopaque, base_types.int32, base_types.int16, vsttypes.CtrlNumber, *vsttypes.ParamID) callconv(.C) base_types.tresult,
+};
+
+pub const IMidiMapping = extern struct {
+    vtable: *const IMidiMappingVTable,
 };
 
 pub const IEditControllerHostEditingVTable = extern struct {
@@ -181,11 +205,19 @@ pub const IEditControllerHostEditingVTable = extern struct {
     endEditFromHost: *const fn (*anyopaque, vsttypes.ParamID) callconv(.C) base_types.tresult,
 };
 
+pub const IEditControllerHostEditing = extern struct {
+    vtable: *const IEditControllerHostEditingVTable,
+};
+
 pub const IComponentHandlerSystemTimeVTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     getSystemTime: *const fn (*anyopaque, *base_types.int64) callconv(.C) base_types.tresult,
+};
+
+pub const IComponentHandlerSystemTime = extern struct {
+    vtable: *const IComponentHandlerSystemTimeVTable,
 };
 
 test "edit controller struct sizes match SDK layout" {
