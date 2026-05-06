@@ -14,9 +14,17 @@ pub fn main() !void {
     try stdout.print("IAutomationState.kWriteState {}\n", .{automation.AutomationStates.kWriteState});
     try stdout.print("IAutomationState.kReadWriteState {}\n", .{automation.AutomationStates.kReadWriteState});
 
+    try printType(stdout, "IPlugInterfaceSupport", interface_support.IPlugInterfaceSupport);
+    try printType(stdout, "IPrefetchableSupport", prefetch.IPrefetchableSupport);
+    try printType(stdout, "IAutomationState", automation.IAutomationState);
+
     try printTuid(stdout, "IPlugInterfaceSupport", interface_support.iplug_interface_support_iid);
     try printTuid(stdout, "IPrefetchableSupport", prefetch.iprefetchable_support_iid);
     try printTuid(stdout, "IAutomationState", automation.iautomation_state_iid);
+}
+
+fn printType(writer: anytype, comptime name: []const u8, comptime Type: type) !void {
+    try writer.print("{s} size {} align {}\n", .{ name, @sizeOf(Type), @alignOf(Type) });
 }
 
 fn printTuid(writer: anytype, comptime name: []const u8, bytes: [16]u8) !void {
