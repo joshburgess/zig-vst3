@@ -119,13 +119,21 @@ pub const IKeyswitchController = extern struct {
 
 test "note expression event struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 16), @sizeOf(NoteExpressionValueEvent));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(NoteExpressionValueEvent));
     try @import("std").testing.expectEqual(@as(usize, 16), @sizeOf(NoteExpressionIntValueEvent));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(NoteExpressionIntValueEvent));
     try @import("std").testing.expectEqual(@as(usize, 24), @sizeOf(NoteExpressionTextEvent));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(NoteExpressionTextEvent));
     try @import("std").testing.expectEqual(@as(usize, 32), @sizeOf(NoteExpressionValueDescription));
-    try @import("std").testing.expectEqual(@as(usize, 824), @sizeOf(NoteExpressionTypeInfo));
-    try @import("std").testing.expectEqual(@as(usize, 540), @sizeOf(KeyswitchInfo));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(NoteExpressionValueDescription));
+    try @import("std").testing.expectEqual(@as(usize, 816), @sizeOf(NoteExpressionTypeInfo));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(NoteExpressionTypeInfo));
+    try @import("std").testing.expectEqual(@as(usize, 536), @sizeOf(KeyswitchInfo));
+    try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(KeyswitchInfo));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(INoteExpressionController));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IKeyswitchController));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(INoteExpressionController));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IKeyswitchController));
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(INoteExpressionControllerVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IKeyswitchControllerVTable).@"struct".fields.len);
 }
