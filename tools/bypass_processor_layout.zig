@@ -25,4 +25,24 @@ pub fn main() !void {
     try stdout.print("delay64.out3 {d:.1}\n", .{out64[3]});
     try stdout.print("delay64.buffer0 {d:.1}\n", .{delay64[0]});
     try stdout.print("delay64.buffer2 {d:.1}\n", .{delay64[2]});
+    var processor_storage32 = [_]f32{0} ** 8;
+    var processor_delay32 = bypass.Delay(f32).init(&processor_storage32, 5, 3);
+    processor_delay32.flush();
+    var delay_input32 = [_]f32{ 1, 2, 3, 4, 5 };
+    var delay_output32 = [_]f32{0} ** 5;
+    const silent32 = processor_delay32.process(&delay_input32, &delay_output32, 5, false);
+    try stdout.print("Delay32.hasDelay {}\n", .{@intFromBool(processor_delay32.hasDelay())});
+    try stdout.print("Delay32.bufferSamples {}\n", .{processor_delay32.getBufferSamples()});
+    try stdout.print("Delay32.process.silent {}\n", .{@intFromBool(silent32)});
+    try stdout.print("Delay32.output0 {d:.1}\n", .{delay_output32[0]});
+    try stdout.print("Delay32.output4 {d:.1}\n", .{delay_output32[4]});
+    var no_delay_storage32 = [_]f32{};
+    var no_delay32 = bypass.Delay(f32).init(&no_delay_storage32, 5, 0);
+    var no_delay_output32 = [_]f32{0} ** 3;
+    const no_delay_silent32 = no_delay32.process(&delay_input32, &no_delay_output32, 3, false);
+    try stdout.print("Delay32.noDelay.silent {}\n", .{@intFromBool(no_delay_silent32)});
+    try stdout.print("Delay32.noDelay.output2 {d:.1}\n", .{no_delay_output32[2]});
+    const null_silent32 = no_delay32.process(null, &no_delay_output32, 3, true);
+    try stdout.print("Delay32.nullInput.silent {}\n", .{@intFromBool(null_silent32)});
+    try stdout.print("Delay32.nullInput.output2 {d:.1}\n", .{no_delay_output32[2]});
 }
