@@ -33,6 +33,8 @@ pub const IParameterChanges = extern struct {
 };
 
 test "parameter change vtable slot counts include FUnknown prefix" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IParamValueQueue));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IParameterChanges));
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IParamValueQueueVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IParameterChangesVTable).@"struct".fields.len);
 }
