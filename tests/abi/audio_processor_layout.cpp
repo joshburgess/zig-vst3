@@ -140,6 +140,10 @@ int main ()
 	PRINT_OFFSET (ProcessData, outputEvents);
 	PRINT_OFFSET (ProcessData, processContext);
 
+	PRINT_TYPE (IAudioProcessor);
+	PRINT_TYPE (IAudioPresentationLatency);
+	PRINT_TYPE (IProcessContextRequirements);
+
 	Steinberg::Vst::ProcessSetup setup32 {};
 	setup32.symbolicSampleSize = Steinberg::Vst::kSample32;
 	Steinberg::Vst::ProcessSetup setup64 {};
