@@ -109,6 +109,12 @@ pub fn main() !void {
     try stdout.print("getArrangementFromString.51_2TopSide {}\n", .{speaker.getSpeakerArrangementFromString(speaker.SpeakerArrStrings.kString51_2TopSide)});
     try stdout.print("getArrangementFromString.Ambi7 {}\n", .{speaker.getSpeakerArrangementFromString(speaker.SpeakerArrStrings.kStringAmbi7thOrder)});
     try stdout.print("getArrangementFromString.unknown {}\n", .{speaker.getSpeakerArrangementFromString("unknown")});
+    try stdout.print("getArrangementString.51 {s}\n", .{speaker.getSpeakerArrangementString(speaker.SpeakerArr.k51, false)});
+    try stdout.print("getArrangementString.51.named {s}\n", .{speaker.getSpeakerArrangementString(speaker.SpeakerArr.k51, true)});
+    try stdout.print("getArrangementString.51_2_TS {s}\n", .{speaker.getSpeakerArrangementString(speaker.SpeakerArr.k51_2_TS, false)});
+    try stdout.print("getArrangementString.222.named {s}\n", .{speaker.getSpeakerArrangementString(speaker.SpeakerArr.k222, true)});
+    try stdout.print("getArrangementString.ambi7 {s}\n", .{speaker.getSpeakerArrangementString(speaker.SpeakerArr.kAmbi7thOrderACN, false)});
+    try stdout.print("getArrangementString.unknown {s}\n", .{speaker.getSpeakerArrangementString(0x4000000000000000, false)});
     var speaker_array = speaker.SpeakerArray.init(speaker.SpeakerArr.k51);
     try stdout.print("SpeakerArray.total.51 {}\n", .{speaker_array.total()});
     try stdout.print("SpeakerArray.at.51.0 {}\n", .{speaker_array.at(0)});
