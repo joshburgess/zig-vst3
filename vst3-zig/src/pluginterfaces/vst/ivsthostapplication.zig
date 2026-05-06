@@ -26,8 +26,20 @@ pub const IVst3ToVst2WrapperVTable = extern struct {
     release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
 };
 
+pub const IVst3ToVst2Wrapper = extern struct {
+    vtable: *const IVst3ToVst2WrapperVTable,
+};
+
 pub const IVst3ToAUWrapperVTable = IVst3ToVst2WrapperVTable;
 pub const IVst3ToAAXWrapperVTable = IVst3ToVst2WrapperVTable;
+
+pub const IVst3ToAUWrapper = extern struct {
+    vtable: *const IVst3ToAUWrapperVTable,
+};
+
+pub const IVst3ToAAXWrapper = extern struct {
+    vtable: *const IVst3ToAAXWrapperVTable,
+};
 
 pub const IVst3WrapperMPESupportVTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
@@ -35,6 +47,10 @@ pub const IVst3WrapperMPESupportVTable = extern struct {
     release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     enableMPEInputProcessing: *const fn (*anyopaque, base_types.TBool) callconv(.C) base_types.tresult,
     setMPEInputDeviceSettings: *const fn (*anyopaque, base_types.int32, base_types.int32, base_types.int32) callconv(.C) base_types.tresult,
+};
+
+pub const IVst3WrapperMPESupport = extern struct {
+    vtable: *const IVst3WrapperMPESupportVTable,
 };
 
 test "host application vtable slot counts include FUnknown prefix" {
