@@ -40,6 +40,8 @@ pub const ITestPlugProvider2 = extern struct {
 };
 
 test "test plug provider vtable sizes match SDK layout" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(ITestPlugProvider));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(ITestPlugProvider2));
     try @import("std").testing.expectEqual(@as(usize, 8), @typeInfo(ITestPlugProviderVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 9), @typeInfo(ITestPlugProvider2VTable).@"struct".fields.len);
 }
