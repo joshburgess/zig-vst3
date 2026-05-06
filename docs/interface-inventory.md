@@ -106,6 +106,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IComponent`, `BusInfo`, `RoutingInfo` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build component-abi` |
 | `IAudioProcessor`, `IAudioPresentationLatency`, `IProcessContextRequirements` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build audio-processor-abi` |
 | `IEditController`, `IComponentHandler`, `IMidiMapping`, and adjacent edit-controller extensions | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build edit-controller-abi` |
+| `IProgress`, `IEditController2`, `IComponentHandler2`, `IComponentHandlerBusActivation`, `IEditControllerHostEditing`, `IComponentHandlerSystemTime` | Initial vtable translation complete; IIDs checked with `zig build edit-controller-abi` |
 | `IParameterChanges`, `IParamValueQueue` | Initial vtable translation complete; IIDs checked with `zig build parameter-changes-abi` |
 | `IEventList`, `Event`, and event payload structs | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build events-abi` |
 | `IConnectionPoint`, `IMessage`, `IAttributeList`, `IHostApplication`, and adjacent host/wrapper interfaces | Initial vtable translation complete; IIDs checked with `zig build host-message-abi` |
