@@ -34,6 +34,8 @@ pub const IConnectionPoint = extern struct {
 test "message vtable slot counts include FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IMessage));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IConnectionPoint));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IMessage));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IConnectionPoint));
     try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IMessageVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IConnectionPointVTable).@"struct".fields.len);
 }
