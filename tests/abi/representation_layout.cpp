@@ -29,6 +29,22 @@ int main ()
 	std::printf ("LayerType.kEndOfLayerType %d\n", Steinberg::Vst::LayerType::kEndOfLayerType);
 	std::printf ("LayerType.layerTypeFIDString.0 %s\n", Steinberg::Vst::LayerType::layerTypeFIDString[0]);
 	std::printf ("LayerType.layerTypeFIDString.7 %s\n", Steinberg::Vst::LayerType::layerTypeFIDString[7]);
+	std::printf ("LayerType.layerTypeFIDString.8 %s\n", Steinberg::Vst::LayerType::layerTypeFIDString[8] ? Steinberg::Vst::LayerType::layerTypeFIDString[8] : "<null>");
+
+	std::printf ("Tag.rootXml %s\n", ROOTXML_TAG);
+	std::printf ("Tag.titleDisplay %s\n", TITLEDISPLAY_TAG);
+	std::printf ("Attr.parameterID %s\n", ATTR_PARAMID);
+	std::printf ("Attr.turnsPerFullRange %s\n", Steinberg::Vst::Attributes::kKnobTurnsPerFullRange);
+	std::printf ("Remote.generic8Cells %s\n", GENERIC_8_CELLS);
+	std::printf ("Remote.quickControl8Cells %s\n", QUICK_CONTROL_8_CELLS);
+	std::printf ("Curve.segment %s\n", Steinberg::Vst::CurveType::kSegment);
+	std::printf ("Curve.valueList %s\n", Steinberg::Vst::CurveType::kValueList);
+	std::printf ("Function.panLaw %s\n", Steinberg::Vst::AttributesFunction::kPanLawFunc);
+	std::printf ("Function.volume %s\n", Steinberg::Vst::AttributesFunction::kVolumeFunc);
+	std::printf ("Style.inverse %s\n", Steinberg::Vst::AttributesStyle::kInverseStyle);
+	std::printf ("Style.ledBoostCut %s\n", Steinberg::Vst::AttributesStyle::kLEDBoostCutStyle);
+	std::printf ("Style.switchLatch %s\n", Steinberg::Vst::AttributesStyle::kSwitchLatchStyle);
+	std::printf ("Flag.hideable %s\n", Steinberg::Vst::AttributesFlags::kHideableFlag);
 
 	print_iid ("IXmlRepresentationController", Steinberg::Vst::IXmlRepresentationController_iid);
 	return 0;
