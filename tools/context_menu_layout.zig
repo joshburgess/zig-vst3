@@ -14,6 +14,9 @@ pub fn main() !void {
     try printOffset(stdout, "IContextMenuItem", "tag", context_menu.IContextMenuItem, "tag");
     try printOffset(stdout, "IContextMenuItem", "flags", context_menu.IContextMenuItem, "flags");
 
+    try printType(stdout, "IComponentHandler3", context_menu.IComponentHandler3);
+    try printType(stdout, "IContextMenuTarget", context_menu.IContextMenuTarget);
+    try printType(stdout, "IContextMenu", context_menu.IContextMenu);
     try printTuid(stdout, "IComponentHandler3", context_menu.icomponent_handler3_iid);
     try printTuid(stdout, "IContextMenuTarget", context_menu.icontext_menu_target_iid);
     try printTuid(stdout, "IContextMenu", context_menu.icontext_menu_iid);

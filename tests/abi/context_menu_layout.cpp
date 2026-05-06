@@ -28,6 +28,9 @@ int main ()
 	PRINT_OFFSET (IContextMenuItem, tag);
 	PRINT_OFFSET (IContextMenuItem, flags);
 
+	PRINT_TYPE (IComponentHandler3);
+	PRINT_TYPE (IContextMenuTarget);
+	PRINT_TYPE (IContextMenu);
 	print_iid ("IComponentHandler3", Steinberg::Vst::IComponentHandler3_iid);
 	print_iid ("IContextMenuTarget", Steinberg::Vst::IContextMenuTarget_iid);
 	print_iid ("IContextMenu", Steinberg::Vst::IContextMenu_iid);

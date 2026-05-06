@@ -14,6 +14,10 @@ pub const IComponentHandler3VTable = extern struct {
     createContextMenu: *const fn (*anyopaque, ?*iplugview.IPlugView, ?*const vsttypes.ParamID) callconv(.C) ?*IContextMenu,
 };
 
+pub const IComponentHandler3 = extern struct {
+    vtable: *const IComponentHandler3VTable,
+};
+
 pub const IContextMenuTargetVTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
@@ -63,6 +67,9 @@ pub const IContextMenuTarget = extern struct {
 
 test "context menu struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 264), @sizeOf(IContextMenuItem));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IComponentHandler3));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IContextMenuTarget));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IContextMenu));
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IComponentHandler3VTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IContextMenuTargetVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 8), @typeInfo(IContextMenuVTable).@"struct".fields.len);
