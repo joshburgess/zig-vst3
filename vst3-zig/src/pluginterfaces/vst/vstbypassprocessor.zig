@@ -1,6 +1,62 @@
+const std = @import("std");
 const base = @import("../base/types.zig");
 
 pub const kMaxChannelsSupported: base.int32 = 64;
+
+pub fn AudioBuffer(comptime T: type) type {
+    return struct {
+        allocator: std.mem.Allocator,
+        buffer: []T = &.{},
+        max_samples: base.int32 = 0,
+
+        const Self = @This();
+
+        pub fn init(allocator: std.mem.Allocator) Self {
+            return .{ .allocator = allocator };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.release();
+        }
+
+        pub fn resize(self: *Self, max_samples: base.int32) !void {
+            if (self.max_samples == max_samples) return;
+
+            self.max_samples = max_samples;
+            if (self.max_samples <= 0) {
+                self.allocator.free(self.buffer);
+                self.buffer = &.{};
+                return;
+            }
+
+            self.buffer = try self.allocator.realloc(self.buffer, @intCast(self.max_samples));
+        }
+
+        pub fn clear(self: *Self, num_samples: base.int32) void {
+            const count = @min(num_samples, self.max_samples);
+            if (count <= 0) return;
+            @memset(self.buffer[0..@intCast(count)], 0);
+        }
+
+        pub fn getMaxSamples(self: *const Self) base.int32 {
+            return self.max_samples;
+        }
+
+        pub fn release(self: *Self) void {
+            self.allocator.free(self.buffer);
+            self.buffer = &.{};
+            self.max_samples = 0;
+        }
+
+        pub fn clearAll(self: *Self) void {
+            if (self.max_samples > 0) self.clear(self.max_samples);
+        }
+
+        pub fn ptr(self: *Self) ?[*]T {
+            return if (self.buffer.len == 0) null else self.buffer.ptr;
+        }
+    };
+}
 
 pub fn delay(
     comptime T: type,
@@ -148,4 +204,13 @@ test "delay helper copies through circular buffer" {
     processor_delay.flush();
     try @import("std").testing.expectEqual(@as(base.int32, 8), processor_delay.getBufferSamples());
     try @import("std").testing.expectEqual(@as(base.int32, 5), processor_delay.out_pos);
+    var audio_buffer = AudioBuffer(f32).init(@import("std").testing.allocator);
+    defer audio_buffer.deinit();
+    try audio_buffer.resize(4);
+    try @import("std").testing.expectEqual(@as(base.int32, 4), audio_buffer.getMaxSamples());
+    audio_buffer.buffer[0] = 7;
+    audio_buffer.clearAll();
+    try @import("std").testing.expectEqual(@as(f32, 0), audio_buffer.buffer[0]);
+    try audio_buffer.resize(0);
+    try @import("std").testing.expectEqual(@as(base.int32, 0), audio_buffer.getMaxSamples());
 }
