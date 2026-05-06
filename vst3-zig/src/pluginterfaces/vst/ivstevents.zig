@@ -132,5 +132,6 @@ test "event struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 16), @sizeOf(ScaleEvent));
     try @import("std").testing.expectEqual(@as(usize, 4), @sizeOf(LegacyMIDICCOutEvent));
     try @import("std").testing.expectEqual(@as(usize, 40), @sizeOf(Event));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IEventList));
     try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IEventListVTable).@"struct".fields.len);
 }
