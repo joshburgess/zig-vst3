@@ -125,13 +125,22 @@ pub const IEventList = extern struct {
 
 test "event struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 20), @sizeOf(NoteOnEvent));
+    try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(NoteOnEvent));
     try @import("std").testing.expectEqual(@as(usize, 16), @sizeOf(NoteOffEvent));
+    try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(NoteOffEvent));
     try @import("std").testing.expectEqual(@as(usize, 16), @sizeOf(DataEvent));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(DataEvent));
     try @import("std").testing.expectEqual(@as(usize, 12), @sizeOf(PolyPressureEvent));
+    try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(PolyPressureEvent));
     try @import("std").testing.expectEqual(@as(usize, 16), @sizeOf(ChordEvent));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(ChordEvent));
     try @import("std").testing.expectEqual(@as(usize, 16), @sizeOf(ScaleEvent));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(ScaleEvent));
     try @import("std").testing.expectEqual(@as(usize, 4), @sizeOf(LegacyMIDICCOutEvent));
-    try @import("std").testing.expectEqual(@as(usize, 40), @sizeOf(Event));
+    try @import("std").testing.expectEqual(@as(usize, 1), @alignOf(LegacyMIDICCOutEvent));
+    try @import("std").testing.expectEqual(@as(usize, 48), @sizeOf(Event));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(Event));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IEventList));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IEventList));
     try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IEventListVTable).@"struct".fields.len);
 }
