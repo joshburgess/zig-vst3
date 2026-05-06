@@ -17,5 +17,6 @@ pub const IPlugViewContentScaleSupport = extern struct {
 };
 
 test "plug view scale support vtable slot count includes FUnknown prefix" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IPlugViewContentScaleSupport));
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IPlugViewContentScaleSupportVTable).@"struct".fields.len);
 }
