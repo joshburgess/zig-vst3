@@ -92,6 +92,7 @@ struct MockParameterChanges : Steinberg::Vst::IParameterChanges
 
 int main ()
 {
+	std::printf ("kVstAudioEffectClass %s\n", kVstAudioEffectClass);
 	std::printf ("ComponentFlags.kDistributable %u\n", Steinberg::Vst::kDistributable);
 	std::printf ("ComponentFlags.kSimpleModeSupported %u\n", Steinberg::Vst::kSimpleModeSupported);
 	std::printf ("SymbolicSampleSizes.kSample32 %d\n", Steinberg::Vst::kSample32);
