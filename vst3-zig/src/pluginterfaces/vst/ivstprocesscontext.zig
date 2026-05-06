@@ -84,7 +84,9 @@ pub const ProcessContext = extern struct {
 
 test "process context struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 8), @sizeOf(FrameRate));
+    try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(FrameRate));
     try @import("std").testing.expectEqual(@as(usize, 4), @sizeOf(Chord));
+    try @import("std").testing.expectEqual(@as(usize, 2), @alignOf(Chord));
     try @import("std").testing.expectEqual(@as(usize, 112), @sizeOf(ProcessContext));
     try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(ProcessContext));
 }
