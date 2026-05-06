@@ -50,6 +50,8 @@ int main ()
 	PRINT_OFFSET (PhysicalUIMapList, count);
 	PRINT_OFFSET (PhysicalUIMapList, map);
 
+	PRINT_TYPE (INoteExpressionPhysicalUIMapping);
+	std::printf ("ChannelContext::IInfoListener size %zu align %zu\n", sizeof (Steinberg::Vst::ChannelContext::IInfoListener), alignof (Steinberg::Vst::ChannelContext::IInfoListener));
 	print_iid ("INoteExpressionPhysicalUIMapping", Steinberg::Vst::INoteExpressionPhysicalUIMapping_iid);
 	print_iid ("IInfoListener", Steinberg::Vst::ChannelContext::IInfoListener_iid);
 	return 0;
