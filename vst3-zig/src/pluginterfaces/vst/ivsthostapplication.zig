@@ -59,6 +59,11 @@ test "host application vtable slot counts include FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IVst3ToAUWrapper));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IVst3ToAAXWrapper));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IVst3WrapperMPESupport));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IHostApplication));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IVst3ToVst2Wrapper));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IVst3ToAUWrapper));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IVst3ToAAXWrapper));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IVst3WrapperMPESupport));
     try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IHostApplicationVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 3), @typeInfo(IVst3ToVst2WrapperVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IVst3WrapperMPESupportVTable).@"struct".fields.len);
