@@ -11,6 +11,10 @@ pub const IParameterFinderVTable = extern struct {
     findParameter: *const fn (*anyopaque, base_types.int32, base_types.int32, *vsttypes.ParamID) callconv(.C) base_types.tresult,
 };
 
+pub const IParameterFinder = extern struct {
+    vtable: *const IParameterFinderVTable,
+};
+
 test "parameter finder vtable slot count includes FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IParameterFinderVTable).@"struct".fields.len);
 }

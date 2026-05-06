@@ -12,6 +12,10 @@ pub const IInfoListenerVTable = extern struct {
     setChannelContextInfos: *const fn (*anyopaque, ?*attributes.IAttributeList) callconv(.C) base_types.tresult,
 };
 
+pub const IInfoListener = extern struct {
+    vtable: *const IInfoListenerVTable,
+};
+
 pub const ChannelContext = struct {
     pub const ChannelPluginLocation = enum(base_types.int32) {
         kPreVolumeFader = 0,

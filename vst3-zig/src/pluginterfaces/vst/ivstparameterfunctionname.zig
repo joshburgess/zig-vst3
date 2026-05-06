@@ -24,6 +24,10 @@ pub const IParameterFunctionNameVTable = extern struct {
     getParameterIDFromFunctionName: *const fn (*anyopaque, vsttypes.UnitID, base_types.FIDString, *vsttypes.ParamID) callconv(.C) base_types.tresult,
 };
 
+pub const IParameterFunctionName = extern struct {
+    vtable: *const IParameterFunctionNameVTable,
+};
+
 test "parameter function name vtable slot count includes FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IParameterFunctionNameVTable).@"struct".fields.len);
 }

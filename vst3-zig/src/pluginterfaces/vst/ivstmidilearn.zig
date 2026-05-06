@@ -11,6 +11,10 @@ pub const IMidiLearnVTable = extern struct {
     onLiveMIDIControllerInput: *const fn (*anyopaque, base_types.int32, base_types.int16, vsttypes.CtrlNumber) callconv(.C) base_types.tresult,
 };
 
+pub const IMidiLearn = extern struct {
+    vtable: *const IMidiLearnVTable,
+};
+
 test "MIDI learn vtable slot count includes FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IMidiLearnVTable).@"struct".fields.len);
 }
