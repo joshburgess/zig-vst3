@@ -118,6 +118,10 @@ int main ()
 	std::printf ("getArrangementString.222.named %s\n", Steinberg::Vst::SpeakerArr::getSpeakerArrangementString (Steinberg::Vst::SpeakerArr::k222, true));
 	std::printf ("getArrangementString.ambi7 %s\n", Steinberg::Vst::SpeakerArr::getSpeakerArrangementString (Steinberg::Vst::SpeakerArr::kAmbi7thOrderACN, false));
 	std::printf ("getArrangementString.unknown %s\n", Steinberg::Vst::SpeakerArr::getSpeakerArrangementString (static_cast<Steinberg::Vst::SpeakerArrangement> (0x4000000000000000ULL), false));
+	std::printf ("getSpeakerShortName.51.3 %s\n", Steinberg::Vst::SpeakerArr::getSpeakerShortName (Steinberg::Vst::SpeakerArr::k51, 3));
+	std::printf ("getSpeakerShortName.ambi1.2 %s\n", Steinberg::Vst::SpeakerArr::getSpeakerShortName (Steinberg::Vst::SpeakerArr::kAmbi1stOrderACN, 2));
+	std::printf ("getSpeakerShortName.50_4_4.10 %s\n", Steinberg::Vst::SpeakerArr::getSpeakerShortName (Steinberg::Vst::SpeakerArr::k50_4_4, 10));
+	std::printf ("getSpeakerShortName.51.99 %s\n", Steinberg::Vst::SpeakerArr::getSpeakerShortName (Steinberg::Vst::SpeakerArr::k51, 99));
 	Steinberg::Vst::SpeakerArray speakerArray (Steinberg::Vst::SpeakerArr::k51);
 	std::printf ("SpeakerArray.total.51 %d\n", speakerArray.total ());
 	std::printf ("SpeakerArray.at.51.0 %llu\n", static_cast<unsigned long long> (speakerArray.at (0)));
