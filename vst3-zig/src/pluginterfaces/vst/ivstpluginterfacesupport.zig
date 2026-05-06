@@ -10,6 +10,10 @@ pub const IPlugInterfaceSupportVTable = extern struct {
     isPlugInterfaceSupported: *const fn (*anyopaque, *const tuid.TUID) callconv(.C) base_types.tresult,
 };
 
+pub const IPlugInterfaceSupport = extern struct {
+    vtable: *const IPlugInterfaceSupportVTable,
+};
+
 test "plug interface support vtable slot count includes FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IPlugInterfaceSupportVTable).@"struct".fields.len);
 }

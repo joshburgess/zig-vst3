@@ -19,6 +19,10 @@ pub const IPrefetchableSupportVTable = extern struct {
     getPrefetchableSupport: *const fn (*anyopaque, *PrefetchableSupport) callconv(.C) base_types.tresult,
 };
 
+pub const IPrefetchableSupport = extern struct {
+    vtable: *const IPrefetchableSupportVTable,
+};
+
 test "prefetchable support vtable slot count includes FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IPrefetchableSupportVTable).@"struct".fields.len);
 }
