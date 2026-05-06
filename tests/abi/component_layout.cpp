@@ -19,6 +19,7 @@ int main ()
 {
 	std::printf ("MediaTypes.kAudio %d\n", Steinberg::Vst::kAudio);
 	std::printf ("MediaTypes.kEvent %d\n", Steinberg::Vst::kEvent);
+	std::printf ("MediaTypes.kNumMediaTypes %d\n", Steinberg::Vst::kNumMediaTypes);
 	std::printf ("BusDirections.kInput %d\n", Steinberg::Vst::kInput);
 	std::printf ("BusDirections.kOutput %d\n", Steinberg::Vst::kOutput);
 	std::printf ("BusTypes.kMain %d\n", Steinberg::Vst::kMain);

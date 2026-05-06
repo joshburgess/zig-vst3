@@ -5,6 +5,7 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("MediaTypes.kAudio {}\n", .{@intFromEnum(component.MediaTypes.kAudio)});
     try stdout.print("MediaTypes.kEvent {}\n", .{@intFromEnum(component.MediaTypes.kEvent)});
+    try stdout.print("MediaTypes.kNumMediaTypes {}\n", .{@intFromEnum(component.MediaTypes.kNumMediaTypes)});
     try stdout.print("BusDirections.kInput {}\n", .{@intFromEnum(component.BusDirections.kInput)});
     try stdout.print("BusDirections.kOutput {}\n", .{@intFromEnum(component.BusDirections.kOutput)});
     try stdout.print("BusTypes.kMain {}\n", .{@intFromEnum(component.BusTypes.kMain)});
