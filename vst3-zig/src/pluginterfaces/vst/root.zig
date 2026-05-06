@@ -1,4 +1,5 @@
 pub const vsttypes = @import("vsttypes.zig");
+pub const vstspeaker = @import("vstspeaker.zig");
 pub const ivstattributes = @import("ivstattributes.zig");
 pub const ivstautomationstate = @import("ivstautomationstate.zig");
 pub const ivstaudioprocessor = @import("ivstaudioprocessor.zig");

@@ -79,6 +79,9 @@ jobs:
       - name: Check MIDI controller constants ABI
         if: runner.os != 'Windows'
         run: zig build midi-controllers-abi
+      - name: Check speaker core ABI
+        if: runner.os != 'Windows'
+        run: zig build speaker-core-abi
       - name: Check note expression ABI
         if: runner.os != 'Windows'
         run: zig build note-expression-abi
