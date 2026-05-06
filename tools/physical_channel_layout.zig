@@ -36,6 +36,8 @@ pub fn main() !void {
     try printOffset(stdout, "PhysicalUIMapList", "count", physical.PhysicalUIMapList, "count");
     try printOffset(stdout, "PhysicalUIMapList", "map", physical.PhysicalUIMapList, "map");
 
+    try printType(stdout, "INoteExpressionPhysicalUIMapping", physical.INoteExpressionPhysicalUIMapping);
+    try printType(stdout, "ChannelContext::IInfoListener", channel.IInfoListener);
     try printTuid(stdout, "INoteExpressionPhysicalUIMapping", physical.inote_expression_physical_ui_mapping_iid);
     try printTuid(stdout, "IInfoListener", channel.iinfo_listener_iid);
 }
