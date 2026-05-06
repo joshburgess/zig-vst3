@@ -16,10 +16,15 @@ static void print_iid (const char* name, const T& tuid)
 int main ()
 {
 	std::printf ("FunctionNameType.kCompGainReduction %s\n", Steinberg::Vst::FunctionNameType::kCompGainReduction);
+	std::printf ("FunctionNameType.kCompGainReductionMax %s\n", Steinberg::Vst::FunctionNameType::kCompGainReductionMax);
+	std::printf ("FunctionNameType.kCompGainReductionPeakHold %s\n", Steinberg::Vst::FunctionNameType::kCompGainReductionPeakHold);
+	std::printf ("FunctionNameType.kCompResetGainReductionMax %s\n", Steinberg::Vst::FunctionNameType::kCompResetGainReductionMax);
 	std::printf ("FunctionNameType.kLowLatencyMode %s\n", Steinberg::Vst::FunctionNameType::kLowLatencyMode);
 	std::printf ("FunctionNameType.kDryWetMix %s\n", Steinberg::Vst::FunctionNameType::kDryWetMix);
 	std::printf ("FunctionNameType.kRandomize %s\n", Steinberg::Vst::FunctionNameType::kRandomize);
 	std::printf ("FunctionNameType.kPanPosCenterX %s\n", Steinberg::Vst::FunctionNameType::kPanPosCenterX);
+	std::printf ("FunctionNameType.kPanPosCenterY %s\n", Steinberg::Vst::FunctionNameType::kPanPosCenterY);
+	std::printf ("FunctionNameType.kPanPosCenterZ %s\n", Steinberg::Vst::FunctionNameType::kPanPosCenterZ);
 
 	print_iid ("IParameterFunctionName", Steinberg::Vst::IParameterFunctionName_iid);
 	print_iid ("IParameterFinder", Steinberg::Vst::IParameterFinder_iid);
