@@ -126,6 +126,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IWaylandHost`, `IWaylandFrame` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build wayland-frame-abi` |
 | `IInterAppAudioHost`, `IInterAppAudioConnectionNotification`, `IInterAppAudioPresetManager` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build inter-app-audio-abi` |
 | `ITestPlugProvider`, `ITestPlugProvider2` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build test-plug-provider-abi` |
+| `ITest`, `ITestResult`, `ITestSuite`, `ITestFactory` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build test-interfaces-abi` |
 
 ## Phase 2 P0 Seed List
 
