@@ -1,6 +1,9 @@
 pub const types = @import("types.zig");
+pub const fvariant = @import("fvariant.zig");
 pub const funknown = @import("funknown.zig");
 pub const ierrorcontext = @import("ierrorcontext.zig");
+pub const icloneable = @import("icloneable.zig");
 pub const ibstream = @import("ibstream.zig");
 pub const ipluginbase = @import("ipluginbase.zig");
+pub const ipersistent = @import("ipersistent.zig");
 pub const istringresult = @import("istringresult.zig");
