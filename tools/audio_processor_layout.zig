@@ -39,6 +39,7 @@ pub fn main() !void {
     try printType(stdout, "AudioBusBuffers", audio_processor.AudioBusBuffers);
     try printOffset(stdout, "AudioBusBuffers", "numChannels", audio_processor.AudioBusBuffers, "numChannels");
     try printOffset(stdout, "AudioBusBuffers", "silenceFlags", audio_processor.AudioBusBuffers, "silenceFlags");
+    try printOffset(stdout, "AudioBusBuffers", "channelBuffers32", audio_processor.AudioBusBuffers, "channelBuffers");
     try printOffset(stdout, "AudioBusBuffers", "channelBuffers64", audio_processor.AudioBusBuffers, "channelBuffers");
 
     try printType(stdout, "ProcessData", audio_processor.ProcessData);

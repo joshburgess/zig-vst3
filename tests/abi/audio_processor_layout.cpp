@@ -123,6 +123,7 @@ int main ()
 	PRINT_TYPE (AudioBusBuffers);
 	PRINT_OFFSET (AudioBusBuffers, numChannels);
 	PRINT_OFFSET (AudioBusBuffers, silenceFlags);
+	PRINT_OFFSET (AudioBusBuffers, channelBuffers32);
 	PRINT_OFFSET (AudioBusBuffers, channelBuffers64);
 
 	PRINT_TYPE (ProcessData);
