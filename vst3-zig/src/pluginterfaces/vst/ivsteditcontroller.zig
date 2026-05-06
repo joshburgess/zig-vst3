@@ -145,6 +145,10 @@ pub const IEditControllerVTable = extern struct {
     createView: *const fn (*anyopaque, base_types.FIDString) callconv(.C) ?*iplugview.IPlugView,
 };
 
+pub const IEditController = extern struct {
+    vtable: *const IEditControllerVTable,
+};
+
 pub const KnobMode = base_types.int32;
 
 pub const KnobModes = enum(KnobMode) {

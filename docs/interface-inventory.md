@@ -121,6 +121,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IXmlRepresentationController`, `RepresentationInfo`, and XML representation constants | Initial vtable, struct, and constant translation complete; layout checked against the pinned SDK with `zig build representation-abi` |
 | `IWaylandHost`, `IWaylandFrame` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build wayland-frame-abi` |
 | `IInterAppAudioHost`, `IInterAppAudioConnectionNotification`, `IInterAppAudioPresetManager` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build inter-app-audio-abi` |
+| `ITestPlugProvider`, `ITestPlugProvider2` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build test-plug-provider-abi` |
 
 ## Phase 2 P0 Seed List
 

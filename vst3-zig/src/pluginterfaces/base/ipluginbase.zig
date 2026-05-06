@@ -25,6 +25,10 @@ pub const IPluginFactoryVTable = extern struct {
     createInstance: *const fn (*anyopaque, types.FIDString, types.FIDString, *?*anyopaque) callconv(.C) types.tresult,
 };
 
+pub const IPluginFactory = extern struct {
+    vtable: *const IPluginFactoryVTable,
+};
+
 pub const IPluginFactory2VTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) types.uint32,
@@ -34,6 +38,10 @@ pub const IPluginFactory2VTable = extern struct {
     getClassInfo: *const fn (*anyopaque, types.int32, *PClassInfo) callconv(.C) types.tresult,
     createInstance: *const fn (*anyopaque, types.FIDString, types.FIDString, *?*anyopaque) callconv(.C) types.tresult,
     getClassInfo2: *const fn (*anyopaque, types.int32, *PClassInfo2) callconv(.C) types.tresult,
+};
+
+pub const IPluginFactory2 = extern struct {
+    vtable: *const IPluginFactory2VTable,
 };
 
 pub const IPluginFactory3VTable = extern struct {
@@ -47,6 +55,10 @@ pub const IPluginFactory3VTable = extern struct {
     getClassInfo2: *const fn (*anyopaque, types.int32, *PClassInfo2) callconv(.C) types.tresult,
     getClassInfoUnicode: *const fn (*anyopaque, types.int32, *PClassInfoW) callconv(.C) types.tresult,
     setHostContext: *const fn (*anyopaque, ?*funknown.Header) callconv(.C) types.tresult,
+};
+
+pub const IPluginFactory3 = extern struct {
+    vtable: *const IPluginFactory3VTable,
 };
 
 pub const PFactoryInfo = extern struct {
