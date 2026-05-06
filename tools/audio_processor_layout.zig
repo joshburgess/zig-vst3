@@ -1,6 +1,10 @@
 const std = @import("std");
+const base = @import("vst3-zig").pluginterfaces.base.types;
 const audio_processor = @import("vst3-zig").pluginterfaces.vst.ivstaudioprocessor;
 const audio_processor_algo = @import("vst3-zig").pluginterfaces.vst.vstaudioprocessoralgo;
+const events = @import("vst3-zig").pluginterfaces.vst.ivstevents;
+const parameter_changes = @import("vst3-zig").pluginterfaces.vst.ivstparameterchanges;
+const vsttypes = @import("vst3-zig").pluginterfaces.vst.vsttypes;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
@@ -98,6 +102,24 @@ pub fn main() !void {
     try stdout.print("AudioProcessorAlgo.isSilent64.before {}\n", .{@intFromBool(audio_processor_algo.isSilent64(&dest64, 2, 0))});
     audio_processor_algo.clear64(@ptrCast(&dest64), 2, 1);
     try stdout.print("AudioProcessorAlgo.isSilent64.after {}\n", .{@intFromBool(audio_processor_algo.isSilent64(&dest64, 2, 0))});
+    var event_list = MockEventList.init();
+    var event_context = EventContext{};
+    audio_processor_algo.forEachEvent(&event_list.iface, &event_context, collectEvent);
+    try stdout.print("AudioProcessorAlgo.foreachEvent.offsetSum {}\n", .{event_context.offset_sum});
+    var param_queue = MockParamValueQueue.init(1234);
+    var param_context = ParamContext{};
+    audio_processor_algo.forEachParamValueQueue(&param_queue.iface, &param_context, collectParamPoint);
+    try stdout.print("AudioProcessorAlgo.foreachParam.paramId {}\n", .{param_context.param_id});
+    try stdout.print("AudioProcessorAlgo.foreachParam.offsetSum {}\n", .{param_context.offset_sum});
+    try stdout.print("AudioProcessorAlgo.foreachParam.valueSum {d:.2}\n", .{param_context.value_sum});
+    var last_context = LastParamContext{};
+    audio_processor_algo.forEachLastParamValueQueue(&param_queue.iface, &last_context, collectLastParamPoint);
+    try stdout.print("AudioProcessorAlgo.foreachLast.offset {}\n", .{last_context.offset});
+    try stdout.print("AudioProcessorAlgo.foreachLast.value {d:.2}\n", .{last_context.value});
+    var changes = MockParameterChanges.init();
+    var changes_context = ChangesContext{};
+    audio_processor_algo.forEachParameterChanges(&changes.iface, &changes_context, collectParamQueue);
+    try stdout.print("AudioProcessorAlgo.foreachChanges.paramIdSum {}\n", .{changes_context.param_id_sum});
 
     try printTuid(stdout, "IAudioProcessor", audio_processor.iaudio_processor_iid);
     try printTuid(stdout, "IAudioPresentationLatency", audio_processor.iaudio_presentation_latency_iid);
@@ -118,4 +140,214 @@ fn printTuid(writer: anytype, comptime name: []const u8, bytes: [16]u8) !void {
         try writer.print(" {X:0>2}", .{byte});
     }
     try writer.writeByte('\n');
+}
+
+const EventContext = struct {
+    offset_sum: base.int32 = 0,
+};
+
+fn collectEvent(context: *EventContext, event: *const events.Event) void {
+    context.offset_sum += event.sampleOffset;
+}
+
+const ParamContext = struct {
+    param_id: vsttypes.ParamID = 0,
+    offset_sum: base.int32 = 0,
+    value_sum: vsttypes.ParamValue = 0,
+};
+
+fn collectParamPoint(context: *ParamContext, param_id: vsttypes.ParamID, sample_offset: base.int32, value: vsttypes.ParamValue) void {
+    context.param_id = param_id;
+    context.offset_sum += sample_offset;
+    context.value_sum += value;
+}
+
+const LastParamContext = struct {
+    offset: base.int32 = 0,
+    value: vsttypes.ParamValue = 0,
+};
+
+fn collectLastParamPoint(context: *LastParamContext, _: vsttypes.ParamID, sample_offset: base.int32, value: vsttypes.ParamValue) void {
+    context.offset = sample_offset;
+    context.value = value;
+}
+
+const ChangesContext = struct {
+    param_id_sum: vsttypes.ParamID = 0,
+};
+
+fn collectParamQueue(context: *ChangesContext, queue: *parameter_changes.IParamValueQueue) void {
+    context.param_id_sum += queue.vtable.getParameterId(queue);
+}
+
+const MockEventList = struct {
+    iface: events.IEventList,
+    event_storage: [3]events.Event,
+
+    fn init() MockEventList {
+        return .{
+            .iface = .{ .vtable = &event_list_vtable },
+            .event_storage = .{
+                .{ .sampleOffset = 10, .type = @intFromEnum(events.Event.EventTypes.kNoteOnEvent) },
+                .{ .sampleOffset = 20, .type = @intFromEnum(events.Event.EventTypes.kNoteOffEvent) },
+                .{ .sampleOffset = 30, .type = @intFromEnum(events.Event.EventTypes.kDataEvent) },
+            },
+        };
+    }
+
+    const event_list_vtable = events.IEventListVTable{
+        .queryInterface = eventListQueryInterface,
+        .addRef = eventListAddRef,
+        .release = eventListRelease,
+        .getEventCount = eventListGetEventCount,
+        .getEvent = eventListGetEvent,
+        .addEvent = eventListAddEvent,
+    };
+};
+
+fn eventListSelf(self: *anyopaque) *MockEventList {
+    return @ptrCast(@alignCast(self));
+}
+
+fn eventListQueryInterface(_: *anyopaque, _: *const @import("vst3-zig").tuid.TUID, obj: *?*anyopaque) callconv(.C) base.tresult {
+    obj.* = null;
+    return base.kNoInterface;
+}
+
+fn eventListAddRef(_: *anyopaque) callconv(.C) base.uint32 {
+    return 1;
+}
+
+fn eventListRelease(_: *anyopaque) callconv(.C) base.uint32 {
+    return 1;
+}
+
+fn eventListGetEventCount(_: *anyopaque) callconv(.C) base.int32 {
+    return 3;
+}
+
+fn eventListGetEvent(self: *anyopaque, index: base.int32, event: *events.Event) callconv(.C) base.tresult {
+    if (index == 1) return base.kResultFalse;
+    event.* = eventListSelf(self).event_storage[@intCast(index)];
+    return base.kResultOk;
+}
+
+fn eventListAddEvent(_: *anyopaque, _: *events.Event) callconv(.C) base.tresult {
+    return base.kResultFalse;
+}
+
+const MockParamValueQueue = struct {
+    iface: parameter_changes.IParamValueQueue,
+    param_id: vsttypes.ParamID,
+    sample_offsets: [3]base.int32 = .{ 4, 8, 12 },
+    values: [3]vsttypes.ParamValue = .{ 0.25, 0.5, 0.75 },
+
+    fn init(param_id: vsttypes.ParamID) MockParamValueQueue {
+        return .{
+            .iface = .{ .vtable = &param_queue_vtable },
+            .param_id = param_id,
+        };
+    }
+
+    const param_queue_vtable = parameter_changes.IParamValueQueueVTable{
+        .queryInterface = paramQueueQueryInterface,
+        .addRef = paramQueueAddRef,
+        .release = paramQueueRelease,
+        .getParameterId = paramQueueGetParameterId,
+        .getPointCount = paramQueueGetPointCount,
+        .getPoint = paramQueueGetPoint,
+        .addPoint = paramQueueAddPoint,
+    };
+};
+
+fn paramQueueSelf(self: *anyopaque) *MockParamValueQueue {
+    return @ptrCast(@alignCast(self));
+}
+
+fn paramQueueQueryInterface(_: *anyopaque, _: *const @import("vst3-zig").tuid.TUID, obj: *?*anyopaque) callconv(.C) base.tresult {
+    obj.* = null;
+    return base.kNoInterface;
+}
+
+fn paramQueueAddRef(_: *anyopaque) callconv(.C) base.uint32 {
+    return 1;
+}
+
+fn paramQueueRelease(_: *anyopaque) callconv(.C) base.uint32 {
+    return 1;
+}
+
+fn paramQueueGetParameterId(self: *anyopaque) callconv(.C) vsttypes.ParamID {
+    return paramQueueSelf(self).param_id;
+}
+
+fn paramQueueGetPointCount(_: *anyopaque) callconv(.C) base.int32 {
+    return 3;
+}
+
+fn paramQueueGetPoint(self: *anyopaque, index: base.int32, sample_offset: *base.int32, value: *vsttypes.ParamValue) callconv(.C) base.tresult {
+    if (index == 1) return base.kResultFalse;
+    const queue = paramQueueSelf(self);
+    sample_offset.* = queue.sample_offsets[@intCast(index)];
+    value.* = queue.values[@intCast(index)];
+    return base.kResultOk;
+}
+
+fn paramQueueAddPoint(_: *anyopaque, _: base.int32, _: vsttypes.ParamValue, _: *base.int32) callconv(.C) base.tresult {
+    return base.kResultFalse;
+}
+
+const MockParameterChanges = struct {
+    iface: parameter_changes.IParameterChanges,
+    queues: [2]MockParamValueQueue,
+
+    fn init() MockParameterChanges {
+        return .{
+            .iface = .{ .vtable = &parameter_changes_vtable },
+            .queues = .{
+                MockParamValueQueue.init(1234),
+                MockParamValueQueue.init(5678),
+            },
+        };
+    }
+
+    const parameter_changes_vtable = parameter_changes.IParameterChangesVTable{
+        .queryInterface = parameterChangesQueryInterface,
+        .addRef = parameterChangesAddRef,
+        .release = parameterChangesRelease,
+        .getParameterCount = parameterChangesGetParameterCount,
+        .getParameterData = parameterChangesGetParameterData,
+        .addParameterData = parameterChangesAddParameterData,
+    };
+};
+
+fn parameterChangesSelf(self: *anyopaque) *MockParameterChanges {
+    return @ptrCast(@alignCast(self));
+}
+
+fn parameterChangesQueryInterface(_: *anyopaque, _: *const @import("vst3-zig").tuid.TUID, obj: *?*anyopaque) callconv(.C) base.tresult {
+    obj.* = null;
+    return base.kNoInterface;
+}
+
+fn parameterChangesAddRef(_: *anyopaque) callconv(.C) base.uint32 {
+    return 1;
+}
+
+fn parameterChangesRelease(_: *anyopaque) callconv(.C) base.uint32 {
+    return 1;
+}
+
+fn parameterChangesGetParameterCount(_: *anyopaque) callconv(.C) base.int32 {
+    return 3;
+}
+
+fn parameterChangesGetParameterData(self: *anyopaque, index: base.int32) callconv(.C) ?*parameter_changes.IParamValueQueue {
+    if (index == 1) return null;
+    const changes = parameterChangesSelf(self);
+    return &changes.queues[if (index == 0) 0 else 1].iface;
+}
+
+fn parameterChangesAddParameterData(_: *anyopaque, _: *const vsttypes.ParamID, _: *base.int32) callconv(.C) ?*parameter_changes.IParamValueQueue {
+    return null;
 }

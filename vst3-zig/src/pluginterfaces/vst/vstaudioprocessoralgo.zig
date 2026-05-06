@@ -1,5 +1,7 @@
 const base = @import("../base/types.zig");
 const audio_processor = @import("ivstaudioprocessor.zig");
+const events = @import("ivstevents.zig");
+const parameter_changes = @import("ivstparameterchanges.zig");
 const vsttypes = @import("vsttypes.zig");
 
 pub fn getChannelBuffersPointer(
@@ -193,6 +195,49 @@ pub fn isSilent64(audio_buffer: *audio_processor.AudioBusBuffers, sample_count: 
         }
     }
     return true;
+}
+
+pub fn forEachEvent(event_list: ?*events.IEventList, context: anytype, comptime callback: anytype) void {
+    const list = event_list orelse return;
+    const event_count = list.vtable.getEventCount(list);
+    var event_index: base.int32 = 0;
+    while (event_index < event_count) : (event_index += 1) {
+        var event = events.Event{};
+        if (list.vtable.getEvent(list, event_index, &event) != base.kResultOk) continue;
+        callback(context, &event);
+    }
+}
+
+pub fn forEachParamValueQueue(param_queue: *parameter_changes.IParamValueQueue, context: anytype, comptime callback: anytype) void {
+    const param_id = param_queue.vtable.getParameterId(param_queue);
+    const num_points = param_queue.vtable.getPointCount(param_queue);
+    var point_index: base.int32 = 0;
+    while (point_index < num_points) : (point_index += 1) {
+        var sample_offset: base.int32 = 0;
+        var value: vsttypes.ParamValue = 0;
+        if (param_queue.vtable.getPoint(param_queue, point_index, &sample_offset, &value) != base.kResultOk) continue;
+        callback(context, param_id, sample_offset, value);
+    }
+}
+
+pub fn forEachLastParamValueQueue(param_queue: *parameter_changes.IParamValueQueue, context: anytype, comptime callback: anytype) void {
+    const param_id = param_queue.vtable.getParameterId(param_queue);
+    const num_points = param_queue.vtable.getPointCount(param_queue);
+    var sample_offset: base.int32 = 0;
+    var value: vsttypes.ParamValue = 0;
+    if (param_queue.vtable.getPoint(param_queue, num_points - 1, &sample_offset, &value) == base.kResultOk) {
+        callback(context, param_id, sample_offset, value);
+    }
+}
+
+pub fn forEachParameterChanges(changes: ?*parameter_changes.IParameterChanges, context: anytype, comptime callback: anytype) void {
+    const parameter_changes_list = changes orelse return;
+    const param_count = parameter_changes_list.vtable.getParameterCount(parameter_changes_list);
+    var param_index: base.int32 = 0;
+    while (param_index < param_count) : (param_index += 1) {
+        const param_queue = parameter_changes_list.vtable.getParameterData(parameter_changes_list, param_index) orelse continue;
+        callback(context, param_queue);
+    }
 }
 
 test "audio processor helpers match expected core behavior" {

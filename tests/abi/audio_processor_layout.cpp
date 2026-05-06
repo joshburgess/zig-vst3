@@ -17,6 +17,79 @@ static void print_iid (const char* name, const T& tuid)
 	std::printf ("\n");
 }
 
+struct MockEventList : Steinberg::Vst::IEventList
+{
+	Steinberg::Vst::Event events[3] {};
+
+	MockEventList ()
+	{
+		events[0].type = Steinberg::Vst::Event::kNoteOnEvent;
+		events[0].sampleOffset = 10;
+		events[1].type = Steinberg::Vst::Event::kNoteOffEvent;
+		events[1].sampleOffset = 20;
+		events[2].type = Steinberg::Vst::Event::kDataEvent;
+		events[2].sampleOffset = 30;
+	}
+
+	Steinberg::tresult PLUGIN_API queryInterface (const Steinberg::TUID, void**) override { return Steinberg::kNoInterface; }
+	Steinberg::uint32 PLUGIN_API addRef () override { return 1; }
+	Steinberg::uint32 PLUGIN_API release () override { return 1; }
+	Steinberg::int32 PLUGIN_API getEventCount () override { return 3; }
+	Steinberg::tresult PLUGIN_API getEvent (Steinberg::int32 index, Steinberg::Vst::Event& e) override
+	{
+		if (index == 1)
+			return Steinberg::kResultFalse;
+		e = events[index];
+		return Steinberg::kResultOk;
+	}
+	Steinberg::tresult PLUGIN_API addEvent (Steinberg::Vst::Event&) override { return Steinberg::kResultFalse; }
+};
+
+struct MockParamValueQueue : Steinberg::Vst::IParamValueQueue
+{
+	Steinberg::Vst::ParamID paramId {1234};
+	Steinberg::int32 sampleOffsets[3] {4, 8, 12};
+	Steinberg::Vst::ParamValue values[3] {0.25, 0.5, 0.75};
+
+	Steinberg::tresult PLUGIN_API queryInterface (const Steinberg::TUID, void**) override { return Steinberg::kNoInterface; }
+	Steinberg::uint32 PLUGIN_API addRef () override { return 1; }
+	Steinberg::uint32 PLUGIN_API release () override { return 1; }
+	Steinberg::Vst::ParamID PLUGIN_API getParameterId () override { return paramId; }
+	Steinberg::int32 PLUGIN_API getPointCount () override { return 3; }
+	Steinberg::tresult PLUGIN_API getPoint (Steinberg::int32 index, Steinberg::int32& sampleOffset, Steinberg::Vst::ParamValue& value) override
+	{
+		if (index == 1)
+			return Steinberg::kResultFalse;
+		sampleOffset = sampleOffsets[index];
+		value = values[index];
+		return Steinberg::kResultOk;
+	}
+	Steinberg::tresult PLUGIN_API addPoint (Steinberg::int32, Steinberg::Vst::ParamValue, Steinberg::int32&) override { return Steinberg::kResultFalse; }
+};
+
+struct MockParameterChanges : Steinberg::Vst::IParameterChanges
+{
+	MockParamValueQueue queues[2] {};
+
+	MockParameterChanges ()
+	{
+		queues[0].paramId = 1234;
+		queues[1].paramId = 5678;
+	}
+
+	Steinberg::tresult PLUGIN_API queryInterface (const Steinberg::TUID, void**) override { return Steinberg::kNoInterface; }
+	Steinberg::uint32 PLUGIN_API addRef () override { return 1; }
+	Steinberg::uint32 PLUGIN_API release () override { return 1; }
+	Steinberg::int32 PLUGIN_API getParameterCount () override { return 3; }
+	Steinberg::Vst::IParamValueQueue* PLUGIN_API getParameterData (Steinberg::int32 index) override
+	{
+		if (index == 1)
+			return nullptr;
+		return &queues[index == 0 ? 0 : 1];
+	}
+	Steinberg::Vst::IParamValueQueue* PLUGIN_API addParameterData (const Steinberg::Vst::ParamID&, Steinberg::int32&) override { return nullptr; }
+};
+
 int main ()
 {
 	std::printf ("ComponentFlags.kDistributable %u\n", Steinberg::Vst::kDistributable);
@@ -125,6 +198,38 @@ int main ()
 	std::printf ("AudioProcessorAlgo.isSilent64.before %d\n", Steinberg::Vst::Algo::isSilent64 (dest64, 2));
 	Steinberg::Vst::Algo::clear64 (&dest64, 2);
 	std::printf ("AudioProcessorAlgo.isSilent64.after %d\n", Steinberg::Vst::Algo::isSilent64 (dest64, 2));
+	MockEventList eventList;
+	Steinberg::int32 eventOffsetSum = 0;
+	Steinberg::Vst::Algo::foreach (&eventList, [&] (Steinberg::Vst::Event& event) {
+		eventOffsetSum += event.sampleOffset;
+	});
+	std::printf ("AudioProcessorAlgo.foreachEvent.offsetSum %d\n", eventOffsetSum);
+	MockParamValueQueue paramQueue;
+	Steinberg::int32 pointOffsetSum = 0;
+	Steinberg::Vst::ParamID visitedParamId = 0;
+	Steinberg::Vst::ParamValue pointValueSum = 0;
+	Steinberg::Vst::Algo::foreach (paramQueue, [&] (Steinberg::Vst::ParamID paramId, Steinberg::int32 sampleOffset, Steinberg::Vst::ParamValue value) {
+		visitedParamId = paramId;
+		pointOffsetSum += sampleOffset;
+		pointValueSum += value;
+	});
+	std::printf ("AudioProcessorAlgo.foreachParam.paramId %u\n", visitedParamId);
+	std::printf ("AudioProcessorAlgo.foreachParam.offsetSum %d\n", pointOffsetSum);
+	std::printf ("AudioProcessorAlgo.foreachParam.valueSum %.2f\n", pointValueSum);
+	Steinberg::int32 lastOffset = 0;
+	Steinberg::Vst::ParamValue lastValue = 0;
+	Steinberg::Vst::Algo::foreachLast (paramQueue, [&] (Steinberg::Vst::ParamID, Steinberg::int32 sampleOffset, Steinberg::Vst::ParamValue value) {
+		lastOffset = sampleOffset;
+		lastValue = value;
+	});
+	std::printf ("AudioProcessorAlgo.foreachLast.offset %d\n", lastOffset);
+	std::printf ("AudioProcessorAlgo.foreachLast.value %.2f\n", lastValue);
+	MockParameterChanges changes;
+	Steinberg::Vst::ParamID queueIdSum = 0;
+	Steinberg::Vst::Algo::foreach (&changes, [&] (Steinberg::Vst::IParamValueQueue& queue) {
+		queueIdSum += queue.getParameterId ();
+	});
+	std::printf ("AudioProcessorAlgo.foreachChanges.paramIdSum %u\n", queueIdSum);
 
 	print_iid ("IAudioProcessor", Steinberg::Vst::IAudioProcessor_iid);
 	print_iid ("IAudioPresentationLatency", Steinberg::Vst::IAudioPresentationLatency_iid);
