@@ -2,7 +2,10 @@
 #include "pluginterfaces/vst/ivstplugview.h"
 #include "pluginterfaces/vst/ivstremapparamid.h"
 
+#include <cstddef>
 #include <cstdio>
+
+#define PRINT_TYPE(Type) std::printf (#Type " size %zu align %zu\n", sizeof (Steinberg::Vst::Type), alignof (Steinberg::Vst::Type))
 
 template <typename T>
 static void print_iid (const char* name, const T& tuid)
@@ -25,6 +28,10 @@ int main ()
 	std::printf ("FunctionNameType.kPanPosCenterX %s\n", Steinberg::Vst::FunctionNameType::kPanPosCenterX);
 	std::printf ("FunctionNameType.kPanPosCenterY %s\n", Steinberg::Vst::FunctionNameType::kPanPosCenterY);
 	std::printf ("FunctionNameType.kPanPosCenterZ %s\n", Steinberg::Vst::FunctionNameType::kPanPosCenterZ);
+
+	PRINT_TYPE (IParameterFunctionName);
+	PRINT_TYPE (IParameterFinder);
+	PRINT_TYPE (IRemapParamID);
 
 	print_iid ("IParameterFunctionName", Steinberg::Vst::IParameterFunctionName_iid);
 	print_iid ("IParameterFinder", Steinberg::Vst::IParameterFinder_iid);

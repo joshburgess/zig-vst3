@@ -16,9 +16,17 @@ pub fn main() !void {
     try stdout.print("FunctionNameType.kPanPosCenterY {s}\n", .{std.mem.span(function_name.FunctionNameType.kPanPosCenterY)});
     try stdout.print("FunctionNameType.kPanPosCenterZ {s}\n", .{std.mem.span(function_name.FunctionNameType.kPanPosCenterZ)});
 
+    try printType(stdout, "IParameterFunctionName", function_name.IParameterFunctionName);
+    try printType(stdout, "IParameterFinder", parameter_finder.IParameterFinder);
+    try printType(stdout, "IRemapParamID", remap.IRemapParamID);
+
     try printTuid(stdout, "IParameterFunctionName", function_name.iparameter_function_name_iid);
     try printTuid(stdout, "IParameterFinder", parameter_finder.iparameter_finder_iid);
     try printTuid(stdout, "IRemapParamID", remap.iremap_param_id_iid);
+}
+
+fn printType(writer: anytype, comptime name: []const u8, comptime Type: type) !void {
+    try writer.print("{s} size {} align {}\n", .{ name, @sizeOf(Type), @alignOf(Type) });
 }
 
 fn printTuid(writer: anytype, comptime name: []const u8, bytes: [16]u8) !void {
