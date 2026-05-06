@@ -60,5 +60,9 @@ int main ()
 	PRINT_OFFSET (PClassInfoW, version);
 	PRINT_OFFSET (PClassInfoW, sdkVersion);
 
+	PRINT_TYPE (IPluginFactory);
+	PRINT_TYPE (IPluginFactory2);
+	PRINT_TYPE (IPluginFactory3);
+
 	return 0;
 }

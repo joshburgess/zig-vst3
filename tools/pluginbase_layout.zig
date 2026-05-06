@@ -54,6 +54,10 @@ pub fn main() !void {
     try printOffset(stdout, "PClassInfoW", "vendor", pluginbase.PClassInfoW, "vendor");
     try printOffset(stdout, "PClassInfoW", "version", pluginbase.PClassInfoW, "version");
     try printOffset(stdout, "PClassInfoW", "sdkVersion", pluginbase.PClassInfoW, "sdkVersion");
+
+    try printType(stdout, "IPluginFactory", pluginbase.IPluginFactory);
+    try printType(stdout, "IPluginFactory2", pluginbase.IPluginFactory2);
+    try printType(stdout, "IPluginFactory3", pluginbase.IPluginFactory3);
 }
 
 fn printType(writer: anytype, comptime name: []const u8, comptime Type: type) !void {
