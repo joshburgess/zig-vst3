@@ -57,6 +57,7 @@ pub const ChannelContext = struct {
 };
 
 test "channel context vtable slot count includes FUnknown prefix" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IInfoListener));
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IInfoListenerVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(base_types.uint8, 0x44), ChannelContext.getBlue(0x11223344));
     try @import("std").testing.expectEqual(@as(base_types.uint8, 0x33), ChannelContext.getGreen(0x11223344));
