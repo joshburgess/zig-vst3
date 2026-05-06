@@ -109,6 +109,7 @@ int main ()
 	std::printf ("Helpers.getPitchBendValue %d\n", Steinberg::Vst::Helpers::getPitchBendValue (midi));
 	std::printf ("Helpers.getNormPitchBendValue %.12f\n", Steinberg::Vst::Helpers::getNormPitchBendValue (midi));
 
+	PRINT_TYPE (IEventList);
 	print_iid ("IEventList", Steinberg::Vst::IEventList_iid);
 	return 0;
 }

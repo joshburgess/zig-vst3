@@ -96,6 +96,7 @@ pub fn main() !void {
     try stdout.print("Helpers.getPitchBendValue {}\n", .{helpers.getPitchBendValue(midi)});
     try stdout.print("Helpers.getNormPitchBendValue {d:.12}\n", .{helpers.getNormPitchBendValue(midi)});
 
+    try printType(stdout, "IEventList", events.IEventList);
     try printTuid(stdout, "IEventList", events.ievent_list_iid);
 }
 
