@@ -126,6 +126,10 @@ pub fn build(b: *std.Build) void {
     const check_midi_mapping_abi = b.addSystemCommand(&.{"scripts/check_midi_mapping_abi.sh"});
     midi_mapping_abi_step.dependOn(&check_midi_mapping_abi.step);
 
+    const midi_controllers_abi_step = b.step("midi-controllers-abi", "Compare Zig MIDI controller constants against the pinned VST3 SDK");
+    const check_midi_controllers_abi = b.addSystemCommand(&.{"scripts/check_midi_controllers_abi.sh"});
+    midi_controllers_abi_step.dependOn(&check_midi_controllers_abi.step);
+
     const note_expression_abi_step = b.step("note-expression-abi", "Compare Zig note expression declarations against the pinned VST3 SDK");
     const check_note_expression_abi = b.addSystemCommand(&.{"scripts/check_note_expression_abi.sh"});
     note_expression_abi_step.dependOn(&check_note_expression_abi.step);
@@ -238,6 +242,7 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(plugview_abi_step);
     phase1_step.dependOn(units_abi_step);
     phase1_step.dependOn(midi_mapping_abi_step);
+    phase1_step.dependOn(midi_controllers_abi_step);
     phase1_step.dependOn(note_expression_abi_step);
     phase1_step.dependOn(capability_state_abi_step);
     phase1_step.dependOn(parameter_helpers_abi_step);
