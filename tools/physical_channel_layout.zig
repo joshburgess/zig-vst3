@@ -5,6 +5,8 @@ const physical = @import("vst3-zig").pluginterfaces.vst.ivstphysicalui;
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("PhysicalUITypeIDs.kPUIXMovement {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kPUIXMovement)});
+    try stdout.print("PhysicalUITypeIDs.kPUIYMovement {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kPUIYMovement)});
+    try stdout.print("PhysicalUITypeIDs.kPUIPressure {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kPUIPressure)});
     try stdout.print("PhysicalUITypeIDs.kPUITypeCount {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kPUITypeCount)});
     try stdout.print("PhysicalUITypeIDs.kInvalidPUITypeID {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kInvalidPUITypeID)});
     try stdout.print("ChannelPluginLocation.kPreVolumeFader {}\n", .{@intFromEnum(channel.ChannelContext.ChannelPluginLocation.kPreVolumeFader)});
