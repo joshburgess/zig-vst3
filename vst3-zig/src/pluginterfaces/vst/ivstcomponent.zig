@@ -71,6 +71,10 @@ pub const IComponentVTable = extern struct {
     getState: *const fn (*anyopaque, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
 };
 
+pub const IComponent = extern struct {
+    vtable: *const IComponentVTable,
+};
+
 test "component struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 276), @sizeOf(BusInfo));
     try @import("std").testing.expectEqual(@as(usize, 12), @sizeOf(RoutingInfo));

@@ -100,6 +100,9 @@ jobs:
       - name: Check Inter-App Audio ABI
         if: runner.os != 'Windows'
         run: zig build inter-app-audio-abi
+      - name: Check test plug provider ABI
+        if: runner.os != 'Windows'
+        run: zig build test-plug-provider-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi
