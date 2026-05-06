@@ -1,4 +1,5 @@
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
+#include <cstring>
 #include "public.sdk/source/vst/vstaudioprocessoralgo.h"
 
 #include <cstddef>
@@ -83,6 +84,47 @@ int main ()
 	std::printf ("AudioProcessorAlgo.getChannelMask.0 %llu\n", static_cast<unsigned long long> (Steinberg::Vst::getChannelMask (0)));
 	std::printf ("AudioProcessorAlgo.getChannelMask.6 %llu\n", static_cast<unsigned long long> (Steinberg::Vst::getChannelMask (6)));
 	std::printf ("AudioProcessorAlgo.getChannelMask.64 %llu\n", static_cast<unsigned long long> (Steinberg::Vst::getChannelMask (64)));
+	float src32Ch0[4] {1.f, 2.f, 3.f, 4.f};
+	float src32Ch1[4] {5.f, 6.f, 7.f, 8.f};
+	float dest32Ch0[6] {};
+	float dest32Ch1[6] {};
+	float* src32Channels[2] {src32Ch0, src32Ch1};
+	float* dest32Channels[2] {dest32Ch0, dest32Ch1};
+	Steinberg::Vst::AudioBusBuffers src32 {};
+	src32.numChannels = 2;
+	src32.channelBuffers32 = src32Channels;
+	Steinberg::Vst::AudioBusBuffers dest32 {};
+	dest32.numChannels = 2;
+	dest32.channelBuffers32 = dest32Channels;
+	Steinberg::Vst::Algo::copy32 (&src32, &dest32, 3, 2);
+	std::printf ("AudioProcessorAlgo.copy32.dest0.2 %.1f\n", dest32Ch0[2]);
+	std::printf ("AudioProcessorAlgo.copy32.dest1.4 %.1f\n", dest32Ch1[4]);
+	Steinberg::Vst::Algo::mix32 (src32, dest32, 3);
+	std::printf ("AudioProcessorAlgo.mix32.dest0.0 %.1f\n", dest32Ch0[0]);
+	std::printf ("AudioProcessorAlgo.mix32.dest1.2 %.1f\n", dest32Ch1[2]);
+	Steinberg::Vst::Algo::multiply32 (src32, dest32, 3, 2.f);
+	std::printf ("AudioProcessorAlgo.multiply32.dest0.1 %.1f\n", dest32Ch0[1]);
+	std::printf ("AudioProcessorAlgo.isSilent32.before %d\n", Steinberg::Vst::Algo::isSilent32 (dest32, 3));
+	Steinberg::Vst::Algo::clear32 (&dest32, 3);
+	std::printf ("AudioProcessorAlgo.clear32.dest0.1 %.1f\n", dest32Ch0[1]);
+	std::printf ("AudioProcessorAlgo.isSilent32.after %d\n", Steinberg::Vst::Algo::isSilent32 (dest32, 3));
+	double src64Ch0[3] {1.5, 2.5, 3.5};
+	double dest64Ch0[5] {};
+	double* src64Channels[1] {src64Ch0};
+	double* dest64Channels[1] {dest64Ch0};
+	Steinberg::Vst::AudioBusBuffers src64 {};
+	src64.numChannels = 1;
+	src64.channelBuffers64 = src64Channels;
+	Steinberg::Vst::AudioBusBuffers dest64 {};
+	dest64.numChannels = 1;
+	dest64.channelBuffers64 = dest64Channels;
+	Steinberg::Vst::Algo::copy64 (&src64, &dest64, 2, 1);
+	std::printf ("AudioProcessorAlgo.copy64.dest0.2 %.1f\n", dest64Ch0[2]);
+	Steinberg::Vst::Algo::multiply64 (src64, dest64, 2, 3.0);
+	std::printf ("AudioProcessorAlgo.multiply64.dest0.1 %.1f\n", dest64Ch0[1]);
+	std::printf ("AudioProcessorAlgo.isSilent64.before %d\n", Steinberg::Vst::Algo::isSilent64 (dest64, 2));
+	Steinberg::Vst::Algo::clear64 (&dest64, 2);
+	std::printf ("AudioProcessorAlgo.isSilent64.after %d\n", Steinberg::Vst::Algo::isSilent64 (dest64, 2));
 
 	print_iid ("IAudioProcessor", Steinberg::Vst::IAudioProcessor_iid);
 	print_iid ("IAudioPresentationLatency", Steinberg::Vst::IAudioPresentationLatency_iid);

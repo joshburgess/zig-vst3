@@ -29,6 +29,172 @@ pub fn getChannelMask(num_channels: base.int32) base.uint64 {
     return (@as(base.uint64, 1) << @intCast(num_channels)) - 1;
 }
 
+pub fn copy32(
+    src: ?*audio_processor.AudioBusBuffers,
+    dest: ?*audio_processor.AudioBusBuffers,
+    slice_size: base.int32,
+    start_index: base.int32,
+) void {
+    const src_buffer = src orelse return;
+    const dest_buffer = dest orelse return;
+    const src_channels = src_buffer.channelBuffers.channelBuffers32 orelse return;
+    const dest_channels = dest_buffer.channelBuffers.channelBuffers32 orelse return;
+    const num_channels = @min(src_buffer.numChannels, dest_buffer.numChannels);
+    var channel: base.int32 = 0;
+    while (channel < num_channels) : (channel += 1) {
+        const src_channel = src_channels[@intCast(channel)];
+        const dest_channel = dest_channels[@intCast(channel)];
+        var sample: base.int32 = 0;
+        while (sample < slice_size) : (sample += 1) {
+            dest_channel[@intCast(start_index + sample)] = src_channel[@intCast(sample)];
+        }
+    }
+}
+
+pub fn copy64(
+    src: ?*audio_processor.AudioBusBuffers,
+    dest: ?*audio_processor.AudioBusBuffers,
+    slice_size: base.int32,
+    start_index: base.int32,
+) void {
+    const src_buffer = src orelse return;
+    const dest_buffer = dest orelse return;
+    const src_channels = src_buffer.channelBuffers.channelBuffers64 orelse return;
+    const dest_channels = dest_buffer.channelBuffers.channelBuffers64 orelse return;
+    const num_channels = @min(src_buffer.numChannels, dest_buffer.numChannels);
+    var channel: base.int32 = 0;
+    while (channel < num_channels) : (channel += 1) {
+        const src_channel = src_channels[@intCast(channel)];
+        const dest_channel = dest_channels[@intCast(channel)];
+        var sample: base.int32 = 0;
+        while (sample < slice_size) : (sample += 1) {
+            dest_channel[@intCast(start_index + sample)] = src_channel[@intCast(sample)];
+        }
+    }
+}
+
+pub fn clear32(audio_bus_buffers: ?[*]audio_processor.AudioBusBuffers, sample_count: base.int32, bus_count: base.int32) void {
+    const buses = audio_bus_buffers orelse return;
+    var bus: base.int32 = 0;
+    while (bus < bus_count) : (bus += 1) {
+        const audio_buffer = &buses[@intCast(bus)];
+        const channels = audio_buffer.channelBuffers.channelBuffers32 orelse return;
+        var channel: base.int32 = 0;
+        while (channel < audio_buffer.numChannels) : (channel += 1) {
+            const channel_buffer = channels[@intCast(channel)];
+            var sample: base.int32 = 0;
+            while (sample < sample_count) : (sample += 1) {
+                channel_buffer[@intCast(sample)] = 0;
+            }
+        }
+    }
+}
+
+pub fn clear64(audio_bus_buffers: ?[*]audio_processor.AudioBusBuffers, sample_count: base.int32, bus_count: base.int32) void {
+    const buses = audio_bus_buffers orelse return;
+    var bus: base.int32 = 0;
+    while (bus < bus_count) : (bus += 1) {
+        const audio_buffer = &buses[@intCast(bus)];
+        const channels = audio_buffer.channelBuffers.channelBuffers64 orelse return;
+        var channel: base.int32 = 0;
+        while (channel < audio_buffer.numChannels) : (channel += 1) {
+            const channel_buffer = channels[@intCast(channel)];
+            var sample: base.int32 = 0;
+            while (sample < sample_count) : (sample += 1) {
+                channel_buffer[@intCast(sample)] = 0;
+            }
+        }
+    }
+}
+
+pub fn mix32(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.AudioBusBuffers, sample_count: base.int32) void {
+    const src_channels = src.channelBuffers.channelBuffers32 orelse return;
+    const dest_channels = dest.channelBuffers.channelBuffers32 orelse return;
+    const num_channels = @min(src.numChannels, dest.numChannels);
+    var channel: base.int32 = 0;
+    while (channel < num_channels) : (channel += 1) {
+        const src_channel = src_channels[@intCast(channel)];
+        const dest_channel = dest_channels[@intCast(channel)];
+        var sample: base.int32 = 0;
+        while (sample < sample_count) : (sample += 1) {
+            dest_channel[@intCast(sample)] += src_channel[@intCast(sample)];
+        }
+    }
+}
+
+pub fn mix64(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.AudioBusBuffers, sample_count: base.int32) void {
+    const src_channels = src.channelBuffers.channelBuffers64 orelse return;
+    const dest_channels = dest.channelBuffers.channelBuffers64 orelse return;
+    const num_channels = @min(src.numChannels, dest.numChannels);
+    var channel: base.int32 = 0;
+    while (channel < num_channels) : (channel += 1) {
+        const src_channel = src_channels[@intCast(channel)];
+        const dest_channel = dest_channels[@intCast(channel)];
+        var sample: base.int32 = 0;
+        while (sample < sample_count) : (sample += 1) {
+            dest_channel[@intCast(sample)] += src_channel[@intCast(sample)];
+        }
+    }
+}
+
+pub fn multiply32(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.AudioBusBuffers, sample_count: base.int32, factor: f32) void {
+    const src_channels = src.channelBuffers.channelBuffers32 orelse return;
+    const dest_channels = dest.channelBuffers.channelBuffers32 orelse return;
+    const num_channels = @min(src.numChannels, dest.numChannels);
+    var channel: base.int32 = 0;
+    while (channel < num_channels) : (channel += 1) {
+        const src_channel = src_channels[@intCast(channel)];
+        const dest_channel = dest_channels[@intCast(channel)];
+        var sample: base.int32 = 0;
+        while (sample < sample_count) : (sample += 1) {
+            dest_channel[@intCast(sample)] = src_channel[@intCast(sample)] * factor;
+        }
+    }
+}
+
+pub fn multiply64(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.AudioBusBuffers, sample_count: base.int32, factor: f64) void {
+    const src_channels = src.channelBuffers.channelBuffers64 orelse return;
+    const dest_channels = dest.channelBuffers.channelBuffers64 orelse return;
+    const num_channels = @min(src.numChannels, dest.numChannels);
+    var channel: base.int32 = 0;
+    while (channel < num_channels) : (channel += 1) {
+        const src_channel = src_channels[@intCast(channel)];
+        const dest_channel = dest_channels[@intCast(channel)];
+        var sample: base.int32 = 0;
+        while (sample < sample_count) : (sample += 1) {
+            dest_channel[@intCast(sample)] = src_channel[@intCast(sample)] * factor;
+        }
+    }
+}
+
+pub fn isSilent32(audio_buffer: *audio_processor.AudioBusBuffers, sample_count: base.int32, start_index: base.int32) bool {
+    const channels = audio_buffer.channelBuffers.channelBuffers32 orelse return true;
+    const end = sample_count + start_index;
+    var channel: base.int32 = 0;
+    while (channel < audio_buffer.numChannels) : (channel += 1) {
+        const channel_buffer = channels[@intCast(channel)];
+        var sample = start_index;
+        while (sample < end) : (sample += 1) {
+            if (@abs(channel_buffer[@intCast(sample)]) > 1e-10) return false;
+        }
+    }
+    return true;
+}
+
+pub fn isSilent64(audio_buffer: *audio_processor.AudioBusBuffers, sample_count: base.int32, start_index: base.int32) bool {
+    const channels = audio_buffer.channelBuffers.channelBuffers64 orelse return true;
+    const end = sample_count + start_index;
+    var channel: base.int32 = 0;
+    while (channel < audio_buffer.numChannels) : (channel += 1) {
+        const channel_buffer = channels[@intCast(channel)];
+        var sample = start_index;
+        while (sample < end) : (sample += 1) {
+            if (@abs(channel_buffer[@intCast(sample)]) > 1e-10) return false;
+        }
+    }
+    return true;
+}
+
 test "audio processor helpers match expected core behavior" {
     var setup32 = audio_processor.ProcessSetup{ .symbolicSampleSize = @intFromEnum(audio_processor.SymbolicSampleSizes.kSample32) };
     var setup64 = audio_processor.ProcessSetup{ .symbolicSampleSize = @intFromEnum(audio_processor.SymbolicSampleSizes.kSample64) };
