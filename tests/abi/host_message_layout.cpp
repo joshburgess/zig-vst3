@@ -1,6 +1,9 @@
 #include "pluginterfaces/vst/ivsthostapplication.h"
 
+#include <cstddef>
 #include <cstdio>
+
+#define PRINT_TYPE(Type) std::printf (#Type " size %zu align %zu\n", sizeof (Steinberg::Vst::Type), alignof (Steinberg::Vst::Type))
 
 template <typename T>
 static void print_iid (const char* name, const T& tuid)
@@ -13,6 +16,16 @@ static void print_iid (const char* name, const T& tuid)
 
 int main ()
 {
+	PRINT_TYPE (IAttributeList);
+	PRINT_TYPE (IStreamAttributes);
+	PRINT_TYPE (IMessage);
+	PRINT_TYPE (IConnectionPoint);
+	PRINT_TYPE (IHostApplication);
+	PRINT_TYPE (IVst3ToVst2Wrapper);
+	PRINT_TYPE (IVst3ToAUWrapper);
+	PRINT_TYPE (IVst3ToAAXWrapper);
+	PRINT_TYPE (IVst3WrapperMPESupport);
+
 	print_iid ("IAttributeList", Steinberg::Vst::IAttributeList_iid);
 	print_iid ("IStreamAttributes", Steinberg::Vst::IStreamAttributes_iid);
 	print_iid ("IMessage", Steinberg::Vst::IMessage_iid);
