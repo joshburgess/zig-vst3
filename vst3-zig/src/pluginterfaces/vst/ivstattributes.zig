@@ -40,6 +40,8 @@ pub const IStreamAttributes = extern struct {
 test "attribute vtable slot counts include FUnknown prefix" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IAttributeList));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IStreamAttributes));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IAttributeList));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IStreamAttributes));
     try @import("std").testing.expectEqual(@as(usize, 11), @typeInfo(IAttributeListVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IStreamAttributesVTable).@"struct".fields.len);
 }
