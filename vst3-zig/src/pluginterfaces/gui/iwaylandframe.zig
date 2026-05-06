@@ -38,6 +38,8 @@ pub const IWaylandFrame = extern struct {
 test "wayland frame vtable sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IWaylandHost));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IWaylandFrame));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IWaylandHost));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IWaylandFrame));
     try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IWaylandHostVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IWaylandFrameVTable).@"struct".fields.len);
 }
