@@ -24,5 +24,6 @@ pub const IPrefetchableSupport = extern struct {
 };
 
 test "prefetchable support vtable slot count includes FUnknown prefix" {
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IPrefetchableSupport));
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IPrefetchableSupportVTable).@"struct".fields.len);
 }
