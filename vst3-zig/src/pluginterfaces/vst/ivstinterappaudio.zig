@@ -54,6 +54,9 @@ test "inter-app audio vtable sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IInterAppAudioHost));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IInterAppAudioConnectionNotification));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IInterAppAudioPresetManager));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IInterAppAudioHost));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IInterAppAudioConnectionNotification));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IInterAppAudioPresetManager));
     try @import("std").testing.expectEqual(@as(usize, 11), @typeInfo(IInterAppAudioHostVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IInterAppAudioConnectionNotificationVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IInterAppAudioPresetManagerVTable).@"struct".fields.len);
