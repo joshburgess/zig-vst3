@@ -48,6 +48,8 @@ pub const IDataExchangeReceiver = extern struct {
 test "data exchange struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 16), @sizeOf(DataExchangeBlock));
     try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(DataExchangeBlock));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IDataExchangeHandler));
+    try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IDataExchangeReceiver));
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IDataExchangeHandlerVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(IDataExchangeReceiverVTable).@"struct".fields.len);
 }
