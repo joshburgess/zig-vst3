@@ -15,6 +15,17 @@ pub fn main() !void {
     try stdout.print("StateType.kProject {s}\n", .{preset_keys.StateType.kProject});
     try stdout.print("StateType.kDefault {s}\n", .{preset_keys.StateType.kDefault});
     try stdout.print("StateType.kTrackPreset {s}\n", .{preset_keys.StateType.kTrackPreset});
+    try stdout.print("MusicalInstrument.kAccordion {s}\n", .{preset_keys.MusicalInstrument.kAccordion});
+    try stdout.print("MusicalInstrument.kBassSynthBass {s}\n", .{preset_keys.MusicalInstrument.kBassSynthBass});
+    try stdout.print("MusicalInstrument.kBrassFrenchHorn {s}\n", .{preset_keys.MusicalInstrument.kBrassFrenchHorn});
+    try stdout.print("MusicalInstrument.kChromaticPercPercussion {s}\n", .{preset_keys.MusicalInstrument.kChromaticPercPercussion});
+    try stdout.print("MusicalInstrument.kDrumPercDrumMenues {s}\n", .{preset_keys.MusicalInstrument.kDrumPercDrumMenues});
+    try stdout.print("MusicalInstrument.kGuitar {s}\n", .{preset_keys.MusicalInstrument.kGuitar});
+    try stdout.print("MusicalInstrument.kMusicalFXBeepsBlips {s}\n", .{preset_keys.MusicalInstrument.kMusicalFXBeepsBlips});
+    try stdout.print("MusicalInstrument.kPianoEGrand {s}\n", .{preset_keys.MusicalInstrument.kPianoEGrand});
+    try stdout.print("MusicalInstrument.kSynthPadMotion {s}\n", .{preset_keys.MusicalInstrument.kSynthPadMotion});
+    try stdout.print("MusicalInstrument.kVocalSpoken {s}\n", .{preset_keys.MusicalInstrument.kVocalSpoken});
+    try stdout.print("MusicalInstrument.kWoodwindsBassoon {s}\n", .{preset_keys.MusicalInstrument.kWoodwindsBassoon});
     try stdout.print("MusicalCharacter.kMono {s}\n", .{preset_keys.MusicalCharacter.kMono});
     try stdout.print("MusicalCharacter.kPoly {s}\n", .{preset_keys.MusicalCharacter.kPoly});
     try stdout.print("MusicalCharacter.kSplit {s}\n", .{preset_keys.MusicalCharacter.kSplit});
