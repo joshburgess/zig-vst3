@@ -1,3 +1,4 @@
+const std = @import("std");
 const base = @import("../base/types.zig");
 const vsttypes = @import("vsttypes.zig");
 
@@ -488,6 +489,126 @@ pub fn convertSpeakerAmbi567OrderToAmbi1234Order(speaker: vsttypes.Speaker) vstt
     return getSpeaker(SpeakerArr.kAmbi4thOrderACN, index);
 }
 
+pub fn getSpeakerArrangementFromString(arrangement_string: vsttypes.CString) vsttypes.SpeakerArrangement {
+    const Match = struct {
+        string: vsttypes.CString,
+        arrangement: vsttypes.SpeakerArrangement,
+    };
+
+    const matches = [_]Match{
+        .{ .string = SpeakerArrStrings.kStringMono, .arrangement = SpeakerArr.kMono },
+        .{ .string = SpeakerArrStrings.kStringStereo, .arrangement = SpeakerArr.kStereo },
+        .{ .string = SpeakerArrStrings.kStringStereoR, .arrangement = SpeakerArr.kStereoSurround },
+        .{ .string = SpeakerArrStrings.kStringStereoWide, .arrangement = SpeakerArr.kStereoWide },
+        .{ .string = SpeakerArrStrings.kStringStereoC, .arrangement = SpeakerArr.kStereoCenter },
+        .{ .string = SpeakerArrStrings.kStringStereoSide, .arrangement = SpeakerArr.kStereoSide },
+        .{ .string = SpeakerArrStrings.kStringStereoCLfe, .arrangement = SpeakerArr.kStereoCLfe },
+        .{ .string = SpeakerArrStrings.kStringStereoTF, .arrangement = SpeakerArr.kStereoTF },
+        .{ .string = SpeakerArrStrings.kStringStereoTS, .arrangement = SpeakerArr.kStereoTS },
+        .{ .string = SpeakerArrStrings.kStringStereoTR, .arrangement = SpeakerArr.kStereoTR },
+        .{ .string = SpeakerArrStrings.kStringStereoBF, .arrangement = SpeakerArr.kStereoBF },
+        .{ .string = SpeakerArrStrings.kStringCineFront, .arrangement = SpeakerArr.kCineFront },
+        .{ .string = SpeakerArrStrings.kString30Cine, .arrangement = SpeakerArr.k30Cine },
+        .{ .string = SpeakerArrStrings.kString30Music, .arrangement = SpeakerArr.k30Music },
+        .{ .string = SpeakerArrStrings.kString31Cine, .arrangement = SpeakerArr.k31Cine },
+        .{ .string = SpeakerArrStrings.kString31Music, .arrangement = SpeakerArr.k31Music },
+        .{ .string = SpeakerArrStrings.kString40Cine, .arrangement = SpeakerArr.k40Cine },
+        .{ .string = SpeakerArrStrings.kString40Music, .arrangement = SpeakerArr.k40Music },
+        .{ .string = SpeakerArrStrings.kString41Cine, .arrangement = SpeakerArr.k41Cine },
+        .{ .string = SpeakerArrStrings.kString41Music, .arrangement = SpeakerArr.k41Music },
+        .{ .string = SpeakerArrStrings.kString50, .arrangement = SpeakerArr.k50 },
+        .{ .string = SpeakerArrStrings.kString51, .arrangement = SpeakerArr.k51 },
+        .{ .string = SpeakerArrStrings.kString60Cine, .arrangement = SpeakerArr.k60Cine },
+        .{ .string = SpeakerArrStrings.kString60Music, .arrangement = SpeakerArr.k60Music },
+        .{ .string = SpeakerArrStrings.kString61Cine, .arrangement = SpeakerArr.k61Cine },
+        .{ .string = SpeakerArrStrings.kString61Music, .arrangement = SpeakerArr.k61Music },
+        .{ .string = SpeakerArrStrings.kString70Cine, .arrangement = SpeakerArr.k70Cine },
+        .{ .string = SpeakerArrStrings.kString70CineOld, .arrangement = SpeakerArr.k70Cine },
+        .{ .string = SpeakerArrStrings.kString70Music, .arrangement = SpeakerArr.k70Music },
+        .{ .string = SpeakerArrStrings.kString70MusicOld, .arrangement = SpeakerArr.k70Music },
+        .{ .string = SpeakerArrStrings.kString71Cine, .arrangement = SpeakerArr.k71Cine },
+        .{ .string = SpeakerArrStrings.kString71CineOld, .arrangement = SpeakerArr.k71Cine },
+        .{ .string = SpeakerArrStrings.kString71Music, .arrangement = SpeakerArr.k71Music },
+        .{ .string = SpeakerArrStrings.kString71MusicOld, .arrangement = SpeakerArr.k71Music },
+        .{ .string = SpeakerArrStrings.kString71Proximity, .arrangement = SpeakerArr.k71Proximity },
+        .{ .string = SpeakerArrStrings.kString80Cine, .arrangement = SpeakerArr.k80Cine },
+        .{ .string = SpeakerArrStrings.kString80Music, .arrangement = SpeakerArr.k80Music },
+        .{ .string = SpeakerArrStrings.kString81Cine, .arrangement = SpeakerArr.k81Cine },
+        .{ .string = SpeakerArrStrings.kString81Music, .arrangement = SpeakerArr.k81Music },
+        .{ .string = SpeakerArrStrings.kString52_5, .arrangement = SpeakerArr.k52_5 },
+        .{ .string = SpeakerArrStrings.kString72_5, .arrangement = SpeakerArr.k72_5 },
+        .{ .string = SpeakerArrStrings.kString40_4, .arrangement = SpeakerArr.k40_4 },
+        .{ .string = SpeakerArrStrings.kString71CineTopCenter, .arrangement = SpeakerArr.k71CineTopCenter },
+        .{ .string = SpeakerArrStrings.kString71CineCenterHigh, .arrangement = SpeakerArr.k71CineCenterHigh },
+        .{ .string = SpeakerArrStrings.kString50_2, .arrangement = SpeakerArr.k50_2 },
+        .{ .string = SpeakerArrStrings.kString51_2, .arrangement = SpeakerArr.k51_2 },
+        .{ .string = SpeakerArrStrings.kString50_2TopSide, .arrangement = SpeakerArr.k50_2_TS },
+        .{ .string = SpeakerArrStrings.kString51_2TopSide, .arrangement = SpeakerArr.k51_2_TS },
+        .{ .string = SpeakerArrStrings.kString71CineFullRear, .arrangement = SpeakerArr.k71CineFullRear },
+        .{ .string = SpeakerArrStrings.kString90Cine, .arrangement = SpeakerArr.k90Cine },
+        .{ .string = SpeakerArrStrings.kString91Cine, .arrangement = SpeakerArr.k91Cine },
+        .{ .string = SpeakerArrStrings.kString100Cine, .arrangement = SpeakerArr.k100Cine },
+        .{ .string = SpeakerArrStrings.kString101Cine, .arrangement = SpeakerArr.k101Cine },
+        .{ .string = SpeakerArrStrings.kString50_4, .arrangement = SpeakerArr.k50_4 },
+        .{ .string = SpeakerArrStrings.kString51_4, .arrangement = SpeakerArr.k51_4 },
+        .{ .string = SpeakerArrStrings.kString50_4_1, .arrangement = SpeakerArr.k50_4_1 },
+        .{ .string = SpeakerArrStrings.kString51_4_1, .arrangement = SpeakerArr.k51_4_1 },
+        .{ .string = SpeakerArrStrings.kString41_4_1, .arrangement = SpeakerArr.k41_4_1 },
+        .{ .string = SpeakerArrStrings.kString70_2, .arrangement = SpeakerArr.k70_2 },
+        .{ .string = SpeakerArrStrings.kString71_2, .arrangement = SpeakerArr.k71_2 },
+        .{ .string = SpeakerArrStrings.kString70_2_TF, .arrangement = SpeakerArr.k70_2_TF },
+        .{ .string = SpeakerArrStrings.kString71_2_TF, .arrangement = SpeakerArr.k71_2_TF },
+        .{ .string = SpeakerArrStrings.kString70_3, .arrangement = SpeakerArr.k70_3 },
+        .{ .string = SpeakerArrStrings.kString72_3, .arrangement = SpeakerArr.k72_3 },
+        .{ .string = SpeakerArrStrings.kString70_4, .arrangement = SpeakerArr.k70_4 },
+        .{ .string = SpeakerArrStrings.kString71_4, .arrangement = SpeakerArr.k71_4 },
+        .{ .string = SpeakerArrStrings.kString70_6, .arrangement = SpeakerArr.k70_6 },
+        .{ .string = SpeakerArrStrings.kString71_6, .arrangement = SpeakerArr.k71_6 },
+        .{ .string = SpeakerArrStrings.kString90_4, .arrangement = SpeakerArr.k90_4 },
+        .{ .string = SpeakerArrStrings.kString91_4, .arrangement = SpeakerArr.k91_4 },
+        .{ .string = SpeakerArrStrings.kString90_6, .arrangement = SpeakerArr.k90_6 },
+        .{ .string = SpeakerArrStrings.kString91_6, .arrangement = SpeakerArr.k91_6 },
+        .{ .string = SpeakerArrStrings.kString90_4_W, .arrangement = SpeakerArr.k90_4_W },
+        .{ .string = SpeakerArrStrings.kString91_4_W, .arrangement = SpeakerArr.k91_4_W },
+        .{ .string = SpeakerArrStrings.kString90_6_W, .arrangement = SpeakerArr.k90_6_W },
+        .{ .string = SpeakerArrStrings.kString91_6_W, .arrangement = SpeakerArr.k91_6_W },
+        .{ .string = SpeakerArrStrings.kString50_5, .arrangement = SpeakerArr.k50_5 },
+        .{ .string = SpeakerArrStrings.kString51_5, .arrangement = SpeakerArr.k51_5 },
+        .{ .string = SpeakerArrStrings.kString50_6, .arrangement = SpeakerArr.k50_6 },
+        .{ .string = SpeakerArrStrings.kString51_6, .arrangement = SpeakerArr.k51_6 },
+        .{ .string = SpeakerArrStrings.kString130, .arrangement = SpeakerArr.k130 },
+        .{ .string = SpeakerArrStrings.kString131, .arrangement = SpeakerArr.k131 },
+        .{ .string = SpeakerArrStrings.kString60_4_4, .arrangement = SpeakerArr.k60_4_4 },
+        .{ .string = SpeakerArrStrings.kString222, .arrangement = SpeakerArr.k222 },
+        .{ .string = SpeakerArrStrings.kString220, .arrangement = SpeakerArr.k220 },
+        .{ .string = SpeakerArrStrings.kString50_5_3, .arrangement = SpeakerArr.k50_5_3 },
+        .{ .string = SpeakerArrStrings.kString51_5_3, .arrangement = SpeakerArr.k51_5_3 },
+        .{ .string = SpeakerArrStrings.kString50_2_2, .arrangement = SpeakerArr.k50_2_2 },
+        .{ .string = SpeakerArrStrings.kString50_4_2, .arrangement = SpeakerArr.k50_4_2 },
+        .{ .string = SpeakerArrStrings.kString70_4_2, .arrangement = SpeakerArr.k70_4_2 },
+        .{ .string = SpeakerArrStrings.kString50_5_Sony, .arrangement = SpeakerArr.k50_5_Sony },
+        .{ .string = SpeakerArrStrings.kString40_2_2, .arrangement = SpeakerArr.k40_2_2 },
+        .{ .string = SpeakerArrStrings.kString40_4_2, .arrangement = SpeakerArr.k40_4_2 },
+        .{ .string = SpeakerArrStrings.kString50_3_2, .arrangement = SpeakerArr.k50_3_2 },
+        .{ .string = SpeakerArrStrings.kString30_5_2, .arrangement = SpeakerArr.k30_5_2 },
+        .{ .string = SpeakerArrStrings.kString40_4_4, .arrangement = SpeakerArr.k40_4_4 },
+        .{ .string = SpeakerArrStrings.kString50_4_4, .arrangement = SpeakerArr.k50_4_4 },
+        .{ .string = SpeakerArrStrings.kStringAmbi1stOrder, .arrangement = SpeakerArr.kAmbi1stOrderACN },
+        .{ .string = SpeakerArrStrings.kStringAmbi2cdOrder, .arrangement = SpeakerArr.kAmbi2cdOrderACN },
+        .{ .string = SpeakerArrStrings.kStringAmbi3rdOrder, .arrangement = SpeakerArr.kAmbi3rdOrderACN },
+        .{ .string = SpeakerArrStrings.kStringAmbi4thOrder, .arrangement = SpeakerArr.kAmbi4thOrderACN },
+        .{ .string = SpeakerArrStrings.kStringAmbi5thOrder, .arrangement = SpeakerArr.kAmbi5thOrderACN },
+        .{ .string = SpeakerArrStrings.kStringAmbi6thOrder, .arrangement = SpeakerArr.kAmbi6thOrderACN },
+        .{ .string = SpeakerArrStrings.kStringAmbi7thOrder, .arrangement = SpeakerArr.kAmbi7thOrderACN },
+    };
+
+    const needle = std.mem.span(arrangement_string);
+    inline for (matches) |match| {
+        if (std.mem.eql(u8, needle, std.mem.span(match.string))) return match.arrangement;
+    }
+    return SpeakerArr.kEmpty;
+}
+
 pub const SpeakerArray = struct {
     pub const kMaxSpeakers = 64;
     pub const SpeakerType = base.uint64;
@@ -555,6 +676,8 @@ test "speaker helpers match expected core behavior" {
     try @import("std").testing.expect(isAmbisonics(SpeakerArr.kAmbi1stOrderACN));
     try @import("std").testing.expectEqual(kSpeakerACN4, convertSpeakerAmbi1234OrderToAmbi567Order(kSpeakerACN4));
     try @import("std").testing.expectEqual(kSpeakerACN4, convertSpeakerAmbi567OrderToAmbi1234Order(kSpeakerACN4));
+    try @import("std").testing.expectEqual(SpeakerArr.k71Cine, getSpeakerArrangementFromString(SpeakerArrStrings.kString71CineOld));
+    try @import("std").testing.expectEqual(SpeakerArr.kEmpty, getSpeakerArrangementFromString("unknown"));
     const speakers = SpeakerArray.init(SpeakerArr.k51);
     try @import("std").testing.expectEqual(@as(base.int32, 6), speakers.total());
     try @import("std").testing.expectEqual(SpeakerArr.k51, speakers.getArrangement());
