@@ -40,6 +40,9 @@ jobs:
       - name: Check base string/error ABI
         if: runner.os != 'Windows'
         run: zig build base-strings-error-abi
+      - name: Check base persistence ABI
+        if: runner.os != 'Windows'
+        run: zig build base-persistence-abi
       - name: Check IComponent ABI
         if: runner.os != 'Windows'
         run: zig build component-abi
