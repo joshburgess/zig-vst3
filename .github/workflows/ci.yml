@@ -79,6 +79,9 @@ jobs:
       - name: Check physical UI/channel context ABI
         if: runner.os != 'Windows'
         run: zig build physical-channel-abi
+      - name: Check data exchange ABI
+        if: runner.os != 'Windows'
+        run: zig build data-exchange-abi
       - name: Check FUnknown C ABI
         if: runner.os != 'Windows'
         run: zig build funknown-abi

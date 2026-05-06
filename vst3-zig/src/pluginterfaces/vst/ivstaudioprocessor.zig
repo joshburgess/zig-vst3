@@ -78,6 +78,10 @@ pub const IAudioProcessorVTable = extern struct {
     getTailSamples: *const fn (*anyopaque) callconv(.C) base_types.uint32,
 };
 
+pub const IAudioProcessor = extern struct {
+    vtable: *const IAudioProcessorVTable,
+};
+
 pub const IAudioPresentationLatencyVTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
