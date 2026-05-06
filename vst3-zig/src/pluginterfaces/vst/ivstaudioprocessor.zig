@@ -134,11 +134,17 @@ pub const IProcessContextRequirements = extern struct {
 
 test "audio processor struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 24), @sizeOf(ProcessSetup));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(ProcessSetup));
     try @import("std").testing.expectEqual(@as(usize, 24), @sizeOf(AudioBusBuffers));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(AudioBusBuffers));
     try @import("std").testing.expectEqual(@as(usize, 80), @sizeOf(ProcessData));
+    try @import("std").testing.expectEqual(@as(usize, 8), @alignOf(ProcessData));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IAudioProcessor));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IAudioPresentationLatency));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IProcessContextRequirements));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IAudioProcessor));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IAudioPresentationLatency));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IProcessContextRequirements));
     try @import("std").testing.expectEqual(@as(usize, 11), @typeInfo(IAudioProcessorVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IAudioPresentationLatencyVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(IProcessContextRequirementsVTable).@"struct".fields.len);
