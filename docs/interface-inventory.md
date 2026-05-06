@@ -115,6 +115,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IPlugView`, `IPlugFrame`, `IPlugViewContentScaleSupport`, and Linux run loop interfaces | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build plugview-abi` |
 | `IUnitInfo`, `IProgramListData`, `IUnitData`, `IUnitHandler`, `IUnitHandler2`, `UnitInfo`, `ProgramListInfo` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build units-abi` |
 | `IMidiLearn`, `IMidiMapping2`, `IMidiLearn2`, and MIDI controller mapping structs | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build midi-mapping-abi` |
+| MIDI controller constants | Initial constant translation complete; values checked against the pinned SDK with `zig build midi-controllers-abi` |
 | `INoteExpressionController`, `IKeyswitchController`, `NoteExpressionTypeInfo`, `KeyswitchInfo` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build note-expression-abi` |
 | `IPlugInterfaceSupport`, `IPrefetchableSupport`, `IAutomationState` | Initial vtable translation complete; constants and IIDs checked with `zig build capability-state-abi` |
 | `IParameterFinder`, `IParameterFunctionName`, `IRemapParamID` | Initial vtable translation complete; constants and IIDs checked with `zig build parameter-helpers-abi` |
