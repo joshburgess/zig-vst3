@@ -33,6 +33,12 @@ int main ()
 	PRINT_OFFSET (ProgramListInfo, name);
 	PRINT_OFFSET (ProgramListInfo, programCount);
 
+	PRINT_TYPE (IUnitHandler);
+	PRINT_TYPE (IUnitHandler2);
+	PRINT_TYPE (IUnitInfo);
+	PRINT_TYPE (IProgramListData);
+	PRINT_TYPE (IUnitData);
+
 	print_iid ("IUnitHandler", Steinberg::Vst::IUnitHandler_iid);
 	print_iid ("IUnitHandler2", Steinberg::Vst::IUnitHandler2_iid);
 	print_iid ("IUnitInfo", Steinberg::Vst::IUnitInfo_iid);

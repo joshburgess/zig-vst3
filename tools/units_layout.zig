@@ -19,6 +19,12 @@ pub fn main() !void {
     try printOffset(stdout, "ProgramListInfo", "name", units.ProgramListInfo, "name");
     try printOffset(stdout, "ProgramListInfo", "programCount", units.ProgramListInfo, "programCount");
 
+    try printType(stdout, "IUnitHandler", units.IUnitHandler);
+    try printType(stdout, "IUnitHandler2", units.IUnitHandler2);
+    try printType(stdout, "IUnitInfo", units.IUnitInfo);
+    try printType(stdout, "IProgramListData", units.IProgramListData);
+    try printType(stdout, "IUnitData", units.IUnitData);
+
     try printTuid(stdout, "IUnitHandler", units.iunit_handler_iid);
     try printTuid(stdout, "IUnitHandler2", units.iunit_handler2_iid);
     try printTuid(stdout, "IUnitInfo", units.iunit_info_iid);
