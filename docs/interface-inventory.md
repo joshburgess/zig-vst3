@@ -100,6 +100,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IPluginFactory`, `IPluginFactory2`, `IPluginFactory3` | Initial vtable and struct translation complete |
 | `PFactoryInfo`, `PClassInfo`, `PClassInfo2`, `PClassInfoW` | Layout checked against the pinned SDK with `zig build pluginbase-abi` |
 | `IBStream`, `ISizeableStream` | Initial vtable translation complete; IIDs and seek constants checked with `zig build ibstream-abi` |
+| `IStringResult`, `IString`, `IErrorContext` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build base-strings-error-abi` |
 | `IComponent`, `BusInfo`, `RoutingInfo` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build component-abi` |
 | `IAudioProcessor`, `IAudioPresentationLatency`, `IProcessContextRequirements` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build audio-processor-abi` |
 | `IEditController`, `IComponentHandler`, `IMidiMapping`, and adjacent edit-controller extensions | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build edit-controller-abi` |
