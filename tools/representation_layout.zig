@@ -15,6 +15,22 @@ pub fn main() !void {
     try stdout.print("LayerType.kEndOfLayerType {}\n", .{@intFromEnum(representation.LayerType.kEndOfLayerType)});
     try stdout.print("LayerType.layerTypeFIDString.0 {s}\n", .{representation.LayerType.fidStrings[0].?});
     try stdout.print("LayerType.layerTypeFIDString.7 {s}\n", .{representation.LayerType.fidStrings[7].?});
+    try stdout.print("LayerType.layerTypeFIDString.8 {s}\n", .{if (representation.LayerType.fidStrings[8]) |value| value else "<null>"});
+
+    try stdout.print("Tag.rootXml {s}\n", .{representation.Tags.rootXml});
+    try stdout.print("Tag.titleDisplay {s}\n", .{representation.Tags.titleDisplay});
+    try stdout.print("Attr.parameterID {s}\n", .{representation.Attributes.parameterID});
+    try stdout.print("Attr.turnsPerFullRange {s}\n", .{representation.Attributes.kKnobTurnsPerFullRange});
+    try stdout.print("Remote.generic8Cells {s}\n", .{representation.RemoteNames.generic8Cells});
+    try stdout.print("Remote.quickControl8Cells {s}\n", .{representation.RemoteNames.quickControl8Cells});
+    try stdout.print("Curve.segment {s}\n", .{representation.CurveType.kSegment});
+    try stdout.print("Curve.valueList {s}\n", .{representation.CurveType.kValueList});
+    try stdout.print("Function.panLaw {s}\n", .{representation.AttributesFunction.kPanLawFunc});
+    try stdout.print("Function.volume {s}\n", .{representation.AttributesFunction.kVolumeFunc});
+    try stdout.print("Style.inverse {s}\n", .{representation.AttributesStyle.kInverseStyle});
+    try stdout.print("Style.ledBoostCut {s}\n", .{representation.AttributesStyle.kLEDBoostCutStyle});
+    try stdout.print("Style.switchLatch {s}\n", .{representation.AttributesStyle.kSwitchLatchStyle});
+    try stdout.print("Flag.hideable {s}\n", .{representation.AttributesFlags.kHideableFlag});
 
     try printTuid(stdout, "IXmlRepresentationController", representation.ixml_representation_controller_iid);
 }
