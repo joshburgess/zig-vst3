@@ -1,5 +1,6 @@
 const std = @import("std");
 const events = @import("vst3-zig").pluginterfaces.vst.ivstevents;
+const helpers = @import("vst3-zig").pluginterfaces.vst.vsteventshelper;
 const noteexpression = @import("vst3-zig").pluginterfaces.vst.ivstnoteexpression;
 
 pub fn main() !void {
@@ -40,6 +41,29 @@ pub fn main() !void {
     try printOffset(stdout, "Event", "noteOn", events.Event, "data");
     try printOffset(stdout, "Event", "noteExpressionText", events.Event, "data");
     try printOffset(stdout, "Event", "midiCCOut", events.Event, "data");
+
+    var event = events.Event{};
+    _ = helpers.init(&event, @intFromEnum(events.Event.EventTypes.kDataEvent), 2, 64, 12.5, events.Event.EventFlags.kIsLive);
+    try stdout.print("Helpers.init.busIndex {}\n", .{event.busIndex});
+    try stdout.print("Helpers.init.sampleOffset {}\n", .{event.sampleOffset});
+    try stdout.print("Helpers.init.ppqPosition {d:.6}\n", .{event.ppqPosition});
+    try stdout.print("Helpers.init.flags {}\n", .{event.flags});
+    try stdout.print("Helpers.init.type {}\n", .{event.type});
+    try stdout.print("Helpers.getMIDINormValue.64 {d:.12}\n", .{helpers.getMIDINormValue(64)});
+    try stdout.print("Helpers.getMIDICCOutValue.1 {}\n", .{helpers.getMIDICCOutValue(1)});
+    try stdout.print("Helpers.getMIDI14BitValue.1 {}\n", .{helpers.getMIDI14BitValue(1)});
+    try stdout.print("Helpers.getMIDI14BitNormValue.8192 {d:.12}\n", .{helpers.getMIDI14BitNormValue(8192)});
+    const midi = helpers.initLegacyMIDICCOutEvent(&event, 10, 2, 64, 1);
+    try stdout.print("Helpers.initLegacy.type {}\n", .{event.type});
+    try stdout.print("Helpers.initLegacy.controlNumber {}\n", .{midi.controlNumber});
+    try stdout.print("Helpers.initLegacy.channel {}\n", .{midi.channel});
+    try stdout.print("Helpers.initLegacy.value {}\n", .{midi.value});
+    try stdout.print("Helpers.initLegacy.value2 {}\n", .{midi.value2});
+    helpers.setPitchBendValue(midi, 1);
+    try stdout.print("Helpers.pitchBend.value {}\n", .{midi.value});
+    try stdout.print("Helpers.pitchBend.value2 {}\n", .{midi.value2});
+    try stdout.print("Helpers.getPitchBendValue {}\n", .{helpers.getPitchBendValue(midi)});
+    try stdout.print("Helpers.getNormPitchBendValue {d:.12}\n", .{helpers.getNormPitchBendValue(midi)});
 
     try printTuid(stdout, "IEventList", events.ievent_list_iid);
 }
