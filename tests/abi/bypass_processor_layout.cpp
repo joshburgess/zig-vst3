@@ -12,6 +12,20 @@ struct DelayAccess : Steinberg::Vst::BypassProcessor<T>
 int main ()
 {
 	std::printf ("kMaxChannelsSupported %d\n", kMaxChannelsSupported);
+	Steinberg::Vst::AudioBuffer<float> audioBuffer32;
+	std::printf ("AudioBuffer32.max.initial %d\n", audioBuffer32.getMaxSamples ());
+	audioBuffer32.resize (4);
+	float* audioBuffer32Ptr = audioBuffer32;
+	audioBuffer32Ptr[0] = 7.f;
+	audioBuffer32Ptr[3] = 9.f;
+	audioBuffer32.clear (2);
+	std::printf ("AudioBuffer32.max.resize4 %d\n", audioBuffer32.getMaxSamples ());
+	std::printf ("AudioBuffer32.value0.clear2 %.1f\n", audioBuffer32Ptr[0]);
+	std::printf ("AudioBuffer32.value3.clear2 %.1f\n", audioBuffer32Ptr[3]);
+	audioBuffer32.clearAll ();
+	std::printf ("AudioBuffer32.value3.clearAll %.1f\n", audioBuffer32Ptr[3]);
+	audioBuffer32.release ();
+	std::printf ("AudioBuffer32.max.release %d\n", audioBuffer32.getMaxSamples ());
 
 	float in32[5] {1.f, 2.f, 3.f, 4.f, 5.f};
 	float out32[5] {};

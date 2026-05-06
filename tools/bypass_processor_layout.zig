@@ -4,6 +4,20 @@ const bypass = @import("vst3-zig").pluginterfaces.vst.vstbypassprocessor;
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("kMaxChannelsSupported {}\n", .{bypass.kMaxChannelsSupported});
+    var audio_buffer32 = bypass.AudioBuffer(f32).init(std.heap.page_allocator);
+    defer audio_buffer32.deinit();
+    try stdout.print("AudioBuffer32.max.initial {}\n", .{audio_buffer32.getMaxSamples()});
+    try audio_buffer32.resize(4);
+    audio_buffer32.buffer[0] = 7;
+    audio_buffer32.buffer[3] = 9;
+    audio_buffer32.clear(2);
+    try stdout.print("AudioBuffer32.max.resize4 {}\n", .{audio_buffer32.getMaxSamples()});
+    try stdout.print("AudioBuffer32.value0.clear2 {d:.1}\n", .{audio_buffer32.buffer[0]});
+    try stdout.print("AudioBuffer32.value3.clear2 {d:.1}\n", .{audio_buffer32.buffer[3]});
+    audio_buffer32.clearAll();
+    try stdout.print("AudioBuffer32.value3.clearAll {d:.1}\n", .{audio_buffer32.buffer[3]});
+    audio_buffer32.release();
+    try stdout.print("AudioBuffer32.max.release {}\n", .{audio_buffer32.getMaxSamples()});
 
     var in32 = [_]f32{ 1, 2, 3, 4, 5 };
     var out32 = [_]f32{0} ** 5;
