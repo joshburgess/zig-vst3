@@ -16,6 +16,17 @@ int main ()
 	std::printf ("StateType.kProject %s\n", Steinberg::Vst::StateType::kProject);
 	std::printf ("StateType.kDefault %s\n", Steinberg::Vst::StateType::kDefault);
 	std::printf ("StateType.kTrackPreset %s\n", Steinberg::Vst::StateType::kTrackPreset);
+	std::printf ("MusicalInstrument.kAccordion %s\n", Steinberg::Vst::MusicalInstrument::kAccordion);
+	std::printf ("MusicalInstrument.kBassSynthBass %s\n", Steinberg::Vst::MusicalInstrument::kBassSynthBass);
+	std::printf ("MusicalInstrument.kBrassFrenchHorn %s\n", Steinberg::Vst::MusicalInstrument::kBrassFrenchHorn);
+	std::printf ("MusicalInstrument.kChromaticPercPercussion %s\n", Steinberg::Vst::MusicalInstrument::kChromaticPercPercussion);
+	std::printf ("MusicalInstrument.kDrumPercDrumMenues %s\n", Steinberg::Vst::MusicalInstrument::kDrumPercDrumMenues);
+	std::printf ("MusicalInstrument.kGuitar %s\n", Steinberg::Vst::MusicalInstrument::kGuitar);
+	std::printf ("MusicalInstrument.kMusicalFXBeepsBlips %s\n", Steinberg::Vst::MusicalInstrument::kMusicalFXBeepsBlips);
+	std::printf ("MusicalInstrument.kPianoEGrand %s\n", Steinberg::Vst::MusicalInstrument::kPianoEGrand);
+	std::printf ("MusicalInstrument.kSynthPadMotion %s\n", Steinberg::Vst::MusicalInstrument::kSynthPadMotion);
+	std::printf ("MusicalInstrument.kVocalSpoken %s\n", Steinberg::Vst::MusicalInstrument::kVocalSpoken);
+	std::printf ("MusicalInstrument.kWoodwindsBassoon %s\n", Steinberg::Vst::MusicalInstrument::kWoodwindsBassoon);
 	std::printf ("MusicalCharacter.kMono %s\n", Steinberg::Vst::MusicalCharacter::kMono);
 	std::printf ("MusicalCharacter.kPoly %s\n", Steinberg::Vst::MusicalCharacter::kPoly);
 	std::printf ("MusicalCharacter.kSplit %s\n", Steinberg::Vst::MusicalCharacter::kSplit);
