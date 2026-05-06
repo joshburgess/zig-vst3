@@ -11,6 +11,9 @@ pub fn main() !void {
     try printOffset(stdout, "DataExchangeBlock", "size", data_exchange.DataExchangeBlock, "size");
     try printOffset(stdout, "DataExchangeBlock", "blockID", data_exchange.DataExchangeBlock, "blockID");
 
+    try printType(stdout, "IDataExchangeHandler", data_exchange.IDataExchangeHandler);
+    try printType(stdout, "IDataExchangeReceiver", data_exchange.IDataExchangeReceiver);
+
     try printTuid(stdout, "IDataExchangeHandler", data_exchange.idata_exchange_handler_iid);
     try printTuid(stdout, "IDataExchangeReceiver", data_exchange.idata_exchange_receiver_iid);
 }

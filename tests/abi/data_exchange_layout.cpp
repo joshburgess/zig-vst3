@@ -25,6 +25,9 @@ int main ()
 	PRINT_OFFSET (DataExchangeBlock, size);
 	PRINT_OFFSET (DataExchangeBlock, blockID);
 
+	PRINT_TYPE (IDataExchangeHandler);
+	PRINT_TYPE (IDataExchangeReceiver);
+
 	print_iid ("IDataExchangeHandler", Steinberg::Vst::IDataExchangeHandler_iid);
 	print_iid ("IDataExchangeReceiver", Steinberg::Vst::IDataExchangeReceiver_iid);
 	return 0;
