@@ -48,12 +48,20 @@ pub const IMidiMapping2VTable = extern struct {
     getMidi1ControllerAssignments: *const fn (*anyopaque, vsttypes.BusDirection, *const Midi1ControllerParamIDAssignmentList) callconv(.C) base_types.tresult,
 };
 
+pub const IMidiMapping2 = extern struct {
+    vtable: *const IMidiMapping2VTable,
+};
+
 pub const IMidiLearn2VTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     onLiveMidi2ControllerInput: *const fn (*anyopaque, BusIndex, MidiChannel, Midi2Controller) callconv(.C) base_types.tresult,
     onLiveMidi1ControllerInput: *const fn (*anyopaque, BusIndex, MidiChannel, vsttypes.CtrlNumber) callconv(.C) base_types.tresult,
+};
+
+pub const IMidiLearn2 = extern struct {
+    vtable: *const IMidiLearn2VTable,
 };
 
 test "MIDI 2 mapping struct sizes match SDK layout" {
