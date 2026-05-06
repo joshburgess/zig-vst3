@@ -35,11 +35,19 @@ pub const IUnitHandlerVTable = extern struct {
     notifyProgramListChange: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32) callconv(.C) base_types.tresult,
 };
 
+pub const IUnitHandler = extern struct {
+    vtable: *const IUnitHandlerVTable,
+};
+
 pub const IUnitHandler2VTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
     notifyUnitByBusChange: *const fn (*anyopaque) callconv(.C) base_types.tresult,
+};
+
+pub const IUnitHandler2 = extern struct {
+    vtable: *const IUnitHandler2VTable,
 };
 
 pub const IUnitInfoVTable = extern struct {
@@ -60,6 +68,10 @@ pub const IUnitInfoVTable = extern struct {
     setUnitProgramData: *const fn (*anyopaque, base_types.int32, base_types.int32, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
 };
 
+pub const IUnitInfo = extern struct {
+    vtable: *const IUnitInfoVTable,
+};
+
 pub const IProgramListDataVTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
@@ -69,6 +81,10 @@ pub const IProgramListDataVTable = extern struct {
     setProgramData: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
 };
 
+pub const IProgramListData = extern struct {
+    vtable: *const IProgramListDataVTable,
+};
+
 pub const IUnitDataVTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
@@ -76,6 +92,10 @@ pub const IUnitDataVTable = extern struct {
     unitDataSupported: *const fn (*anyopaque, vsttypes.UnitID) callconv(.C) base_types.tresult,
     getUnitData: *const fn (*anyopaque, vsttypes.UnitID, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
     setUnitData: *const fn (*anyopaque, vsttypes.UnitID, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
+};
+
+pub const IUnitData = extern struct {
+    vtable: *const IUnitDataVTable,
 };
 
 test "unit struct sizes match SDK layout" {
