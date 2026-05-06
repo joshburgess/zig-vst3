@@ -125,12 +125,19 @@ test "pluginbase struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IPluginFactory));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IPluginFactory2));
     try @import("std").testing.expectEqual(@as(usize, @sizeOf(usize)), @sizeOf(IPluginFactory3));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IPluginFactory));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IPluginFactory2));
+    try @import("std").testing.expectEqual(@as(usize, @alignOf(usize)), @alignOf(IPluginFactory3));
     try @import("std").testing.expectEqual(@as(usize, 5), @typeInfo(IPluginBaseVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(IPluginFactoryVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 8), @typeInfo(IPluginFactory2VTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 10), @typeInfo(IPluginFactory3VTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 452), @sizeOf(PFactoryInfo));
+    try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(PFactoryInfo));
     try @import("std").testing.expectEqual(@as(usize, 116), @sizeOf(PClassInfo));
+    try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(PClassInfo));
     try @import("std").testing.expectEqual(@as(usize, 440), @sizeOf(PClassInfo2));
+    try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(PClassInfo2));
     try @import("std").testing.expectEqual(@as(usize, 696), @sizeOf(PClassInfoW));
+    try @import("std").testing.expectEqual(@as(usize, 4), @alignOf(PClassInfoW));
 }
