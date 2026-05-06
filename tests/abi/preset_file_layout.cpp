@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <cstdio>
+#include <cstddef>
 
 static void printChunkID (const char* label, const Steinberg::Vst::ChunkID& id)
 {
@@ -17,6 +18,12 @@ int main ()
 	Steinberg::Vst::ChunkID metaInfo = {'I', 'n', 'f', 'o'};
 	Steinberg::Vst::ChunkID chunkList = {'L', 'i', 's', 't'};
 	std::printf ("sizeof.ChunkID %zu\n", sizeof (Steinberg::Vst::ChunkID));
+	std::printf ("sizeof.Entry %zu\n", sizeof (Steinberg::Vst::PresetFile::Entry));
+	std::printf ("alignof.Entry %zu\n", alignof (Steinberg::Vst::PresetFile::Entry));
+	std::printf ("offsetof.Entry.id %zu\n", offsetof (Steinberg::Vst::PresetFile::Entry, id));
+	std::printf ("offsetof.Entry.offset %zu\n", offsetof (Steinberg::Vst::PresetFile::Entry, offset));
+	std::printf ("offsetof.Entry.size %zu\n", offsetof (Steinberg::Vst::PresetFile::Entry, size));
+	std::printf ("PresetFile.kMaxEntries %d\n", 128);
 	std::printf ("ChunkType.kHeader %d\n", Steinberg::Vst::kHeader);
 	std::printf ("ChunkType.kComponentState %d\n", Steinberg::Vst::kComponentState);
 	std::printf ("ChunkType.kControllerState %d\n", Steinberg::Vst::kControllerState);

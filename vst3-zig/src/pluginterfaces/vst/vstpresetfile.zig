@@ -13,6 +13,14 @@ pub const ChunkType = enum(base.int32) {
     kNumPresetChunks = 6,
 };
 
+pub const kMaxEntries: base.int32 = 128;
+
+pub const Entry = extern struct {
+    id: ChunkID,
+    offset: base.TSize,
+    size: base.TSize,
+};
+
 pub const chunk_ids = struct {
     pub const kHeader: ChunkID = "VST3".*;
     pub const kComponentState: ChunkID = "Comp".*;
@@ -44,4 +52,6 @@ test "preset chunk helpers match expected IDs" {
     try std.testing.expectEqualStrings("Comp", &getChunkID(.kComponentState));
     try std.testing.expect(isEqualID(chunk_ids.kChunkList, getChunkID(.kChunkList)));
     try std.testing.expect(!isEqualID(chunk_ids.kChunkList, getChunkID(.kMetaInfo)));
+    try std.testing.expectEqual(@as(usize, 24), @sizeOf(Entry));
+    try std.testing.expectEqual(@as(usize, 8), @alignOf(Entry));
 }
