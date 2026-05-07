@@ -315,7 +315,7 @@ Plugin discovery and instantiation. Includes `PFactoryInfo`, `PClassInfo`, `PCla
 
 ### Work Unit 2.3: `IBStream`, `ISizeableStream`
 
-State serialization streams.
+State serialization streams. The raw string-result interfaces are translated, and `vst_string_result.zig` provides a reusable fixed-buffer `IStringResult`/`IString` object for SDK callbacks that return text.
 
 ### Work Unit 2.4: `IComponent` and supporting types
 
