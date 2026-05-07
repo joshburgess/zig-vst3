@@ -13,8 +13,6 @@ const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const zig_plug_bridge = @import("zig_plug_bridge.zig");
 
 pub const cid = tuid.inlineUid(0xA74E7A0D, 0x6B234163, 0xA0A83EBF, 0xD06F1401);
-const kEmptyArrangement: vsttypes.SpeakerArrangement = 0;
-const kStereoArrangement: vsttypes.SpeakerArrangement = 3;
 
 const Component = extern struct {
     iface: ivstcomponent.IComponent = .{ .vtable = &component_vtable },
@@ -96,37 +94,11 @@ fn setIoMode(_: *anyopaque, _: vsttypes.IoMode) callconv(.C) types.tresult {
 }
 
 fn getBusCount(_: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection) callconv(.C) types.int32 {
-    if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and
-        (direction == @intFromEnum(ivstcomponent.BusDirections.kInput) or direction == @intFromEnum(ivstcomponent.BusDirections.kOutput)))
-    {
-        return 1;
-    }
-    return 0;
+    return zig_plug_bridge.StereoAudioBuses.busCount(media_type, direction);
 }
 
 fn getBusInfo(_: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo) callconv(.C) types.tresult {
-    if (media_type != @intFromEnum(ivstcomponent.MediaTypes.kAudio) or index != 0) {
-        out.* = .{};
-        return types.kInvalidArgument;
-    }
-    if (direction != @intFromEnum(ivstcomponent.BusDirections.kInput) and direction != @intFromEnum(ivstcomponent.BusDirections.kOutput)) {
-        out.* = .{};
-        return types.kInvalidArgument;
-    }
-
-    out.* = .{
-        .mediaType = media_type,
-        .direction = direction,
-        .channelCount = 2,
-        .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
-        .flags = ivstcomponent.BusFlags.kDefaultActive,
-    };
-    if (direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) {
-        copyAscii16(&out.name, "Stereo In");
-    } else {
-        copyAscii16(&out.name, "Stereo Out");
-    }
-    return types.kResultOk;
+    return zig_plug_bridge.StereoAudioBuses.busInfo(media_type, direction, index, out);
 }
 
 fn getRoutingInfo(_: *anyopaque, _: *ivstcomponent.RoutingInfo, _: *ivstcomponent.RoutingInfo) callconv(.C) types.tresult {
@@ -147,14 +119,6 @@ fn setState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresul
 
 fn getState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresult {
     return gain_controller.writeGainState(state);
-}
-
-fn copyAscii16(dest: *vsttypes.String128, source: []const u8) void {
-    @memset(dest, 0);
-    const len = @min(source.len, dest.len - 1);
-    for (source[0..len], 0..) |char, index| {
-        dest[index] = char;
-    }
 }
 
 const processor_vtable = ivstaudioprocessor.IAudioProcessorVTable{
@@ -180,24 +144,11 @@ fn releaseFromProcessor(ptr: *anyopaque) callconv(.C) types.uint32 {
 }
 
 fn setBusArrangements(_: *anyopaque, inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32) callconv(.C) types.tresult {
-    if (num_inputs != 1 or num_outputs != 1 or inputs == null or outputs == null) {
-        return types.kResultFalse;
-    }
-    if (inputs.?[0] != kStereoArrangement or outputs.?[0] != kStereoArrangement) {
-        return types.kResultFalse;
-    }
-    return types.kResultOk;
+    return zig_plug_bridge.StereoAudioBuses.setArrangements(inputs, num_inputs, outputs, num_outputs);
 }
 
 fn getBusArrangement(_: *anyopaque, direction: vsttypes.BusDirection, index: types.int32, out: *vsttypes.SpeakerArrangement) callconv(.C) types.tresult {
-    if (index != 0 or
-        (direction != @intFromEnum(ivstcomponent.BusDirections.kInput) and direction != @intFromEnum(ivstcomponent.BusDirections.kOutput)))
-    {
-        out.* = kEmptyArrangement;
-        return types.kInvalidArgument;
-    }
-    out.* = kStereoArrangement;
-    return types.kResultOk;
+    return zig_plug_bridge.StereoAudioBuses.arrangement(direction, index, out);
 }
 
 fn canProcessSampleSize(_: *anyopaque, symbolic_sample_size: types.int32) callconv(.C) types.tresult {

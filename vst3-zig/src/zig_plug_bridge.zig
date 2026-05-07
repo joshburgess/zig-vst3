@@ -1,6 +1,7 @@
 const std = @import("std");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const plug = @import("zig-plug-core");
@@ -8,6 +9,58 @@ const audio_processor_algo = @import("pluginterfaces/vst/vstaudioprocessoralgo.z
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 const max_audio_channels = 64;
+const empty_arrangement: vsttypes.SpeakerArrangement = 0;
+const stereo_arrangement: vsttypes.SpeakerArrangement = 3;
+
+pub const StereoAudioBuses = struct {
+    pub fn busCount(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection) types.int32 {
+        if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and isInputOrOutput(direction)) {
+            return 1;
+        }
+        return 0;
+    }
+
+    pub fn busInfo(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo) types.tresult {
+        if (media_type != @intFromEnum(ivstcomponent.MediaTypes.kAudio) or index != 0 or !isInputOrOutput(direction)) {
+            out.* = .{};
+            return types.kInvalidArgument;
+        }
+
+        out.* = .{
+            .mediaType = media_type,
+            .direction = direction,
+            .channelCount = 2,
+            .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
+            .flags = ivstcomponent.BusFlags.kDefaultActive,
+        };
+        copyAscii16(&out.name, if (direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) "Stereo In" else "Stereo Out");
+        return types.kResultOk;
+    }
+
+    pub fn setArrangements(inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32) types.tresult {
+        if (num_inputs != 1 or num_outputs != 1 or inputs == null or outputs == null) {
+            return types.kResultFalse;
+        }
+        if (inputs.?[0] != stereo_arrangement or outputs.?[0] != stereo_arrangement) {
+            return types.kResultFalse;
+        }
+        return types.kResultOk;
+    }
+
+    pub fn arrangement(direction: vsttypes.BusDirection, index: types.int32, out: *vsttypes.SpeakerArrangement) types.tresult {
+        if (index != 0 or !isInputOrOutput(direction)) {
+            out.* = empty_arrangement;
+            return types.kInvalidArgument;
+        }
+        out.* = stereo_arrangement;
+        return types.kResultOk;
+    }
+
+    fn isInputOrOutput(direction: vsttypes.BusDirection) bool {
+        return direction == @intFromEnum(ivstcomponent.BusDirections.kInput) or
+            direction == @intFromEnum(ivstcomponent.BusDirections.kOutput);
+    }
+};
 
 pub fn ParameterState(comptime Params: type) type {
     const Set = plug.parameters.ParameterSet(Params);
@@ -401,6 +454,36 @@ test "zig-plug bridge parameter controller exposes reflected edit operations" {
     try std.testing.expectEqual(types.kResultOk, controller.setNormalized(8, 1.0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), controller.getNormalized(8));
     try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(99, 0.5));
+}
+
+test "zig-plug bridge stereo audio buses expose one input and output" {
+    var info = ivstcomponent.BusInfo{};
+
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput)));
+    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput)));
+
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info));
+    try std.testing.expectEqual(@as(types.int32, 2), info.channelCount);
+    try std.testing.expectEqual(ivstcomponent.BusFlags.kDefaultActive, info.flags);
+    try expectString128("Stereo In", &info.name);
+
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 1, &info));
+}
+
+test "zig-plug bridge stereo audio buses validate arrangements" {
+    var inputs = [_]vsttypes.SpeakerArrangement{stereo_arrangement};
+    var outputs = [_]vsttypes.SpeakerArrangement{stereo_arrangement};
+    var arrangement_out: vsttypes.SpeakerArrangement = empty_arrangement;
+
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.setArrangements(&inputs, 1, &outputs, 1));
+    inputs[0] = empty_arrangement;
+    try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangements(&inputs, 1, &outputs, 1));
+
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.arrangement(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out));
+    try std.testing.expectEqual(stereo_arrangement, arrangement_out);
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangement(@intFromEnum(ivstcomponent.BusDirections.kOutput), 1, &arrangement_out));
+    try std.testing.expectEqual(empty_arrangement, arrangement_out);
 }
 
 test "zig-plug bridge fills VST3 parameter info from reflected set" {
