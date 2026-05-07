@@ -6,6 +6,75 @@ const ipersistent = @import("pluginterfaces/base/ipersistent.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 
+pub fn Persistent(comptime Config: type) type {
+    return extern struct {
+        const Self = @This();
+
+        iface: ipersistent.IPersistent = .{ .vtable = &vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        save_count: types.uint32 = 0,
+        load_count: types.uint32 = 0,
+
+        pub fn asInterface(self: *Self) *ipersistent.IPersistent {
+            return &self.iface;
+        }
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *ipersistent.IPersistent = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn classId() tuid.TUID {
+            if (!@hasDecl(Config, "class_id")) @compileError("Persistent Config requires class_id");
+            return Config.class_id;
+        }
+
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &ipersistent.ipersistent_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&owner(ptr).ref_count, "IPersistent");
+        }
+
+        fn getClassID(_: *anyopaque, out: [*]types.char8) callconv(.C) types.tresult {
+            @memcpy(out[0..16], &classId());
+            return types.kResultOk;
+        }
+
+        fn saveAttributes(ptr: *anyopaque, attributes: ?*ipersistent.IAttributes) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.save_count += 1;
+            if (@hasDecl(Config, "saveAttributes")) return Config.saveAttributes(self, attributes);
+            return types.kResultOk;
+        }
+
+        fn loadAttributes(ptr: *anyopaque, attributes: ?*ipersistent.IAttributes) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.load_count += 1;
+            if (@hasDecl(Config, "loadAttributes")) return Config.loadAttributes(self, attributes);
+            return types.kResultOk;
+        }
+
+        const vtable = ipersistent.IPersistentVTable{
+            .queryInterface = query,
+            .addRef = addRef,
+            .release = release,
+            .getClassID = getClassID,
+            .saveAttributes = saveAttributes,
+            .loadAttributes = loadAttributes,
+        };
+    };
+}
+
 pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize) type {
     if (max_entries == 0) @compileError("Attributes requires at least one entry");
 
@@ -252,6 +321,66 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             .getAttributeID = getAttributeID,
         };
     };
+}
+
+test "persistent object returns class ID and counts save load calls" {
+    const expected_class_id = tuid.inlineUid(0x01234567, 0x89ABCDEF, 0x10325476, 0x98BADCFE);
+    const Object = Persistent(struct {
+        pub const class_id = expected_class_id;
+    });
+    var object = Object{};
+    const iface = object.asInterface();
+
+    var out: [16]types.char8 = [_]types.char8{0} ** 16;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getClassID(iface, &out));
+    try std.testing.expectEqualSlices(u8, &expected_class_id, &out);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.saveAttributes(iface, null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.loadAttributes(iface, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), object.save_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), object.load_count);
+}
+
+test "persistent object delegates save and load hooks" {
+    const expected_class_id = tuid.inlineUid(0x10203040, 0x50607080, 0x90A0B0C0, 0xD0E0F000);
+    const Object = Persistent(struct {
+        pub const class_id = expected_class_id;
+
+        pub fn saveAttributes(self: anytype, attributes: ?*ipersistent.IAttributes) types.tresult {
+            _ = self;
+            return if (attributes == null) types.kInvalidArgument else types.kResultOk;
+        }
+
+        pub fn loadAttributes(self: anytype, attributes: ?*ipersistent.IAttributes) types.tresult {
+            _ = self;
+            return if (attributes == null) types.kInvalidArgument else types.kResultOk;
+        }
+    });
+    const Store = Attributes(1, 1);
+    var object = Object{};
+    var store = Store{};
+    const iface = object.asInterface();
+
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.saveAttributes(iface, null));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.loadAttributes(iface, null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.saveAttributes(iface, store.asAttributes()));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.loadAttributes(iface, store.asAttributes()));
+    try std.testing.expectEqual(@as(types.uint32, 2), object.save_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), object.load_count);
+}
+
+test "persistent object supports query interface" {
+    const Object = Persistent(struct {
+        pub const class_id = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
+    });
+    var object = Object{};
+    const iface = object.asInterface();
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ipersistent.ipersistent_iid, &queried));
+    try std.testing.expect(queried != null);
+    const persistent: *ipersistent.IPersistent = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), persistent.vtable.release(persistent));
 }
 
 test "persistent attributes store and enumerate variants" {
