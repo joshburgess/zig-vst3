@@ -1,5 +1,6 @@
 const std = @import("std");
 const funknown = @import("funknown.zig");
+const interface_map = @import("interface_map.zig");
 const tuid = @import("tuid.zig");
 
 pub const test_a_iid = tuid.inlineUid(0x11111111, 0x11111111, 0x11111111, 0x11111111);
@@ -93,29 +94,13 @@ fn objectFromC(ptr: *anyopaque) *TestObject {
 }
 
 fn query(object: *TestObject, requested_iid: *const tuid.TUID, out: *?*anyopaque) funknown.tresult {
-    if (std.mem.eql(u8, requested_iid, &funknown.iid)) {
-        _ = object.unknown.vtable.addRef(&object.unknown);
-        out.* = &object.unknown;
-        return funknown.kResultOk;
-    }
-    if (std.mem.eql(u8, requested_iid, &test_a_iid)) {
-        _ = object.unknown.vtable.addRef(&object.unknown);
-        out.* = &object.a;
-        return funknown.kResultOk;
-    }
-    if (std.mem.eql(u8, requested_iid, &test_b_iid)) {
-        _ = object.unknown.vtable.addRef(&object.unknown);
-        out.* = &object.b;
-        return funknown.kResultOk;
-    }
-    if (std.mem.eql(u8, requested_iid, &test_c_iid)) {
-        _ = object.unknown.vtable.addRef(&object.unknown);
-        out.* = &object.c;
-        return funknown.kResultOk;
-    }
-
-    out.* = null;
-    return funknown.kNoInterface;
+    const entries = [_]interface_map.Entry{
+        .{ .iid = &funknown.iid, .ptr = &object.unknown },
+        .{ .iid = &test_a_iid, .ptr = &object.a },
+        .{ .iid = &test_b_iid, .ptr = &object.b },
+        .{ .iid = &test_c_iid, .ptr = &object.c },
+    };
+    return interface_map.query(&object.unknown, &entries, requested_iid, out);
 }
 
 fn queryFromUnknown(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) funknown.tresult {
