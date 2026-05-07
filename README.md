@@ -23,7 +23,7 @@ Implemented pieces include:
 - Platform-specific VST3 module entry exports
 - macOS, Linux, and Windows `.vst3` bundle generation for the gain plugin
 - A validator-passing gain plugin with component, controller, processor, one automatable gain parameter, sample-accurate parameter updates, and state persistence
-- Initial `zig-plug` float, int, and bool parameter descriptors with normalization tests
+- Initial `zig-plug` float, int, bool, and enum parameter descriptors with normalization tests
 
 ## Development
 
