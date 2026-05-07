@@ -733,6 +733,56 @@ test "zig-plug bridge collects VST3 input events" {
     try std.testing.expectEqual(@as(usize, 3), collected.items[1].sample_offset);
 }
 
+test "zig-plug bridge drops invalid and overflowing VST3 input events" {
+    const items = [_]ivstevents.Event{
+        .{
+            .busIndex = 0,
+            .sampleOffset = -1,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .data = .{ .noteOn = .{ .channel = 0, .pitch = 59, .velocity = 0.5 } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 0,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .data = .{ .noteOn = .{ .channel = 0, .pitch = 60, .velocity = 0.75 } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 4,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+            .data = .{ .noteOff = .{ .channel = 0, .pitch = 60, .velocity = 0.25 } },
+        },
+        .{
+            .busIndex = 1,
+            .sampleOffset = 2,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent),
+            .data = .{ .polyPressure = .{ .channel = 1, .pitch = 64, .pressure = 0.5 } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 3,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent),
+            .data = .{ .data = .{} },
+        },
+    };
+    var list = TestEventList.init(&items, null);
+    var storage: [2]plug.process.Event = undefined;
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 4,
+        .inputEvents = &list.iface,
+    };
+
+    const collected = collectInputEvents(&data, &storage);
+
+    try std.testing.expectEqual(@as(usize, 2), collected.items.len);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, collected.items[0].kind);
+    try std.testing.expectEqual(@as(usize, 0), collected.items[0].sample_offset);
+    try std.testing.expectEqual(plug.process.EventKind.other, collected.items[1].kind);
+    try std.testing.expectEqual(@as(i32, 1), collected.items[1].bus_index);
+    try std.testing.expectEqual(@as(usize, 2), collected.items[1].sample_offset);
+}
+
 test "zig-plug bridge parameter controller exposes reflected edit operations" {
     const Params = struct {
         gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(7, "Gain", 0.0, 2.0, 1.0),
