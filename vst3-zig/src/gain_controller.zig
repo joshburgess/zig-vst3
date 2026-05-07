@@ -7,6 +7,7 @@ const gain_spec = @import("gain_spec.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const interface_map = @import("interface_map.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+const plug_state = @import("zig-plug-core").state;
 const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
@@ -163,19 +164,28 @@ pub fn setGain(value: vsttypes.ParamValue) void {
 
 pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
     const stream = state orelse return types.kInvalidArgument;
-    var bytes: [@sizeOf(f64)]u8 = undefined;
+    var bytes: [plug_state.encodedSize(gain_spec.Spec.Params)]u8 = undefined;
     var read: types.int32 = 0;
     const result = stream.vtable.read(stream, &bytes, bytes.len, &read);
     if (result != types.kResultOk or read != bytes.len) return types.kResultFalse;
-    setGain(@bitCast(bytes));
+    var state_stream = std.io.fixedBufferStream(&bytes);
+    var values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
+    plug_state.readParameterState(gain_spec.Spec.Params, &gain_spec.parameter_set, &values, state_stream.reader()) catch return types.kResultFalse;
+    if (values.load(gain_param_index)) |value| {
+        setGain(value);
+    }
     return types.kResultOk;
 }
 
 pub fn writeGainState(state: ?*ibstream.IBStream) types.tresult {
     const stream = state orelse return types.kInvalidArgument;
-    const bytes: [@sizeOf(f64)]u8 = @bitCast(gain());
+    var bytes: [plug_state.encodedSize(gain_spec.Spec.Params)]u8 = undefined;
+    var state_stream = std.io.fixedBufferStream(&bytes);
+    var values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
+    _ = values.store(gain_param_index, gain());
+    plug_state.writeParameterState(gain_spec.Spec.Params, &gain_spec.parameter_set, &values, state_stream.writer()) catch return types.kResultFalse;
     var written: types.int32 = 0;
-    const result = stream.vtable.write(stream, @constCast(&bytes), bytes.len, &written);
+    const result = stream.vtable.write(stream, &bytes, bytes.len, &written);
     if (result != types.kResultOk or written != bytes.len) return types.kResultFalse;
     return types.kResultOk;
 }
