@@ -12,10 +12,13 @@ pub const FactoryInfo = struct {
 };
 
 pub const ClassInfo = struct {
+    pub const CreateFn = *const fn (types.FIDString, *?*anyopaque) callconv(.C) types.tresult;
+
     cid: tuid.TUID,
     cardinality: types.int32 = ipluginbase.PClassInfo.kManyInstances,
     category: []const u8,
     name: []const u8,
+    create: ?CreateFn = null,
 };
 
 pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const ClassInfo) type {
@@ -67,7 +70,10 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
 
         fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
             const previous = owner(ptr).ref_count.fetchSub(1, .release);
-            std.debug.assert(previous > 0);
+            if (previous == 0) {
+                owner(ptr).ref_count.store(0, .monotonic);
+                return 0;
+            }
             return previous - 1;
         }
 
@@ -104,7 +110,16 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
             }
         }
 
-        fn createInstance(_: *anyopaque, _: types.FIDString, _: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
+            for (classes) |class| {
+                if (std.mem.eql(u8, cid[0..16], &class.cid)) {
+                    if (class.create) |create| {
+                        return create(requested_iid, out);
+                    }
+                    break;
+                }
+            }
+
             out.* = null;
             return types.kNoInterface;
         }
@@ -141,6 +156,30 @@ test "static factory exposes metadata and class count" {
     try std.testing.expectEqual(types.kResultOk, factory.vtable.getClassInfo(factory, 0, &class_info));
     try std.testing.expectEqualStrings("Audio Module Class", std.mem.sliceTo(&class_info.category, 0));
     try std.testing.expectEqualStrings("Test Plug-in", std.mem.sliceTo(&class_info.name, 0));
+}
+
+test "static factory dispatches createInstance by class id" {
+    const Create = struct {
+        fn create(_: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
+            out.* = @ptrFromInt(0x1);
+            return types.kResultOk;
+        }
+    };
+    const TestFactory = StaticFactory(.{ .vendor = "Test Vendor" }, &.{
+        .{
+            .cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444),
+            .category = "Audio Module Class",
+            .name = "Test Plug-in",
+            .create = Create.create,
+        },
+    });
+
+    const factory = TestFactory.getPluginFactory().?;
+    const cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
+    var out: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, factory.vtable.createInstance(factory, @ptrCast(&cid), @ptrCast(&funknown.iid), &out));
+    try std.testing.expectEqual(@as(?*anyopaque, @ptrFromInt(0x1)), out);
 }
 
 test "static factory implements queryInterface for FUnknown and IPluginFactory" {
