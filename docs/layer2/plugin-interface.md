@@ -1,6 +1,6 @@
 # Layer 2 Plugin Interface
 
-The current `zig-plug` plugin prototype is a compile-time spec helper with a reusable Layer 1 bridge for reflected parameter metadata, string conversion, normalized/plain conversion, state, host automation collection and application, stereo audio bus metadata, VST3 audio buffer views, and main audio sample-size dispatch. The gain plugin now uses reusable simple stereo effect and reflected edit-controller shells.
+The current `zig-plug` plugin prototype is a compile-time spec helper with a reusable Layer 1 bridge for reflected parameter metadata, string conversion, normalized/plain conversion, state, host automation and event collection, stereo audio bus metadata, VST3 audio buffer views, and main audio sample-size dispatch. The gain plugin now uses reusable simple stereo effect and reflected edit-controller shells.
 
 ## Current API
 
@@ -26,7 +26,7 @@ A plugin type declares:
 - `process64(self: *Plugin, context: *process.ProcessContext(f64)) void`
 - `deinit(self: *Plugin) void`
 
-`process.ProcessContext(Sample)` carries typed input and output channel views, parameter changes, and the current sample rate. The input and output views validate that each channel has the same frame count before a context is created. Parameter changes validate normalized values and sample offsets within the current block, expose block-latest lookup, expose latest-at-sample lookup, and expose the next sample offset with an automation change.
+`process.ProcessContext(Sample)` carries typed input and output channel views, parameter changes, input events, and the current sample rate. The input and output views validate that each channel has the same frame count before a context is created. Parameter changes validate normalized values and sample offsets within the current block, expose block-latest lookup, expose latest-at-sample lookup, and expose the next sample offset with an automation change. Events currently expose note-on, note-off, data, and other event kinds with block-offset validation.
 
 ## Example
 

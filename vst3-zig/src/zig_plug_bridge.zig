@@ -3,6 +3,7 @@ const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+const ivstevents = @import("pluginterfaces/vst/ivstevents.zig");
 const ivstparameterchanges = @import("pluginterfaces/vst/ivstparameterchanges.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const plug = @import("zig-plug-core");
@@ -277,6 +278,15 @@ pub fn collectInputParameterChanges(data: *ivstaudioprocessor.ProcessData, stora
     return plug.process.ParameterChanges.init(storage[0..collector.count], collector.frame_count) catch .{};
 }
 
+pub fn collectInputEvents(data: *ivstaudioprocessor.ProcessData, storage: []plug.process.Event) plug.process.Events {
+    var collector = EventCollector{
+        .storage = storage,
+        .frame_count = if (data.numSamples <= 0) 0 else @intCast(data.numSamples),
+    };
+    audio_processor_algo.forEachEvent(data.inputEvents, &collector, collectEvent);
+    return plug.process.Events.init(storage[0..collector.count], collector.frame_count) catch .{};
+}
+
 pub fn copyParameterValues(
     comptime Params: type,
     source: *const plug.parameters.ParameterValues(Params),
@@ -295,6 +305,7 @@ pub fn makeProcessContext(
     output: ivstaudioprocessor.AudioBusBuffers,
     data: *const ivstaudioprocessor.ProcessData,
     parameter_changes: plug.process.ParameterChanges,
+    events: plug.process.Events,
 ) !plug.process.ProcessContext(Sample) {
     if (data.numSamples < 0) return error.InvalidFrameCount;
     const frame_count: usize = @intCast(data.numSamples);
@@ -314,6 +325,7 @@ pub fn makeProcessContext(
         .inputs = try plug.process.AudioInputs(Sample).init(input_channels[0..channel_count]),
         .outputs = try plug.process.AudioOutputs(Sample).init(output_channels[0..channel_count]),
         .parameter_changes = parameter_changes,
+        .events = events,
     };
 }
 
@@ -321,6 +333,7 @@ pub fn makeMainAudioProcessContext(
     comptime Sample: type,
     data: *const ivstaudioprocessor.ProcessData,
     parameter_changes: plug.process.ParameterChanges,
+    events: plug.process.Events,
 ) !plug.process.ProcessContext(Sample) {
     if (data.numInputs <= 0 or data.numOutputs <= 0 or data.inputs == null or data.outputs == null) {
         return error.MissingMainAudioBus;
@@ -330,19 +343,20 @@ pub fn makeMainAudioProcessContext(
     if (input.numChannels <= 0 or output.numChannels <= 0) {
         return error.MissingMainAudioChannels;
     }
-    return makeProcessContext(Sample, input, output, data, parameter_changes);
+    return makeProcessContext(Sample, input, output, data, parameter_changes, events);
 }
 
 pub fn processMainAudio(
     data: *const ivstaudioprocessor.ProcessData,
     parameter_changes: plug.process.ParameterChanges,
+    events: plug.process.Events,
     processor: anytype,
 ) types.tresult {
     if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
-        var context = makeMainAudioProcessContext(f32, data, parameter_changes) catch return types.kResultOk;
+        var context = makeMainAudioProcessContext(f32, data, parameter_changes, events) catch return types.kResultOk;
         processor.process(f32, &context);
     } else {
-        var context = makeMainAudioProcessContext(f64, data, parameter_changes) catch return types.kResultOk;
+        var context = makeMainAudioProcessContext(f64, data, parameter_changes, events) catch return types.kResultOk;
         processor.process(f64, &context);
     }
     return types.kResultOk;
@@ -448,6 +462,12 @@ const ParameterChangeCollector = struct {
     frame_count: usize,
 };
 
+const EventCollector = struct {
+    storage: []plug.process.Event,
+    count: usize = 0,
+    frame_count: usize,
+};
+
 fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *ivstparameterchanges.IParamValueQueue) void {
     audio_processor_algo.forEachParamValueQueue(queue, collector, collectParameterPoint);
 }
@@ -462,6 +482,42 @@ fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.Para
         .id = id,
         .sample_offset = offset,
         .normalized = value,
+    };
+    collector.count += 1;
+}
+
+fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void {
+    if (collector.count >= collector.storage.len) return;
+    if (event.sampleOffset < 0) return;
+    const offset: usize = @intCast(event.sampleOffset);
+    if (offset >= collector.frame_count) return;
+    collector.storage[collector.count] = switch (@as(ivstevents.Event.EventTypes, @enumFromInt(event.type))) {
+        .kNoteOnEvent => .{
+            .kind = .note_on,
+            .bus_index = event.busIndex,
+            .sample_offset = offset,
+            .channel = event.data.noteOn.channel,
+            .pitch = event.data.noteOn.pitch,
+            .velocity = event.data.noteOn.velocity,
+        },
+        .kNoteOffEvent => .{
+            .kind = .note_off,
+            .bus_index = event.busIndex,
+            .sample_offset = offset,
+            .channel = event.data.noteOff.channel,
+            .pitch = event.data.noteOff.pitch,
+            .velocity = event.data.noteOff.velocity,
+        },
+        .kDataEvent => .{
+            .kind = .data,
+            .bus_index = event.busIndex,
+            .sample_offset = offset,
+        },
+        else => .{
+            .kind = .other,
+            .bus_index = event.busIndex,
+            .sample_offset = offset,
+        },
     };
     collector.count += 1;
 }
@@ -637,6 +693,46 @@ test "zig-plug bridge drops invalid and overflowing VST3 parameter changes" {
     try std.testing.expectEqual(@as(usize, 3), collected.items[1].sample_offset);
 }
 
+test "zig-plug bridge collects VST3 input events" {
+    const items = [_]ivstevents.Event{
+        .{
+            .busIndex = 0,
+            .sampleOffset = 1,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .data = .{ .noteOn = .{ .channel = 2, .pitch = 60, .velocity = 0.75 } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 3,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+            .data = .{ .noteOff = .{ .channel = 2, .pitch = 60, .velocity = 0.25 } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 4,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent),
+            .data = .{ .data = .{} },
+        },
+    };
+    var list = TestEventList.init(&items, null);
+    var storage: [4]plug.process.Event = undefined;
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 4,
+        .inputEvents = &list.iface,
+    };
+
+    const collected = collectInputEvents(&data, &storage);
+
+    try std.testing.expectEqual(@as(usize, 2), collected.items.len);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, collected.items[0].kind);
+    try std.testing.expectEqual(@as(usize, 1), collected.items[0].sample_offset);
+    try std.testing.expectEqual(@as(i16, 2), collected.items[0].channel);
+    try std.testing.expectEqual(@as(i16, 60), collected.items[0].pitch);
+    try std.testing.expectEqual(@as(f32, 0.75), collected.items[0].velocity);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, collected.items[1].kind);
+    try std.testing.expectEqual(@as(usize, 3), collected.items[1].sample_offset);
+}
+
 test "zig-plug bridge parameter controller exposes reflected edit operations" {
     const Params = struct {
         gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(7, "Gain", 0.0, 2.0, 1.0),
@@ -799,7 +895,7 @@ test "zig-plug bridge builds process context from VST3 buffers" {
         .numSamples = 2,
     };
 
-    const context = try makeProcessContext(f32, input, output, &data, .{});
+    const context = try makeProcessContext(f32, input, output, &data, .{}, .{});
 
     try std.testing.expectEqual(@as(usize, 2), context.frameCount());
     try std.testing.expectEqual(@as(f32, 3.0), context.inputs.channel(1).?[0]);
@@ -830,7 +926,7 @@ test "zig-plug bridge builds process context from main VST3 buses" {
         .numSamples = 2,
     };
 
-    const context = try makeMainAudioProcessContext(f32, &data, .{});
+    const context = try makeMainAudioProcessContext(f32, &data, .{}, .{});
 
     try std.testing.expectEqual(@as(usize, 2), context.frameCount());
     try std.testing.expectEqual(@as(f32, 4.0), context.inputs.channel(1).?[1]);
@@ -843,7 +939,7 @@ test "zig-plug bridge rejects missing main process buses" {
         .numSamples = 2,
     };
 
-    try std.testing.expectError(error.MissingMainAudioBus, makeMainAudioProcessContext(f32, &data, .{}));
+    try std.testing.expectError(error.MissingMainAudioBus, makeMainAudioProcessContext(f32, &data, .{}, .{}));
 }
 
 test "zig-plug bridge dispatches main audio processing by sample size" {
@@ -880,7 +976,7 @@ test "zig-plug bridge dispatches main audio processing by sample size" {
         .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
     };
 
-    try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, Doubler{}));
+    try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, Doubler{}));
     try std.testing.expectEqual(@as(f32, 2.0), output_samples[0]);
     try std.testing.expectEqual(@as(f32, 4.0), output_samples[1]);
 }
@@ -1085,5 +1181,60 @@ const TestParameterChanges = struct {
 
     fn addParameterData(_: *anyopaque, _: *const vsttypes.ParamID, _: *types.int32) callconv(.C) ?*ivstparameterchanges.IParamValueQueue {
         return null;
+    }
+};
+
+const TestEventList = struct {
+    iface: ivstevents.IEventList = .{ .vtable = &vtable },
+    items: []const ivstevents.Event,
+    fail_index: ?types.int32 = null,
+
+    const vtable = ivstevents.IEventListVTable{
+        .queryInterface = queryInterface,
+        .addRef = addRef,
+        .release = release,
+        .getEventCount = getEventCount,
+        .getEvent = getEvent,
+        .addEvent = addEvent,
+    };
+
+    fn init(items: []const ivstevents.Event, fail_index: ?types.int32) TestEventList {
+        return .{ .items = items, .fail_index = fail_index };
+    }
+
+    fn owner(ptr: *anyopaque) *TestEventList {
+        const iface: *ivstevents.IEventList = @ptrCast(@alignCast(ptr));
+        return @fieldParentPtr("iface", iface);
+    }
+
+    fn queryInterface(_: *anyopaque, _: *const @import("tuid.zig").TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        out.* = null;
+        return types.kNoInterface;
+    }
+
+    fn addRef(_: *anyopaque) callconv(.C) types.uint32 {
+        return 1;
+    }
+
+    fn release(_: *anyopaque) callconv(.C) types.uint32 {
+        return 1;
+    }
+
+    fn getEventCount(ptr: *anyopaque) callconv(.C) types.int32 {
+        return @intCast(owner(ptr).items.len);
+    }
+
+    fn getEvent(ptr: *anyopaque, index: types.int32, event: *ivstevents.Event) callconv(.C) types.tresult {
+        if (index < 0) return types.kInvalidArgument;
+        const self = owner(ptr);
+        if (self.fail_index != null and index == self.fail_index.?) return types.kResultFalse;
+        const event_index: usize = @intCast(index);
+        if (event_index >= self.items.len) return types.kInvalidArgument;
+        event.* = self.items[event_index];
+        return types.kResultOk;
+    }
+
+    fn addEvent(_: *anyopaque, _: *ivstevents.Event) callconv(.C) types.tresult {
+        return types.kResultFalse;
     }
 };
