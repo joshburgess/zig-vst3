@@ -102,3 +102,28 @@ test "gain controller exposes default root unit info" {
     );
     try std.testing.expectEqual(ivstunits.kRootUnitId, unit_by_bus);
 }
+
+test "gain controller exposes default MIDI mapping interface" {
+    const std = @import("std");
+    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+    const ivstmidicontrollers = @import("pluginterfaces/vst/ivstmidicontrollers.zig");
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var mapping_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.queryInterface(controller_iface, &ivsteditcontroller.imidi_mapping_iid, &mapping_out));
+    try std.testing.expect(mapping_out != null);
+    const mapping: *ivsteditcontroller.IMidiMapping = @ptrCast(@alignCast(mapping_out.?));
+    defer _ = mapping.vtable.release(mapping);
+
+    var param_id: vsttypes.ParamID = 0;
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        mapping.vtable.getMidiControllerAssignment(mapping, 0, 0, ivstmidicontrollers.kCtrlModWheel, &param_id),
+    );
+    try std.testing.expectEqual(vsttypes.kNoParamId, param_id);
+}
