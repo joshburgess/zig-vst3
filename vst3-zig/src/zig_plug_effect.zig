@@ -8,6 +8,7 @@ const interface_map = @import("interface_map.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+const ivsthostapplication = @import("pluginterfaces/vst/ivsthostapplication.zig");
 const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
 const ivstmidilearn = @import("pluginterfaces/vst/ivstmidilearn.zig");
 const ivstmidimapping2 = @import("pluginterfaces/vst/ivstmidimapping2.zig");
@@ -47,6 +48,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             remap_param_id: ivstremapparamid.IRemapParamID = .{ .vtable = &remap_param_id_vtable },
             connected_peer: ?*ivstmessage.IConnectionPoint = null,
             component_handler: ?*ivsteditcontroller.IComponentHandler = null,
+            host_application: ?*ivsthostapplication.IHostApplication = null,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -412,11 +414,13 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return release(&ownerFromRemapParamID(ptr).iface);
         }
 
-        fn initialize(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
+        fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.C) types.tresult {
+            owner(ptr).host_application = queryHostApplication(context);
             return types.kResultOk;
         }
 
-        fn terminate(_: *anyopaque) callconv(.C) types.tresult {
+        fn terminate(ptr: *anyopaque) callconv(.C) types.tresult {
+            releaseHostApplication(&owner(ptr).host_application);
             return types.kResultOk;
         }
 
@@ -823,6 +827,23 @@ fn copyString128(dest: *vsttypes.String128, source: []const u8) void {
     }
 }
 
+fn queryHostApplication(context: ?*anyopaque) ?*ivsthostapplication.IHostApplication {
+    const raw = context orelse return null;
+    const unknown: *funknown.Header = @ptrCast(@alignCast(raw));
+    var out: ?*anyopaque = null;
+    if (unknown.vtable.queryInterface(unknown, &ivsthostapplication.ihost_application_iid, &out) != types.kResultOk) {
+        return null;
+    }
+    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+}
+
+fn releaseHostApplication(host_application: *?*ivsthostapplication.IHostApplication) void {
+    if (host_application.*) |host| {
+        _ = host.vtable.release(host);
+        host_application.* = null;
+    }
+}
+
 pub fn SimpleStereoEffect(comptime Config: type) type {
     return struct {
         const Self = @This();
@@ -841,6 +862,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             plug_interface_support: ivstpluginterfacesupport.IPlugInterfaceSupport = .{ .vtable = &plug_interface_support_vtable },
             prefetchable_support: ivstprefetchablesupport.IPrefetchableSupport = .{ .vtable = &prefetchable_support_vtable },
             connected_peer: ?*ivstmessage.IConnectionPoint = null,
+            host_application: ?*ivsthostapplication.IHostApplication = null,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -950,11 +972,13 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, Config.component_name);
         }
 
-        fn initialize(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
+        fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.C) types.tresult {
+            owner(ptr).host_application = queryHostApplication(context);
             return types.kResultOk;
         }
 
-        fn terminate(_: *anyopaque) callconv(.C) types.tresult {
+        fn terminate(ptr: *anyopaque) callconv(.C) types.tresult {
+            releaseHostApplication(&owner(ptr).host_application);
             return types.kResultOk;
         }
 
