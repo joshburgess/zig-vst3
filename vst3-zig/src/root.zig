@@ -32,6 +32,7 @@ pub const pluginterfaces = struct {
 };
 pub const tuid = @import("tuid.zig");
 pub const version = "0.1.0-dev";
+pub const vst_cloneable = @import("vst_cloneable.zig");
 pub const vst_content_scale_support = @import("vst_content_scale_support.zig");
 pub const vst_error_context = @import("vst_error_context.zig");
 pub const vst_message = @import("vst_message.zig");

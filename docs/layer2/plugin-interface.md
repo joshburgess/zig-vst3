@@ -1,6 +1,6 @@
 # Layer 2 Plugin Interface
 
-The current `zig-plug` plugin prototype is a compile-time spec helper with a reusable Layer 1 bridge for reflected parameter metadata, string conversion, normalized/plain conversion, state, host automation and event collection, stereo audio bus metadata, VST3 audio buffer views, optional plug-view and XML representation creation, reusable error-context, string-result, update-handler, persistent-attribute, plugin-compatibility, parameter-finder, content-scale, and Wayland-frame helpers for custom editors and SDK callbacks, and main audio sample-size dispatch. The gain plugin now uses reusable simple stereo effect and reflected edit-controller shells.
+The current `zig-plug` plugin prototype is a compile-time spec helper with a reusable Layer 1 bridge for reflected parameter metadata, string conversion, normalized/plain conversion, state, host automation and event collection, stereo audio bus metadata, VST3 audio buffer views, optional plug-view and XML representation creation, reusable error-context, string-result, cloneable, update-handler, persistent-attribute, plugin-compatibility, parameter-finder, content-scale, and Wayland-frame helpers for custom editors and SDK callbacks, and main audio sample-size dispatch. The gain plugin now uses reusable simple stereo effect and reflected edit-controller shells.
 
 ## Current API
 
