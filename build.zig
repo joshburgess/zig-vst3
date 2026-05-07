@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) void {
     });
     zig_plug.addImport("vst3-zig", vst3_zig);
 
-    const stub = b.addLibrary(.{
+    const gain = b.addLibrary(.{
         .linkage = .dynamic,
         .name = "zig_vst3_gain",
         .root_module = b.createModule(.{
@@ -26,55 +26,61 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    b.installArtifact(stub);
+    b.installArtifact(gain);
 
     const entry_symbols_step = b.step("entry-symbols", "Verify native VST3 module entry exports");
     const check_entry_symbols = b.addSystemCommand(&.{"scripts/check_entry_symbols.sh"});
-    check_entry_symbols.addFileArg(stub.getEmittedBin());
+    check_entry_symbols.addFileArg(gain.getEmittedBin());
     entry_symbols_step.dependOn(&check_entry_symbols.step);
 
-    const bundle_stub_step = b.step("bundle-stub", "Build a native VST3 bundle for the stub plugin");
+    const bundle_gain_step = b.step("bundle-gain", "Build a native VST3 bundle for the gain plugin");
     if (target.result.os.tag == .macos) {
-        const bundle_stub = b.addSystemCommand(&.{"scripts/bundle_macos_vst3.sh"});
-        bundle_stub.addFileArg(stub.getEmittedBin());
-        bundle_stub.addArgs(&.{
+        const bundle_gain = b.addSystemCommand(&.{"scripts/bundle_macos_vst3.sh"});
+        bundle_gain.addFileArg(gain.getEmittedBin());
+        bundle_gain.addArgs(&.{
             b.getInstallPath(.prefix, "bundle/zig_vst3_gain.vst3"),
             "dev.zig-vst3.gain",
             "0.1.0",
             "zig_vst3_gain",
         });
-        bundle_stub_step.dependOn(&bundle_stub.step);
+        bundle_gain_step.dependOn(&bundle_gain.step);
     } else {
-        bundle_stub_step.dependOn(&b.addFail("bundle-stub currently supports macOS targets").step);
+        bundle_gain_step.dependOn(&b.addFail("bundle-gain currently supports macOS targets").step);
     }
+    const bundle_stub_step = b.step("bundle-stub", "Alias for bundle-gain");
+    bundle_stub_step.dependOn(bundle_gain_step);
 
-    const bundle_stub_linux_step = b.step("bundle-stub-linux", "Build a Linux VST3 bundle for the stub plugin");
+    const bundle_gain_linux_step = b.step("bundle-gain-linux", "Build a Linux VST3 bundle for the gain plugin");
     if (target.result.os.tag == .linux) {
-        const bundle_stub_linux = b.addSystemCommand(&.{"scripts/bundle_linux_vst3.sh"});
-        bundle_stub_linux.addFileArg(stub.getEmittedBin());
-        bundle_stub_linux.addArgs(&.{
+        const bundle_gain_linux = b.addSystemCommand(&.{"scripts/bundle_linux_vst3.sh"});
+        bundle_gain_linux.addFileArg(gain.getEmittedBin());
+        bundle_gain_linux.addArgs(&.{
             b.getInstallPath(.prefix, "bundle/zig_vst3_gain_linux.vst3"),
             linuxPlatformDir(target.result.cpu.arch),
             "zig_vst3_gain",
         });
-        bundle_stub_linux_step.dependOn(&bundle_stub_linux.step);
+        bundle_gain_linux_step.dependOn(&bundle_gain_linux.step);
     } else {
-        bundle_stub_linux_step.dependOn(&b.addFail("bundle-stub-linux requires a Linux target").step);
+        bundle_gain_linux_step.dependOn(&b.addFail("bundle-gain-linux requires a Linux target").step);
     }
+    const bundle_stub_linux_step = b.step("bundle-stub-linux", "Alias for bundle-gain-linux");
+    bundle_stub_linux_step.dependOn(bundle_gain_linux_step);
 
-    const bundle_stub_windows_step = b.step("bundle-stub-windows", "Build a Windows VST3 bundle for the stub plugin");
+    const bundle_gain_windows_step = b.step("bundle-gain-windows", "Build a Windows VST3 bundle for the gain plugin");
     if (target.result.os.tag == .windows) {
-        const bundle_stub_windows = b.addSystemCommand(&.{"scripts/bundle_windows_vst3.sh"});
-        bundle_stub_windows.addFileArg(stub.getEmittedBin());
-        bundle_stub_windows.addArgs(&.{
+        const bundle_gain_windows = b.addSystemCommand(&.{"scripts/bundle_windows_vst3.sh"});
+        bundle_gain_windows.addFileArg(gain.getEmittedBin());
+        bundle_gain_windows.addArgs(&.{
             b.getInstallPath(.prefix, "bundle/zig_vst3_gain_windows.vst3"),
             windowsPlatformDir(target.result.cpu.arch),
             "zig_vst3_gain",
         });
-        bundle_stub_windows_step.dependOn(&bundle_stub_windows.step);
+        bundle_gain_windows_step.dependOn(&bundle_gain_windows.step);
     } else {
-        bundle_stub_windows_step.dependOn(&b.addFail("bundle-stub-windows requires a Windows target").step);
+        bundle_gain_windows_step.dependOn(&b.addFail("bundle-gain-windows requires a Windows target").step);
     }
+    const bundle_stub_windows_step = b.step("bundle-stub-windows", "Alias for bundle-gain-windows");
+    bundle_stub_windows_step.dependOn(bundle_gain_windows_step);
 
     const vst3_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -115,18 +121,20 @@ pub fn build(b: *std.Build) void {
         validate_step.dependOn(&missing_plugin.step);
     }
 
-    const validate_stub_step = b.step("validate-stub", "Build and validate the native stub VST3 bundle");
+    const validate_gain_step = b.step("validate-gain", "Build and validate the native gain VST3 bundle");
     if (target.result.os.tag == .macos) {
-        validate_stub_step.dependOn(bundle_stub_step);
-        const validate_stub = b.addSystemCommand(&.{
+        validate_gain_step.dependOn(bundle_gain_step);
+        const validate_gain = b.addSystemCommand(&.{
             "scripts/validate.sh",
             b.getInstallPath(.prefix, "bundle/zig_vst3_gain.vst3"),
         });
-        validate_stub.step.dependOn(bundle_stub_step);
-        validate_stub_step.dependOn(&validate_stub.step);
+        validate_gain.step.dependOn(bundle_gain_step);
+        validate_gain_step.dependOn(&validate_gain.step);
     } else {
-        validate_stub_step.dependOn(&b.addFail("validate-stub currently supports macOS targets").step);
+        validate_gain_step.dependOn(&b.addFail("validate-gain currently supports macOS targets").step);
     }
+    const validate_stub_step = b.step("validate-stub", "Alias for validate-gain");
+    validate_stub_step.dependOn(validate_gain_step);
 
     const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
