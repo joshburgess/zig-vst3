@@ -1,4 +1,5 @@
 const std = @import("std");
+const process = @import("process.zig");
 
 pub const NormalizedValue = struct {
     bits: std.atomic.Value(u64),
@@ -456,6 +457,12 @@ pub fn ParameterValues(comptime Params: type) type {
             const index = set.indexOfId(id) orelse return false;
             return self.store(index, value);
         }
+
+        pub fn applyChanges(self: *Self, set: *const Set, changes: process.ParameterChanges) void {
+            for (changes.items) |change| {
+                _ = self.storeById(set, change.id, change.normalized);
+            }
+        }
     };
 }
 
@@ -643,6 +650,28 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
     try std.testing.expect(!values.storeById(&set, 99, 0.5));
     try std.testing.expectEqual(@as(?f64, null), values.loadById(&set, 99));
+}
+
+test "parameter values apply reflected parameter changes by id" {
+    const Params = struct {
+        gain: FloatParam = FloatParam.init(0, "Gain", 0.0, 1.0, 0.25),
+        mix: FloatParam = FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
+    };
+    const Set = ParameterSet(Params);
+    const Values = ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    const items = [_]process.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = 0.75 },
+        .{ .id = 99, .sample_offset = 0, .normalized = 0.25 },
+        .{ .id = 1, .sample_offset = 4, .normalized = 1.0 },
+    };
+    const changes = try process.ParameterChanges.init(&items, 8);
+
+    values.applyChanges(&set, changes);
+
+    try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.loadById(&set, 1));
 }
 
 test "float parameter round-trips normalized values" {
