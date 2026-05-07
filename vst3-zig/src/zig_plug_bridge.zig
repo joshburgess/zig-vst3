@@ -273,6 +273,22 @@ pub fn makeProcessContext(
     };
 }
 
+pub fn makeMainAudioProcessContext(
+    comptime Sample: type,
+    data: *const ivstaudioprocessor.ProcessData,
+    parameter_changes: plug.process.ParameterChanges,
+) !plug.process.ProcessContext(Sample) {
+    if (data.numInputs <= 0 or data.numOutputs <= 0 or data.inputs == null or data.outputs == null) {
+        return error.MissingMainAudioBus;
+    }
+    const input = data.inputs.?[0];
+    const output = data.outputs.?[0];
+    if (input.numChannels <= 0 or output.numChannels <= 0) {
+        return error.MissingMainAudioChannels;
+    }
+    return makeProcessContext(Sample, input, output, data, parameter_changes);
+}
+
 pub fn readParameterState(
     comptime Params: type,
     stream: ?*ibstream.IBStream,
@@ -554,6 +570,45 @@ test "zig-plug bridge builds process context from VST3 buffers" {
     try std.testing.expectEqual(@as(f32, 3.0), context.inputs.channel(1).?[0]);
     context.outputs.channel(0).?[1] = 9.0;
     try std.testing.expectEqual(@as(f32, 9.0), out_left[1]);
+}
+
+test "zig-plug bridge builds process context from main VST3 buses" {
+    var in_left = [_]f32{ 1.0, 2.0 };
+    var in_right = [_]f32{ 3.0, 4.0 };
+    var out_left = [_]f32{ 0.0, 0.0 };
+    var out_right = [_]f32{ 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f32{ &in_left, &in_right };
+    var output_channel_ptrs = [_][*]f32{ &out_left, &out_right };
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+    }};
+    const data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 2,
+    };
+
+    const context = try makeMainAudioProcessContext(f32, &data, .{});
+
+    try std.testing.expectEqual(@as(usize, 2), context.frameCount());
+    try std.testing.expectEqual(@as(f32, 4.0), context.inputs.channel(1).?[1]);
+}
+
+test "zig-plug bridge rejects missing main process buses" {
+    const data = ivstaudioprocessor.ProcessData{
+        .numInputs = 0,
+        .numOutputs = 1,
+        .numSamples = 2,
+    };
+
+    try std.testing.expectError(error.MissingMainAudioBus, makeMainAudioProcessContext(f32, &data, .{}));
 }
 
 fn expectString128(expected: []const u8, actual: *const vsttypes.String128) !void {
