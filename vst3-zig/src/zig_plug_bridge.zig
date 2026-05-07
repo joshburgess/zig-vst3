@@ -612,6 +612,31 @@ test "zig-plug bridge collects VST3 parameter changes" {
     try std.testing.expectEqual(@as(usize, 2), collected.items[2].sample_offset);
 }
 
+test "zig-plug bridge drops invalid and overflowing VST3 parameter changes" {
+    var gain_queue = TestParamValueQueue.init(7, &.{
+        .{ .sample_offset = 0, .value = 0.25 },
+        .{ .sample_offset = -1, .value = 0.5 },
+        .{ .sample_offset = 4, .value = 0.75 },
+        .{ .sample_offset = 2, .value = 1.5 },
+        .{ .sample_offset = 3, .value = 0.5 },
+    });
+    var mix_queue = TestParamValueQueue.init(8, &.{
+        .{ .sample_offset = 1, .value = 0.0 },
+    });
+    var changes = TestParameterChanges.init(&.{ &gain_queue, &mix_queue });
+    var storage: [2]plug.process.ParameterChange = undefined;
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 4,
+        .inputParameterChanges = &changes.iface,
+    };
+
+    const collected = collectInputParameterChanges(&data, &storage);
+
+    try std.testing.expectEqual(@as(usize, 2), collected.items.len);
+    try std.testing.expectEqual(@as(usize, 0), collected.items[0].sample_offset);
+    try std.testing.expectEqual(@as(usize, 3), collected.items[1].sample_offset);
+}
+
 test "zig-plug bridge parameter controller exposes reflected edit operations" {
     const Params = struct {
         gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(7, "Gain", 0.0, 2.0, 1.0),
