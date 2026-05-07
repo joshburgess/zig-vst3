@@ -53,6 +53,9 @@ pub const EventKind = enum {
     midi_cc,
     pitch_bend,
     aftertouch,
+    note_expression_value,
+    note_expression_int,
+    note_expression_text,
     data,
     other,
 };
@@ -64,8 +67,11 @@ pub const Event = struct {
     channel: i16 = 0,
     pitch: i16 = 0,
     control_number: i16 = 0,
+    note_id: i32 = 0,
+    expression_type_id: u32 = 0,
     velocity: f32 = 0,
     value: f32 = 0,
+    int_value: u64 = 0,
 };
 
 pub const Events = struct {
