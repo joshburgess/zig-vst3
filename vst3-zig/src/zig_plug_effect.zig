@@ -11,6 +11,7 @@ const ivstautomationstate = @import("pluginterfaces/vst/ivstautomationstate.zig"
 const ivstchannelcontextinfo = @import("pluginterfaces/vst/ivstchannelcontextinfo.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivstcontextmenu = @import("pluginterfaces/vst/ivstcontextmenu.zig");
+const ivstdataexchange = @import("pluginterfaces/vst/ivstdataexchange.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const ivsthostapplication = @import("pluginterfaces/vst/ivsthostapplication.zig");
 const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
@@ -992,6 +993,23 @@ fn releaseAutomationState(automation_state: *?*ivstautomationstate.IAutomationSt
     }
 }
 
+fn queryDataExchangeHandler(context: ?*anyopaque) ?*ivstdataexchange.IDataExchangeHandler {
+    const raw = context orelse return null;
+    const unknown: *funknown.Header = @ptrCast(@alignCast(raw));
+    var out: ?*anyopaque = null;
+    if (unknown.vtable.queryInterface(unknown, &ivstdataexchange.idata_exchange_handler_iid, &out) != types.kResultOk) {
+        return null;
+    }
+    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+}
+
+fn releaseDataExchangeHandler(data_exchange_handler: *?*ivstdataexchange.IDataExchangeHandler) void {
+    if (data_exchange_handler.*) |handler| {
+        _ = handler.vtable.release(handler);
+        data_exchange_handler.* = null;
+    }
+}
+
 fn queryComponentHandler2(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentHandler2 {
     const raw = handler orelse return null;
     const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
@@ -1097,10 +1115,12 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             audio_presentation_latency: ivstaudioprocessor.IAudioPresentationLatency = .{ .vtable = &audio_presentation_latency_vtable },
             plug_interface_support: ivstpluginterfacesupport.IPlugInterfaceSupport = .{ .vtable = &plug_interface_support_vtable },
             prefetchable_support: ivstprefetchablesupport.IPrefetchableSupport = .{ .vtable = &prefetchable_support_vtable },
+            data_exchange_receiver: ivstdataexchange.IDataExchangeReceiver = .{ .vtable = &data_exchange_receiver_vtable },
             connected_peer: ?*ivstmessage.IConnectionPoint = null,
             host_application: ?*ivsthostapplication.IHostApplication = null,
             info_listener: ?*ivstchannelcontextinfo.IInfoListener = null,
             automation_state: ?*ivstautomationstate.IAutomationState = null,
+            data_exchange_handler: ?*ivstdataexchange.IDataExchangeHandler = null,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -1118,6 +1138,32 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         pub fn setAutomationState(state: types.int32) types.tresult {
             const automation_state = component.automation_state orelse return types.kResultFalse;
             return automation_state.vtable.setAutomationState(automation_state, state);
+        }
+
+        pub fn openDataExchangeQueue(block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
+            const handler = component.data_exchange_handler orelse {
+                out.* = ivstdataexchange.InvalidDataExchangeQueueID;
+                return types.kResultFalse;
+            };
+            return handler.vtable.openQueue(handler, &component.processor, block_size, num_blocks, alignment, user_context_id, out);
+        }
+
+        pub fn closeDataExchangeQueue(queue_id: ivstdataexchange.DataExchangeQueueID) types.tresult {
+            const handler = component.data_exchange_handler orelse return types.kResultFalse;
+            return handler.vtable.closeQueue(handler, queue_id);
+        }
+
+        pub fn lockDataExchangeBlock(queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
+            const handler = component.data_exchange_handler orelse {
+                block.* = .{ .blockID = ivstdataexchange.InvalidDataExchangeBlockID };
+                return types.kResultFalse;
+            };
+            return handler.vtable.lockBlock(handler, queue_id, block);
+        }
+
+        pub fn freeDataExchangeBlock(queue_id: ivstdataexchange.DataExchangeQueueID, block_id: ivstdataexchange.DataExchangeBlockID, send_to_receiver: types.TBool) types.tresult {
+            const handler = component.data_exchange_handler orelse return types.kResultFalse;
+            return handler.vtable.freeBlock(handler, queue_id, block_id, send_to_receiver);
         }
 
         const component_vtable = ivstcomponent.IComponentVTable{
@@ -1172,6 +1218,11 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return @fieldParentPtr("prefetchable_support", iface);
         }
 
+        fn ownerFromDataExchangeReceiver(ptr: *anyopaque) *Component {
+            const iface: *ivstdataexchange.IDataExchangeReceiver = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("data_exchange_receiver", iface);
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
@@ -1184,6 +1235,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
                 .{ .iid = &ivstaudioprocessor.iaudio_presentation_latency_iid, .ptr = &self.audio_presentation_latency },
                 .{ .iid = &ivstpluginterfacesupport.iplug_interface_support_iid, .ptr = &self.plug_interface_support },
                 .{ .iid = &ivstprefetchablesupport.iprefetchable_support_iid, .ptr = &self.prefetchable_support },
+                .{ .iid = &ivstdataexchange.idata_exchange_receiver_iid, .ptr = &self.data_exchange_receiver },
             };
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
@@ -1212,6 +1264,10 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return query(&ownerFromPrefetchableSupport(ptr).iface, requested_iid, out);
         }
 
+        fn queryFromDataExchangeReceiver(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromDataExchangeReceiver(ptr).iface, requested_iid, out);
+        }
+
         fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
@@ -1225,11 +1281,13 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             self.host_application = queryHostApplication(context);
             self.info_listener = queryInfoListener(context);
             self.automation_state = queryAutomationState(context);
+            self.data_exchange_handler = queryDataExchangeHandler(context);
             return types.kResultOk;
         }
 
         fn terminate(ptr: *anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
+            releaseDataExchangeHandler(&self.data_exchange_handler);
             releaseAutomationState(&self.automation_state);
             releaseInfoListener(&self.info_listener);
             releaseHostApplication(&self.host_application);
@@ -1335,6 +1393,14 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return release(&ownerFromPrefetchableSupport(ptr).iface);
         }
 
+        fn addRefFromDataExchangeReceiver(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromDataExchangeReceiver(ptr).iface);
+        }
+
+        fn releaseFromDataExchangeReceiver(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromDataExchangeReceiver(ptr).iface);
+        }
+
         const component_connection_point_vtable = ivstmessage.IConnectionPointVTable{
             .queryInterface = queryFromComponentConnectionPoint,
             .addRef = addRefFromComponentConnectionPoint,
@@ -1405,6 +1471,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
                 &ivstaudioprocessor.iaudio_presentation_latency_iid,
                 &ivstpluginterfacesupport.iplug_interface_support_iid,
                 &ivstprefetchablesupport.iprefetchable_support_iid,
+                &ivstdataexchange.idata_exchange_receiver_iid,
             };
             for (supported) |supported_iid| {
                 if (std.mem.eql(u8, iid, supported_iid)) return types.kResultOk;
@@ -1422,6 +1489,35 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         fn getPrefetchableSupport(_: *anyopaque, out: *ivstprefetchablesupport.PrefetchableSupport) callconv(.C) types.tresult {
             out.* = @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsNeverPrefetchable);
             return types.kResultOk;
+        }
+
+        const data_exchange_receiver_vtable = ivstdataexchange.IDataExchangeReceiverVTable{
+            .queryInterface = queryFromDataExchangeReceiver,
+            .addRef = addRefFromDataExchangeReceiver,
+            .release = releaseFromDataExchangeReceiver,
+            .queueOpened = dataExchangeQueueOpened,
+            .queueClosed = dataExchangeQueueClosed,
+            .onDataExchangeBlocksReceived = onDataExchangeBlocksReceived,
+        };
+
+        fn dataExchangeQueueOpened(_: *anyopaque, user_context_id: ivstdataexchange.DataExchangeUserContextID, block_size: types.uint32, out: *types.TBool) callconv(.C) void {
+            if (@hasDecl(Config, "dataExchangeQueueOpened")) {
+                out.* = Config.dataExchangeQueueOpened(user_context_id, block_size);
+            } else {
+                out.* = 0;
+            }
+        }
+
+        fn dataExchangeQueueClosed(_: *anyopaque, user_context_id: ivstdataexchange.DataExchangeUserContextID) callconv(.C) void {
+            if (@hasDecl(Config, "dataExchangeQueueClosed")) {
+                Config.dataExchangeQueueClosed(user_context_id);
+            }
+        }
+
+        fn onDataExchangeBlocksReceived(_: *anyopaque, user_context_id: ivstdataexchange.DataExchangeUserContextID, num_blocks: types.uint32, blocks: ?[*]ivstdataexchange.DataExchangeBlock, on_background_thread: types.TBool) callconv(.C) void {
+            if (@hasDecl(Config, "onDataExchangeBlocksReceived")) {
+                Config.onDataExchangeBlocksReceived(user_context_id, num_blocks, blocks, on_background_thread);
+            }
         }
 
         fn setBusArrangements(_: *anyopaque, inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32) callconv(.C) types.tresult {
