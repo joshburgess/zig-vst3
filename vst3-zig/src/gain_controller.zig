@@ -108,13 +108,11 @@ fn getParamValueByString(_: *anyopaque, id: vsttypes.ParamID, text: [*]vsttypes.
 }
 
 fn normalizedParamToPlain(_: *anyopaque, id: vsttypes.ParamID, normalized: vsttypes.ParamValue) callconv(.C) vsttypes.ParamValue {
-    if (id != gain_param_id) return 0;
-    return normalized;
+    return zig_plug_bridge.normalizedParamToPlain(gain_spec.Spec.Params, &gain_spec.parameter_set, id, normalized);
 }
 
 fn plainParamToNormalized(_: *anyopaque, id: vsttypes.ParamID, plain: vsttypes.ParamValue) callconv(.C) vsttypes.ParamValue {
-    if (id != gain_param_id) return 0;
-    return plain;
+    return zig_plug_bridge.plainParamToNormalized(gain_spec.Spec.Params, &gain_spec.parameter_set, id, plain);
 }
 
 fn getParamNormalized(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) vsttypes.ParamValue {
