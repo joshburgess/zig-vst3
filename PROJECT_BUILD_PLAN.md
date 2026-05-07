@@ -31,7 +31,7 @@ A staged plan for building a VST3 plugin framework in Zig, structured for delega
 - A bundled GUI library (we expose the `IPlugView` hook; users plug in their own toolkit)
 - Plugin sandboxing or out-of-process hosting
 
-**Current status.** Layer 1 now builds reusable VST3 effect shells, emits `.vst3` bundles for macOS, Linux, and Windows, and validates the bundled gain, bypass, mode-gain, voice-mix, note-gate, and event-echo examples locally on macOS with `zig build validate-examples`. The reusable shells now expose conservative default `IConnectionPoint` implementations for host/plugin connection setup.
+**Current status.** Layer 1 now builds reusable VST3 effect shells, emits `.vst3` bundles for macOS, Linux, and Windows, and validates the bundled gain, bypass, mode-gain, voice-mix, note-gate, and event-echo examples locally on macOS with `zig build validate-examples`. The reusable shells now expose conservative default `IConnectionPoint` implementations for host/plugin connection setup and an optional edit-controller plug-view factory hook for plugin-provided editors.
 
 **Total estimated duration.** 6–9 months for a Layer 2 release that's genuinely useful to others. The first Layer 1 gain plugin milestone is complete locally on macOS; the remaining Layer 1 work is hardening the raw API, CI coverage, and host smoke testing.
 
@@ -343,7 +343,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.9: Plug view (no GUI implementation yet)
 
-`IPlugView`, `IPlugFrame`, `IPlugViewContentScaleSupport`, `ViewRect`, platform-specific `kPlatformType*` constants.
+`IPlugView`, `IPlugFrame`, `IPlugViewContentScaleSupport`, `ViewRect`, platform-specific `kPlatformType*` constants. The raw ABI translation is present, and reflected edit controllers can delegate `createView` to a plugin config hook. There is still no bundled GUI toolkit.
 
 ### Work Unit 2.9a: Linux Wayland plug view interfaces
 
