@@ -10,6 +10,7 @@ const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const ivstmidilearn = @import("pluginterfaces/vst/ivstmidilearn.zig");
 const ivstmidimapping2 = @import("pluginterfaces/vst/ivstmidimapping2.zig");
+const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
@@ -28,6 +29,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
             midi_learn: ivstmidilearn.IMidiLearn = .{ .vtable = &midi_learn_vtable },
             midi_mapping2: ivstmidimapping2.IMidiMapping2 = .{ .vtable = &midi_mapping2_vtable },
             midi_learn2: ivstmidimapping2.IMidiLearn2 = .{ .vtable = &midi_learn2_vtable },
+            note_expression: ivstnoteexpression.INoteExpressionController = .{ .vtable = &note_expression_vtable },
+            keyswitch: ivstnoteexpression.IKeyswitchController = .{ .vtable = &keyswitch_vtable },
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -113,6 +116,16 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return @fieldParentPtr("midi_learn2", iface);
         }
 
+        fn ownerFromNoteExpression(ptr: *anyopaque) *Controller {
+            const iface: *ivstnoteexpression.INoteExpressionController = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("note_expression", iface);
+        }
+
+        fn ownerFromKeyswitch(ptr: *anyopaque) *Controller {
+            const iface: *ivstnoteexpression.IKeyswitchController = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("keyswitch", iface);
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
@@ -124,6 +137,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 .{ .iid = &ivstmidilearn.imidi_learn_iid, .ptr = &self.midi_learn },
                 .{ .iid = &ivstmidimapping2.imidi_mapping2_iid, .ptr = &self.midi_mapping2 },
                 .{ .iid = &ivstmidimapping2.imidi_learn2_iid, .ptr = &self.midi_learn2 },
+                .{ .iid = &ivstnoteexpression.inote_expression_controller_iid, .ptr = &self.note_expression },
+                .{ .iid = &ivstnoteexpression.ikeyswitch_controller_iid, .ptr = &self.keyswitch },
             };
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
@@ -146,6 +161,14 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn queryFromMidiLearn2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&ownerFromMidiLearn2(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromNoteExpression(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromNoteExpression(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromKeyswitch(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromKeyswitch(ptr).iface, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
@@ -194,6 +217,22 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn releaseFromMidiLearn2(ptr: *anyopaque) callconv(.C) types.uint32 {
             return release(&ownerFromMidiLearn2(ptr).iface);
+        }
+
+        fn addRefFromNoteExpression(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromNoteExpression(ptr).iface);
+        }
+
+        fn releaseFromNoteExpression(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromNoteExpression(ptr).iface);
+        }
+
+        fn addRefFromKeyswitch(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromKeyswitch(ptr).iface);
+        }
+
+        fn releaseFromKeyswitch(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromKeyswitch(ptr).iface);
         }
 
         fn initialize(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
@@ -401,6 +440,52 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn onLiveMidi1ControllerInput(_: *anyopaque, _: ivstmidimapping2.BusIndex, _: ivstmidimapping2.MidiChannel, _: vsttypes.CtrlNumber) callconv(.C) types.tresult {
             return types.kResultFalse;
+        }
+
+        const note_expression_vtable = ivstnoteexpression.INoteExpressionControllerVTable{
+            .queryInterface = queryFromNoteExpression,
+            .addRef = addRefFromNoteExpression,
+            .release = releaseFromNoteExpression,
+            .getNoteExpressionCount = getNoteExpressionCount,
+            .getNoteExpressionInfo = getNoteExpressionInfo,
+            .getNoteExpressionStringByValue = getNoteExpressionStringByValue,
+            .getNoteExpressionValueByString = getNoteExpressionValueByString,
+        };
+
+        fn getNoteExpressionCount(_: *anyopaque, _: types.int32, _: types.int16) callconv(.C) types.int32 {
+            return 0;
+        }
+
+        fn getNoteExpressionInfo(_: *anyopaque, _: types.int32, _: types.int16, _: types.int32, out: *ivstnoteexpression.NoteExpressionTypeInfo) callconv(.C) types.tresult {
+            out.* = .{};
+            return types.kInvalidArgument;
+        }
+
+        fn getNoteExpressionStringByValue(_: *anyopaque, _: types.int32, _: types.int16, _: ivstnoteexpression.NoteExpressionTypeID, _: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            out[0] = 0;
+            return types.kInvalidArgument;
+        }
+
+        fn getNoteExpressionValueByString(_: *anyopaque, _: types.int32, _: types.int16, _: ivstnoteexpression.NoteExpressionTypeID, _: [*:0]const vsttypes.TChar, out: *ivstnoteexpression.NoteExpressionValue) callconv(.C) types.tresult {
+            out.* = 0;
+            return types.kInvalidArgument;
+        }
+
+        const keyswitch_vtable = ivstnoteexpression.IKeyswitchControllerVTable{
+            .queryInterface = queryFromKeyswitch,
+            .addRef = addRefFromKeyswitch,
+            .release = releaseFromKeyswitch,
+            .getKeyswitchCount = getKeyswitchCount,
+            .getKeyswitchInfo = getKeyswitchInfo,
+        };
+
+        fn getKeyswitchCount(_: *anyopaque, _: types.int32, _: types.int16) callconv(.C) types.int32 {
+            return 0;
+        }
+
+        fn getKeyswitchInfo(_: *anyopaque, _: types.int32, _: types.int16, _: types.int32, out: *ivstnoteexpression.KeyswitchInfo) callconv(.C) types.tresult {
+            out.* = .{};
+            return types.kInvalidArgument;
         }
     };
 }
