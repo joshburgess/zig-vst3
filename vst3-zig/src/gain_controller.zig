@@ -169,3 +169,47 @@ test "gain controller exposes default MIDI learn and MIDI 2 mapping interfaces" 
         learn2.vtable.onLiveMidi1ControllerInput(learn2, 0, 0, ivstmidicontrollers.kCtrlModWheel),
     );
 }
+
+test "gain controller exposes default note expression and keyswitch interfaces" {
+    const std = @import("std");
+    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+    const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var expression_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        controller_iface.vtable.queryInterface(controller_iface, &ivstnoteexpression.inote_expression_controller_iid, &expression_out),
+    );
+    try std.testing.expect(expression_out != null);
+    const expression: *ivstnoteexpression.INoteExpressionController = @ptrCast(@alignCast(expression_out.?));
+    defer _ = expression.vtable.release(expression);
+
+    try std.testing.expectEqual(@as(types.int32, 0), expression.vtable.getNoteExpressionCount(expression, 0, 0));
+    var expression_info: ivstnoteexpression.NoteExpressionTypeInfo = .{};
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        expression.vtable.getNoteExpressionInfo(expression, 0, 0, 0, &expression_info),
+    );
+
+    var keyswitch_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        controller_iface.vtable.queryInterface(controller_iface, &ivstnoteexpression.ikeyswitch_controller_iid, &keyswitch_out),
+    );
+    try std.testing.expect(keyswitch_out != null);
+    const keyswitch: *ivstnoteexpression.IKeyswitchController = @ptrCast(@alignCast(keyswitch_out.?));
+    defer _ = keyswitch.vtable.release(keyswitch);
+
+    try std.testing.expectEqual(@as(types.int32, 0), keyswitch.vtable.getKeyswitchCount(keyswitch, 0, 0));
+    var keyswitch_info: ivstnoteexpression.KeyswitchInfo = .{};
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        keyswitch.vtable.getKeyswitchInfo(keyswitch, 0, 0, 0, &keyswitch_info),
+    );
+}
