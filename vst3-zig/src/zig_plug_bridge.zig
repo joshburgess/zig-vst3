@@ -4,10 +4,12 @@ const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const ivstevents = @import("pluginterfaces/vst/ivstevents.zig");
+const ivstmidicontrollers = @import("pluginterfaces/vst/ivstmidicontrollers.zig");
 const ivstparameterchanges = @import("pluginterfaces/vst/ivstparameterchanges.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const plug = @import("zig-plug-core");
 const audio_processor_algo = @import("pluginterfaces/vst/vstaudioprocessoralgo.zig");
+const events_helper = @import("pluginterfaces/vst/vsteventshelper.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 const max_audio_channels = 64;
@@ -533,6 +535,7 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
             .bus_index = event.busIndex,
             .sample_offset = offset,
         },
+        .kLegacyMIDICCOutEvent => collectLegacyMidiCcEvent(event, offset),
         else => .{
             .kind = .other,
             .bus_index = event.busIndex,
@@ -540,6 +543,38 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
         },
     };
     collector.count += 1;
+}
+
+fn collectLegacyMidiCcEvent(event: *const ivstevents.Event, offset: usize) plug.process.Event {
+    const midi = &event.data.midiCCOut;
+    const control_number: i16 = @intCast(midi.controlNumber);
+    const value = events_helper.getMIDINormValue(@intCast(@max(midi.value, 0)));
+    return switch (midi.controlNumber) {
+        ivstmidicontrollers.kPitchBend => .{
+            .kind = .pitch_bend,
+            .bus_index = event.busIndex,
+            .sample_offset = offset,
+            .channel = midi.channel,
+            .control_number = control_number,
+            .value = @floatCast(events_helper.getNormPitchBendValue(midi)),
+        },
+        ivstmidicontrollers.kAfterTouch => .{
+            .kind = .aftertouch,
+            .bus_index = event.busIndex,
+            .sample_offset = offset,
+            .channel = midi.channel,
+            .control_number = control_number,
+            .value = @floatCast(value),
+        },
+        else => .{
+            .kind = .midi_cc,
+            .bus_index = event.busIndex,
+            .sample_offset = offset,
+            .channel = midi.channel,
+            .control_number = control_number,
+            .value = @floatCast(value),
+        },
+    };
 }
 
 test "zig-plug bridge round-trips parameter state through IBStream" {
@@ -801,6 +836,59 @@ test "zig-plug bridge drops invalid and overflowing VST3 input events" {
     try std.testing.expectEqual(plug.process.EventKind.other, collected.items[1].kind);
     try std.testing.expectEqual(@as(i32, 1), collected.items[1].bus_index);
     try std.testing.expectEqual(@as(usize, 2), collected.items[1].sample_offset);
+}
+
+test "zig-plug bridge maps legacy MIDI controller events" {
+    const items = [_]ivstevents.Event{
+        .{
+            .busIndex = 0,
+            .sampleOffset = 0,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent),
+            .data = .{ .midiCCOut = .{
+                .controlNumber = ivstmidicontrollers.kCtrlModWheel,
+                .channel = 2,
+                .value = 64,
+            } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 1,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent),
+            .data = .{ .midiCCOut = .{
+                .controlNumber = ivstmidicontrollers.kPitchBend,
+                .channel = 2,
+                .value = 127,
+                .value2 = 127,
+            } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 2,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent),
+            .data = .{ .midiCCOut = .{
+                .controlNumber = ivstmidicontrollers.kAfterTouch,
+                .channel = 2,
+                .value = 32,
+            } },
+        },
+    };
+    var list = TestEventList.init(&items, null);
+    var storage: [3]plug.process.Event = undefined;
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 3,
+        .inputEvents = &list.iface,
+    };
+
+    const collected = collectInputEvents(&data, &storage);
+
+    try std.testing.expectEqual(@as(usize, 3), collected.items.len);
+    try std.testing.expectEqual(plug.process.EventKind.midi_cc, collected.items[0].kind);
+    try std.testing.expectEqual(@as(i16, ivstmidicontrollers.kCtrlModWheel), collected.items[0].control_number);
+    try std.testing.expectApproxEqAbs(@as(f32, 64.0 / 127.0), collected.items[0].value, 0.0001);
+    try std.testing.expectEqual(plug.process.EventKind.pitch_bend, collected.items[1].kind);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), collected.items[1].value, 0.0001);
+    try std.testing.expectEqual(plug.process.EventKind.aftertouch, collected.items[2].kind);
+    try std.testing.expectApproxEqAbs(@as(f32, 32.0 / 127.0), collected.items[2].value, 0.0001);
 }
 
 test "zig-plug bridge parameter controller exposes reflected edit operations" {

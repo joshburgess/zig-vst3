@@ -50,6 +50,9 @@ pub const ParameterChanges = struct {
 pub const EventKind = enum {
     note_on,
     note_off,
+    midi_cc,
+    pitch_bend,
+    aftertouch,
     data,
     other,
 };
@@ -60,7 +63,9 @@ pub const Event = struct {
     sample_offset: usize,
     channel: i16 = 0,
     pitch: i16 = 0,
+    control_number: i16 = 0,
     velocity: f32 = 0,
+    value: f32 = 0,
 };
 
 pub const Events = struct {
@@ -227,12 +232,14 @@ test "parameter changes reject denormalized values" {
 test "events validate block offsets and count kinds" {
     const items = [_]Event{
         .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 0, .pitch = 60, .velocity = 0.75 },
+        .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 1, .channel = 0, .control_number = 1, .value = 0.5 },
         .{ .kind = .note_off, .bus_index = 0, .sample_offset = 3, .channel = 0, .pitch = 60 },
     };
     const view = try Events.init(&items, 4);
 
-    try std.testing.expectEqual(@as(usize, 2), view.items.len);
+    try std.testing.expectEqual(@as(usize, 3), view.items.len);
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_on));
+    try std.testing.expectEqual(@as(usize, 1), view.countKind(.midi_cc));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_off));
     try std.testing.expectEqual(@as(usize, 0), view.countKind(.data));
 }
