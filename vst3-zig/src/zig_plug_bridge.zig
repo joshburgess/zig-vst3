@@ -9,6 +9,46 @@ const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 const max_audio_channels = 64;
 
+pub fn ParameterState(comptime Params: type) type {
+    const Set = plug.parameters.ParameterSet(Params);
+    const Values = plug.parameters.ParameterValues(Params);
+
+    return struct {
+        const Self = @This();
+
+        set: *const Set,
+        values: Values,
+
+        pub fn init(set: *const Set) Self {
+            return .{
+                .set = set,
+                .values = Values.init(set),
+            };
+        }
+
+        pub fn getNormalizedById(self: *const Self, id: vsttypes.ParamID) vsttypes.ParamValue {
+            return self.values.loadById(self.set, id) orelse 0;
+        }
+
+        pub fn setNormalizedById(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+            if (!self.values.storeById(self.set, id, value)) return types.kInvalidArgument;
+            return types.kResultOk;
+        }
+
+        pub fn readFromStream(self: *Self, stream: ?*ibstream.IBStream) types.tresult {
+            var restored = Values.init(self.set);
+            const result = readParameterState(Params, stream, self.set, &restored);
+            if (result != types.kResultOk) return result;
+            copyParameterValues(Params, &restored, &self.values);
+            return types.kResultOk;
+        }
+
+        pub fn writeToStream(self: *const Self, stream: ?*ibstream.IBStream) types.tresult {
+            return writeParameterState(Params, stream, self.set, &self.values);
+        }
+    };
+}
+
 pub fn fillParameterInfo(
     comptime Params: type,
     set: *const plug.parameters.ParameterSet(Params),
@@ -252,6 +292,30 @@ test "zig-plug bridge copies reflected parameter values" {
 
     try std.testing.expectEqual(@as(?f64, 0.25), dest.loadById(&set, 0));
     try std.testing.expectEqual(@as(?f64, 0.75), dest.loadById(&set, 1));
+}
+
+test "zig-plug bridge parameter state stores ids and persists streams" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+        mix: plug.parameters.FloatParam = plug.parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const set = Set.init(.{});
+    var source = ParameterState(Params).init(&set);
+    var restored = ParameterState(Params).init(&set);
+    var stream = MemoryStream{};
+
+    try std.testing.expectEqual(types.kResultOk, source.setNormalizedById(0, 0.25));
+    try std.testing.expectEqual(types.kResultOk, source.setNormalizedById(1, 0.75));
+    try std.testing.expectEqual(types.kInvalidArgument, source.setNormalizedById(99, 0.5));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), source.getNormalizedById(0));
+
+    try std.testing.expectEqual(types.kResultOk, source.writeToStream(&stream.iface));
+    try std.testing.expectEqual(types.kResultOk, stream.iface.vtable.seek(&stream.iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, restored.readFromStream(&stream.iface));
+
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), restored.getNormalizedById(0));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), restored.getNormalizedById(1));
 }
 
 test "zig-plug bridge fills VST3 parameter info from reflected set" {
