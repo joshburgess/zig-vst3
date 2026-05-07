@@ -701,10 +701,17 @@ test "zig-plug bridge stereo audio buses validate arrangements" {
     try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.setArrangements(&inputs, 1, &outputs, 1));
     inputs[0] = empty_arrangement;
     try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangements(&inputs, 1, &outputs, 1));
+    inputs[0] = stereo_arrangement;
+    try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangements(null, 1, &outputs, 1));
+    try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangements(&inputs, 0, &outputs, 1));
+    try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangements(&inputs, 1, null, 1));
+    try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangements(&inputs, 1, &outputs, 0));
 
     try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.arrangement(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out));
     try std.testing.expectEqual(stereo_arrangement, arrangement_out);
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangement(@intFromEnum(ivstcomponent.BusDirections.kOutput), 1, &arrangement_out));
+    try std.testing.expectEqual(empty_arrangement, arrangement_out);
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangement(99, 0, &arrangement_out));
     try std.testing.expectEqual(empty_arrangement, arrangement_out);
 }
 
