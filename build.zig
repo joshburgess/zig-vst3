@@ -62,6 +62,20 @@ pub fn build(b: *std.Build) void {
         bundle_stub_linux_step.dependOn(&b.addFail("bundle-stub-linux requires a Linux target").step);
     }
 
+    const bundle_stub_windows_step = b.step("bundle-stub-windows", "Build a Windows VST3 bundle for the stub plugin");
+    if (target.result.os.tag == .windows) {
+        const bundle_stub_windows = b.addSystemCommand(&.{"scripts/bundle_windows_vst3.sh"});
+        bundle_stub_windows.addFileArg(stub.getEmittedBin());
+        bundle_stub_windows.addArgs(&.{
+            b.getInstallPath(.prefix, "bundle/zig_vst3_stub_windows.vst3"),
+            windowsPlatformDir(target.result.cpu.arch),
+            "zig_vst3_stub",
+        });
+        bundle_stub_windows_step.dependOn(&bundle_stub_windows.step);
+    } else {
+        bundle_stub_windows_step.dependOn(&b.addFail("bundle-stub-windows requires a Windows target").step);
+    }
+
     const vst3_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("vst3-zig/src/root.zig"),
@@ -322,5 +336,13 @@ fn linuxPlatformDir(arch: std.Target.Cpu.Arch) []const u8 {
         .x86_64 => "x86_64-linux",
         .aarch64 => "aarch64-linux",
         else => "unknown-linux",
+    };
+}
+
+fn windowsPlatformDir(arch: std.Target.Cpu.Arch) []const u8 {
+    return switch (arch) {
+        .x86_64 => "x86_64-win",
+        .aarch64 => "aarch64-win",
+        else => "unknown-win",
     };
 }
