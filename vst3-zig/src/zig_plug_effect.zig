@@ -2,14 +2,162 @@ const std = @import("std");
 const funknown = @import("funknown.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
+const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const interface_map = @import("interface_map.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const zig_plug_bridge = @import("zig_plug_bridge.zig");
+
+pub fn ReflectedEditController(comptime Config: type) type {
+    return struct {
+        const Self = @This();
+        const Params = Config.Params;
+
+        const Controller = extern struct {
+            iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
+            ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        };
+
+        var controller = Controller{};
+        var parameter_state = zig_plug_bridge.ParameterState(Params).init(Config.parameter_set);
+        var parameters = zig_plug_bridge.ParameterController(Params){
+            .set = Config.parameter_set,
+            .state = &parameter_state,
+        };
+
+        pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&controller.iface, @ptrCast(requested_iid), out);
+        }
+
+        pub fn getNormalized(id: vsttypes.ParamID) vsttypes.ParamValue {
+            return parameters.getNormalized(id);
+        }
+
+        pub fn setNormalized(id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+            return parameters.setNormalized(id, value);
+        }
+
+        pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
+            parameters.applyChanges(changes);
+        }
+
+        pub fn readState(state: ?*ibstream.IBStream) types.tresult {
+            return parameters.readState(state);
+        }
+
+        pub fn writeState(state: ?*ibstream.IBStream) types.tresult {
+            return parameters.writeState(state);
+        }
+
+        const controller_vtable = ivsteditcontroller.IEditControllerVTable{
+            .queryInterface = query,
+            .addRef = addRef,
+            .release = release,
+            .initialize = initialize,
+            .terminate = terminate,
+            .setComponentState = setComponentState,
+            .setState = setState,
+            .getState = getState,
+            .getParameterCount = getParameterCount,
+            .getParameterInfo = getParameterInfo,
+            .getParamStringByValue = getParamStringByValue,
+            .getParamValueByString = getParamValueByString,
+            .normalizedParamToPlain = normalizedParamToPlain,
+            .plainParamToNormalized = plainParamToNormalized,
+            .getParamNormalized = getParamNormalized,
+            .setParamNormalized = setParamNormalized,
+            .setComponentHandler = setComponentHandler,
+            .createView = createView,
+        };
+
+        fn owner(ptr: *anyopaque) *Controller {
+            const iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &ipluginbase.iplugin_base_iid, .ptr = ptr },
+                .{ .iid = &ivsteditcontroller.iedit_controller_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&owner(ptr).ref_count, Config.controller_name);
+        }
+
+        fn initialize(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
+            return types.kResultOk;
+        }
+
+        fn terminate(_: *anyopaque) callconv(.C) types.tresult {
+            return types.kResultOk;
+        }
+
+        fn setComponentState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresult {
+            return Self.readState(state);
+        }
+
+        fn setState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresult {
+            return Self.readState(state);
+        }
+
+        fn getState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresult {
+            return Self.writeState(state);
+        }
+
+        fn getParameterCount(_: *anyopaque) callconv(.C) types.int32 {
+            return parameters.parameterCount();
+        }
+
+        fn getParameterInfo(_: *anyopaque, index: types.int32, out: *ivsteditcontroller.ParameterInfo) callconv(.C) types.tresult {
+            return parameters.parameterInfo(index, out);
+        }
+
+        fn getParamStringByValue(_: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            return parameters.stringByValue(id, value, out);
+        }
+
+        fn getParamValueByString(_: *anyopaque, id: vsttypes.ParamID, text: [*]vsttypes.TChar, out: *vsttypes.ParamValue) callconv(.C) types.tresult {
+            return parameters.valueByString(id, text, out);
+        }
+
+        fn normalizedParamToPlain(_: *anyopaque, id: vsttypes.ParamID, normalized: vsttypes.ParamValue) callconv(.C) vsttypes.ParamValue {
+            return parameters.plainFromNormalized(id, normalized);
+        }
+
+        fn plainParamToNormalized(_: *anyopaque, id: vsttypes.ParamID, plain: vsttypes.ParamValue) callconv(.C) vsttypes.ParamValue {
+            return parameters.normalizedFromPlain(id, plain);
+        }
+
+        fn getParamNormalized(_: *anyopaque, id: vsttypes.ParamID) callconv(.C) vsttypes.ParamValue {
+            return parameters.getNormalized(id);
+        }
+
+        fn setParamNormalized(_: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+            return parameters.setNormalized(id, value);
+        }
+
+        fn setComponentHandler(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
+            return types.kResultOk;
+        }
+
+        fn createView(_: *anyopaque, _: types.FIDString) callconv(.C) ?*iplugview.IPlugView {
+            return null;
+        }
+    };
+}
 
 pub fn SimpleStereoEffect(comptime Config: type) type {
     return struct {
