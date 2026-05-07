@@ -22,6 +22,8 @@ const Component = extern struct {
     ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
 };
 
+const max_audio_channels = 64;
+
 var component = Component{};
 
 pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
@@ -231,31 +233,18 @@ fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.C) ty
         return types.kResultOk;
     }
 
-    const gain = @as(f32, @floatCast(gain_controller.gain()));
     const input = data.inputs.?[0];
     const output = &data.outputs.?[0];
     if (input.numChannels <= 0 or output.numChannels <= 0) {
         return types.kResultOk;
     }
 
-    const channels = @min(input.numChannels, output.numChannels);
     if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
-        const inputs = input.channelBuffers.channelBuffers32 orelse return types.kResultOk;
-        const outputs = output.channelBuffers.channelBuffers32 orelse return types.kResultOk;
-        for (0..@intCast(channels)) |channel| {
-            for (0..@intCast(data.numSamples)) |sample| {
-                outputs[channel][sample] = inputs[channel][sample] * gain;
-            }
-        }
+        var context = makeProcessContext(f32, input, output.*, data, parameter_changes) catch return types.kResultOk;
+        applyGain(f32, &context, @floatCast(gain_controller.gain()));
     } else {
-        const inputs = input.channelBuffers.channelBuffers64 orelse return types.kResultOk;
-        const outputs = output.channelBuffers.channelBuffers64 orelse return types.kResultOk;
-        const gain64 = @as(f64, gain_controller.gain());
-        for (0..@intCast(channels)) |channel| {
-            for (0..@intCast(data.numSamples)) |sample| {
-                outputs[channel][sample] = inputs[channel][sample] * gain64;
-            }
-        }
+        var context = makeProcessContext(f64, input, output.*, data, parameter_changes) catch return types.kResultOk;
+        applyGain(f64, &context, gain_controller.gain());
     }
 
     return types.kResultOk;
@@ -263,6 +252,52 @@ fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.C) ty
 
 fn getTailSamples(_: *anyopaque) callconv(.C) types.uint32 {
     return ivstaudioprocessor.kNoTail;
+}
+
+fn makeProcessContext(
+    comptime Sample: type,
+    input: ivstaudioprocessor.AudioBusBuffers,
+    output: ivstaudioprocessor.AudioBusBuffers,
+    data: *const ivstaudioprocessor.ProcessData,
+    parameter_changes: plug_process.ParameterChanges,
+) !plug_process.ProcessContext(Sample) {
+    if (data.numSamples < 0) return error.InvalidFrameCount;
+    const frame_count: usize = @intCast(data.numSamples);
+    const channel_count: usize = @intCast(@min(@min(input.numChannels, output.numChannels), max_audio_channels));
+    var input_channels: [max_audio_channels][]const Sample = undefined;
+    var output_channels: [max_audio_channels][]Sample = undefined;
+    const input_buffers = vstAudioBuffers(Sample, input) orelse return error.MissingInputBuffers;
+    const output_buffers = vstAudioBuffers(Sample, output) orelse return error.MissingOutputBuffers;
+
+    for (0..channel_count) |channel| {
+        input_channels[channel] = input_buffers[channel][0..frame_count];
+        output_channels[channel] = output_buffers[channel][0..frame_count];
+    }
+
+    return .{
+        .sample_rate = if (data.processContext) |context| context.sampleRate else 0,
+        .inputs = try plug_process.AudioInputs(Sample).init(input_channels[0..channel_count]),
+        .outputs = try plug_process.AudioOutputs(Sample).init(output_channels[0..channel_count]),
+        .parameter_changes = parameter_changes,
+    };
+}
+
+fn vstAudioBuffers(comptime Sample: type, buffer: ivstaudioprocessor.AudioBusBuffers) ?[*][*]Sample {
+    return switch (Sample) {
+        f32 => buffer.channelBuffers.channelBuffers32,
+        f64 => buffer.channelBuffers.channelBuffers64,
+        else => @compileError("unsupported VST3 sample type"),
+    };
+}
+
+fn applyGain(comptime Sample: type, context: *plug_process.ProcessContext(Sample), gain: Sample) void {
+    for (0..context.outputs.channels.len) |channel| {
+        const input = context.inputs.channel(channel) orelse continue;
+        const output = context.outputs.channel(channel) orelse continue;
+        for (0..context.frameCount()) |sample| {
+            output[sample] = input[sample] * gain;
+        }
+    }
 }
 
 fn collectInputParameterChanges(data: *ivstaudioprocessor.ProcessData, storage: []plug_process.ParameterChange) plug_process.ParameterChanges {
