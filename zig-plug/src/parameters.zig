@@ -74,8 +74,46 @@ pub const ExponentialSmoother = struct {
     }
 };
 
+pub const LogSmoother = struct {
+    current: f64,
+    target: f64,
+    ratio: f64 = 1.0,
+    remaining: usize = 0,
+
+    pub fn init(value: f64) LogSmoother {
+        const clamped = clampNormalizedNonZero(value);
+        return .{ .current = clamped, .target = clamped };
+    }
+
+    pub fn setTarget(self: *LogSmoother, target: f64, samples: usize) void {
+        self.target = clampNormalizedNonZero(target);
+        self.remaining = samples;
+        if (samples == 0) {
+            self.current = self.target;
+            self.ratio = 1.0;
+        } else {
+            self.ratio = std.math.pow(f64, self.target / self.current, 1.0 / @as(f64, @floatFromInt(samples)));
+        }
+    }
+
+    pub fn next(self: *LogSmoother) f64 {
+        if (self.remaining == 0) return self.current;
+        self.remaining -= 1;
+        if (self.remaining == 0) {
+            self.current = self.target;
+        } else {
+            self.current *= self.ratio;
+        }
+        return self.current;
+    }
+};
+
 fn clampNormalized(value: f64) f64 {
     return std.math.clamp(value, 0.0, 1.0);
+}
+
+fn clampNormalizedNonZero(value: f64) f64 {
+    return std.math.clamp(value, std.math.floatEps(f64), 1.0);
 }
 
 pub const FloatParam = struct {
@@ -313,6 +351,23 @@ test "exponential smoother clamps initial value target and coefficient" {
     try std.testing.expectApproxEqAbs(1.0, smoother.coefficient, 0.000001);
     smoother.setTarget(-1.0);
     try std.testing.expectApproxEqAbs(0.0, smoother.next(), 0.000001);
+}
+
+test "log smoother reaches multiplicative target after requested samples" {
+    var smoother = LogSmoother.init(0.25);
+
+    smoother.setTarget(1.0, 2);
+    try std.testing.expectApproxEqAbs(0.5, smoother.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(1.0, smoother.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(1.0, smoother.next(), 0.000001);
+}
+
+test "log smoother clamps zero and handles immediate target" {
+    var smoother = LogSmoother.init(0.0);
+
+    try std.testing.expect(smoother.current > 0.0);
+    smoother.setTarget(2.0, 0);
+    try std.testing.expectApproxEqAbs(1.0, smoother.current, 0.000001);
 }
 
 test "int parameter clamps and rounds normalized values" {

@@ -11,6 +11,7 @@
 - `NormalizedValue`: lock-free atomic storage for normalized `f64` values, stored as raw bits.
 - `LinearSmoother`: sample-counted ramp between normalized values.
 - `ExponentialSmoother`: coefficient-based smoothing toward a normalized target.
+- `LogSmoother`: sample-counted multiplicative ramp for normalized values that must stay above zero.
 
 ## Boundary Rules
 
@@ -20,7 +21,6 @@ Parameter state that may be read by the audio thread should use `NormalizedValue
 
 ## Open Work
 
-- Add logarithmic smoothing.
 - Add modulation lanes separate from the base value.
 - Add a reflected parameter collection so plugins can declare parameters as struct fields.
 - Wire the gain plugin to the Layer 2 descriptors after the plugin interface prototype exists.
