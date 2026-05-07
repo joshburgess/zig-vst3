@@ -232,12 +232,61 @@ fn setProcessing(_: *anyopaque, _: types.TBool) callconv(.C) types.tresult {
     return types.kResultOk;
 }
 
-fn process(_: *anyopaque, _: *ivstaudioprocessor.ProcessData) callconv(.C) types.tresult {
+fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.C) types.tresult {
+    applyInputParameterChanges(data);
+    if (data.numInputs <= 0 or data.numOutputs <= 0 or data.inputs == null or data.outputs == null) {
+        return types.kResultOk;
+    }
+
+    const gain = @as(f32, @floatCast(stub_controller.gain()));
+    const input = data.inputs.?[0];
+    const output = &data.outputs.?[0];
+    if (input.numChannels <= 0 or output.numChannels <= 0) {
+        return types.kResultOk;
+    }
+
+    const channels = @min(input.numChannels, output.numChannels);
+    if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
+        const inputs = input.channelBuffers.channelBuffers32 orelse return types.kResultOk;
+        const outputs = output.channelBuffers.channelBuffers32 orelse return types.kResultOk;
+        for (0..@intCast(channels)) |channel| {
+            for (0..@intCast(data.numSamples)) |sample| {
+                outputs[channel][sample] = inputs[channel][sample] * gain;
+            }
+        }
+    } else {
+        const inputs = input.channelBuffers.channelBuffers64 orelse return types.kResultOk;
+        const outputs = output.channelBuffers.channelBuffers64 orelse return types.kResultOk;
+        const gain64 = @as(f64, stub_controller.gain());
+        for (0..@intCast(channels)) |channel| {
+            for (0..@intCast(data.numSamples)) |sample| {
+                outputs[channel][sample] = inputs[channel][sample] * gain64;
+            }
+        }
+    }
+
     return types.kResultOk;
 }
 
 fn getTailSamples(_: *anyopaque) callconv(.C) types.uint32 {
     return ivstaudioprocessor.kNoTail;
+}
+
+fn applyInputParameterChanges(data: *ivstaudioprocessor.ProcessData) void {
+    const changes = data.inputParameterChanges orelse return;
+    for (0..@intCast(changes.vtable.getParameterCount(changes))) |index| {
+        const queue = changes.vtable.getParameterData(changes, @intCast(index)) orelse continue;
+        if (queue.vtable.getParameterId(queue) != stub_controller.gain_param_id) continue;
+        const points = queue.vtable.getPointCount(queue);
+        if (points <= 0) continue;
+        var sample_offset: types.int32 = 0;
+        var value: vsttypes.ParamValue = 0;
+        for (0..@intCast(points)) |point_index| {
+            if (queue.vtable.getPoint(queue, @intCast(point_index), &sample_offset, &value) == types.kResultOk) {
+                stub_controller.setGain(value);
+            }
+        }
+    }
 }
 
 test "stub component can be created as IComponent" {
