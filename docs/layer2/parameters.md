@@ -13,6 +13,8 @@
 - `LinearSmoother`: sample-counted ramp between normalized values.
 - `ExponentialSmoother`: coefficient-based smoothing toward a normalized target.
 - `LogSmoother`: sample-counted multiplicative ramp for normalized values that must stay above zero.
+- `ParameterSet(Params)`: comptime reflection over a struct of descriptors.
+- `ParameterValues(Params)`: atomic normalized value storage initialized from reflected descriptor defaults.
 
 ## Boundary Rules
 
@@ -22,5 +24,4 @@ Parameter state that may be read by the audio thread should use `NormalizedValue
 
 ## Open Work
 
-- Add a reflected parameter collection so plugins can declare parameters as struct fields.
 - Wire the gain plugin to the Layer 2 descriptors after the plugin interface prototype exists.

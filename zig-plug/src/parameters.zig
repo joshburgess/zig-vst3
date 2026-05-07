@@ -314,6 +314,79 @@ pub fn EnumParam(comptime Enum: type) type {
     };
 }
 
+pub fn ParameterSet(comptime Params: type) type {
+    const fields = @typeInfo(Params).@"struct".fields;
+
+    return struct {
+        const Self = @This();
+
+        pub const count = fields.len;
+
+        params: Params,
+
+        pub fn init(params: Params) Self {
+            return .{ .params = params };
+        }
+
+        pub fn id(self: *const Self, index: usize) ?u32 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field.name).id;
+            }
+            return null;
+        }
+
+        pub fn name(self: *const Self, index: usize) ?[]const u8 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field.name).name;
+            }
+            return null;
+        }
+
+        pub fn defaultNormalized(self: *const Self, index: usize) ?f64 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field.name).defaultNormalized();
+            }
+            return null;
+        }
+
+        pub fn indexOfId(self: *const Self, wanted_id: u32) ?usize {
+            inline for (fields, 0..) |field, index| {
+                if (@field(self.params, field.name).id == wanted_id) return index;
+            }
+            return null;
+        }
+    };
+}
+
+pub fn ParameterValues(comptime Params: type) type {
+    const Set = ParameterSet(Params);
+
+    return struct {
+        const Self = @This();
+
+        values: [Set.count]NormalizedValue,
+
+        pub fn init(set: *const Set) Self {
+            var self: Self = undefined;
+            inline for (0..Set.count) |index| {
+                self.values[index] = NormalizedValue.init(set.defaultNormalized(index).?);
+            }
+            return self;
+        }
+
+        pub fn load(self: *const Self, index: usize) ?f64 {
+            if (index >= Set.count) return null;
+            return self.values[index].load();
+        }
+
+        pub fn store(self: *Self, index: usize, value: f64) bool {
+            if (index >= Set.count) return false;
+            self.values[index].store(value);
+            return true;
+        }
+    };
+}
+
 test "float parameter clamps defaults and values" {
     const param = FloatParam.init(7, "Gain", -12.0, 6.0, 12.0);
 
@@ -454,6 +527,46 @@ test "single-value enum parameter stays at zero" {
     try std.testing.expectEqual(@as(f64, 0.0), only.defaultNormalized());
     try std.testing.expectEqual(@as(f64, 0.0), only.normalize(.value));
     try std.testing.expectEqual(Only.value, only.denormalize(1.0));
+}
+
+test "parameter set reflects descriptor fields" {
+    const Mode = enum { clean, lead };
+    const Params = struct {
+        gain: FloatParam = FloatParam.init(0, "Gain", 0.0, 1.0, 0.75),
+        voices: IntParam = IntParam.init(1, "Voices", 1, 16, 4),
+        bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
+        mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .lead },
+    };
+    const Set = ParameterSet(Params);
+    const set = Set.init(.{});
+
+    try std.testing.expectEqual(@as(usize, 4), Set.count);
+    try std.testing.expectEqual(@as(?u32, 0), set.id(0));
+    try std.testing.expectEqualStrings("Voices", set.name(1).?);
+    try std.testing.expectEqual(@as(?usize, 2), set.indexOfId(2));
+    try std.testing.expectEqual(@as(?usize, null), set.indexOfId(99));
+    try std.testing.expectApproxEqAbs(0.75, set.defaultNormalized(0).?, 0.000001);
+    try std.testing.expectApproxEqAbs(0.2, set.defaultNormalized(1).?, 0.000001);
+    try std.testing.expectApproxEqAbs(0.0, set.defaultNormalized(2).?, 0.000001);
+    try std.testing.expectApproxEqAbs(1.0, set.defaultNormalized(3).?, 0.000001);
+}
+
+test "parameter values initialize from reflected defaults" {
+    const Params = struct {
+        gain: FloatParam = FloatParam.init(0, "Gain", 0.0, 1.0, 0.25),
+        bypass: BoolParam = .{ .id = 1, .name = "Bypass", .default = true },
+    };
+    const Set = ParameterSet(Params);
+    const Values = ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+
+    try std.testing.expectEqual(@as(?f64, 0.25), values.load(0));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.load(1));
+    try std.testing.expectEqual(@as(?f64, null), values.load(2));
+    try std.testing.expect(values.store(0, 2.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
+    try std.testing.expect(!values.store(2, 0.5));
 }
 
 test "float parameter round-trips normalized values" {
