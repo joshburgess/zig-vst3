@@ -28,6 +28,11 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(stub);
 
+    const entry_symbols_step = b.step("entry-symbols", "Verify native VST3 module entry exports");
+    const check_entry_symbols = b.addSystemCommand(&.{"scripts/check_entry_symbols.sh"});
+    check_entry_symbols.addFileArg(stub.getEmittedBin());
+    entry_symbols_step.dependOn(&check_entry_symbols.step);
+
     const vst3_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("vst3-zig/src/root.zig"),
@@ -246,6 +251,7 @@ pub fn build(b: *std.Build) void {
 
     const phase1_step = b.step("phase1", "Run Phase 1 COM/vtable integration checks");
     phase1_step.dependOn(test_step);
+    phase1_step.dependOn(entry_symbols_step);
     phase1_step.dependOn(tuid_abi_step);
     phase1_step.dependOn(pluginbase_abi_step);
     phase1_step.dependOn(ibstream_abi_step);
