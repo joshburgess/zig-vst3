@@ -42,9 +42,10 @@ pub fn build(b: *std.Build) void {
     });
 
     const entry_symbols_step = b.step("entry-symbols", "Verify native VST3 module entry exports");
-    const check_entry_symbols = b.addSystemCommand(&.{"scripts/check_entry_symbols.sh"});
-    check_entry_symbols.addFileArg(gain.getEmittedBin());
-    entry_symbols_step.dependOn(&check_entry_symbols.step);
+    addEntrySymbolsCheck(b, entry_symbols_step, gain);
+    addEntrySymbolsCheck(b, entry_symbols_step, bypass);
+    addEntrySymbolsCheck(b, entry_symbols_step, mode_gain);
+    addEntrySymbolsCheck(b, entry_symbols_step, voice_mix);
 
     const bundle_gain_step = addVst3BundleSteps(b, target, gain, .{
         .short_name = "gain",
@@ -553,6 +554,16 @@ fn addVst3PluginLibrary(
     });
     b.installArtifact(library);
     return library;
+}
+
+fn addEntrySymbolsCheck(
+    b: *std.Build,
+    step: *std.Build.Step,
+    library: *std.Build.Step.Compile,
+) void {
+    const check_entry_symbols = b.addSystemCommand(&.{"scripts/check_entry_symbols.sh"});
+    check_entry_symbols.addFileArg(library.getEmittedBin());
+    step.dependOn(&check_entry_symbols.step);
 }
 
 const Vst3BundleOptions = struct {
