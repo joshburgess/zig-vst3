@@ -64,12 +64,7 @@ fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
 }
 
 fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
-    const previous = owner(ptr).ref_count.fetchSub(1, .release);
-    if (previous == 0) {
-        owner(ptr).ref_count.store(0, .monotonic);
-        return 0;
-    }
-    return previous - 1;
+    return funknown.decrementRefCount(&owner(ptr).ref_count, "GainController");
 }
 
 fn initialize(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {

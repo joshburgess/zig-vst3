@@ -69,12 +69,7 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
         }
 
         fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
-            const previous = owner(ptr).ref_count.fetchSub(1, .release);
-            if (previous == 0) {
-                owner(ptr).ref_count.store(0, .monotonic);
-                return 0;
-            }
-            return previous - 1;
+            return funknown.decrementRefCount(&owner(ptr).ref_count, "IPluginFactory");
         }
 
         fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.C) types.tresult {

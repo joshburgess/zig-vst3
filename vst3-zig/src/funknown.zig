@@ -75,20 +75,25 @@ pub fn addRef(ptr: *anyopaque) callconv(.C) uint32 {
 
 pub fn release(ptr: *anyopaque) callconv(.C) uint32 {
     const header: *Header = @ptrCast(@alignCast(ptr));
+    const next = decrementRefCount(&header.ref_count, "FUnknown");
+    if (next == 0) {
+        _ = header.ref_count.load(.acquire);
+        if (header.destroy) |destroy| destroy(ptr);
+    }
+
+    return next;
+}
+
+pub fn decrementRefCount(ref_count: *std.atomic.Value(uint32), comptime owner_name: []const u8) uint32 {
     while (true) {
-        const previous = header.ref_count.load(.monotonic);
+        const previous = ref_count.load(.monotonic);
         if (previous == 0) {
-            @panic("FUnknown.release called after refcount reached zero");
+            @panic(owner_name ++ ".release called after refcount reached zero");
         }
 
         const next = previous - 1;
-        if (header.ref_count.cmpxchgWeak(previous, next, .release, .monotonic)) |_| {
+        if (ref_count.cmpxchgWeak(previous, next, .release, .monotonic)) |_| {
             continue;
-        }
-
-        if (next == 0) {
-            _ = header.ref_count.load(.acquire);
-            if (header.destroy) |destroy| destroy(ptr);
         }
 
         return next;
