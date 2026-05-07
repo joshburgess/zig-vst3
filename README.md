@@ -10,7 +10,7 @@ The current tree contains:
 
 ## Current Status
 
-Layer 1 now builds a minimal gain VST3 plugin that passes Steinberg's official validator locally on macOS.
+Layer 1 now builds VST3 example plugins that pass Steinberg's official validator locally on macOS.
 
 Implemented pieces include:
 
@@ -21,8 +21,8 @@ Implemented pieces include:
 - C ABI harnesses for `FUnknown` and multi-interface dispatch
 - `pluginterfaces/base`, `pluginterfaces/gui`, and broad `pluginterfaces/vst` ABI translations
 - Platform-specific VST3 module entry exports
-- macOS, Linux, and Windows `.vst3` bundle generation for the gain plugin
-- A validator-passing gain plugin with component, controller, processor, one automatable gain parameter, sample-accurate parameter updates, and state persistence
+- macOS, Linux, and Windows `.vst3` bundle generation for gain, bypass, mode-gain, and voice-mix examples
+- Validator-passing example plugins with component, controller, processor, automatable parameters, sample-accurate parameter updates, and state persistence
 - Initial `zig-plug` float, int, bool, and enum parameter descriptors with normalization tests
 - Initial `zig-plug` plugin spec prototype with reflected parameter defaults
 
@@ -40,17 +40,20 @@ zig build test
 zig build phase1
 ```
 
-Build and validate the gain plugin on macOS:
+Build and validate the example plugins on macOS:
 
 ```sh
 zig build validator
-zig build validate-gain
+zig build validate-examples
 ```
 
 Build platform bundles:
 
 ```sh
 zig build bundle-gain
+zig build bundle-bypass
+zig build bundle-mode-gain
+zig build bundle-voice-mix
 zig build -Dtarget=x86_64-linux-gnu bundle-gain-linux
 zig build -Dtarget=x86_64-windows-gnu bundle-gain-windows
 ```
