@@ -152,12 +152,12 @@ fn setActive(_: *anyopaque, _: types.TBool) callconv(.C) types.tresult {
     return types.kResultOk;
 }
 
-fn setState(_: *anyopaque, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
-    return types.kResultOk;
+fn setState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresult {
+    return stub_controller.readGainState(state);
 }
 
-fn getState(_: *anyopaque, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
-    return types.kResultOk;
+fn getState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresult {
+    return stub_controller.writeGainState(state);
 }
 
 fn copyAscii16(dest: *vsttypes.String128, source: []const u8) void {
