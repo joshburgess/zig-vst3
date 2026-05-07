@@ -32,6 +32,10 @@ pub fn build(b: *std.Build) void {
         .artifact_name = "zig_vst3_bypass",
         .root_source_file = "vst3-zig/src/bypass_plugin.zig",
     });
+    const mode_gain = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
+        .artifact_name = "zig_vst3_mode_gain",
+        .root_source_file = "vst3-zig/src/mode_gain_plugin.zig",
+    });
 
     const entry_symbols_step = b.step("entry-symbols", "Verify native VST3 module entry exports");
     const check_entry_symbols = b.addSystemCommand(&.{"scripts/check_entry_symbols.sh"});
@@ -49,6 +53,12 @@ pub fn build(b: *std.Build) void {
         .display_name = "bypass",
         .artifact_name = "zig_vst3_bypass",
         .bundle_id = "dev.zig-vst3.bypass",
+    });
+    const bundle_mode_gain_step = addVst3BundleSteps(b, target, mode_gain, .{
+        .short_name = "mode-gain",
+        .display_name = "mode gain",
+        .artifact_name = "zig_vst3_mode_gain",
+        .bundle_id = "dev.zig-vst3.mode-gain",
     });
     const vst3_test_module = b.createModule(.{
         .root_source_file = b.path("vst3-zig/src/root.zig"),
@@ -88,6 +98,16 @@ pub fn build(b: *std.Build) void {
     bypass_test_module.addImport("zig-plug-core", zig_plug_core);
     const bypass_tests = b.addTest(.{
         .root_module = bypass_test_module,
+    });
+
+    const mode_gain_test_module = b.createModule(.{
+        .root_source_file = b.path("vst3-zig/src/mode_gain_plugin.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    mode_gain_test_module.addImport("zig-plug-core", zig_plug_core);
+    const mode_gain_tests = b.addTest(.{
+        .root_module = mode_gain_test_module,
     });
 
     const gain_core_example_module = b.createModule(.{
@@ -135,6 +155,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(zig_plug_tests).step);
     test_step.dependOn(&b.addRunArtifact(gain_tests).step);
     test_step.dependOn(&b.addRunArtifact(bypass_tests).step);
+    test_step.dependOn(&b.addRunArtifact(mode_gain_tests).step);
     test_step.dependOn(&b.addRunArtifact(gain_core_example_tests).step);
     test_step.dependOn(&b.addRunArtifact(bypass_core_example_tests).step);
     test_step.dependOn(&b.addRunArtifact(mode_gain_core_example_tests).step);
@@ -173,9 +194,22 @@ pub fn build(b: *std.Build) void {
     } else {
         validate_bypass_step.dependOn(&b.addFail("validate-bypass currently supports macOS targets").step);
     }
+    const validate_mode_gain_step = b.step("validate-mode-gain", "Build and validate the native mode gain VST3 bundle");
+    if (target.result.os.tag == .macos) {
+        validate_mode_gain_step.dependOn(bundle_mode_gain_step);
+        const validate_mode_gain = b.addSystemCommand(&.{
+            "scripts/validate.sh",
+            b.getInstallPath(.prefix, "bundle/zig_vst3_mode_gain.vst3"),
+        });
+        validate_mode_gain.step.dependOn(bundle_mode_gain_step);
+        validate_mode_gain_step.dependOn(&validate_mode_gain.step);
+    } else {
+        validate_mode_gain_step.dependOn(&b.addFail("validate-mode-gain currently supports macOS targets").step);
+    }
     const validate_examples_step = b.step("validate-examples", "Build and validate all native VST3 example bundles");
     validate_examples_step.dependOn(validate_gain_step);
     validate_examples_step.dependOn(validate_bypass_step);
+    validate_examples_step.dependOn(validate_mode_gain_step);
     const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
     validator_step.dependOn(&build_validator.step);
