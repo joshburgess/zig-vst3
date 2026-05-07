@@ -68,6 +68,18 @@ pub fn getSystemTime(out: *types.int64) types.tresult {
     return Controller.getSystemTime(out);
 }
 
+pub fn startProgress(progress_type: types.uint32, title: ?[*]const types.char16, out: *@import("pluginterfaces/vst/ivsteditcontroller.zig").ProgressID) types.tresult {
+    return Controller.startProgress(progress_type, title, out);
+}
+
+pub fn updateProgress(id: @import("pluginterfaces/vst/ivsteditcontroller.zig").ProgressID, value: vsttypes.ParamValue) types.tresult {
+    return Controller.updateProgress(id, value);
+}
+
+pub fn finishProgress(id: @import("pluginterfaces/vst/ivsteditcontroller.zig").ProgressID) types.tresult {
+    return Controller.finishProgress(id);
+}
+
 pub fn notifyUnitSelection(unit_id: vsttypes.UnitID) types.tresult {
     return Controller.notifyUnitSelection(unit_id);
 }
@@ -671,6 +683,153 @@ test "gain controller stores bus activation and system time handlers" {
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.bus_release_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.time_release_count);
+}
+
+test "gain controller stores progress callbacks" {
+    const std = @import("std");
+    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+
+    const HostHandler = extern struct {
+        const Self = @This();
+
+        handler: ivsteditcontroller.IComponentHandler = .{ .vtable = &handler_vtable },
+        progress: ivsteditcontroller.IProgress = .{ .vtable = &progress_vtable },
+        start_count: types.uint32 = 0,
+        update_count: types.uint32 = 0,
+        finish_count: types.uint32 = 0,
+        progress_release_count: types.uint32 = 0,
+        last_type: types.uint32 = 0,
+        last_id: ivsteditcontroller.ProgressID = 0,
+        last_value: vsttypes.ParamValue = 0,
+
+        const handler_vtable = ivsteditcontroller.IComponentHandlerVTable{
+            .queryInterface = queryFromHandler,
+            .addRef = addRefFromHandler,
+            .release = releaseFromHandler,
+            .beginEdit = beginEditCallback,
+            .performEdit = performEditCallback,
+            .endEdit = endEditCallback,
+            .restartComponent = restartComponent,
+        };
+
+        const progress_vtable = ivsteditcontroller.IProgressVTable{
+            .queryInterface = queryFromProgress,
+            .addRef = addRefFromProgress,
+            .release = releaseFromProgress,
+            .start = startCallback,
+            .update = updateCallback,
+            .finish = finishCallback,
+        };
+
+        fn ownerFromHandler(ptr: *anyopaque) *Self {
+            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("handler", iface);
+        }
+
+        fn ownerFromProgress(ptr: *anyopaque) *Self {
+            const iface: *ivsteditcontroller.IProgress = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("progress", iface);
+        }
+
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.iprogress_iid)) {
+                _ = self.progress.vtable.addRef(&self.progress);
+                out.* = &self.progress;
+                return types.kResultOk;
+            }
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn queryFromProgress(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn addRefFromHandler(_: *anyopaque) callconv(.C) types.uint32 {
+            return 1;
+        }
+
+        fn releaseFromHandler(_: *anyopaque) callconv(.C) types.uint32 {
+            return 1;
+        }
+
+        fn addRefFromProgress(_: *anyopaque) callconv(.C) types.uint32 {
+            return 2;
+        }
+
+        fn releaseFromProgress(ptr: *anyopaque) callconv(.C) types.uint32 {
+            ownerFromProgress(ptr).progress_release_count += 1;
+            return 1;
+        }
+
+        fn beginEditCallback(_: *anyopaque, _: vsttypes.ParamID) callconv(.C) types.tresult {
+            return types.kResultOk;
+        }
+
+        fn performEditCallback(_: *anyopaque, _: vsttypes.ParamID, _: vsttypes.ParamValue) callconv(.C) types.tresult {
+            return types.kResultOk;
+        }
+
+        fn endEditCallback(_: *anyopaque, _: vsttypes.ParamID) callconv(.C) types.tresult {
+            return types.kResultOk;
+        }
+
+        fn restartComponent(_: *anyopaque, _: types.int32) callconv(.C) types.tresult {
+            return types.kResultOk;
+        }
+
+        fn startCallback(ptr: *anyopaque, progress_type: types.uint32, _: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) callconv(.C) types.tresult {
+            const self = ownerFromProgress(ptr);
+            self.start_count += 1;
+            self.last_type = progress_type;
+            out.* = 77;
+            self.last_id = out.*;
+            return types.kResultOk;
+        }
+
+        fn updateCallback(ptr: *anyopaque, id: ivsteditcontroller.ProgressID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+            const self = ownerFromProgress(ptr);
+            self.update_count += 1;
+            self.last_id = id;
+            self.last_value = value;
+            return types.kResultOk;
+        }
+
+        fn finishCallback(ptr: *anyopaque, id: ivsteditcontroller.ProgressID) callconv(.C) types.tresult {
+            const self = ownerFromProgress(ptr);
+            self.finish_count += 1;
+            self.last_id = id;
+            return types.kResultOk;
+        }
+    };
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var progress_id: ivsteditcontroller.ProgressID = 999;
+    try std.testing.expectEqual(types.kResultFalse, startProgress(@intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
+    try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 0), progress_id);
+
+    var handler = HostHandler{};
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, &handler.handler));
+    try std.testing.expectEqual(types.kResultOk, startProgress(@intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
+    try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 77), progress_id);
+    try std.testing.expectEqual(types.kResultOk, updateProgress(progress_id, 0.5));
+    try std.testing.expectEqual(types.kResultOk, finishProgress(progress_id));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.start_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.update_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.finish_count);
+    try std.testing.expectEqual(@intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), handler.last_type);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), handler.last_value);
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.progress_release_count);
+    try std.testing.expectEqual(types.kResultFalse, updateProgress(progress_id, 1.0));
 }
 
 test "gain controller stores unit handler callbacks" {

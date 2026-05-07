@@ -59,6 +59,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             component_handler3: ?*ivstcontextmenu.IComponentHandler3 = null,
             component_handler_bus_activation: ?*ivsteditcontroller.IComponentHandlerBusActivation = null,
             component_handler_system_time: ?*ivsteditcontroller.IComponentHandlerSystemTime = null,
+            progress: ?*ivsteditcontroller.IProgress = null,
             unit_handler: ?*ivstunits.IUnitHandler = null,
             unit_handler2: ?*ivstunits.IUnitHandler2 = null,
             host_application: ?*ivsthostapplication.IHostApplication = null,
@@ -137,6 +138,24 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 return types.kResultFalse;
             };
             return handler.vtable.getSystemTime(handler, out);
+        }
+
+        pub fn startProgress(progress_type: types.uint32, title: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) types.tresult {
+            const progress = controller.progress orelse {
+                out.* = 0;
+                return types.kResultFalse;
+            };
+            return progress.vtable.start(progress, progress_type, title, out);
+        }
+
+        pub fn updateProgress(id: ivsteditcontroller.ProgressID, value: vsttypes.ParamValue) types.tresult {
+            const progress = controller.progress orelse return types.kResultFalse;
+            return progress.vtable.update(progress, id, value);
+        }
+
+        pub fn finishProgress(id: ivsteditcontroller.ProgressID) types.tresult {
+            const progress = controller.progress orelse return types.kResultFalse;
+            return progress.vtable.finish(progress, id);
         }
 
         pub fn notifyUnitSelection(unit_id: vsttypes.UnitID) types.tresult {
@@ -566,6 +585,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             self.component_handler3 = queryComponentHandler3(handler);
             self.component_handler_bus_activation = queryComponentHandlerBusActivation(handler);
             self.component_handler_system_time = queryComponentHandlerSystemTime(handler);
+            self.progress = queryProgress(handler);
             self.unit_handler = queryUnitHandler(handler);
             self.unit_handler2 = queryUnitHandler2(handler);
             return types.kResultOk;
@@ -1050,6 +1070,16 @@ fn queryComponentHandlerSystemTime(handler: ?*anyopaque) ?*ivsteditcontroller.IC
     return if (out) |value| @ptrCast(@alignCast(value)) else null;
 }
 
+fn queryProgress(handler: ?*anyopaque) ?*ivsteditcontroller.IProgress {
+    const raw = handler orelse return null;
+    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
+    var out: ?*anyopaque = null;
+    if (base.vtable.queryInterface(base, &ivsteditcontroller.iprogress_iid, &out) != types.kResultOk) {
+        return null;
+    }
+    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+}
+
 fn queryUnitHandler(handler: ?*anyopaque) ?*ivstunits.IUnitHandler {
     const raw = handler orelse return null;
     const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
@@ -1082,6 +1112,10 @@ fn releaseComponentHandlers(controller: anytype) void {
     if (controller.component_handler_system_time) |handler_system_time| {
         _ = handler_system_time.vtable.release(handler_system_time);
         controller.component_handler_system_time = null;
+    }
+    if (controller.progress) |progress| {
+        _ = progress.vtable.release(progress);
+        controller.progress = null;
     }
     if (controller.component_handler_bus_activation) |handler_bus_activation| {
         _ = handler_bus_activation.vtable.release(handler_bus_activation);
