@@ -23,7 +23,7 @@ Implemented pieces include:
 - Platform-specific VST3 module entry exports
 - macOS, Linux, and Windows `.vst3` bundle generation for gain, bypass, mode-gain, voice-mix, note-gate, and event-echo examples
 - Validator-passing example plugins with component, controller, processor, automatable parameters, sample-accurate parameter updates, state persistence, input events, and output events
-- Reusable component and controller shells covering default VST3 connection point, unit info, MIDI mapping/learn, note expression, keyswitch, physical UI mapping, parameter helper, unit data, edit-controller extension, process-context requirement, and processor capability interfaces
+- Reusable component and controller shells covering default VST3 connection point, component-handler automation callbacks, unit info, MIDI mapping/learn, note expression, keyswitch, physical UI mapping, parameter helper, unit data, edit-controller extension, process-context requirement, and processor capability interfaces
 - Initial `zig-plug` float, int, bool, and enum parameter descriptors with normalization tests
 - Initial `zig-plug` plugin spec prototype with reflected parameter defaults
 

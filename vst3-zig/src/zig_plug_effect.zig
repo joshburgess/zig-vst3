@@ -46,6 +46,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             parameter_function_name: ivstparameterfunctionname.IParameterFunctionName = .{ .vtable = &parameter_function_name_vtable },
             remap_param_id: ivstremapparamid.IRemapParamID = .{ .vtable = &remap_param_id_vtable },
             connected_peer: ?*ivstmessage.IConnectionPoint = null,
+            component_handler: ?*ivsteditcontroller.IComponentHandler = null,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -66,6 +67,23 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         pub fn setNormalized(id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
             return parameters.setNormalized(id, value);
+        }
+
+        pub fn beginEdit(id: vsttypes.ParamID) types.tresult {
+            const handler = controller.component_handler orelse return types.kResultFalse;
+            return handler.vtable.beginEdit(handler, id);
+        }
+
+        pub fn performEdit(id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+            const handler = controller.component_handler orelse return types.kResultFalse;
+            const result = parameters.setNormalized(id, value);
+            if (result != types.kResultOk) return result;
+            return handler.vtable.performEdit(handler, id, value);
+        }
+
+        pub fn endEdit(id: vsttypes.ParamID) types.tresult {
+            const handler = controller.component_handler orelse return types.kResultFalse;
+            return handler.vtable.endEdit(handler, id);
         }
 
         pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
@@ -446,7 +464,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return parameters.setNormalized(id, value);
         }
 
-        fn setComponentHandler(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
+        fn setComponentHandler(ptr: *anyopaque, handler: ?*anyopaque) callconv(.C) types.tresult {
+            owner(ptr).component_handler = if (handler) |value| @ptrCast(@alignCast(value)) else null;
             return types.kResultOk;
         }
 
