@@ -26,5 +26,5 @@ Parameter state that may be read by the audio thread should use `NormalizedValue
 
 ## Open Work
 
-- Add bundled VST3 examples that exercise more reflected parameter kinds through the reusable controller shell.
+- Add a bundled VST3 example for reflected integer parameters through the reusable controller shell.
 - Add host smoke test notes for reflected string conversion and automation behavior.
