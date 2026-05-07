@@ -127,3 +127,45 @@ test "gain controller exposes default MIDI mapping interface" {
     );
     try std.testing.expectEqual(vsttypes.kNoParamId, param_id);
 }
+
+test "gain controller exposes default MIDI learn and MIDI 2 mapping interfaces" {
+    const std = @import("std");
+    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+    const ivstmidicontrollers = @import("pluginterfaces/vst/ivstmidicontrollers.zig");
+    const ivstmidilearn = @import("pluginterfaces/vst/ivstmidilearn.zig");
+    const ivstmidimapping2 = @import("pluginterfaces/vst/ivstmidimapping2.zig");
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var learn_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.queryInterface(controller_iface, &ivstmidilearn.imidi_learn_iid, &learn_out));
+    try std.testing.expect(learn_out != null);
+    const learn: *ivstmidilearn.IMidiLearn = @ptrCast(@alignCast(learn_out.?));
+    defer _ = learn.vtable.release(learn);
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        learn.vtable.onLiveMIDIControllerInput(learn, 0, 0, ivstmidicontrollers.kCtrlModWheel),
+    );
+
+    var mapping2_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.queryInterface(controller_iface, &ivstmidimapping2.imidi_mapping2_iid, &mapping2_out));
+    try std.testing.expect(mapping2_out != null);
+    const mapping2: *ivstmidimapping2.IMidiMapping2 = @ptrCast(@alignCast(mapping2_out.?));
+    defer _ = mapping2.vtable.release(mapping2);
+    try std.testing.expectEqual(@as(types.uint32, 0), mapping2.vtable.getNumMidi1ControllerAssignments(mapping2, @intFromEnum(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.uint32, 0), mapping2.vtable.getNumMidi2ControllerAssignments(mapping2, @intFromEnum(ivstcomponent.BusDirections.kInput)));
+
+    var learn2_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.queryInterface(controller_iface, &ivstmidimapping2.imidi_learn2_iid, &learn2_out));
+    try std.testing.expect(learn2_out != null);
+    const learn2: *ivstmidimapping2.IMidiLearn2 = @ptrCast(@alignCast(learn2_out.?));
+    defer _ = learn2.vtable.release(learn2);
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        learn2.vtable.onLiveMidi1ControllerInput(learn2, 0, 0, ivstmidicontrollers.kCtrlModWheel),
+    );
+}
