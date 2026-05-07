@@ -178,21 +178,12 @@ fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.C) ty
     if (parameter_changes.latest(gain_controller.gain_param_id)) |change| {
         gain_controller.setGain(change.normalized);
     }
-    if (data.numInputs <= 0 or data.numOutputs <= 0 or data.inputs == null or data.outputs == null) {
-        return types.kResultOk;
-    }
-
-    const input = data.inputs.?[0];
-    const output = &data.outputs.?[0];
-    if (input.numChannels <= 0 or output.numChannels <= 0) {
-        return types.kResultOk;
-    }
 
     if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
-        var context = zig_plug_bridge.makeProcessContext(f32, input, output.*, data, parameter_changes) catch return types.kResultOk;
+        var context = zig_plug_bridge.makeMainAudioProcessContext(f32, data, parameter_changes) catch return types.kResultOk;
         applyGain(f32, &context, @floatCast(gain_controller.gain()));
     } else {
-        var context = zig_plug_bridge.makeProcessContext(f64, input, output.*, data, parameter_changes) catch return types.kResultOk;
+        var context = zig_plug_bridge.makeMainAudioProcessContext(f64, data, parameter_changes) catch return types.kResultOk;
         applyGain(f64, &context, gain_controller.gain());
     }
 
