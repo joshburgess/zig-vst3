@@ -354,12 +354,8 @@ pub fn readParameterState(
     values: *plug.parameters.ParameterValues(Params),
 ) types.tresult {
     const input = stream orelse return types.kInvalidArgument;
-    var bytes: [plug.state.encodedSize(Params)]u8 = undefined;
-    var read: types.int32 = 0;
-    const result = input.vtable.read(input, &bytes, bytes.len, &read);
-    if (result != types.kResultOk or read != bytes.len) return types.kResultFalse;
-    var state_stream = std.io.fixedBufferStream(&bytes);
-    plug.state.readParameterState(Params, set, values, state_stream.reader()) catch return types.kResultFalse;
+    var input_reader = IBStreamReader{ .stream = input };
+    plug.state.readParameterState(Params, set, values, input_reader.reader()) catch return types.kResultFalse;
     return types.kResultOk;
 }
 
@@ -370,14 +366,48 @@ pub fn writeParameterState(
     values: *const plug.parameters.ParameterValues(Params),
 ) types.tresult {
     const output = stream orelse return types.kInvalidArgument;
-    var bytes: [plug.state.encodedSize(Params)]u8 = undefined;
-    var state_stream = std.io.fixedBufferStream(&bytes);
-    plug.state.writeParameterState(Params, set, values, state_stream.writer()) catch return types.kResultFalse;
-    var written: types.int32 = 0;
-    const result = output.vtable.write(output, &bytes, bytes.len, &written);
-    if (result != types.kResultOk or written != bytes.len) return types.kResultFalse;
+    var output_writer = IBStreamWriter{ .stream = output };
+    plug.state.writeParameterState(Params, set, values, output_writer.writer()) catch return types.kResultFalse;
     return types.kResultOk;
 }
+
+const StreamError = error{ StreamReadFailed, StreamWriteFailed };
+
+const IBStreamReader = struct {
+    stream: *ibstream.IBStream,
+
+    const Reader = std.io.Reader(*IBStreamReader, StreamError, read);
+
+    fn reader(self: *IBStreamReader) Reader {
+        return .{ .context = self };
+    }
+
+    fn read(self: *IBStreamReader, buffer: []u8) StreamError!usize {
+        if (buffer.len == 0) return 0;
+        var bytes_read: types.int32 = 0;
+        const result = self.stream.vtable.read(self.stream, buffer.ptr, @intCast(buffer.len), &bytes_read);
+        if (result != types.kResultOk or bytes_read < 0) return error.StreamReadFailed;
+        return @intCast(bytes_read);
+    }
+};
+
+const IBStreamWriter = struct {
+    stream: *ibstream.IBStream,
+
+    const Writer = std.io.Writer(*IBStreamWriter, StreamError, write);
+
+    fn writer(self: *IBStreamWriter) Writer {
+        return .{ .context = self };
+    }
+
+    fn write(self: *IBStreamWriter, bytes: []const u8) StreamError!usize {
+        if (bytes.len == 0) return 0;
+        var bytes_written: types.int32 = 0;
+        const result = self.stream.vtable.write(self.stream, @constCast(bytes.ptr), @intCast(bytes.len), &bytes_written);
+        if (result != types.kResultOk or bytes_written < 0) return error.StreamWriteFailed;
+        return @intCast(bytes_written);
+    }
+};
 
 fn copyAscii16(dest: *vsttypes.String128, source: []const u8) void {
     @memset(dest, 0);
@@ -451,6 +481,33 @@ test "zig-plug bridge round-trips parameter state through IBStream" {
     try std.testing.expectEqual(types.kResultOk, stream.iface.vtable.seek(&stream.iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, readParameterState(Params, &stream.iface, &set, &restored));
     try std.testing.expectEqual(@as(?f64, 0.25), restored.load(0));
+}
+
+test "zig-plug bridge reads older parameter state without requiring current encoded size" {
+    const OldParams = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+    };
+    const NewParams = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+        mix: plug.parameters.FloatParam = plug.parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
+    };
+    const OldSet = plug.parameters.ParameterSet(OldParams);
+    const OldValues = plug.parameters.ParameterValues(OldParams);
+    const NewSet = plug.parameters.ParameterSet(NewParams);
+    const NewValues = plug.parameters.ParameterValues(NewParams);
+    const old_set = OldSet.init(.{});
+    const new_set = NewSet.init(.{});
+    var old_values = OldValues.init(&old_set);
+    var new_values = NewValues.init(&new_set);
+    var stream = MemoryStream{};
+
+    try std.testing.expect(old_values.store(0, 0.25));
+    try std.testing.expectEqual(types.kResultOk, writeParameterState(OldParams, &stream.iface, &old_set, &old_values));
+    try std.testing.expectEqual(types.kResultOk, stream.iface.vtable.seek(&stream.iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, readParameterState(NewParams, &stream.iface, &new_set, &new_values));
+
+    try std.testing.expectEqual(@as(?f64, 0.25), new_values.load(0));
+    try std.testing.expectEqual(@as(?f64, 0.5), new_values.load(1));
 }
 
 test "zig-plug bridge copies reflected parameter values" {
