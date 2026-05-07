@@ -75,16 +75,24 @@ pub fn addRef(ptr: *anyopaque) callconv(.C) uint32 {
 
 pub fn release(ptr: *anyopaque) callconv(.C) uint32 {
     const header: *Header = @ptrCast(@alignCast(ptr));
-    const previous = header.ref_count.fetchSub(1, .release);
-    std.debug.assert(previous > 0);
+    while (true) {
+        const previous = header.ref_count.load(.monotonic);
+        if (previous == 0) {
+            @panic("FUnknown.release called after refcount reached zero");
+        }
 
-    const next = previous - 1;
-    if (next == 0) {
-        _ = header.ref_count.load(.acquire);
-        if (header.destroy) |destroy| destroy(ptr);
+        const next = previous - 1;
+        if (header.ref_count.cmpxchgWeak(previous, next, .release, .monotonic)) |_| {
+            continue;
+        }
+
+        if (next == 0) {
+            _ = header.ref_count.load(.acquire);
+            if (header.destroy) |destroy| destroy(ptr);
+        }
+
+        return next;
     }
-
-    return next;
 }
 
 fn testAddRef(ptr: *anyopaque) callconv(.C) uint32 {
