@@ -13,13 +13,13 @@ const StubFactory = factory.StaticFactory(.{
     .{
         .cid = stub_component.cid,
         .category = "Audio Module Class",
-        .name = "zig-vst3 Stub",
+        .name = "zig-vst3 Gain",
         .create = stub_component.create,
     },
     .{
         .cid = stub_controller.cid,
         .category = "Component Controller Class",
-        .name = "zig-vst3 Stub Controller",
+        .name = "zig-vst3 Gain Controller",
         .create = stub_controller.create,
     },
 });
@@ -32,5 +32,5 @@ test "stub export returns enumerable factory" {
 
     try std.testing.expectEqual(@as(i32, 2), plugin_factory.vtable.countClasses(plugin_factory));
     try std.testing.expectEqual(types.kResultOk, plugin_factory.vtable.getClassInfo(plugin_factory, 0, &class_info));
-    try std.testing.expectEqualStrings("zig-vst3 Stub", std.mem.sliceTo(&class_info.name, 0));
+    try std.testing.expectEqualStrings("zig-vst3 Gain", std.mem.sliceTo(&class_info.name, 0));
 }

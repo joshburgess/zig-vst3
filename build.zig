@@ -19,7 +19,7 @@ pub fn build(b: *std.Build) void {
 
     const stub = b.addLibrary(.{
         .linkage = .dynamic,
-        .name = "zig_vst3_stub",
+        .name = "zig_vst3_gain",
         .root_module = b.createModule(.{
             .root_source_file = b.path("vst3-zig/src/stub_plugin.zig"),
             .target = target,
@@ -38,10 +38,10 @@ pub fn build(b: *std.Build) void {
         const bundle_stub = b.addSystemCommand(&.{"scripts/bundle_macos_vst3.sh"});
         bundle_stub.addFileArg(stub.getEmittedBin());
         bundle_stub.addArgs(&.{
-            b.getInstallPath(.prefix, "bundle/zig_vst3_stub.vst3"),
-            "dev.zig-vst3.stub",
+            b.getInstallPath(.prefix, "bundle/zig_vst3_gain.vst3"),
+            "dev.zig-vst3.gain",
             "0.1.0",
-            "zig_vst3_stub",
+            "zig_vst3_gain",
         });
         bundle_stub_step.dependOn(&bundle_stub.step);
     } else {
@@ -53,9 +53,9 @@ pub fn build(b: *std.Build) void {
         const bundle_stub_linux = b.addSystemCommand(&.{"scripts/bundle_linux_vst3.sh"});
         bundle_stub_linux.addFileArg(stub.getEmittedBin());
         bundle_stub_linux.addArgs(&.{
-            b.getInstallPath(.prefix, "bundle/zig_vst3_stub_linux.vst3"),
+            b.getInstallPath(.prefix, "bundle/zig_vst3_gain_linux.vst3"),
             linuxPlatformDir(target.result.cpu.arch),
-            "zig_vst3_stub",
+            "zig_vst3_gain",
         });
         bundle_stub_linux_step.dependOn(&bundle_stub_linux.step);
     } else {
@@ -67,9 +67,9 @@ pub fn build(b: *std.Build) void {
         const bundle_stub_windows = b.addSystemCommand(&.{"scripts/bundle_windows_vst3.sh"});
         bundle_stub_windows.addFileArg(stub.getEmittedBin());
         bundle_stub_windows.addArgs(&.{
-            b.getInstallPath(.prefix, "bundle/zig_vst3_stub_windows.vst3"),
+            b.getInstallPath(.prefix, "bundle/zig_vst3_gain_windows.vst3"),
             windowsPlatformDir(target.result.cpu.arch),
-            "zig_vst3_stub",
+            "zig_vst3_gain",
         });
         bundle_stub_windows_step.dependOn(&bundle_stub_windows.step);
     } else {
@@ -120,7 +120,7 @@ pub fn build(b: *std.Build) void {
         validate_stub_step.dependOn(bundle_stub_step);
         const validate_stub = b.addSystemCommand(&.{
             "scripts/validate.sh",
-            b.getInstallPath(.prefix, "bundle/zig_vst3_stub.vst3"),
+            b.getInstallPath(.prefix, "bundle/zig_vst3_gain.vst3"),
         });
         validate_stub.step.dependOn(bundle_stub_step);
         validate_stub_step.dependOn(&validate_stub.step);
