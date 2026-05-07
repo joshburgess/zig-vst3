@@ -170,9 +170,7 @@ fn setProcessing(_: *anyopaque, _: types.TBool) callconv(.C) types.tresult {
 fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.C) types.tresult {
     var parameter_change_storage: [64]plug_process.ParameterChange = undefined;
     const parameter_changes = zig_plug_bridge.collectInputParameterChanges(data, &parameter_change_storage);
-    if (parameter_changes.latest(gain_controller.gain_param_id)) |change| {
-        gain_controller.setGain(change.normalized);
-    }
+    gain_controller.applyParameterChanges(parameter_changes);
 
     if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
         var context = zig_plug_bridge.makeMainAudioProcessContext(f32, data, parameter_changes) catch return types.kResultOk;

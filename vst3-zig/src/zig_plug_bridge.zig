@@ -107,6 +107,10 @@ pub fn ParameterState(comptime Params: type) type {
             return types.kResultOk;
         }
 
+        pub fn applyChanges(self: *Self, changes: plug.process.ParameterChanges) void {
+            self.values.applyChanges(self.set, changes);
+        }
+
         pub fn readFromStream(self: *Self, stream: ?*ibstream.IBStream) types.tresult {
             var restored = Values.init(self.set);
             const result = readParameterState(Params, stream, self.set, &restored);
@@ -161,6 +165,10 @@ pub fn ParameterController(comptime Params: type) type {
 
         pub fn setNormalized(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
             return self.state.setNormalizedById(id, value);
+        }
+
+        pub fn applyChanges(self: *Self, changes: plug.process.ParameterChanges) void {
+            self.state.applyChanges(changes);
         }
 
         pub fn readState(self: *Self, stream: ?*ibstream.IBStream) types.tresult {
@@ -489,6 +497,14 @@ test "zig-plug bridge parameter controller exposes reflected edit operations" {
     try std.testing.expectEqual(types.kResultOk, controller.setNormalized(8, 1.0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), controller.getNormalized(8));
     try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(99, 0.5));
+
+    const changes = [_]plug.process.ParameterChange{
+        .{ .id = 7, .sample_offset = 0, .normalized = 0.25 },
+        .{ .id = 8, .sample_offset = 1, .normalized = 0.0 },
+    };
+    controller.applyChanges(try plug.process.ParameterChanges.init(&changes, 2));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), controller.getNormalized(7));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), controller.getNormalized(8));
 }
 
 test "zig-plug bridge stereo audio buses expose one input and output" {
