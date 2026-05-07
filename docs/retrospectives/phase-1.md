@@ -15,6 +15,7 @@ Status: first plugin milestone complete locally on macOS. This document records 
 - `zig build phase1` now groups the Phase 1 integration checks.
 - A shared raw-layer interface map handles IID dispatch for the synthetic multi-interface object and the gain plugin query paths.
 - `FUnknown.release` detects release-after-zero before the atomic refcount can underflow.
+- `funknown.allocatorDestroyFn` provides a reusable allocator-owned destruction callback for raw-layer objects.
 - Layer 1 builds `zig_vst3_gain.vst3` with component, controller, processor, factory exports, sample-accurate gain automation, and state persistence.
 - `zig build validate-gain` passes Steinberg's official validator locally on macOS.
 - `zig build phase1` runs `validate-gain` on macOS.
@@ -28,12 +29,12 @@ Status: first plugin milestone complete locally on macOS. This document records 
 ## Still Open
 
 - The interface map helper is still explicit per object. A future helper should derive interface entries from field offsets once more plugin object shapes exist.
-- Refcount destruction is callback-based in the low-level helpers. The gain plugin works, but concrete plugin objects still need a stable allocator ownership pattern.
+- Refcount destruction is still callback-based in the low-level helpers. The raw layer now has a reusable allocator-owned callback, but higher-level object factory ergonomics are still open.
 - Windows C ABI harness execution is not wired yet. Cross-compilation passes, but the C harnesses run only on non-Windows CI jobs for now.
 - The current SDK C++ harness covers `FUnknown` dispatch but still uses local synthetic extension interfaces for the test-only `callA`/`callB`/`callC` methods.
 - Host smoke testing has not been recorded yet. The validator pass proves the bundle and interfaces are structurally valid, but it does not replace DAW loading tests.
 
 ## Follow-Up Tasks
 
-- Decide whether the raw layer exposes callback-based destruction directly or hides it behind object factory helpers.
+- Decide whether Layer 2 hides raw callback-based destruction behind object factory helpers.
 - Add `docs/host-matrix.md` after the gain plugin is loaded in at least one real host.
