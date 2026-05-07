@@ -34,15 +34,33 @@ pub fn build(b: *std.Build) void {
     entry_symbols_step.dependOn(&check_entry_symbols.step);
 
     const bundle_stub_step = b.step("bundle-stub", "Build a native VST3 bundle for the stub plugin");
-    const bundle_stub = b.addSystemCommand(&.{"scripts/bundle_macos_vst3.sh"});
-    bundle_stub.addFileArg(stub.getEmittedBin());
-    bundle_stub.addArgs(&.{
-        b.getInstallPath(.prefix, "bundle/zig_vst3_stub.vst3"),
-        "dev.zig-vst3.stub",
-        "0.1.0",
-        "zig_vst3_stub",
-    });
-    bundle_stub_step.dependOn(&bundle_stub.step);
+    if (target.result.os.tag == .macos) {
+        const bundle_stub = b.addSystemCommand(&.{"scripts/bundle_macos_vst3.sh"});
+        bundle_stub.addFileArg(stub.getEmittedBin());
+        bundle_stub.addArgs(&.{
+            b.getInstallPath(.prefix, "bundle/zig_vst3_stub.vst3"),
+            "dev.zig-vst3.stub",
+            "0.1.0",
+            "zig_vst3_stub",
+        });
+        bundle_stub_step.dependOn(&bundle_stub.step);
+    } else {
+        bundle_stub_step.dependOn(&b.addFail("bundle-stub currently supports macOS targets").step);
+    }
+
+    const bundle_stub_linux_step = b.step("bundle-stub-linux", "Build a Linux VST3 bundle for the stub plugin");
+    if (target.result.os.tag == .linux) {
+        const bundle_stub_linux = b.addSystemCommand(&.{"scripts/bundle_linux_vst3.sh"});
+        bundle_stub_linux.addFileArg(stub.getEmittedBin());
+        bundle_stub_linux.addArgs(&.{
+            b.getInstallPath(.prefix, "bundle/zig_vst3_stub_linux.vst3"),
+            linuxPlatformDir(target.result.cpu.arch),
+            "zig_vst3_stub",
+        });
+        bundle_stub_linux_step.dependOn(&bundle_stub_linux.step);
+    } else {
+        bundle_stub_linux_step.dependOn(&b.addFail("bundle-stub-linux requires a Linux target").step);
+    }
 
     const vst3_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -297,4 +315,12 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(test_interfaces_abi_step);
     phase1_step.dependOn(funknown_abi_step);
     phase1_step.dependOn(multi_interface_abi_step);
+}
+
+fn linuxPlatformDir(arch: std.Target.Cpu.Arch) []const u8 {
+    return switch (arch) {
+        .x86_64 => "x86_64-linux",
+        .aarch64 => "aarch64-linux",
+        else => "unknown-linux",
+    };
 }
