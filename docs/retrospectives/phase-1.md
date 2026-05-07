@@ -10,6 +10,7 @@ Status: first plugin milestone complete locally on macOS. This document records 
 - `zig build funknown-abi` calls the Zig `FUnknown` prototype from C.
 - The multi-interface prototype returns distinct interface pointers for synthetic `ITestA`, `ITestB`, and `ITestC` interfaces backed by one object.
 - `zig build multi-interface-abi` exercises that query and pointer-recovery path from C.
+- `zig build multi-interface-cpp-abi` exercises the same path from C++.
 - `zig build phase1` now groups the Phase 1 integration checks.
 - A shared raw-layer interface map handles IID dispatch for the synthetic multi-interface object and the gain plugin query paths.
 - `FUnknown.release` detects release-after-zero before the atomic refcount can underflow.
@@ -28,11 +29,11 @@ Status: first plugin milestone complete locally on macOS. This document records 
 - The interface map helper is still explicit per object. A future helper should derive interface entries from field offsets once more plugin object shapes exist.
 - Refcount destruction is callback-based in the low-level helpers. The gain plugin works, but concrete plugin objects still need a stable allocator ownership pattern.
 - Windows C ABI harness execution is not wired yet. Cross-compilation passes, but the C harnesses run only on non-Windows CI jobs for now.
-- There is no C++ harness yet for a full multi-interface object. The current harnesses are C ABI checks plus the Steinberg validator.
+- The current C++ harness covers the synthetic multi-interface object, but it does not yet use Steinberg SDK interface types.
 - Host smoke testing has not been recorded yet. The validator pass proves the bundle and interfaces are structurally valid, but it does not replace DAW loading tests.
 
 ## Follow-Up Tasks
 
-- Add a C++ harness once the interface map helper exists.
+- Add a C++ harness variant that calls through Steinberg SDK interface declarations.
 - Decide whether the raw layer exposes callback-based destruction directly or hides it behind object factory helpers.
 - Add `docs/host-matrix.md` after the gain plugin is loaded in at least one real host.
