@@ -20,6 +20,7 @@ A plugin type declares:
 
 `validateLifecycle(Plugin)` currently accepts:
 
+- `init(allocator: std.mem.Allocator) !Plugin`
 - `prepare(self: *Plugin, config: PrepareConfig) void`
 - `process(self: *Plugin) void`
 - `deinit(self: *Plugin) void`
@@ -42,7 +43,5 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 
 ## Open Work
 
-- Add allocator-aware `init` signature validation.
-- Replace the temporary `process(self)` shape with the audio buffer and parameter-change contract.
 - Define the process callback contract for audio buffers and parameter changes.
 - Generate Layer 1 component/controller glue from `PluginSpec`.
