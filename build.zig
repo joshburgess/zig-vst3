@@ -192,54 +192,26 @@ pub fn build(b: *std.Build) void {
         validate_step.dependOn(&missing_plugin.step);
     }
 
-    const validate_gain_step = b.step("validate-gain", "Build and validate the native gain VST3 bundle");
-    if (target.result.os.tag == .macos) {
-        validate_gain_step.dependOn(bundle_gain_step);
-        const validate_gain = b.addSystemCommand(&.{
-            "scripts/validate.sh",
-            b.getInstallPath(.prefix, "bundle/zig_vst3_gain.vst3"),
-        });
-        validate_gain.step.dependOn(bundle_gain_step);
-        validate_gain_step.dependOn(&validate_gain.step);
-    } else {
-        validate_gain_step.dependOn(&b.addFail("validate-gain currently supports macOS targets").step);
-    }
-    const validate_bypass_step = b.step("validate-bypass", "Build and validate the native bypass VST3 bundle");
-    if (target.result.os.tag == .macos) {
-        validate_bypass_step.dependOn(bundle_bypass_step);
-        const validate_bypass = b.addSystemCommand(&.{
-            "scripts/validate.sh",
-            b.getInstallPath(.prefix, "bundle/zig_vst3_bypass.vst3"),
-        });
-        validate_bypass.step.dependOn(bundle_bypass_step);
-        validate_bypass_step.dependOn(&validate_bypass.step);
-    } else {
-        validate_bypass_step.dependOn(&b.addFail("validate-bypass currently supports macOS targets").step);
-    }
-    const validate_mode_gain_step = b.step("validate-mode-gain", "Build and validate the native mode gain VST3 bundle");
-    if (target.result.os.tag == .macos) {
-        validate_mode_gain_step.dependOn(bundle_mode_gain_step);
-        const validate_mode_gain = b.addSystemCommand(&.{
-            "scripts/validate.sh",
-            b.getInstallPath(.prefix, "bundle/zig_vst3_mode_gain.vst3"),
-        });
-        validate_mode_gain.step.dependOn(bundle_mode_gain_step);
-        validate_mode_gain_step.dependOn(&validate_mode_gain.step);
-    } else {
-        validate_mode_gain_step.dependOn(&b.addFail("validate-mode-gain currently supports macOS targets").step);
-    }
-    const validate_voice_mix_step = b.step("validate-voice-mix", "Build and validate the native voice mix VST3 bundle");
-    if (target.result.os.tag == .macos) {
-        validate_voice_mix_step.dependOn(bundle_voice_mix_step);
-        const validate_voice_mix = b.addSystemCommand(&.{
-            "scripts/validate.sh",
-            b.getInstallPath(.prefix, "bundle/zig_vst3_voice_mix.vst3"),
-        });
-        validate_voice_mix.step.dependOn(bundle_voice_mix_step);
-        validate_voice_mix_step.dependOn(&validate_voice_mix.step);
-    } else {
-        validate_voice_mix_step.dependOn(&b.addFail("validate-voice-mix currently supports macOS targets").step);
-    }
+    const validate_gain_step = addVst3ValidationStep(b, target, bundle_gain_step, .{
+        .short_name = "gain",
+        .display_name = "gain",
+        .artifact_name = "zig_vst3_gain",
+    });
+    const validate_bypass_step = addVst3ValidationStep(b, target, bundle_bypass_step, .{
+        .short_name = "bypass",
+        .display_name = "bypass",
+        .artifact_name = "zig_vst3_bypass",
+    });
+    const validate_mode_gain_step = addVst3ValidationStep(b, target, bundle_mode_gain_step, .{
+        .short_name = "mode-gain",
+        .display_name = "mode gain",
+        .artifact_name = "zig_vst3_mode_gain",
+    });
+    const validate_voice_mix_step = addVst3ValidationStep(b, target, bundle_voice_mix_step, .{
+        .short_name = "voice-mix",
+        .display_name = "voice mix",
+        .artifact_name = "zig_vst3_voice_mix",
+    });
     const validate_examples_step = b.step("validate-examples", "Build and validate all native VST3 example bundles");
     validate_examples_step.dependOn(validate_gain_step);
     validate_examples_step.dependOn(validate_bypass_step);
@@ -564,6 +536,34 @@ fn addEntrySymbolsCheck(
     const check_entry_symbols = b.addSystemCommand(&.{"scripts/check_entry_symbols.sh"});
     check_entry_symbols.addFileArg(library.getEmittedBin());
     step.dependOn(&check_entry_symbols.step);
+}
+
+const Vst3ValidationOptions = struct {
+    short_name: []const u8,
+    display_name: []const u8,
+    artifact_name: []const u8,
+};
+
+fn addVst3ValidationStep(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    bundle_step: *std.Build.Step,
+    options: Vst3ValidationOptions,
+) *std.Build.Step {
+    const step_name = b.fmt("validate-{s}", .{options.short_name});
+    const validate_step = b.step(step_name, b.fmt("Build and validate the native {s} VST3 bundle", .{options.display_name}));
+    if (target.result.os.tag == .macos) {
+        validate_step.dependOn(bundle_step);
+        const validate = b.addSystemCommand(&.{
+            "scripts/validate.sh",
+            b.getInstallPath(.prefix, b.fmt("bundle/{s}.vst3", .{options.artifact_name})),
+        });
+        validate.step.dependOn(bundle_step);
+        validate_step.dependOn(&validate.step);
+    } else {
+        validate_step.dependOn(&b.addFail(b.fmt("{s} currently supports macOS targets", .{step_name})).step);
+    }
+    return validate_step;
 }
 
 const Vst3BundleOptions = struct {
