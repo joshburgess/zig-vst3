@@ -5,6 +5,7 @@ pub const factory = @import("factory.zig");
 pub const funknown = @import("funknown.zig");
 pub const gain_component = @import("gain_component.zig");
 pub const gain_controller = @import("gain_controller.zig");
+pub const gain_spec = @import("gain_spec.zig");
 pub const interface_map = @import("interface_map.zig");
 pub const multi_interface = @import("multi_interface.zig");
 pub const pluginterfaces = struct {

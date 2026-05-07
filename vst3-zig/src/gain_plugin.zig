@@ -2,29 +2,19 @@ const entry = @import("entry.zig");
 const factory = @import("factory.zig");
 const gain_component = @import("gain_component.zig");
 const gain_controller = @import("gain_controller.zig");
+const gain_spec = @import("gain_spec.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
-const plug = @import("zig-plug-core");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
 
-const GainPlugin = struct {
-    pub const name = "zig-vst3 Gain";
-    pub const vendor = "zig-vst3";
-    pub const Params = struct {
-        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(gain_controller.gain_param_id, "Gain", 0.0, 1.0, 1.0),
-    };
-};
-
-const GainSpec = plug.plugin.PluginSpec(GainPlugin);
-
 const GainFactory = factory.StaticFactory(.{
-    .vendor = GainSpec.vendor,
+    .vendor = gain_spec.Spec.vendor,
     .url = "https://github.com/joshburgess/zig-vst3",
 }, &.{
     .{
         .cid = gain_component.cid,
         .category = "Audio Module Class",
-        .name = GainSpec.name,
+        .name = gain_spec.Spec.name,
         .create = gain_component.create,
     },
     .{
@@ -47,10 +37,10 @@ test "gain export returns enumerable factory" {
 }
 
 test "gain plugin root exposes zig-plug metadata" {
-    const spec = GainSpec.init(.{});
+    const spec = gain_spec.Spec.init(.{});
 
-    try std.testing.expectEqualStrings("zig-vst3 Gain", GainSpec.name);
-    try std.testing.expectEqualStrings("zig-vst3", GainSpec.vendor);
-    try std.testing.expectEqual(@as(usize, 1), GainSpec.ParameterSet.count);
-    try std.testing.expectEqual(@as(?f64, 1.0), spec.values.load(gain_controller.gain_param_id));
+    try std.testing.expectEqualStrings("zig-vst3 Gain", gain_spec.Spec.name);
+    try std.testing.expectEqualStrings("zig-vst3", gain_spec.Spec.vendor);
+    try std.testing.expectEqual(@as(usize, 1), gain_spec.Spec.ParameterSet.count);
+    try std.testing.expectEqual(@as(?f64, 1.0), spec.values.load(gain_spec.gain_param_id));
 }
