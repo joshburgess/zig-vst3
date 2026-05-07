@@ -395,6 +395,20 @@ pub fn ParameterSet(comptime Params: type) type {
             return null;
         }
 
+        pub fn stepCount(self: *const Self, index: usize) ?i32 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return parameterStepCount(@field(self.params, field.name));
+            }
+            return null;
+        }
+
+        pub fn isList(self: *const Self, index: usize) ?bool {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return parameterIsList(@field(self.params, field.name));
+            }
+            return null;
+        }
+
         pub fn indexOfId(self: *const Self, wanted_id: u32) ?usize {
             inline for (fields, 0..) |field, index| {
                 if (@field(self.params, field.name).id == wanted_id) return index;
@@ -430,6 +444,32 @@ pub fn ParameterSet(comptime Params: type) type {
             return null;
         }
     };
+}
+
+fn parameterStepCount(param: anytype) i32 {
+    const Param = @TypeOf(param);
+    if (Param == FloatParam) return 0;
+    if (Param == BoolParam) return 1;
+    if (Param == IntParam) return @intCast(param.max - param.min);
+
+    const info = @typeInfo(Param);
+    if (info == .@"struct" and @hasDecl(Param, "denormalize")) {
+        const default_type = @TypeOf(param.default);
+        if (@typeInfo(default_type) == .@"enum") {
+            return @intCast(@typeInfo(default_type).@"enum".fields.len - 1);
+        }
+    }
+    return 0;
+}
+
+fn parameterIsList(param: anytype) bool {
+    const Param = @TypeOf(param);
+    if (Param == BoolParam) return false;
+    const info = @typeInfo(Param);
+    if (info == .@"struct" and @hasDecl(Param, "label")) {
+        return @typeInfo(@TypeOf(param.default)) == .@"enum";
+    }
+    return false;
 }
 
 pub fn ParameterValues(comptime Params: type) type {
@@ -642,6 +682,14 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectApproxEqAbs(1.0, set.defaultNormalized(3).?, 0.000001);
     try std.testing.expectEqual(@as(?bool, false), set.isBypass(0));
     try std.testing.expectEqual(@as(?bool, null), set.isBypass(99));
+    try std.testing.expectEqual(@as(?i32, 0), set.stepCount(0));
+    try std.testing.expectEqual(@as(?i32, 15), set.stepCount(1));
+    try std.testing.expectEqual(@as(?i32, 1), set.stepCount(2));
+    try std.testing.expectEqual(@as(?i32, 1), set.stepCount(3));
+    try std.testing.expectEqual(@as(?i32, null), set.stepCount(99));
+    try std.testing.expectEqual(@as(?bool, false), set.isList(1));
+    try std.testing.expectEqual(@as(?bool, true), set.isList(3));
+    try std.testing.expectEqual(@as(?bool, null), set.isList(99));
 }
 
 test "parameter values initialize from reflected defaults" {
