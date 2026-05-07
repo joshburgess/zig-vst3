@@ -13,13 +13,11 @@ const zig_plug_bridge = @import("zig_plug_bridge.zig");
 
 pub const cid = tuid.inlineUid(0xF0B8107A, 0x7E654828, 0x9113340B, 0x912D9E70);
 pub const gain_param_id: vsttypes.ParamID = gain_spec.gain_param_id;
-const gain_param_index: usize = 0;
-const default_gain = gain_spec.parameter_set.defaultNormalized(gain_param_index).?;
 
 const Controller = extern struct {
     iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
     ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-    gain: std.atomic.Value(u64) = std.atomic.Value(u64).init(@bitCast(default_gain)),
+    gain: std.atomic.Value(u64) = std.atomic.Value(u64).init(@bitCast(gain_spec.default_gain)),
 };
 
 var controller = Controller{};
@@ -146,7 +144,7 @@ pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
     var values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
     const result = zig_plug_bridge.readParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &values);
     if (result != types.kResultOk) return result;
-    if (values.load(gain_param_index)) |value| {
+    if (values.load(gain_spec.gain_param_index)) |value| {
         setGain(value);
     }
     return types.kResultOk;
@@ -154,7 +152,7 @@ pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
 
 pub fn writeGainState(state: ?*ibstream.IBStream) types.tresult {
     var values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
-    _ = values.store(gain_param_index, gain());
+    _ = values.store(gain_spec.gain_param_index, gain());
     return zig_plug_bridge.writeParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &values);
 }
 
