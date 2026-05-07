@@ -16,15 +16,23 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     zig_plug.addImport("vst3-zig", vst3_zig);
+    const zig_plug_core = b.addModule("zig-plug-core", .{
+        .root_source_file = b.path("zig-plug/src/core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const gain_module = b.createModule(.{
+        .root_source_file = b.path("vst3-zig/src/gain_plugin.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    gain_module.addImport("zig-plug-core", zig_plug_core);
 
     const gain = b.addLibrary(.{
         .linkage = .dynamic,
         .name = "zig_vst3_gain",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("vst3-zig/src/gain_plugin.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+        .root_module = gain_module,
     });
     b.installArtifact(gain);
 
@@ -90,12 +98,14 @@ pub fn build(b: *std.Build) void {
     });
     zig_plug_tests.root_module.addImport("vst3-zig", vst3_zig);
 
+    const gain_test_module = b.createModule(.{
+        .root_source_file = b.path("vst3-zig/src/gain_plugin.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    gain_test_module.addImport("zig-plug-core", zig_plug_core);
     const gain_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("vst3-zig/src/gain_plugin.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+        .root_module = gain_test_module,
     });
 
     const test_step = b.step("test", "Run unit tests");
