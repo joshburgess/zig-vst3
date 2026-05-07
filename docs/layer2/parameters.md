@@ -9,6 +9,7 @@
 - `BoolParam`: midpoint-based boolean conversion with `On`/`Off` display and permissive parsing for `on`, `off`, `true`, `false`, `1`, and `0`.
 - `EnumParam(Enum)`: comptime enum descriptor with tag-name labels and normalized tag positions.
 - `NormalizedValue`: lock-free atomic storage for normalized `f64` values, stored as raw bits.
+- `ModulatedValue`: lock-free base value plus bipolar modulation offset, clamped to the normalized range.
 - `LinearSmoother`: sample-counted ramp between normalized values.
 - `ExponentialSmoother`: coefficient-based smoothing toward a normalized target.
 - `LogSmoother`: sample-counted multiplicative ramp for normalized values that must stay above zero.
@@ -21,6 +22,5 @@ Parameter state that may be read by the audio thread should use `NormalizedValue
 
 ## Open Work
 
-- Add modulation lanes separate from the base value.
 - Add a reflected parameter collection so plugins can declare parameters as struct fields.
 - Wire the gain plugin to the Layer 2 descriptors after the plugin interface prototype exists.
