@@ -52,3 +52,46 @@ test "gain component can be created as IComponent" {
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput)));
     try std.testing.expect(component_iface.vtable.release(component_iface) >= 1);
 }
+
+test "gain component exposes process context requirements" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var requirements_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iprocess_context_requirements_iid, &requirements_out),
+    );
+    try std.testing.expect(requirements_out != null);
+    const requirements: *ivstaudioprocessor.IProcessContextRequirements = @ptrCast(@alignCast(requirements_out.?));
+    defer _ = requirements.vtable.release(requirements);
+
+    try std.testing.expectEqual(@as(types.uint32, 0), requirements.vtable.getProcessContextRequirements(requirements));
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &processor_out),
+    );
+    try std.testing.expect(processor_out != null);
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
+    defer _ = processor.vtable.release(processor);
+
+    var processor_requirements_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        processor.vtable.queryInterface(processor, &ivstaudioprocessor.iprocess_context_requirements_iid, &processor_requirements_out),
+    );
+    try std.testing.expect(processor_requirements_out != null);
+    const processor_requirements: *ivstaudioprocessor.IProcessContextRequirements = @ptrCast(@alignCast(processor_requirements_out.?));
+    defer _ = processor_requirements.vtable.release(processor_requirements);
+
+    try std.testing.expectEqual(@as(types.uint32, 0), processor_requirements.vtable.getProcessContextRequirements(processor_requirements));
+}
