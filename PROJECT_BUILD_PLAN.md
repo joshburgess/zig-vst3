@@ -511,6 +511,8 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 **Goal.** Design and prototype the user-facing framework. This is where Zig idioms matter most. Exit this phase with a `Plugin` interface that's pleasant to implement and a parameter system that scales.
 
+**Current status.** The first prototype exists under `zig-plug/src/` and is also exposed as the pure `zig-plug-core` module for Layer 1 integration. The gain plugin uses `PluginSpec` for factory metadata, controller parameter metadata, default parameter state, host automation collection, and process context construction. The remaining Phase 5 work is to generalize that gain-specific bridge into reusable component/controller glue, then add state serialization and more examples.
+
 ### Work Unit 5.1: Plugin trait equivalent
 
 **Inputs.** Phases 1–4. NIH-plug's `Plugin` trait source.
@@ -526,7 +528,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 **Exit criteria.**
 - Three external Zig developers review the design and at least two find the API natural
-- Prototype gain plugin compiles and runs (using Layer 1 underneath)
+- Prototype gain plugin compiles, runs, and passes Steinberg's validator using Layer 1 underneath
 
 ### Work Unit 5.2: Parameter system
 
@@ -540,7 +542,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 **Exit criteria.**
 - Gain plugin's parameter declaration is one struct definition, no boilerplate beyond field annotations
-- Parameter automation works correctly in Reaper and Bitwig
+- Parameter automation is routed through the Layer 2 parameter-change view; Reaper and Bitwig smoke tests still need to be recorded
 
 ### Work Unit 5.3: State serialization
 
