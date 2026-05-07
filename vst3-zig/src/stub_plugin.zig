@@ -1,27 +1,10 @@
-export fn GetPluginFactory() ?*anyopaque {
-    return null;
-}
+const entry = @import("entry.zig");
+const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 
-export fn ModuleEntry(_: ?*anyopaque) bool {
-    return true;
-}
+const StubFactory = struct {
+    pub fn getPluginFactory() ?*ipluginbase.IPluginFactory {
+        return null;
+    }
+};
 
-export fn ModuleExit() bool {
-    return true;
-}
-
-export fn bundleEntry(_: ?*anyopaque) bool {
-    return true;
-}
-
-export fn bundleExit() bool {
-    return true;
-}
-
-export fn InitDll() bool {
-    return true;
-}
-
-export fn ExitDll() bool {
-    return true;
-}
+pub usingnamespace entry.Exports(StubFactory);
