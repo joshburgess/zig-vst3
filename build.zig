@@ -123,11 +123,22 @@ pub fn build(b: *std.Build) void {
         .root_module = gain_core_example_module,
     });
 
+    const bypass_core_example_module = b.createModule(.{
+        .root_source_file = b.path("examples/bypass_core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    bypass_core_example_module.addImport("zig-plug-core", zig_plug_core);
+    const bypass_core_example_tests = b.addTest(.{
+        .root_module = bypass_core_example_module,
+    });
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(vst3_tests).step);
     test_step.dependOn(&b.addRunArtifact(zig_plug_tests).step);
     test_step.dependOn(&b.addRunArtifact(gain_tests).step);
     test_step.dependOn(&b.addRunArtifact(gain_core_example_tests).step);
+    test_step.dependOn(&b.addRunArtifact(bypass_core_example_tests).step);
 
     const validate_step = b.step("validate", "Run the VST3 SDK validator for -Dplugin=path/to/Plugin.vst3");
     if (b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate")) |plugin_path| {
