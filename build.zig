@@ -317,6 +317,9 @@ pub fn build(b: *std.Build) void {
     const phase1_step = b.step("phase1", "Run Phase 1 COM/vtable integration checks");
     phase1_step.dependOn(test_step);
     phase1_step.dependOn(entry_symbols_step);
+    if (target.result.os.tag == .macos) {
+        phase1_step.dependOn(validate_stub_step);
+    }
     phase1_step.dependOn(tuid_abi_step);
     phase1_step.dependOn(pluginbase_abi_step);
     phase1_step.dependOn(ibstream_abi_step);
