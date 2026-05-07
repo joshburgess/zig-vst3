@@ -240,6 +240,20 @@ pub fn forEachParameterChanges(changes: ?*parameter_changes.IParameterChanges, c
     }
 }
 
+const EventCollector = struct {
+    count: usize = 0,
+    note_on_count: usize = 0,
+    last_sample_offset: base.int32 = 0,
+};
+
+fn collectEvent(collector: *EventCollector, event: *const events.Event) void {
+    collector.count += 1;
+    collector.last_sample_offset = event.sampleOffset;
+    if (event.type == @intFromEnum(events.Event.EventTypes.kNoteOnEvent)) {
+        collector.note_on_count += 1;
+    }
+}
+
 test "audio processor helpers match expected core behavior" {
     var setup32 = audio_processor.ProcessSetup{ .symbolicSampleSize = @intFromEnum(audio_processor.SymbolicSampleSizes.kSample32) };
     var setup64 = audio_processor.ProcessSetup{ .symbolicSampleSize = @intFromEnum(audio_processor.SymbolicSampleSizes.kSample64) };
@@ -248,3 +262,82 @@ test "audio processor helpers match expected core behavior" {
     try @import("std").testing.expectEqual(@as(base.uint64, 0x3f), getChannelMask(6));
     try @import("std").testing.expectEqual(@as(base.uint64, 0xFFFFFFFFFFFFFFFF), getChannelMask(64));
 }
+
+test "audio processor helper iterates event lists and skips failed reads" {
+    const std = @import("std");
+    const event_items = [_]events.Event{
+        .{
+            .sampleOffset = 1,
+            .type = @intFromEnum(events.Event.EventTypes.kNoteOnEvent),
+            .data = .{ .noteOn = .{ .pitch = 60, .velocity = 0.75 } },
+        },
+        .{
+            .sampleOffset = 3,
+            .type = @intFromEnum(events.Event.EventTypes.kNoteOffEvent),
+            .data = .{ .noteOff = .{ .pitch = 60 } },
+        },
+    };
+    var list = TestEventList.init(&event_items, 1);
+    var collector = EventCollector{};
+
+    forEachEvent(&list.iface, &collector, collectEvent);
+
+    try std.testing.expectEqual(@as(usize, 1), collector.count);
+    try std.testing.expectEqual(@as(usize, 1), collector.note_on_count);
+    try std.testing.expectEqual(@as(base.int32, 1), collector.last_sample_offset);
+}
+
+const TestEventList = struct {
+    iface: events.IEventList = .{ .vtable = &vtable },
+    items: []const events.Event,
+    fail_index: ?base.int32 = null,
+
+    const vtable = events.IEventListVTable{
+        .queryInterface = queryInterface,
+        .addRef = addRef,
+        .release = release,
+        .getEventCount = getEventCount,
+        .getEvent = getEvent,
+        .addEvent = addEvent,
+    };
+
+    fn init(items: []const events.Event, fail_index: ?base.int32) TestEventList {
+        return .{ .items = items, .fail_index = fail_index };
+    }
+
+    fn owner(ptr: *anyopaque) *TestEventList {
+        const iface: *events.IEventList = @ptrCast(@alignCast(ptr));
+        return @fieldParentPtr("iface", iface);
+    }
+
+    fn queryInterface(_: *anyopaque, _: *const @import("../../tuid.zig").TUID, out: *?*anyopaque) callconv(.C) base.tresult {
+        out.* = null;
+        return base.kNoInterface;
+    }
+
+    fn addRef(_: *anyopaque) callconv(.C) base.uint32 {
+        return 1;
+    }
+
+    fn release(_: *anyopaque) callconv(.C) base.uint32 {
+        return 1;
+    }
+
+    fn getEventCount(ptr: *anyopaque) callconv(.C) base.int32 {
+        return @intCast(owner(ptr).items.len);
+    }
+
+    fn getEvent(ptr: *anyopaque, index: base.int32, event: *events.Event) callconv(.C) base.tresult {
+        if (index < 0) return base.kInvalidArgument;
+        const self = owner(ptr);
+        if (self.fail_index != null and index == self.fail_index.?) return base.kResultFalse;
+        const event_index: usize = @intCast(index);
+        if (event_index >= self.items.len) return base.kInvalidArgument;
+        event.* = self.items[event_index];
+        return base.kResultOk;
+    }
+
+    fn addEvent(_: *anyopaque, _: *events.Event) callconv(.C) base.tresult {
+        return base.kResultFalse;
+    }
+};
