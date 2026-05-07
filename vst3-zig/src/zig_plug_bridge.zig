@@ -1,9 +1,13 @@
 const std = @import("std");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
+const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const plug = @import("zig-plug-core");
+const audio_processor_algo = @import("pluginterfaces/vst/vstaudioprocessoralgo.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+
+const max_audio_channels = 64;
 
 pub fn fillParameterInfo(
     comptime Params: type,
@@ -75,6 +79,43 @@ pub fn plainParamToNormalized(
     return set.normalizedFromPlain(index, plain) orelse 0;
 }
 
+pub fn collectInputParameterChanges(data: *ivstaudioprocessor.ProcessData, storage: []plug.process.ParameterChange) plug.process.ParameterChanges {
+    var collector = ParameterChangeCollector{
+        .storage = storage,
+        .frame_count = if (data.numSamples <= 0) 0 else @intCast(data.numSamples),
+    };
+    audio_processor_algo.forEachParameterChanges(data.inputParameterChanges, &collector, collectParameterQueue);
+    return plug.process.ParameterChanges.init(storage[0..collector.count], collector.frame_count) catch .{};
+}
+
+pub fn makeProcessContext(
+    comptime Sample: type,
+    input: ivstaudioprocessor.AudioBusBuffers,
+    output: ivstaudioprocessor.AudioBusBuffers,
+    data: *const ivstaudioprocessor.ProcessData,
+    parameter_changes: plug.process.ParameterChanges,
+) !plug.process.ProcessContext(Sample) {
+    if (data.numSamples < 0) return error.InvalidFrameCount;
+    const frame_count: usize = @intCast(data.numSamples);
+    const channel_count: usize = @intCast(@min(@min(input.numChannels, output.numChannels), max_audio_channels));
+    var input_channels: [max_audio_channels][]const Sample = undefined;
+    var output_channels: [max_audio_channels][]Sample = undefined;
+    const input_buffers = vstAudioBuffers(Sample, input) orelse return error.MissingInputBuffers;
+    const output_buffers = vstAudioBuffers(Sample, output) orelse return error.MissingOutputBuffers;
+
+    for (0..channel_count) |channel| {
+        input_channels[channel] = input_buffers[channel][0..frame_count];
+        output_channels[channel] = output_buffers[channel][0..frame_count];
+    }
+
+    return .{
+        .sample_rate = if (data.processContext) |context| context.sampleRate else 0,
+        .inputs = try plug.process.AudioInputs(Sample).init(input_channels[0..channel_count]),
+        .outputs = try plug.process.AudioOutputs(Sample).init(output_channels[0..channel_count]),
+        .parameter_changes = parameter_changes,
+    };
+}
+
 pub fn readParameterState(
     comptime Params: type,
     stream: ?*ibstream.IBStream,
@@ -129,6 +170,38 @@ fn readAscii16Ptr(source: [*]vsttypes.TChar, buffer: []u8) []const u8 {
         buffer[len] = @intCast(@min(source[len], 0xff));
     }
     return buffer[0..len];
+}
+
+fn vstAudioBuffers(comptime Sample: type, buffer: ivstaudioprocessor.AudioBusBuffers) ?[*][*]Sample {
+    return switch (Sample) {
+        f32 => buffer.channelBuffers.channelBuffers32,
+        f64 => buffer.channelBuffers.channelBuffers64,
+        else => @compileError("unsupported VST3 sample type"),
+    };
+}
+
+const ParameterChangeCollector = struct {
+    storage: []plug.process.ParameterChange,
+    count: usize = 0,
+    frame_count: usize,
+};
+
+fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *@import("pluginterfaces/vst/ivstparameterchanges.zig").IParamValueQueue) void {
+    audio_processor_algo.forEachParamValueQueue(queue, collector, collectParameterPoint);
+}
+
+fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.ParamID, sample_offset: types.int32, value: vsttypes.ParamValue) void {
+    if (collector.count >= collector.storage.len) return;
+    if (sample_offset < 0) return;
+    const offset: usize = @intCast(sample_offset);
+    if (offset >= collector.frame_count) return;
+    if (value < 0.0 or value > 1.0 or std.math.isNan(value)) return;
+    collector.storage[collector.count] = .{
+        .id = id,
+        .sample_offset = offset,
+        .normalized = value,
+    };
+    collector.count += 1;
 }
 
 test "zig-plug bridge round-trips parameter state through IBStream" {
@@ -190,6 +263,33 @@ test "zig-plug bridge converts VST3 normalized and plain values" {
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), normalizedParamToPlain(Params, &set, 7, 0.5));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), plainParamToNormalized(Params, &set, 7, 1.0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), normalizedParamToPlain(Params, &set, 8, 0.5));
+}
+
+test "zig-plug bridge builds process context from VST3 buffers" {
+    var in_left = [_]f32{ 1.0, 2.0 };
+    var in_right = [_]f32{ 3.0, 4.0 };
+    var out_left = [_]f32{ 0.0, 0.0 };
+    var out_right = [_]f32{ 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f32{ &in_left, &in_right };
+    var output_channel_ptrs = [_][*]f32{ &out_left, &out_right };
+    const input = ivstaudioprocessor.AudioBusBuffers{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+    };
+    const output = ivstaudioprocessor.AudioBusBuffers{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+    };
+    const data = ivstaudioprocessor.ProcessData{
+        .numSamples = 2,
+    };
+
+    const context = try makeProcessContext(f32, input, output, &data, .{});
+
+    try std.testing.expectEqual(@as(usize, 2), context.frameCount());
+    try std.testing.expectEqual(@as(f32, 3.0), context.inputs.channel(1).?[0]);
+    context.outputs.channel(0).?[1] = 9.0;
+    try std.testing.expectEqual(@as(f32, 9.0), out_left[1]);
 }
 
 fn expectString128(expected: []const u8, actual: *const vsttypes.String128) !void {
