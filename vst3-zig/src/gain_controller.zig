@@ -136,6 +136,37 @@ test "gain controller exposes default root unit info" {
     try std.testing.expectEqual(ivstunits.kRootUnitId, unit_by_bus);
 }
 
+test "gain controller exposes default unit data interfaces" {
+    const std = @import("std");
+    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var program_data_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.queryInterface(controller_iface, &ivstunits.iprogram_list_data_iid, &program_data_out));
+    try std.testing.expect(program_data_out != null);
+    const program_data: *ivstunits.IProgramListData = @ptrCast(@alignCast(program_data_out.?));
+    defer _ = program_data.vtable.release(program_data);
+
+    try std.testing.expectEqual(types.kResultFalse, program_data.vtable.programDataSupported(program_data, ivstunits.kNoProgramListId));
+    try std.testing.expectEqual(types.kResultFalse, program_data.vtable.getProgramData(program_data, ivstunits.kNoProgramListId, 0, null));
+    try std.testing.expectEqual(types.kResultFalse, program_data.vtable.setProgramData(program_data, ivstunits.kNoProgramListId, 0, null));
+
+    var unit_data_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.queryInterface(controller_iface, &ivstunits.iunit_data_iid, &unit_data_out));
+    try std.testing.expect(unit_data_out != null);
+    const unit_data: *ivstunits.IUnitData = @ptrCast(@alignCast(unit_data_out.?));
+    defer _ = unit_data.vtable.release(unit_data);
+
+    try std.testing.expectEqual(types.kResultFalse, unit_data.vtable.unitDataSupported(unit_data, ivstunits.kRootUnitId));
+    try std.testing.expectEqual(types.kResultFalse, unit_data.vtable.getUnitData(unit_data, ivstunits.kRootUnitId, null));
+    try std.testing.expectEqual(types.kResultFalse, unit_data.vtable.setUnitData(unit_data, ivstunits.kRootUnitId, null));
+}
+
 test "gain controller exposes default MIDI mapping interface" {
     const std = @import("std");
     const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");

@@ -32,6 +32,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
             controller2: ivsteditcontroller.IEditController2 = .{ .vtable = &controller2_vtable },
             host_editing: ivsteditcontroller.IEditControllerHostEditing = .{ .vtable = &host_editing_vtable },
             unit_info: ivstunits.IUnitInfo = .{ .vtable = &unit_info_vtable },
+            program_list_data: ivstunits.IProgramListData = .{ .vtable = &program_list_data_vtable },
+            unit_data: ivstunits.IUnitData = .{ .vtable = &unit_data_vtable },
             midi_mapping: ivsteditcontroller.IMidiMapping = .{ .vtable = &midi_mapping_vtable },
             midi_learn: ivstmidilearn.IMidiLearn = .{ .vtable = &midi_learn_vtable },
             midi_mapping2: ivstmidimapping2.IMidiMapping2 = .{ .vtable = &midi_mapping2_vtable },
@@ -116,6 +118,16 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return @fieldParentPtr("unit_info", iface);
         }
 
+        fn ownerFromProgramListData(ptr: *anyopaque) *Controller {
+            const iface: *ivstunits.IProgramListData = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("program_list_data", iface);
+        }
+
+        fn ownerFromUnitData(ptr: *anyopaque) *Controller {
+            const iface: *ivstunits.IUnitData = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("unit_data", iface);
+        }
+
         fn ownerFromMidiMapping(ptr: *anyopaque) *Controller {
             const iface: *ivsteditcontroller.IMidiMapping = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("midi_mapping", iface);
@@ -170,6 +182,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 .{ .iid = &ivsteditcontroller.iedit_controller2_iid, .ptr = &self.controller2 },
                 .{ .iid = &ivsteditcontroller.iedit_controller_host_editing_iid, .ptr = &self.host_editing },
                 .{ .iid = &ivstunits.iunit_info_iid, .ptr = &self.unit_info },
+                .{ .iid = &ivstunits.iprogram_list_data_iid, .ptr = &self.program_list_data },
+                .{ .iid = &ivstunits.iunit_data_iid, .ptr = &self.unit_data },
                 .{ .iid = &ivsteditcontroller.imidi_mapping_iid, .ptr = &self.midi_mapping },
                 .{ .iid = &ivstmidilearn.imidi_learn_iid, .ptr = &self.midi_learn },
                 .{ .iid = &ivstmidimapping2.imidi_mapping2_iid, .ptr = &self.midi_mapping2 },
@@ -185,6 +199,14 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn queryFromUnitInfo(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&ownerFromUnitInfo(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromProgramListData(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromProgramListData(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromUnitData(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromUnitData(ptr).iface, requested_iid, out);
         }
 
         fn queryFromController2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
@@ -245,6 +267,22 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn releaseFromUnitInfo(ptr: *anyopaque) callconv(.C) types.uint32 {
             return release(&ownerFromUnitInfo(ptr).iface);
+        }
+
+        fn addRefFromProgramListData(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromProgramListData(ptr).iface);
+        }
+
+        fn releaseFromProgramListData(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromProgramListData(ptr).iface);
+        }
+
+        fn addRefFromUnitData(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromUnitData(ptr).iface);
+        }
+
+        fn releaseFromUnitData(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromUnitData(ptr).iface);
         }
 
         fn addRefFromController2(ptr: *anyopaque) callconv(.C) types.uint32 {
@@ -511,6 +549,48 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn setUnitProgramData(_: *anyopaque, _: types.int32, _: types.int32, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        const program_list_data_vtable = ivstunits.IProgramListDataVTable{
+            .queryInterface = queryFromProgramListData,
+            .addRef = addRefFromProgramListData,
+            .release = releaseFromProgramListData,
+            .programDataSupported = programDataSupported,
+            .getProgramData = getProgramData,
+            .setProgramData = setProgramData,
+        };
+
+        fn programDataSupported(_: *anyopaque, _: vsttypes.ProgramListID) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        fn getProgramData(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        fn setProgramData(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        const unit_data_vtable = ivstunits.IUnitDataVTable{
+            .queryInterface = queryFromUnitData,
+            .addRef = addRefFromUnitData,
+            .release = releaseFromUnitData,
+            .unitDataSupported = unitDataSupported,
+            .getUnitData = getUnitData,
+            .setUnitData = setUnitData,
+        };
+
+        fn unitDataSupported(_: *anyopaque, _: vsttypes.UnitID) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        fn getUnitData(_: *anyopaque, _: vsttypes.UnitID, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        fn setUnitData(_: *anyopaque, _: vsttypes.UnitID, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
             return types.kResultFalse;
         }
 
