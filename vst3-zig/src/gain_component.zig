@@ -152,16 +152,11 @@ fn getBusArrangement(_: *anyopaque, direction: vsttypes.BusDirection, index: typ
 }
 
 fn canProcessSampleSize(_: *anyopaque, symbolic_sample_size: types.int32) callconv(.C) types.tresult {
-    if (symbolic_sample_size == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32) or
-        symbolic_sample_size == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64))
-    {
-        return types.kResultOk;
-    }
-    return types.kResultFalse;
+    return zig_plug_bridge.RealtimeProcessorDefaults.canProcessSampleSize(symbolic_sample_size);
 }
 
 fn getLatencySamples(_: *anyopaque) callconv(.C) types.uint32 {
-    return 0;
+    return zig_plug_bridge.RealtimeProcessorDefaults.latencySamples();
 }
 
 fn setupProcessing(_: *anyopaque, _: *ivstaudioprocessor.ProcessSetup) callconv(.C) types.tresult {
@@ -191,7 +186,7 @@ fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.C) ty
 }
 
 fn getTailSamples(_: *anyopaque) callconv(.C) types.uint32 {
-    return ivstaudioprocessor.kNoTail;
+    return zig_plug_bridge.RealtimeProcessorDefaults.tailSamples();
 }
 
 fn applyGain(comptime Sample: type, context: *plug_process.ProcessContext(Sample), gain: Sample) void {
