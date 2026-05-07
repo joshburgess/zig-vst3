@@ -6,7 +6,7 @@ const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
 
-const StubFactory = factory.StaticFactory(.{
+const GainFactory = factory.StaticFactory(.{
     .vendor = "zig-vst3",
     .url = "https://github.com/joshburgess/zig-vst3",
 }, &.{
@@ -24,10 +24,10 @@ const StubFactory = factory.StaticFactory(.{
     },
 });
 
-pub usingnamespace entry.Exports(StubFactory);
+pub usingnamespace entry.Exports(GainFactory);
 
 test "gain export returns enumerable factory" {
-    const plugin_factory = StubFactory.getPluginFactory().?;
+    const plugin_factory = GainFactory.getPluginFactory().?;
     var class_info: ipluginbase.PClassInfo = .{};
 
     try std.testing.expectEqual(@as(i32, 2), plugin_factory.vtable.countClasses(plugin_factory));
