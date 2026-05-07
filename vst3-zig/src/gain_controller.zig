@@ -112,6 +112,7 @@ test "gain controller can be created as IEditController" {
 test "gain controller exposes edit controller extension interfaces" {
     const std = @import("std");
     const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+    const ivstrepresentation = @import("pluginterfaces/vst/ivstrepresentation.zig");
 
     var controller_out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
@@ -140,6 +141,18 @@ test "gain controller exposes edit controller extension interfaces" {
 
     try std.testing.expectEqual(types.kResultOk, host_editing.vtable.beginEditFromHost(host_editing, gain_param_id));
     try std.testing.expectEqual(types.kResultOk, host_editing.vtable.endEditFromHost(host_editing, gain_param_id));
+
+    var xml_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        controller_iface.vtable.queryInterface(controller_iface, &ivstrepresentation.ixml_representation_controller_iid, &xml_out),
+    );
+    try std.testing.expect(xml_out != null);
+    const xml: *ivstrepresentation.IXmlRepresentationController = @ptrCast(@alignCast(xml_out.?));
+    defer _ = xml.vtable.release(xml);
+
+    var info = ivstrepresentation.RepresentationInfo{};
+    try std.testing.expectEqual(types.kResultFalse, xml.vtable.getXmlRepresentationStream(xml, &info, null));
 }
 
 test "gain controller returns no plug view by default" {

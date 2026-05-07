@@ -22,6 +22,7 @@ const ivstphysicalui = @import("pluginterfaces/vst/ivstphysicalui.zig");
 const ivstpluginterfacesupport = @import("pluginterfaces/vst/ivstpluginterfacesupport.zig");
 const ivstprefetchablesupport = @import("pluginterfaces/vst/ivstprefetchablesupport.zig");
 const ivstremapparamid = @import("pluginterfaces/vst/ivstremapparamid.zig");
+const ivstrepresentation = @import("pluginterfaces/vst/ivstrepresentation.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
@@ -50,6 +51,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             physical_ui_mapping: ivstphysicalui.INoteExpressionPhysicalUIMapping = .{ .vtable = &physical_ui_mapping_vtable },
             parameter_function_name: ivstparameterfunctionname.IParameterFunctionName = .{ .vtable = &parameter_function_name_vtable },
             remap_param_id: ivstremapparamid.IRemapParamID = .{ .vtable = &remap_param_id_vtable },
+            xml_representation: ivstrepresentation.IXmlRepresentationController = .{ .vtable = &xml_representation_vtable },
             connected_peer: ?*ivstmessage.IConnectionPoint = null,
             component_handler: ?*ivsteditcontroller.IComponentHandler = null,
             component_handler2: ?*ivsteditcontroller.IComponentHandler2 = null,
@@ -268,6 +270,11 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return @fieldParentPtr("remap_param_id", iface);
         }
 
+        fn ownerFromXmlRepresentation(ptr: *anyopaque) *Controller {
+            const iface: *ivstrepresentation.IXmlRepresentationController = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("xml_representation", iface);
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
@@ -289,6 +296,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 .{ .iid = &ivstphysicalui.inote_expression_physical_ui_mapping_iid, .ptr = &self.physical_ui_mapping },
                 .{ .iid = &ivstparameterfunctionname.iparameter_function_name_iid, .ptr = &self.parameter_function_name },
                 .{ .iid = &ivstremapparamid.iremap_param_id_iid, .ptr = &self.remap_param_id },
+                .{ .iid = &ivstrepresentation.ixml_representation_controller_iid, .ptr = &self.xml_representation },
             };
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
@@ -351,6 +359,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn queryFromRemapParamID(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&ownerFromRemapParamID(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromXmlRepresentation(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromXmlRepresentation(ptr).iface, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
@@ -479,6 +491,14 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn releaseFromRemapParamID(ptr: *anyopaque) callconv(.C) types.uint32 {
             return release(&ownerFromRemapParamID(ptr).iface);
+        }
+
+        fn addRefFromXmlRepresentation(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromXmlRepresentation(ptr).iface);
+        }
+
+        fn releaseFromXmlRepresentation(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromXmlRepresentation(ptr).iface);
         }
 
         fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.C) types.tresult {
@@ -894,6 +914,20 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn getCompatibleParamID(_: *anyopaque, _: *const tuid.TUID, _: vsttypes.ParamID, out: *vsttypes.ParamID) callconv(.C) types.tresult {
             out.* = vsttypes.kNoParamId;
+            return types.kResultFalse;
+        }
+
+        const xml_representation_vtable = ivstrepresentation.IXmlRepresentationControllerVTable{
+            .queryInterface = queryFromXmlRepresentation,
+            .addRef = addRefFromXmlRepresentation,
+            .release = releaseFromXmlRepresentation,
+            .getXmlRepresentationStream = getXmlRepresentationStream,
+        };
+
+        fn getXmlRepresentationStream(_: *anyopaque, info: *ivstrepresentation.RepresentationInfo, stream: ?*ibstream.IBStream) callconv(.C) types.tresult {
+            if (@hasDecl(Config, "getXmlRepresentationStream")) {
+                return Config.getXmlRepresentationStream(info, stream);
+            }
             return types.kResultFalse;
         }
     };
