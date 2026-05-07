@@ -511,7 +511,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 **Goal.** Design and prototype the user-facing framework. This is where Zig idioms matter most. Exit this phase with a `Plugin` interface that's pleasant to implement and a parameter system that scales.
 
-**Current status.** The first prototype exists under `zig-plug/src/` and is also exposed as the pure `zig-plug-core` module for Layer 1 integration. The gain plugin uses `PluginSpec` for factory metadata, controller parameter metadata, default parameter state, host automation collection, and process context construction. The remaining Phase 5 work is to generalize that gain-specific bridge into reusable component/controller glue, then add state serialization and more examples.
+**Current status.** The first prototype exists under `zig-plug/src/` and is also exposed as the pure `zig-plug-core` module for Layer 1 integration. The gain plugin uses `PluginSpec` for factory metadata, controller parameter metadata, string conversion, normalized/plain conversion, default parameter state, host automation collection, state serialization, and process context construction. The remaining Phase 5 work is to generalize the remaining gain-specific audio bridge into reusable component/controller glue, then add more examples.
 
 ### Work Unit 5.1: Plugin trait equivalent
 

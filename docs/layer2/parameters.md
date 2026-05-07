@@ -13,7 +13,7 @@
 - `LinearSmoother`: sample-counted ramp between normalized values.
 - `ExponentialSmoother`: coefficient-based smoothing toward a normalized target.
 - `LogSmoother`: sample-counted multiplicative ramp for normalized values that must stay above zero.
-- `ParameterSet(Params)`: comptime reflection over a struct of descriptors.
+- `ParameterSet(Params)`: comptime reflection over a struct of descriptors, including host-facing id/name/default lookup, string conversion, and normalized/plain conversion by reflected index.
 - `ParameterValues(Params)`: atomic normalized value storage initialized from reflected descriptor defaults.
 
 ## Boundary Rules
@@ -24,5 +24,5 @@ Parameter state that may be read by the audio thread should use `NormalizedValue
 
 ## Open Work
 
-- Generate controller parameter metadata for arbitrary `PluginSpec` parameter sets.
-- Bridge reflected state serialization to VST3 `IBStream`.
+- Generalize reflected controller glue for plugins beyond the gain example.
+- Add host smoke test notes for reflected string conversion and automation behavior.

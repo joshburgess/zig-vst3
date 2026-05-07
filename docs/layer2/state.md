@@ -17,6 +17,5 @@ Loading ignores unknown parameter ids, which lets newer plugin versions remove p
 
 ## Open Work
 
-- Bridge this binary format to VST3 `IBStream` for component/controller state.
 - Add an optional debug JSON format.
 - Add explicit migration hooks for parameter renames.

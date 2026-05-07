@@ -1,6 +1,6 @@
 # Layer 2 Plugin Interface
 
-The current `zig-plug` plugin prototype is a compile-time spec helper with a narrow Layer 1 integration path. The gain plugin now uses a reflected `PluginSpec` for factory metadata, controller parameter metadata, default parameter state, host automation delivery, and audio process context construction.
+The current `zig-plug` plugin prototype is a compile-time spec helper with a narrow Layer 1 integration path. The gain plugin now uses a reflected `PluginSpec` for factory metadata, controller parameter metadata, parameter string conversion, normalized/plain conversion, default parameter state, host automation delivery, state serialization, and audio process context construction.
 
 ## Current API
 
@@ -47,5 +47,5 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 ## Open Work
 
 - Generalize the gain-specific Layer 1 bridge into reusable component/controller glue.
-- Bridge reflected state serialization to VST3 `IBStream`.
+- Generalize VST3 audio context construction beyond the gain component.
 - Add example plugins that use the public `zig-plug-core` API directly.
