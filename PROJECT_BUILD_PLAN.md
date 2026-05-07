@@ -174,7 +174,7 @@ Each phase is broken into **work units**. A work unit is sized so that one agent
 
 **Duration.** 2–3 weeks originally planned. The phase expanded to include the first real VST3 bundle and validator pass.
 
-**Goal.** Build the machinery needed for ABI-compatible COM objects and prove it against a real VST3 plugin. This phase now exits when the gain plugin validates, the compatibility aliases are documented, and the remaining raw-layer hardening work is tracked separately.
+**Goal.** Build the machinery needed for ABI-compatible COM objects and prove it against a real VST3 plugin. This phase now exits when the gain plugin validates and the remaining raw-layer hardening work is tracked separately.
 
 **Current exit status.**
 - `zig build test` passes locally.
@@ -186,7 +186,7 @@ Each phase is broken into **work units**. A work unit is sized so that one agent
 - Add CI jobs for validator and cross-target bundle checks where the platform supports them.
 - Replace one-off plugin object wiring with reusable raw-layer helpers for interface maps and allocator-owned objects.
 - Add host smoke test notes under `docs/host-matrix.md` once at least one DAW has loaded the gain plugin.
-- Decide how long to keep the `bundle-stub*` and `validate-stub` compatibility aliases.
+- Keep build steps aligned with the gain plugin naming now that the scaffold-era stub artifact has been retired.
 
 ### Work Unit 1.1: TUID/FUID handling
 

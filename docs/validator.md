@@ -53,4 +53,4 @@ zig build validator
 zig build validate-gain
 ```
 
-`zig build phase1` also runs `validate-gain` on macOS. The legacy `validate-stub` step remains as an alias for `validate-gain`.
+`zig build phase1` also runs `validate-gain` on macOS.

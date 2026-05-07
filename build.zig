@@ -47,9 +47,6 @@ pub fn build(b: *std.Build) void {
     } else {
         bundle_gain_step.dependOn(&b.addFail("bundle-gain currently supports macOS targets").step);
     }
-    const bundle_stub_step = b.step("bundle-stub", "Alias for bundle-gain");
-    bundle_stub_step.dependOn(bundle_gain_step);
-
     const bundle_gain_linux_step = b.step("bundle-gain-linux", "Build a Linux VST3 bundle for the gain plugin");
     if (target.result.os.tag == .linux) {
         const bundle_gain_linux = b.addSystemCommand(&.{"scripts/bundle_linux_vst3.sh"});
@@ -63,9 +60,6 @@ pub fn build(b: *std.Build) void {
     } else {
         bundle_gain_linux_step.dependOn(&b.addFail("bundle-gain-linux requires a Linux target").step);
     }
-    const bundle_stub_linux_step = b.step("bundle-stub-linux", "Alias for bundle-gain-linux");
-    bundle_stub_linux_step.dependOn(bundle_gain_linux_step);
-
     const bundle_gain_windows_step = b.step("bundle-gain-windows", "Build a Windows VST3 bundle for the gain plugin");
     if (target.result.os.tag == .windows) {
         const bundle_gain_windows = b.addSystemCommand(&.{"scripts/bundle_windows_vst3.sh"});
@@ -79,9 +73,6 @@ pub fn build(b: *std.Build) void {
     } else {
         bundle_gain_windows_step.dependOn(&b.addFail("bundle-gain-windows requires a Windows target").step);
     }
-    const bundle_stub_windows_step = b.step("bundle-stub-windows", "Alias for bundle-gain-windows");
-    bundle_stub_windows_step.dependOn(bundle_gain_windows_step);
-
     const vst3_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("vst3-zig/src/root.zig"),
@@ -133,9 +124,6 @@ pub fn build(b: *std.Build) void {
     } else {
         validate_gain_step.dependOn(&b.addFail("validate-gain currently supports macOS targets").step);
     }
-    const validate_stub_step = b.step("validate-stub", "Alias for validate-gain");
-    validate_stub_step.dependOn(validate_gain_step);
-
     const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
     validator_step.dependOn(&build_validator.step);
