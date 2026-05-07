@@ -97,6 +97,19 @@ pub fn build(b: *std.Build) void {
     } else {
         bundle_gain_linux_step.dependOn(&b.addFail("bundle-gain-linux requires a Linux target").step);
     }
+    const bundle_bypass_linux_step = b.step("bundle-bypass-linux", "Build a Linux VST3 bundle for the bypass plugin");
+    if (target.result.os.tag == .linux) {
+        const bundle_bypass_linux = b.addSystemCommand(&.{"scripts/bundle_linux_vst3.sh"});
+        bundle_bypass_linux.addFileArg(bypass.getEmittedBin());
+        bundle_bypass_linux.addArgs(&.{
+            b.getInstallPath(.prefix, "bundle/zig_vst3_bypass_linux.vst3"),
+            linuxPlatformDir(target.result.cpu.arch),
+            "zig_vst3_bypass",
+        });
+        bundle_bypass_linux_step.dependOn(&bundle_bypass_linux.step);
+    } else {
+        bundle_bypass_linux_step.dependOn(&b.addFail("bundle-bypass-linux requires a Linux target").step);
+    }
     const bundle_gain_windows_step = b.step("bundle-gain-windows", "Build a Windows VST3 bundle for the gain plugin");
     if (target.result.os.tag == .windows) {
         const bundle_gain_windows = b.addSystemCommand(&.{"scripts/bundle_windows_vst3.sh"});
@@ -109,6 +122,19 @@ pub fn build(b: *std.Build) void {
         bundle_gain_windows_step.dependOn(&bundle_gain_windows.step);
     } else {
         bundle_gain_windows_step.dependOn(&b.addFail("bundle-gain-windows requires a Windows target").step);
+    }
+    const bundle_bypass_windows_step = b.step("bundle-bypass-windows", "Build a Windows VST3 bundle for the bypass plugin");
+    if (target.result.os.tag == .windows) {
+        const bundle_bypass_windows = b.addSystemCommand(&.{"scripts/bundle_windows_vst3.sh"});
+        bundle_bypass_windows.addFileArg(bypass.getEmittedBin());
+        bundle_bypass_windows.addArgs(&.{
+            b.getInstallPath(.prefix, "bundle/zig_vst3_bypass_windows.vst3"),
+            windowsPlatformDir(target.result.cpu.arch),
+            "zig_vst3_bypass",
+        });
+        bundle_bypass_windows_step.dependOn(&bundle_bypass_windows.step);
+    } else {
+        bundle_bypass_windows_step.dependOn(&b.addFail("bundle-bypass-windows requires a Windows target").step);
     }
     const vst3_test_module = b.createModule(.{
         .root_source_file = b.path("vst3-zig/src/root.zig"),
@@ -233,6 +259,9 @@ pub fn build(b: *std.Build) void {
     } else {
         validate_bypass_step.dependOn(&b.addFail("validate-bypass currently supports macOS targets").step);
     }
+    const validate_examples_step = b.step("validate-examples", "Build and validate all native VST3 example bundles");
+    validate_examples_step.dependOn(validate_gain_step);
+    validate_examples_step.dependOn(validate_bypass_step);
     const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
     validator_step.dependOn(&build_validator.step);
