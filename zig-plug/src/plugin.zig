@@ -20,6 +20,10 @@ pub fn PluginSpec(comptime Plugin: type) type {
         pub const ParameterValues = parameters.ParameterValues(Params);
         pub const name = Plugin.name;
         pub const vendor = Plugin.vendor;
+        pub const has_init = @hasDecl(Plugin, "init");
+        pub const has_prepare = @hasDecl(Plugin, "prepare");
+        pub const has_process = @hasDecl(Plugin, "process");
+        pub const has_deinit = @hasDecl(Plugin, "deinit");
 
         parameter_set: ParameterSet,
         values: ParameterValues,
@@ -52,4 +56,40 @@ test "plugin spec exposes metadata and parameter defaults" {
     try std.testing.expectEqual(@as(?f64, 1.0), spec.values.load(0));
     try std.testing.expect(spec.values.store(0, 0.5));
     try std.testing.expectEqual(@as(?f64, 0.5), spec.values.load(0));
+}
+
+test "plugin spec detects lifecycle declarations" {
+    const Meter = struct {
+        pub const name = "Meter";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+
+        pub fn init() @This() {
+            return .{};
+        }
+
+        pub fn prepare(_: *@This(), _: f64, _: u32) void {}
+        pub fn process(_: *@This()) void {}
+        pub fn deinit(_: *@This()) void {}
+    };
+    const Spec = PluginSpec(Meter);
+
+    try std.testing.expect(Spec.has_init);
+    try std.testing.expect(Spec.has_prepare);
+    try std.testing.expect(Spec.has_process);
+    try std.testing.expect(Spec.has_deinit);
+}
+
+test "plugin spec allows missing lifecycle declarations during prototype phase" {
+    const Minimal = struct {
+        pub const name = "Minimal";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+    };
+    const Spec = PluginSpec(Minimal);
+
+    try std.testing.expect(!Spec.has_init);
+    try std.testing.expect(!Spec.has_prepare);
+    try std.testing.expect(!Spec.has_process);
+    try std.testing.expect(!Spec.has_deinit);
 }
