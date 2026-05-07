@@ -21,6 +21,10 @@ const Controller = extern struct {
 
 var controller = Controller{};
 var parameter_state = zig_plug_bridge.ParameterState(gain_spec.Spec.Params).init(&gain_spec.parameter_set);
+var parameters = zig_plug_bridge.ParameterController(gain_spec.Spec.Params){
+    .set = &gain_spec.parameter_set,
+    .state = &parameter_state,
+};
 
 pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
     return query(&controller.iface, @ptrCast(requested_iid), out);
@@ -90,37 +94,37 @@ fn getState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresul
 }
 
 fn getParameterCount(_: *anyopaque) callconv(.C) types.int32 {
-    return @intCast(gain_spec.Spec.ParameterSet.count);
+    return parameters.parameterCount();
 }
 
 fn getParameterInfo(_: *anyopaque, index: types.int32, out: *ivsteditcontroller.ParameterInfo) callconv(.C) types.tresult {
-    return zig_plug_bridge.fillParameterInfo(gain_spec.Spec.Params, &gain_spec.parameter_set, index, out);
+    return parameters.parameterInfo(index, out);
 }
 
 fn getParamStringByValue(_: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
-    return zig_plug_bridge.getParamStringByValue(gain_spec.Spec.Params, &gain_spec.parameter_set, id, value, out);
+    return parameters.stringByValue(id, value, out);
 }
 
 fn getParamValueByString(_: *anyopaque, id: vsttypes.ParamID, text: [*]vsttypes.TChar, out: *vsttypes.ParamValue) callconv(.C) types.tresult {
-    return zig_plug_bridge.getParamValueByString(gain_spec.Spec.Params, &gain_spec.parameter_set, id, text, out);
+    return parameters.valueByString(id, text, out);
 }
 
 fn normalizedParamToPlain(_: *anyopaque, id: vsttypes.ParamID, normalized: vsttypes.ParamValue) callconv(.C) vsttypes.ParamValue {
-    return zig_plug_bridge.normalizedParamToPlain(gain_spec.Spec.Params, &gain_spec.parameter_set, id, normalized);
+    return parameters.plainFromNormalized(id, normalized);
 }
 
 fn plainParamToNormalized(_: *anyopaque, id: vsttypes.ParamID, plain: vsttypes.ParamValue) callconv(.C) vsttypes.ParamValue {
-    return zig_plug_bridge.plainParamToNormalized(gain_spec.Spec.Params, &gain_spec.parameter_set, id, plain);
+    return parameters.normalizedFromPlain(id, plain);
 }
 
 fn getParamNormalized(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) vsttypes.ParamValue {
     _ = ptr;
-    return parameter_state.getNormalizedById(id);
+    return parameters.getNormalized(id);
 }
 
 fn setParamNormalized(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
     _ = ptr;
-    return parameter_state.setNormalizedById(id, value);
+    return parameters.setNormalized(id, value);
 }
 
 fn setComponentHandler(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
@@ -132,19 +136,19 @@ fn createView(_: *anyopaque, _: types.FIDString) callconv(.C) ?*iplugview.IPlugV
 }
 
 pub fn gain() vsttypes.ParamValue {
-    return parameter_state.getNormalizedById(gain_param_id);
+    return parameters.getNormalized(gain_param_id);
 }
 
 pub fn setGain(value: vsttypes.ParamValue) void {
-    _ = parameter_state.setNormalizedById(gain_param_id, value);
+    _ = parameters.setNormalized(gain_param_id, value);
 }
 
 pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
-    return parameter_state.readFromStream(state);
+    return parameters.readState(state);
 }
 
 pub fn writeGainState(state: ?*ibstream.IBStream) types.tresult {
-    return parameter_state.writeToStream(state);
+    return parameters.writeState(state);
 }
 
 test "gain controller can be created as IEditController" {

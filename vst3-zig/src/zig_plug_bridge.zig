@@ -49,6 +49,58 @@ pub fn ParameterState(comptime Params: type) type {
     };
 }
 
+pub fn ParameterController(comptime Params: type) type {
+    const Set = plug.parameters.ParameterSet(Params);
+    const State = ParameterState(Params);
+
+    return struct {
+        const Self = @This();
+
+        set: *const Set,
+        state: *State,
+
+        pub fn parameterCount(_: *const Self) types.int32 {
+            return @intCast(Set.count);
+        }
+
+        pub fn parameterInfo(self: *const Self, index: types.int32, out: *ivsteditcontroller.ParameterInfo) types.tresult {
+            return fillParameterInfo(Params, self.set, index, out);
+        }
+
+        pub fn stringByValue(self: *const Self, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*]vsttypes.TChar) types.tresult {
+            return getParamStringByValue(Params, self.set, id, value, out);
+        }
+
+        pub fn valueByString(self: *const Self, id: vsttypes.ParamID, text: [*]vsttypes.TChar, out: *vsttypes.ParamValue) types.tresult {
+            return getParamValueByString(Params, self.set, id, text, out);
+        }
+
+        pub fn plainFromNormalized(self: *const Self, id: vsttypes.ParamID, normalized: vsttypes.ParamValue) vsttypes.ParamValue {
+            return normalizedParamToPlain(Params, self.set, id, normalized);
+        }
+
+        pub fn normalizedFromPlain(self: *const Self, id: vsttypes.ParamID, plain: vsttypes.ParamValue) vsttypes.ParamValue {
+            return plainParamToNormalized(Params, self.set, id, plain);
+        }
+
+        pub fn getNormalized(self: *const Self, id: vsttypes.ParamID) vsttypes.ParamValue {
+            return self.state.getNormalizedById(id);
+        }
+
+        pub fn setNormalized(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+            return self.state.setNormalizedById(id, value);
+        }
+
+        pub fn readState(self: *Self, stream: ?*ibstream.IBStream) types.tresult {
+            return self.state.readFromStream(stream);
+        }
+
+        pub fn writeState(self: *const Self, stream: ?*ibstream.IBStream) types.tresult {
+            return self.state.writeToStream(stream);
+        }
+    };
+}
+
 pub fn fillParameterInfo(
     comptime Params: type,
     set: *const plug.parameters.ParameterSet(Params),
@@ -316,6 +368,39 @@ test "zig-plug bridge parameter state stores ids and persists streams" {
 
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), restored.getNormalizedById(0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), restored.getNormalizedById(1));
+}
+
+test "zig-plug bridge parameter controller exposes reflected edit operations" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(7, "Gain", 0.0, 2.0, 1.0),
+        bypass: plug.parameters.BoolParam = .{ .id = 8, .name = "Bypass" },
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const set = Set.init(.{});
+    var state = ParameterState(Params).init(&set);
+    var controller = ParameterController(Params){
+        .set = &set,
+        .state = &state,
+    };
+    var info = ivsteditcontroller.ParameterInfo{};
+    var text: vsttypes.String128 = undefined;
+    var value: vsttypes.ParamValue = 0;
+
+    try std.testing.expectEqual(@as(types.int32, 2), controller.parameterCount());
+    try std.testing.expectEqual(types.kResultOk, controller.parameterInfo(0, &info));
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 7), info.id);
+    try expectString128("Gain", &info.title);
+
+    try std.testing.expectEqual(types.kResultOk, controller.stringByValue(7, 0.5, &text));
+    try expectString128("1.000", &text);
+    try std.testing.expectEqual(types.kResultOk, controller.valueByString(7, &text, &value));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), controller.plainFromNormalized(7, 0.5));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), controller.normalizedFromPlain(7, 1.0));
+
+    try std.testing.expectEqual(types.kResultOk, controller.setNormalized(8, 1.0));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), controller.getNormalized(8));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(99, 0.5));
 }
 
 test "zig-plug bridge fills VST3 parameter info from reflected set" {
