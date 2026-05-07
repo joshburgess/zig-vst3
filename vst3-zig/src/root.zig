@@ -24,6 +24,10 @@ pub const pluginterfaces = struct {
 };
 pub const tuid = @import("tuid.zig");
 pub const version = "0.1.0-dev";
+pub const voice_mix_component = @import("voice_mix_component.zig");
+pub const voice_mix_controller = @import("voice_mix_controller.zig");
+pub const voice_mix_plugin = @import("voice_mix_plugin.zig");
+pub const voice_mix_spec = @import("voice_mix_spec.zig");
 pub const zig_plug_bridge = @import("zig_plug_bridge.zig");
 pub const zig_plug_effect = @import("zig_plug_effect.zig");
 
