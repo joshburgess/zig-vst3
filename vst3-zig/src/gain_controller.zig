@@ -52,6 +52,39 @@ test "gain controller can be created as IEditController" {
     try std.testing.expect(controller_iface.vtable.release(controller_iface) >= 1);
 }
 
+test "gain controller exposes edit controller extension interfaces" {
+    const std = @import("std");
+    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var controller2_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.queryInterface(controller_iface, &ivsteditcontroller.iedit_controller2_iid, &controller2_out));
+    try std.testing.expect(controller2_out != null);
+    const controller2: *ivsteditcontroller.IEditController2 = @ptrCast(@alignCast(controller2_out.?));
+    defer _ = controller2.vtable.release(controller2);
+
+    try std.testing.expectEqual(types.kResultOk, controller2.vtable.setKnobMode(controller2, @intFromEnum(ivsteditcontroller.KnobModes.kLinearMode)));
+    try std.testing.expectEqual(types.kResultFalse, controller2.vtable.openHelp(controller2, 1));
+    try std.testing.expectEqual(types.kResultFalse, controller2.vtable.openAboutBox(controller2, 1));
+
+    var host_editing_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        controller_iface.vtable.queryInterface(controller_iface, &ivsteditcontroller.iedit_controller_host_editing_iid, &host_editing_out),
+    );
+    try std.testing.expect(host_editing_out != null);
+    const host_editing: *ivsteditcontroller.IEditControllerHostEditing = @ptrCast(@alignCast(host_editing_out.?));
+    defer _ = host_editing.vtable.release(host_editing);
+
+    try std.testing.expectEqual(types.kResultOk, host_editing.vtable.beginEditFromHost(host_editing, gain_param_id));
+    try std.testing.expectEqual(types.kResultOk, host_editing.vtable.endEditFromHost(host_editing, gain_param_id));
+}
+
 test "gain controller exposes default root unit info" {
     const std = @import("std");
     const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");

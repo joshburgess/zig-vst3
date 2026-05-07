@@ -27,6 +27,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         const Controller = extern struct {
             iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
+            controller2: ivsteditcontroller.IEditController2 = .{ .vtable = &controller2_vtable },
+            host_editing: ivsteditcontroller.IEditControllerHostEditing = .{ .vtable = &host_editing_vtable },
             unit_info: ivstunits.IUnitInfo = .{ .vtable = &unit_info_vtable },
             midi_mapping: ivsteditcontroller.IMidiMapping = .{ .vtable = &midi_mapping_vtable },
             midi_learn: ivstmidilearn.IMidiLearn = .{ .vtable = &midi_learn_vtable },
@@ -95,6 +97,16 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
+        fn ownerFromController2(ptr: *anyopaque) *Controller {
+            const iface: *ivsteditcontroller.IEditController2 = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("controller2", iface);
+        }
+
+        fn ownerFromHostEditing(ptr: *anyopaque) *Controller {
+            const iface: *ivsteditcontroller.IEditControllerHostEditing = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("host_editing", iface);
+        }
+
         fn ownerFromUnitInfo(ptr: *anyopaque) *Controller {
             const iface: *ivstunits.IUnitInfo = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("unit_info", iface);
@@ -141,6 +153,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ipluginbase.iplugin_base_iid, .ptr = ptr },
                 .{ .iid = &ivsteditcontroller.iedit_controller_iid, .ptr = ptr },
+                .{ .iid = &ivsteditcontroller.iedit_controller2_iid, .ptr = &self.controller2 },
+                .{ .iid = &ivsteditcontroller.iedit_controller_host_editing_iid, .ptr = &self.host_editing },
                 .{ .iid = &ivstunits.iunit_info_iid, .ptr = &self.unit_info },
                 .{ .iid = &ivsteditcontroller.imidi_mapping_iid, .ptr = &self.midi_mapping },
                 .{ .iid = &ivstmidilearn.imidi_learn_iid, .ptr = &self.midi_learn },
@@ -155,6 +169,14 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn queryFromUnitInfo(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&ownerFromUnitInfo(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromController2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromController2(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromHostEditing(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromHostEditing(ptr).iface, requested_iid, out);
         }
 
         fn queryFromMidiMapping(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
@@ -199,6 +221,22 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn releaseFromUnitInfo(ptr: *anyopaque) callconv(.C) types.uint32 {
             return release(&ownerFromUnitInfo(ptr).iface);
+        }
+
+        fn addRefFromController2(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromController2(ptr).iface);
+        }
+
+        fn releaseFromController2(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromController2(ptr).iface);
+        }
+
+        fn addRefFromHostEditing(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromHostEditing(ptr).iface);
+        }
+
+        fn releaseFromHostEditing(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromHostEditing(ptr).iface);
         }
 
         fn addRefFromMidiMapping(ptr: *anyopaque) callconv(.C) types.uint32 {
@@ -315,6 +353,43 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn createView(_: *anyopaque, _: types.FIDString) callconv(.C) ?*iplugview.IPlugView {
             return null;
+        }
+
+        const controller2_vtable = ivsteditcontroller.IEditController2VTable{
+            .queryInterface = queryFromController2,
+            .addRef = addRefFromController2,
+            .release = releaseFromController2,
+            .setKnobMode = setKnobMode,
+            .openHelp = openHelp,
+            .openAboutBox = openAboutBox,
+        };
+
+        fn setKnobMode(_: *anyopaque, _: ivsteditcontroller.KnobMode) callconv(.C) types.tresult {
+            return types.kResultOk;
+        }
+
+        fn openHelp(_: *anyopaque, _: types.TBool) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        fn openAboutBox(_: *anyopaque, _: types.TBool) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        const host_editing_vtable = ivsteditcontroller.IEditControllerHostEditingVTable{
+            .queryInterface = queryFromHostEditing,
+            .addRef = addRefFromHostEditing,
+            .release = releaseFromHostEditing,
+            .beginEditFromHost = beginEditFromHost,
+            .endEditFromHost = endEditFromHost,
+        };
+
+        fn beginEditFromHost(_: *anyopaque, _: vsttypes.ParamID) callconv(.C) types.tresult {
+            return types.kResultOk;
+        }
+
+        fn endEditFromHost(_: *anyopaque, _: vsttypes.ParamID) callconv(.C) types.tresult {
+            return types.kResultOk;
         }
 
         const unit_info_vtable = ivstunits.IUnitInfoVTable{
