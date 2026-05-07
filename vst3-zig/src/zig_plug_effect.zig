@@ -8,6 +8,7 @@ const interface_map = @import("interface_map.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
@@ -20,6 +21,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         const Controller = extern struct {
             iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
+            unit_info: ivstunits.IUnitInfo = .{ .vtable = &unit_info_vtable },
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -80,13 +82,24 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
+        fn ownerFromUnitInfo(ptr: *anyopaque) *Controller {
+            const iface: *ivstunits.IUnitInfo = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("unit_info", iface);
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = owner(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ipluginbase.iplugin_base_iid, .ptr = ptr },
                 .{ .iid = &ivsteditcontroller.iedit_controller_iid, .ptr = ptr },
+                .{ .iid = &ivstunits.iunit_info_iid, .ptr = &self.unit_info },
             };
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+        }
+
+        fn queryFromUnitInfo(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromUnitInfo(ptr).iface, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
@@ -95,6 +108,14 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, Config.controller_name);
+        }
+
+        fn addRefFromUnitInfo(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromUnitInfo(ptr).iface);
+        }
+
+        fn releaseFromUnitInfo(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromUnitInfo(ptr).iface);
         }
 
         fn initialize(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
@@ -156,7 +177,97 @@ pub fn ReflectedEditController(comptime Config: type) type {
         fn createView(_: *anyopaque, _: types.FIDString) callconv(.C) ?*iplugview.IPlugView {
             return null;
         }
+
+        const unit_info_vtable = ivstunits.IUnitInfoVTable{
+            .queryInterface = queryFromUnitInfo,
+            .addRef = addRefFromUnitInfo,
+            .release = releaseFromUnitInfo,
+            .getUnitCount = getUnitCount,
+            .getUnitInfo = getUnitInfo,
+            .getProgramListCount = getProgramListCount,
+            .getProgramListInfo = getProgramListInfo,
+            .getProgramName = getProgramName,
+            .getProgramInfo = getProgramInfo,
+            .hasProgramPitchNames = hasProgramPitchNames,
+            .getProgramPitchName = getProgramPitchName,
+            .getSelectedUnit = getSelectedUnit,
+            .selectUnit = selectUnit,
+            .getUnitByBus = getUnitByBus,
+            .setUnitProgramData = setUnitProgramData,
+        };
+
+        fn getUnitCount(_: *anyopaque) callconv(.C) types.int32 {
+            return 1;
+        }
+
+        fn getUnitInfo(_: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.C) types.tresult {
+            if (index != 0) {
+                out.* = .{};
+                return types.kInvalidArgument;
+            }
+            out.* = .{
+                .id = ivstunits.kRootUnitId,
+                .parentUnitId = ivstunits.kNoParentUnitId,
+                .programListId = ivstunits.kNoProgramListId,
+            };
+            copyString128(&out.name, "Root");
+            return types.kResultOk;
+        }
+
+        fn getProgramListCount(_: *anyopaque) callconv(.C) types.int32 {
+            return 0;
+        }
+
+        fn getProgramListInfo(_: *anyopaque, _: types.int32, out: *ivstunits.ProgramListInfo) callconv(.C) types.tresult {
+            out.* = .{};
+            return types.kInvalidArgument;
+        }
+
+        fn getProgramName(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            out[0] = 0;
+            return types.kInvalidArgument;
+        }
+
+        fn getProgramInfo(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            out[0] = 0;
+            return types.kInvalidArgument;
+        }
+
+        fn hasProgramPitchNames(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        fn getProgramPitchName(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: types.int16, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            out[0] = 0;
+            return types.kInvalidArgument;
+        }
+
+        fn getSelectedUnit(_: *anyopaque) callconv(.C) vsttypes.UnitID {
+            return ivstunits.kRootUnitId;
+        }
+
+        fn selectUnit(_: *anyopaque, id: vsttypes.UnitID) callconv(.C) types.tresult {
+            if (id != ivstunits.kRootUnitId) return types.kInvalidArgument;
+            return types.kResultOk;
+        }
+
+        fn getUnitByBus(_: *anyopaque, _: vsttypes.MediaType, _: vsttypes.BusDirection, _: types.int32, _: types.int32, out: *vsttypes.UnitID) callconv(.C) types.tresult {
+            out.* = ivstunits.kRootUnitId;
+            return types.kResultOk;
+        }
+
+        fn setUnitProgramData(_: *anyopaque, _: types.int32, _: types.int32, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
     };
+}
+
+fn copyString128(dest: *vsttypes.String128, source: []const u8) void {
+    @memset(dest, 0);
+    const len = @min(source.len, dest.len - 1);
+    for (source[0..len], 0..) |char, index| {
+        dest[index] = char;
+    }
 }
 
 pub fn SimpleStereoEffect(comptime Config: type) type {
