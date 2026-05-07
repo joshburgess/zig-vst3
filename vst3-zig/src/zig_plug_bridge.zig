@@ -18,16 +18,27 @@ const stereo_arrangement: vsttypes.SpeakerArrangement = 3;
 
 pub const StereoAudioBuses = struct {
     pub fn busCount(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection) types.int32 {
+        return busCountWithEventOutput(media_type, direction, false);
+    }
+
+    pub fn busCountWithEventOutput(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, event_output: bool) types.int32 {
         if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and isInputOrOutput(direction)) {
             return 1;
         }
         if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) {
             return 1;
         }
+        if (event_output and media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput)) {
+            return 1;
+        }
         return 0;
     }
 
     pub fn busInfo(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo) types.tresult {
+        return busInfoWithEventOutput(media_type, direction, index, out, false);
+    }
+
+    pub fn busInfoWithEventOutput(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo, event_output: bool) types.tresult {
         if (index != 0) {
             out.* = .{};
             return types.kInvalidArgument;
@@ -45,7 +56,10 @@ pub const StereoAudioBuses = struct {
             return types.kResultOk;
         }
 
-        if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) {
+        if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and
+            (direction == @intFromEnum(ivstcomponent.BusDirections.kInput) or
+                (event_output and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput))))
+        {
             out.* = .{
                 .mediaType = media_type,
                 .direction = direction,
@@ -53,7 +67,7 @@ pub const StereoAudioBuses = struct {
                 .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
                 .flags = ivstcomponent.BusFlags.kDefaultActive,
             };
-            copyAscii16(&out.name, "Event In");
+            copyAscii16(&out.name, if (direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) "Event In" else "Event Out");
             return types.kResultOk;
         }
 
@@ -1220,6 +1234,7 @@ test "zig-plug bridge stereo buses expose audio and event input metadata" {
     try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput)));
     try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput)));
     try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput)));
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountWithEventOutput(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput), true));
 
     try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info));
     try std.testing.expectEqual(@as(types.int32, 2), info.channelCount);
@@ -1230,6 +1245,11 @@ test "zig-plug bridge stereo buses expose audio and event input metadata" {
     try std.testing.expectEqual(@as(types.int32, 1), info.channelCount);
     try std.testing.expectEqual(ivstcomponent.BusFlags.kDefaultActive, info.flags);
     try expectString128("Event In", &info.name);
+
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoWithEventOutput(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &info, true));
+    try std.testing.expectEqual(@as(types.int32, 1), info.channelCount);
+    try std.testing.expectEqual(ivstcomponent.BusFlags.kDefaultActive, info.flags);
+    try expectString128("Event Out", &info.name);
 
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 1, &info));
 }

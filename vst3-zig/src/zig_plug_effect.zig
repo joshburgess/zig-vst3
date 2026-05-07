@@ -162,6 +162,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
 pub fn SimpleStereoEffect(comptime Config: type) type {
     return struct {
         const Self = @This();
+        const event_output = @hasDecl(Config, "event_output") and Config.event_output;
 
         const Component = extern struct {
             iface: ivstcomponent.IComponent = .{ .vtable = &component_vtable },
@@ -243,11 +244,11 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         fn getBusCount(_: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection) callconv(.C) types.int32 {
-            return zig_plug_bridge.StereoAudioBuses.busCount(media_type, direction);
+            return zig_plug_bridge.StereoAudioBuses.busCountWithEventOutput(media_type, direction, event_output);
         }
 
         fn getBusInfo(_: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo) callconv(.C) types.tresult {
-            return zig_plug_bridge.StereoAudioBuses.busInfo(media_type, direction, index, out);
+            return zig_plug_bridge.StereoAudioBuses.busInfoWithEventOutput(media_type, direction, index, out, event_output);
         }
 
         fn getRoutingInfo(_: *anyopaque, _: *ivstcomponent.RoutingInfo, _: *ivstcomponent.RoutingInfo) callconv(.C) types.tresult {
