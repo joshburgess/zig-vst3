@@ -9,6 +9,8 @@
 
 Loading ignores unknown parameter ids, which lets newer plugin versions remove parameters without breaking older saved states. Missing parameters keep their current value, so newer plugin versions can add parameters and keep descriptor defaults when loading older state.
 
+The VST3 bridge reads and writes this format directly through `IBStream`, so state loading is not tied to the current parameter count. Older shorter states can load into newer plugins, and newer states with extra ids can load into older plugins.
+
 ## Current API
 
 - `state.encodedSize(Params)`: byte count for a full parameter snapshot.
