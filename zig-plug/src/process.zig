@@ -47,6 +47,43 @@ pub const ParameterChanges = struct {
     }
 };
 
+pub const EventKind = enum {
+    note_on,
+    note_off,
+    data,
+    other,
+};
+
+pub const Event = struct {
+    kind: EventKind,
+    bus_index: i32,
+    sample_offset: usize,
+    channel: i16 = 0,
+    pitch: i16 = 0,
+    velocity: f32 = 0,
+};
+
+pub const Events = struct {
+    items: []const Event = &.{},
+
+    pub fn init(items: []const Event, frame_count: usize) !Events {
+        for (items) |item| {
+            if (item.sample_offset >= frame_count) {
+                return error.EventOutsideBlock;
+            }
+        }
+        return .{ .items = items };
+    }
+
+    pub fn countKind(self: Events, kind: EventKind) usize {
+        var count: usize = 0;
+        for (self.items) |item| {
+            if (item.kind == kind) count += 1;
+        }
+        return count;
+    }
+};
+
 pub fn AudioInputs(comptime Sample: type) type {
     return struct {
         const Self = @This();
@@ -107,6 +144,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         inputs: AudioInputs(Sample),
         outputs: AudioOutputs(Sample),
         parameter_changes: ParameterChanges = .{},
+        events: Events = .{},
 
         pub fn frameCount(self: @This()) usize {
             return @min(self.inputs.frame_count, self.outputs.frame_count);
@@ -184,4 +222,25 @@ test "parameter changes reject denormalized values" {
     };
 
     try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, ParameterChanges.init(&changes, 4));
+}
+
+test "events validate block offsets and count kinds" {
+    const items = [_]Event{
+        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 0, .pitch = 60, .velocity = 0.75 },
+        .{ .kind = .note_off, .bus_index = 0, .sample_offset = 3, .channel = 0, .pitch = 60 },
+    };
+    const view = try Events.init(&items, 4);
+
+    try std.testing.expectEqual(@as(usize, 2), view.items.len);
+    try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_on));
+    try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_off));
+    try std.testing.expectEqual(@as(usize, 0), view.countKind(.data));
+}
+
+test "events reject values outside the process block" {
+    const items = [_]Event{
+        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 4 },
+    };
+
+    try std.testing.expectError(error.EventOutsideBlock, Events.init(&items, 4));
 }

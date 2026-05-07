@@ -318,9 +318,11 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.C) types.tresult {
             var parameter_change_storage: [64]plug_process.ParameterChange = undefined;
+            var event_storage: [64]plug_process.Event = undefined;
             const parameter_changes = zig_plug_bridge.collectInputParameterChanges(data, &parameter_change_storage);
+            const events = zig_plug_bridge.collectInputEvents(data, &event_storage);
             Config.applyParameterChanges(parameter_changes);
-            return zig_plug_bridge.processMainAudio(data, parameter_changes, Config.Processor{});
+            return zig_plug_bridge.processMainAudio(data, parameter_changes, events, Config.Processor{});
         }
 
         fn getTailSamples(_: *anyopaque) callconv(.C) types.uint32 {
