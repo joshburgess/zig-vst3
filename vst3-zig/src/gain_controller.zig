@@ -144,20 +144,12 @@ pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
     var values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
     const result = zig_plug_bridge.readParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &values);
     if (result != types.kResultOk) return result;
-    storeParameterValues(&values);
+    zig_plug_bridge.copyParameterValues(gain_spec.Spec.Params, &values, &parameter_values);
     return types.kResultOk;
 }
 
 pub fn writeGainState(state: ?*ibstream.IBStream) types.tresult {
     return zig_plug_bridge.writeParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &parameter_values);
-}
-
-fn storeParameterValues(values: *const gain_spec.Spec.ParameterValues) void {
-    inline for (0..gain_spec.Spec.ParameterSet.count) |index| {
-        if (values.load(index)) |value| {
-            _ = parameter_values.store(index, value);
-        }
-    }
 }
 
 test "gain controller can be created as IEditController" {

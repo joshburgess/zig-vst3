@@ -88,6 +88,18 @@ pub fn collectInputParameterChanges(data: *ivstaudioprocessor.ProcessData, stora
     return plug.process.ParameterChanges.init(storage[0..collector.count], collector.frame_count) catch .{};
 }
 
+pub fn copyParameterValues(
+    comptime Params: type,
+    source: *const plug.parameters.ParameterValues(Params),
+    dest: *plug.parameters.ParameterValues(Params),
+) void {
+    inline for (0..plug.parameters.ParameterSet(Params).count) |index| {
+        if (source.load(index)) |value| {
+            _ = dest.store(index, value);
+        }
+    }
+}
+
 pub fn makeProcessContext(
     comptime Sample: type,
     input: ivstaudioprocessor.AudioBusBuffers,
@@ -220,6 +232,26 @@ test "zig-plug bridge round-trips parameter state through IBStream" {
     try std.testing.expectEqual(types.kResultOk, stream.iface.vtable.seek(&stream.iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, readParameterState(Params, &stream.iface, &set, &restored));
     try std.testing.expectEqual(@as(?f64, 0.25), restored.load(0));
+}
+
+test "zig-plug bridge copies reflected parameter values" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+        mix: plug.parameters.FloatParam = plug.parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const Values = plug.parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var source = Values.init(&set);
+    var dest = Values.init(&set);
+
+    try std.testing.expect(source.storeById(&set, 0, 0.25));
+    try std.testing.expect(source.storeById(&set, 1, 0.75));
+
+    copyParameterValues(Params, &source, &dest);
+
+    try std.testing.expectEqual(@as(?f64, 0.25), dest.loadById(&set, 0));
+    try std.testing.expectEqual(@as(?f64, 0.75), dest.loadById(&set, 1));
 }
 
 test "zig-plug bridge fills VST3 parameter info from reflected set" {
