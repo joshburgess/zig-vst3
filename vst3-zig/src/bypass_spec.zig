@@ -6,7 +6,7 @@ const BypassPlugin = struct {
     pub const name = "zig-vst3 Bypass";
     pub const vendor = "zig-vst3";
     pub const Params = struct {
-        bypass: plug.parameters.BoolParam = .{ .id = bypass_param_id, .name = "Bypass", .default = false },
+        bypass: plug.parameters.BoolParam = .{ .id = bypass_param_id, .name = "Bypass", .default = false, .is_bypass = true },
     };
 };
 

@@ -145,6 +145,7 @@ pub const FloatParam = struct {
     min: f64 = 0.0,
     max: f64 = 1.0,
     default: f64 = 0.0,
+    is_bypass: bool = false,
 
     pub fn init(id: u32, name: []const u8, min: f64, max: f64, default: f64) FloatParam {
         std.debug.assert(max > min);
@@ -200,6 +201,7 @@ pub const IntParam = struct {
     min: i64,
     max: i64,
     default: i64,
+    is_bypass: bool = false,
 
     pub fn init(id: u32, name: []const u8, min: i64, max: i64, default: i64) IntParam {
         std.debug.assert(max > min);
@@ -249,6 +251,7 @@ pub const BoolParam = struct {
     id: u32,
     name: []const u8,
     default: bool = false,
+    is_bypass: bool = false,
 
     pub fn normalize(_: BoolParam, plain: bool) f64 {
         return if (plain) 1.0 else 0.0;
@@ -302,6 +305,7 @@ pub fn EnumParam(comptime Enum: type) type {
         id: u32,
         name: []const u8,
         default: Enum,
+        is_bypass: bool = false,
 
         pub fn normalize(_: Self, value: Enum) f64 {
             if (info.fields.len == 1) return 0.0;
@@ -380,6 +384,13 @@ pub fn ParameterSet(comptime Params: type) type {
         pub fn defaultNormalized(self: *const Self, index: usize) ?f64 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).defaultNormalized();
+            }
+            return null;
+        }
+
+        pub fn isBypass(self: *const Self, index: usize) ?bool {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field.name).is_bypass;
             }
             return null;
         }
@@ -571,10 +582,11 @@ test "int parameter clamps and rounds normalized values" {
 }
 
 test "bool parameter maps around midpoint" {
-    const bypass = BoolParam{ .id = 3, .name = "Bypass", .default = true };
+    const bypass = BoolParam{ .id = 3, .name = "Bypass", .default = true, .is_bypass = true };
 
     try std.testing.expectEqual(@as(u32, 3), bypass.id);
     try std.testing.expectEqualStrings("Bypass", bypass.name);
+    try std.testing.expect(bypass.is_bypass);
     try std.testing.expectEqual(@as(f64, 1.0), bypass.defaultNormalized());
     try std.testing.expectEqual(@as(f64, 0.0), bypass.normalize(false));
     try std.testing.expectEqual(@as(f64, 1.0), bypass.normalize(true));
@@ -628,6 +640,8 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectApproxEqAbs(0.2, set.defaultNormalized(1).?, 0.000001);
     try std.testing.expectApproxEqAbs(0.0, set.defaultNormalized(2).?, 0.000001);
     try std.testing.expectApproxEqAbs(1.0, set.defaultNormalized(3).?, 0.000001);
+    try std.testing.expectEqual(@as(?bool, false), set.isBypass(0));
+    try std.testing.expectEqual(@as(?bool, null), set.isBypass(99));
 }
 
 test "parameter values initialize from reflected defaults" {
