@@ -55,6 +55,26 @@ pub fn getParamValueByString(
     return types.kResultOk;
 }
 
+pub fn normalizedParamToPlain(
+    comptime Params: type,
+    set: *const plug.parameters.ParameterSet(Params),
+    id: vsttypes.ParamID,
+    normalized: vsttypes.ParamValue,
+) vsttypes.ParamValue {
+    const index = set.indexOfId(id) orelse return 0;
+    return set.plainFromNormalized(index, normalized) orelse 0;
+}
+
+pub fn plainParamToNormalized(
+    comptime Params: type,
+    set: *const plug.parameters.ParameterSet(Params),
+    id: vsttypes.ParamID,
+    plain: vsttypes.ParamValue,
+) vsttypes.ParamValue {
+    const index = set.indexOfId(id) orelse return 0;
+    return set.normalizedFromPlain(index, plain) orelse 0;
+}
+
 pub fn readParameterState(
     comptime Params: type,
     stream: ?*ibstream.IBStream,
@@ -158,6 +178,18 @@ test "zig-plug bridge formats and parses VST3 parameter strings" {
     try std.testing.expectEqual(types.kResultOk, getParamValueByString(Params, &set, 7, &text, &value));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
     try std.testing.expectEqual(types.kInvalidArgument, getParamStringByValue(Params, &set, 8, 0.5, &text));
+}
+
+test "zig-plug bridge converts VST3 normalized and plain values" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(7, "Gain", 0.0, 2.0, 1.0),
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const set = Set.init(.{});
+
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), normalizedParamToPlain(Params, &set, 7, 0.5));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), plainParamToNormalized(Params, &set, 7, 1.0));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), normalizedParamToPlain(Params, &set, 8, 0.5));
 }
 
 fn expectString128(expected: []const u8, actual: *const vsttypes.String128) !void {

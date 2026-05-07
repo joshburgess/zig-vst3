@@ -179,6 +179,14 @@ pub const FloatParam = struct {
         return std.fmt.bufPrint(buffer, "{d:.3}", .{self.denormalize(normalized)});
     }
 
+    pub fn plainFromNormalized(self: FloatParam, normalized: f64) f64 {
+        return self.denormalize(normalized);
+    }
+
+    pub fn normalizedFromPlain(self: FloatParam, plain: f64) f64 {
+        return self.normalize(plain);
+    }
+
     pub fn parsePlain(self: FloatParam, text: []const u8) !f64 {
         const value = try std.fmt.parseFloat(f64, std.mem.trim(u8, text, " \t\r\n"));
         return self.normalize(value);
@@ -222,6 +230,14 @@ pub const IntParam = struct {
         return std.fmt.bufPrint(buffer, "{d}", .{self.denormalize(normalized)});
     }
 
+    pub fn plainFromNormalized(self: IntParam, normalized: f64) f64 {
+        return @floatFromInt(self.denormalize(normalized));
+    }
+
+    pub fn normalizedFromPlain(self: IntParam, plain: f64) f64 {
+        return self.normalize(@intFromFloat(@round(plain)));
+    }
+
     pub fn parsePlain(self: IntParam, text: []const u8) !f64 {
         const value = try std.fmt.parseInt(i64, std.mem.trim(u8, text, " \t\r\n"), 10);
         return self.normalize(value);
@@ -247,6 +263,14 @@ pub const BoolParam = struct {
 
     pub fn formatPlain(self: BoolParam, normalized: f64, _: []u8) ![]const u8 {
         return if (self.denormalize(normalized)) "On" else "Off";
+    }
+
+    pub fn plainFromNormalized(self: BoolParam, normalized: f64) f64 {
+        return if (self.denormalize(normalized)) 1.0 else 0.0;
+    }
+
+    pub fn normalizedFromPlain(self: BoolParam, plain: f64) f64 {
+        return self.normalize(plain >= 0.5);
     }
 
     pub fn parsePlain(self: BoolParam, text: []const u8) !f64 {
@@ -300,6 +324,16 @@ pub fn EnumParam(comptime Enum: type) type {
 
         pub fn formatPlain(self: Self, normalized: f64, _: []u8) ![]const u8 {
             return self.label(self.denormalize(normalized));
+        }
+
+        pub fn plainFromNormalized(self: Self, normalized: f64) f64 {
+            return @floatFromInt(@intFromEnum(self.denormalize(normalized)));
+        }
+
+        pub fn normalizedFromPlain(self: Self, plain: f64) f64 {
+            const max_index = info.fields.len - 1;
+            const index = std.math.clamp(@as(usize, @intFromFloat(@round(plain))), 0, max_index);
+            return self.normalize(@enumFromInt(index));
         }
 
         pub fn parsePlain(self: Self, text: []const u8) !f64 {
@@ -368,6 +402,20 @@ pub fn ParameterSet(comptime Params: type) type {
                 if (index == field_index) return @field(self.params, field.name).parsePlain(text);
             }
             return error.InvalidParameterIndex;
+        }
+
+        pub fn plainFromNormalized(self: *const Self, index: usize, normalized: f64) ?f64 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field.name).plainFromNormalized(normalized);
+            }
+            return null;
+        }
+
+        pub fn normalizedFromPlain(self: *const Self, index: usize, plain: f64) ?f64 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field.name).normalizedFromPlain(plain);
+            }
+            return null;
         }
     };
 }
@@ -618,4 +666,23 @@ test "parameters format and parse plain values" {
     try std.testing.expectEqual(@as(f64, 0.0), try bypass.parsePlain("off"));
     try std.testing.expectEqualStrings("crunch", try mode.formatPlain(0.5, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try mode.parsePlain("lead"));
+}
+
+test "parameter sets convert normalized and plain values by reflected index" {
+    const Mode = enum { clean, crunch, lead };
+    const Params = struct {
+        gain: FloatParam = FloatParam.init(0, "Gain", 0.0, 2.0, 1.0),
+        voices: IntParam = IntParam.init(1, "Voices", 1, 16, 4),
+        bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
+        mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
+    };
+    const Set = ParameterSet(Params);
+    const set = Set.init(.{});
+
+    try std.testing.expectEqual(@as(?f64, 1.0), set.plainFromNormalized(0, 0.5));
+    try std.testing.expectEqual(@as(?f64, 0.5), set.normalizedFromPlain(0, 1.0));
+    try std.testing.expectEqual(@as(?f64, 9.0), set.plainFromNormalized(1, 0.5));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.normalizedFromPlain(2, 1.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.plainFromNormalized(3, 0.5));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.normalizedFromPlain(3, 2.0));
 }
