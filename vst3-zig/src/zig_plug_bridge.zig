@@ -316,6 +316,21 @@ pub fn makeMainAudioProcessContext(
     return makeProcessContext(Sample, input, output, data, parameter_changes);
 }
 
+pub fn processMainAudio(
+    data: *const ivstaudioprocessor.ProcessData,
+    parameter_changes: plug.process.ParameterChanges,
+    processor: anytype,
+) types.tresult {
+    if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
+        var context = makeMainAudioProcessContext(f32, data, parameter_changes) catch return types.kResultOk;
+        processor.process(f32, &context);
+    } else {
+        var context = makeMainAudioProcessContext(f64, data, parameter_changes) catch return types.kResultOk;
+        processor.process(f64, &context);
+    }
+    return types.kResultOk;
+}
+
 pub fn readParameterState(
     comptime Params: type,
     stream: ?*ibstream.IBStream,
@@ -652,6 +667,45 @@ test "zig-plug bridge rejects missing main process buses" {
     };
 
     try std.testing.expectError(error.MissingMainAudioBus, makeMainAudioProcessContext(f32, &data, .{}));
+}
+
+test "zig-plug bridge dispatches main audio processing by sample size" {
+    const Doubler = struct {
+        pub fn process(_: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
+            for (0..context.outputs.channels.len) |channel| {
+                const input = context.inputs.channel(channel) orelse continue;
+                const output = context.outputs.channel(channel) orelse continue;
+                for (0..context.frameCount()) |sample| {
+                    output[sample] = input[sample] * 2;
+                }
+            }
+        }
+    };
+
+    var input_samples = [_]f32{ 1.0, 2.0 };
+    var output_samples = [_]f32{ 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f32{&input_samples};
+    var output_channel_ptrs = [_][*]f32{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+    }};
+    const data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+    };
+
+    try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, Doubler{}));
+    try std.testing.expectEqual(@as(f32, 2.0), output_samples[0]);
+    try std.testing.expectEqual(@as(f32, 4.0), output_samples[1]);
 }
 
 fn expectString128(expected: []const u8, actual: *const vsttypes.String128) !void {

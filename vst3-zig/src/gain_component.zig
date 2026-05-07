@@ -171,31 +171,25 @@ fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.C) ty
     var parameter_change_storage: [64]plug_process.ParameterChange = undefined;
     const parameter_changes = zig_plug_bridge.collectInputParameterChanges(data, &parameter_change_storage);
     gain_controller.applyParameterChanges(parameter_changes);
-
-    if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
-        var context = zig_plug_bridge.makeMainAudioProcessContext(f32, data, parameter_changes) catch return types.kResultOk;
-        applyGain(f32, &context, @floatCast(gain_controller.gain()));
-    } else {
-        var context = zig_plug_bridge.makeMainAudioProcessContext(f64, data, parameter_changes) catch return types.kResultOk;
-        applyGain(f64, &context, gain_controller.gain());
-    }
-
-    return types.kResultOk;
+    return zig_plug_bridge.processMainAudio(data, parameter_changes, GainProcessor{});
 }
 
 fn getTailSamples(_: *anyopaque) callconv(.C) types.uint32 {
     return zig_plug_bridge.RealtimeProcessorDefaults.tailSamples();
 }
 
-fn applyGain(comptime Sample: type, context: *plug_process.ProcessContext(Sample), gain: Sample) void {
-    for (0..context.outputs.channels.len) |channel| {
-        const input = context.inputs.channel(channel) orelse continue;
-        const output = context.outputs.channel(channel) orelse continue;
-        for (0..context.frameCount()) |sample| {
-            output[sample] = input[sample] * gain;
+const GainProcessor = struct {
+    pub fn process(_: GainProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+        const gain: Sample = @floatCast(gain_controller.gain());
+        for (0..context.outputs.channels.len) |channel| {
+            const input = context.inputs.channel(channel) orelse continue;
+            const output = context.outputs.channel(channel) orelse continue;
+            for (0..context.frameCount()) |sample| {
+                output[sample] = input[sample] * gain;
+            }
         }
     }
-}
+};
 
 test "gain component can be created as IComponent" {
     var out: ?*anyopaque = null;
