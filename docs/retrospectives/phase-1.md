@@ -1,6 +1,6 @@
 # Phase 1 Retrospective
 
-Status: in progress. This document records what the early COM/vtable work has proven so far and what remains open before Phase 1 can be considered complete.
+Status: first plugin milestone complete locally on macOS. This document records what the COM/vtable work has proven so far and what remains open before Layer 2 should treat the raw API as stable.
 
 ## Completed
 
@@ -11,6 +11,9 @@ Status: in progress. This document records what the early COM/vtable work has pr
 - The multi-interface prototype returns distinct interface pointers for synthetic `ITestA`, `ITestB`, and `ITestC` interfaces backed by one object.
 - `zig build multi-interface-abi` exercises that query and pointer-recovery path from C.
 - `zig build phase1` now groups the Phase 1 integration checks.
+- Layer 1 builds `zig_vst3_gain.vst3` with component, controller, processor, factory exports, sample-accurate gain automation, and state persistence.
+- `zig build validate-gain` passes Steinberg's official validator locally on macOS.
+- `zig build phase1` runs `validate-gain` on macOS.
 
 ## Harder Than Expected
 
@@ -20,10 +23,11 @@ Status: in progress. This document records what the early COM/vtable work has pr
 
 ## Still Open
 
-- The multi-interface prototype is still synthetic. It proves pointer recovery and dispatch shape, but it is not yet a reusable interface registration API.
-- Refcount destruction is callback-based. Real plugin objects still need a stable allocator ownership pattern around concrete object creation.
+- The multi-interface prototype and the gain plugin object wiring prove the dispatch shape, but reusable interface registration helpers are still needed before the raw layer API should be considered stable.
+- Refcount destruction is callback-based in the low-level helpers. The gain plugin works, but concrete plugin objects still need a stable allocator ownership pattern.
 - Windows C ABI harness execution is not wired yet. Cross-compilation passes, but the C harnesses run only on non-Windows CI jobs for now.
-- There is no C++ harness yet for Phase 1's full synthetic object. The current harnesses are C ABI checks.
+- There is no C++ harness yet for a full multi-interface object. The current harnesses are C ABI checks plus the Steinberg validator.
+- Host smoke testing has not been recorded yet. The validator pass proves the bundle and interfaces are structurally valid, but it does not replace DAW loading tests.
 
 ## Follow-Up Tasks
 
@@ -31,3 +35,4 @@ Status: in progress. This document records what the early COM/vtable work has pr
 - Add a C++ harness once the interface map helper exists.
 - Add debug-only double-release detection that reports a clear failure before atomic underflow.
 - Decide whether the raw layer exposes callback-based destruction directly or hides it behind object factory helpers.
+- Add `docs/host-matrix.md` after the gain plugin is loaded in at least one real host.
