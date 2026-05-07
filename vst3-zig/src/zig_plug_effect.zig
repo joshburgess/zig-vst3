@@ -51,6 +51,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
             component_handler: ?*ivsteditcontroller.IComponentHandler = null,
             component_handler2: ?*ivsteditcontroller.IComponentHandler2 = null,
             component_handler3: ?*ivstcontextmenu.IComponentHandler3 = null,
+            component_handler_bus_activation: ?*ivsteditcontroller.IComponentHandlerBusActivation = null,
+            component_handler_system_time: ?*ivsteditcontroller.IComponentHandlerSystemTime = null,
             host_application: ?*ivsthostapplication.IHostApplication = null,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
@@ -114,6 +116,19 @@ pub fn ReflectedEditController(comptime Config: type) type {
         pub fn createContextMenu(view: ?*iplugview.IPlugView, param_id: ?*const vsttypes.ParamID) ?*ivstcontextmenu.IContextMenu {
             const handler = controller.component_handler3 orelse return null;
             return handler.vtable.createContextMenu(handler, view, param_id);
+        }
+
+        pub fn requestBusActivation(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, state: types.TBool) types.tresult {
+            const handler = controller.component_handler_bus_activation orelse return types.kResultFalse;
+            return handler.vtable.requestBusActivation(handler, media_type, direction, index, state);
+        }
+
+        pub fn getSystemTime(out: *types.int64) types.tresult {
+            const handler = controller.component_handler_system_time orelse {
+                out.* = 0;
+                return types.kResultFalse;
+            };
+            return handler.vtable.getSystemTime(handler, out);
         }
 
         pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
@@ -504,6 +519,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
             self.component_handler = if (handler) |value| @ptrCast(@alignCast(value)) else null;
             self.component_handler2 = queryComponentHandler2(handler);
             self.component_handler3 = queryComponentHandler3(handler);
+            self.component_handler_bus_activation = queryComponentHandlerBusActivation(handler);
+            self.component_handler_system_time = queryComponentHandlerSystemTime(handler);
             return types.kResultOk;
         }
 
@@ -898,7 +915,35 @@ fn queryComponentHandler3(handler: ?*anyopaque) ?*ivstcontextmenu.IComponentHand
     return if (out) |value| @ptrCast(@alignCast(value)) else null;
 }
 
+fn queryComponentHandlerBusActivation(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentHandlerBusActivation {
+    const raw = handler orelse return null;
+    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
+    var out: ?*anyopaque = null;
+    if (base.vtable.queryInterface(base, &ivsteditcontroller.icomponent_handler_bus_activation_iid, &out) != types.kResultOk) {
+        return null;
+    }
+    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+}
+
+fn queryComponentHandlerSystemTime(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentHandlerSystemTime {
+    const raw = handler orelse return null;
+    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
+    var out: ?*anyopaque = null;
+    if (base.vtable.queryInterface(base, &ivsteditcontroller.icomponent_handler_system_time_iid, &out) != types.kResultOk) {
+        return null;
+    }
+    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+}
+
 fn releaseComponentHandlers(controller: anytype) void {
+    if (controller.component_handler_system_time) |handler_system_time| {
+        _ = handler_system_time.vtable.release(handler_system_time);
+        controller.component_handler_system_time = null;
+    }
+    if (controller.component_handler_bus_activation) |handler_bus_activation| {
+        _ = handler_bus_activation.vtable.release(handler_bus_activation);
+        controller.component_handler_bus_activation = null;
+    }
     if (controller.component_handler3) |handler3| {
         _ = handler3.vtable.release(handler3);
         controller.component_handler3 = null;
