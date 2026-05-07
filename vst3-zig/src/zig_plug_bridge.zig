@@ -194,6 +194,7 @@ pub fn fillParameterInfo(
     const parameter_index: usize = @intCast(index);
     out.* = .{
         .id = set.id(parameter_index).?,
+        .stepCount = set.stepCount(parameter_index).?,
         .defaultNormalizedValue = set.defaultNormalized(parameter_index).?,
         .unitId = 0,
         .flags = parameterInfoFlags(Params, set, parameter_index),
@@ -209,6 +210,9 @@ fn parameterInfoFlags(
     index: usize,
 ) types.int32 {
     var flags = ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate;
+    if (set.isList(index) orelse false) {
+        flags |= ivsteditcontroller.ParameterInfo.ParameterFlags.kIsList;
+    }
     if (set.isBypass(index) orelse false) {
         flags |= ivsteditcontroller.ParameterInfo.ParameterFlags.kIsBypass;
     }
@@ -573,9 +577,12 @@ test "zig-plug bridge realtime processor defaults accept 32 and 64 bit samples" 
 }
 
 test "zig-plug bridge fills VST3 parameter info from reflected set" {
+    const Mode = enum { clean, boost, mute };
     const Params = struct {
         gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(7, "Gain", 0.0, 2.0, 1.0),
         bypass: plug.parameters.BoolParam = .{ .id = 8, .name = "Bypass", .is_bypass = true },
+        voices: plug.parameters.IntParam = plug.parameters.IntParam.init(9, "Voices", 1, 4, 1),
+        mode: plug.parameters.EnumParam(Mode) = .{ .id = 10, .name = "Mode", .default = .clean },
     };
     const Set = plug.parameters.ParameterSet(Params);
     const set = Set.init(.{});
@@ -583,12 +590,19 @@ test "zig-plug bridge fills VST3 parameter info from reflected set" {
 
     try std.testing.expectEqual(types.kResultOk, fillParameterInfo(Params, &set, 0, &info));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 7), info.id);
+    try std.testing.expectEqual(@as(types.int32, 0), info.stepCount);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), info.defaultNormalizedValue);
     try expectString128("Gain", &info.title);
     try std.testing.expectEqual(ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate, info.flags);
     try std.testing.expectEqual(types.kResultOk, fillParameterInfo(Params, &set, 1, &info));
+    try std.testing.expectEqual(@as(types.int32, 1), info.stepCount);
     try std.testing.expect((info.flags & ivsteditcontroller.ParameterInfo.ParameterFlags.kIsBypass) != 0);
-    try std.testing.expectEqual(types.kInvalidArgument, fillParameterInfo(Params, &set, 2, &info));
+    try std.testing.expectEqual(types.kResultOk, fillParameterInfo(Params, &set, 2, &info));
+    try std.testing.expectEqual(@as(types.int32, 3), info.stepCount);
+    try std.testing.expectEqual(types.kResultOk, fillParameterInfo(Params, &set, 3, &info));
+    try std.testing.expectEqual(@as(types.int32, 2), info.stepCount);
+    try std.testing.expect((info.flags & ivsteditcontroller.ParameterInfo.ParameterFlags.kIsList) != 0);
+    try std.testing.expectEqual(types.kInvalidArgument, fillParameterInfo(Params, &set, 4, &info));
 }
 
 test "zig-plug bridge formats and parses VST3 parameter strings" {
