@@ -144,7 +144,7 @@ pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
     var values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
     const result = zig_plug_bridge.readParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &values);
     if (result != types.kResultOk) return result;
-    if (values.load(gain_spec.gain_param_index)) |value| {
+    if (values.loadById(&gain_spec.parameter_set, gain_param_id)) |value| {
         setGain(value);
     }
     return types.kResultOk;
@@ -152,7 +152,7 @@ pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
 
 pub fn writeGainState(state: ?*ibstream.IBStream) types.tresult {
     var values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
-    _ = values.store(gain_spec.gain_param_index, gain());
+    _ = values.storeById(&gain_spec.parameter_set, gain_param_id, gain());
     return zig_plug_bridge.writeParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &values);
 }
 

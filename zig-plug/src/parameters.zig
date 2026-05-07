@@ -446,6 +446,16 @@ pub fn ParameterValues(comptime Params: type) type {
             self.values[index].store(value);
             return true;
         }
+
+        pub fn loadById(self: *const Self, set: *const Set, id: u32) ?f64 {
+            const index = set.indexOfId(id) orelse return null;
+            return self.load(index);
+        }
+
+        pub fn storeById(self: *Self, set: *const Set, id: u32, value: f64) bool {
+            const index = set.indexOfId(id) orelse return false;
+            return self.store(index, value);
+        }
     };
 }
 
@@ -629,6 +639,10 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expect(values.store(0, 2.0));
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
     try std.testing.expect(!values.store(2, 0.5));
+    try std.testing.expect(values.storeById(&set, 0, 0.75));
+    try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
+    try std.testing.expect(!values.storeById(&set, 99, 0.5));
+    try std.testing.expectEqual(@as(?f64, null), values.loadById(&set, 99));
 }
 
 test "float parameter round-trips normalized values" {
