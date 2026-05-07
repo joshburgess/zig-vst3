@@ -22,8 +22,10 @@ A plugin type declares:
 
 - `init(allocator: std.mem.Allocator) !Plugin`
 - `prepare(self: *Plugin, config: PrepareConfig) void`
-- `process(self: *Plugin) void`
+- `process(self: *Plugin, context: *process.ProcessContext(f32)) void`
 - `deinit(self: *Plugin) void`
+
+`process.ProcessContext(Sample)` carries typed input and output channel views plus the current sample rate. The input and output views validate that each channel has the same frame count before a context is created.
 
 ## Example
 
@@ -43,5 +45,6 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 
 ## Open Work
 
-- Define the process callback contract for audio buffers and parameter changes.
+- Add parameter-change delivery to the process callback contract.
+- Add double-precision process callback support.
 - Generate Layer 1 component/controller glue from `PluginSpec`.

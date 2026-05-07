@@ -1,5 +1,6 @@
 const std = @import("std");
 const parameters = @import("parameters.zig");
+const process_api = @import("process.zig");
 
 pub fn PluginSpec(comptime Plugin: type) type {
     if (!@hasDecl(Plugin, "Params")) {
@@ -63,8 +64,8 @@ pub fn validateLifecycle(comptime Plugin: type) void {
     }
     if (@hasDecl(Plugin, "process")) {
         const process = @typeInfo(@TypeOf(Plugin.process)).@"fn";
-        if (process.params.len != 1 or process.params[0].type.? != *Plugin or process.return_type.? != void) {
-            @compileError("process must be fn (*Plugin) void until the audio process contract lands");
+        if (process.params.len != 2 or process.params[0].type.? != *Plugin or process.params[1].type.? != *process_api.ProcessContext(f32) or process.return_type.? != void) {
+            @compileError("process must be fn (*Plugin, *process.ProcessContext(f32)) void");
         }
     }
     if (@hasDecl(Plugin, "deinit")) {
@@ -106,7 +107,7 @@ test "plugin spec detects lifecycle declarations" {
         }
 
         pub fn prepare(_: *@This(), _: PrepareConfig) void {}
-        pub fn process(_: *@This()) void {}
+        pub fn process(_: *@This(), _: *process_api.ProcessContext(f32)) void {}
         pub fn deinit(_: *@This()) void {}
     };
     const Spec = PluginSpec(Meter);
