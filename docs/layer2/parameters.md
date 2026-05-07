@@ -24,5 +24,5 @@ Parameter state that may be read by the audio thread should use `NormalizedValue
 
 ## Open Work
 
-- Replace the remaining gain-specific VST3 component/controller shell with a reusable plugin wrapper.
+- Replace the remaining gain-specific VST3 controller shell with a reusable plugin wrapper.
 - Add host smoke test notes for reflected string conversion and automation behavior.
