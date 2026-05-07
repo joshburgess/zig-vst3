@@ -4,6 +4,7 @@ const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const interface_map = @import("interface_map.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
@@ -50,17 +51,12 @@ fn owner(ptr: *anyopaque) *Controller {
 }
 
 fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-    if (std.mem.eql(u8, requested_iid, &funknown.iid) or
-        std.mem.eql(u8, requested_iid, &ipluginbase.iplugin_base_iid) or
-        std.mem.eql(u8, requested_iid, &ivsteditcontroller.iedit_controller_iid))
-    {
-        _ = addRef(ptr);
-        out.* = ptr;
-        return types.kResultOk;
-    }
-
-    out.* = null;
-    return types.kNoInterface;
+    const entries = [_]interface_map.Entry{
+        .{ .iid = &funknown.iid, .ptr = ptr },
+        .{ .iid = &ipluginbase.iplugin_base_iid, .ptr = ptr },
+        .{ .iid = &ivsteditcontroller.iedit_controller_iid, .ptr = ptr },
+    };
+    return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
 }
 
 fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {

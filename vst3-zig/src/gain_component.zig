@@ -4,6 +4,7 @@ const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const gain_controller = @import("gain_controller.zig");
+const interface_map = @import("interface_map.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const tuid = @import("tuid.zig");
@@ -54,22 +55,13 @@ fn ownerFromProcessor(ptr: *anyopaque) *Component {
 
 fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
     const self = owner(ptr);
-    if (std.mem.eql(u8, requested_iid, &funknown.iid) or
-        std.mem.eql(u8, requested_iid, &ipluginbase.iplugin_base_iid) or
-        std.mem.eql(u8, requested_iid, &ivstcomponent.icomponent_iid))
-    {
-        _ = addRef(ptr);
-        out.* = ptr;
-        return types.kResultOk;
-    }
-    if (std.mem.eql(u8, requested_iid, &ivstaudioprocessor.iaudio_processor_iid)) {
-        _ = addRef(ptr);
-        out.* = &self.processor;
-        return types.kResultOk;
-    }
-
-    out.* = null;
-    return types.kNoInterface;
+    const entries = [_]interface_map.Entry{
+        .{ .iid = &funknown.iid, .ptr = ptr },
+        .{ .iid = &ipluginbase.iplugin_base_iid, .ptr = ptr },
+        .{ .iid = &ivstcomponent.icomponent_iid, .ptr = ptr },
+        .{ .iid = &ivstaudioprocessor.iaudio_processor_iid, .ptr = &self.processor },
+    };
+    return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
 }
 
 fn queryFromProcessor(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
