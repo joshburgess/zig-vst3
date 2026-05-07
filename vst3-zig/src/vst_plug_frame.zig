@@ -1,0 +1,107 @@
+const std = @import("std");
+const funknown = @import("funknown.zig");
+const interface_map = @import("interface_map.zig");
+const iplugview = @import("pluginterfaces/gui/iplugview.zig");
+const tuid = @import("tuid.zig");
+const types = @import("pluginterfaces/base/types.zig");
+
+pub fn PlugFrame(comptime Config: type) type {
+    return extern struct {
+        const Self = @This();
+
+        iface: iplugview.IPlugFrame = .{ .vtable = &vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        last_view: ?*iplugview.IPlugView = null,
+        last_rect: iplugview.ViewRect = .{},
+        resize_count: types.uint32 = 0,
+
+        pub fn asInterface(self: *Self) *iplugview.IPlugFrame {
+            return &self.iface;
+        }
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *iplugview.IPlugFrame = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &iplugview.iplug_frame_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&owner(ptr).ref_count, "IPlugFrame");
+        }
+
+        fn resizeView(ptr: *anyopaque, view: ?*iplugview.IPlugView, rect: *iplugview.ViewRect) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.last_view = view;
+            self.last_rect = rect.*;
+            self.resize_count += 1;
+            if (@hasDecl(Config, "resizeView")) {
+                return Config.resizeView(view, rect);
+            }
+            return types.kResultOk;
+        }
+
+        const vtable = iplugview.IPlugFrameVTable{
+            .queryInterface = query,
+            .addRef = addRef,
+            .release = release,
+            .resizeView = resizeView,
+        };
+    };
+}
+
+test "plug frame stores resize requests by default" {
+    const Frame = PlugFrame(struct {});
+    var frame = Frame{};
+    const iface = frame.asInterface();
+    var rect = iplugview.ViewRect{ .left = 1, .top = 2, .right = 101, .bottom = 202 };
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.resizeView(iface, null, &rect));
+    try std.testing.expectEqual(@as(types.uint32, 1), frame.resize_count);
+    try std.testing.expectEqual(rect, frame.last_rect);
+    try std.testing.expectEqual(@as(?*iplugview.IPlugView, null), frame.last_view);
+}
+
+test "plug frame delegates resize requests to config" {
+    const Config = struct {
+        var resize_count: types.uint32 = 0;
+        var last_width: types.int32 = 0;
+
+        fn resizeView(_: ?*iplugview.IPlugView, rect: *iplugview.ViewRect) types.tresult {
+            resize_count += 1;
+            last_width = rect.right - rect.left;
+            return types.kResultFalse;
+        }
+    };
+    const Frame = PlugFrame(Config);
+    var frame = Frame{};
+    const iface = frame.asInterface();
+    var rect = iplugview.ViewRect{ .left = 10, .top = 0, .right = 42, .bottom = 20 };
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.resizeView(iface, null, &rect));
+    try std.testing.expectEqual(@as(types.uint32, 1), Config.resize_count);
+    try std.testing.expectEqual(@as(types.int32, 32), Config.last_width);
+    try std.testing.expectEqual(@as(types.uint32, 1), frame.resize_count);
+}
+
+test "plug frame supports query interface" {
+    const Frame = PlugFrame(struct {});
+    var frame = Frame{};
+    const iface = frame.asInterface();
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &iplugview.iplug_frame_iid, &queried));
+    try std.testing.expect(queried != null);
+    const queried_frame: *iplugview.IPlugFrame = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_frame.vtable.release(queried_frame));
+}
