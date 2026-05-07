@@ -12,11 +12,13 @@ const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 pub const cid = tuid.inlineUid(0xF0B8107A, 0x7E654828, 0x9113340B, 0x912D9E70);
 pub const gain_param_id: vsttypes.ParamID = gain_spec.gain_param_id;
+const gain_param_index: usize = 0;
+const default_gain = gain_spec.parameter_set.defaultNormalized(gain_param_index).?;
 
 const Controller = extern struct {
     iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
     ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-    gain: std.atomic.Value(u64) = std.atomic.Value(u64).init(@bitCast(@as(f64, 1.0))),
+    gain: std.atomic.Value(u64) = std.atomic.Value(u64).init(@bitCast(default_gain)),
 };
 
 var controller = Controller{};
@@ -118,7 +120,7 @@ fn getParamStringByValue(_: *anyopaque, id: vsttypes.ParamID, value: vsttypes.Pa
 
 fn getParamValueByString(_: *anyopaque, id: vsttypes.ParamID, _: [*]vsttypes.TChar, out: *vsttypes.ParamValue) callconv(.C) types.tresult {
     if (id != gain_param_id) return types.kInvalidArgument;
-    out.* = 0;
+    out.* = default_gain;
     return types.kResultOk;
 }
 
