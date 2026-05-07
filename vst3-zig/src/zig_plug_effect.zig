@@ -148,6 +148,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return handler.vtable.notifyUnitByBusChange(handler);
         }
 
+        pub fn openView(name: types.FIDString) ?*iplugview.IPlugView {
+            return createView(&controller.iface, name);
+        }
+
         pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
             parameters.applyChanges(changes);
         }
@@ -543,7 +547,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn createView(_: *anyopaque, _: types.FIDString) callconv(.C) ?*iplugview.IPlugView {
+        fn createView(_: *anyopaque, name: types.FIDString) callconv(.C) ?*iplugview.IPlugView {
+            if (@hasDecl(Config, "createView")) {
+                return Config.createView(name);
+            }
             return null;
         }
 

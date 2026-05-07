@@ -1,5 +1,6 @@
 const gain_spec = @import("gain_spec.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
+const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const plug_process = @import("zig-plug-core").process;
@@ -79,6 +80,10 @@ pub fn notifyUnitByBusChange() types.tresult {
     return Controller.notifyUnitByBusChange();
 }
 
+pub fn openView(name: types.FIDString) ?*iplugview.IPlugView {
+    return Controller.openView(name);
+}
+
 pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
     Controller.applyParameterChanges(changes);
 }
@@ -135,6 +140,12 @@ test "gain controller exposes edit controller extension interfaces" {
 
     try std.testing.expectEqual(types.kResultOk, host_editing.vtable.beginEditFromHost(host_editing, gain_param_id));
     try std.testing.expectEqual(types.kResultOk, host_editing.vtable.endEditFromHost(host_editing, gain_param_id));
+}
+
+test "gain controller returns no plug view by default" {
+    const std = @import("std");
+
+    try std.testing.expectEqual(@as(?*iplugview.IPlugView, null), openView("editor"));
 }
 
 test "gain controller stores component handler for automation callbacks" {
