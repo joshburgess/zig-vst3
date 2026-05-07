@@ -343,7 +343,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.9: Plug view (no GUI implementation yet)
 
-`IPlugView`, `IPlugFrame`, `IPlugViewContentScaleSupport`, `IParameterFinder`, `ViewRect`, platform-specific `kPlatformType*` constants. The raw ABI translation is present, reflected edit controllers can delegate `createView` to a plugin config hook, `vst_parameter_finder.zig` provides a reusable coordinate-to-parameter object, and `vst_content_scale_support.zig` provides reusable positive scale-factor handling for custom editors. There is still no bundled GUI toolkit.
+`IPlugView`, `IPlugFrame`, `IPlugViewContentScaleSupport`, `IParameterFinder`, `ViewRect`, platform-specific `kPlatformType*` constants. The raw ABI translation is present, reflected edit controllers can delegate `createView` to a plugin config hook, `vst_parameter_finder.zig` provides a reusable coordinate-to-parameter object, `vst_content_scale_support.zig` provides reusable positive scale-factor handling for custom editors, and `vst_linux_run_loop.zig` provides fixed-slot Linux `IRunLoop`/event/timer handler utilities. There is still no bundled GUI toolkit.
 
 ### Work Unit 2.9a: Linux Wayland plug view interfaces
 
