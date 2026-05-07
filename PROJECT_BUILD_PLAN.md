@@ -353,6 +353,10 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 `IUnitInfo`, `IProgramListData`, `IUnitData`, `UnitInfo`, `ProgramListInfo`. Lower priority; can defer if time runs short.
 
+### Work Unit 2.10a: Legacy mobile and test-support interfaces
+
+`IInterAppAudioHost`, `IInterAppAudioConnectionNotification`, `IInterAppAudioPresetManager`, `ITestPlugProvider`, `ITestPlugProvider2`. These are P3 legacy/mobile/test-support interfaces. `vst_inter_app_audio.zig` provides reusable stateful `IInterAppAudioConnectionNotification` and hook-based `IInterAppAudioPresetManager` objects.
+
 ### Work Unit 2.11: Phase 2 integration milestone
 
 **Inputs.** All previous Phase 2 work units.
