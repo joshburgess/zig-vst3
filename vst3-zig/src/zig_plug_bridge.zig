@@ -19,24 +19,44 @@ pub const StereoAudioBuses = struct {
         if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and isInputOrOutput(direction)) {
             return 1;
         }
+        if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) {
+            return 1;
+        }
         return 0;
     }
 
     pub fn busInfo(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo) types.tresult {
-        if (media_type != @intFromEnum(ivstcomponent.MediaTypes.kAudio) or index != 0 or !isInputOrOutput(direction)) {
+        if (index != 0) {
             out.* = .{};
             return types.kInvalidArgument;
         }
 
-        out.* = .{
-            .mediaType = media_type,
-            .direction = direction,
-            .channelCount = 2,
-            .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
-            .flags = ivstcomponent.BusFlags.kDefaultActive,
-        };
-        copyAscii16(&out.name, if (direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) "Stereo In" else "Stereo Out");
-        return types.kResultOk;
+        if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and isInputOrOutput(direction)) {
+            out.* = .{
+                .mediaType = media_type,
+                .direction = direction,
+                .channelCount = 2,
+                .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
+                .flags = ivstcomponent.BusFlags.kDefaultActive,
+            };
+            copyAscii16(&out.name, if (direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) "Stereo In" else "Stereo Out");
+            return types.kResultOk;
+        }
+
+        if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) {
+            out.* = .{
+                .mediaType = media_type,
+                .direction = direction,
+                .channelCount = 1,
+                .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
+                .flags = ivstcomponent.BusFlags.kDefaultActive,
+            };
+            copyAscii16(&out.name, "Event In");
+            return types.kResultOk;
+        }
+
+        out.* = .{};
+        return types.kInvalidArgument;
     }
 
     pub fn setArrangements(inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32) types.tresult {
@@ -824,17 +844,23 @@ test "zig-plug bridge parameter controller exposes reflected edit operations" {
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), controller.getNormalized(8));
 }
 
-test "zig-plug bridge stereo audio buses expose one input and output" {
+test "zig-plug bridge stereo buses expose audio and event input metadata" {
     var info = ivstcomponent.BusInfo{};
 
     try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput)));
     try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput)));
-    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCount(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput)));
 
     try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info));
     try std.testing.expectEqual(@as(types.int32, 2), info.channelCount);
     try std.testing.expectEqual(ivstcomponent.BusFlags.kDefaultActive, info.flags);
     try expectString128("Stereo In", &info.name);
+
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info));
+    try std.testing.expectEqual(@as(types.int32, 1), info.channelCount);
+    try std.testing.expectEqual(ivstcomponent.BusFlags.kDefaultActive, info.flags);
+    try expectString128("Event In", &info.name);
 
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 1, &info));
 }
