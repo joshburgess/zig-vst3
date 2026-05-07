@@ -326,7 +326,7 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(test_step);
     phase1_step.dependOn(entry_symbols_step);
     if (target.result.os.tag == .macos) {
-        phase1_step.dependOn(validate_stub_step);
+        phase1_step.dependOn(validate_gain_step);
     }
     phase1_step.dependOn(tuid_abi_step);
     phase1_step.dependOn(pluginbase_abi_step);
