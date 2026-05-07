@@ -21,8 +21,8 @@ Implemented pieces include:
 - C ABI harnesses for `FUnknown` and multi-interface dispatch
 - `pluginterfaces/base`, `pluginterfaces/gui`, and broad `pluginterfaces/vst` ABI translations
 - Platform-specific VST3 module entry exports
-- macOS, Linux, and Windows `.vst3` bundle generation for gain, bypass, mode-gain, and voice-mix examples
-- Validator-passing example plugins with component, controller, processor, automatable parameters, sample-accurate parameter updates, and state persistence
+- macOS, Linux, and Windows `.vst3` bundle generation for gain, bypass, mode-gain, voice-mix, note-gate, and event-echo examples
+- Validator-passing example plugins with component, controller, processor, automatable parameters, sample-accurate parameter updates, state persistence, input events, and output events
 - Initial `zig-plug` float, int, bool, and enum parameter descriptors with normalization tests
 - Initial `zig-plug` plugin spec prototype with reflected parameter defaults
 
@@ -54,6 +54,8 @@ zig build bundle-gain
 zig build bundle-bypass
 zig build bundle-mode-gain
 zig build bundle-voice-mix
+zig build bundle-note-gate
+zig build bundle-event-echo
 zig build -Dtarget=x86_64-linux-gnu bundle-examples-linux
 zig build -Dtarget=x86_64-windows-gnu bundle-examples-windows
 ```
