@@ -115,6 +115,19 @@ pub fn build(b: *std.Build) void {
         validate_step.dependOn(&missing_plugin.step);
     }
 
+    const validate_stub_step = b.step("validate-stub", "Build and validate the native stub VST3 bundle");
+    if (target.result.os.tag == .macos) {
+        validate_stub_step.dependOn(bundle_stub_step);
+        const validate_stub = b.addSystemCommand(&.{
+            "scripts/validate.sh",
+            b.getInstallPath(.prefix, "bundle/zig_vst3_stub.vst3"),
+        });
+        validate_stub.step.dependOn(bundle_stub_step);
+        validate_stub_step.dependOn(&validate_stub.step);
+    } else {
+        validate_stub_step.dependOn(&b.addFail("validate-stub currently supports macOS targets").step);
+    }
+
     const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
     validator_step.dependOn(&build_validator.step);
