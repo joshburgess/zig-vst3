@@ -7,6 +7,7 @@ const types = @import("pluginterfaces/base/types.zig");
 const interface_map = @import("interface_map.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+const ivstcontextmenu = @import("pluginterfaces/vst/ivstcontextmenu.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const ivsthostapplication = @import("pluginterfaces/vst/ivsthostapplication.zig");
 const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
@@ -49,6 +50,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             connected_peer: ?*ivstmessage.IConnectionPoint = null,
             component_handler: ?*ivsteditcontroller.IComponentHandler = null,
             component_handler2: ?*ivsteditcontroller.IComponentHandler2 = null,
+            component_handler3: ?*ivstcontextmenu.IComponentHandler3 = null,
             host_application: ?*ivsthostapplication.IHostApplication = null,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
@@ -107,6 +109,11 @@ pub fn ReflectedEditController(comptime Config: type) type {
         pub fn finishGroupEdit() types.tresult {
             const handler = controller.component_handler2 orelse return types.kResultFalse;
             return handler.vtable.finishGroupEdit(handler);
+        }
+
+        pub fn createContextMenu(view: ?*iplugview.IPlugView, param_id: ?*const vsttypes.ParamID) ?*ivstcontextmenu.IContextMenu {
+            const handler = controller.component_handler3 orelse return null;
+            return handler.vtable.createContextMenu(handler, view, param_id);
         }
 
         pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
@@ -496,6 +503,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             releaseComponentHandlers(self);
             self.component_handler = if (handler) |value| @ptrCast(@alignCast(value)) else null;
             self.component_handler2 = queryComponentHandler2(handler);
+            self.component_handler3 = queryComponentHandler3(handler);
             return types.kResultOk;
         }
 
@@ -880,7 +888,21 @@ fn queryComponentHandler2(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentH
     return if (out) |value| @ptrCast(@alignCast(value)) else null;
 }
 
+fn queryComponentHandler3(handler: ?*anyopaque) ?*ivstcontextmenu.IComponentHandler3 {
+    const raw = handler orelse return null;
+    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
+    var out: ?*anyopaque = null;
+    if (base.vtable.queryInterface(base, &ivstcontextmenu.icomponent_handler3_iid, &out) != types.kResultOk) {
+        return null;
+    }
+    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+}
+
 fn releaseComponentHandlers(controller: anytype) void {
+    if (controller.component_handler3) |handler3| {
+        _ = handler3.vtable.release(handler3);
+        controller.component_handler3 = null;
+    }
     if (controller.component_handler2) |handler2| {
         _ = handler2.vtable.release(handler2);
         controller.component_handler2 = null;
