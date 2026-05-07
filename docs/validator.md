@@ -43,3 +43,14 @@ VST3_VALIDATOR=/path/to/validator scripts/validate.sh path/to/Plugin.vst3
 ```
 
 The wrapper checks the default SDK build output directories first. Use `VST3_VALIDATOR` when testing a validator binary built elsewhere.
+
+## Validate the gain plugin
+
+On macOS, build the validator and run the gain plugin through it:
+
+```sh
+zig build validator
+zig build validate-gain
+```
+
+`zig build phase1` also runs `validate-gain` on macOS. The legacy `validate-stub` step remains as an alias for `validate-gain`.
