@@ -44,7 +44,9 @@ const Gain = struct {
 const GainSpec = plug.plugin.PluginSpec(Gain);
 ```
 
+`examples/gain_core.zig` is the checked example for the pure `zig-plug-core` API. It declares a gain plugin, validates the lifecycle signature, and processes audio through `process.ProcessContext(f32)`.
+
 ## Open Work
 
 - Generalize the remaining gain-specific component/controller classes.
-- Add example plugins that use the public `zig-plug-core` API directly.
+- Add bundled VST3 examples that use the bridge without hand-written gain-specific controller logic.
