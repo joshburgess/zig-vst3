@@ -12,6 +12,8 @@ const ivstmidilearn = @import("pluginterfaces/vst/ivstmidilearn.zig");
 const ivstmidimapping2 = @import("pluginterfaces/vst/ivstmidimapping2.zig");
 const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
 const ivstphysicalui = @import("pluginterfaces/vst/ivstphysicalui.zig");
+const ivstpluginterfacesupport = @import("pluginterfaces/vst/ivstpluginterfacesupport.zig");
+const ivstprefetchablesupport = @import("pluginterfaces/vst/ivstprefetchablesupport.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
@@ -543,6 +545,9 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             iface: ivstcomponent.IComponent = .{ .vtable = &component_vtable },
             processor: ivstaudioprocessor.IAudioProcessor = .{ .vtable = &processor_vtable },
             process_context_requirements: ivstaudioprocessor.IProcessContextRequirements = .{ .vtable = &process_context_requirements_vtable },
+            audio_presentation_latency: ivstaudioprocessor.IAudioPresentationLatency = .{ .vtable = &audio_presentation_latency_vtable },
+            plug_interface_support: ivstpluginterfacesupport.IPlugInterfaceSupport = .{ .vtable = &plug_interface_support_vtable },
+            prefetchable_support: ivstprefetchablesupport.IPrefetchableSupport = .{ .vtable = &prefetchable_support_vtable },
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -584,6 +589,21 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return @fieldParentPtr("process_context_requirements", iface);
         }
 
+        fn ownerFromAudioPresentationLatency(ptr: *anyopaque) *Component {
+            const iface: *ivstaudioprocessor.IAudioPresentationLatency = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("audio_presentation_latency", iface);
+        }
+
+        fn ownerFromPlugInterfaceSupport(ptr: *anyopaque) *Component {
+            const iface: *ivstpluginterfacesupport.IPlugInterfaceSupport = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("plug_interface_support", iface);
+        }
+
+        fn ownerFromPrefetchableSupport(ptr: *anyopaque) *Component {
+            const iface: *ivstprefetchablesupport.IPrefetchableSupport = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("prefetchable_support", iface);
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
@@ -592,6 +612,9 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
                 .{ .iid = &ivstcomponent.icomponent_iid, .ptr = ptr },
                 .{ .iid = &ivstaudioprocessor.iaudio_processor_iid, .ptr = &self.processor },
                 .{ .iid = &ivstaudioprocessor.iprocess_context_requirements_iid, .ptr = &self.process_context_requirements },
+                .{ .iid = &ivstaudioprocessor.iaudio_presentation_latency_iid, .ptr = &self.audio_presentation_latency },
+                .{ .iid = &ivstpluginterfacesupport.iplug_interface_support_iid, .ptr = &self.plug_interface_support },
+                .{ .iid = &ivstprefetchablesupport.iprefetchable_support_iid, .ptr = &self.prefetchable_support },
             };
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
@@ -602,6 +625,18 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn queryFromProcessContextRequirements(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&ownerFromProcessContextRequirements(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromAudioPresentationLatency(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromAudioPresentationLatency(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromPlugInterfaceSupport(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromPlugInterfaceSupport(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromPrefetchableSupport(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromPrefetchableSupport(ptr).iface, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
@@ -687,6 +722,30 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return release(&ownerFromProcessContextRequirements(ptr).iface);
         }
 
+        fn addRefFromAudioPresentationLatency(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromAudioPresentationLatency(ptr).iface);
+        }
+
+        fn releaseFromAudioPresentationLatency(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromAudioPresentationLatency(ptr).iface);
+        }
+
+        fn addRefFromPlugInterfaceSupport(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromPlugInterfaceSupport(ptr).iface);
+        }
+
+        fn releaseFromPlugInterfaceSupport(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromPlugInterfaceSupport(ptr).iface);
+        }
+
+        fn addRefFromPrefetchableSupport(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromPrefetchableSupport(ptr).iface);
+        }
+
+        fn releaseFromPrefetchableSupport(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromPrefetchableSupport(ptr).iface);
+        }
+
         const process_context_requirements_vtable = ivstaudioprocessor.IProcessContextRequirementsVTable{
             .queryInterface = queryFromProcessContextRequirements,
             .addRef = addRefFromProcessContextRequirements,
@@ -696,6 +755,51 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn getProcessContextRequirements(_: *anyopaque) callconv(.C) types.uint32 {
             return process_context_requirements;
+        }
+
+        const audio_presentation_latency_vtable = ivstaudioprocessor.IAudioPresentationLatencyVTable{
+            .queryInterface = queryFromAudioPresentationLatency,
+            .addRef = addRefFromAudioPresentationLatency,
+            .release = releaseFromAudioPresentationLatency,
+            .setAudioPresentationLatencySamples = setAudioPresentationLatencySamples,
+        };
+
+        fn setAudioPresentationLatencySamples(_: *anyopaque, _: vsttypes.BusDirection, _: types.int32, _: types.uint32) callconv(.C) types.tresult {
+            return types.kResultOk;
+        }
+
+        const plug_interface_support_vtable = ivstpluginterfacesupport.IPlugInterfaceSupportVTable{
+            .queryInterface = queryFromPlugInterfaceSupport,
+            .addRef = addRefFromPlugInterfaceSupport,
+            .release = releaseFromPlugInterfaceSupport,
+            .isPlugInterfaceSupported = isPlugInterfaceSupported,
+        };
+
+        fn isPlugInterfaceSupported(_: *anyopaque, iid: *const tuid.TUID) callconv(.C) types.tresult {
+            const supported = [_]*const tuid.TUID{
+                &ivstcomponent.icomponent_iid,
+                &ivstaudioprocessor.iaudio_processor_iid,
+                &ivstaudioprocessor.iprocess_context_requirements_iid,
+                &ivstaudioprocessor.iaudio_presentation_latency_iid,
+                &ivstpluginterfacesupport.iplug_interface_support_iid,
+                &ivstprefetchablesupport.iprefetchable_support_iid,
+            };
+            for (supported) |supported_iid| {
+                if (std.mem.eql(u8, iid, supported_iid)) return types.kResultOk;
+            }
+            return types.kResultFalse;
+        }
+
+        const prefetchable_support_vtable = ivstprefetchablesupport.IPrefetchableSupportVTable{
+            .queryInterface = queryFromPrefetchableSupport,
+            .addRef = addRefFromPrefetchableSupport,
+            .release = releaseFromPrefetchableSupport,
+            .getPrefetchableSupport = getPrefetchableSupport,
+        };
+
+        fn getPrefetchableSupport(_: *anyopaque, out: *ivstprefetchablesupport.PrefetchableSupport) callconv(.C) types.tresult {
+            out.* = @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsNeverPrefetchable);
+            return types.kResultOk;
         }
 
         fn setBusArrangements(_: *anyopaque, inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32) callconv(.C) types.tresult {

@@ -95,3 +95,55 @@ test "gain component exposes process context requirements" {
 
     try std.testing.expectEqual(@as(types.uint32, 0), processor_requirements.vtable.getProcessContextRequirements(processor_requirements));
 }
+
+test "gain component exposes default processor capability interfaces" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+    const ivstpluginterfacesupport = @import("pluginterfaces/vst/ivstpluginterfacesupport.zig");
+    const ivstprefetchablesupport = @import("pluginterfaces/vst/ivstprefetchablesupport.zig");
+    const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var latency_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_presentation_latency_iid, &latency_out),
+    );
+    try std.testing.expect(latency_out != null);
+    const latency: *ivstaudioprocessor.IAudioPresentationLatency = @ptrCast(@alignCast(latency_out.?));
+    defer _ = latency.vtable.release(latency);
+    try std.testing.expectEqual(
+        types.kResultOk,
+        latency.vtable.setAudioPresentationLatencySamples(latency, @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, 0),
+    );
+
+    var support_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstpluginterfacesupport.iplug_interface_support_iid, &support_out),
+    );
+    try std.testing.expect(support_out != null);
+    const support: *ivstpluginterfacesupport.IPlugInterfaceSupport = @ptrCast(@alignCast(support_out.?));
+    defer _ = support.vtable.release(support);
+    try std.testing.expectEqual(types.kResultOk, support.vtable.isPlugInterfaceSupported(support, &ivstaudioprocessor.iaudio_processor_iid));
+    try std.testing.expectEqual(types.kResultFalse, support.vtable.isPlugInterfaceSupported(support, &ivstunits.iunit_info_iid));
+
+    var prefetch_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstprefetchablesupport.iprefetchable_support_iid, &prefetch_out),
+    );
+    try std.testing.expect(prefetch_out != null);
+    const prefetch: *ivstprefetchablesupport.IPrefetchableSupport = @ptrCast(@alignCast(prefetch_out.?));
+    defer _ = prefetch.vtable.release(prefetch);
+
+    var prefetchable: ivstprefetchablesupport.PrefetchableSupport = 99;
+    try std.testing.expectEqual(types.kResultOk, prefetch.vtable.getPrefetchableSupport(prefetch, &prefetchable));
+    try std.testing.expectEqual(@as(types.uint32, @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsNeverPrefetchable)), prefetchable);
+}
