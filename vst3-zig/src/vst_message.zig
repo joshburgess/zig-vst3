@@ -188,6 +188,69 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
     };
 }
 
+pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attributes: usize, comptime max_string_chars: usize, comptime max_binary_bytes: usize) type {
+    return extern struct {
+        const Self = @This();
+        const Attributes = AttributeList(max_attributes, max_string_chars, max_binary_bytes);
+
+        iface: ivstattributes.IStreamAttributes = .{ .vtable = &stream_vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        file_name: [max_file_name_chars]vsttypes.TChar = [_]vsttypes.TChar{0} ** max_file_name_chars,
+        attributes: Attributes = .{},
+
+        pub fn asInterface(self: *Self) *ivstattributes.IStreamAttributes {
+            return &self.iface;
+        }
+
+        pub fn setFileName(self: *Self, value: [*:0]const vsttypes.TChar) void {
+            @memset(&self.file_name, 0);
+            const len = @min(std.mem.len(value), max_file_name_chars - 1);
+            @memcpy(self.file_name[0..len], value[0..len]);
+        }
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *ivstattributes.IStreamAttributes = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const entries_for_query = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &ivstattributes.istream_attributes_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries_for_query, requested_iid, out);
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&owner(ptr).ref_count, "IStreamAttributes");
+        }
+
+        fn getFileName(ptr: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            const len = std.mem.len(@as([*:0]const vsttypes.TChar, @ptrCast(&self.file_name)));
+            @memcpy(out[0..len], self.file_name[0..len]);
+            out[len] = 0;
+            return types.kResultOk;
+        }
+
+        fn getAttributes(ptr: *anyopaque) callconv(.C) ?*ivstattributes.IAttributeList {
+            return owner(ptr).attributes.asInterface();
+        }
+
+        const stream_vtable = ivstattributes.IStreamAttributesVTable{
+            .queryInterface = query,
+            .addRef = addRef,
+            .release = release,
+            .getFileName = getFileName,
+            .getAttributes = getAttributes,
+        };
+    };
+}
+
 pub fn Message(comptime max_message_id_bytes: usize, comptime max_attributes: usize, comptime max_string_chars: usize, comptime max_binary_bytes: usize) type {
     return extern struct {
         const Self = @This();
@@ -304,4 +367,31 @@ test "message stores id and exposes attributes" {
     try std.testing.expect(queried != null);
     const queried_message: *ivstmessage.IMessage = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_message.vtable.release(queried_message));
+}
+
+test "stream attributes expose filename and attribute list" {
+    const TestStreamAttributes = StreamAttributes(32, 4, 16, 8);
+    var stream_attributes = TestStreamAttributes{};
+    const iface = stream_attributes.asInterface();
+
+    const file_name: [11:0]vsttypes.TChar = .{ 'p', 'r', 'e', 's', 'e', 't', '.', 'v', 's', 't', 0 };
+    stream_attributes.setFileName(&file_name);
+
+    var file_name_out: [32]vsttypes.TChar = [_]vsttypes.TChar{0} ** 32;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getFileName(iface, &file_name_out));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'p'), file_name_out[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 't'), file_name_out[9]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), file_name_out[10]);
+
+    const attrs = iface.vtable.getAttributes(iface).?;
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.setInt(attrs, "version", 1));
+    var version: types.int64 = 0;
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.getInt(attrs, "version", &version));
+    try std.testing.expectEqual(@as(types.int64, 1), version);
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstattributes.istream_attributes_iid, &queried));
+    try std.testing.expect(queried != null);
+    const queried_stream: *ivstattributes.IStreamAttributes = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_stream.vtable.release(queried_stream));
 }
