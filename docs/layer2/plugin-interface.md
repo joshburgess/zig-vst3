@@ -9,6 +9,7 @@ A plugin type declares:
 - `name`: display name
 - `vendor`: vendor string
 - `Params`: struct of `zig-plug` parameter descriptors
+- optional lifecycle methods
 
 `PluginSpec(Plugin)` validates those declarations at compile time and exposes:
 
@@ -16,6 +17,12 @@ A plugin type declares:
 - `ParameterValues`: atomic normalized values initialized from descriptor defaults
 - lifecycle flags for optional `init`, `prepare`, `process`, and `deinit` declarations
 - `init(params)`: builds the reflected set and value storage
+
+`validateLifecycle(Plugin)` currently accepts:
+
+- `prepare(self: *Plugin, config: PrepareConfig) void`
+- `process(self: *Plugin) void`
+- `deinit(self: *Plugin) void`
 
 ## Example
 
@@ -35,6 +42,7 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 
 ## Open Work
 
-- Define exact signatures for init, prepare, process, and deinit.
+- Add allocator-aware `init` signature validation.
+- Replace the temporary `process(self)` shape with the audio buffer and parameter-change contract.
 - Define the process callback contract for audio buffers and parameter changes.
 - Generate Layer 1 component/controller glue from `PluginSpec`.
