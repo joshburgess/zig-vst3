@@ -511,7 +511,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 **Goal.** Design and prototype the user-facing framework. This is where Zig idioms matter most. Exit this phase with a `Plugin` interface that's pleasant to implement and a parameter system that scales.
 
-**Current status.** The first prototype exists under `zig-plug/src/` and is also exposed as the pure `zig-plug-core` module for Layer 1 integration. The reusable VST3 bridge now covers reflected controller metadata, string conversion, normalized/plain conversion, default parameter state, host automation collection, state serialization, and process context construction. The gain plugin uses that bridge while still owning its concrete component/controller classes. `examples/gain_core.zig` and `examples/bypass_core.zig` are checked pure-API examples. The remaining Phase 5 work is to generalize those component/controller classes, then add bundled VST3 examples.
+**Current status.** The first prototype exists under `zig-plug/src/` and is also exposed as the pure `zig-plug-core` module for Layer 1 integration. The reusable VST3 bridge now covers reflected controller metadata, string conversion, normalized/plain conversion, default parameter state, host automation collection, state serialization, and process context construction. The gain plugin uses that bridge while still owning its concrete component/controller classes. `examples/gain_core.zig`, `examples/bypass_core.zig`, and `examples/mode_gain_core.zig` are checked pure-API examples. The remaining Phase 5 work is to generalize those component/controller classes, then add bundled VST3 examples.
 
 ### Work Unit 5.1: Plugin trait equivalent
 

@@ -44,7 +44,7 @@ const Gain = struct {
 const GainSpec = plug.plugin.PluginSpec(Gain);
 ```
 
-`examples/gain_core.zig` and `examples/bypass_core.zig` are checked examples for the pure `zig-plug-core` API. Together they cover float and bool parameters, lifecycle validation, id-based parameter changes, and audio processing through `process.ProcessContext(f32)`.
+`examples/gain_core.zig`, `examples/bypass_core.zig`, and `examples/mode_gain_core.zig` are checked examples for the pure `zig-plug-core` API. Together they cover float, bool, and enum parameters, lifecycle validation, id-based parameter changes, and audio processing through `process.ProcessContext(f32)`.
 
 ## Open Work
 
