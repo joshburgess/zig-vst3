@@ -8,6 +8,8 @@ const interface_map = @import("interface_map.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+const ivstmidilearn = @import("pluginterfaces/vst/ivstmidilearn.zig");
+const ivstmidimapping2 = @import("pluginterfaces/vst/ivstmidimapping2.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
@@ -23,6 +25,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
             iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
             unit_info: ivstunits.IUnitInfo = .{ .vtable = &unit_info_vtable },
             midi_mapping: ivsteditcontroller.IMidiMapping = .{ .vtable = &midi_mapping_vtable },
+            midi_learn: ivstmidilearn.IMidiLearn = .{ .vtable = &midi_learn_vtable },
+            midi_mapping2: ivstmidimapping2.IMidiMapping2 = .{ .vtable = &midi_mapping2_vtable },
+            midi_learn2: ivstmidimapping2.IMidiLearn2 = .{ .vtable = &midi_learn2_vtable },
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -93,6 +98,21 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return @fieldParentPtr("midi_mapping", iface);
         }
 
+        fn ownerFromMidiLearn(ptr: *anyopaque) *Controller {
+            const iface: *ivstmidilearn.IMidiLearn = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("midi_learn", iface);
+        }
+
+        fn ownerFromMidiMapping2(ptr: *anyopaque) *Controller {
+            const iface: *ivstmidimapping2.IMidiMapping2 = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("midi_mapping2", iface);
+        }
+
+        fn ownerFromMidiLearn2(ptr: *anyopaque) *Controller {
+            const iface: *ivstmidimapping2.IMidiLearn2 = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("midi_learn2", iface);
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
@@ -101,6 +121,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 .{ .iid = &ivsteditcontroller.iedit_controller_iid, .ptr = ptr },
                 .{ .iid = &ivstunits.iunit_info_iid, .ptr = &self.unit_info },
                 .{ .iid = &ivsteditcontroller.imidi_mapping_iid, .ptr = &self.midi_mapping },
+                .{ .iid = &ivstmidilearn.imidi_learn_iid, .ptr = &self.midi_learn },
+                .{ .iid = &ivstmidimapping2.imidi_mapping2_iid, .ptr = &self.midi_mapping2 },
+                .{ .iid = &ivstmidimapping2.imidi_learn2_iid, .ptr = &self.midi_learn2 },
             };
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
@@ -111,6 +134,18 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn queryFromMidiMapping(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&ownerFromMidiMapping(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromMidiLearn(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromMidiLearn(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromMidiMapping2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromMidiMapping2(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromMidiLearn2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromMidiLearn2(ptr).iface, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
@@ -135,6 +170,30 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn releaseFromMidiMapping(ptr: *anyopaque) callconv(.C) types.uint32 {
             return release(&ownerFromMidiMapping(ptr).iface);
+        }
+
+        fn addRefFromMidiLearn(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromMidiLearn(ptr).iface);
+        }
+
+        fn releaseFromMidiLearn(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromMidiLearn(ptr).iface);
+        }
+
+        fn addRefFromMidiMapping2(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromMidiMapping2(ptr).iface);
+        }
+
+        fn releaseFromMidiMapping2(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromMidiMapping2(ptr).iface);
+        }
+
+        fn addRefFromMidiLearn2(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromMidiLearn2(ptr).iface);
+        }
+
+        fn releaseFromMidiLearn2(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromMidiLearn2(ptr).iface);
         }
 
         fn initialize(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
@@ -288,6 +347,59 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn getMidiControllerAssignment(_: *anyopaque, _: types.int32, _: types.int16, _: vsttypes.CtrlNumber, out: *vsttypes.ParamID) callconv(.C) types.tresult {
             out.* = vsttypes.kNoParamId;
+            return types.kResultFalse;
+        }
+
+        const midi_learn_vtable = ivstmidilearn.IMidiLearnVTable{
+            .queryInterface = queryFromMidiLearn,
+            .addRef = addRefFromMidiLearn,
+            .release = releaseFromMidiLearn,
+            .onLiveMIDIControllerInput = onLiveMIDIControllerInput,
+        };
+
+        fn onLiveMIDIControllerInput(_: *anyopaque, _: types.int32, _: types.int16, _: vsttypes.CtrlNumber) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        const midi_mapping2_vtable = ivstmidimapping2.IMidiMapping2VTable{
+            .queryInterface = queryFromMidiMapping2,
+            .addRef = addRefFromMidiMapping2,
+            .release = releaseFromMidiMapping2,
+            .getNumMidi2ControllerAssignments = getNumMidi2ControllerAssignments,
+            .getMidi2ControllerAssignments = getMidi2ControllerAssignments,
+            .getNumMidi1ControllerAssignments = getNumMidi1ControllerAssignments,
+            .getMidi1ControllerAssignments = getMidi1ControllerAssignments,
+        };
+
+        fn getNumMidi2ControllerAssignments(_: *anyopaque, _: vsttypes.BusDirection) callconv(.C) types.uint32 {
+            return 0;
+        }
+
+        fn getMidi2ControllerAssignments(_: *anyopaque, _: vsttypes.BusDirection, _: *const ivstmidimapping2.Midi2ControllerParamIDAssignmentList) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        fn getNumMidi1ControllerAssignments(_: *anyopaque, _: vsttypes.BusDirection) callconv(.C) types.uint32 {
+            return 0;
+        }
+
+        fn getMidi1ControllerAssignments(_: *anyopaque, _: vsttypes.BusDirection, _: *const ivstmidimapping2.Midi1ControllerParamIDAssignmentList) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        const midi_learn2_vtable = ivstmidimapping2.IMidiLearn2VTable{
+            .queryInterface = queryFromMidiLearn2,
+            .addRef = addRefFromMidiLearn2,
+            .release = releaseFromMidiLearn2,
+            .onLiveMidi2ControllerInput = onLiveMidi2ControllerInput,
+            .onLiveMidi1ControllerInput = onLiveMidi1ControllerInput,
+        };
+
+        fn onLiveMidi2ControllerInput(_: *anyopaque, _: ivstmidimapping2.BusIndex, _: ivstmidimapping2.MidiChannel, _: ivstmidimapping2.Midi2Controller) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        fn onLiveMidi1ControllerInput(_: *anyopaque, _: ivstmidimapping2.BusIndex, _: ivstmidimapping2.MidiChannel, _: vsttypes.CtrlNumber) callconv(.C) types.tresult {
             return types.kResultFalse;
         }
     };
