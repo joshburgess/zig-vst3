@@ -38,6 +38,32 @@ pub fn PluginSpec(comptime Plugin: type) type {
     };
 }
 
+pub const PrepareConfig = struct {
+    sample_rate: f64,
+    max_block_size: u32,
+};
+
+pub fn validateLifecycle(comptime Plugin: type) void {
+    if (@hasDecl(Plugin, "prepare")) {
+        const prepare = @typeInfo(@TypeOf(Plugin.prepare)).@"fn";
+        if (prepare.params.len != 2 or prepare.params[0].type.? != *Plugin or prepare.params[1].type.? != PrepareConfig or prepare.return_type.? != void) {
+            @compileError("prepare must be fn (*Plugin, PrepareConfig) void");
+        }
+    }
+    if (@hasDecl(Plugin, "process")) {
+        const process = @typeInfo(@TypeOf(Plugin.process)).@"fn";
+        if (process.params.len != 1 or process.params[0].type.? != *Plugin or process.return_type.? != void) {
+            @compileError("process must be fn (*Plugin) void until the audio process contract lands");
+        }
+    }
+    if (@hasDecl(Plugin, "deinit")) {
+        const deinit = @typeInfo(@TypeOf(Plugin.deinit)).@"fn";
+        if (deinit.params.len != 1 or deinit.params[0].type.? != *Plugin or deinit.return_type.? != void) {
+            @compileError("deinit must be fn (*Plugin) void");
+        }
+    }
+}
+
 test "plugin spec exposes metadata and parameter defaults" {
     const Gain = struct {
         pub const name = "Gain";
@@ -68,11 +94,12 @@ test "plugin spec detects lifecycle declarations" {
             return .{};
         }
 
-        pub fn prepare(_: *@This(), _: f64, _: u32) void {}
+        pub fn prepare(_: *@This(), _: PrepareConfig) void {}
         pub fn process(_: *@This()) void {}
         pub fn deinit(_: *@This()) void {}
     };
     const Spec = PluginSpec(Meter);
+    validateLifecycle(Meter);
 
     try std.testing.expect(Spec.has_init);
     try std.testing.expect(Spec.has_prepare);
