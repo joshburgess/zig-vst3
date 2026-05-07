@@ -274,10 +274,15 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
     return struct {
         const Self = @This();
         const event_output = @hasDecl(Config, "event_output") and Config.event_output;
+        const process_context_requirements: types.uint32 = if (@hasDecl(Config, "process_context_requirements"))
+            Config.process_context_requirements
+        else
+            0;
 
         const Component = extern struct {
             iface: ivstcomponent.IComponent = .{ .vtable = &component_vtable },
             processor: ivstaudioprocessor.IAudioProcessor = .{ .vtable = &processor_vtable },
+            process_context_requirements: ivstaudioprocessor.IProcessContextRequirements = .{ .vtable = &process_context_requirements_vtable },
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -314,6 +319,11 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return @fieldParentPtr("processor", iface);
         }
 
+        fn ownerFromProcessContextRequirements(ptr: *anyopaque) *Component {
+            const iface: *ivstaudioprocessor.IProcessContextRequirements = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("process_context_requirements", iface);
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
@@ -321,12 +331,17 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
                 .{ .iid = &ipluginbase.iplugin_base_iid, .ptr = ptr },
                 .{ .iid = &ivstcomponent.icomponent_iid, .ptr = ptr },
                 .{ .iid = &ivstaudioprocessor.iaudio_processor_iid, .ptr = &self.processor },
+                .{ .iid = &ivstaudioprocessor.iprocess_context_requirements_iid, .ptr = &self.process_context_requirements },
             };
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
         fn queryFromProcessor(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&ownerFromProcessor(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromProcessContextRequirements(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromProcessContextRequirements(ptr).iface, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
@@ -402,6 +417,25 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn releaseFromProcessor(ptr: *anyopaque) callconv(.C) types.uint32 {
             return release(&ownerFromProcessor(ptr).iface);
+        }
+
+        fn addRefFromProcessContextRequirements(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromProcessContextRequirements(ptr).iface);
+        }
+
+        fn releaseFromProcessContextRequirements(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromProcessContextRequirements(ptr).iface);
+        }
+
+        const process_context_requirements_vtable = ivstaudioprocessor.IProcessContextRequirementsVTable{
+            .queryInterface = queryFromProcessContextRequirements,
+            .addRef = addRefFromProcessContextRequirements,
+            .release = releaseFromProcessContextRequirements,
+            .getProcessContextRequirements = getProcessContextRequirements,
+        };
+
+        fn getProcessContextRequirements(_: *anyopaque) callconv(.C) types.uint32 {
+            return process_context_requirements;
         }
 
         fn setBusArrangements(_: *anyopaque, inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32) callconv(.C) types.tresult {
