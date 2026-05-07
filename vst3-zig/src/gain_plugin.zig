@@ -14,13 +14,13 @@ const GainFactory = factory.StaticFactory(.{
     .{
         .cid = gain_component.cid,
         .category = "Audio Module Class",
-        .name = gain_spec.Spec.name,
+        .name = gain_spec.component_class_name,
         .create = gain_component.create,
     },
     .{
         .cid = gain_controller.cid,
         .category = "Component Controller Class",
-        .name = "zig-vst3 Gain Controller",
+        .name = gain_spec.controller_class_name,
         .create = gain_controller.create,
     },
 });
@@ -40,6 +40,7 @@ test "gain plugin root exposes zig-plug metadata" {
     const spec = gain_spec.Spec.init(.{});
 
     try std.testing.expectEqualStrings("zig-vst3 Gain", gain_spec.Spec.name);
+    try std.testing.expectEqualStrings("zig-vst3 Gain Controller", gain_spec.controller_class_name);
     try std.testing.expectEqualStrings("zig-vst3", gain_spec.Spec.vendor);
     try std.testing.expectEqual(@as(usize, 1), gain_spec.Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(?f64, 1.0), spec.values.load(gain_spec.gain_param_id));

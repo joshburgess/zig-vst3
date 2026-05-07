@@ -12,3 +12,5 @@ const GainPlugin = struct {
 
 pub const Spec = plug.plugin.PluginSpec(GainPlugin);
 pub const parameter_set = Spec.ParameterSet.init(.{});
+pub const component_class_name = Spec.name;
+pub const controller_class_name = Spec.name ++ " Controller";
