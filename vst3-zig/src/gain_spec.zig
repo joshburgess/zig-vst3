@@ -1,0 +1,14 @@
+const plug = @import("zig-plug-core");
+
+pub const gain_param_id: u32 = 0;
+
+const GainPlugin = struct {
+    pub const name = "zig-vst3 Gain";
+    pub const vendor = "zig-vst3";
+    pub const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(gain_param_id, "Gain", 0.0, 1.0, 1.0),
+    };
+};
+
+pub const Spec = plug.plugin.PluginSpec(GainPlugin);
+pub const parameter_set = Spec.ParameterSet.init(.{});

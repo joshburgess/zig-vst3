@@ -3,6 +3,7 @@ const funknown = @import("funknown.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
+const gain_spec = @import("gain_spec.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const interface_map = @import("interface_map.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
@@ -10,7 +11,7 @@ const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 pub const cid = tuid.inlineUid(0xF0B8107A, 0x7E654828, 0x9113340B, 0x912D9E70);
-pub const gain_param_id: vsttypes.ParamID = 0;
+pub const gain_param_id: vsttypes.ParamID = gain_spec.gain_param_id;
 
 const Controller = extern struct {
     iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
@@ -88,23 +89,24 @@ fn getState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresul
 }
 
 fn getParameterCount(_: *anyopaque) callconv(.C) types.int32 {
-    return 1;
+    return @intCast(gain_spec.Spec.ParameterSet.count);
 }
 
 fn getParameterInfo(_: *anyopaque, index: types.int32, out: *ivsteditcontroller.ParameterInfo) callconv(.C) types.tresult {
-    if (index != 0) {
+    if (index < 0 or index >= gain_spec.Spec.ParameterSet.count) {
         out.* = .{};
         return types.kInvalidArgument;
     }
+    const parameter_index: usize = @intCast(index);
 
     out.* = .{
-        .id = gain_param_id,
-        .defaultNormalizedValue = 1.0,
+        .id = gain_spec.parameter_set.id(parameter_index).?,
+        .defaultNormalizedValue = gain_spec.parameter_set.defaultNormalized(parameter_index).?,
         .unitId = 0,
         .flags = ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate,
     };
-    copyAscii16(&out.title, "Gain");
-    copyAscii16(&out.shortTitle, "Gain");
+    copyAscii16(&out.title, gain_spec.parameter_set.name(parameter_index).?);
+    copyAscii16(&out.shortTitle, gain_spec.parameter_set.name(parameter_index).?);
     return types.kResultOk;
 }
 

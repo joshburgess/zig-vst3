@@ -1,7 +1,7 @@
 const std = @import("std");
 const vst3 = @import("vst3-zig");
 
-pub const core = @import("core.zig");
+pub const core = @import("zig-plug-core");
 pub const parameters = core.parameters;
 pub const plugin = core.plugin;
 pub const process = core.process;
