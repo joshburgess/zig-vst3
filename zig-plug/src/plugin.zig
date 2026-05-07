@@ -44,6 +44,17 @@ pub const PrepareConfig = struct {
 };
 
 pub fn validateLifecycle(comptime Plugin: type) void {
+    if (@hasDecl(Plugin, "init")) {
+        const init_info = @typeInfo(@TypeOf(Plugin.init)).@"fn";
+        if (init_info.params.len != 1 or init_info.params[0].type.? != std.mem.Allocator) {
+            @compileError("init must be fn (std.mem.Allocator) !Plugin");
+        }
+        const return_type = init_info.return_type orelse @compileError("init must return !Plugin");
+        const return_info = @typeInfo(return_type);
+        if (return_info != .error_union or return_info.error_union.payload != Plugin) {
+            @compileError("init must return !Plugin");
+        }
+    }
     if (@hasDecl(Plugin, "prepare")) {
         const prepare = @typeInfo(@TypeOf(Plugin.prepare)).@"fn";
         if (prepare.params.len != 2 or prepare.params[0].type.? != *Plugin or prepare.params[1].type.? != PrepareConfig or prepare.return_type.? != void) {
@@ -90,7 +101,7 @@ test "plugin spec detects lifecycle declarations" {
         pub const vendor = "zig-vst3";
         pub const Params = struct {};
 
-        pub fn init() @This() {
+        pub fn init(_: std.mem.Allocator) !@This() {
             return .{};
         }
 
