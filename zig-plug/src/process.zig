@@ -28,6 +28,23 @@ pub const ParameterChanges = struct {
         }
         return result;
     }
+
+    pub fn latestAtOrBefore(self: ParameterChanges, id: u32, sample_offset: usize) ?ParameterChange {
+        var result: ?ParameterChange = null;
+        for (self.items) |item| {
+            if (item.id == id and item.sample_offset <= sample_offset) result = item;
+        }
+        return result;
+    }
+
+    pub fn nextSampleOffset(self: ParameterChanges, after_sample_offset: usize) ?usize {
+        var result: ?usize = null;
+        for (self.items) |item| {
+            if (item.sample_offset <= after_sample_offset) continue;
+            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+        }
+        return result;
+    }
 };
 
 pub fn AudioInputs(comptime Sample: type) type {
@@ -137,12 +154,20 @@ test "parameter changes validate block offsets and normalized values" {
     const changes = [_]ParameterChange{
         .{ .id = 7, .sample_offset = 0, .normalized = 0.25 },
         .{ .id = 7, .sample_offset = 3, .normalized = 0.75 },
+        .{ .id = 8, .sample_offset = 2, .normalized = 1.0 },
     };
     const view = try ParameterChanges.init(&changes, 4);
 
-    try std.testing.expectEqual(@as(usize, 2), view.items.len);
+    try std.testing.expectEqual(@as(usize, 3), view.items.len);
     try std.testing.expectEqual(@as(f64, 0.75), view.latest(7).?.normalized);
-    try std.testing.expectEqual(@as(?ParameterChange, null), view.latest(8));
+    try std.testing.expectEqual(@as(?ParameterChange, null), view.latest(9));
+    try std.testing.expectEqual(@as(f64, 0.25), view.latestAtOrBefore(7, 0).?.normalized);
+    try std.testing.expectEqual(@as(f64, 0.25), view.latestAtOrBefore(7, 2).?.normalized);
+    try std.testing.expectEqual(@as(f64, 0.75), view.latestAtOrBefore(7, 3).?.normalized);
+    try std.testing.expectEqual(@as(?ParameterChange, null), view.latestAtOrBefore(8, 1));
+    try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffset(0));
+    try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffset(2));
+    try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffset(3));
 }
 
 test "parameter changes reject values outside the process block" {
