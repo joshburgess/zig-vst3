@@ -1,7 +1,31 @@
 const std = @import("std");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
+const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const plug = @import("zig-plug-core");
+const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+
+pub fn fillParameterInfo(
+    comptime Params: type,
+    set: *const plug.parameters.ParameterSet(Params),
+    index: types.int32,
+    out: *ivsteditcontroller.ParameterInfo,
+) types.tresult {
+    if (index < 0 or index >= plug.parameters.ParameterSet(Params).count) {
+        out.* = .{};
+        return types.kInvalidArgument;
+    }
+    const parameter_index: usize = @intCast(index);
+    out.* = .{
+        .id = set.id(parameter_index).?,
+        .defaultNormalizedValue = set.defaultNormalized(parameter_index).?,
+        .unitId = 0,
+        .flags = ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate,
+    };
+    copyAscii16(&out.title, set.name(parameter_index).?);
+    copyAscii16(&out.shortTitle, set.name(parameter_index).?);
+    return types.kResultOk;
+}
 
 pub fn readParameterState(
     comptime Params: type,
@@ -35,6 +59,14 @@ pub fn writeParameterState(
     return types.kResultOk;
 }
 
+fn copyAscii16(dest: *vsttypes.String128, source: []const u8) void {
+    @memset(dest, 0);
+    const len = @min(source.len, dest.len - 1);
+    for (source[0..len], 0..) |char, index| {
+        dest[index] = char;
+    }
+}
+
 test "zig-plug bridge round-trips parameter state through IBStream" {
     const Params = struct {
         gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
@@ -51,6 +83,28 @@ test "zig-plug bridge round-trips parameter state through IBStream" {
     try std.testing.expectEqual(types.kResultOk, stream.iface.vtable.seek(&stream.iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, readParameterState(Params, &stream.iface, &set, &restored));
     try std.testing.expectEqual(@as(?f64, 0.25), restored.load(0));
+}
+
+test "zig-plug bridge fills VST3 parameter info from reflected set" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(7, "Gain", 0.0, 2.0, 1.0),
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const set = Set.init(.{});
+    var info = ivsteditcontroller.ParameterInfo{};
+
+    try std.testing.expectEqual(types.kResultOk, fillParameterInfo(Params, &set, 0, &info));
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 7), info.id);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), info.defaultNormalizedValue);
+    try expectString128("Gain", &info.title);
+    try std.testing.expectEqual(types.kInvalidArgument, fillParameterInfo(Params, &set, 1, &info));
+}
+
+fn expectString128(expected: []const u8, actual: *const vsttypes.String128) !void {
+    for (expected, 0..) |char, index| {
+        try std.testing.expectEqual(@as(vsttypes.TChar, char), actual[index]);
+    }
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), actual[expected.len]);
 }
 
 const MemoryStream = extern struct {
