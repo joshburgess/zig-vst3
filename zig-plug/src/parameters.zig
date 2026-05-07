@@ -16,6 +16,28 @@ pub const NormalizedValue = struct {
     }
 };
 
+pub const ModulatedValue = struct {
+    base: NormalizedValue,
+    modulation: NormalizedValue = NormalizedValue.init(0.5),
+
+    pub fn init(base: f64) ModulatedValue {
+        return .{ .base = NormalizedValue.init(base) };
+    }
+
+    pub fn storeBase(self: *ModulatedValue, value: f64) void {
+        self.base.store(value);
+    }
+
+    pub fn storeModulation(self: *ModulatedValue, offset: f64) void {
+        self.modulation.store((std.math.clamp(offset, -1.0, 1.0) + 1.0) * 0.5);
+    }
+
+    pub fn load(self: *const ModulatedValue) f64 {
+        const offset = self.modulation.load() * 2.0 - 1.0;
+        return clampNormalized(self.base.load() + offset);
+    }
+};
+
 pub const LinearSmoother = struct {
     current: f64,
     target: f64,
@@ -312,6 +334,19 @@ test "normalized value clamps and updates atomically" {
     try std.testing.expectEqual(@as(f64, 0.0), value.load());
     value.store(0.25);
     try std.testing.expectEqual(@as(f64, 0.25), value.load());
+}
+
+test "modulated value combines base and bipolar offset" {
+    var value = ModulatedValue.init(0.5);
+
+    try std.testing.expectEqual(@as(f64, 0.5), value.load());
+    value.storeModulation(0.25);
+    try std.testing.expectEqual(@as(f64, 0.75), value.load());
+    value.storeBase(0.1);
+    value.storeModulation(-0.5);
+    try std.testing.expectEqual(@as(f64, 0.0), value.load());
+    value.storeModulation(2.0);
+    try std.testing.expectEqual(@as(f64, 1.0), value.load());
 }
 
 test "linear smoother reaches target after requested samples" {
