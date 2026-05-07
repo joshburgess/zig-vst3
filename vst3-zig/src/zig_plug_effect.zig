@@ -48,6 +48,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             remap_param_id: ivstremapparamid.IRemapParamID = .{ .vtable = &remap_param_id_vtable },
             connected_peer: ?*ivstmessage.IConnectionPoint = null,
             component_handler: ?*ivsteditcontroller.IComponentHandler = null,
+            component_handler2: ?*ivsteditcontroller.IComponentHandler2 = null,
             host_application: ?*ivsthostapplication.IHostApplication = null,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
@@ -86,6 +87,26 @@ pub fn ReflectedEditController(comptime Config: type) type {
         pub fn endEdit(id: vsttypes.ParamID) types.tresult {
             const handler = controller.component_handler orelse return types.kResultFalse;
             return handler.vtable.endEdit(handler, id);
+        }
+
+        pub fn setDirty(state: types.TBool) types.tresult {
+            const handler = controller.component_handler2 orelse return types.kResultFalse;
+            return handler.vtable.setDirty(handler, state);
+        }
+
+        pub fn requestOpenEditor(name: types.FIDString) types.tresult {
+            const handler = controller.component_handler2 orelse return types.kResultFalse;
+            return handler.vtable.requestOpenEditor(handler, name);
+        }
+
+        pub fn startGroupEdit() types.tresult {
+            const handler = controller.component_handler2 orelse return types.kResultFalse;
+            return handler.vtable.startGroupEdit(handler);
+        }
+
+        pub fn finishGroupEdit() types.tresult {
+            const handler = controller.component_handler2 orelse return types.kResultFalse;
+            return handler.vtable.finishGroupEdit(handler);
         }
 
         pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
@@ -420,7 +441,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn terminate(ptr: *anyopaque) callconv(.C) types.tresult {
-            releaseHostApplication(&owner(ptr).host_application);
+            const self = owner(ptr);
+            releaseComponentHandlers(self);
+            releaseHostApplication(&self.host_application);
             return types.kResultOk;
         }
 
@@ -469,7 +492,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn setComponentHandler(ptr: *anyopaque, handler: ?*anyopaque) callconv(.C) types.tresult {
-            owner(ptr).component_handler = if (handler) |value| @ptrCast(@alignCast(value)) else null;
+            const self = owner(ptr);
+            releaseComponentHandlers(self);
+            self.component_handler = if (handler) |value| @ptrCast(@alignCast(value)) else null;
+            self.component_handler2 = queryComponentHandler2(handler);
             return types.kResultOk;
         }
 
@@ -842,6 +868,24 @@ fn releaseHostApplication(host_application: *?*ivsthostapplication.IHostApplicat
         _ = host.vtable.release(host);
         host_application.* = null;
     }
+}
+
+fn queryComponentHandler2(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentHandler2 {
+    const raw = handler orelse return null;
+    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
+    var out: ?*anyopaque = null;
+    if (base.vtable.queryInterface(base, &ivsteditcontroller.icomponent_handler2_iid, &out) != types.kResultOk) {
+        return null;
+    }
+    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+}
+
+fn releaseComponentHandlers(controller: anytype) void {
+    if (controller.component_handler2) |handler2| {
+        _ = handler2.vtable.release(handler2);
+        controller.component_handler2 = null;
+    }
+    controller.component_handler = null;
 }
 
 pub fn SimpleStereoEffect(comptime Config: type) type {
