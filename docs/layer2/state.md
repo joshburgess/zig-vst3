@@ -11,6 +11,8 @@ Loading ignores unknown parameter ids, which lets newer plugin versions remove p
 
 The VST3 bridge reads and writes this format directly through `IBStream`, so state loading is not tied to the current parameter count. Older shorter states can load into newer plugins, and newer states with extra ids can load into older plugins.
 
+Malformed state headers, unsupported format versions, truncated entries, and failed `IBStream` writes are rejected. Failed reads do not apply partial parameter entries.
+
 ## Current API
 
 - `state.encodedSize(Params)`: byte count for a full parameter snapshot.

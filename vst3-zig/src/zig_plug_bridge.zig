@@ -511,6 +511,36 @@ test "zig-plug bridge reads older parameter state without requiring current enco
     try std.testing.expectEqual(@as(?f64, 0.5), new_values.load(1));
 }
 
+test "zig-plug bridge rejects truncated IBStream state" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const Values = plug.parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var stream = MemoryStream{};
+
+    try std.testing.expect(values.store(0, 0.25));
+    try std.testing.expectEqual(types.kResultOk, writeParameterState(Params, &stream.iface, &set, &values));
+    stream.len -= 1;
+    try std.testing.expectEqual(types.kResultOk, stream.iface.vtable.seek(&stream.iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultFalse, readParameterState(Params, &stream.iface, &set, &values));
+}
+
+test "zig-plug bridge reports failed IBStream writes" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const Values = plug.parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var stream = MemoryStream{ .write_limit = 4 };
+
+    try std.testing.expectEqual(types.kResultFalse, writeParameterState(Params, &stream.iface, &set, &values));
+}
+
 test "zig-plug bridge copies reflected parameter values" {
     const Params = struct {
         gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
@@ -835,6 +865,7 @@ const MemoryStream = extern struct {
     bytes: [256]u8 = undefined,
     len: usize = 0,
     pos: usize = 0,
+    write_limit: usize = 256,
 
     const vtable = ibstream.IBStreamVTable{
         .queryInterface = queryInterface,
@@ -880,7 +911,7 @@ const MemoryStream = extern struct {
         if (buffer == null or byte_count < 0) return types.kInvalidArgument;
         const self = owner(ptr);
         const requested: usize = @intCast(byte_count);
-        if (self.pos + requested > self.bytes.len) return types.kResultFalse;
+        if (self.pos + requested > self.bytes.len or self.pos + requested > self.write_limit) return types.kResultFalse;
         const input = @as([*]const u8, @ptrCast(buffer.?))[0..requested];
         @memcpy(self.bytes[self.pos..][0..requested], input);
         self.pos += requested;
