@@ -24,6 +24,7 @@ Implemented pieces include:
 - macOS, Linux, and Windows `.vst3` bundle generation for the gain plugin
 - A validator-passing gain plugin with component, controller, processor, one automatable gain parameter, sample-accurate parameter updates, and state persistence
 - Initial `zig-plug` float, int, bool, and enum parameter descriptors with normalization tests
+- Initial `zig-plug` plugin spec prototype with reflected parameter defaults
 
 ## Development
 
