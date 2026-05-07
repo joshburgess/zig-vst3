@@ -347,7 +347,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.9a: Linux Wayland plug view interfaces
 
-`IWaylandHost`, `IWaylandFrame`, and `kPlatformTypeWaylandSurfaceID` from SDK 3.8.0. Treat these as P2 initially unless the inventory finds they are required for current Linux hosts.
+`IWaylandHost`, `IWaylandFrame`, and `kPlatformTypeWaylandSurfaceID` from SDK 3.8.0. The raw ABI translation is present, and `vst_wayland_frame.zig` provides a reusable null-default `IWaylandFrame` object for custom Linux editors. Treat `IWaylandHost` integration as P2 unless the inventory finds it is required for current Linux hosts.
 
 ### Work Unit 2.10: Unit info and program lists
 

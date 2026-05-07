@@ -34,6 +34,7 @@ pub const tuid = @import("tuid.zig");
 pub const version = "0.1.0-dev";
 pub const vst_message = @import("vst_message.zig");
 pub const vst_parameter_finder = @import("vst_parameter_finder.zig");
+pub const vst_wayland_frame = @import("vst_wayland_frame.zig");
 pub const voice_mix_component = @import("voice_mix_component.zig");
 pub const voice_mix_controller = @import("voice_mix_controller.zig");
 pub const voice_mix_plugin = @import("voice_mix_plugin.zig");
