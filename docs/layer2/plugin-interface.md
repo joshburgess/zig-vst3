@@ -44,7 +44,7 @@ const Gain = struct {
 const GainSpec = plug.plugin.PluginSpec(Gain);
 ```
 
-`examples/gain_core.zig`, `examples/bypass_core.zig`, `examples/mode_gain_core.zig`, and `examples/voice_mix_core.zig` are checked examples for the pure `zig-plug-core` API. Together they cover float, bool, enum, and int parameters, lifecycle validation, id-based parameter changes, and audio processing through `process.ProcessContext(f32)`. `vst3-zig/src/bypass_plugin.zig` is the second bundled VST3 example using the reusable shells, and `zig build validate-examples` validates both bundled examples locally on macOS.
+`examples/gain_core.zig`, `examples/bypass_core.zig`, `examples/mode_gain_core.zig`, and `examples/voice_mix_core.zig` are checked examples for the pure `zig-plug-core` API. Together they cover float, bool, enum, and int parameters, lifecycle validation, id-based parameter changes, and audio processing through `process.ProcessContext(f32)`. `vst3-zig/src/bypass_plugin.zig` is the second bundled VST3 example using the reusable shells. `zig build validate-examples` validates both bundled examples locally on macOS, and the bypass bundle also has Linux and Windows bundle steps.
 
 ## Open Work
 
