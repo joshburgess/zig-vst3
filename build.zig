@@ -143,6 +143,16 @@ pub fn build(b: *std.Build) void {
         .root_module = mode_gain_core_example_module,
     });
 
+    const voice_mix_core_example_module = b.createModule(.{
+        .root_source_file = b.path("examples/voice_mix_core.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    voice_mix_core_example_module.addImport("zig-plug-core", zig_plug_core);
+    const voice_mix_core_example_tests = b.addTest(.{
+        .root_module = voice_mix_core_example_module,
+    });
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(vst3_tests).step);
     test_step.dependOn(&b.addRunArtifact(zig_plug_tests).step);
@@ -150,6 +160,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(gain_core_example_tests).step);
     test_step.dependOn(&b.addRunArtifact(bypass_core_example_tests).step);
     test_step.dependOn(&b.addRunArtifact(mode_gain_core_example_tests).step);
+    test_step.dependOn(&b.addRunArtifact(voice_mix_core_example_tests).step);
 
     const validate_step = b.step("validate", "Run the VST3 SDK validator for -Dplugin=path/to/Plugin.vst3");
     if (b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate")) |plugin_path| {
