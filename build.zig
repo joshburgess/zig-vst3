@@ -24,118 +24,32 @@ pub fn build(b: *std.Build) void {
     zig_plug.addImport("zig-plug-core", zig_plug_core);
     zig_plug.addImport("vst3-zig", vst3_zig);
 
-    const gain_module = b.createModule(.{
-        .root_source_file = b.path("vst3-zig/src/gain_plugin.zig"),
-        .target = target,
-        .optimize = optimize,
+    const gain = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
+        .artifact_name = "zig_vst3_gain",
+        .root_source_file = "vst3-zig/src/gain_plugin.zig",
     });
-    gain_module.addImport("zig-plug-core", zig_plug_core);
-
-    const gain = b.addLibrary(.{
-        .linkage = .dynamic,
-        .name = "zig_vst3_gain",
-        .root_module = gain_module,
+    const bypass = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
+        .artifact_name = "zig_vst3_bypass",
+        .root_source_file = "vst3-zig/src/bypass_plugin.zig",
     });
-    b.installArtifact(gain);
-
-    const bypass_module = b.createModule(.{
-        .root_source_file = b.path("vst3-zig/src/bypass_plugin.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    bypass_module.addImport("zig-plug-core", zig_plug_core);
-    const bypass = b.addLibrary(.{
-        .linkage = .dynamic,
-        .name = "zig_vst3_bypass",
-        .root_module = bypass_module,
-    });
-    b.installArtifact(bypass);
 
     const entry_symbols_step = b.step("entry-symbols", "Verify native VST3 module entry exports");
     const check_entry_symbols = b.addSystemCommand(&.{"scripts/check_entry_symbols.sh"});
     check_entry_symbols.addFileArg(gain.getEmittedBin());
     entry_symbols_step.dependOn(&check_entry_symbols.step);
 
-    const bundle_gain_step = b.step("bundle-gain", "Build a native VST3 bundle for the gain plugin");
-    if (target.result.os.tag == .macos) {
-        const bundle_gain = b.addSystemCommand(&.{"scripts/bundle_macos_vst3.sh"});
-        bundle_gain.addFileArg(gain.getEmittedBin());
-        bundle_gain.addArgs(&.{
-            b.getInstallPath(.prefix, "bundle/zig_vst3_gain.vst3"),
-            "dev.zig-vst3.gain",
-            "0.1.0",
-            "zig_vst3_gain",
-        });
-        bundle_gain_step.dependOn(&bundle_gain.step);
-    } else {
-        bundle_gain_step.dependOn(&b.addFail("bundle-gain currently supports macOS targets").step);
-    }
-    const bundle_bypass_step = b.step("bundle-bypass", "Build a native VST3 bundle for the bypass plugin");
-    if (target.result.os.tag == .macos) {
-        const bundle_bypass = b.addSystemCommand(&.{"scripts/bundle_macos_vst3.sh"});
-        bundle_bypass.addFileArg(bypass.getEmittedBin());
-        bundle_bypass.addArgs(&.{
-            b.getInstallPath(.prefix, "bundle/zig_vst3_bypass.vst3"),
-            "dev.zig-vst3.bypass",
-            "0.1.0",
-            "zig_vst3_bypass",
-        });
-        bundle_bypass_step.dependOn(&bundle_bypass.step);
-    } else {
-        bundle_bypass_step.dependOn(&b.addFail("bundle-bypass currently supports macOS targets").step);
-    }
-    const bundle_gain_linux_step = b.step("bundle-gain-linux", "Build a Linux VST3 bundle for the gain plugin");
-    if (target.result.os.tag == .linux) {
-        const bundle_gain_linux = b.addSystemCommand(&.{"scripts/bundle_linux_vst3.sh"});
-        bundle_gain_linux.addFileArg(gain.getEmittedBin());
-        bundle_gain_linux.addArgs(&.{
-            b.getInstallPath(.prefix, "bundle/zig_vst3_gain_linux.vst3"),
-            linuxPlatformDir(target.result.cpu.arch),
-            "zig_vst3_gain",
-        });
-        bundle_gain_linux_step.dependOn(&bundle_gain_linux.step);
-    } else {
-        bundle_gain_linux_step.dependOn(&b.addFail("bundle-gain-linux requires a Linux target").step);
-    }
-    const bundle_bypass_linux_step = b.step("bundle-bypass-linux", "Build a Linux VST3 bundle for the bypass plugin");
-    if (target.result.os.tag == .linux) {
-        const bundle_bypass_linux = b.addSystemCommand(&.{"scripts/bundle_linux_vst3.sh"});
-        bundle_bypass_linux.addFileArg(bypass.getEmittedBin());
-        bundle_bypass_linux.addArgs(&.{
-            b.getInstallPath(.prefix, "bundle/zig_vst3_bypass_linux.vst3"),
-            linuxPlatformDir(target.result.cpu.arch),
-            "zig_vst3_bypass",
-        });
-        bundle_bypass_linux_step.dependOn(&bundle_bypass_linux.step);
-    } else {
-        bundle_bypass_linux_step.dependOn(&b.addFail("bundle-bypass-linux requires a Linux target").step);
-    }
-    const bundle_gain_windows_step = b.step("bundle-gain-windows", "Build a Windows VST3 bundle for the gain plugin");
-    if (target.result.os.tag == .windows) {
-        const bundle_gain_windows = b.addSystemCommand(&.{"scripts/bundle_windows_vst3.sh"});
-        bundle_gain_windows.addFileArg(gain.getEmittedBin());
-        bundle_gain_windows.addArgs(&.{
-            b.getInstallPath(.prefix, "bundle/zig_vst3_gain_windows.vst3"),
-            windowsPlatformDir(target.result.cpu.arch),
-            "zig_vst3_gain",
-        });
-        bundle_gain_windows_step.dependOn(&bundle_gain_windows.step);
-    } else {
-        bundle_gain_windows_step.dependOn(&b.addFail("bundle-gain-windows requires a Windows target").step);
-    }
-    const bundle_bypass_windows_step = b.step("bundle-bypass-windows", "Build a Windows VST3 bundle for the bypass plugin");
-    if (target.result.os.tag == .windows) {
-        const bundle_bypass_windows = b.addSystemCommand(&.{"scripts/bundle_windows_vst3.sh"});
-        bundle_bypass_windows.addFileArg(bypass.getEmittedBin());
-        bundle_bypass_windows.addArgs(&.{
-            b.getInstallPath(.prefix, "bundle/zig_vst3_bypass_windows.vst3"),
-            windowsPlatformDir(target.result.cpu.arch),
-            "zig_vst3_bypass",
-        });
-        bundle_bypass_windows_step.dependOn(&bundle_bypass_windows.step);
-    } else {
-        bundle_bypass_windows_step.dependOn(&b.addFail("bundle-bypass-windows requires a Windows target").step);
-    }
+    const bundle_gain_step = addVst3BundleSteps(b, target, gain, .{
+        .short_name = "gain",
+        .display_name = "gain",
+        .artifact_name = "zig_vst3_gain",
+        .bundle_id = "dev.zig-vst3.gain",
+    });
+    const bundle_bypass_step = addVst3BundleSteps(b, target, bypass, .{
+        .short_name = "bypass",
+        .display_name = "bypass",
+        .artifact_name = "zig_vst3_bypass",
+        .bundle_id = "dev.zig-vst3.bypass",
+    });
     const vst3_test_module = b.createModule(.{
         .root_source_file = b.path("vst3-zig/src/root.zig"),
         .target = target,
@@ -543,4 +457,94 @@ fn windowsPlatformDir(arch: std.Target.Cpu.Arch) []const u8 {
         .aarch64 => "aarch64-win",
         else => "unknown-win",
     };
+}
+
+const Vst3PluginLibraryOptions = struct {
+    artifact_name: []const u8,
+    root_source_file: []const u8,
+};
+
+fn addVst3PluginLibrary(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    zig_plug_core: *std.Build.Module,
+    options: Vst3PluginLibraryOptions,
+) *std.Build.Step.Compile {
+    const module = b.createModule(.{
+        .root_source_file = b.path(options.root_source_file),
+        .target = target,
+        .optimize = optimize,
+    });
+    module.addImport("zig-plug-core", zig_plug_core);
+
+    const library = b.addLibrary(.{
+        .linkage = .dynamic,
+        .name = options.artifact_name,
+        .root_module = module,
+    });
+    b.installArtifact(library);
+    return library;
+}
+
+const Vst3BundleOptions = struct {
+    short_name: []const u8,
+    display_name: []const u8,
+    artifact_name: []const u8,
+    bundle_id: []const u8,
+};
+
+fn addVst3BundleSteps(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    library: *std.Build.Step.Compile,
+    options: Vst3BundleOptions,
+) *std.Build.Step {
+    const native_step_name = b.fmt("bundle-{s}", .{options.short_name});
+    const native_step = b.step(native_step_name, b.fmt("Build a native VST3 bundle for the {s} plugin", .{options.display_name}));
+    if (target.result.os.tag == .macos) {
+        const bundle = b.addSystemCommand(&.{"scripts/bundle_macos_vst3.sh"});
+        bundle.addFileArg(library.getEmittedBin());
+        bundle.addArgs(&.{
+            b.getInstallPath(.prefix, b.fmt("bundle/{s}.vst3", .{options.artifact_name})),
+            options.bundle_id,
+            "0.1.0",
+            options.artifact_name,
+        });
+        native_step.dependOn(&bundle.step);
+    } else {
+        native_step.dependOn(&b.addFail(b.fmt("{s} currently supports macOS targets", .{native_step_name})).step);
+    }
+
+    const linux_step_name = b.fmt("bundle-{s}-linux", .{options.short_name});
+    const linux_step = b.step(linux_step_name, b.fmt("Build a Linux VST3 bundle for the {s} plugin", .{options.display_name}));
+    if (target.result.os.tag == .linux) {
+        const bundle_linux = b.addSystemCommand(&.{"scripts/bundle_linux_vst3.sh"});
+        bundle_linux.addFileArg(library.getEmittedBin());
+        bundle_linux.addArgs(&.{
+            b.getInstallPath(.prefix, b.fmt("bundle/{s}_linux.vst3", .{options.artifact_name})),
+            linuxPlatformDir(target.result.cpu.arch),
+            options.artifact_name,
+        });
+        linux_step.dependOn(&bundle_linux.step);
+    } else {
+        linux_step.dependOn(&b.addFail(b.fmt("{s} requires a Linux target", .{linux_step_name})).step);
+    }
+
+    const windows_step_name = b.fmt("bundle-{s}-windows", .{options.short_name});
+    const windows_step = b.step(windows_step_name, b.fmt("Build a Windows VST3 bundle for the {s} plugin", .{options.display_name}));
+    if (target.result.os.tag == .windows) {
+        const bundle_windows = b.addSystemCommand(&.{"scripts/bundle_windows_vst3.sh"});
+        bundle_windows.addFileArg(library.getEmittedBin());
+        bundle_windows.addArgs(&.{
+            b.getInstallPath(.prefix, b.fmt("bundle/{s}_windows.vst3", .{options.artifact_name})),
+            windowsPlatformDir(target.result.cpu.arch),
+            options.artifact_name,
+        });
+        windows_step.dependOn(&bundle_windows.step);
+    } else {
+        windows_step.dependOn(&b.addFail(b.fmt("{s} requires a Windows target", .{windows_step_name})).step);
+    }
+
+    return native_step;
 }
