@@ -27,6 +27,18 @@ pub fn setGain(value: vsttypes.ParamValue) void {
     _ = Controller.setNormalized(gain_param_id, value);
 }
 
+pub fn beginEdit(id: vsttypes.ParamID) types.tresult {
+    return Controller.beginEdit(id);
+}
+
+pub fn performEdit(id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+    return Controller.performEdit(id, value);
+}
+
+pub fn endEdit(id: vsttypes.ParamID) types.tresult {
+    return Controller.endEdit(id);
+}
+
 pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
     Controller.applyParameterChanges(changes);
 }
@@ -83,6 +95,99 @@ test "gain controller exposes edit controller extension interfaces" {
 
     try std.testing.expectEqual(types.kResultOk, host_editing.vtable.beginEditFromHost(host_editing, gain_param_id));
     try std.testing.expectEqual(types.kResultOk, host_editing.vtable.endEditFromHost(host_editing, gain_param_id));
+}
+
+test "gain controller stores component handler for automation callbacks" {
+    const std = @import("std");
+    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+
+    const HostHandler = extern struct {
+        const Self = @This();
+
+        iface: ivsteditcontroller.IComponentHandler = .{ .vtable = &vtable },
+        begin_count: types.uint32 = 0,
+        perform_count: types.uint32 = 0,
+        end_count: types.uint32 = 0,
+        last_param_id: vsttypes.ParamID = vsttypes.kNoParamId,
+        last_value: vsttypes.ParamValue = -1,
+
+        const vtable = ivsteditcontroller.IComponentHandlerVTable{
+            .queryInterface = queryInterface,
+            .addRef = addRef,
+            .release = release,
+            .beginEdit = beginEditCallback,
+            .performEdit = performEditCallback,
+            .endEdit = endEditCallback,
+            .restartComponent = restartComponent,
+        };
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn addRef(_: *anyopaque) callconv(.C) types.uint32 {
+            return 1;
+        }
+
+        fn release(_: *anyopaque) callconv(.C) types.uint32 {
+            return 1;
+        }
+
+        fn beginEditCallback(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.begin_count += 1;
+            self.last_param_id = id;
+            return types.kResultOk;
+        }
+
+        fn performEditCallback(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.perform_count += 1;
+            self.last_param_id = id;
+            self.last_value = value;
+            return types.kResultOk;
+        }
+
+        fn endEditCallback(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.end_count += 1;
+            self.last_param_id = id;
+            return types.kResultOk;
+        }
+
+        fn restartComponent(_: *anyopaque, _: types.int32) callconv(.C) types.tresult {
+            return types.kResultOk;
+        }
+    };
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    try std.testing.expectEqual(types.kResultFalse, beginEdit(gain_param_id));
+
+    var handler = HostHandler{};
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, &handler.iface));
+    try std.testing.expectEqual(types.kResultOk, beginEdit(gain_param_id));
+    try std.testing.expectEqual(types.kResultOk, performEdit(gain_param_id, 0.25));
+    try std.testing.expectEqual(types.kResultOk, endEdit(gain_param_id));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.begin_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.perform_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.end_count);
+    try std.testing.expectEqual(gain_param_id, handler.last_param_id);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), handler.last_value);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), gain());
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
+    try std.testing.expectEqual(types.kResultFalse, endEdit(gain_param_id));
 }
 
 test "gain controller exposes default connection point" {
