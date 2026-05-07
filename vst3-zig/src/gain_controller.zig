@@ -17,10 +17,10 @@ pub const gain_param_id: vsttypes.ParamID = gain_spec.gain_param_id;
 const Controller = extern struct {
     iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
     ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-    gain: std.atomic.Value(u64) = std.atomic.Value(u64).init(@bitCast(gain_spec.default_gain)),
 };
 
 var controller = Controller{};
+var parameter_values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
 
 pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
     return query(&controller.iface, @ptrCast(requested_iid), out);
@@ -114,13 +114,13 @@ fn plainParamToNormalized(_: *anyopaque, id: vsttypes.ParamID, plain: vsttypes.P
 }
 
 fn getParamNormalized(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) vsttypes.ParamValue {
-    if (id != gain_param_id) return 0;
-    return @bitCast(owner(ptr).gain.load(.monotonic));
+    _ = ptr;
+    return parameter_values.loadById(&gain_spec.parameter_set, id) orelse 0;
 }
 
 fn setParamNormalized(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
-    if (id != gain_param_id) return types.kInvalidArgument;
-    owner(ptr).gain.store(@bitCast(clamp01(value)), .monotonic);
+    _ = ptr;
+    if (!parameter_values.storeById(&gain_spec.parameter_set, id, value)) return types.kInvalidArgument;
     return types.kResultOk;
 }
 
@@ -133,31 +133,31 @@ fn createView(_: *anyopaque, _: types.FIDString) callconv(.C) ?*iplugview.IPlugV
 }
 
 pub fn gain() vsttypes.ParamValue {
-    return @bitCast(controller.gain.load(.monotonic));
+    return parameter_values.loadById(&gain_spec.parameter_set, gain_param_id) orelse gain_spec.default_gain;
 }
 
 pub fn setGain(value: vsttypes.ParamValue) void {
-    controller.gain.store(@bitCast(clamp01(value)), .monotonic);
+    _ = parameter_values.storeById(&gain_spec.parameter_set, gain_param_id, value);
 }
 
 pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
     var values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
     const result = zig_plug_bridge.readParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &values);
     if (result != types.kResultOk) return result;
-    if (values.loadById(&gain_spec.parameter_set, gain_param_id)) |value| {
-        setGain(value);
-    }
+    storeParameterValues(&values);
     return types.kResultOk;
 }
 
 pub fn writeGainState(state: ?*ibstream.IBStream) types.tresult {
-    var values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
-    _ = values.storeById(&gain_spec.parameter_set, gain_param_id, gain());
-    return zig_plug_bridge.writeParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &values);
+    return zig_plug_bridge.writeParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &parameter_values);
 }
 
-fn clamp01(value: vsttypes.ParamValue) vsttypes.ParamValue {
-    return @min(@max(value, 0), 1);
+fn storeParameterValues(values: *const gain_spec.Spec.ParameterValues) void {
+    inline for (0..gain_spec.Spec.ParameterSet.count) |index| {
+        if (values.load(index)) |value| {
+            _ = parameter_values.store(index, value);
+        }
+    }
 }
 
 test "gain controller can be created as IEditController" {
