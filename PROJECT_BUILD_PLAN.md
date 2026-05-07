@@ -31,7 +31,7 @@ A staged plan for building a VST3 plugin framework in Zig, structured for delega
 - A bundled GUI library (we expose the `IPlugView` hook; users plug in their own toolkit)
 - Plugin sandboxing or out-of-process hosting
 
-**Current status.** Layer 1 now builds a minimal gain plugin on macOS, emits `.vst3` bundles for macOS, Linux, and Windows, and passes Steinberg's validator locally on macOS with `zig build validate-gain`.
+**Current status.** Layer 1 now builds reusable VST3 effect shells, emits `.vst3` bundles for macOS, Linux, and Windows, and validates the bundled gain, bypass, mode-gain, voice-mix, and note-gate examples locally on macOS with `zig build validate-examples`.
 
 **Total estimated duration.** 6–9 months for a Layer 2 release that's genuinely useful to others. The first Layer 1 gain plugin milestone is complete locally on macOS; the remaining Layer 1 work is hardening the raw API, CI coverage, and host smoke testing.
 
@@ -511,7 +511,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 **Goal.** Design and prototype the user-facing framework. This is where Zig idioms matter most. Exit this phase with a `Plugin` interface that's pleasant to implement and a parameter system that scales.
 
-**Current status.** The first prototype exists under `zig-plug/src/` and is also exposed as the pure `zig-plug-core` module for Layer 1 integration. The reusable VST3 bridge now covers reflected controller metadata, string conversion, normalized/plain conversion, parameter controller/state helpers, host automation collection and application, state serialization with id migrations, stereo audio bus metadata, VST3 stream state compatibility, process context construction, and main audio sample-size dispatch. The gain, bypass, mode-gain, and voice-mix plugins now use reusable simple stereo effect and reflected edit-controller shells, and all four validate locally on macOS via `zig build validate-examples`. The build has factored helpers for adding bundled VST3 examples and native, Linux, and Windows aggregate bundle steps. CI cross-target bundle checks now build all bundled examples. `examples/gain_core.zig`, `examples/bypass_core.zig`, `examples/mode_gain_core.zig`, and `examples/voice_mix_core.zig` are checked pure-API examples covering float, bool, enum, int, and sample-offset parameter changes. The remaining Phase 5 work is host smoke testing and broader framework hardening.
+**Current status.** The first prototype exists under `zig-plug/src/` and is also exposed as the pure `zig-plug-core` module for Layer 1 integration. The reusable VST3 bridge now covers reflected controller metadata, string conversion, normalized/plain conversion, parameter controller/state helpers, host automation collection and application, state serialization with id migrations, stereo audio and input event bus metadata, VST3 stream state compatibility, process context construction, input event collection, and main audio sample-size dispatch. The gain, bypass, mode-gain, voice-mix, and note-gate plugins now use reusable simple stereo effect and reflected edit-controller shells, and all five validate locally on macOS via `zig build validate-examples`. The build has factored helpers for adding bundled VST3 examples and native, Linux, and Windows aggregate bundle steps. CI cross-target bundle checks now build all bundled examples. `examples/gain_core.zig`, `examples/bypass_core.zig`, `examples/mode_gain_core.zig`, `examples/voice_mix_core.zig`, and `examples/note_gate_core.zig` are checked pure-API examples covering float, bool, enum, int, sample-offset parameter changes, and input events. The remaining Phase 5 work is host smoke testing, richer event mapping, outgoing events, and broader framework hardening.
 
 ### Work Unit 5.1: Plugin trait equivalent
 
@@ -575,8 +575,10 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 **Inputs.** Phase 2's event list translation.
 
+**Current status.** Basic VST3 input event collection is implemented. `process.ProcessContext` exposes note-on, note-off, data, and other event kinds with block-offset validation. The reusable shell advertises one input event bus, collects bounded event lists during `process`, and delivers them into Layer 2 contexts. The pure `note_gate_core` example and bundled `zig_vst3_note_gate` plugin exercise event consumption, and the bundled plugin passes Steinberg's validator locally on macOS.
+
 **Deliverables.**
-- High-level event types in the framework: `NoteOn`, `NoteOff`, `MidiCC`, `PitchBend`, `Aftertouch`, `NoteExpression`
+- Rich high-level event types in the framework: `NoteOn`, `NoteOff`, `MidiCC`, `PitchBend`, `Aftertouch`, `NoteExpression`
 - Event iterator API for plugins to consume
 - SysEx send/receive
 - A simple MIDI-effect example plugin (`examples/midi-monitor/`) that prints incoming events
