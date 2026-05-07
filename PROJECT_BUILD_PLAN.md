@@ -31,7 +31,9 @@ A staged plan for building a VST3 plugin framework in Zig, structured for delega
 - A bundled GUI library (we expose the `IPlugView` hook; users plug in their own toolkit)
 - Plugin sandboxing or out-of-process hosting
 
-**Total estimated duration.** 6–9 months for a Layer 2 release that's genuinely useful to others. Layer 1 alone reaches a working gain plugin in roughly 8–10 weeks of focused work.
+**Current status.** Layer 1 now builds a minimal gain plugin on macOS, emits `.vst3` bundles for macOS, Linux, and Windows, and passes Steinberg's validator locally on macOS with `zig build validate-gain`.
+
+**Total estimated duration.** 6–9 months for a Layer 2 release that's genuinely useful to others. The first Layer 1 gain plugin milestone is complete locally on macOS; the remaining Layer 1 work is hardening the raw API, CI coverage, and host smoke testing.
 
 ---
 
@@ -168,9 +170,23 @@ Each phase is broken into **work units**. A work unit is sized so that one agent
 
 ## Phase 1: COM/Vtable Foundation
 
-**Duration.** 2–3 weeks. The hardest design problem in the project.
+**Status.** Substantially complete for the first plugin milestone. The raw layer has enough COM, factory, component, controller, audio processor, bundle, and validator support to ship a minimal gain plugin through Steinberg's validator on macOS.
 
-**Goal.** Build the comptime machinery that lets a Zig struct declare which COM interfaces it implements and produces correct, ABI-compatible vtables. No real VST3 yet. This phase ends with a fake host that round-trips through `queryInterface` and refcounts correctly.
+**Duration.** 2–3 weeks originally planned. The phase expanded to include the first real VST3 bundle and validator pass.
+
+**Goal.** Build the machinery needed for ABI-compatible COM objects and prove it against a real VST3 plugin. This phase now exits when the gain plugin validates, the compatibility aliases are documented, and the remaining raw-layer hardening work is tracked separately.
+
+**Current exit status.**
+- `zig build test` passes locally.
+- `zig build validate-gain` passes locally on macOS.
+- `zig build phase1` runs the gain validator path on macOS.
+- `bundle-gain`, `bundle-gain-linux`, and `bundle-gain-windows` produce platform bundle layouts.
+
+**Remaining hardening before Layer 2 should depend on this API.**
+- Add CI jobs for validator and cross-target bundle checks where the platform supports them.
+- Replace one-off plugin object wiring with reusable raw-layer helpers for interface maps and allocator-owned objects.
+- Add host smoke test notes under `docs/host-matrix.md` once at least one DAW has loaded the gain plugin.
+- Decide how long to keep the `bundle-stub*` and `validate-stub` compatibility aliases.
 
 ### Work Unit 1.1: TUID/FUID handling
 
