@@ -575,7 +575,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 **Inputs.** Phase 2's event list translation.
 
-**Current status.** Basic VST3 input event collection is implemented. `process.ProcessContext` exposes note-on, note-off, data, and other event kinds with block-offset validation. The reusable shell advertises one input event bus, collects bounded event lists during `process`, and delivers them into Layer 2 contexts. The pure `note_gate_core` example and bundled `zig_vst3_note_gate` plugin exercise event consumption, and the bundled plugin passes Steinberg's validator locally on macOS.
+**Current status.** Basic VST3 input event collection is implemented. `process.ProcessContext` exposes note-on, note-off, MIDI CC, pitch bend, aftertouch, note-expression value/int/text, data, and other event kinds with block-offset validation. The reusable shell advertises one input event bus, collects bounded event lists during `process`, and delivers them into Layer 2 contexts. The pure `note_gate_core` example and bundled `zig_vst3_note_gate` plugin exercise event consumption, and the bundled plugin passes Steinberg's validator locally on macOS.
 
 **Deliverables.**
 - Rich high-level event types in the framework: `NoteOn`, `NoteOff`, `MidiCC`, `PitchBend`, `Aftertouch`, `NoteExpression`
