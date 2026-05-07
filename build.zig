@@ -36,6 +36,10 @@ pub fn build(b: *std.Build) void {
         .artifact_name = "zig_vst3_mode_gain",
         .root_source_file = "vst3-zig/src/mode_gain_plugin.zig",
     });
+    const voice_mix = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
+        .artifact_name = "zig_vst3_voice_mix",
+        .root_source_file = "vst3-zig/src/voice_mix_plugin.zig",
+    });
 
     const entry_symbols_step = b.step("entry-symbols", "Verify native VST3 module entry exports");
     const check_entry_symbols = b.addSystemCommand(&.{"scripts/check_entry_symbols.sh"});
@@ -59,6 +63,12 @@ pub fn build(b: *std.Build) void {
         .display_name = "mode gain",
         .artifact_name = "zig_vst3_mode_gain",
         .bundle_id = "dev.zig-vst3.mode-gain",
+    });
+    const bundle_voice_mix_step = addVst3BundleSteps(b, target, voice_mix, .{
+        .short_name = "voice-mix",
+        .display_name = "voice mix",
+        .artifact_name = "zig_vst3_voice_mix",
+        .bundle_id = "dev.zig-vst3.voice-mix",
     });
     const vst3_test_module = b.createModule(.{
         .root_source_file = b.path("vst3-zig/src/root.zig"),
@@ -110,6 +120,16 @@ pub fn build(b: *std.Build) void {
         .root_module = mode_gain_test_module,
     });
 
+    const voice_mix_test_module = b.createModule(.{
+        .root_source_file = b.path("vst3-zig/src/voice_mix_plugin.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    voice_mix_test_module.addImport("zig-plug-core", zig_plug_core);
+    const voice_mix_tests = b.addTest(.{
+        .root_module = voice_mix_test_module,
+    });
+
     const gain_core_example_module = b.createModule(.{
         .root_source_file = b.path("examples/gain_core.zig"),
         .target = target,
@@ -156,6 +176,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(gain_tests).step);
     test_step.dependOn(&b.addRunArtifact(bypass_tests).step);
     test_step.dependOn(&b.addRunArtifact(mode_gain_tests).step);
+    test_step.dependOn(&b.addRunArtifact(voice_mix_tests).step);
     test_step.dependOn(&b.addRunArtifact(gain_core_example_tests).step);
     test_step.dependOn(&b.addRunArtifact(bypass_core_example_tests).step);
     test_step.dependOn(&b.addRunArtifact(mode_gain_core_example_tests).step);
@@ -206,10 +227,23 @@ pub fn build(b: *std.Build) void {
     } else {
         validate_mode_gain_step.dependOn(&b.addFail("validate-mode-gain currently supports macOS targets").step);
     }
+    const validate_voice_mix_step = b.step("validate-voice-mix", "Build and validate the native voice mix VST3 bundle");
+    if (target.result.os.tag == .macos) {
+        validate_voice_mix_step.dependOn(bundle_voice_mix_step);
+        const validate_voice_mix = b.addSystemCommand(&.{
+            "scripts/validate.sh",
+            b.getInstallPath(.prefix, "bundle/zig_vst3_voice_mix.vst3"),
+        });
+        validate_voice_mix.step.dependOn(bundle_voice_mix_step);
+        validate_voice_mix_step.dependOn(&validate_voice_mix.step);
+    } else {
+        validate_voice_mix_step.dependOn(&b.addFail("validate-voice-mix currently supports macOS targets").step);
+    }
     const validate_examples_step = b.step("validate-examples", "Build and validate all native VST3 example bundles");
     validate_examples_step.dependOn(validate_gain_step);
     validate_examples_step.dependOn(validate_bypass_step);
     validate_examples_step.dependOn(validate_mode_gain_step);
+    validate_examples_step.dependOn(validate_voice_mix_step);
     const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
     validator_step.dependOn(&build_validator.step);
