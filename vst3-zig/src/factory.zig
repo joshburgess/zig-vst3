@@ -84,19 +84,24 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
         }
 
         fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.C) types.tresult {
-            if (index < 0 or index >= classes.len) {
+            if (comptime classes.len == 0) {
                 out.* = .{};
                 return types.kInvalidArgument;
-            }
+            } else {
+                if (index < 0 or index >= classes.len) {
+                    out.* = .{};
+                    return types.kInvalidArgument;
+                }
 
-            const class = classes[@intCast(index)];
-            out.* = .{
-                .cid = class.cid,
-                .cardinality = class.cardinality,
-            };
-            copyZ(&out.category, class.category);
-            copyZ(&out.name, class.name);
-            return types.kResultOk;
+                const class = classes[@intCast(index)];
+                out.* = .{
+                    .cid = class.cid,
+                    .cardinality = class.cardinality,
+                };
+                copyZ(&out.category, class.category);
+                copyZ(&out.name, class.name);
+                return types.kResultOk;
+            }
         }
 
         fn createInstance(_: *anyopaque, _: types.FIDString, _: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
