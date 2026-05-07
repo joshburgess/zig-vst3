@@ -6,6 +6,8 @@ const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const interface_map = @import("interface_map.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+const ivstattributes = @import("pluginterfaces/vst/ivstattributes.zig");
+const ivstchannelcontextinfo = @import("pluginterfaces/vst/ivstchannelcontextinfo.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivstcontextmenu = @import("pluginterfaces/vst/ivstcontextmenu.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
@@ -921,6 +923,23 @@ fn releaseHostApplication(host_application: *?*ivsthostapplication.IHostApplicat
     }
 }
 
+fn queryInfoListener(context: ?*anyopaque) ?*ivstchannelcontextinfo.IInfoListener {
+    const raw = context orelse return null;
+    const unknown: *funknown.Header = @ptrCast(@alignCast(raw));
+    var out: ?*anyopaque = null;
+    if (unknown.vtable.queryInterface(unknown, &ivstchannelcontextinfo.iinfo_listener_iid, &out) != types.kResultOk) {
+        return null;
+    }
+    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+}
+
+fn releaseInfoListener(info_listener: *?*ivstchannelcontextinfo.IInfoListener) void {
+    if (info_listener.*) |listener| {
+        _ = listener.vtable.release(listener);
+        info_listener.* = null;
+    }
+}
+
 fn queryComponentHandler2(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentHandler2 {
     const raw = handler orelse return null;
     const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
@@ -1028,6 +1047,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             prefetchable_support: ivstprefetchablesupport.IPrefetchableSupport = .{ .vtable = &prefetchable_support_vtable },
             connected_peer: ?*ivstmessage.IConnectionPoint = null,
             host_application: ?*ivsthostapplication.IHostApplication = null,
+            info_listener: ?*ivstchannelcontextinfo.IInfoListener = null,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -1035,6 +1055,11 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&component.iface, @ptrCast(requested_iid), out);
+        }
+
+        pub fn setChannelContextInfos(attributes: ?*ivstattributes.IAttributeList) types.tresult {
+            const info_listener = component.info_listener orelse return types.kResultFalse;
+            return info_listener.vtable.setChannelContextInfos(info_listener, attributes);
         }
 
         const component_vtable = ivstcomponent.IComponentVTable{
@@ -1138,12 +1163,16 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.C) types.tresult {
-            owner(ptr).host_application = queryHostApplication(context);
+            const self = owner(ptr);
+            self.host_application = queryHostApplication(context);
+            self.info_listener = queryInfoListener(context);
             return types.kResultOk;
         }
 
         fn terminate(ptr: *anyopaque) callconv(.C) types.tresult {
-            releaseHostApplication(&owner(ptr).host_application);
+            const self = owner(ptr);
+            releaseInfoListener(&self.info_listener);
+            releaseHostApplication(&self.host_application);
             return types.kResultOk;
         }
 
