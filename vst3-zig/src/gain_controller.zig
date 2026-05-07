@@ -174,6 +174,7 @@ test "gain controller exposes default note expression and keyswitch interfaces" 
     const std = @import("std");
     const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
     const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
+    const ivstphysicalui = @import("pluginterfaces/vst/ivstphysicalui.zig");
 
     var controller_out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
@@ -212,4 +213,21 @@ test "gain controller exposes default note expression and keyswitch interfaces" 
         types.kInvalidArgument,
         keyswitch.vtable.getKeyswitchInfo(keyswitch, 0, 0, 0, &keyswitch_info),
     );
+
+    var physical_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        controller_iface.vtable.queryInterface(controller_iface, &ivstphysicalui.inote_expression_physical_ui_mapping_iid, &physical_out),
+    );
+    try std.testing.expect(physical_out != null);
+    const physical: *ivstphysicalui.INoteExpressionPhysicalUIMapping = @ptrCast(@alignCast(physical_out.?));
+    defer _ = physical.vtable.release(physical);
+
+    var physical_mapping: ivstphysicalui.PhysicalUIMapList = .{ .count = 99, .map = null };
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        physical.vtable.getPhysicalUIMapping(physical, 0, 0, &physical_mapping),
+    );
+    try std.testing.expectEqual(@as(types.uint32, 0), physical_mapping.count);
+    try std.testing.expectEqual(@as(?[*]ivstphysicalui.PhysicalUIMap, null), physical_mapping.map);
 }

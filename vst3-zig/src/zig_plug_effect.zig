@@ -11,6 +11,7 @@ const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const ivstmidilearn = @import("pluginterfaces/vst/ivstmidilearn.zig");
 const ivstmidimapping2 = @import("pluginterfaces/vst/ivstmidimapping2.zig");
 const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
+const ivstphysicalui = @import("pluginterfaces/vst/ivstphysicalui.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
@@ -31,6 +32,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             midi_learn2: ivstmidimapping2.IMidiLearn2 = .{ .vtable = &midi_learn2_vtable },
             note_expression: ivstnoteexpression.INoteExpressionController = .{ .vtable = &note_expression_vtable },
             keyswitch: ivstnoteexpression.IKeyswitchController = .{ .vtable = &keyswitch_vtable },
+            physical_ui_mapping: ivstphysicalui.INoteExpressionPhysicalUIMapping = .{ .vtable = &physical_ui_mapping_vtable },
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -126,6 +128,11 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return @fieldParentPtr("keyswitch", iface);
         }
 
+        fn ownerFromPhysicalUIMapping(ptr: *anyopaque) *Controller {
+            const iface: *ivstphysicalui.INoteExpressionPhysicalUIMapping = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("physical_ui_mapping", iface);
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
@@ -139,6 +146,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 .{ .iid = &ivstmidimapping2.imidi_learn2_iid, .ptr = &self.midi_learn2 },
                 .{ .iid = &ivstnoteexpression.inote_expression_controller_iid, .ptr = &self.note_expression },
                 .{ .iid = &ivstnoteexpression.ikeyswitch_controller_iid, .ptr = &self.keyswitch },
+                .{ .iid = &ivstphysicalui.inote_expression_physical_ui_mapping_iid, .ptr = &self.physical_ui_mapping },
             };
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
@@ -169,6 +177,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn queryFromKeyswitch(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&ownerFromKeyswitch(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromPhysicalUIMapping(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromPhysicalUIMapping(ptr).iface, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
@@ -233,6 +245,14 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn releaseFromKeyswitch(ptr: *anyopaque) callconv(.C) types.uint32 {
             return release(&ownerFromKeyswitch(ptr).iface);
+        }
+
+        fn addRefFromPhysicalUIMapping(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromPhysicalUIMapping(ptr).iface);
+        }
+
+        fn releaseFromPhysicalUIMapping(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromPhysicalUIMapping(ptr).iface);
         }
 
         fn initialize(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
@@ -486,6 +506,18 @@ pub fn ReflectedEditController(comptime Config: type) type {
         fn getKeyswitchInfo(_: *anyopaque, _: types.int32, _: types.int16, _: types.int32, out: *ivstnoteexpression.KeyswitchInfo) callconv(.C) types.tresult {
             out.* = .{};
             return types.kInvalidArgument;
+        }
+
+        const physical_ui_mapping_vtable = ivstphysicalui.INoteExpressionPhysicalUIMappingVTable{
+            .queryInterface = queryFromPhysicalUIMapping,
+            .addRef = addRefFromPhysicalUIMapping,
+            .release = releaseFromPhysicalUIMapping,
+            .getPhysicalUIMapping = getPhysicalUIMapping,
+        };
+
+        fn getPhysicalUIMapping(_: *anyopaque, _: types.int32, _: types.int16, out: *ivstphysicalui.PhysicalUIMapList) callconv(.C) types.tresult {
+            out.* = .{};
+            return types.kResultFalse;
         }
     };
 }
