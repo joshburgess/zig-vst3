@@ -24,4 +24,5 @@ Parameter state that may be read by the audio thread should use `NormalizedValue
 
 ## Open Work
 
-- Wire the gain plugin to the Layer 2 descriptors after the plugin interface prototype exists.
+- Generate controller parameter metadata for arbitrary `PluginSpec` parameter sets.
+- Add state serialization over reflected parameter values.
