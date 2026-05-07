@@ -16,6 +16,7 @@ pub const pluginterfaces = struct {
 };
 pub const tuid = @import("tuid.zig");
 pub const version = "0.1.0-dev";
+pub const zig_plug_bridge = @import("zig_plug_bridge.zig");
 
 pub fn targetName() []const u8 {
     return @tagName(@import("builtin").target.os.tag);
