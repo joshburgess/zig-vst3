@@ -96,21 +96,7 @@ fn getParameterCount(_: *anyopaque) callconv(.C) types.int32 {
 }
 
 fn getParameterInfo(_: *anyopaque, index: types.int32, out: *ivsteditcontroller.ParameterInfo) callconv(.C) types.tresult {
-    if (index < 0 or index >= gain_spec.Spec.ParameterSet.count) {
-        out.* = .{};
-        return types.kInvalidArgument;
-    }
-    const parameter_index: usize = @intCast(index);
-
-    out.* = .{
-        .id = gain_spec.parameter_set.id(parameter_index).?,
-        .defaultNormalizedValue = gain_spec.parameter_set.defaultNormalized(parameter_index).?,
-        .unitId = 0,
-        .flags = ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate,
-    };
-    copyAscii16(&out.title, gain_spec.parameter_set.name(parameter_index).?);
-    copyAscii16(&out.shortTitle, gain_spec.parameter_set.name(parameter_index).?);
-    return types.kResultOk;
+    return zig_plug_bridge.fillParameterInfo(gain_spec.Spec.Params, &gain_spec.parameter_set, index, out);
 }
 
 fn getParamStringByValue(_: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
@@ -180,14 +166,6 @@ pub fn writeGainState(state: ?*ibstream.IBStream) types.tresult {
 
 fn clamp01(value: vsttypes.ParamValue) vsttypes.ParamValue {
     return @min(@max(value, 0), 1);
-}
-
-fn copyAscii16(dest: *vsttypes.String128, source: []const u8) void {
-    @memset(dest, 0);
-    const len = @min(source.len, dest.len - 1);
-    for (source[0..len], 0..) |char, index| {
-        dest[index] = char;
-    }
 }
 
 fn writePercent(dest: [*]vsttypes.TChar, value: vsttypes.ParamValue) void {
