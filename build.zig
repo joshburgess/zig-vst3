@@ -44,6 +44,10 @@ pub fn build(b: *std.Build) void {
         .artifact_name = "zig_vst3_note_gate",
         .root_source_file = "vst3-zig/src/note_gate_plugin.zig",
     });
+    const event_echo = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
+        .artifact_name = "zig_vst3_event_echo",
+        .root_source_file = "vst3-zig/src/event_echo_plugin.zig",
+    });
 
     const entry_symbols_step = b.step("entry-symbols", "Verify native VST3 module entry exports");
     addEntrySymbolsCheck(b, entry_symbols_step, gain);
@@ -51,6 +55,7 @@ pub fn build(b: *std.Build) void {
     addEntrySymbolsCheck(b, entry_symbols_step, mode_gain);
     addEntrySymbolsCheck(b, entry_symbols_step, voice_mix);
     addEntrySymbolsCheck(b, entry_symbols_step, note_gate);
+    addEntrySymbolsCheck(b, entry_symbols_step, event_echo);
 
     const bundle_gain_step = addVst3BundleSteps(b, target, gain, .{
         .short_name = "gain",
@@ -81,6 +86,12 @@ pub fn build(b: *std.Build) void {
         .display_name = "note gate",
         .artifact_name = "zig_vst3_note_gate",
         .bundle_id = "dev.zig-vst3.note-gate",
+    });
+    const bundle_event_echo_step = addVst3BundleSteps(b, target, event_echo, .{
+        .short_name = "event-echo",
+        .display_name = "event echo",
+        .artifact_name = "zig_vst3_event_echo",
+        .bundle_id = "dev.zig-vst3.event-echo",
     });
     const vst3_test_module = b.createModule(.{
         .root_source_file = b.path("vst3-zig/src/root.zig"),
@@ -152,6 +163,16 @@ pub fn build(b: *std.Build) void {
         .root_module = note_gate_test_module,
     });
 
+    const event_echo_test_module = b.createModule(.{
+        .root_source_file = b.path("vst3-zig/src/event_echo_plugin.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    event_echo_test_module.addImport("zig-plug-core", zig_plug_core);
+    const event_echo_tests = b.addTest(.{
+        .root_module = event_echo_test_module,
+    });
+
     const gain_core_example_module = b.createModule(.{
         .root_source_file = b.path("examples/gain_core.zig"),
         .target = target,
@@ -220,6 +241,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(mode_gain_tests).step);
     test_step.dependOn(&b.addRunArtifact(voice_mix_tests).step);
     test_step.dependOn(&b.addRunArtifact(note_gate_tests).step);
+    test_step.dependOn(&b.addRunArtifact(event_echo_tests).step);
     test_step.dependOn(&b.addRunArtifact(gain_core_example_tests).step);
     test_step.dependOn(&b.addRunArtifact(bypass_core_example_tests).step);
     test_step.dependOn(&b.addRunArtifact(mode_gain_core_example_tests).step);
@@ -261,12 +283,18 @@ pub fn build(b: *std.Build) void {
         .display_name = "note gate",
         .artifact_name = "zig_vst3_note_gate",
     });
+    const validate_event_echo_step = addVst3ValidationStep(b, target, bundle_event_echo_step.native, .{
+        .short_name = "event-echo",
+        .display_name = "event echo",
+        .artifact_name = "zig_vst3_event_echo",
+    });
     const validate_examples_step = b.step("validate-examples", "Build and validate all native VST3 example bundles");
     validate_examples_step.dependOn(validate_gain_step);
     validate_examples_step.dependOn(validate_bypass_step);
     validate_examples_step.dependOn(validate_mode_gain_step);
     validate_examples_step.dependOn(validate_voice_mix_step);
     validate_examples_step.dependOn(validate_note_gate_step);
+    validate_examples_step.dependOn(validate_event_echo_step);
 
     const bundle_examples_step = b.step("bundle-examples", "Build native VST3 bundles for all example plugins");
     bundle_examples_step.dependOn(bundle_gain_step.native);
@@ -274,6 +302,7 @@ pub fn build(b: *std.Build) void {
     bundle_examples_step.dependOn(bundle_mode_gain_step.native);
     bundle_examples_step.dependOn(bundle_voice_mix_step.native);
     bundle_examples_step.dependOn(bundle_note_gate_step.native);
+    bundle_examples_step.dependOn(bundle_event_echo_step.native);
 
     const bundle_examples_linux_step = b.step("bundle-examples-linux", "Build Linux VST3 bundles for all example plugins");
     bundle_examples_linux_step.dependOn(bundle_gain_step.linux);
@@ -281,6 +310,7 @@ pub fn build(b: *std.Build) void {
     bundle_examples_linux_step.dependOn(bundle_mode_gain_step.linux);
     bundle_examples_linux_step.dependOn(bundle_voice_mix_step.linux);
     bundle_examples_linux_step.dependOn(bundle_note_gate_step.linux);
+    bundle_examples_linux_step.dependOn(bundle_event_echo_step.linux);
 
     const bundle_examples_windows_step = b.step("bundle-examples-windows", "Build Windows VST3 bundles for all example plugins");
     bundle_examples_windows_step.dependOn(bundle_gain_step.windows);
@@ -288,6 +318,7 @@ pub fn build(b: *std.Build) void {
     bundle_examples_windows_step.dependOn(bundle_mode_gain_step.windows);
     bundle_examples_windows_step.dependOn(bundle_voice_mix_step.windows);
     bundle_examples_windows_step.dependOn(bundle_note_gate_step.windows);
+    bundle_examples_windows_step.dependOn(bundle_event_echo_step.windows);
     const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
     validator_step.dependOn(&build_validator.step);
