@@ -14,6 +14,7 @@ A plugin type declares:
 
 - `ParameterSet`: reflected descriptor metadata
 - `ParameterValues`: atomic normalized values initialized from descriptor defaults
+- lifecycle flags for optional `init`, `prepare`, `process`, and `deinit` declarations
 - `init(params)`: builds the reflected set and value storage
 
 ## Example
@@ -34,6 +35,6 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 
 ## Open Work
 
-- Add lifecycle hooks for init, prepare, process, and deinit.
+- Define exact signatures for init, prepare, process, and deinit.
 - Define the process callback contract for audio buffers and parameter changes.
 - Generate Layer 1 component/controller glue from `PluginSpec`.
