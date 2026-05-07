@@ -16,6 +16,64 @@ pub const NormalizedValue = struct {
     }
 };
 
+pub const LinearSmoother = struct {
+    current: f64,
+    target: f64,
+    step: f64 = 0.0,
+    remaining: usize = 0,
+
+    pub fn init(value: f64) LinearSmoother {
+        const clamped = clampNormalized(value);
+        return .{ .current = clamped, .target = clamped };
+    }
+
+    pub fn setTarget(self: *LinearSmoother, target: f64, samples: usize) void {
+        self.target = clampNormalized(target);
+        self.remaining = samples;
+        if (samples == 0) {
+            self.current = self.target;
+            self.step = 0.0;
+        } else {
+            self.step = (self.target - self.current) / @as(f64, @floatFromInt(samples));
+        }
+    }
+
+    pub fn next(self: *LinearSmoother) f64 {
+        if (self.remaining == 0) return self.current;
+        self.remaining -= 1;
+        if (self.remaining == 0) {
+            self.current = self.target;
+        } else {
+            self.current += self.step;
+        }
+        return self.current;
+    }
+};
+
+pub const ExponentialSmoother = struct {
+    current: f64,
+    target: f64,
+    coefficient: f64,
+
+    pub fn init(value: f64, coefficient: f64) ExponentialSmoother {
+        const clamped = clampNormalized(value);
+        return .{
+            .current = clamped,
+            .target = clamped,
+            .coefficient = clampNormalized(coefficient),
+        };
+    }
+
+    pub fn setTarget(self: *ExponentialSmoother, target: f64) void {
+        self.target = clampNormalized(target);
+    }
+
+    pub fn next(self: *ExponentialSmoother) f64 {
+        self.current += (self.target - self.current) * self.coefficient;
+        return self.current;
+    }
+};
+
 fn clampNormalized(value: f64) f64 {
     return std.math.clamp(value, 0.0, 1.0);
 }
@@ -216,6 +274,45 @@ test "normalized value clamps and updates atomically" {
     try std.testing.expectEqual(@as(f64, 0.0), value.load());
     value.store(0.25);
     try std.testing.expectEqual(@as(f64, 0.25), value.load());
+}
+
+test "linear smoother reaches target after requested samples" {
+    var smoother = LinearSmoother.init(0.0);
+
+    smoother.setTarget(1.0, 4);
+    try std.testing.expectApproxEqAbs(0.25, smoother.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(0.5, smoother.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(0.75, smoother.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(1.0, smoother.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(1.0, smoother.next(), 0.000001);
+}
+
+test "linear smoother handles immediate and clamped targets" {
+    var smoother = LinearSmoother.init(0.25);
+
+    smoother.setTarget(2.0, 0);
+    try std.testing.expectApproxEqAbs(1.0, smoother.current, 0.000001);
+    smoother.setTarget(-1.0, 2);
+    try std.testing.expectApproxEqAbs(0.5, smoother.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(0.0, smoother.next(), 0.000001);
+}
+
+test "exponential smoother approaches target by coefficient" {
+    var smoother = ExponentialSmoother.init(0.0, 0.25);
+
+    smoother.setTarget(1.0);
+    try std.testing.expectApproxEqAbs(0.25, smoother.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(0.4375, smoother.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(0.578125, smoother.next(), 0.000001);
+}
+
+test "exponential smoother clamps initial value target and coefficient" {
+    var smoother = ExponentialSmoother.init(2.0, 2.0);
+
+    try std.testing.expectApproxEqAbs(1.0, smoother.current, 0.000001);
+    try std.testing.expectApproxEqAbs(1.0, smoother.coefficient, 0.000001);
+    smoother.setTarget(-1.0);
+    try std.testing.expectApproxEqAbs(0.0, smoother.next(), 0.000001);
 }
 
 test "int parameter clamps and rounds normalized values" {
