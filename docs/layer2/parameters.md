@@ -25,4 +25,4 @@ Parameter state that may be read by the audio thread should use `NormalizedValue
 ## Open Work
 
 - Generate controller parameter metadata for arbitrary `PluginSpec` parameter sets.
-- Add state serialization over reflected parameter values.
+- Bridge reflected state serialization to VST3 `IBStream`.

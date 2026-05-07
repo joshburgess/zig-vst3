@@ -47,5 +47,5 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 ## Open Work
 
 - Generalize the gain-specific Layer 1 bridge into reusable component/controller glue.
-- Add state serialization over reflected parameters.
+- Bridge reflected state serialization to VST3 `IBStream`.
 - Add example plugins that use the public `zig-plug-core` API directly.
