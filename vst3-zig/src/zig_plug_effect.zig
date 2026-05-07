@@ -22,6 +22,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         const Controller = extern struct {
             iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
             unit_info: ivstunits.IUnitInfo = .{ .vtable = &unit_info_vtable },
+            midi_mapping: ivsteditcontroller.IMidiMapping = .{ .vtable = &midi_mapping_vtable },
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -87,6 +88,11 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return @fieldParentPtr("unit_info", iface);
         }
 
+        fn ownerFromMidiMapping(ptr: *anyopaque) *Controller {
+            const iface: *ivsteditcontroller.IMidiMapping = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("midi_mapping", iface);
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
@@ -94,12 +100,17 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 .{ .iid = &ipluginbase.iplugin_base_iid, .ptr = ptr },
                 .{ .iid = &ivsteditcontroller.iedit_controller_iid, .ptr = ptr },
                 .{ .iid = &ivstunits.iunit_info_iid, .ptr = &self.unit_info },
+                .{ .iid = &ivsteditcontroller.imidi_mapping_iid, .ptr = &self.midi_mapping },
             };
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
         fn queryFromUnitInfo(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&ownerFromUnitInfo(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromMidiMapping(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromMidiMapping(ptr).iface, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
@@ -116,6 +127,14 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn releaseFromUnitInfo(ptr: *anyopaque) callconv(.C) types.uint32 {
             return release(&ownerFromUnitInfo(ptr).iface);
+        }
+
+        fn addRefFromMidiMapping(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromMidiMapping(ptr).iface);
+        }
+
+        fn releaseFromMidiMapping(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromMidiMapping(ptr).iface);
         }
 
         fn initialize(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
@@ -257,6 +276,18 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn setUnitProgramData(_: *anyopaque, _: types.int32, _: types.int32, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
+            return types.kResultFalse;
+        }
+
+        const midi_mapping_vtable = ivsteditcontroller.IMidiMappingVTable{
+            .queryInterface = queryFromMidiMapping,
+            .addRef = addRefFromMidiMapping,
+            .release = releaseFromMidiMapping,
+            .getMidiControllerAssignment = getMidiControllerAssignment,
+        };
+
+        fn getMidiControllerAssignment(_: *anyopaque, _: types.int32, _: types.int16, _: vsttypes.CtrlNumber, out: *vsttypes.ParamID) callconv(.C) types.tresult {
+            out.* = vsttypes.kNoParamId;
             return types.kResultFalse;
         }
     };
