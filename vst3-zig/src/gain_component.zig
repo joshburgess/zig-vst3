@@ -1,5 +1,6 @@
 const gain_controller = @import("gain_controller.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
+const ivstattributes = @import("pluginterfaces/vst/ivstattributes.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
@@ -39,6 +40,10 @@ const Effect = zig_plug_effect.SimpleStereoEffect(struct {
 });
 
 pub const create = Effect.create;
+
+pub fn setChannelContextInfos(attributes: ?*ivstattributes.IAttributeList) types.tresult {
+    return Effect.setChannelContextInfos(attributes);
+}
 
 test "gain component can be created as IComponent" {
     const std = @import("std");
@@ -166,12 +171,127 @@ test "gain component queries host application during initialize" {
 
     var host = HostApplication{};
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, &host.iface));
-    try std.testing.expectEqual(@as(types.uint32, 1), host.query_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), host.query_count);
     try std.testing.expectEqual(@as(types.uint32, 1), host.add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 0), host.release_count);
 
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
     try std.testing.expectEqual(@as(types.uint32, 1), host.release_count);
+}
+
+test "gain component stores channel context info listener" {
+    const std = @import("std");
+    const ivstchannelcontextinfo = @import("pluginterfaces/vst/ivstchannelcontextinfo.zig");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivsthostapplication = @import("pluginterfaces/vst/ivsthostapplication.zig");
+    const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+
+    const HostContext = extern struct {
+        const Self = @This();
+
+        host_application: ivsthostapplication.IHostApplication = .{ .vtable = &host_vtable },
+        info_listener: ivstchannelcontextinfo.IInfoListener = .{ .vtable = &info_vtable },
+        info_add_ref_count: types.uint32 = 0,
+        info_release_count: types.uint32 = 0,
+        channel_context_count: types.uint32 = 0,
+
+        const host_vtable = ivsthostapplication.IHostApplicationVTable{
+            .queryInterface = queryFromHost,
+            .addRef = addRefFromHost,
+            .release = releaseFromHost,
+            .getName = getName,
+            .createInstance = createInstance,
+        };
+
+        const info_vtable = ivstchannelcontextinfo.IInfoListenerVTable{
+            .queryInterface = queryFromInfo,
+            .addRef = addRefFromInfo,
+            .release = releaseFromInfo,
+            .setChannelContextInfos = setChannelContextInfosCallback,
+        };
+
+        fn ownerFromHost(ptr: *anyopaque) *Self {
+            const iface: *ivsthostapplication.IHostApplication = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("host_application", iface);
+        }
+
+        fn ownerFromInfo(ptr: *anyopaque) *Self {
+            const iface: *ivstchannelcontextinfo.IInfoListener = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("info_listener", iface);
+        }
+
+        fn queryFromHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromHost(ptr);
+            if (std.mem.eql(u8, requested_iid, &ivsthostapplication.ihost_application_iid)) {
+                out.* = ptr;
+                return types.kResultOk;
+            }
+            if (std.mem.eql(u8, requested_iid, &ivstchannelcontextinfo.iinfo_listener_iid)) {
+                _ = addRefFromInfo(&self.info_listener);
+                out.* = &self.info_listener;
+                return types.kResultOk;
+            }
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn queryFromInfo(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn addRefFromHost(_: *anyopaque) callconv(.C) types.uint32 {
+            return 1;
+        }
+
+        fn releaseFromHost(_: *anyopaque) callconv(.C) types.uint32 {
+            return 1;
+        }
+
+        fn addRefFromInfo(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromInfo(ptr);
+            self.info_add_ref_count += 1;
+            return self.info_add_ref_count + 1;
+        }
+
+        fn releaseFromInfo(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromInfo(ptr);
+            self.info_release_count += 1;
+            return 1;
+        }
+
+        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            out[0] = 0;
+            return types.kResultOk;
+        }
+
+        fn createInstance(_: *anyopaque, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn setChannelContextInfosCallback(ptr: *anyopaque, _: ?*ivstattributes.IAttributeList) callconv(.C) types.tresult {
+            ownerFromInfo(ptr).channel_context_count += 1;
+            return types.kResultOk;
+        }
+    };
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    try std.testing.expectEqual(types.kResultFalse, setChannelContextInfos(null));
+
+    var host = HostContext{};
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, &host.host_application));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.info_add_ref_count);
+    try std.testing.expectEqual(types.kResultOk, setChannelContextInfos(null));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.channel_context_count);
+
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.info_release_count);
 }
 
 test "gain component exposes default connection point" {
