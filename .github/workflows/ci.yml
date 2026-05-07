@@ -166,6 +166,20 @@ jobs:
           version: 0.14.0
       - name: Build target
         run: zig build -Dtarget=${{ matrix.target }}
+      - name: Build VST3 bundle
+        shell: bash
+        run: |
+          case "${{ matrix.target }}" in
+            *linux*)
+              zig build -Dtarget=${{ matrix.target }} bundle-gain-linux
+              ;;
+            *macos*)
+              zig build -Dtarget=${{ matrix.target }} bundle-gain
+              ;;
+            *windows*)
+              zig build -Dtarget=${{ matrix.target }} bundle-gain-windows
+              ;;
+          esac
 
   validator:
     name: Build VST3 validator
