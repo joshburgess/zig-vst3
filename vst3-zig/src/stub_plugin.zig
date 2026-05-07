@@ -2,7 +2,7 @@ const entry = @import("entry.zig");
 const factory = @import("factory.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const std = @import("std");
-const tuid = @import("tuid.zig");
+const stub_component = @import("stub_component.zig");
 const types = @import("pluginterfaces/base/types.zig");
 
 const StubFactory = factory.StaticFactory(.{
@@ -10,9 +10,10 @@ const StubFactory = factory.StaticFactory(.{
     .url = "https://github.com/joshburgess/zig-vst3",
 }, &.{
     .{
-        .cid = tuid.inlineUid(0xA74E7A0D, 0x6B234163, 0xA0A83EBF, 0xD06F1401),
+        .cid = stub_component.cid,
         .category = "Audio Module Class",
         .name = "zig-vst3 Stub",
+        .create = stub_component.create,
     },
 });
 

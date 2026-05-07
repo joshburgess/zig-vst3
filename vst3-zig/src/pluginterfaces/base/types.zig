@@ -15,8 +15,8 @@ pub const char16 = u16;
 pub const FIDString = [*:0]const char8;
 
 pub const kResultOk: tresult = 0;
-pub const kResultTrue: tresult = 1;
-pub const kResultFalse: tresult = 0;
+pub const kResultTrue: tresult = kResultOk;
+pub const kResultFalse: tresult = 1;
 pub const kNoInterface: tresult = -1;
 pub const kInvalidArgument: tresult = 2;
 
