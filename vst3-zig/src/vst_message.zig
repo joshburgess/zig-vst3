@@ -1,0 +1,307 @@
+const std = @import("std");
+const funknown = @import("funknown.zig");
+const interface_map = @import("interface_map.zig");
+const tuid = @import("tuid.zig");
+const types = @import("pluginterfaces/base/types.zig");
+const ivstattributes = @import("pluginterfaces/vst/ivstattributes.zig");
+const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
+const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+
+pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usize, comptime max_binary_bytes: usize) type {
+    return extern struct {
+        const Self = @This();
+        const Kind = enum(types.uint32) {
+            empty = 0,
+            int = 1,
+            float = 2,
+            string = 3,
+            binary = 4,
+        };
+
+        const Entry = extern struct {
+            id: ?ivstattributes.AttrID = null,
+            kind: types.uint32 = @intFromEnum(Kind.empty),
+            int_value: types.int64 = 0,
+            float_value: f64 = 0,
+            string_value: [max_string_chars]vsttypes.TChar = [_]vsttypes.TChar{0} ** max_string_chars,
+            binary_value: [max_binary_bytes]u8 = [_]u8{0} ** max_binary_bytes,
+            binary_size: types.uint32 = 0,
+        };
+
+        iface: ivstattributes.IAttributeList = .{ .vtable = &attribute_vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        entries: [max_entries]Entry = [_]Entry{.{}} ** max_entries,
+
+        pub fn asInterface(self: *Self) *ivstattributes.IAttributeList {
+            return &self.iface;
+        }
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *ivstattributes.IAttributeList = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const entries_for_query = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &ivstattributes.iattribute_list_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries_for_query, requested_iid, out);
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&owner(ptr).ref_count, "IAttributeList");
+        }
+
+        fn findEntry(self: *Self, id: ivstattributes.AttrID) ?*Entry {
+            const wanted = std.mem.span(id);
+            for (&self.entries) |*entry| {
+                if (entry.id) |existing| {
+                    if (std.mem.eql(u8, wanted, std.mem.span(existing))) return entry;
+                }
+            }
+            return null;
+        }
+
+        fn slotFor(self: *Self, id: ivstattributes.AttrID) ?*Entry {
+            if (self.findEntry(id)) |entry| return entry;
+            for (&self.entries) |*entry| {
+                if (entry.kind == @intFromEnum(Kind.empty)) {
+                    entry.id = id;
+                    return entry;
+                }
+            }
+            return null;
+        }
+
+        fn setInt(ptr: *anyopaque, id: ivstattributes.AttrID, value: types.int64) callconv(.C) types.tresult {
+            const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
+            entry.kind = @intFromEnum(Kind.int);
+            entry.int_value = value;
+            return types.kResultOk;
+        }
+
+        fn getInt(ptr: *anyopaque, id: ivstattributes.AttrID, out: *types.int64) callconv(.C) types.tresult {
+            const entry = owner(ptr).findEntry(id) orelse {
+                out.* = 0;
+                return types.kResultFalse;
+            };
+            if (entry.kind != @intFromEnum(Kind.int)) {
+                out.* = 0;
+                return types.kInvalidArgument;
+            }
+            out.* = entry.int_value;
+            return types.kResultOk;
+        }
+
+        fn setFloat(ptr: *anyopaque, id: ivstattributes.AttrID, value: f64) callconv(.C) types.tresult {
+            const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
+            entry.kind = @intFromEnum(Kind.float);
+            entry.float_value = value;
+            return types.kResultOk;
+        }
+
+        fn getFloat(ptr: *anyopaque, id: ivstattributes.AttrID, out: *f64) callconv(.C) types.tresult {
+            const entry = owner(ptr).findEntry(id) orelse {
+                out.* = 0;
+                return types.kResultFalse;
+            };
+            if (entry.kind != @intFromEnum(Kind.float)) {
+                out.* = 0;
+                return types.kInvalidArgument;
+            }
+            out.* = entry.float_value;
+            return types.kResultOk;
+        }
+
+        fn setString(ptr: *anyopaque, id: ivstattributes.AttrID, value: [*:0]const vsttypes.TChar) callconv(.C) types.tresult {
+            const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
+            entry.kind = @intFromEnum(Kind.string);
+            @memset(&entry.string_value, 0);
+            const len = @min(std.mem.len(value), max_string_chars - 1);
+            @memcpy(entry.string_value[0..len], value[0..len]);
+            return types.kResultOk;
+        }
+
+        fn getString(ptr: *anyopaque, id: ivstattributes.AttrID, out: [*]vsttypes.TChar, size: types.uint32) callconv(.C) types.tresult {
+            if (size == 0) return types.kInvalidArgument;
+            const entry = owner(ptr).findEntry(id) orelse {
+                out[0] = 0;
+                return types.kResultFalse;
+            };
+            if (entry.kind != @intFromEnum(Kind.string)) {
+                out[0] = 0;
+                return types.kInvalidArgument;
+            }
+            const len = @min(std.mem.len(@as([*:0]const vsttypes.TChar, @ptrCast(&entry.string_value))), size - 1);
+            @memcpy(out[0..len], entry.string_value[0..len]);
+            out[len] = 0;
+            return types.kResultOk;
+        }
+
+        fn setBinary(ptr: *anyopaque, id: ivstattributes.AttrID, value: ?*const anyopaque, size: types.uint32) callconv(.C) types.tresult {
+            if (size > max_binary_bytes) return types.kResultFalse;
+            if (size > 0 and value == null) return types.kInvalidArgument;
+            const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
+            entry.kind = @intFromEnum(Kind.binary);
+            entry.binary_size = size;
+            if (size > 0) {
+                const bytes: [*]const u8 = @ptrCast(value.?);
+                @memcpy(entry.binary_value[0..size], bytes[0..size]);
+            }
+            return types.kResultOk;
+        }
+
+        fn getBinary(ptr: *anyopaque, id: ivstattributes.AttrID, out: *?*const anyopaque, size: *types.uint32) callconv(.C) types.tresult {
+            const entry = owner(ptr).findEntry(id) orelse {
+                out.* = null;
+                size.* = 0;
+                return types.kResultFalse;
+            };
+            if (entry.kind != @intFromEnum(Kind.binary)) {
+                out.* = null;
+                size.* = 0;
+                return types.kInvalidArgument;
+            }
+            out.* = &entry.binary_value;
+            size.* = entry.binary_size;
+            return types.kResultOk;
+        }
+
+        const attribute_vtable = ivstattributes.IAttributeListVTable{
+            .queryInterface = query,
+            .addRef = addRef,
+            .release = release,
+            .setInt = setInt,
+            .getInt = getInt,
+            .setFloat = setFloat,
+            .getFloat = getFloat,
+            .setString = setString,
+            .getString = getString,
+            .setBinary = setBinary,
+            .getBinary = getBinary,
+        };
+    };
+}
+
+pub fn Message(comptime max_message_id_bytes: usize, comptime max_attributes: usize, comptime max_string_chars: usize, comptime max_binary_bytes: usize) type {
+    return extern struct {
+        const Self = @This();
+        const Attributes = AttributeList(max_attributes, max_string_chars, max_binary_bytes);
+
+        iface: ivstmessage.IMessage = .{ .vtable = &message_vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        message_id: [max_message_id_bytes]types.char8 = [_]types.char8{0} ** max_message_id_bytes,
+        attributes: Attributes = .{},
+
+        pub fn asInterface(self: *Self) *ivstmessage.IMessage {
+            return &self.iface;
+        }
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *ivstmessage.IMessage = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const entries_for_query = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &ivstmessage.imessage_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries_for_query, requested_iid, out);
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&owner(ptr).ref_count, "IMessage");
+        }
+
+        fn getMessageID(ptr: *anyopaque) callconv(.C) types.FIDString {
+            return &owner(ptr).message_id;
+        }
+
+        fn setMessageID(ptr: *anyopaque, value: types.FIDString) callconv(.C) void {
+            const self = owner(ptr);
+            @memset(&self.message_id, 0);
+            if (value == null) return;
+            const source: [*:0]const types.char8 = @ptrCast(value.?);
+            const len = @min(std.mem.len(source), max_message_id_bytes - 1);
+            @memcpy(self.message_id[0..len], source[0..len]);
+        }
+
+        fn getAttributes(ptr: *anyopaque) callconv(.C) ?*ivstattributes.IAttributeList {
+            return owner(ptr).attributes.asInterface();
+        }
+
+        const message_vtable = ivstmessage.IMessageVTable{
+            .queryInterface = query,
+            .addRef = addRef,
+            .release = release,
+            .getMessageID = getMessageID,
+            .setMessageID = setMessageID,
+            .getAttributes = getAttributes,
+        };
+    };
+}
+
+test "attribute list stores scalar string and binary values" {
+    const List = AttributeList(4, 16, 8);
+    var list = List{};
+    const iface = list.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setInt(iface, "count", 7));
+    var int_value: types.int64 = 0;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getInt(iface, "count", &int_value));
+    try std.testing.expectEqual(@as(types.int64, 7), int_value);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setFloat(iface, "ratio", 0.5));
+    var float_value: f64 = 0;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getFloat(iface, "ratio", &float_value));
+    try std.testing.expectEqual(@as(f64, 0.5), float_value);
+
+    const text: [6:0]vsttypes.TChar = .{ 'h', 'e', 'l', 'l', 'o', 0 };
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setString(iface, "text", &text));
+    var text_out: [16]vsttypes.TChar = [_]vsttypes.TChar{0} ** 16;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getString(iface, "text", &text_out, text_out.len));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'h'), text_out[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'o'), text_out[4]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text_out[5]);
+
+    const bytes = [_]u8{ 1, 2, 3 };
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setBinary(iface, "data", &bytes, bytes.len));
+    var binary_out: ?*const anyopaque = null;
+    var binary_size: types.uint32 = 0;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getBinary(iface, "data", &binary_out, &binary_size));
+    try std.testing.expectEqual(@as(types.uint32, bytes.len), binary_size);
+    const binary_bytes: [*]const u8 = @ptrCast(binary_out.?);
+    try std.testing.expectEqual(@as(u8, 1), binary_bytes[0]);
+    try std.testing.expectEqual(@as(u8, 3), binary_bytes[2]);
+}
+
+test "message stores id and exposes attributes" {
+    const TestMessage = Message(32, 4, 16, 8);
+    var message = TestMessage{};
+    const iface = message.asInterface();
+
+    iface.vtable.setMessageID(iface, "parameter-change");
+    try std.testing.expectEqualStrings("parameter-change", std.mem.span(iface.vtable.getMessageID(iface).?));
+
+    const attrs = iface.vtable.getAttributes(iface).?;
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.setInt(attrs, "id", 42));
+    var id: types.int64 = 0;
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.getInt(attrs, "id", &id));
+    try std.testing.expectEqual(@as(types.int64, 42), id);
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstmessage.imessage_iid, &queried));
+    try std.testing.expect(queried != null);
+    const queried_message: *ivstmessage.IMessage = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_message.vtable.release(queried_message));
+}

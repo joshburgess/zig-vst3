@@ -339,7 +339,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.8: Component handler and host application
 
-`IComponentHandler`, `IComponentHandler2`, `IComponentHandler3`, `IHostApplication`, `IConnectionPoint`, `IMessage`, `IAttributeList`. The reusable component and controller shells now expose default `IConnectionPoint` objects and store `IComponentHandler` for edit callbacks; message attribute helpers and deeper host-side component handler coverage remain open.
+`IComponentHandler`, `IComponentHandler2`, `IComponentHandler3`, `IHostApplication`, `IConnectionPoint`, `IMessage`, `IAttributeList`. The reusable component and controller shells now expose default `IConnectionPoint` objects and store `IComponentHandler` for edit callbacks. `vst_message.zig` provides reusable `IMessage` and fixed-capacity `IAttributeList` objects; deeper host-side component handler coverage remains open.
 
 ### Work Unit 2.9: Plug view (no GUI implementation yet)
 
