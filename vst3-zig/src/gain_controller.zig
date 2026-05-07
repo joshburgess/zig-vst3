@@ -20,7 +20,7 @@ const Controller = extern struct {
 };
 
 var controller = Controller{};
-var parameter_values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
+var parameter_state = zig_plug_bridge.ParameterState(gain_spec.Spec.Params).init(&gain_spec.parameter_set);
 
 pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
     return query(&controller.iface, @ptrCast(requested_iid), out);
@@ -115,13 +115,12 @@ fn plainParamToNormalized(_: *anyopaque, id: vsttypes.ParamID, plain: vsttypes.P
 
 fn getParamNormalized(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) vsttypes.ParamValue {
     _ = ptr;
-    return parameter_values.loadById(&gain_spec.parameter_set, id) orelse 0;
+    return parameter_state.getNormalizedById(id);
 }
 
 fn setParamNormalized(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
     _ = ptr;
-    if (!parameter_values.storeById(&gain_spec.parameter_set, id, value)) return types.kInvalidArgument;
-    return types.kResultOk;
+    return parameter_state.setNormalizedById(id, value);
 }
 
 fn setComponentHandler(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
@@ -133,23 +132,19 @@ fn createView(_: *anyopaque, _: types.FIDString) callconv(.C) ?*iplugview.IPlugV
 }
 
 pub fn gain() vsttypes.ParamValue {
-    return parameter_values.loadById(&gain_spec.parameter_set, gain_param_id) orelse gain_spec.default_gain;
+    return parameter_state.getNormalizedById(gain_param_id);
 }
 
 pub fn setGain(value: vsttypes.ParamValue) void {
-    _ = parameter_values.storeById(&gain_spec.parameter_set, gain_param_id, value);
+    _ = parameter_state.setNormalizedById(gain_param_id, value);
 }
 
 pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
-    var values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
-    const result = zig_plug_bridge.readParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &values);
-    if (result != types.kResultOk) return result;
-    zig_plug_bridge.copyParameterValues(gain_spec.Spec.Params, &values, &parameter_values);
-    return types.kResultOk;
+    return parameter_state.readFromStream(state);
 }
 
 pub fn writeGainState(state: ?*ibstream.IBStream) types.tresult {
-    return zig_plug_bridge.writeParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &parameter_values);
+    return parameter_state.writeToStream(state);
 }
 
 test "gain controller can be created as IEditController" {
