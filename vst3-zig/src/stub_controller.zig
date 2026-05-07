@@ -84,16 +84,16 @@ fn terminate(_: *anyopaque) callconv(.C) types.tresult {
     return types.kResultOk;
 }
 
-fn setComponentState(_: *anyopaque, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
-    return types.kResultOk;
+fn setComponentState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresult {
+    return readGainState(state);
 }
 
-fn setState(_: *anyopaque, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
-    return types.kResultOk;
+fn setState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresult {
+    return readGainState(state);
 }
 
-fn getState(_: *anyopaque, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
-    return types.kResultOk;
+fn getState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresult {
+    return writeGainState(state);
 }
 
 fn getParameterCount(_: *anyopaque) callconv(.C) types.int32 {
@@ -164,6 +164,25 @@ pub fn gain() vsttypes.ParamValue {
 
 pub fn setGain(value: vsttypes.ParamValue) void {
     controller.gain.store(@bitCast(clamp01(value)), .monotonic);
+}
+
+pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
+    const stream = state orelse return types.kInvalidArgument;
+    var bytes: [@sizeOf(f64)]u8 = undefined;
+    var read: types.int32 = 0;
+    const result = stream.vtable.read(stream, &bytes, bytes.len, &read);
+    if (result != types.kResultOk or read != bytes.len) return types.kResultFalse;
+    setGain(@bitCast(bytes));
+    return types.kResultOk;
+}
+
+pub fn writeGainState(state: ?*ibstream.IBStream) types.tresult {
+    const stream = state orelse return types.kInvalidArgument;
+    const bytes: [@sizeOf(f64)]u8 = @bitCast(gain());
+    var written: types.int32 = 0;
+    const result = stream.vtable.write(stream, @constCast(&bytes), bytes.len, &written);
+    if (result != types.kResultOk or written != bytes.len) return types.kResultFalse;
+    return types.kResultOk;
 }
 
 fn clamp01(value: vsttypes.ParamValue) vsttypes.ParamValue {
