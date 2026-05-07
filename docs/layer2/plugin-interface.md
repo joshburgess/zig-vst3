@@ -15,7 +15,7 @@ A plugin type declares:
 
 - `ParameterSet`: reflected descriptor metadata
 - `ParameterValues`: atomic normalized values initialized from descriptor defaults
-- lifecycle flags for optional `init`, `prepare`, `process`, and `deinit` declarations
+- lifecycle flags for optional `init`, `prepare`, `process`, `process64`, and `deinit` declarations
 - `init(params)`: builds the reflected set and value storage
 
 `validateLifecycle(Plugin)` currently accepts:
@@ -23,6 +23,7 @@ A plugin type declares:
 - `init(allocator: std.mem.Allocator) !Plugin`
 - `prepare(self: *Plugin, config: PrepareConfig) void`
 - `process(self: *Plugin, context: *process.ProcessContext(f32)) void`
+- `process64(self: *Plugin, context: *process.ProcessContext(f64)) void`
 - `deinit(self: *Plugin) void`
 
 `process.ProcessContext(Sample)` carries typed input and output channel views plus the current sample rate. The input and output views validate that each channel has the same frame count before a context is created.
@@ -46,5 +47,4 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 ## Open Work
 
 - Add parameter-change delivery to the process callback contract.
-- Add double-precision process callback support.
 - Generate Layer 1 component/controller glue from `PluginSpec`.

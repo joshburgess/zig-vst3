@@ -24,6 +24,7 @@ pub fn PluginSpec(comptime Plugin: type) type {
         pub const has_init = @hasDecl(Plugin, "init");
         pub const has_prepare = @hasDecl(Plugin, "prepare");
         pub const has_process = @hasDecl(Plugin, "process");
+        pub const has_process64 = @hasDecl(Plugin, "process64");
         pub const has_deinit = @hasDecl(Plugin, "deinit");
 
         parameter_set: ParameterSet,
@@ -68,6 +69,12 @@ pub fn validateLifecycle(comptime Plugin: type) void {
             @compileError("process must be fn (*Plugin, *process.ProcessContext(f32)) void");
         }
     }
+    if (@hasDecl(Plugin, "process64")) {
+        const process64 = @typeInfo(@TypeOf(Plugin.process64)).@"fn";
+        if (process64.params.len != 2 or process64.params[0].type.? != *Plugin or process64.params[1].type.? != *process_api.ProcessContext(f64) or process64.return_type.? != void) {
+            @compileError("process64 must be fn (*Plugin, *process.ProcessContext(f64)) void");
+        }
+    }
     if (@hasDecl(Plugin, "deinit")) {
         const deinit = @typeInfo(@TypeOf(Plugin.deinit)).@"fn";
         if (deinit.params.len != 1 or deinit.params[0].type.? != *Plugin or deinit.return_type.? != void) {
@@ -108,6 +115,7 @@ test "plugin spec detects lifecycle declarations" {
 
         pub fn prepare(_: *@This(), _: PrepareConfig) void {}
         pub fn process(_: *@This(), _: *process_api.ProcessContext(f32)) void {}
+        pub fn process64(_: *@This(), _: *process_api.ProcessContext(f64)) void {}
         pub fn deinit(_: *@This()) void {}
     };
     const Spec = PluginSpec(Meter);
@@ -116,6 +124,7 @@ test "plugin spec detects lifecycle declarations" {
     try std.testing.expect(Spec.has_init);
     try std.testing.expect(Spec.has_prepare);
     try std.testing.expect(Spec.has_process);
+    try std.testing.expect(Spec.has_process64);
     try std.testing.expect(Spec.has_deinit);
 }
 
@@ -130,5 +139,6 @@ test "plugin spec allows missing lifecycle declarations during prototype phase" 
     try std.testing.expect(!Spec.has_init);
     try std.testing.expect(!Spec.has_prepare);
     try std.testing.expect(!Spec.has_process);
+    try std.testing.expect(!Spec.has_process64);
     try std.testing.expect(!Spec.has_deinit);
 }
