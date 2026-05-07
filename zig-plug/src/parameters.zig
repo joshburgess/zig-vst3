@@ -1,5 +1,25 @@
 const std = @import("std");
 
+pub const NormalizedValue = struct {
+    bits: std.atomic.Value(u64),
+
+    pub fn init(value: f64) NormalizedValue {
+        return .{ .bits = std.atomic.Value(u64).init(@bitCast(clampNormalized(value))) };
+    }
+
+    pub fn load(self: *const NormalizedValue) f64 {
+        return @bitCast(@constCast(&self.bits).load(.monotonic));
+    }
+
+    pub fn store(self: *NormalizedValue, value: f64) void {
+        self.bits.store(@bitCast(clampNormalized(value)), .monotonic);
+    }
+};
+
+fn clampNormalized(value: f64) f64 {
+    return std.math.clamp(value, 0.0, 1.0);
+}
+
 pub const FloatParam = struct {
     id: u32,
     name: []const u8,
@@ -24,7 +44,7 @@ pub const FloatParam = struct {
     }
 
     pub fn denormalize(self: FloatParam, normalized: f64) f64 {
-        const clamped = std.math.clamp(normalized, 0.0, 1.0);
+        const clamped = clampNormalized(normalized);
         return self.min + clamped * (self.max - self.min);
     }
 
@@ -35,6 +55,15 @@ pub const FloatParam = struct {
     pub fn formatPercent(self: FloatParam, normalized: f64, buffer: []u8) ![]const u8 {
         const percent = @as(u32, @intFromFloat(@round(self.normalize(self.denormalize(normalized)) * 100.0)));
         return std.fmt.bufPrint(buffer, "{d}%", .{percent});
+    }
+
+    pub fn formatPlain(self: FloatParam, normalized: f64, buffer: []u8) ![]const u8 {
+        return std.fmt.bufPrint(buffer, "{d:.3}", .{self.denormalize(normalized)});
+    }
+
+    pub fn parsePlain(self: FloatParam, text: []const u8) !f64 {
+        const value = try std.fmt.parseFloat(f64, std.mem.trim(u8, text, " \t\r\n"));
+        return self.normalize(value);
     }
 };
 
@@ -62,13 +91,22 @@ pub const IntParam = struct {
     }
 
     pub fn denormalize(self: IntParam, normalized: f64) i64 {
-        const clamped = std.math.clamp(normalized, 0.0, 1.0);
+        const clamped = clampNormalized(normalized);
         const range = @as(f64, @floatFromInt(self.max - self.min));
         return self.min + @as(i64, @intFromFloat(@round(clamped * range)));
     }
 
     pub fn defaultNormalized(self: IntParam) f64 {
         return self.normalize(self.default);
+    }
+
+    pub fn formatPlain(self: IntParam, normalized: f64, buffer: []u8) ![]const u8 {
+        return std.fmt.bufPrint(buffer, "{d}", .{self.denormalize(normalized)});
+    }
+
+    pub fn parsePlain(self: IntParam, text: []const u8) !f64 {
+        const value = try std.fmt.parseInt(i64, std.mem.trim(u8, text, " \t\r\n"), 10);
+        return self.normalize(value);
     }
 };
 
@@ -87,6 +125,27 @@ pub const BoolParam = struct {
 
     pub fn defaultNormalized(self: BoolParam) f64 {
         return self.normalize(self.default);
+    }
+
+    pub fn formatPlain(self: BoolParam, normalized: f64) []const u8 {
+        return if (self.denormalize(normalized)) "On" else "Off";
+    }
+
+    pub fn parsePlain(self: BoolParam, text: []const u8) !f64 {
+        const trimmed = std.mem.trim(u8, text, " \t\r\n");
+        if (std.ascii.eqlIgnoreCase(trimmed, "on") or
+            std.ascii.eqlIgnoreCase(trimmed, "true") or
+            std.mem.eql(u8, trimmed, "1"))
+        {
+            return self.normalize(true);
+        }
+        if (std.ascii.eqlIgnoreCase(trimmed, "off") or
+            std.ascii.eqlIgnoreCase(trimmed, "false") or
+            std.mem.eql(u8, trimmed, "0"))
+        {
+            return self.normalize(false);
+        }
+        return error.InvalidBool;
     }
 };
 
@@ -107,7 +166,7 @@ pub fn EnumParam(comptime Enum: type) type {
         }
 
         pub fn denormalize(_: Self, normalized: f64) Enum {
-            const clamped = std.math.clamp(normalized, 0.0, 1.0);
+            const clamped = clampNormalized(normalized);
             const max_index = info.fields.len - 1;
             const index = @as(usize, @intFromFloat(@round(clamped * @as(f64, @floatFromInt(max_index)))));
             return @enumFromInt(index);
@@ -119,6 +178,20 @@ pub fn EnumParam(comptime Enum: type) type {
 
         pub fn label(_: Self, value: Enum) []const u8 {
             return @tagName(value);
+        }
+
+        pub fn formatPlain(self: Self, normalized: f64) []const u8 {
+            return self.label(self.denormalize(normalized));
+        }
+
+        pub fn parsePlain(self: Self, text: []const u8) !f64 {
+            const trimmed = std.mem.trim(u8, text, " \t\r\n");
+            inline for (info.fields) |field| {
+                if (std.mem.eql(u8, trimmed, field.name)) {
+                    return self.normalize(@enumFromInt(field.value));
+                }
+            }
+            return error.InvalidEnumTag;
         }
     };
 }
@@ -133,6 +206,16 @@ test "float parameter clamps defaults and values" {
     try std.testing.expectEqual(@as(f64, 1.0), param.normalize(12.0));
     try std.testing.expectEqual(@as(f64, -12.0), param.denormalize(-1.0));
     try std.testing.expectEqual(@as(f64, 6.0), param.denormalize(2.0));
+}
+
+test "normalized value clamps and updates atomically" {
+    var value = NormalizedValue.init(2.0);
+
+    try std.testing.expectEqual(@as(f64, 1.0), value.load());
+    value.store(-1.0);
+    try std.testing.expectEqual(@as(f64, 0.0), value.load());
+    value.store(0.25);
+    try std.testing.expectEqual(@as(f64, 0.25), value.load());
 }
 
 test "int parameter clamps and rounds normalized values" {
@@ -202,4 +285,23 @@ test "float parameter formats percent values" {
     try std.testing.expectEqualStrings("0%", try param.formatPercent(0.0, &buffer));
     try std.testing.expectEqualStrings("50%", try param.formatPercent(0.5, &buffer));
     try std.testing.expectEqualStrings("100%", try param.formatPercent(2.0, &buffer));
+}
+
+test "parameters format and parse plain values" {
+    const gain = FloatParam.init(0, "Gain", 0.0, 1.0, 0.25);
+    const voices = IntParam.init(1, "Voices", 1, 16, 4);
+    const bypass = BoolParam{ .id = 2, .name = "Bypass" };
+    const Mode = enum { clean, crunch, lead };
+    const ModeParam = EnumParam(Mode);
+    const mode = ModeParam{ .id = 3, .name = "Mode", .default = .clean };
+    var buffer: [16]u8 = undefined;
+
+    try std.testing.expectEqualStrings("0.500", try gain.formatPlain(0.5, &buffer));
+    try std.testing.expectApproxEqAbs(0.75, try gain.parsePlain(" 0.75 "), 0.000001);
+    try std.testing.expectEqualStrings("9", try voices.formatPlain(0.5, &buffer));
+    try std.testing.expectApproxEqAbs(1.0, try voices.parsePlain("16"), 0.000001);
+    try std.testing.expectEqualStrings("On", bypass.formatPlain(1.0));
+    try std.testing.expectEqual(@as(f64, 0.0), try bypass.parsePlain("off"));
+    try std.testing.expectEqualStrings("crunch", mode.formatPlain(0.5));
+    try std.testing.expectEqual(@as(f64, 1.0), try mode.parsePlain("lead"));
 }
