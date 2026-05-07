@@ -95,6 +95,30 @@ pub const Events = struct {
     }
 };
 
+pub const EventWriter = struct {
+    storage: []Event,
+    count: usize = 0,
+    frame_count: usize,
+
+    pub fn init(storage: []Event, frame_count: usize) EventWriter {
+        return .{
+            .storage = storage,
+            .frame_count = frame_count,
+        };
+    }
+
+    pub fn append(self: *EventWriter, event: Event) !void {
+        if (event.sample_offset >= self.frame_count) return error.EventOutsideBlock;
+        if (self.count >= self.storage.len) return error.EventStorageFull;
+        self.storage[self.count] = event;
+        self.count += 1;
+    }
+
+    pub fn events(self: *const EventWriter) Events {
+        return .{ .items = self.storage[0..self.count] };
+    }
+};
+
 pub fn AudioInputs(comptime Sample: type) type {
     return struct {
         const Self = @This();
@@ -156,6 +180,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         outputs: AudioOutputs(Sample),
         parameter_changes: ParameterChanges = .{},
         events: Events = .{},
+        output_events: ?*EventWriter = null,
 
         pub fn frameCount(self: @This()) usize {
             return @min(self.inputs.frame_count, self.outputs.frame_count);
@@ -256,4 +281,17 @@ test "events reject values outside the process block" {
     };
 
     try std.testing.expectError(error.EventOutsideBlock, Events.init(&items, 4));
+}
+
+test "event writer validates offsets and capacity" {
+    var storage: [1]Event = undefined;
+    var writer = EventWriter.init(&storage, 4);
+
+    try writer.append(.{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .pitch = 60 });
+    try std.testing.expectEqual(@as(usize, 1), writer.events().items.len);
+    try std.testing.expectError(error.EventStorageFull, writer.append(.{ .kind = .note_off, .bus_index = 0, .sample_offset = 1, .pitch = 60 }));
+
+    var empty_storage: [1]Event = undefined;
+    var empty_writer = EventWriter.init(&empty_storage, 4);
+    try std.testing.expectError(error.EventOutsideBlock, empty_writer.append(.{ .kind = .note_on, .bus_index = 0, .sample_offset = 4 }));
 }

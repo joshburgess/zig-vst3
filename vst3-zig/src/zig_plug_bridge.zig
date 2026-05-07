@@ -338,6 +338,7 @@ pub fn makeProcessContext(
     data: *const ivstaudioprocessor.ProcessData,
     parameter_changes: plug.process.ParameterChanges,
     events: plug.process.Events,
+    output_events: ?*plug.process.EventWriter,
 ) !plug.process.ProcessContext(Sample) {
     if (data.numSamples < 0) return error.InvalidFrameCount;
     const frame_count: usize = @intCast(data.numSamples);
@@ -358,6 +359,7 @@ pub fn makeProcessContext(
         .outputs = try plug.process.AudioOutputs(Sample).init(output_channels[0..channel_count]),
         .parameter_changes = parameter_changes,
         .events = events,
+        .output_events = output_events,
     };
 }
 
@@ -366,6 +368,7 @@ pub fn makeMainAudioProcessContext(
     data: *const ivstaudioprocessor.ProcessData,
     parameter_changes: plug.process.ParameterChanges,
     events: plug.process.Events,
+    output_events: ?*plug.process.EventWriter,
 ) !plug.process.ProcessContext(Sample) {
     if (data.numInputs <= 0 or data.numOutputs <= 0 or data.inputs == null or data.outputs == null) {
         return error.MissingMainAudioBus;
@@ -375,20 +378,21 @@ pub fn makeMainAudioProcessContext(
     if (input.numChannels <= 0 or output.numChannels <= 0) {
         return error.MissingMainAudioChannels;
     }
-    return makeProcessContext(Sample, input, output, data, parameter_changes, events);
+    return makeProcessContext(Sample, input, output, data, parameter_changes, events, output_events);
 }
 
 pub fn processMainAudio(
     data: *const ivstaudioprocessor.ProcessData,
     parameter_changes: plug.process.ParameterChanges,
     events: plug.process.Events,
+    output_events: ?*plug.process.EventWriter,
     processor: anytype,
 ) types.tresult {
     if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
-        var context = makeMainAudioProcessContext(f32, data, parameter_changes, events) catch return types.kResultOk;
+        var context = makeMainAudioProcessContext(f32, data, parameter_changes, events, output_events) catch return types.kResultOk;
         processor.process(f32, &context);
     } else {
-        var context = makeMainAudioProcessContext(f64, data, parameter_changes, events) catch return types.kResultOk;
+        var context = makeMainAudioProcessContext(f64, data, parameter_changes, events, output_events) catch return types.kResultOk;
         processor.process(f64, &context);
     }
     return types.kResultOk;
@@ -1290,7 +1294,7 @@ test "zig-plug bridge builds process context from VST3 buffers" {
         .numSamples = 2,
     };
 
-    const context = try makeProcessContext(f32, input, output, &data, .{}, .{});
+    const context = try makeProcessContext(f32, input, output, &data, .{}, .{}, null);
 
     try std.testing.expectEqual(@as(usize, 2), context.frameCount());
     try std.testing.expectEqual(@as(f32, 3.0), context.inputs.channel(1).?[0]);
@@ -1321,7 +1325,7 @@ test "zig-plug bridge builds process context from main VST3 buses" {
         .numSamples = 2,
     };
 
-    const context = try makeMainAudioProcessContext(f32, &data, .{}, .{});
+    const context = try makeMainAudioProcessContext(f32, &data, .{}, .{}, null);
 
     try std.testing.expectEqual(@as(usize, 2), context.frameCount());
     try std.testing.expectEqual(@as(f32, 4.0), context.inputs.channel(1).?[1]);
@@ -1334,7 +1338,7 @@ test "zig-plug bridge rejects missing main process buses" {
         .numSamples = 2,
     };
 
-    try std.testing.expectError(error.MissingMainAudioBus, makeMainAudioProcessContext(f32, &data, .{}, .{}));
+    try std.testing.expectError(error.MissingMainAudioBus, makeMainAudioProcessContext(f32, &data, .{}, .{}, null));
 }
 
 test "zig-plug bridge dispatches main audio processing by sample size" {
@@ -1371,9 +1375,53 @@ test "zig-plug bridge dispatches main audio processing by sample size" {
         .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
     };
 
-    try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, Doubler{}));
+    try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, null, Doubler{}));
     try std.testing.expectEqual(@as(f32, 2.0), output_samples[0]);
     try std.testing.expectEqual(@as(f32, 4.0), output_samples[1]);
+}
+
+test "zig-plug bridge exposes output event writer to processors" {
+    const EventEmitter = struct {
+        pub fn process(_: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
+            const writer = context.output_events orelse return;
+            writer.append(.{
+                .kind = .note_on,
+                .bus_index = 0,
+                .sample_offset = 1,
+                .channel = 0,
+                .pitch = 60,
+                .velocity = 0.75,
+            }) catch {};
+        }
+    };
+
+    var input_samples = [_]f32{ 1.0, 2.0 };
+    var output_samples = [_]f32{ 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f32{&input_samples};
+    var output_channel_ptrs = [_][*]f32{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+    }};
+    const data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+    };
+    var event_storage: [1]plug.process.Event = undefined;
+    var writer = plug.process.EventWriter.init(&event_storage, 2);
+
+    try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, &writer, EventEmitter{}));
+    try std.testing.expectEqual(@as(usize, 1), writer.events().items.len);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, writer.events().items[0].kind);
+    try std.testing.expectEqual(@as(usize, 1), writer.events().items[0].sample_offset);
 }
 
 fn expectString128(expected: []const u8, actual: *const vsttypes.String128) !void {
