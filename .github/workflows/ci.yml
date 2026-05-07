@@ -130,6 +130,9 @@ jobs:
       - name: Check multi-interface C ABI
         if: runner.os != 'Windows'
         run: zig build multi-interface-abi
+      - name: Build VST3 validator
+        if: runner.os == 'macOS'
+        run: zig build validator
       - name: Phase 1 integration
         if: runner.os != 'Windows'
         run: zig build phase1
