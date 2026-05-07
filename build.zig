@@ -33,6 +33,17 @@ pub fn build(b: *std.Build) void {
     check_entry_symbols.addFileArg(stub.getEmittedBin());
     entry_symbols_step.dependOn(&check_entry_symbols.step);
 
+    const bundle_stub_step = b.step("bundle-stub", "Build a native VST3 bundle for the stub plugin");
+    const bundle_stub = b.addSystemCommand(&.{"scripts/bundle_macos_vst3.sh"});
+    bundle_stub.addFileArg(stub.getEmittedBin());
+    bundle_stub.addArgs(&.{
+        b.getInstallPath(.prefix, "bundle/zig_vst3_stub.vst3"),
+        "dev.zig-vst3.stub",
+        "0.1.0",
+        "zig_vst3_stub",
+    });
+    bundle_stub_step.dependOn(&bundle_stub.step);
+
     const vst3_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("vst3-zig/src/root.zig"),
