@@ -31,7 +31,7 @@ A staged plan for building a VST3 plugin framework in Zig, structured for delega
 - A bundled GUI library (we expose the `IPlugView` hook; users plug in their own toolkit)
 - Plugin sandboxing or out-of-process hosting
 
-**Current status.** Layer 1 now builds reusable VST3 effect shells, emits `.vst3` bundles for macOS, Linux, and Windows, and validates the bundled gain, bypass, mode-gain, voice-mix, note-gate, and event-echo examples locally on macOS with `zig build validate-examples`.
+**Current status.** Layer 1 now builds reusable VST3 effect shells, emits `.vst3` bundles for macOS, Linux, and Windows, and validates the bundled gain, bypass, mode-gain, voice-mix, note-gate, and event-echo examples locally on macOS with `zig build validate-examples`. The reusable shells now expose conservative default `IConnectionPoint` implementations for host/plugin connection setup.
 
 **Total estimated duration.** 6–9 months for a Layer 2 release that's genuinely useful to others. The first Layer 1 gain plugin milestone is complete locally on macOS; the remaining Layer 1 work is hardening the raw API, CI coverage, and host smoke testing.
 
@@ -339,7 +339,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.8: Component handler and host application
 
-`IComponentHandler`, `IComponentHandler2`, `IComponentHandler3`, `IHostApplication`, `IConnectionPoint`, `IMessage`, `IAttributeList`.
+`IComponentHandler`, `IComponentHandler2`, `IComponentHandler3`, `IHostApplication`, `IConnectionPoint`, `IMessage`, `IAttributeList`. The reusable component and controller shells now expose default `IConnectionPoint` objects; message attribute helpers and host-side component handler coverage remain open.
 
 ### Work Unit 2.9: Plug view (no GUI implementation yet)
 
