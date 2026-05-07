@@ -26,7 +26,7 @@ A plugin type declares:
 - `process64(self: *Plugin, context: *process.ProcessContext(f64)) void`
 - `deinit(self: *Plugin) void`
 
-`process.ProcessContext(Sample)` carries typed input and output channel views plus the current sample rate. The input and output views validate that each channel has the same frame count before a context is created.
+`process.ProcessContext(Sample)` carries typed input and output channel views, parameter changes, and the current sample rate. The input and output views validate that each channel has the same frame count before a context is created. Parameter changes validate normalized values and sample offsets within the current block.
 
 ## Example
 
@@ -46,5 +46,4 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 
 ## Open Work
 
-- Add parameter-change delivery to the process callback contract.
 - Generate Layer 1 component/controller glue from `PluginSpec`.

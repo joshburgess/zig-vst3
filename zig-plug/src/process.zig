@@ -1,5 +1,35 @@
 const std = @import("std");
 
+pub const ParameterChange = struct {
+    id: u32,
+    sample_offset: usize,
+    normalized: f64,
+};
+
+pub const ParameterChanges = struct {
+    items: []const ParameterChange = &.{},
+
+    pub fn init(items: []const ParameterChange, frame_count: usize) !ParameterChanges {
+        for (items) |item| {
+            if (item.sample_offset >= frame_count) {
+                return error.ParameterChangeOutsideBlock;
+            }
+            if (item.normalized < 0.0 or item.normalized > 1.0 or std.math.isNan(item.normalized)) {
+                return error.ParameterChangeOutsideNormalizedRange;
+            }
+        }
+        return .{ .items = items };
+    }
+
+    pub fn latest(self: ParameterChanges, id: u32) ?ParameterChange {
+        var result: ?ParameterChange = null;
+        for (self.items) |item| {
+            if (item.id == id) result = item;
+        }
+        return result;
+    }
+};
+
 pub fn AudioInputs(comptime Sample: type) type {
     return struct {
         const Self = @This();
@@ -59,6 +89,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         sample_rate: f64,
         inputs: AudioInputs(Sample),
         outputs: AudioOutputs(Sample),
+        parameter_changes: ParameterChanges = .{},
 
         pub fn frameCount(self: @This()) usize {
             return @min(self.inputs.frame_count, self.outputs.frame_count);
@@ -100,4 +131,32 @@ test "process context reports usable frame count" {
     };
 
     try std.testing.expectEqual(@as(usize, 3), context.frameCount());
+}
+
+test "parameter changes validate block offsets and normalized values" {
+    const changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 0, .normalized = 0.25 },
+        .{ .id = 7, .sample_offset = 3, .normalized = 0.75 },
+    };
+    const view = try ParameterChanges.init(&changes, 4);
+
+    try std.testing.expectEqual(@as(usize, 2), view.items.len);
+    try std.testing.expectEqual(@as(f64, 0.75), view.latest(7).?.normalized);
+    try std.testing.expectEqual(@as(?ParameterChange, null), view.latest(8));
+}
+
+test "parameter changes reject values outside the process block" {
+    const changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 4, .normalized = 0.25 },
+    };
+
+    try std.testing.expectError(error.ParameterChangeOutsideBlock, ParameterChanges.init(&changes, 4));
+}
+
+test "parameter changes reject denormalized values" {
+    const changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 0, .normalized = 1.5 },
+    };
+
+    try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, ParameterChanges.init(&changes, 4));
 }
