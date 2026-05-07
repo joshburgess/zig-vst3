@@ -218,6 +218,12 @@ pub fn build(b: *std.Build) void {
     validate_examples_step.dependOn(validate_mode_gain_step);
     validate_examples_step.dependOn(validate_voice_mix_step);
 
+    const bundle_examples_step = b.step("bundle-examples", "Build native VST3 bundles for all example plugins");
+    bundle_examples_step.dependOn(bundle_gain_step.native);
+    bundle_examples_step.dependOn(bundle_bypass_step.native);
+    bundle_examples_step.dependOn(bundle_mode_gain_step.native);
+    bundle_examples_step.dependOn(bundle_voice_mix_step.native);
+
     const bundle_examples_linux_step = b.step("bundle-examples-linux", "Build Linux VST3 bundles for all example plugins");
     bundle_examples_linux_step.dependOn(bundle_gain_step.linux);
     bundle_examples_linux_step.dependOn(bundle_bypass_step.linux);

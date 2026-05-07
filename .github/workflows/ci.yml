@@ -143,7 +143,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: zig-vst3-gain-${{ matrix.os }}
+          name: zig-vst3-examples-${{ matrix.os }}
           path: zig-out/
 
   cross-compile:
@@ -171,13 +171,13 @@ jobs:
         run: |
           case "${{ matrix.target }}" in
             *linux*)
-              zig build -Dtarget=${{ matrix.target }} bundle-gain-linux
+              zig build -Dtarget=${{ matrix.target }} bundle-examples-linux
               ;;
             *macos*)
-              zig build -Dtarget=${{ matrix.target }} bundle-gain
+              zig build -Dtarget=${{ matrix.target }} bundle-examples
               ;;
             *windows*)
-              zig build -Dtarget=${{ matrix.target }} bundle-gain-windows
+              zig build -Dtarget=${{ matrix.target }} bundle-examples-windows
               ;;
           esac
 
