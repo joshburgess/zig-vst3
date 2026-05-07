@@ -4,6 +4,7 @@ const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const gain_spec = @import("gain_spec.zig");
+const plug_process = @import("zig-plug-core").process;
 const types = @import("pluginterfaces/base/types.zig");
 const interface_map = @import("interface_map.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
@@ -141,6 +142,10 @@ pub fn gain() vsttypes.ParamValue {
 
 pub fn setGain(value: vsttypes.ParamValue) void {
     _ = parameters.setNormalized(gain_param_id, value);
+}
+
+pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
+    parameters.applyChanges(changes);
 }
 
 pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
