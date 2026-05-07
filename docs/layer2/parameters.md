@@ -22,7 +22,9 @@ Hosts speak normalized `0.0...1.0` values. Descriptors clamp normalized input be
 
 Parameter state that may be read by the audio thread should use `NormalizedValue`. It uses monotonic atomic loads and stores because parameter values are independent scalars; cross-parameter ordering is not part of the contract.
 
+`BoolParam.is_bypass` marks a boolean parameter as the plugin bypass control for hosts that recognize dedicated bypass metadata.
+
 ## Open Work
 
-- Add bundled VST3 examples that exercise reflected parameters through the reusable controller shell.
+- Add bundled VST3 examples that exercise more reflected parameter kinds through the reusable controller shell.
 - Add host smoke test notes for reflected string conversion and automation behavior.
