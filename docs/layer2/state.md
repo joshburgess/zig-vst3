@@ -7,7 +7,7 @@
 - 16-bit parameter entry count
 - repeated entries of parameter id plus normalized `f64` bits
 
-Loading ignores unknown parameter ids, which lets newer plugin versions remove parameters without breaking older saved states. Missing parameters keep their current value, so newer plugin versions can add parameters and keep descriptor defaults when loading older state.
+Loading ignores unknown parameter ids, which lets newer plugin versions remove parameters without breaking older saved states. Missing parameters keep their current value, so newer plugin versions can add parameters and keep descriptor defaults when loading older state. Renamed parameters can be restored through explicit old-id to new-id migrations.
 
 The VST3 bridge reads and writes this format directly through `IBStream`, so state loading is not tied to the current parameter count. Older shorter states can load into newer plugins, and newer states with extra ids can load into older plugins.
 
@@ -16,8 +16,8 @@ The VST3 bridge reads and writes this format directly through `IBStream`, so sta
 - `state.encodedSize(Params)`: byte count for a full parameter snapshot.
 - `state.writeParameterState(Params, set, values, writer)`: writes all reflected parameter values.
 - `state.readParameterState(Params, set, values, reader)`: reads entries and updates matching reflected values.
+- `state.readParameterStateWithMigrations(Params, set, values, reader, migrations)`: reads entries and maps renamed parameter ids before lookup.
 
 ## Open Work
 
 - Add an optional debug JSON format.
-- Add explicit migration hooks for parameter renames.

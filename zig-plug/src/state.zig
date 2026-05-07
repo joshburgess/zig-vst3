@@ -4,6 +4,11 @@ const parameters = @import("parameters.zig");
 const magic = "ZPLGSTAT";
 const version: u16 = 1;
 
+pub const ParameterIdMigration = struct {
+    old_id: u32,
+    new_id: u32,
+};
+
 pub fn encodedSize(comptime Params: type) usize {
     return magic.len + @sizeOf(u16) + @sizeOf(u16) + parameters.ParameterSet(Params).count * (@sizeOf(u32) + @sizeOf(u64));
 }
@@ -29,6 +34,16 @@ pub fn readParameterState(
     values: *parameters.ParameterValues(Params),
     reader: anytype,
 ) !void {
+    try readParameterStateWithMigrations(Params, set, values, reader, &.{});
+}
+
+pub fn readParameterStateWithMigrations(
+    comptime Params: type,
+    set: *const parameters.ParameterSet(Params),
+    values: *parameters.ParameterValues(Params),
+    reader: anytype,
+    migrations: []const ParameterIdMigration,
+) !void {
     var header: [magic.len]u8 = undefined;
     try reader.readNoEof(&header);
     if (!std.mem.eql(u8, &header, magic)) return error.InvalidStateMagic;
@@ -38,10 +53,17 @@ pub fn readParameterState(
     for (0..count) |_| {
         const id = try reader.readInt(u32, .little);
         const normalized: f64 = @bitCast(try reader.readInt(u64, .little));
-        if (set.indexOfId(id)) |index| {
+        if (set.indexOfId(migratedId(id, migrations))) |index| {
             _ = values.store(index, normalized);
         }
     }
+}
+
+fn migratedId(id: u32, migrations: []const ParameterIdMigration) u32 {
+    for (migrations) |migration| {
+        if (migration.old_id == id) return migration.new_id;
+    }
+    return id;
 }
 
 test "parameter state round-trips normalized values" {
@@ -91,4 +113,33 @@ test "parameter state ignores unknown parameter ids" {
     try readParameterState(Params, &set, &values, in_stream.reader());
 
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
+}
+
+test "parameter state migrates renamed parameter ids" {
+    const OldParams = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
+    };
+    const NewParams = struct {
+        output: parameters.FloatParam = parameters.FloatParam.init(9, "Output", 0.0, 1.0, 1.0),
+    };
+    const OldSet = parameters.ParameterSet(OldParams);
+    const OldValues = parameters.ParameterValues(OldParams);
+    const NewSet = parameters.ParameterSet(NewParams);
+    const NewValues = parameters.ParameterValues(NewParams);
+    const old_set = OldSet.init(.{});
+    const new_set = NewSet.init(.{});
+    var old_values = OldValues.init(&old_set);
+    var new_values = NewValues.init(&new_set);
+    var bytes: [encodedSize(OldParams)]u8 = undefined;
+
+    try std.testing.expect(old_values.storeById(&old_set, 1, 0.25));
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    try writeParameterState(OldParams, &old_set, &old_values, out_stream.writer());
+
+    var in_stream = std.io.fixedBufferStream(&bytes);
+    try readParameterStateWithMigrations(NewParams, &new_set, &new_values, in_stream.reader(), &.{
+        .{ .old_id = 1, .new_id = 9 },
+    });
+
+    try std.testing.expectEqual(@as(?f64, 0.25), new_values.loadById(&new_set, 9));
 }
