@@ -1,6 +1,7 @@
 const gain_controller = @import("gain_controller.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ivstattributes = @import("pluginterfaces/vst/ivstattributes.zig");
+const ivstautomationstate = @import("pluginterfaces/vst/ivstautomationstate.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
@@ -43,6 +44,10 @@ pub const create = Effect.create;
 
 pub fn setChannelContextInfos(attributes: ?*ivstattributes.IAttributeList) types.tresult {
     return Effect.setChannelContextInfos(attributes);
+}
+
+pub fn setAutomationState(state: types.int32) types.tresult {
+    return Effect.setAutomationState(state);
 }
 
 test "gain component can be created as IComponent" {
@@ -171,7 +176,7 @@ test "gain component queries host application during initialize" {
 
     var host = HostApplication{};
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, &host.iface));
-    try std.testing.expectEqual(@as(types.uint32, 2), host.query_count);
+    try std.testing.expectEqual(@as(types.uint32, 3), host.query_count);
     try std.testing.expectEqual(@as(types.uint32, 1), host.add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 0), host.release_count);
 
@@ -292,6 +297,120 @@ test "gain component stores channel context info listener" {
 
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
     try std.testing.expectEqual(@as(types.uint32, 1), host.info_release_count);
+}
+
+test "gain component stores automation state host interface" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivsthostapplication = @import("pluginterfaces/vst/ivsthostapplication.zig");
+    const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+
+    const HostContext = extern struct {
+        const Self = @This();
+
+        host_application: ivsthostapplication.IHostApplication = .{ .vtable = &host_vtable },
+        automation_state: ivstautomationstate.IAutomationState = .{ .vtable = &automation_vtable },
+        automation_add_ref_count: types.uint32 = 0,
+        automation_release_count: types.uint32 = 0,
+        last_state: types.int32 = ivstautomationstate.AutomationStates.kNoAutomation,
+
+        const host_vtable = ivsthostapplication.IHostApplicationVTable{
+            .queryInterface = queryFromHost,
+            .addRef = addRefFromHost,
+            .release = releaseFromHost,
+            .getName = getName,
+            .createInstance = createInstance,
+        };
+
+        const automation_vtable = ivstautomationstate.IAutomationStateVTable{
+            .queryInterface = queryFromAutomation,
+            .addRef = addRefFromAutomation,
+            .release = releaseFromAutomation,
+            .setAutomationState = setAutomationStateCallback,
+        };
+
+        fn ownerFromHost(ptr: *anyopaque) *Self {
+            const iface: *ivsthostapplication.IHostApplication = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("host_application", iface);
+        }
+
+        fn ownerFromAutomation(ptr: *anyopaque) *Self {
+            const iface: *ivstautomationstate.IAutomationState = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("automation_state", iface);
+        }
+
+        fn queryFromHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromHost(ptr);
+            if (std.mem.eql(u8, requested_iid, &ivsthostapplication.ihost_application_iid)) {
+                out.* = ptr;
+                return types.kResultOk;
+            }
+            if (std.mem.eql(u8, requested_iid, &ivstautomationstate.iautomation_state_iid)) {
+                _ = addRefFromAutomation(&self.automation_state);
+                out.* = &self.automation_state;
+                return types.kResultOk;
+            }
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn queryFromAutomation(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn addRefFromHost(_: *anyopaque) callconv(.C) types.uint32 {
+            return 1;
+        }
+
+        fn releaseFromHost(_: *anyopaque) callconv(.C) types.uint32 {
+            return 1;
+        }
+
+        fn addRefFromAutomation(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromAutomation(ptr);
+            self.automation_add_ref_count += 1;
+            return self.automation_add_ref_count + 1;
+        }
+
+        fn releaseFromAutomation(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromAutomation(ptr);
+            self.automation_release_count += 1;
+            return 1;
+        }
+
+        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            out[0] = 0;
+            return types.kResultOk;
+        }
+
+        fn createInstance(_: *anyopaque, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn setAutomationStateCallback(ptr: *anyopaque, state: types.int32) callconv(.C) types.tresult {
+            ownerFromAutomation(ptr).last_state = state;
+            return types.kResultOk;
+        }
+    };
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    try std.testing.expectEqual(types.kResultFalse, setAutomationState(ivstautomationstate.AutomationStates.kReadState));
+
+    var host = HostContext{};
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, &host.host_application));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.automation_add_ref_count);
+    try std.testing.expectEqual(types.kResultOk, setAutomationState(ivstautomationstate.AutomationStates.kReadWriteState));
+    try std.testing.expectEqual(ivstautomationstate.AutomationStates.kReadWriteState, host.last_state);
+
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.automation_release_count);
 }
 
 test "gain component exposes default connection point" {
