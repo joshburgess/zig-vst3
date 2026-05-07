@@ -3,6 +3,7 @@ const factory = @import("factory.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const std = @import("std");
 const stub_component = @import("stub_component.zig");
+const stub_controller = @import("stub_controller.zig");
 const types = @import("pluginterfaces/base/types.zig");
 
 const StubFactory = factory.StaticFactory(.{
@@ -15,6 +16,12 @@ const StubFactory = factory.StaticFactory(.{
         .name = "zig-vst3 Stub",
         .create = stub_component.create,
     },
+    .{
+        .cid = stub_controller.cid,
+        .category = "Component Controller Class",
+        .name = "zig-vst3 Stub Controller",
+        .create = stub_controller.create,
+    },
 });
 
 pub usingnamespace entry.Exports(StubFactory);
@@ -23,7 +30,7 @@ test "stub export returns enumerable factory" {
     const plugin_factory = StubFactory.getPluginFactory().?;
     var class_info: ipluginbase.PClassInfo = .{};
 
-    try std.testing.expectEqual(@as(i32, 1), plugin_factory.vtable.countClasses(plugin_factory));
+    try std.testing.expectEqual(@as(i32, 2), plugin_factory.vtable.countClasses(plugin_factory));
     try std.testing.expectEqual(types.kResultOk, plugin_factory.vtable.getClassInfo(plugin_factory, 0, &class_info));
     try std.testing.expectEqualStrings("zig-vst3 Stub", std.mem.sliceTo(&class_info.name, 0));
 }

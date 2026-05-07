@@ -5,6 +5,7 @@ pub const factory = @import("factory.zig");
 pub const funknown = @import("funknown.zig");
 pub const multi_interface = @import("multi_interface.zig");
 pub const stub_component = @import("stub_component.zig");
+pub const stub_controller = @import("stub_controller.zig");
 pub const pluginterfaces = struct {
     pub const base = @import("pluginterfaces/base/root.zig");
     pub const gui = @import("pluginterfaces/gui/root.zig");

@@ -5,6 +5,7 @@ const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+const stub_controller = @import("stub_controller.zig");
 const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
@@ -97,8 +98,8 @@ fn terminate(_: *anyopaque) callconv(.C) types.tresult {
 }
 
 fn getControllerClassId(_: *anyopaque, out: *tuid.TUID) callconv(.C) types.tresult {
-    out.* = [_]u8{0} ** 16;
-    return types.kNoInterface;
+    out.* = stub_controller.cid;
+    return types.kResultOk;
 }
 
 fn setIoMode(_: *anyopaque, _: vsttypes.IoMode) callconv(.C) types.tresult {
