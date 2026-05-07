@@ -2,7 +2,7 @@
 
 Zig bindings and framework experiments for building VST3 audio plugins.
 
-The project is at the repository scaffold stage. The current tree contains:
+The current tree contains:
 
 - `vst3-zig/`: raw VST3 binding layer
 - `zig-plug/`: higher-level plugin framework layer
@@ -10,14 +10,19 @@ The project is at the repository scaffold stage. The current tree contains:
 
 ## Current Status
 
-Phase 1 COM/vtable groundwork is in progress:
+Layer 1 now builds a minimal gain VST3 plugin that passes Steinberg's official validator locally on macOS.
+
+Implemented pieces include:
 
 - TUID/FUID byte layout with SDK fixture comparison
 - Explicit `FUnknown` vtable prototype
 - Atomic reference counting with allocator-backed destruction tests
 - Synthetic multi-interface query dispatch
 - C ABI harnesses for `FUnknown` and multi-interface dispatch
-- Initial `pluginterfaces/base` translations for `FUnknown`, `IPluginBase`, and plugin factory structs
+- `pluginterfaces/base`, `pluginterfaces/gui`, and broad `pluginterfaces/vst` ABI translations
+- Platform-specific VST3 module entry exports
+- macOS, Linux, and Windows `.vst3` bundle generation for the gain plugin
+- A validator-passing gain plugin with component, controller, processor, one automatable gain parameter, sample-accurate parameter updates, and state persistence
 
 ## Development
 
@@ -31,5 +36,19 @@ Run the local checks:
 zig build
 zig build test
 zig build phase1
-zig build pluginbase-abi
+```
+
+Build and validate the gain plugin on macOS:
+
+```sh
+zig build validator
+zig build validate-gain
+```
+
+Build platform bundles:
+
+```sh
+zig build bundle-gain
+zig build -Dtarget=x86_64-linux-gnu bundle-gain-linux
+zig build -Dtarget=x86_64-windows-gnu bundle-gain-windows
 ```
