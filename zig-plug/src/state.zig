@@ -115,6 +115,49 @@ test "parameter state ignores unknown parameter ids" {
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
 }
 
+test "parameter state rejects malformed headers and unsupported versions" {
+    const Params = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+    };
+    const Set = parameters.ParameterSet(Params);
+    const Values = parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+
+    var bad_magic = [_]u8{0} ** (magic.len + @sizeOf(u16) + @sizeOf(u16));
+    var bad_magic_stream = std.io.fixedBufferStream(&bad_magic);
+    try std.testing.expectError(error.InvalidStateMagic, readParameterState(Params, &set, &values, bad_magic_stream.reader()));
+
+    var bad_version: [magic.len + @sizeOf(u16) + @sizeOf(u16)]u8 = undefined;
+    var out_stream = std.io.fixedBufferStream(&bad_version);
+    try out_stream.writer().writeAll(magic);
+    try out_stream.writer().writeInt(u16, version + 1, .little);
+    try out_stream.writer().writeInt(u16, 0, .little);
+    var in_stream = std.io.fixedBufferStream(&bad_version);
+    try std.testing.expectError(error.UnsupportedStateVersion, readParameterState(Params, &set, &values, in_stream.reader()));
+}
+
+test "parameter state rejects truncated entries without changing defaults" {
+    const Params = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+    };
+    const Set = parameters.ParameterSet(Params);
+    const Values = parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + @sizeOf(u32)]u8 = undefined;
+    var out_stream = std.io.fixedBufferStream(&bytes);
+
+    try out_stream.writer().writeAll(magic);
+    try out_stream.writer().writeInt(u16, version, .little);
+    try out_stream.writer().writeInt(u16, 1, .little);
+    try out_stream.writer().writeInt(u32, 0, .little);
+
+    var in_stream = std.io.fixedBufferStream(&bytes);
+    try std.testing.expectError(error.EndOfStream, readParameterState(Params, &set, &values, in_stream.reader()));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
+}
+
 test "parameter state migrates renamed parameter ids" {
     const OldParams = struct {
         gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
