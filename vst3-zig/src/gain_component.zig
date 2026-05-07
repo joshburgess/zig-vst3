@@ -96,6 +96,84 @@ test "gain component exposes process context requirements" {
     try std.testing.expectEqual(@as(types.uint32, 0), processor_requirements.vtable.getProcessContextRequirements(processor_requirements));
 }
 
+test "gain component queries host application during initialize" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivsthostapplication = @import("pluginterfaces/vst/ivsthostapplication.zig");
+    const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+
+    const HostApplication = extern struct {
+        const Self = @This();
+
+        iface: ivsthostapplication.IHostApplication = .{ .vtable = &vtable },
+        query_count: types.uint32 = 0,
+        add_ref_count: types.uint32 = 0,
+        release_count: types.uint32 = 0,
+
+        const vtable = ivsthostapplication.IHostApplicationVTable{
+            .queryInterface = queryInterface,
+            .addRef = addRef,
+            .release = release,
+            .getName = getName,
+            .createInstance = createInstance,
+        };
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *ivsthostapplication.IHostApplication = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.query_count += 1;
+            if (std.mem.eql(u8, requested_iid, &ivsthostapplication.ihost_application_iid)) {
+                _ = addRef(ptr);
+                out.* = ptr;
+                return types.kResultOk;
+            }
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = owner(ptr);
+            self.add_ref_count += 1;
+            return self.add_ref_count + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = owner(ptr);
+            self.release_count += 1;
+            return 1;
+        }
+
+        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            out[0] = 0;
+            return types.kResultOk;
+        }
+
+        fn createInstance(_: *anyopaque, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            out.* = null;
+            return types.kNoInterface;
+        }
+    };
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var host = HostApplication{};
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, &host.iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.query_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), host.release_count);
+
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.release_count);
+}
+
 test "gain component exposes default connection point" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");

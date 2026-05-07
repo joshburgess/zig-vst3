@@ -190,6 +190,83 @@ test "gain controller stores component handler for automation callbacks" {
     try std.testing.expectEqual(types.kResultFalse, endEdit(gain_param_id));
 }
 
+test "gain controller queries host application during initialize" {
+    const std = @import("std");
+    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+    const ivsthostapplication = @import("pluginterfaces/vst/ivsthostapplication.zig");
+
+    const HostApplication = extern struct {
+        const Self = @This();
+
+        iface: ivsthostapplication.IHostApplication = .{ .vtable = &vtable },
+        query_count: types.uint32 = 0,
+        add_ref_count: types.uint32 = 0,
+        release_count: types.uint32 = 0,
+
+        const vtable = ivsthostapplication.IHostApplicationVTable{
+            .queryInterface = queryInterface,
+            .addRef = addRef,
+            .release = release,
+            .getName = getName,
+            .createInstance = createInstance,
+        };
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *ivsthostapplication.IHostApplication = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.query_count += 1;
+            if (std.mem.eql(u8, requested_iid, &ivsthostapplication.ihost_application_iid)) {
+                _ = addRef(ptr);
+                out.* = ptr;
+                return types.kResultOk;
+            }
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = owner(ptr);
+            self.add_ref_count += 1;
+            return self.add_ref_count + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = owner(ptr);
+            self.release_count += 1;
+            return 1;
+        }
+
+        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            out[0] = 0;
+            return types.kResultOk;
+        }
+
+        fn createInstance(_: *anyopaque, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            out.* = null;
+            return types.kNoInterface;
+        }
+    };
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var host = HostApplication{};
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.initialize(controller_iface, &host.iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.query_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), host.release_count);
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.terminate(controller_iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.release_count);
+}
+
 test "gain controller exposes default connection point" {
     const std = @import("std");
     const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
