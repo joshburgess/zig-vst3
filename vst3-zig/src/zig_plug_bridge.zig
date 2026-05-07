@@ -27,6 +27,34 @@ pub fn fillParameterInfo(
     return types.kResultOk;
 }
 
+pub fn getParamStringByValue(
+    comptime Params: type,
+    set: *const plug.parameters.ParameterSet(Params),
+    id: vsttypes.ParamID,
+    value: vsttypes.ParamValue,
+    out: [*]vsttypes.TChar,
+) types.tresult {
+    const index = set.indexOfId(id) orelse return types.kInvalidArgument;
+    var buffer: [64]u8 = undefined;
+    const text = set.formatPlain(index, value, &buffer) catch return types.kResultFalse;
+    copyAscii16Ptr(out, text);
+    return types.kResultOk;
+}
+
+pub fn getParamValueByString(
+    comptime Params: type,
+    set: *const plug.parameters.ParameterSet(Params),
+    id: vsttypes.ParamID,
+    text: [*]vsttypes.TChar,
+    out: *vsttypes.ParamValue,
+) types.tresult {
+    const index = set.indexOfId(id) orelse return types.kInvalidArgument;
+    var buffer: [128]u8 = undefined;
+    const parsed_text = readAscii16Ptr(text, &buffer);
+    out.* = set.parsePlain(index, parsed_text) catch return types.kResultFalse;
+    return types.kResultOk;
+}
+
 pub fn readParameterState(
     comptime Params: type,
     stream: ?*ibstream.IBStream,
@@ -67,6 +95,22 @@ fn copyAscii16(dest: *vsttypes.String128, source: []const u8) void {
     }
 }
 
+fn copyAscii16Ptr(dest: [*]vsttypes.TChar, source: []const u8) void {
+    const len = @min(source.len, 127);
+    for (source[0..len], 0..) |char, index| {
+        dest[index] = char;
+    }
+    dest[len] = 0;
+}
+
+fn readAscii16Ptr(source: [*]vsttypes.TChar, buffer: []u8) []const u8 {
+    var len: usize = 0;
+    while (len < buffer.len and source[len] != 0) : (len += 1) {
+        buffer[len] = @intCast(@min(source[len], 0xff));
+    }
+    return buffer[0..len];
+}
+
 test "zig-plug bridge round-trips parameter state through IBStream" {
     const Params = struct {
         gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
@@ -98,6 +142,22 @@ test "zig-plug bridge fills VST3 parameter info from reflected set" {
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), info.defaultNormalizedValue);
     try expectString128("Gain", &info.title);
     try std.testing.expectEqual(types.kInvalidArgument, fillParameterInfo(Params, &set, 1, &info));
+}
+
+test "zig-plug bridge formats and parses VST3 parameter strings" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(7, "Gain", 0.0, 2.0, 1.0),
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const set = Set.init(.{});
+    var text: vsttypes.String128 = undefined;
+    var value: vsttypes.ParamValue = 0;
+
+    try std.testing.expectEqual(types.kResultOk, getParamStringByValue(Params, &set, 7, 0.5, &text));
+    try expectString128("1.000", &text);
+    try std.testing.expectEqual(types.kResultOk, getParamValueByString(Params, &set, 7, &text, &value));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
+    try std.testing.expectEqual(types.kInvalidArgument, getParamStringByValue(Params, &set, 8, 0.5, &text));
 }
 
 fn expectString128(expected: []const u8, actual: *const vsttypes.String128) !void {

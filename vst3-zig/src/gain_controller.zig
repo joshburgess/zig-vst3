@@ -100,15 +100,11 @@ fn getParameterInfo(_: *anyopaque, index: types.int32, out: *ivsteditcontroller.
 }
 
 fn getParamStringByValue(_: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
-    if (id != gain_param_id) return types.kInvalidArgument;
-    writePercent(out, value);
-    return types.kResultOk;
+    return zig_plug_bridge.getParamStringByValue(gain_spec.Spec.Params, &gain_spec.parameter_set, id, value, out);
 }
 
-fn getParamValueByString(_: *anyopaque, id: vsttypes.ParamID, _: [*]vsttypes.TChar, out: *vsttypes.ParamValue) callconv(.C) types.tresult {
-    if (id != gain_param_id) return types.kInvalidArgument;
-    out.* = default_gain;
-    return types.kResultOk;
+fn getParamValueByString(_: *anyopaque, id: vsttypes.ParamID, text: [*]vsttypes.TChar, out: *vsttypes.ParamValue) callconv(.C) types.tresult {
+    return zig_plug_bridge.getParamValueByString(gain_spec.Spec.Params, &gain_spec.parameter_set, id, text, out);
 }
 
 fn normalizedParamToPlain(_: *anyopaque, id: vsttypes.ParamID, normalized: vsttypes.ParamValue) callconv(.C) vsttypes.ParamValue {
@@ -166,16 +162,6 @@ pub fn writeGainState(state: ?*ibstream.IBStream) types.tresult {
 
 fn clamp01(value: vsttypes.ParamValue) vsttypes.ParamValue {
     return @min(@max(value, 0), 1);
-}
-
-fn writePercent(dest: [*]vsttypes.TChar, value: vsttypes.ParamValue) void {
-    const percent = @as(u32, @intFromFloat(@round(clamp01(value) * 100)));
-    var buffer: [8]u8 = undefined;
-    const text = std.fmt.bufPrint(&buffer, "{d}%", .{percent}) catch "0%";
-    for (text, 0..) |char, index| {
-        dest[index] = char;
-    }
-    dest[text.len] = 0;
 }
 
 test "gain controller can be created as IEditController" {

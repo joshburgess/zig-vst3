@@ -245,7 +245,7 @@ pub const BoolParam = struct {
         return self.normalize(self.default);
     }
 
-    pub fn formatPlain(self: BoolParam, normalized: f64) []const u8 {
+    pub fn formatPlain(self: BoolParam, normalized: f64, _: []u8) ![]const u8 {
         return if (self.denormalize(normalized)) "On" else "Off";
     }
 
@@ -298,7 +298,7 @@ pub fn EnumParam(comptime Enum: type) type {
             return @tagName(value);
         }
 
-        pub fn formatPlain(self: Self, normalized: f64) []const u8 {
+        pub fn formatPlain(self: Self, normalized: f64, _: []u8) ![]const u8 {
             return self.label(self.denormalize(normalized));
         }
 
@@ -354,6 +354,20 @@ pub fn ParameterSet(comptime Params: type) type {
                 if (@field(self.params, field.name).id == wanted_id) return index;
             }
             return null;
+        }
+
+        pub fn formatPlain(self: *const Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field.name).formatPlain(normalized, buffer);
+            }
+            return error.InvalidParameterIndex;
+        }
+
+        pub fn parsePlain(self: *const Self, index: usize, text: []const u8) !f64 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field.name).parsePlain(text);
+            }
+            return error.InvalidParameterIndex;
         }
     };
 }
@@ -600,8 +614,8 @@ test "parameters format and parse plain values" {
     try std.testing.expectApproxEqAbs(0.75, try gain.parsePlain(" 0.75 "), 0.000001);
     try std.testing.expectEqualStrings("9", try voices.formatPlain(0.5, &buffer));
     try std.testing.expectApproxEqAbs(1.0, try voices.parsePlain("16"), 0.000001);
-    try std.testing.expectEqualStrings("On", bypass.formatPlain(1.0));
+    try std.testing.expectEqualStrings("On", try bypass.formatPlain(1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 0.0), try bypass.parsePlain("off"));
-    try std.testing.expectEqualStrings("crunch", mode.formatPlain(0.5));
+    try std.testing.expectEqualStrings("crunch", try mode.formatPlain(0.5, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try mode.parsePlain("lead"));
 }
