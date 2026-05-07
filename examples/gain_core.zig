@@ -9,11 +9,11 @@ pub const Gain = struct {
     };
 
     pub fn process(_: *Gain, context: *plug.process.ProcessContext(f32)) void {
-        const gain = if (context.parameter_changes.latest(0)) |change| change.normalized else 1.0;
         for (0..context.outputs.channels.len) |channel| {
             const input = context.inputs.channel(channel) orelse continue;
             const output = context.outputs.channel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
+                const gain = if (context.parameter_changes.latestAtOrBefore(0, sample)) |change| change.normalized else 1.0;
                 output[sample] = input[sample] * @as(f32, @floatCast(gain));
             }
         }
@@ -51,6 +51,29 @@ test "gain core example processes through zig-plug context" {
     plugin.process(&context);
 
     try std.testing.expectEqual(@as(f32, 0.125), output[0]);
+    try std.testing.expectEqual(@as(f32, 0.25), output[1]);
+    try std.testing.expectEqual(@as(f32, 0.5), output[2]);
+}
+
+test "gain core example applies sample-offset parameter changes" {
+    var plugin = Gain{};
+    const input = [_]f32{ 0.25, 0.5, 1.0 };
+    var output = [_]f32{ 0.0, 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const changes = [_]plug.process.ParameterChange{
+        .{ .id = 0, .sample_offset = 1, .normalized = 0.5 },
+    };
+    var context = plug.process.ProcessContext(f32){
+        .sample_rate = 48_000.0,
+        .inputs = try plug.process.AudioInputs(f32).init(&input_channels),
+        .outputs = try plug.process.AudioOutputs(f32).init(&output_channels),
+        .parameter_changes = try plug.process.ParameterChanges.init(&changes, input.len),
+    };
+
+    plugin.process(&context);
+
+    try std.testing.expectEqual(@as(f32, 0.25), output[0]);
     try std.testing.expectEqual(@as(f32, 0.25), output[1]);
     try std.testing.expectEqual(@as(f32, 0.5), output[2]);
 }
