@@ -53,6 +53,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
             component_handler3: ?*ivstcontextmenu.IComponentHandler3 = null,
             component_handler_bus_activation: ?*ivsteditcontroller.IComponentHandlerBusActivation = null,
             component_handler_system_time: ?*ivsteditcontroller.IComponentHandlerSystemTime = null,
+            unit_handler: ?*ivstunits.IUnitHandler = null,
+            unit_handler2: ?*ivstunits.IUnitHandler2 = null,
             host_application: ?*ivsthostapplication.IHostApplication = null,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
@@ -129,6 +131,21 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 return types.kResultFalse;
             };
             return handler.vtable.getSystemTime(handler, out);
+        }
+
+        pub fn notifyUnitSelection(unit_id: vsttypes.UnitID) types.tresult {
+            const handler = controller.unit_handler orelse return types.kResultFalse;
+            return handler.vtable.notifyUnitSelection(handler, unit_id);
+        }
+
+        pub fn notifyProgramListChange(list_id: vsttypes.ProgramListID, program_index: types.int32) types.tresult {
+            const handler = controller.unit_handler orelse return types.kResultFalse;
+            return handler.vtable.notifyProgramListChange(handler, list_id, program_index);
+        }
+
+        pub fn notifyUnitByBusChange() types.tresult {
+            const handler = controller.unit_handler2 orelse return types.kResultFalse;
+            return handler.vtable.notifyUnitByBusChange(handler);
         }
 
         pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
@@ -521,6 +538,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
             self.component_handler3 = queryComponentHandler3(handler);
             self.component_handler_bus_activation = queryComponentHandlerBusActivation(handler);
             self.component_handler_system_time = queryComponentHandlerSystemTime(handler);
+            self.unit_handler = queryUnitHandler(handler);
+            self.unit_handler2 = queryUnitHandler2(handler);
             return types.kResultOk;
         }
 
@@ -935,7 +954,35 @@ fn queryComponentHandlerSystemTime(handler: ?*anyopaque) ?*ivsteditcontroller.IC
     return if (out) |value| @ptrCast(@alignCast(value)) else null;
 }
 
+fn queryUnitHandler(handler: ?*anyopaque) ?*ivstunits.IUnitHandler {
+    const raw = handler orelse return null;
+    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
+    var out: ?*anyopaque = null;
+    if (base.vtable.queryInterface(base, &ivstunits.iunit_handler_iid, &out) != types.kResultOk) {
+        return null;
+    }
+    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+}
+
+fn queryUnitHandler2(handler: ?*anyopaque) ?*ivstunits.IUnitHandler2 {
+    const raw = handler orelse return null;
+    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
+    var out: ?*anyopaque = null;
+    if (base.vtable.queryInterface(base, &ivstunits.iunit_handler2_iid, &out) != types.kResultOk) {
+        return null;
+    }
+    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+}
+
 fn releaseComponentHandlers(controller: anytype) void {
+    if (controller.unit_handler2) |unit_handler2| {
+        _ = unit_handler2.vtable.release(unit_handler2);
+        controller.unit_handler2 = null;
+    }
+    if (controller.unit_handler) |unit_handler| {
+        _ = unit_handler.vtable.release(unit_handler);
+        controller.unit_handler = null;
+    }
     if (controller.component_handler_system_time) |handler_system_time| {
         _ = handler_system_time.vtable.release(handler_system_time);
         controller.component_handler_system_time = null;
