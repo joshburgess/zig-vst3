@@ -264,3 +264,48 @@ test "gain controller exposes default note expression and keyswitch interfaces" 
     try std.testing.expectEqual(@as(types.uint32, 0), physical_mapping.count);
     try std.testing.expectEqual(@as(?[*]ivstphysicalui.PhysicalUIMap, null), physical_mapping.map);
 }
+
+test "gain controller exposes default parameter helper interfaces" {
+    const std = @import("std");
+    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+    const ivstparameterfunctionname = @import("pluginterfaces/vst/ivstparameterfunctionname.zig");
+    const ivstremapparamid = @import("pluginterfaces/vst/ivstremapparamid.zig");
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var function_name_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        controller_iface.vtable.queryInterface(controller_iface, &ivstparameterfunctionname.iparameter_function_name_iid, &function_name_out),
+    );
+    try std.testing.expect(function_name_out != null);
+    const function_name: *ivstparameterfunctionname.IParameterFunctionName = @ptrCast(@alignCast(function_name_out.?));
+    defer _ = function_name.vtable.release(function_name);
+
+    var function_param_id: vsttypes.ParamID = gain_param_id;
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        function_name.vtable.getParameterIDFromFunctionName(function_name, 0, ivstparameterfunctionname.FunctionNameType.kDryWetMix, &function_param_id),
+    );
+    try std.testing.expectEqual(vsttypes.kNoParamId, function_param_id);
+
+    var remap_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        controller_iface.vtable.queryInterface(controller_iface, &ivstremapparamid.iremap_param_id_iid, &remap_out),
+    );
+    try std.testing.expect(remap_out != null);
+    const remap: *ivstremapparamid.IRemapParamID = @ptrCast(@alignCast(remap_out.?));
+    defer _ = remap.vtable.release(remap);
+
+    var remapped: vsttypes.ParamID = gain_param_id;
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        remap.vtable.getCompatibleParamID(remap, &cid, gain_param_id, &remapped),
+    );
+    try std.testing.expectEqual(vsttypes.kNoParamId, remapped);
+}

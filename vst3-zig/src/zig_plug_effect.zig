@@ -11,9 +11,11 @@ const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const ivstmidilearn = @import("pluginterfaces/vst/ivstmidilearn.zig");
 const ivstmidimapping2 = @import("pluginterfaces/vst/ivstmidimapping2.zig");
 const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
+const ivstparameterfunctionname = @import("pluginterfaces/vst/ivstparameterfunctionname.zig");
 const ivstphysicalui = @import("pluginterfaces/vst/ivstphysicalui.zig");
 const ivstpluginterfacesupport = @import("pluginterfaces/vst/ivstpluginterfacesupport.zig");
 const ivstprefetchablesupport = @import("pluginterfaces/vst/ivstprefetchablesupport.zig");
+const ivstremapparamid = @import("pluginterfaces/vst/ivstremapparamid.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
@@ -37,6 +39,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
             note_expression: ivstnoteexpression.INoteExpressionController = .{ .vtable = &note_expression_vtable },
             keyswitch: ivstnoteexpression.IKeyswitchController = .{ .vtable = &keyswitch_vtable },
             physical_ui_mapping: ivstphysicalui.INoteExpressionPhysicalUIMapping = .{ .vtable = &physical_ui_mapping_vtable },
+            parameter_function_name: ivstparameterfunctionname.IParameterFunctionName = .{ .vtable = &parameter_function_name_vtable },
+            remap_param_id: ivstremapparamid.IRemapParamID = .{ .vtable = &remap_param_id_vtable },
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -147,6 +151,16 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return @fieldParentPtr("physical_ui_mapping", iface);
         }
 
+        fn ownerFromParameterFunctionName(ptr: *anyopaque) *Controller {
+            const iface: *ivstparameterfunctionname.IParameterFunctionName = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("parameter_function_name", iface);
+        }
+
+        fn ownerFromRemapParamID(ptr: *anyopaque) *Controller {
+            const iface: *ivstremapparamid.IRemapParamID = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("remap_param_id", iface);
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
@@ -163,6 +177,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 .{ .iid = &ivstnoteexpression.inote_expression_controller_iid, .ptr = &self.note_expression },
                 .{ .iid = &ivstnoteexpression.ikeyswitch_controller_iid, .ptr = &self.keyswitch },
                 .{ .iid = &ivstphysicalui.inote_expression_physical_ui_mapping_iid, .ptr = &self.physical_ui_mapping },
+                .{ .iid = &ivstparameterfunctionname.iparameter_function_name_iid, .ptr = &self.parameter_function_name },
+                .{ .iid = &ivstremapparamid.iremap_param_id_iid, .ptr = &self.remap_param_id },
             };
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
@@ -205,6 +221,14 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn queryFromPhysicalUIMapping(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&ownerFromPhysicalUIMapping(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromParameterFunctionName(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromParameterFunctionName(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromRemapParamID(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromRemapParamID(ptr).iface, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
@@ -293,6 +317,22 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn releaseFromPhysicalUIMapping(ptr: *anyopaque) callconv(.C) types.uint32 {
             return release(&ownerFromPhysicalUIMapping(ptr).iface);
+        }
+
+        fn addRefFromParameterFunctionName(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromParameterFunctionName(ptr).iface);
+        }
+
+        fn releaseFromParameterFunctionName(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromParameterFunctionName(ptr).iface);
+        }
+
+        fn addRefFromRemapParamID(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromRemapParamID(ptr).iface);
+        }
+
+        fn releaseFromRemapParamID(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromRemapParamID(ptr).iface);
         }
 
         fn initialize(_: *anyopaque, _: ?*anyopaque) callconv(.C) types.tresult {
@@ -594,6 +634,30 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn getPhysicalUIMapping(_: *anyopaque, _: types.int32, _: types.int16, out: *ivstphysicalui.PhysicalUIMapList) callconv(.C) types.tresult {
             out.* = .{};
+            return types.kResultFalse;
+        }
+
+        const parameter_function_name_vtable = ivstparameterfunctionname.IParameterFunctionNameVTable{
+            .queryInterface = queryFromParameterFunctionName,
+            .addRef = addRefFromParameterFunctionName,
+            .release = releaseFromParameterFunctionName,
+            .getParameterIDFromFunctionName = getParameterIDFromFunctionName,
+        };
+
+        fn getParameterIDFromFunctionName(_: *anyopaque, _: vsttypes.UnitID, _: types.FIDString, out: *vsttypes.ParamID) callconv(.C) types.tresult {
+            out.* = vsttypes.kNoParamId;
+            return types.kResultFalse;
+        }
+
+        const remap_param_id_vtable = ivstremapparamid.IRemapParamIDVTable{
+            .queryInterface = queryFromRemapParamID,
+            .addRef = addRefFromRemapParamID,
+            .release = releaseFromRemapParamID,
+            .getCompatibleParamID = getCompatibleParamID,
+        };
+
+        fn getCompatibleParamID(_: *anyopaque, _: *const tuid.TUID, _: vsttypes.ParamID, out: *vsttypes.ParamID) callconv(.C) types.tresult {
+            out.* = vsttypes.kNoParamId;
             return types.kResultFalse;
         }
     };
