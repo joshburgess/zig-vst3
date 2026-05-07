@@ -192,22 +192,22 @@ pub fn build(b: *std.Build) void {
         validate_step.dependOn(&missing_plugin.step);
     }
 
-    const validate_gain_step = addVst3ValidationStep(b, target, bundle_gain_step, .{
+    const validate_gain_step = addVst3ValidationStep(b, target, bundle_gain_step.native, .{
         .short_name = "gain",
         .display_name = "gain",
         .artifact_name = "zig_vst3_gain",
     });
-    const validate_bypass_step = addVst3ValidationStep(b, target, bundle_bypass_step, .{
+    const validate_bypass_step = addVst3ValidationStep(b, target, bundle_bypass_step.native, .{
         .short_name = "bypass",
         .display_name = "bypass",
         .artifact_name = "zig_vst3_bypass",
     });
-    const validate_mode_gain_step = addVst3ValidationStep(b, target, bundle_mode_gain_step, .{
+    const validate_mode_gain_step = addVst3ValidationStep(b, target, bundle_mode_gain_step.native, .{
         .short_name = "mode-gain",
         .display_name = "mode gain",
         .artifact_name = "zig_vst3_mode_gain",
     });
-    const validate_voice_mix_step = addVst3ValidationStep(b, target, bundle_voice_mix_step, .{
+    const validate_voice_mix_step = addVst3ValidationStep(b, target, bundle_voice_mix_step.native, .{
         .short_name = "voice-mix",
         .display_name = "voice mix",
         .artifact_name = "zig_vst3_voice_mix",
@@ -217,6 +217,18 @@ pub fn build(b: *std.Build) void {
     validate_examples_step.dependOn(validate_bypass_step);
     validate_examples_step.dependOn(validate_mode_gain_step);
     validate_examples_step.dependOn(validate_voice_mix_step);
+
+    const bundle_examples_linux_step = b.step("bundle-examples-linux", "Build Linux VST3 bundles for all example plugins");
+    bundle_examples_linux_step.dependOn(bundle_gain_step.linux);
+    bundle_examples_linux_step.dependOn(bundle_bypass_step.linux);
+    bundle_examples_linux_step.dependOn(bundle_mode_gain_step.linux);
+    bundle_examples_linux_step.dependOn(bundle_voice_mix_step.linux);
+
+    const bundle_examples_windows_step = b.step("bundle-examples-windows", "Build Windows VST3 bundles for all example plugins");
+    bundle_examples_windows_step.dependOn(bundle_gain_step.windows);
+    bundle_examples_windows_step.dependOn(bundle_bypass_step.windows);
+    bundle_examples_windows_step.dependOn(bundle_mode_gain_step.windows);
+    bundle_examples_windows_step.dependOn(bundle_voice_mix_step.windows);
     const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
     validator_step.dependOn(&build_validator.step);
@@ -573,12 +585,18 @@ const Vst3BundleOptions = struct {
     bundle_id: []const u8,
 };
 
+const Vst3BundleSteps = struct {
+    native: *std.Build.Step,
+    linux: *std.Build.Step,
+    windows: *std.Build.Step,
+};
+
 fn addVst3BundleSteps(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     library: *std.Build.Step.Compile,
     options: Vst3BundleOptions,
-) *std.Build.Step {
+) Vst3BundleSteps {
     const native_step_name = b.fmt("bundle-{s}", .{options.short_name});
     const native_step = b.step(native_step_name, b.fmt("Build a native VST3 bundle for the {s} plugin", .{options.display_name}));
     if (target.result.os.tag == .macos) {
@@ -625,5 +643,9 @@ fn addVst3BundleSteps(
         windows_step.dependOn(&b.addFail(b.fmt("{s} requires a Windows target", .{windows_step_name})).step);
     }
 
-    return native_step;
+    return .{
+        .native = native_step,
+        .linux = linux_step,
+        .windows = windows_step,
+    };
 }

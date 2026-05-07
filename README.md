@@ -54,6 +54,6 @@ zig build bundle-gain
 zig build bundle-bypass
 zig build bundle-mode-gain
 zig build bundle-voice-mix
-zig build -Dtarget=x86_64-linux-gnu bundle-gain-linux
-zig build -Dtarget=x86_64-windows-gnu bundle-gain-windows
+zig build -Dtarget=x86_64-linux-gnu bundle-examples-linux
+zig build -Dtarget=x86_64-windows-gnu bundle-examples-windows
 ```
