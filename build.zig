@@ -322,6 +322,24 @@ pub fn build(b: *std.Build) void {
     const multi_interface_abi_step = b.step("multi-interface-abi", "Run the C ABI harness for multi-interface query dispatch");
     multi_interface_abi_step.dependOn(&b.addRunArtifact(multi_interface_harness).step);
 
+    const multi_interface_cpp_harness = b.addExecutable(.{
+        .name = "multi_interface_cpp_harness",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .link_libcpp = true,
+        }),
+    });
+    multi_interface_cpp_harness.root_module.addCSourceFile(.{
+        .file = b.path("tests/abi/multi_interface_harness.cpp"),
+        .flags = &.{"-std=c++17"},
+    });
+    multi_interface_cpp_harness.root_module.addObject(multi_interface_harness_zig);
+
+    const multi_interface_cpp_abi_step = b.step("multi-interface-cpp-abi", "Run the C++ ABI harness for multi-interface query dispatch");
+    multi_interface_cpp_abi_step.dependOn(&b.addRunArtifact(multi_interface_cpp_harness).step);
+
     const phase1_step = b.step("phase1", "Run Phase 1 COM/vtable integration checks");
     phase1_step.dependOn(test_step);
     phase1_step.dependOn(entry_symbols_step);
@@ -362,6 +380,7 @@ pub fn build(b: *std.Build) void {
     phase1_step.dependOn(test_interfaces_abi_step);
     phase1_step.dependOn(funknown_abi_step);
     phase1_step.dependOn(multi_interface_abi_step);
+    phase1_step.dependOn(multi_interface_cpp_abi_step);
 }
 
 fn linuxPlatformDir(arch: std.Target.Cpu.Arch) []const u8 {
