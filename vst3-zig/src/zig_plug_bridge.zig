@@ -62,6 +62,25 @@ pub const StereoAudioBuses = struct {
     }
 };
 
+pub const RealtimeProcessorDefaults = struct {
+    pub fn canProcessSampleSize(symbolic_sample_size: types.int32) types.tresult {
+        if (symbolic_sample_size == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32) or
+            symbolic_sample_size == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64))
+        {
+            return types.kResultOk;
+        }
+        return types.kResultFalse;
+    }
+
+    pub fn latencySamples() types.uint32 {
+        return 0;
+    }
+
+    pub fn tailSamples() types.uint32 {
+        return ivstaudioprocessor.kNoTail;
+    }
+};
+
 pub fn ParameterState(comptime Params: type) type {
     const Set = plug.parameters.ParameterSet(Params);
     const Values = plug.parameters.ParameterValues(Params);
@@ -500,6 +519,14 @@ test "zig-plug bridge stereo audio buses validate arrangements" {
     try std.testing.expectEqual(stereo_arrangement, arrangement_out);
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangement(@intFromEnum(ivstcomponent.BusDirections.kOutput), 1, &arrangement_out));
     try std.testing.expectEqual(empty_arrangement, arrangement_out);
+}
+
+test "zig-plug bridge realtime processor defaults accept 32 and 64 bit samples" {
+    try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.canProcessSampleSize(@intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)));
+    try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.canProcessSampleSize(@intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64)));
+    try std.testing.expectEqual(types.kResultFalse, RealtimeProcessorDefaults.canProcessSampleSize(99));
+    try std.testing.expectEqual(@as(types.uint32, 0), RealtimeProcessorDefaults.latencySamples());
+    try std.testing.expectEqual(@as(types.uint32, ivstaudioprocessor.kNoTail), RealtimeProcessorDefaults.tailSamples());
 }
 
 test "zig-plug bridge fills VST3 parameter info from reflected set" {
