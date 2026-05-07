@@ -3,6 +3,7 @@ const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+const ivstparameterchanges = @import("pluginterfaces/vst/ivstparameterchanges.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const plug = @import("zig-plug-core");
 const audio_processor_algo = @import("pluginterfaces/vst/vstaudioprocessoralgo.zig");
@@ -447,7 +448,7 @@ const ParameterChangeCollector = struct {
     frame_count: usize,
 };
 
-fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *@import("pluginterfaces/vst/ivstparameterchanges.zig").IParamValueQueue) void {
+fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *ivstparameterchanges.IParamValueQueue) void {
     audio_processor_algo.forEachParamValueQueue(queue, collector, collectParameterPoint);
 }
 
@@ -552,6 +553,33 @@ test "zig-plug bridge parameter state stores ids and persists streams" {
 
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), restored.getNormalizedById(0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), restored.getNormalizedById(1));
+}
+
+test "zig-plug bridge collects VST3 parameter changes" {
+    var gain_queue = TestParamValueQueue.init(7, &.{
+        .{ .sample_offset = 0, .value = 0.25 },
+        .{ .sample_offset = 3, .value = 0.75 },
+    });
+    var mix_queue = TestParamValueQueue.init(8, &.{
+        .{ .sample_offset = 2, .value = 1.0 },
+    });
+    var changes = TestParameterChanges.init(&.{ &gain_queue, &mix_queue });
+    var storage: [4]plug.process.ParameterChange = undefined;
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 4,
+        .inputParameterChanges = &changes.iface,
+    };
+
+    const collected = collectInputParameterChanges(&data, &storage);
+
+    try std.testing.expectEqual(@as(usize, 3), collected.items.len);
+    try std.testing.expectEqual(@as(u32, 7), collected.items[0].id);
+    try std.testing.expectEqual(@as(usize, 0), collected.items[0].sample_offset);
+    try std.testing.expectEqual(@as(f64, 0.25), collected.items[0].normalized);
+    try std.testing.expectEqual(@as(u32, 7), collected.items[1].id);
+    try std.testing.expectEqual(@as(usize, 3), collected.items[1].sample_offset);
+    try std.testing.expectEqual(@as(u32, 8), collected.items[2].id);
+    try std.testing.expectEqual(@as(usize, 2), collected.items[2].sample_offset);
 }
 
 test "zig-plug bridge parameter controller exposes reflected edit operations" {
@@ -877,5 +905,122 @@ const MemoryStream = extern struct {
     fn tell(ptr: *anyopaque, pos: *types.int64) callconv(.C) types.tresult {
         pos.* = @intCast(owner(ptr).pos);
         return types.kResultOk;
+    }
+};
+
+const TestParamPoint = struct {
+    sample_offset: types.int32,
+    value: vsttypes.ParamValue,
+};
+
+const TestParamValueQueue = struct {
+    iface: ivstparameterchanges.IParamValueQueue = .{ .vtable = &vtable },
+    id: vsttypes.ParamID,
+    points: []const TestParamPoint,
+
+    const vtable = ivstparameterchanges.IParamValueQueueVTable{
+        .queryInterface = queryInterface,
+        .addRef = addRef,
+        .release = release,
+        .getParameterId = getParameterId,
+        .getPointCount = getPointCount,
+        .getPoint = getPoint,
+        .addPoint = addPoint,
+    };
+
+    fn init(id: vsttypes.ParamID, points: []const TestParamPoint) TestParamValueQueue {
+        return .{ .id = id, .points = points };
+    }
+
+    fn owner(ptr: *anyopaque) *TestParamValueQueue {
+        const iface: *ivstparameterchanges.IParamValueQueue = @ptrCast(@alignCast(ptr));
+        return @fieldParentPtr("iface", iface);
+    }
+
+    fn queryInterface(_: *anyopaque, _: *const @import("tuid.zig").TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        out.* = null;
+        return types.kNoInterface;
+    }
+
+    fn addRef(_: *anyopaque) callconv(.C) types.uint32 {
+        return 1;
+    }
+
+    fn release(_: *anyopaque) callconv(.C) types.uint32 {
+        return 1;
+    }
+
+    fn getParameterId(ptr: *anyopaque) callconv(.C) vsttypes.ParamID {
+        return owner(ptr).id;
+    }
+
+    fn getPointCount(ptr: *anyopaque) callconv(.C) types.int32 {
+        return @intCast(owner(ptr).points.len);
+    }
+
+    fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.C) types.tresult {
+        if (index < 0) return types.kInvalidArgument;
+        const self = owner(ptr);
+        const point_index: usize = @intCast(index);
+        if (point_index >= self.points.len) return types.kInvalidArgument;
+        sample_offset.* = self.points[point_index].sample_offset;
+        value.* = self.points[point_index].value;
+        return types.kResultOk;
+    }
+
+    fn addPoint(_: *anyopaque, _: types.int32, _: vsttypes.ParamValue, _: *types.int32) callconv(.C) types.tresult {
+        return types.kResultFalse;
+    }
+};
+
+const TestParameterChanges = struct {
+    iface: ivstparameterchanges.IParameterChanges = .{ .vtable = &vtable },
+    queues: []const *TestParamValueQueue,
+
+    const vtable = ivstparameterchanges.IParameterChangesVTable{
+        .queryInterface = queryInterface,
+        .addRef = addRef,
+        .release = release,
+        .getParameterCount = getParameterCount,
+        .getParameterData = getParameterData,
+        .addParameterData = addParameterData,
+    };
+
+    fn init(queues: []const *TestParamValueQueue) TestParameterChanges {
+        return .{ .queues = queues };
+    }
+
+    fn owner(ptr: *anyopaque) *TestParameterChanges {
+        const iface: *ivstparameterchanges.IParameterChanges = @ptrCast(@alignCast(ptr));
+        return @fieldParentPtr("iface", iface);
+    }
+
+    fn queryInterface(_: *anyopaque, _: *const @import("tuid.zig").TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        out.* = null;
+        return types.kNoInterface;
+    }
+
+    fn addRef(_: *anyopaque) callconv(.C) types.uint32 {
+        return 1;
+    }
+
+    fn release(_: *anyopaque) callconv(.C) types.uint32 {
+        return 1;
+    }
+
+    fn getParameterCount(ptr: *anyopaque) callconv(.C) types.int32 {
+        return @intCast(owner(ptr).queues.len);
+    }
+
+    fn getParameterData(ptr: *anyopaque, index: types.int32) callconv(.C) ?*ivstparameterchanges.IParamValueQueue {
+        if (index < 0) return null;
+        const self = owner(ptr);
+        const queue_index: usize = @intCast(index);
+        if (queue_index >= self.queues.len) return null;
+        return &self.queues[queue_index].iface;
+    }
+
+    fn addParameterData(_: *anyopaque, _: *const vsttypes.ParamID, _: *types.int32) callconv(.C) ?*ivstparameterchanges.IParamValueQueue {
+        return null;
     }
 };
