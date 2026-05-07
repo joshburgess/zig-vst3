@@ -185,7 +185,7 @@ Each phase is broken into **work units**. A work unit is sized so that one agent
 **Remaining hardening before Layer 2 should depend on this API.**
 - Add CI jobs for validator and cross-target bundle checks where the platform supports them.
 - Replace one-off plugin object wiring with reusable raw-layer helpers for interface maps and allocator-owned objects.
-- Add host smoke test notes under `docs/host-matrix.md` once at least one DAW has loaded the gain plugin.
+- Record real DAW smoke test results under `docs/host-matrix.md`.
 - Keep build steps aligned with the gain plugin naming now that the scaffold-era stub artifact has been retired.
 
 ### Work Unit 1.1: TUID/FUID handling
