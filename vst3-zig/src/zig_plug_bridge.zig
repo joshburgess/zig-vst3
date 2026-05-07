@@ -536,6 +536,37 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
             .sample_offset = offset,
         },
         .kLegacyMIDICCOutEvent => collectLegacyMidiCcEvent(event, offset),
+        .kPolyPressureEvent => .{
+            .kind = .aftertouch,
+            .bus_index = event.busIndex,
+            .sample_offset = offset,
+            .channel = event.data.polyPressure.channel,
+            .pitch = event.data.polyPressure.pitch,
+            .value = event.data.polyPressure.pressure,
+        },
+        .kNoteExpressionValueEvent => .{
+            .kind = .note_expression_value,
+            .bus_index = event.busIndex,
+            .sample_offset = offset,
+            .note_id = event.data.noteExpressionValue.noteId,
+            .expression_type_id = event.data.noteExpressionValue.typeId,
+            .value = @floatCast(event.data.noteExpressionValue.value),
+        },
+        .kNoteExpressionIntValueEvent => .{
+            .kind = .note_expression_int,
+            .bus_index = event.busIndex,
+            .sample_offset = offset,
+            .note_id = event.data.noteExpressionIntValue.noteId,
+            .expression_type_id = event.data.noteExpressionIntValue.typeId,
+            .int_value = event.data.noteExpressionIntValue.value,
+        },
+        .kNoteExpressionTextEvent => .{
+            .kind = .note_expression_text,
+            .bus_index = event.busIndex,
+            .sample_offset = offset,
+            .note_id = event.data.noteExpressionText.noteId,
+            .expression_type_id = event.data.noteExpressionText.typeId,
+        },
         else => .{
             .kind = .other,
             .bus_index = event.busIndex,
@@ -833,7 +864,7 @@ test "zig-plug bridge drops invalid and overflowing VST3 input events" {
     try std.testing.expectEqual(@as(usize, 2), collected.items.len);
     try std.testing.expectEqual(plug.process.EventKind.note_on, collected.items[0].kind);
     try std.testing.expectEqual(@as(usize, 0), collected.items[0].sample_offset);
-    try std.testing.expectEqual(plug.process.EventKind.other, collected.items[1].kind);
+    try std.testing.expectEqual(plug.process.EventKind.aftertouch, collected.items[1].kind);
     try std.testing.expectEqual(@as(i32, 1), collected.items[1].bus_index);
     try std.testing.expectEqual(@as(usize, 2), collected.items[1].sample_offset);
 }
@@ -889,6 +920,74 @@ test "zig-plug bridge maps legacy MIDI controller events" {
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), collected.items[1].value, 0.0001);
     try std.testing.expectEqual(plug.process.EventKind.aftertouch, collected.items[2].kind);
     try std.testing.expectApproxEqAbs(@as(f32, 32.0 / 127.0), collected.items[2].value, 0.0001);
+}
+
+test "zig-plug bridge maps poly pressure and note expression events" {
+    const items = [_]ivstevents.Event{
+        .{
+            .busIndex = 0,
+            .sampleOffset = 0,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent),
+            .data = .{ .polyPressure = .{
+                .channel = 1,
+                .pitch = 64,
+                .pressure = 0.625,
+                .noteId = 42,
+            } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 1,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent),
+            .data = .{ .noteExpressionValue = .{
+                .typeId = 5,
+                .noteId = 42,
+                .value = 0.5,
+            } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 2,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent),
+            .data = .{ .noteExpressionIntValue = .{
+                .typeId = 8,
+                .noteId = 42,
+                .value = 12345,
+            } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 3,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent),
+            .data = .{ .noteExpressionText = .{
+                .typeId = 6,
+                .noteId = 42,
+                .textLen = 0,
+                .text = null,
+            } },
+        },
+    };
+    var list = TestEventList.init(&items, null);
+    var storage: [4]plug.process.Event = undefined;
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 4,
+        .inputEvents = &list.iface,
+    };
+
+    const collected = collectInputEvents(&data, &storage);
+
+    try std.testing.expectEqual(@as(usize, 4), collected.items.len);
+    try std.testing.expectEqual(plug.process.EventKind.aftertouch, collected.items[0].kind);
+    try std.testing.expectEqual(@as(i16, 64), collected.items[0].pitch);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.625), collected.items[0].value, 0.0001);
+    try std.testing.expectEqual(plug.process.EventKind.note_expression_value, collected.items[1].kind);
+    try std.testing.expectEqual(@as(i32, 42), collected.items[1].note_id);
+    try std.testing.expectEqual(@as(u32, 5), collected.items[1].expression_type_id);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), collected.items[1].value, 0.0001);
+    try std.testing.expectEqual(plug.process.EventKind.note_expression_int, collected.items[2].kind);
+    try std.testing.expectEqual(@as(u64, 12345), collected.items[2].int_value);
+    try std.testing.expectEqual(plug.process.EventKind.note_expression_text, collected.items[3].kind);
+    try std.testing.expectEqual(@as(u32, 6), collected.items[3].expression_type_id);
 }
 
 test "zig-plug bridge parameter controller exposes reflected edit operations" {
