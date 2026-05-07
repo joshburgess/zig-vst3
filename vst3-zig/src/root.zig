@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub const entry = @import("entry.zig");
+pub const factory = @import("factory.zig");
 pub const funknown = @import("funknown.zig");
 pub const multi_interface = @import("multi_interface.zig");
 pub const pluginterfaces = struct {
