@@ -100,6 +100,17 @@ pub fn decrementRefCount(ref_count: *std.atomic.Value(uint32), comptime owner_na
     }
 }
 
+pub fn allocatorDestroyFn(comptime Object: type, comptime header_field: []const u8) *const fn (*anyopaque) callconv(.C) void {
+    return struct {
+        fn destroy(ptr: *anyopaque) callconv(.C) void {
+            const header: *Header = @ptrCast(@alignCast(ptr));
+            const object: *Object = @fieldParentPtr(header_field, header);
+            const allocator = object.allocator;
+            allocator.destroy(object);
+        }
+    }.destroy;
+}
+
 fn testAddRef(ptr: *anyopaque) callconv(.C) uint32 {
     return addRef(ptr);
 }
@@ -113,7 +124,7 @@ fn testDestroy(ptr: *anyopaque) callconv(.C) void {
 }
 
 pub const AllocatedTestObject = struct {
-    unknown: Header = Header.init(&test_vtable, allocatedTestDestroy),
+    unknown: Header = Header.init(&test_vtable, allocatorDestroyFn(AllocatedTestObject, "unknown")),
     allocator: std.mem.Allocator,
     query_count: uint32 = 0,
     destroy_count: uint32 = 0,
@@ -129,13 +140,21 @@ pub const AllocatedTestObject = struct {
     }
 };
 
-fn allocatedTestDestroy(ptr: *anyopaque) callconv(.C) void {
-    const header: *Header = @ptrCast(@alignCast(ptr));
-    const object: *AllocatedTestObject = @fieldParentPtr("unknown", header);
-    const allocator = object.allocator;
-    object.destroy_count += 1;
-    allocator.destroy(object);
-}
+pub const OffsetAllocatedTestObject = struct {
+    prefix: uint32 = 1234,
+    unknown: Header = Header.init(&test_vtable, allocatorDestroyFn(OffsetAllocatedTestObject, "unknown")),
+    allocator: std.mem.Allocator,
+
+    pub fn create(allocator: std.mem.Allocator) !*OffsetAllocatedTestObject {
+        const object = try allocator.create(OffsetAllocatedTestObject);
+        object.* = .{ .allocator = allocator };
+        return object;
+    }
+
+    pub fn asUnknown(self: *OffsetAllocatedTestObject) *Header {
+        return &self.unknown;
+    }
+};
 
 test "queryInterface returns FUnknown pointer and increments refcount" {
     var object = TestObject{};
@@ -211,6 +230,14 @@ test "atomic refcount tolerates concurrent add and release pairs" {
 test "allocator-owned object is destroyed at refcount zero" {
     const allocator = std.testing.allocator;
     const object = try AllocatedTestObject.create(allocator);
+    const unknown = object.asUnknown();
+
+    try std.testing.expectEqual(@as(uint32, 0), unknown.vtable.release(unknown));
+}
+
+test "allocator destroy helper recovers object at nonzero field offset" {
+    const allocator = std.testing.allocator;
+    const object = try OffsetAllocatedTestObject.create(allocator);
     const unknown = object.asUnknown();
 
     try std.testing.expectEqual(@as(uint32, 0), unknown.vtable.release(unknown));

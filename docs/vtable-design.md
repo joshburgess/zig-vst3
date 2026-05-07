@@ -82,6 +82,6 @@ This is intentionally narrower than the final multi-interface design. Phase 1.4 
 
 ## Refcount Policy
 
-`addRef` uses a monotonic atomic increment and returns the new count. `release` uses a release decrement; when the count reaches zero it performs an acquire load before calling the destroy callback. Debug builds assert on release below zero.
+`addRef` uses a monotonic atomic increment and returns the new count. `release` uses a guarded compare-exchange decrement; when the count reaches zero it performs an acquire load before calling the destroy callback. Release-after-zero panics before the counter can underflow.
 
-Objects that own an allocator store it in their concrete object and release themselves from their destroy callback. This keeps allocator ownership outside the ABI header while giving the raw COM helper a single destruction hook.
+Objects that own an allocator store it in their concrete object and use `funknown.allocatorDestroyFn` as their destroy callback. This keeps allocator ownership outside the ABI header while giving the raw COM helper a single destruction hook.
