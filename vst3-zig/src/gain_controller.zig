@@ -7,9 +7,9 @@ const gain_spec = @import("gain_spec.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const interface_map = @import("interface_map.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
-const plug_state = @import("zig-plug-core").state;
 const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+const zig_plug_bridge = @import("zig_plug_bridge.zig");
 
 pub const cid = tuid.inlineUid(0xF0B8107A, 0x7E654828, 0x9113340B, 0x912D9E70);
 pub const gain_param_id: vsttypes.ParamID = gain_spec.gain_param_id;
@@ -163,14 +163,9 @@ pub fn setGain(value: vsttypes.ParamValue) void {
 }
 
 pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
-    const stream = state orelse return types.kInvalidArgument;
-    var bytes: [plug_state.encodedSize(gain_spec.Spec.Params)]u8 = undefined;
-    var read: types.int32 = 0;
-    const result = stream.vtable.read(stream, &bytes, bytes.len, &read);
-    if (result != types.kResultOk or read != bytes.len) return types.kResultFalse;
-    var state_stream = std.io.fixedBufferStream(&bytes);
     var values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
-    plug_state.readParameterState(gain_spec.Spec.Params, &gain_spec.parameter_set, &values, state_stream.reader()) catch return types.kResultFalse;
+    const result = zig_plug_bridge.readParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &values);
+    if (result != types.kResultOk) return result;
     if (values.load(gain_param_index)) |value| {
         setGain(value);
     }
@@ -178,16 +173,9 @@ pub fn readGainState(state: ?*ibstream.IBStream) types.tresult {
 }
 
 pub fn writeGainState(state: ?*ibstream.IBStream) types.tresult {
-    const stream = state orelse return types.kInvalidArgument;
-    var bytes: [plug_state.encodedSize(gain_spec.Spec.Params)]u8 = undefined;
-    var state_stream = std.io.fixedBufferStream(&bytes);
     var values = gain_spec.Spec.ParameterValues.init(&gain_spec.parameter_set);
     _ = values.store(gain_param_index, gain());
-    plug_state.writeParameterState(gain_spec.Spec.Params, &gain_spec.parameter_set, &values, state_stream.writer()) catch return types.kResultFalse;
-    var written: types.int32 = 0;
-    const result = stream.vtable.write(stream, &bytes, bytes.len, &written);
-    if (result != types.kResultOk or written != bytes.len) return types.kResultFalse;
-    return types.kResultOk;
+    return zig_plug_bridge.writeParameterState(gain_spec.Spec.Params, state, &gain_spec.parameter_set, &values);
 }
 
 fn clamp01(value: vsttypes.ParamValue) vsttypes.ParamValue {
