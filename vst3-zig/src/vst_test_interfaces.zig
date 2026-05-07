@@ -159,6 +159,95 @@ pub fn Test(comptime Config: type) type {
     };
 }
 
+pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
+    if (max_tests == 0) @compileError("TestSuite requires at least one test slot");
+    if (max_suites == 0) @compileError("TestSuite requires at least one nested suite slot");
+
+    return extern struct {
+        const Self = @This();
+
+        const TestEntry = extern struct {
+            name: ?types.FIDString = null,
+            test_iface: ?*itest.ITest = null,
+        };
+
+        const SuiteEntry = extern struct {
+            name: ?types.FIDString = null,
+            suite: ?*itest.ITestSuite = null,
+        };
+
+        iface: itest.ITestSuite = .{ .vtable = &vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        test_count: types.uint32 = 0,
+        suite_count: types.uint32 = 0,
+        tests: [max_tests]TestEntry = [_]TestEntry{.{}} ** max_tests,
+        suites: [max_suites]SuiteEntry = [_]SuiteEntry{.{}} ** max_suites,
+        environment: ?*itest.ITest = null,
+
+        pub fn asInterface(self: *Self) *itest.ITestSuite {
+            return &self.iface;
+        }
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *itest.ITestSuite = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &itest.itest_suite_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&owner(ptr).ref_count, "ITestSuite");
+        }
+
+        fn addTest(ptr: *anyopaque, name: types.FIDString, test_iface: ?*itest.ITest) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            const index = self.test_count;
+            self.test_count += 1;
+            if (index >= max_tests) return types.kResultFalse;
+            if (test_iface) |value| _ = value.vtable.addRef(value);
+            self.tests[index] = .{ .name = name, .test_iface = test_iface };
+            return types.kResultOk;
+        }
+
+        fn addTestSuite(ptr: *anyopaque, name: types.FIDString, suite_iface: ?*itest.ITestSuite) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            const index = self.suite_count;
+            self.suite_count += 1;
+            if (index >= max_suites) return types.kResultFalse;
+            if (suite_iface) |value| _ = value.vtable.addRef(value);
+            self.suites[index] = .{ .name = name, .suite = suite_iface };
+            return types.kResultOk;
+        }
+
+        fn setEnvironment(ptr: *anyopaque, environment: ?*itest.ITest) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            if (environment) |value| _ = value.vtable.addRef(value);
+            if (self.environment) |previous| _ = previous.vtable.release(previous);
+            self.environment = environment;
+            return types.kResultOk;
+        }
+
+        const vtable = itest.ITestSuiteVTable{
+            .queryInterface = query,
+            .addRef = addRef,
+            .release = release,
+            .addTest = addTest,
+            .addTestSuite = addTestSuite,
+            .setEnvironment = setEnvironment,
+        };
+    };
+}
+
 test "test result stores messages and errors" {
     const Result = TestResult(2, 8);
     var result = Result{};
@@ -236,11 +325,39 @@ test "test object delegates lifecycle hooks and description" {
     try std.testing.expectEqual(expected_description, iface.vtable.getDescription(iface).?);
 }
 
+test "test suite stores tests suites and environment" {
+    const Suite = TestSuite(1, 1);
+    const TestObject = Test(struct {});
+    var suite = Suite{};
+    var nested = Suite{};
+    var test_object = TestObject{};
+    const iface = suite.asInterface();
+    const test_iface = test_object.asInterface();
+    const nested_iface = nested.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addTest(iface, "case", test_iface));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addTest(iface, "overflow", null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addTestSuite(iface, "nested", nested_iface));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addTestSuite(iface, "overflow", null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setEnvironment(iface, test_iface));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setEnvironment(iface, null));
+
+    try std.testing.expectEqual(@as(types.uint32, 2), suite.test_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), suite.suite_count);
+    try std.testing.expectEqualStrings("case", std.mem.span(suite.tests[0].name.?));
+    try std.testing.expectEqual(test_iface, suite.tests[0].test_iface.?);
+    try std.testing.expectEqualStrings("nested", std.mem.span(suite.suites[0].name.?));
+    try std.testing.expectEqual(nested_iface, suite.suites[0].suite.?);
+    try std.testing.expectEqual(@as(?*itest.ITest, null), suite.environment);
+}
+
 test "test interfaces support query interface" {
     const TestObject = Test(struct {});
     const Result = TestResult(1, 1);
+    const Suite = TestSuite(1, 1);
     var object = TestObject{};
     var result = Result{};
+    var suite = Suite{};
 
     var queried_test: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, object.asInterface().vtable.queryInterface(object.asInterface(), &itest.itest_iid, &queried_test));
@@ -253,4 +370,10 @@ test "test interfaces support query interface" {
     try std.testing.expect(queried_result != null);
     const queried_result_iface: *itest.ITestResult = @ptrCast(@alignCast(queried_result.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_result_iface.vtable.release(queried_result_iface));
+
+    var queried_suite: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, suite.asInterface().vtable.queryInterface(suite.asInterface(), &itest.itest_suite_iid, &queried_suite));
+    try std.testing.expect(queried_suite != null);
+    const queried_suite_iface: *itest.ITestSuite = @ptrCast(@alignCast(queried_suite.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_suite_iface.vtable.release(queried_suite_iface));
 }
