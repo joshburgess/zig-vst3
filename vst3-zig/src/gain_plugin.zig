@@ -1,9 +1,9 @@
 const entry = @import("entry.zig");
 const factory = @import("factory.zig");
+const gain_component = @import("gain_component.zig");
+const gain_controller = @import("gain_controller.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const std = @import("std");
-const stub_component = @import("stub_component.zig");
-const stub_controller = @import("stub_controller.zig");
 const types = @import("pluginterfaces/base/types.zig");
 
 const StubFactory = factory.StaticFactory(.{
@@ -11,22 +11,22 @@ const StubFactory = factory.StaticFactory(.{
     .url = "https://github.com/joshburgess/zig-vst3",
 }, &.{
     .{
-        .cid = stub_component.cid,
+        .cid = gain_component.cid,
         .category = "Audio Module Class",
         .name = "zig-vst3 Gain",
-        .create = stub_component.create,
+        .create = gain_component.create,
     },
     .{
-        .cid = stub_controller.cid,
+        .cid = gain_controller.cid,
         .category = "Component Controller Class",
         .name = "zig-vst3 Gain Controller",
-        .create = stub_controller.create,
+        .create = gain_controller.create,
     },
 });
 
 pub usingnamespace entry.Exports(StubFactory);
 
-test "stub export returns enumerable factory" {
+test "gain export returns enumerable factory" {
     const plugin_factory = StubFactory.getPluginFactory().?;
     var class_info: ipluginbase.PClassInfo = .{};
 

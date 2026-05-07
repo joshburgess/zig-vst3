@@ -207,7 +207,7 @@ fn writePercent(dest: [*]vsttypes.TChar, value: vsttypes.ParamValue) void {
     dest[text.len] = 0;
 }
 
-test "stub controller can be created as IEditController" {
+test "gain controller can be created as IEditController" {
     var out: ?*anyopaque = null;
 
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &out));

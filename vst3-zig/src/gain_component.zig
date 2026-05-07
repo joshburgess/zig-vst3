@@ -3,9 +3,9 @@ const funknown = @import("funknown.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const gain_controller = @import("gain_controller.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
-const stub_controller = @import("stub_controller.zig");
 const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
@@ -98,7 +98,7 @@ fn terminate(_: *anyopaque) callconv(.C) types.tresult {
 }
 
 fn getControllerClassId(_: *anyopaque, out: *tuid.TUID) callconv(.C) types.tresult {
-    out.* = stub_controller.cid;
+    out.* = gain_controller.cid;
     return types.kResultOk;
 }
 
@@ -153,11 +153,11 @@ fn setActive(_: *anyopaque, _: types.TBool) callconv(.C) types.tresult {
 }
 
 fn setState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresult {
-    return stub_controller.readGainState(state);
+    return gain_controller.readGainState(state);
 }
 
 fn getState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.C) types.tresult {
-    return stub_controller.writeGainState(state);
+    return gain_controller.writeGainState(state);
 }
 
 fn copyAscii16(dest: *vsttypes.String128, source: []const u8) void {
@@ -238,7 +238,7 @@ fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.C) ty
         return types.kResultOk;
     }
 
-    const gain = @as(f32, @floatCast(stub_controller.gain()));
+    const gain = @as(f32, @floatCast(gain_controller.gain()));
     const input = data.inputs.?[0];
     const output = &data.outputs.?[0];
     if (input.numChannels <= 0 or output.numChannels <= 0) {
@@ -257,7 +257,7 @@ fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.C) ty
     } else {
         const inputs = input.channelBuffers.channelBuffers64 orelse return types.kResultOk;
         const outputs = output.channelBuffers.channelBuffers64 orelse return types.kResultOk;
-        const gain64 = @as(f64, stub_controller.gain());
+        const gain64 = @as(f64, gain_controller.gain());
         for (0..@intCast(channels)) |channel| {
             for (0..@intCast(data.numSamples)) |sample| {
                 outputs[channel][sample] = inputs[channel][sample] * gain64;
@@ -276,20 +276,20 @@ fn applyInputParameterChanges(data: *ivstaudioprocessor.ProcessData) void {
     const changes = data.inputParameterChanges orelse return;
     for (0..@intCast(changes.vtable.getParameterCount(changes))) |index| {
         const queue = changes.vtable.getParameterData(changes, @intCast(index)) orelse continue;
-        if (queue.vtable.getParameterId(queue) != stub_controller.gain_param_id) continue;
+        if (queue.vtable.getParameterId(queue) != gain_controller.gain_param_id) continue;
         const points = queue.vtable.getPointCount(queue);
         if (points <= 0) continue;
         var sample_offset: types.int32 = 0;
         var value: vsttypes.ParamValue = 0;
         for (0..@intCast(points)) |point_index| {
             if (queue.vtable.getPoint(queue, @intCast(point_index), &sample_offset, &value) == types.kResultOk) {
-                stub_controller.setGain(value);
+                gain_controller.setGain(value);
             }
         }
     }
 }
 
-test "stub component can be created as IComponent" {
+test "gain component can be created as IComponent" {
     var out: ?*anyopaque = null;
 
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
