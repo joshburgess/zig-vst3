@@ -85,6 +85,31 @@ test "gain controller exposes edit controller extension interfaces" {
     try std.testing.expectEqual(types.kResultOk, host_editing.vtable.endEditFromHost(host_editing, gain_param_id));
 }
 
+test "gain controller exposes default connection point" {
+    const std = @import("std");
+    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+    const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        controller_iface.vtable.queryInterface(controller_iface, &ivstmessage.iconnection_point_iid, &connection_out),
+    );
+    try std.testing.expect(connection_out != null);
+    const connection: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(connection_out.?));
+    defer _ = connection.vtable.release(connection);
+
+    try std.testing.expectEqual(types.kInvalidArgument, connection.vtable.connect(connection, null));
+    try std.testing.expectEqual(types.kResultFalse, connection.vtable.notify(connection, null));
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.disconnect(connection, null));
+}
+
 test "gain controller exposes default root unit info" {
     const std = @import("std");
     const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");

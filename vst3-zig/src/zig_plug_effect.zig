@@ -8,6 +8,7 @@ const interface_map = @import("interface_map.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
 const ivstmidilearn = @import("pluginterfaces/vst/ivstmidilearn.zig");
 const ivstmidimapping2 = @import("pluginterfaces/vst/ivstmidimapping2.zig");
 const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
@@ -29,6 +30,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         const Controller = extern struct {
             iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
+            connection_point: ivstmessage.IConnectionPoint = .{ .vtable = &connection_point_vtable },
             controller2: ivsteditcontroller.IEditController2 = .{ .vtable = &controller2_vtable },
             host_editing: ivsteditcontroller.IEditControllerHostEditing = .{ .vtable = &host_editing_vtable },
             unit_info: ivstunits.IUnitInfo = .{ .vtable = &unit_info_vtable },
@@ -43,6 +45,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             physical_ui_mapping: ivstphysicalui.INoteExpressionPhysicalUIMapping = .{ .vtable = &physical_ui_mapping_vtable },
             parameter_function_name: ivstparameterfunctionname.IParameterFunctionName = .{ .vtable = &parameter_function_name_vtable },
             remap_param_id: ivstremapparamid.IRemapParamID = .{ .vtable = &remap_param_id_vtable },
+            connected_peer: ?*ivstmessage.IConnectionPoint = null,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -106,6 +109,11 @@ pub fn ReflectedEditController(comptime Config: type) type {
         fn ownerFromController2(ptr: *anyopaque) *Controller {
             const iface: *ivsteditcontroller.IEditController2 = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("controller2", iface);
+        }
+
+        fn ownerFromConnectionPoint(ptr: *anyopaque) *Controller {
+            const iface: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("connection_point", iface);
         }
 
         fn ownerFromHostEditing(ptr: *anyopaque) *Controller {
@@ -179,6 +187,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ipluginbase.iplugin_base_iid, .ptr = ptr },
                 .{ .iid = &ivsteditcontroller.iedit_controller_iid, .ptr = ptr },
+                .{ .iid = &ivstmessage.iconnection_point_iid, .ptr = &self.connection_point },
                 .{ .iid = &ivsteditcontroller.iedit_controller2_iid, .ptr = &self.controller2 },
                 .{ .iid = &ivsteditcontroller.iedit_controller_host_editing_iid, .ptr = &self.host_editing },
                 .{ .iid = &ivstunits.iunit_info_iid, .ptr = &self.unit_info },
@@ -211,6 +220,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn queryFromController2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&ownerFromController2(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromConnectionPoint(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromConnectionPoint(ptr).iface, requested_iid, out);
         }
 
         fn queryFromHostEditing(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
@@ -291,6 +304,14 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn releaseFromController2(ptr: *anyopaque) callconv(.C) types.uint32 {
             return release(&ownerFromController2(ptr).iface);
+        }
+
+        fn addRefFromConnectionPoint(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromConnectionPoint(ptr).iface);
+        }
+
+        fn releaseFromConnectionPoint(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromConnectionPoint(ptr).iface);
         }
 
         fn addRefFromHostEditing(ptr: *anyopaque) callconv(.C) types.uint32 {
@@ -431,6 +452,38 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn createView(_: *anyopaque, _: types.FIDString) callconv(.C) ?*iplugview.IPlugView {
             return null;
+        }
+
+        const connection_point_vtable = ivstmessage.IConnectionPointVTable{
+            .queryInterface = queryFromConnectionPoint,
+            .addRef = addRefFromConnectionPoint,
+            .release = releaseFromConnectionPoint,
+            .connect = connect,
+            .disconnect = disconnect,
+            .notify = notify,
+        };
+
+        fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
+            const self = ownerFromConnectionPoint(ptr);
+            if (peer == null) {
+                self.connected_peer = null;
+                return types.kInvalidArgument;
+            }
+            self.connected_peer = peer;
+            return types.kResultOk;
+        }
+
+        fn disconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
+            const self = ownerFromConnectionPoint(ptr);
+            if (peer == null or self.connected_peer == null or self.connected_peer == peer) {
+                self.connected_peer = null;
+                return types.kResultOk;
+            }
+            return types.kResultFalse;
+        }
+
+        fn notify(_: *anyopaque, _: ?*ivstmessage.IMessage) callconv(.C) types.tresult {
+            return types.kResultFalse;
         }
 
         const controller2_vtable = ivsteditcontroller.IEditController2VTable{
@@ -762,11 +815,13 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         const Component = extern struct {
             iface: ivstcomponent.IComponent = .{ .vtable = &component_vtable },
+            connection_point: ivstmessage.IConnectionPoint = .{ .vtable = &component_connection_point_vtable },
             processor: ivstaudioprocessor.IAudioProcessor = .{ .vtable = &processor_vtable },
             process_context_requirements: ivstaudioprocessor.IProcessContextRequirements = .{ .vtable = &process_context_requirements_vtable },
             audio_presentation_latency: ivstaudioprocessor.IAudioPresentationLatency = .{ .vtable = &audio_presentation_latency_vtable },
             plug_interface_support: ivstpluginterfacesupport.IPlugInterfaceSupport = .{ .vtable = &plug_interface_support_vtable },
             prefetchable_support: ivstprefetchablesupport.IPrefetchableSupport = .{ .vtable = &prefetchable_support_vtable },
+            connected_peer: ?*ivstmessage.IConnectionPoint = null,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -803,6 +858,11 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return @fieldParentPtr("processor", iface);
         }
 
+        fn ownerFromComponentConnectionPoint(ptr: *anyopaque) *Component {
+            const iface: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("connection_point", iface);
+        }
+
         fn ownerFromProcessContextRequirements(ptr: *anyopaque) *Component {
             const iface: *ivstaudioprocessor.IProcessContextRequirements = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("process_context_requirements", iface);
@@ -829,6 +889,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ipluginbase.iplugin_base_iid, .ptr = ptr },
                 .{ .iid = &ivstcomponent.icomponent_iid, .ptr = ptr },
+                .{ .iid = &ivstmessage.iconnection_point_iid, .ptr = &self.connection_point },
                 .{ .iid = &ivstaudioprocessor.iaudio_processor_iid, .ptr = &self.processor },
                 .{ .iid = &ivstaudioprocessor.iprocess_context_requirements_iid, .ptr = &self.process_context_requirements },
                 .{ .iid = &ivstaudioprocessor.iaudio_presentation_latency_iid, .ptr = &self.audio_presentation_latency },
@@ -840,6 +901,10 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn queryFromProcessor(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             return query(&ownerFromProcessor(ptr).iface, requested_iid, out);
+        }
+
+        fn queryFromComponentConnectionPoint(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return query(&ownerFromComponentConnectionPoint(ptr).iface, requested_iid, out);
         }
 
         fn queryFromProcessContextRequirements(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
@@ -933,6 +998,14 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return release(&ownerFromProcessor(ptr).iface);
         }
 
+        fn addRefFromComponentConnectionPoint(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return addRef(&ownerFromComponentConnectionPoint(ptr).iface);
+        }
+
+        fn releaseFromComponentConnectionPoint(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return release(&ownerFromComponentConnectionPoint(ptr).iface);
+        }
+
         fn addRefFromProcessContextRequirements(ptr: *anyopaque) callconv(.C) types.uint32 {
             return addRef(&ownerFromProcessContextRequirements(ptr).iface);
         }
@@ -963,6 +1036,38 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn releaseFromPrefetchableSupport(ptr: *anyopaque) callconv(.C) types.uint32 {
             return release(&ownerFromPrefetchableSupport(ptr).iface);
+        }
+
+        const component_connection_point_vtable = ivstmessage.IConnectionPointVTable{
+            .queryInterface = queryFromComponentConnectionPoint,
+            .addRef = addRefFromComponentConnectionPoint,
+            .release = releaseFromComponentConnectionPoint,
+            .connect = componentConnect,
+            .disconnect = componentDisconnect,
+            .notify = componentNotify,
+        };
+
+        fn componentConnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
+            const self = ownerFromComponentConnectionPoint(ptr);
+            if (peer == null) {
+                self.connected_peer = null;
+                return types.kInvalidArgument;
+            }
+            self.connected_peer = peer;
+            return types.kResultOk;
+        }
+
+        fn componentDisconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
+            const self = ownerFromComponentConnectionPoint(ptr);
+            if (peer == null or self.connected_peer == null or self.connected_peer == peer) {
+                self.connected_peer = null;
+                return types.kResultOk;
+            }
+            return types.kResultFalse;
+        }
+
+        fn componentNotify(_: *anyopaque, _: ?*ivstmessage.IMessage) callconv(.C) types.tresult {
+            return types.kResultFalse;
         }
 
         const process_context_requirements_vtable = ivstaudioprocessor.IProcessContextRequirementsVTable{
@@ -997,6 +1102,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         fn isPlugInterfaceSupported(_: *anyopaque, iid: *const tuid.TUID) callconv(.C) types.tresult {
             const supported = [_]*const tuid.TUID{
                 &ivstcomponent.icomponent_iid,
+                &ivstmessage.iconnection_point_iid,
                 &ivstaudioprocessor.iaudio_processor_iid,
                 &ivstaudioprocessor.iprocess_context_requirements_iid,
                 &ivstaudioprocessor.iaudio_presentation_latency_iid,

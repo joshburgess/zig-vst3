@@ -96,6 +96,31 @@ test "gain component exposes process context requirements" {
     try std.testing.expectEqual(@as(types.uint32, 0), processor_requirements.vtable.getProcessContextRequirements(processor_requirements));
 }
 
+test "gain component exposes default connection point" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstmessage.iconnection_point_iid, &connection_out),
+    );
+    try std.testing.expect(connection_out != null);
+    const connection: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(connection_out.?));
+    defer _ = connection.vtable.release(connection);
+
+    try std.testing.expectEqual(types.kInvalidArgument, connection.vtable.connect(connection, null));
+    try std.testing.expectEqual(types.kResultFalse, connection.vtable.notify(connection, null));
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.disconnect(connection, null));
+}
+
 test "gain component exposes default processor capability interfaces" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
@@ -131,6 +156,8 @@ test "gain component exposes default processor capability interfaces" {
     try std.testing.expect(support_out != null);
     const support: *ivstpluginterfacesupport.IPlugInterfaceSupport = @ptrCast(@alignCast(support_out.?));
     defer _ = support.vtable.release(support);
+    const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
+    try std.testing.expectEqual(types.kResultOk, support.vtable.isPlugInterfaceSupported(support, &ivstmessage.iconnection_point_iid));
     try std.testing.expectEqual(types.kResultOk, support.vtable.isPlugInterfaceSupported(support, &ivstaudioprocessor.iaudio_processor_iid));
     try std.testing.expectEqual(types.kResultFalse, support.vtable.isPlugInterfaceSupported(support, &ivstunits.iunit_info_iid));
 
