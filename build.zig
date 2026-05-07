@@ -38,6 +38,19 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(gain);
 
+    const bypass_module = b.createModule(.{
+        .root_source_file = b.path("vst3-zig/src/bypass_plugin.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    bypass_module.addImport("zig-plug-core", zig_plug_core);
+    const bypass = b.addLibrary(.{
+        .linkage = .dynamic,
+        .name = "zig_vst3_bypass",
+        .root_module = bypass_module,
+    });
+    b.installArtifact(bypass);
+
     const entry_symbols_step = b.step("entry-symbols", "Verify native VST3 module entry exports");
     const check_entry_symbols = b.addSystemCommand(&.{"scripts/check_entry_symbols.sh"});
     check_entry_symbols.addFileArg(gain.getEmittedBin());
@@ -56,6 +69,20 @@ pub fn build(b: *std.Build) void {
         bundle_gain_step.dependOn(&bundle_gain.step);
     } else {
         bundle_gain_step.dependOn(&b.addFail("bundle-gain currently supports macOS targets").step);
+    }
+    const bundle_bypass_step = b.step("bundle-bypass", "Build a native VST3 bundle for the bypass plugin");
+    if (target.result.os.tag == .macos) {
+        const bundle_bypass = b.addSystemCommand(&.{"scripts/bundle_macos_vst3.sh"});
+        bundle_bypass.addFileArg(bypass.getEmittedBin());
+        bundle_bypass.addArgs(&.{
+            b.getInstallPath(.prefix, "bundle/zig_vst3_bypass.vst3"),
+            "dev.zig-vst3.bypass",
+            "0.1.0",
+            "zig_vst3_bypass",
+        });
+        bundle_bypass_step.dependOn(&bundle_bypass.step);
+    } else {
+        bundle_bypass_step.dependOn(&b.addFail("bundle-bypass currently supports macOS targets").step);
     }
     const bundle_gain_linux_step = b.step("bundle-gain-linux", "Build a Linux VST3 bundle for the gain plugin");
     if (target.result.os.tag == .linux) {
@@ -113,6 +140,16 @@ pub fn build(b: *std.Build) void {
         .root_module = gain_test_module,
     });
 
+    const bypass_test_module = b.createModule(.{
+        .root_source_file = b.path("vst3-zig/src/bypass_plugin.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    bypass_test_module.addImport("zig-plug-core", zig_plug_core);
+    const bypass_tests = b.addTest(.{
+        .root_module = bypass_test_module,
+    });
+
     const gain_core_example_module = b.createModule(.{
         .root_source_file = b.path("examples/gain_core.zig"),
         .target = target,
@@ -157,6 +194,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(vst3_tests).step);
     test_step.dependOn(&b.addRunArtifact(zig_plug_tests).step);
     test_step.dependOn(&b.addRunArtifact(gain_tests).step);
+    test_step.dependOn(&b.addRunArtifact(bypass_tests).step);
     test_step.dependOn(&b.addRunArtifact(gain_core_example_tests).step);
     test_step.dependOn(&b.addRunArtifact(bypass_core_example_tests).step);
     test_step.dependOn(&b.addRunArtifact(mode_gain_core_example_tests).step);
@@ -182,6 +220,18 @@ pub fn build(b: *std.Build) void {
         validate_gain_step.dependOn(&validate_gain.step);
     } else {
         validate_gain_step.dependOn(&b.addFail("validate-gain currently supports macOS targets").step);
+    }
+    const validate_bypass_step = b.step("validate-bypass", "Build and validate the native bypass VST3 bundle");
+    if (target.result.os.tag == .macos) {
+        validate_bypass_step.dependOn(bundle_bypass_step);
+        const validate_bypass = b.addSystemCommand(&.{
+            "scripts/validate.sh",
+            b.getInstallPath(.prefix, "bundle/zig_vst3_bypass.vst3"),
+        });
+        validate_bypass.step.dependOn(bundle_bypass_step);
+        validate_bypass_step.dependOn(&validate_bypass.step);
+    } else {
+        validate_bypass_step.dependOn(&b.addFail("validate-bypass currently supports macOS targets").step);
     }
     const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});

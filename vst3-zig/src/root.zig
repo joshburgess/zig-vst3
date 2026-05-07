@@ -1,6 +1,10 @@
 const std = @import("std");
 
 pub const entry = @import("entry.zig");
+pub const bypass_component = @import("bypass_component.zig");
+pub const bypass_controller = @import("bypass_controller.zig");
+pub const bypass_plugin = @import("bypass_plugin.zig");
+pub const bypass_spec = @import("bypass_spec.zig");
 pub const factory = @import("factory.zig");
 pub const funknown = @import("funknown.zig");
 pub const gain_component = @import("gain_component.zig");
