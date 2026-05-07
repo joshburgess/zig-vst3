@@ -7,7 +7,9 @@ const gain_controller = @import("gain_controller.zig");
 const interface_map = @import("interface_map.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
+const audio_processor_algo = @import("pluginterfaces/vst/vstaudioprocessoralgo.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 pub const cid = tuid.inlineUid(0xA74E7A0D, 0x6B234163, 0xA0A83EBF, 0xD06F1401);
@@ -220,7 +222,11 @@ fn setProcessing(_: *anyopaque, _: types.TBool) callconv(.C) types.tresult {
 }
 
 fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.C) types.tresult {
-    applyInputParameterChanges(data);
+    var parameter_change_storage: [64]plug_process.ParameterChange = undefined;
+    const parameter_changes = collectInputParameterChanges(data, &parameter_change_storage);
+    if (parameter_changes.latest(gain_controller.gain_param_id)) |change| {
+        gain_controller.setGain(change.normalized);
+    }
     if (data.numInputs <= 0 or data.numOutputs <= 0 or data.inputs == null or data.outputs == null) {
         return types.kResultOk;
     }
@@ -259,21 +265,37 @@ fn getTailSamples(_: *anyopaque) callconv(.C) types.uint32 {
     return ivstaudioprocessor.kNoTail;
 }
 
-fn applyInputParameterChanges(data: *ivstaudioprocessor.ProcessData) void {
-    const changes = data.inputParameterChanges orelse return;
-    for (0..@intCast(changes.vtable.getParameterCount(changes))) |index| {
-        const queue = changes.vtable.getParameterData(changes, @intCast(index)) orelse continue;
-        if (queue.vtable.getParameterId(queue) != gain_controller.gain_param_id) continue;
-        const points = queue.vtable.getPointCount(queue);
-        if (points <= 0) continue;
-        var sample_offset: types.int32 = 0;
-        var value: vsttypes.ParamValue = 0;
-        for (0..@intCast(points)) |point_index| {
-            if (queue.vtable.getPoint(queue, @intCast(point_index), &sample_offset, &value) == types.kResultOk) {
-                gain_controller.setGain(value);
-            }
-        }
-    }
+fn collectInputParameterChanges(data: *ivstaudioprocessor.ProcessData, storage: []plug_process.ParameterChange) plug_process.ParameterChanges {
+    var collector = ParameterChangeCollector{
+        .storage = storage,
+        .frame_count = if (data.numSamples <= 0) 0 else @intCast(data.numSamples),
+    };
+    audio_processor_algo.forEachParameterChanges(data.inputParameterChanges, &collector, collectParameterQueue);
+    return plug_process.ParameterChanges.init(storage[0..collector.count], collector.frame_count) catch .{};
+}
+
+const ParameterChangeCollector = struct {
+    storage: []plug_process.ParameterChange,
+    count: usize = 0,
+    frame_count: usize,
+};
+
+fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *@import("pluginterfaces/vst/ivstparameterchanges.zig").IParamValueQueue) void {
+    audio_processor_algo.forEachParamValueQueue(queue, collector, collectParameterPoint);
+}
+
+fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.ParamID, sample_offset: types.int32, value: vsttypes.ParamValue) void {
+    if (collector.count >= collector.storage.len) return;
+    if (sample_offset < 0) return;
+    const offset: usize = @intCast(sample_offset);
+    if (offset >= collector.frame_count) return;
+    if (value < 0.0 or value > 1.0 or std.math.isNan(value)) return;
+    collector.storage[collector.count] = .{
+        .id = id,
+        .sample_offset = offset,
+        .normalized = value,
+    };
+    collector.count += 1;
 }
 
 test "gain component can be created as IComponent" {
