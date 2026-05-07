@@ -248,6 +248,59 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
     };
 }
 
+pub fn TestFactory(comptime Config: type) type {
+    return extern struct {
+        const Self = @This();
+
+        iface: itest.ITestFactory = .{ .vtable = &vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        create_count: types.uint32 = 0,
+        last_context: ?*anyopaque = null,
+        last_suite: ?*itest.ITestSuite = null,
+
+        pub fn asInterface(self: *Self) *itest.ITestFactory {
+            return &self.iface;
+        }
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *itest.ITestFactory = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &itest.itest_factory_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&owner(ptr).ref_count, "ITestFactory");
+        }
+
+        fn createTests(ptr: *anyopaque, context: ?*anyopaque, suite: ?*itest.ITestSuite) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.create_count += 1;
+            self.last_context = context;
+            self.last_suite = suite;
+            if (@hasDecl(Config, "createTests")) return Config.createTests(self, context, suite);
+            return types.kResultOk;
+        }
+
+        const vtable = itest.ITestFactoryVTable{
+            .queryInterface = query,
+            .addRef = addRef,
+            .release = release,
+            .createTests = createTests,
+        };
+    };
+}
+
 test "test result stores messages and errors" {
     const Result = TestResult(2, 8);
     var result = Result{};
@@ -351,13 +404,35 @@ test "test suite stores tests suites and environment" {
     try std.testing.expectEqual(@as(?*itest.ITest, null), suite.environment);
 }
 
+test "test factory tracks create calls and delegates hook" {
+    const Factory = TestFactory(struct {
+        pub fn createTests(self: anytype, context: ?*anyopaque, suite: ?*itest.ITestSuite) types.tresult {
+            _ = self;
+            return if (context != null and suite != null) types.kResultOk else types.kInvalidArgument;
+        }
+    });
+    const Suite = TestSuite(1, 1);
+    var factory = Factory{};
+    var suite = Suite{};
+    const iface = factory.asInterface();
+    const context: *anyopaque = @ptrFromInt(0x1000);
+
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.createTests(iface, null, null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.createTests(iface, context, suite.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 2), factory.create_count);
+    try std.testing.expectEqual(context, factory.last_context.?);
+    try std.testing.expectEqual(suite.asInterface(), factory.last_suite.?);
+}
+
 test "test interfaces support query interface" {
     const TestObject = Test(struct {});
     const Result = TestResult(1, 1);
     const Suite = TestSuite(1, 1);
+    const Factory = TestFactory(struct {});
     var object = TestObject{};
     var result = Result{};
     var suite = Suite{};
+    var factory = Factory{};
 
     var queried_test: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, object.asInterface().vtable.queryInterface(object.asInterface(), &itest.itest_iid, &queried_test));
@@ -376,4 +451,10 @@ test "test interfaces support query interface" {
     try std.testing.expect(queried_suite != null);
     const queried_suite_iface: *itest.ITestSuite = @ptrCast(@alignCast(queried_suite.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_suite_iface.vtable.release(queried_suite_iface));
+
+    var queried_factory: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, factory.asInterface().vtable.queryInterface(factory.asInterface(), &itest.itest_factory_iid, &queried_factory));
+    try std.testing.expect(queried_factory != null);
+    const queried_factory_iface: *itest.ITestFactory = @ptrCast(@alignCast(queried_factory.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_factory_iface.vtable.release(queried_factory_iface));
 }

@@ -359,7 +359,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.10b: Test interface helpers
 
-`ITest`, `ITestResult`, `ITestSuite`, `ITestFactory`. The raw ABI translation is present, and `vst_test_interfaces.zig` provides reusable hook-based `ITest`, fixed-capacity `ITestResult`, and fixed-slot `ITestSuite` objects for local host/test harnesses.
+`ITest`, `ITestResult`, `ITestSuite`, `ITestFactory`. The raw ABI translation is present, and `vst_test_interfaces.zig` provides reusable hook-based `ITest`, fixed-capacity `ITestResult`, fixed-slot `ITestSuite`, and hook-based `ITestFactory` objects for local host/test harnesses.
 
 ### Work Unit 2.11: Phase 2 integration milestone
 
