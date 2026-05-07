@@ -315,7 +315,7 @@ Plugin discovery and instantiation. Includes `PFactoryInfo`, `PClassInfo`, `PCla
 
 ### Work Unit 2.3: `IBStream`, `ISizeableStream`
 
-State serialization streams. The raw string-result, persistence, and plugin-compatibility interfaces are translated. `vst_string_result.zig` provides a reusable fixed-buffer `IStringResult`/`IString` object for SDK callbacks that return text, `vst_persistent_attributes.zig` provides a reusable fixed-slot `IAttributes`/`IAttributes2` store for variant and binary metadata, and `vst_plugin_compatibility.zig` provides a reusable JSON compatibility provider.
+State serialization streams. The raw error-context, string-result, persistence, and plugin-compatibility interfaces are translated. `vst_error_context.zig` provides a reusable fixed-message `IErrorContext`, `vst_string_result.zig` provides a reusable fixed-buffer `IStringResult`/`IString` object for SDK callbacks that return text, `vst_persistent_attributes.zig` provides a reusable fixed-slot `IAttributes`/`IAttributes2` store for variant and binary metadata, and `vst_plugin_compatibility.zig` provides a reusable JSON compatibility provider.
 
 ### Work Unit 2.4: `IComponent` and supporting types
 
