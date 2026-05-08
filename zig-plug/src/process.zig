@@ -21,6 +21,14 @@ pub const ParameterChanges = struct {
         return .{ .items = items };
     }
 
+    pub fn changeCount(self: ParameterChanges) usize {
+        return self.items.len;
+    }
+
+    pub fn isEmpty(self: ParameterChanges) bool {
+        return self.items.len == 0;
+    }
+
     pub fn latest(self: ParameterChanges, id: u32) ?ParameterChange {
         var result: ?ParameterChange = null;
         for (self.items) |item| {
@@ -478,6 +486,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes;
         }
 
+        pub fn parameterChangeCount(self: @This()) usize {
+            return self.parameter_changes.changeCount();
+        }
+
+        pub fn parameterChangesEmpty(self: @This()) bool {
+            return self.parameter_changes.isEmpty();
+        }
+
         pub fn latestParameterChange(self: @This(), id: u32) ?ParameterChange {
             return self.parameter_changes.latest(id);
         }
@@ -724,6 +740,8 @@ test "process context validates attached parameter changes and events" {
 
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(usize, 1), context.parameterChanges().items.len);
+    try std.testing.expectEqual(@as(usize, 1), context.parameterChangeCount());
+    try std.testing.expect(!context.parameterChangesEmpty());
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(usize, 1), context.countParameterChanges(1));
@@ -796,6 +814,8 @@ test "parameter changes validate block offsets and normalized values" {
     const view = try ParameterChanges.init(&changes, 4);
 
     try std.testing.expectEqual(@as(usize, 3), view.items.len);
+    try std.testing.expectEqual(@as(usize, 3), view.changeCount());
+    try std.testing.expect(!view.isEmpty());
     try std.testing.expect(view.has(7));
     try std.testing.expect(!view.has(9));
     try std.testing.expectEqual(@as(usize, 2), view.count(7));
@@ -824,6 +844,8 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffset(0));
     try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffset(2));
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffset(3));
+    try std.testing.expectEqual(@as(usize, 0), (ParameterChanges{}).changeCount());
+    try std.testing.expect((ParameterChanges{}).isEmpty());
 }
 
 test "parameter changes reject values outside the process block" {
