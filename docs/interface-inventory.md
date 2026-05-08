@@ -99,7 +99,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IPluginBase` | Initial vtable translation complete |
 | `IPluginFactory`, `IPluginFactory2`, `IPluginFactory3` | Initial vtable and struct translation complete |
 | `PFactoryInfo`, `PClassInfo`, `PClassInfo2`, `PClassInfoW` | Layout checked against the pinned SDK with `zig build pluginbase-abi` |
-| `IBStream`, `ISizeableStream` | Initial vtable translation complete; IIDs and seek constants checked with `zig build ibstream-abi` |
+| `IBStream`, `ISizeableStream` | Initial vtable translation complete; IIDs and seek constants checked with `zig build ibstream-abi`; reusable fixed-buffer helper added in `vst_stream.zig` with deterministic failed read/write/seek outputs |
 | `IStringResult`, `IString`, `IErrorContext` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build base-strings-error-abi` |
 | `FVariant`, `ICloneable`, `IPersistent`, `IAttributes`, `IAttributes2` | Initial struct and vtable translation complete; layout and IIDs checked against the pinned SDK with `zig build base-persistence-abi` |
 | `IUpdateHandler`, `IDependent`, `IPluginCompatibility` | Initial vtable translation complete; constants and IIDs checked against the pinned SDK with `zig build base-update-compatibility-abi` |
@@ -111,7 +111,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IProgress`, `IEditController2`, `IComponentHandler2`, `IComponentHandlerBusActivation`, `IEditControllerHostEditing`, `IComponentHandlerSystemTime` | Initial vtable translation complete; IIDs checked with `zig build edit-controller-abi` |
 | `IParameterChanges`, `IParamValueQueue` | Initial vtable translation complete; IIDs checked with `zig build parameter-changes-abi`; reusable fixed-slot helper added in `vst_parameter_changes.zig` |
 | `IEventList`, `Event`, event payload structs, and event helper functions | Initial vtable, struct, and helper translation complete; layout checked against the pinned SDK with `zig build events-abi`; reusable fixed-slot helper added in `vst_event_list.zig` |
-| `IConnectionPoint`, `IMessage`, `IAttributeList`, `IHostApplication`, and adjacent host/wrapper interfaces | Initial vtable translation complete; IIDs checked with `zig build host-message-abi`; reusable host-side helper added in `vst_host_application.zig` |
+| `IConnectionPoint`, `IMessage`, `IAttributeList`, `IHostApplication`, and adjacent host/wrapper interfaces | Initial vtable translation complete; IIDs checked with `zig build host-message-abi`; reusable host-side helper added in `vst_host_application.zig`; reusable message and attribute helpers added in `vst_message.zig` |
 | `IVst3ToVst2Wrapper`, `IVst3ToAUWrapper`, `IVst3ToAAXWrapper`, `IVst3WrapperMPESupport` | Initial vtable translation complete; IIDs checked with `zig build host-message-abi`; reusable wrapper marker and MPE support helpers added in `vst_host_application.zig` |
 | `IPlugView`, `IPlugFrame`, `IPlugViewContentScaleSupport`, and Linux run loop interfaces | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build plugview-abi` |
 | `IUnitInfo`, `IProgramListData`, `IUnitData`, `IUnitHandler`, `IUnitHandler2`, `UnitInfo`, `ProgramListInfo` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build units-abi` |
