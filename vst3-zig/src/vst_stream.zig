@@ -6,6 +6,8 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 
 pub fn FixedBufferStream(comptime capacity: usize) type {
+    if (capacity == 0) @compileError("FixedBufferStream requires at least one byte of capacity");
+
     return extern struct {
         const Self = @This();
 
@@ -76,12 +78,12 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         }
 
         fn read(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_read: ?*types.int32) callconv(.C) types.tresult {
+            if (bytes_read) |out| out.* = 0;
             if (byte_count < 0) return types.kInvalidArgument;
             const requested: usize = @intCast(byte_count);
             if (requested > 0 and buffer == null) return types.kInvalidArgument;
             const self = ownerFromStream(ptr);
             if (self.pos + requested > self.len) {
-                if (bytes_read) |out| out.* = 0;
                 return types.kResultFalse;
             }
             if (requested > 0) {
@@ -94,12 +96,12 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         }
 
         fn write(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_written: ?*types.int32) callconv(.C) types.tresult {
+            if (bytes_written) |out| out.* = 0;
             if (byte_count < 0) return types.kInvalidArgument;
             const requested: usize = @intCast(byte_count);
             if (requested > 0 and buffer == null) return types.kInvalidArgument;
             const self = ownerFromStream(ptr);
             if (self.pos + requested > capacity or self.pos + requested > self.write_limit) {
-                if (bytes_written) |out| out.* = 0;
                 return types.kResultFalse;
             }
             if (requested > 0) {
@@ -119,7 +121,10 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
                 .kIBSeekCur => @as(types.int64, @intCast(self.pos)) + offset,
                 .kIBSeekEnd => @as(types.int64, @intCast(self.len)) + offset,
             };
-            if (next < 0 or next > self.len) return types.kResultFalse;
+            if (next < 0 or next > self.len) {
+                if (result) |out| out.* = -1;
+                return types.kResultFalse;
+            }
             self.pos = @intCast(next);
             if (result) |out| out.* = next;
             return types.kResultOk;
@@ -195,11 +200,31 @@ test "fixed buffer stream enforces bounds and supports query interface" {
     var stream = Stream{ .write_limit = 2 };
     const iface = stream.asStream();
     var input = [_]u8{ 1, 2, 3 };
+    var count: types.int32 = 99;
 
-    try std.testing.expectEqual(types.kResultFalse, iface.vtable.write(iface, &input, input.len, null));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.write(iface, &input, -1, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
+    count = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.write(iface, null, input.len, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
+    count = 99;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.write(iface, &input, input.len, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
     stream.write_limit = 4;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.write(iface, &input, 2, null));
-    try std.testing.expectEqual(types.kResultFalse, iface.vtable.read(iface, &input, 3, null));
+    count = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.read(iface, &input, -1, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
+    count = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.read(iface, null, 1, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
+    count = 99;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.read(iface, &input, 3, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
+
+    var pos: types.int64 = 99;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.seek(iface, 100, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), &pos));
+    try std.testing.expectEqual(@as(types.int64, -1), pos);
 
     var queried: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ibstream.isizeable_stream_iid, &queried));
