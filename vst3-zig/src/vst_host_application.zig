@@ -63,8 +63,12 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
         fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             self.create_instance_count += 1;
-            if (@hasDecl(Config, "createInstance")) return Config.createInstance(self, cid, iid, out);
             out.* = null;
+            if (@hasDecl(Config, "createInstance")) {
+                const result = Config.createInstance(self, cid, iid, out);
+                if (result != types.kResultOk) out.* = null;
+                return result;
+            }
             return types.kResultFalse;
         }
 
@@ -205,6 +209,22 @@ test "host application exposes name and create-instance hook" {
     var created: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.createInstance(iface, &funknown.iid, &funknown.iid, &created));
     try std.testing.expect(created != null);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.create_instance_count);
+}
+
+test "host application clears failed delegated create-instance output" {
+    const Host = HostApplication("Test Host", struct {
+        pub fn createInstance(_: anytype, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            out.* = @ptrFromInt(0x10);
+            return types.kNoInterface;
+        }
+    });
+    var host = Host{};
+    const iface = host.asInterface();
+
+    var created: ?*anyopaque = @ptrFromInt(0x20);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.createInstance(iface, &funknown.iid, &funknown.iid, &created));
+    try std.testing.expectEqual(@as(?*anyopaque, null), created);
     try std.testing.expectEqual(@as(types.uint32, 1), host.create_instance_count);
 }
 
