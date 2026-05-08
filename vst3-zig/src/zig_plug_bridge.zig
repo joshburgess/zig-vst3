@@ -582,14 +582,14 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
             .pitch = event.data.polyPressure.pitch,
             .value = event.data.polyPressure.pressure,
         } else null,
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent) => .{
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent) => if (isFiniteValue(event.data.noteExpressionValue.value)) .{
             .kind = .note_expression_value,
             .bus_index = event.busIndex,
             .sample_offset = offset,
             .note_id = event.data.noteExpressionValue.noteId,
             .expression_type_id = event.data.noteExpressionValue.typeId,
             .value = @floatCast(event.data.noteExpressionValue.value),
-        },
+        } else null,
         @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent) => .{
             .kind = .note_expression_int,
             .bus_index = event.busIndex,
@@ -651,6 +651,10 @@ fn isUnitValue(value: f32) bool {
     return !std.math.isNan(value) and value >= 0.0 and value <= 1.0;
 }
 
+fn isFiniteValue(value: anytype) bool {
+    return !std.math.isNan(value) and !std.math.isInf(value);
+}
+
 fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
     if (event.sample_offset > std.math.maxInt(types.int32)) return null;
     const offset: types.int32 = @intCast(event.sample_offset);
@@ -710,6 +714,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
             } };
         },
         .note_expression_value => {
+            if (!isFiniteValue(event.value)) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent);
             result.data = .{ .noteExpressionValue = .{
                 .typeId = event.expression_type_id,
@@ -1014,6 +1019,16 @@ test "zig-plug bridge drops invalid and overflowing VST3 input events" {
         },
         .{
             .busIndex = 0,
+            .sampleOffset = 2,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent),
+            .data = .{ .noteExpressionValue = .{
+                .typeId = 5,
+                .noteId = 42,
+                .value = std.math.nan(vsttypes.ParamValue),
+            } },
+        },
+        .{
+            .busIndex = 0,
             .sampleOffset = 3,
             .type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent),
             .data = .{ .data = .{} },
@@ -1270,6 +1285,7 @@ test "zig-plug bridge drops output MIDI events with invalid legacy fields" {
         .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = 60, .velocity = std.math.nan(f32) },
         .{ .kind = .note_off, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = 60, .velocity = -0.1 },
         .{ .kind = .aftertouch, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = 60, .value = 1.1 },
+        .{ .kind = .note_expression_value, .bus_index = 0, .sample_offset = 0, .note_id = 42, .expression_type_id = 5, .value = std.math.inf(f32) },
     };
     const List = vst_event_list.EventList(1);
     var list = List{};
