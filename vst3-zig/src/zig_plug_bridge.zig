@@ -571,30 +571,13 @@ fn collectLegacyMidiCcEvent(event: *const ivstevents.Event, offset: usize) plug.
     const control_number: i16 = @intCast(midi.controlNumber);
     const value = events_helper.getMIDINormValue(@intCast(@max(midi.value, 0)));
     return switch (midi.controlNumber) {
-        ivstmidicontrollers.kPitchBend => .{
-            .kind = .pitch_bend,
-            .bus_index = event.busIndex,
-            .sample_offset = offset,
-            .channel = midi.channel,
-            .control_number = control_number,
-            .value = @floatCast(events_helper.getNormPitchBendValue(midi)),
-        },
-        ivstmidicontrollers.kAfterTouch => .{
-            .kind = .aftertouch,
-            .bus_index = event.busIndex,
-            .sample_offset = offset,
-            .channel = midi.channel,
-            .control_number = control_number,
-            .value = @floatCast(value),
-        },
-        else => .{
-            .kind = .midi_cc,
-            .bus_index = event.busIndex,
-            .sample_offset = offset,
-            .channel = midi.channel,
-            .control_number = control_number,
-            .value = @floatCast(value),
-        },
+        ivstmidicontrollers.kPitchBend => plug.process.Event.pitchBend(offset, midi.channel, @floatCast(events_helper.getNormPitchBendValue(midi)))
+            .withBusIndex(event.busIndex)
+            .withControlNumber(control_number),
+        ivstmidicontrollers.kAfterTouch => plug.process.Event.aftertouch(offset, midi.channel, 0, @floatCast(value))
+            .withBusIndex(event.busIndex)
+            .withControlNumber(control_number),
+        else => plug.process.Event.midiCc(offset, midi.channel, control_number, @floatCast(value)).withBusIndex(event.busIndex),
     };
 }
 
