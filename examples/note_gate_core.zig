@@ -19,6 +19,7 @@ pub const NoteGate = struct {
 };
 
 pub const Spec = plug.plugin.PluginSpec(NoteGate);
+pub const Instance = plug.plugin.PluginInstance(NoteGate);
 
 test "note gate core example declares reflected metadata" {
     const spec = Spec.init(.{});
@@ -70,4 +71,26 @@ test "note gate core example passes audio when a note-on event is present" {
     try std.testing.expectEqual(@as(f32, 0.25), output[0]);
     try std.testing.expectEqual(@as(f32, -0.5), output[1]);
     try std.testing.expectEqual(@as(f32, 1.0), output[2]);
+}
+
+test "note gate core example can run through plugin instance" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const input = [_]f32{ 0.25, -0.5 };
+    var output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const events = [_]plug.process.Event{
+        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 0, .pitch = 60, .velocity = 0.75 },
+    };
+    var context = plug.process.ProcessContext(f32){
+        .sample_rate = 48_000.0,
+        .inputs = try plug.process.AudioInputs(f32).init(&input_channels),
+        .outputs = try plug.process.AudioOutputs(f32).init(&output_channels),
+        .events = try plug.process.Events.init(&events, input.len),
+    };
+
+    instance.process(&context);
+
+    try std.testing.expectEqual(@as(f32, 0.25), output[0]);
+    try std.testing.expectEqual(@as(f32, -0.5), output[1]);
 }
