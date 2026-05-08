@@ -1463,8 +1463,8 @@ test "zig-plug bridge builds process context from VST3 buffers" {
     const context = try makeProcessContext(f32, input, output, &data, .{}, .{}, null);
 
     try std.testing.expectEqual(@as(usize, 2), context.frameCount());
-    try std.testing.expectEqual(@as(f32, 3.0), context.inputs.channel(1).?[0]);
-    context.outputs.channel(0).?[1] = 9.0;
+    try std.testing.expectEqual(@as(f32, 3.0), context.inputChannel(1).?[0]);
+    context.outputChannel(0).?[1] = 9.0;
     try std.testing.expectEqual(@as(f32, 9.0), out_left[1]);
 }
 
@@ -1502,7 +1502,7 @@ test "zig-plug bridge builds process context from main VST3 buses" {
     const context = try makeMainAudioProcessContext(f32, &data, .{}, .{}, null);
 
     try std.testing.expectEqual(@as(usize, 2), context.frameCount());
-    try std.testing.expectEqual(@as(f32, 4.0), context.inputs.channel(1).?[1]);
+    try std.testing.expectEqual(@as(f32, 4.0), context.inputChannel(1).?[1]);
 }
 
 test "zig-plug bridge rejects missing main process buses" {
@@ -1518,9 +1518,9 @@ test "zig-plug bridge rejects missing main process buses" {
 test "zig-plug bridge dispatches main audio processing by sample size" {
     const Doubler = struct {
         pub fn process(_: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
-            for (0..context.outputs.channels.len) |channel| {
-                const input = context.inputs.channel(channel) orelse continue;
-                const output = context.outputs.channel(channel) orelse continue;
+            for (0..context.outputChannelCount()) |channel| {
+                const input = context.inputChannel(channel) orelse continue;
+                const output = context.outputChannel(channel) orelse continue;
                 for (0..context.frameCount()) |sample| {
                     output[sample] = input[sample] * 2;
                 }

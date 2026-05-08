@@ -10,9 +10,9 @@ pub const cid = tuid.inlineUid(0xDD49909F, 0x3FF84D0B, 0x84B8D39C, 0x59666363);
 const ModeGainProcessor = struct {
     pub fn process(_: ModeGainProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
         const gain: Sample = @floatCast(mode_gain_controller.gain());
-        for (0..context.outputs.channels.len) |channel| {
-            const input = context.inputs.channel(channel) orelse continue;
-            const output = context.outputs.channel(channel) orelse continue;
+        for (0..context.outputChannelCount()) |channel| {
+            const input = context.inputChannel(channel) orelse continue;
+            const output = context.outputChannel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
                 output[sample] = input[sample] * gain;
             }

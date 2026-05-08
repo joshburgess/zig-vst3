@@ -9,10 +9,10 @@ pub const cid = tuid.inlineUid(0x70E3A630, 0x5EE54F09, 0x94C968A8, 0x22947A9F);
 
 const NoteGateProcessor = struct {
     pub fn process(_: NoteGateProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-        const gate_open = context.events.countKind(.note_on) > 0;
-        for (0..context.outputs.channels.len) |channel| {
-            const input = context.inputs.channel(channel) orelse continue;
-            const output = context.outputs.channel(channel) orelse continue;
+        const gate_open = context.hasEvent(.note_on);
+        for (0..context.outputChannelCount()) |channel| {
+            const input = context.inputChannel(channel) orelse continue;
+            const output = context.outputChannel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
                 output[sample] = if (gate_open) input[sample] else 0;
             }
