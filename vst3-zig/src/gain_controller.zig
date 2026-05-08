@@ -6,6 +6,7 @@ const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_component_handler = @import("vst_component_handler.zig");
 const vst_host_application = @import("vst_host_application.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const zig_plug_effect = @import("zig_plug_effect.zig");
@@ -178,70 +179,7 @@ test "gain controller stores component handler for automation callbacks" {
     const std = @import("std");
     const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 
-    const HostHandler = extern struct {
-        const Self = @This();
-
-        iface: ivsteditcontroller.IComponentHandler = .{ .vtable = &vtable },
-        begin_count: types.uint32 = 0,
-        perform_count: types.uint32 = 0,
-        end_count: types.uint32 = 0,
-        last_param_id: vsttypes.ParamID = vsttypes.kNoParamId,
-        last_value: vsttypes.ParamValue = -1,
-
-        const vtable = ivsteditcontroller.IComponentHandlerVTable{
-            .queryInterface = queryInterface,
-            .addRef = addRef,
-            .release = release,
-            .beginEdit = beginEditCallback,
-            .performEdit = performEditCallback,
-            .endEdit = endEditCallback,
-            .restartComponent = restartComponent,
-        };
-
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
-
-        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn addRef(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn release(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn beginEditCallback(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
-            const self = owner(ptr);
-            self.begin_count += 1;
-            self.last_param_id = id;
-            return types.kResultOk;
-        }
-
-        fn performEditCallback(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
-            const self = owner(ptr);
-            self.perform_count += 1;
-            self.last_param_id = id;
-            self.last_value = value;
-            return types.kResultOk;
-        }
-
-        fn endEditCallback(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
-            const self = owner(ptr);
-            self.end_count += 1;
-            self.last_param_id = id;
-            return types.kResultOk;
-        }
-
-        fn restartComponent(_: *anyopaque, _: types.int32) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-    };
+    const HostHandler = vst_component_handler.ComponentHandler(struct {});
 
     var controller_out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
@@ -252,7 +190,7 @@ test "gain controller stores component handler for automation callbacks" {
     try std.testing.expectEqual(types.kResultFalse, beginEdit(gain_param_id));
 
     var handler = HostHandler{};
-    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, &handler.iface));
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
     try std.testing.expectEqual(types.kResultOk, beginEdit(gain_param_id));
     try std.testing.expectEqual(types.kResultOk, performEdit(gain_param_id, 0.25));
     try std.testing.expectEqual(types.kResultOk, endEdit(gain_param_id));
