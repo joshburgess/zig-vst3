@@ -25,3 +25,13 @@ Tier 3 host smoke tests are release gates. Record only tests that were run in a 
    - `zig_vst3_note_gate.vst3`: send note input and confirm the gate opens and closes.
    - `zig_vst3_event_echo.vst3`: route event output and confirm input events are echoed.
 6. Save and reload the session, then confirm parameter state and scan status are preserved.
+
+## Recording Helper
+
+After a real host run, generate a matrix row with:
+
+```sh
+sh scripts/host_smoke_row.sh "REAPER" "7.32" "zig_vst3_gain.vst3" "Pass" "Scanned, loaded, automated, saved, reloaded."
+```
+
+Paste the printed row into the table above and replace the matching pending row.
