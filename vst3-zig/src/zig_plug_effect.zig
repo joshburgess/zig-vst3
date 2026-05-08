@@ -522,7 +522,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.C) types.tresult {
-            owner(ptr).host_application = queryHostApplication(context);
+            const self = owner(ptr);
+            releaseHostApplication(&self.host_application);
+            self.host_application = queryHostApplication(context);
             return types.kResultOk;
         }
 
@@ -1337,6 +1339,10 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
+            releaseDataExchangeHandler(&self.data_exchange_handler);
+            releaseAutomationState(&self.automation_state);
+            releaseInfoListener(&self.info_listener);
+            releaseHostApplication(&self.host_application);
             self.host_application = queryHostApplication(context);
             self.info_listener = queryInfoListener(context);
             self.automation_state = queryAutomationState(context);

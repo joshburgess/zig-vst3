@@ -134,8 +134,13 @@ test "gain component queries host application during initialize" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 0), host.release_count);
 
-    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 8), host.query_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), host.add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), host.release_count);
+
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
+    try std.testing.expectEqual(@as(types.uint32, 2), host.release_count);
 }
 
 test "gain component stores channel context info listener" {
