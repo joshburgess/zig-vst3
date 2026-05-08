@@ -707,11 +707,11 @@ test "zig-plug bridge round-trips parameter state through IBStream" {
     const Stream = vst_stream.FixedBufferStream(plug.state.encodedSize(Params));
     var stream = Stream{};
 
-    try std.testing.expect(values.store(0, 0.25));
+    try std.testing.expect(values.storeField(&set, "gain", 0.25));
     try std.testing.expectEqual(types.kResultOk, writeParameterState(Params, stream.asStream(), &set, &values));
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, readParameterState(Params, stream.asStream(), &set, &restored));
-    try std.testing.expectEqual(@as(?f64, 0.25), restored.load(0));
+    try std.testing.expectEqual(@as(f64, 0.25), restored.loadField(&set, "gain"));
 }
 
 test "zig-plug bridge reads older parameter state without requiring current encoded size" {
@@ -733,13 +733,13 @@ test "zig-plug bridge reads older parameter state without requiring current enco
     const Stream = vst_stream.FixedBufferStream(256);
     var stream = Stream{};
 
-    try std.testing.expect(old_values.store(0, 0.25));
+    try std.testing.expect(old_values.storeField(&old_set, "gain", 0.25));
     try std.testing.expectEqual(types.kResultOk, writeParameterState(OldParams, stream.asStream(), &old_set, &old_values));
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, readParameterState(NewParams, stream.asStream(), &new_set, &new_values));
 
-    try std.testing.expectEqual(@as(?f64, 0.25), new_values.load(0));
-    try std.testing.expectEqual(@as(?f64, 0.5), new_values.load(1));
+    try std.testing.expectEqual(@as(f64, 0.25), new_values.loadField(&new_set, "gain"));
+    try std.testing.expectEqual(@as(f64, 0.5), new_values.loadField(&new_set, "mix"));
 }
 
 test "zig-plug bridge rejects truncated IBStream state" {
@@ -755,16 +755,16 @@ test "zig-plug bridge rejects truncated IBStream state" {
     const Stream = vst_stream.FixedBufferStream(256);
     var stream = Stream{};
 
-    try std.testing.expect(values.store(0, 0.8));
-    try std.testing.expect(values.store(1, 0.6));
-    try std.testing.expect(source.store(0, 0.25));
-    try std.testing.expect(source.store(1, 0.75));
+    try std.testing.expect(values.storeField(&set, "gain", 0.8));
+    try std.testing.expect(values.storeField(&set, "mix", 0.6));
+    try std.testing.expect(source.storeField(&set, "gain", 0.25));
+    try std.testing.expect(source.storeField(&set, "mix", 0.75));
     try std.testing.expectEqual(types.kResultOk, writeParameterState(Params, stream.asStream(), &set, &source));
     stream.len -= 1;
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultFalse, readParameterState(Params, stream.asStream(), &set, &values));
-    try std.testing.expectEqual(@as(?f64, 0.8), values.load(0));
-    try std.testing.expectEqual(@as(?f64, 0.6), values.load(1));
+    try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
+    try std.testing.expectEqual(@as(f64, 0.6), values.loadField(&set, "mix"));
 }
 
 test "zig-plug bridge rejects invalid normalized IBStream state" {

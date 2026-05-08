@@ -461,9 +461,9 @@ test "plugin spec exposes metadata and parameter defaults" {
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
     try std.testing.expectEqualStrings("Gain", spec.parameter_set.name(0).?);
-    try std.testing.expectEqual(@as(?f64, 1.0), spec.values.load(0));
-    try std.testing.expect(spec.values.store(0, 0.5));
-    try std.testing.expectEqual(@as(?f64, 0.5), spec.values.load(0));
+    try std.testing.expectEqual(@as(f64, 1.0), spec.values.view(&spec.parameter_set).loadNormalized("gain"));
+    try std.testing.expect(spec.values.editor(&spec.parameter_set).storeNormalized("gain", 0.5));
+    try std.testing.expectEqual(@as(f64, 0.5), spec.values.view(&spec.parameter_set).loadNormalized("gain"));
 }
 
 test "plugin spec detects lifecycle declarations" {
@@ -569,7 +569,7 @@ test "plugin instance drives declared lifecycle hooks" {
         .outputs = try process_api.AudioOutputs(f32).init(&output_channels),
     };
 
-    try std.testing.expectEqual(@as(?f64, 0.5), instance.spec.values.load(0));
+    try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("gain"));
     instance.prepare(.{ .sample_rate = 48_000.0, .max_block_size = 64 });
     instance.process(&context);
     instance.deinit();
@@ -601,7 +601,7 @@ test "plugin instance applies parameter changes to owned values" {
     instance.applyParameterChanges(view);
 
     try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
-    try std.testing.expectEqual(@as(?f64, null), instance.parameterValues().loadById(instance.parameterSet(), 99));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterView().loadById(99));
 }
 
 test "plugin instance exposes typed parameter field access" {
