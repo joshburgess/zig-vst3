@@ -335,143 +335,8 @@ test "gain controller stores progress callbacks" {
 
 test "gain controller stores unit handler callbacks" {
     const std = @import("std");
-    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 
-    const HostHandler = extern struct {
-        const Self = @This();
-
-        handler: ivsteditcontroller.IComponentHandler = .{ .vtable = &handler_vtable },
-        unit_handler: ivstunits.IUnitHandler = .{ .vtable = &unit_vtable },
-        unit_handler2: ivstunits.IUnitHandler2 = .{ .vtable = &unit2_vtable },
-        unit_selection_count: types.uint32 = 0,
-        program_list_count: types.uint32 = 0,
-        unit_by_bus_count: types.uint32 = 0,
-        unit_release_count: types.uint32 = 0,
-        unit2_release_count: types.uint32 = 0,
-
-        const handler_vtable = ivsteditcontroller.IComponentHandlerVTable{
-            .queryInterface = queryFromHandler,
-            .addRef = addRefFromHandler,
-            .release = releaseFromHandler,
-            .beginEdit = beginEditCallback,
-            .performEdit = performEditCallback,
-            .endEdit = endEditCallback,
-            .restartComponent = restartComponent,
-        };
-
-        const unit_vtable = ivstunits.IUnitHandlerVTable{
-            .queryInterface = queryFromUnit,
-            .addRef = addRefFromUnit,
-            .release = releaseFromUnit,
-            .notifyUnitSelection = notifyUnitSelectionCallback,
-            .notifyProgramListChange = notifyProgramListChangeCallback,
-        };
-
-        const unit2_vtable = ivstunits.IUnitHandler2VTable{
-            .queryInterface = queryFromUnit2,
-            .addRef = addRefFromUnit2,
-            .release = releaseFromUnit2,
-            .notifyUnitByBusChange = notifyUnitByBusChangeCallback,
-        };
-
-        fn ownerFromHandler(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler", iface);
-        }
-
-        fn ownerFromUnit(ptr: *anyopaque) *Self {
-            const iface: *ivstunits.IUnitHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("unit_handler", iface);
-        }
-
-        fn ownerFromUnit2(ptr: *anyopaque) *Self {
-            const iface: *ivstunits.IUnitHandler2 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("unit_handler2", iface);
-        }
-
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            const self = ownerFromHandler(ptr);
-            if (std.mem.eql(u8, requested_iid, &ivstunits.iunit_handler_iid)) {
-                _ = self.unit_handler.vtable.addRef(&self.unit_handler);
-                out.* = &self.unit_handler;
-                return types.kResultOk;
-            }
-            if (std.mem.eql(u8, requested_iid, &ivstunits.iunit_handler2_iid)) {
-                _ = self.unit_handler2.vtable.addRef(&self.unit_handler2);
-                out.* = &self.unit_handler2;
-                return types.kResultOk;
-            }
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn queryFromUnit(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn queryFromUnit2(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn addRefFromHandler(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn releaseFromHandler(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn addRefFromUnit(_: *anyopaque) callconv(.C) types.uint32 {
-            return 2;
-        }
-
-        fn releaseFromUnit(ptr: *anyopaque) callconv(.C) types.uint32 {
-            ownerFromUnit(ptr).unit_release_count += 1;
-            return 1;
-        }
-
-        fn addRefFromUnit2(_: *anyopaque) callconv(.C) types.uint32 {
-            return 2;
-        }
-
-        fn releaseFromUnit2(ptr: *anyopaque) callconv(.C) types.uint32 {
-            ownerFromUnit2(ptr).unit2_release_count += 1;
-            return 1;
-        }
-
-        fn beginEditCallback(_: *anyopaque, _: vsttypes.ParamID) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn performEditCallback(_: *anyopaque, _: vsttypes.ParamID, _: vsttypes.ParamValue) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn endEditCallback(_: *anyopaque, _: vsttypes.ParamID) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn restartComponent(_: *anyopaque, _: types.int32) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn notifyUnitSelectionCallback(ptr: *anyopaque, _: vsttypes.UnitID) callconv(.C) types.tresult {
-            ownerFromUnit(ptr).unit_selection_count += 1;
-            return types.kResultOk;
-        }
-
-        fn notifyProgramListChangeCallback(ptr: *anyopaque, _: vsttypes.ProgramListID, _: types.int32) callconv(.C) types.tresult {
-            ownerFromUnit(ptr).program_list_count += 1;
-            return types.kResultOk;
-        }
-
-        fn notifyUnitByBusChangeCallback(ptr: *anyopaque) callconv(.C) types.tresult {
-            ownerFromUnit2(ptr).unit_by_bus_count += 1;
-            return types.kResultOk;
-        }
-    };
+    const HostHandler = vst_component_handler.ComponentHandlerUnits(struct {});
 
     var controller_out: ?*anyopaque = null;
     const ivstedit = @import("pluginterfaces/vst/ivsteditcontroller.zig");
@@ -485,7 +350,7 @@ test "gain controller stores unit handler callbacks" {
     try std.testing.expectEqual(types.kResultFalse, notifyUnitByBusChange());
 
     var handler = HostHandler{};
-    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, &handler.handler));
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
     try std.testing.expectEqual(types.kResultOk, notifyUnitSelection(ivstunits.kRootUnitId));
     try std.testing.expectEqual(types.kResultOk, notifyProgramListChange(ivstunits.kNoProgramListId, ivstunits.kAllProgramInvalid));
     try std.testing.expectEqual(types.kResultOk, notifyUnitByBusChange());
