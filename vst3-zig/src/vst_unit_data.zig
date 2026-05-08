@@ -7,6 +7,177 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
+fn copyString128(dest: *vsttypes.String128, source: []const u8) void {
+    @memset(dest, 0);
+    const len = @min(source.len, dest.len - 1);
+    for (source[0..len], 0..) |char, index| {
+        dest[index] = char;
+    }
+}
+
+pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, comptime Config: type) type {
+    if (max_units == 0) @compileError("UnitInfo requires at least one unit slot");
+
+    return extern struct {
+        const Self = @This();
+
+        iface: ivstunits.IUnitInfo = .{ .vtable = &vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        units: [max_units]ivstunits.UnitInfo = rootUnits(),
+        unit_count: types.int32 = 1,
+        program_lists: [max_program_lists]ivstunits.ProgramListInfo = [_]ivstunits.ProgramListInfo{.{}} ** max_program_lists,
+        program_list_count: types.int32 = 0,
+        selected_unit: vsttypes.UnitID = ivstunits.kRootUnitId,
+        unit_program_data_count: types.uint32 = 0,
+        last_unit_program_list_id: types.int32 = ivstunits.kNoProgramListId,
+        last_unit_program_index: types.int32 = ivstunits.kAllProgramInvalid,
+
+        pub fn asInterface(self: *Self) *ivstunits.IUnitInfo {
+            return &self.iface;
+        }
+
+        pub fn setRootName(self: *Self, name: []const u8) void {
+            copyString128(&self.units[0].name, name);
+        }
+
+        fn rootUnits() [max_units]ivstunits.UnitInfo {
+            var values: [max_units]ivstunits.UnitInfo = [_]ivstunits.UnitInfo{.{}} ** max_units;
+            values[0] = .{
+                .id = ivstunits.kRootUnitId,
+                .parentUnitId = ivstunits.kNoParentUnitId,
+                .programListId = ivstunits.kNoProgramListId,
+            };
+            copyString128(&values[0].name, "Root");
+            return values;
+        }
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *ivstunits.IUnitInfo = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &ivstunits.iunit_info_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&owner(ptr).ref_count, "IUnitInfo");
+        }
+
+        fn getUnitCount(ptr: *anyopaque) callconv(.C) types.int32 {
+            return owner(ptr).unit_count;
+        }
+
+        fn getUnitInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            if (index < 0 or index >= self.unit_count) {
+                out.* = .{};
+                return types.kInvalidArgument;
+            }
+            out.* = self.units[@intCast(index)];
+            return types.kResultOk;
+        }
+
+        fn getProgramListCount(ptr: *anyopaque) callconv(.C) types.int32 {
+            return owner(ptr).program_list_count;
+        }
+
+        fn getProgramListInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            if (index < 0 or index >= self.program_list_count) {
+                out.* = .{};
+                return types.kInvalidArgument;
+            }
+            out.* = self.program_lists[@intCast(index)];
+            return types.kResultOk;
+        }
+
+        fn getProgramName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            if (@hasDecl(Config, "getProgramName")) return Config.getProgramName(self, list_id, program_index, out);
+            out[0] = 0;
+            return types.kInvalidArgument;
+        }
+
+        fn getProgramInfo(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            if (@hasDecl(Config, "getProgramInfo")) return Config.getProgramInfo(self, list_id, program_index, attribute_id, out);
+            out[0] = 0;
+            return types.kInvalidArgument;
+        }
+
+        fn hasProgramPitchNames(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            if (@hasDecl(Config, "hasProgramPitchNames")) return Config.hasProgramPitchNames(self, list_id, program_index);
+            return types.kResultFalse;
+        }
+
+        fn getProgramPitchName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, pitch: types.int16, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            if (@hasDecl(Config, "getProgramPitchName")) return Config.getProgramPitchName(self, list_id, program_index, pitch, out);
+            out[0] = 0;
+            return types.kInvalidArgument;
+        }
+
+        fn getSelectedUnit(ptr: *anyopaque) callconv(.C) vsttypes.UnitID {
+            return owner(ptr).selected_unit;
+        }
+
+        fn selectUnit(ptr: *anyopaque, id: vsttypes.UnitID) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            for (self.units[0..@intCast(self.unit_count)]) |unit| {
+                if (unit.id == id) {
+                    self.selected_unit = id;
+                    return types.kResultOk;
+                }
+            }
+            return types.kInvalidArgument;
+        }
+
+        fn getUnitByBus(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, channel: types.int32, out: *vsttypes.UnitID) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            if (@hasDecl(Config, "getUnitByBus")) return Config.getUnitByBus(self, media_type, direction, bus_index, channel, out);
+            out.* = ivstunits.kRootUnitId;
+            return types.kResultOk;
+        }
+
+        fn setUnitProgramData(ptr: *anyopaque, list_id: types.int32, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.unit_program_data_count += 1;
+            self.last_unit_program_list_id = list_id;
+            self.last_unit_program_index = program_index;
+            if (@hasDecl(Config, "setUnitProgramData")) return Config.setUnitProgramData(self, list_id, program_index, stream);
+            return types.kResultFalse;
+        }
+
+        const vtable = ivstunits.IUnitInfoVTable{
+            .queryInterface = query,
+            .addRef = addRef,
+            .release = release,
+            .getUnitCount = getUnitCount,
+            .getUnitInfo = getUnitInfo,
+            .getProgramListCount = getProgramListCount,
+            .getProgramListInfo = getProgramListInfo,
+            .getProgramName = getProgramName,
+            .getProgramInfo = getProgramInfo,
+            .hasProgramPitchNames = hasProgramPitchNames,
+            .getProgramPitchName = getProgramPitchName,
+            .getSelectedUnit = getSelectedUnit,
+            .selectUnit = selectUnit,
+            .getUnitByBus = getUnitByBus,
+            .setUnitProgramData = setUnitProgramData,
+        };
+    };
+}
+
 pub fn UnitProgramData(comptime Config: type) type {
     return extern struct {
         const Self = @This();
@@ -140,6 +311,75 @@ pub fn UnitProgramData(comptime Config: type) type {
             .setUnitData = setUnitData,
         };
     };
+}
+
+test "unit info exposes root unit defaults" {
+    const Info = UnitInfo(2, 1, struct {});
+    var info = Info{};
+    const iface = info.asInterface();
+
+    try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getUnitCount(iface));
+    var root = ivstunits.UnitInfo{};
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getUnitInfo(iface, 0, &root));
+    try std.testing.expectEqual(ivstunits.kRootUnitId, root.id);
+    try std.testing.expectEqual(ivstunits.kNoParentUnitId, root.parentUnitId);
+    try std.testing.expectEqual(ivstunits.kNoProgramListId, root.programListId);
+    try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Root")[0..4], std.mem.sliceTo(&root.name, 0));
+
+    var missing = ivstunits.UnitInfo{};
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getUnitInfo(iface, 1, &missing));
+    try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getProgramListCount(iface));
+    try std.testing.expectEqual(ivstunits.kRootUnitId, iface.vtable.getSelectedUnit(iface));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.selectUnit(iface, ivstunits.kRootUnitId));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.selectUnit(iface, 99));
+}
+
+test "unit info stores program list entries and selected unit" {
+    const Info = UnitInfo(2, 1, struct {});
+    var info = Info{};
+    info.unit_count = 2;
+    info.units[1] = .{ .id = 7, .parentUnitId = ivstunits.kRootUnitId, .programListId = 4 };
+    info.setRootName("Main");
+    info.program_list_count = 1;
+    info.program_lists[0] = .{ .id = 4, .programCount = 3 };
+    copyString128(&info.units[1].name, "Layer");
+    copyString128(&info.program_lists[0].name, "Programs");
+    const iface = info.asInterface();
+
+    var unit = ivstunits.UnitInfo{};
+    var list = ivstunits.ProgramListInfo{};
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getUnitInfo(iface, 1, &unit));
+    try std.testing.expectEqual(@as(vsttypes.UnitID, 7), unit.id);
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramListInfo(iface, 0, &list));
+    try std.testing.expectEqual(@as(vsttypes.ProgramListID, 4), list.id);
+    try std.testing.expectEqual(@as(types.int32, 3), list.programCount);
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.selectUnit(iface, 7));
+    try std.testing.expectEqual(@as(vsttypes.UnitID, 7), iface.vtable.getSelectedUnit(iface));
+}
+
+test "unit info delegates optional callbacks and supports query interface" {
+    const Info = UnitInfo(1, 0, struct {
+        pub fn getProgramName(self: anytype, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) types.tresult {
+            _ = self;
+            if (list_id != 1 or program_index != 2) return types.kInvalidArgument;
+            const name = std.unicode.utf8ToUtf16LeStringLiteral("Init");
+            @memcpy(out[0..name.len], name);
+            out[name.len] = 0;
+            return types.kResultOk;
+        }
+    });
+    var info = Info{};
+    const iface = info.asInterface();
+
+    var name: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramName(iface, 1, 2, &name));
+    try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Init")[0..4], std.mem.sliceTo(&name, 0));
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstunits.iunit_info_iid, &queried));
+    try std.testing.expect(queried != null);
+    const queried_info: *ivstunits.IUnitInfo = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_info.vtable.release(queried_info));
 }
 
 test "unit program data tracks default calls" {
