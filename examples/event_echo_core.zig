@@ -39,8 +39,8 @@ test "event echo core example writes input events to output events" {
     var output_event_storage: [1]plug.process.Event = undefined;
     var output_events = plug.process.EventWriter.init(&output_event_storage, input.len);
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
-    context.events = try plug.process.Events.init(&events, input.len);
-    context.output_events = &output_events;
+    try context.setEvents(&events);
+    context.setOutputEvents(&output_events);
 
     plugin.process(&context);
 
@@ -61,8 +61,8 @@ test "event echo core example can run through plugin instance" {
     var output_event_storage: [1]plug.process.Event = undefined;
     var output_events = plug.process.EventWriter.init(&output_event_storage, input.len);
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
-    context.events = try plug.process.Events.init(&events, input.len);
-    context.output_events = &output_events;
+    try context.setEvents(&events);
+    context.setOutputEvents(&output_events);
 
     instance.process(&context);
 

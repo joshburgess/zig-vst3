@@ -43,7 +43,7 @@ test "gain core example processes through zig-plug context" {
         .{ .id = 0, .sample_offset = 0, .normalized = 0.5 },
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
-    context.parameter_changes = try plug.process.ParameterChanges.init(&changes, input.len);
+    try context.setParameterChanges(&changes);
 
     plugin.process(&context);
 
@@ -62,7 +62,7 @@ test "gain core example can run through plugin instance" {
         .{ .id = 0, .sample_offset = 0, .normalized = 0.25 },
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
-    context.parameter_changes = try plug.process.ParameterChanges.init(&changes, input.len);
+    try context.setParameterChanges(&changes);
 
     instance.process(&context);
 
@@ -81,7 +81,7 @@ test "gain core example applies sample-offset parameter changes" {
         .{ .id = 0, .sample_offset = 1, .normalized = 0.5 },
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
-    context.parameter_changes = try plug.process.ParameterChanges.init(&changes, input.len);
+    try context.setParameterChanges(&changes);
 
     plugin.process(&context);
 

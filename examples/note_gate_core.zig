@@ -56,7 +56,7 @@ test "note gate core example passes audio when a note-on event is present" {
         .{ .kind = .note_on, .bus_index = 0, .sample_offset = 1, .channel = 0, .pitch = 60, .velocity = 0.75 },
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
-    context.events = try plug.process.Events.init(&events, input.len);
+    try context.setEvents(&events);
 
     plugin.process(&context);
 
@@ -75,7 +75,7 @@ test "note gate core example can run through plugin instance" {
         .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 0, .pitch = 60, .velocity = 0.75 },
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
-    context.events = try plug.process.Events.init(&events, input.len);
+    try context.setEvents(&events);
 
     instance.process(&context);
 
