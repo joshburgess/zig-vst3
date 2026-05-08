@@ -29,8 +29,32 @@ pub const ParameterChanges = struct {
         return result;
     }
 
+    pub fn first(self: ParameterChanges, id: u32) ?ParameterChange {
+        for (self.items) |item| {
+            if (item.id == id) return item;
+        }
+        return null;
+    }
+
+    pub fn count(self: ParameterChanges, id: u32) usize {
+        var result: usize = 0;
+        for (self.items) |item| {
+            if (item.id == id) result += 1;
+        }
+        return result;
+    }
+
+    pub fn has(self: ParameterChanges, id: u32) bool {
+        return self.first(id) != null;
+    }
+
     pub fn latestNormalized(self: ParameterChanges, id: u32) ?f64 {
         const change = self.latest(id) orelse return null;
+        return change.normalized;
+    }
+
+    pub fn firstNormalized(self: ParameterChanges, id: u32) ?f64 {
+        const change = self.first(id) orelse return null;
         return change.normalized;
     }
 
@@ -525,9 +549,17 @@ test "parameter changes validate block offsets and normalized values" {
     const view = try ParameterChanges.init(&changes, 4);
 
     try std.testing.expectEqual(@as(usize, 3), view.items.len);
+    try std.testing.expect(view.has(7));
+    try std.testing.expect(!view.has(9));
+    try std.testing.expectEqual(@as(usize, 2), view.count(7));
+    try std.testing.expectEqual(@as(usize, 1), view.count(8));
+    try std.testing.expectEqual(@as(usize, 0), view.count(9));
+    try std.testing.expectEqual(@as(f64, 0.25), view.first(7).?.normalized);
+    try std.testing.expectEqual(@as(?f64, 0.25), view.firstNormalized(7));
     try std.testing.expectEqual(@as(f64, 0.75), view.latest(7).?.normalized);
     try std.testing.expectEqual(@as(?f64, 0.75), view.latestNormalized(7));
     try std.testing.expectEqual(@as(f64, 0.75), view.latestNormalizedOr(7, 0.0));
+    try std.testing.expectEqual(@as(?f64, null), view.firstNormalized(9));
     try std.testing.expectEqual(@as(?f64, null), view.latestNormalized(9));
     try std.testing.expectEqual(@as(f64, 0.5), view.latestNormalizedOr(9, 0.5));
     try std.testing.expectEqual(@as(?ParameterChange, null), view.latest(9));
