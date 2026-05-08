@@ -154,6 +154,11 @@ pub fn PluginInstance(comptime Plugin: type) type {
             self.spec.values.applyChanges(&self.spec.parameter_set, changes);
         }
 
+        pub fn encodedParameterStateSize(self: *const Self) usize {
+            _ = self;
+            return state.encodedSize(Plugin.Params);
+        }
+
         pub fn writeParameterState(self: *const Self, writer: anytype) !void {
             try state.writeParameterState(Plugin.Params, &self.spec.parameter_set, &self.spec.values, writer);
         }
@@ -723,6 +728,7 @@ test "plugin instance round-trips owned parameter state" {
     var restored = try Instance.init(std.testing.allocator, .{});
     var bytes: [state.encodedSize(Gain.Params)]u8 = undefined;
 
+    try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), instance.encodedParameterStateSize());
     try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
     try std.testing.expect(instance.storeParameterNormalized("mix", 0.75));
 
