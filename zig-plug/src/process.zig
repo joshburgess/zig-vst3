@@ -397,6 +397,26 @@ pub const EventWriter = struct {
         return self.events().latestSampleOffset();
     }
 
+    pub fn countKind(self: *const EventWriter, kind: EventKind) usize {
+        return self.events().countKind(kind);
+    }
+
+    pub fn firstKind(self: *const EventWriter, kind: EventKind) ?Event {
+        return self.events().firstKind(kind);
+    }
+
+    pub fn latestKind(self: *const EventWriter, kind: EventKind) ?Event {
+        return self.events().latestKind(kind);
+    }
+
+    pub fn hasKind(self: *const EventWriter, kind: EventKind) bool {
+        return self.events().hasKind(kind);
+    }
+
+    pub fn nextSampleOffset(self: *const EventWriter, after_sample_offset: usize) ?usize {
+        return self.events().nextSampleOffset(after_sample_offset);
+    }
+
     pub fn events(self: *const EventWriter) Events {
         return .{ .items = self.storage[0..self.count] };
     }
@@ -1039,6 +1059,12 @@ test "event writer validates offsets and capacity" {
     try std.testing.expectEqual(@as(usize, 1), writer.events().items.len);
     try std.testing.expectEqual(@as(?usize, 1), writer.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 1), writer.latestSampleOffset());
+    try std.testing.expect(writer.hasKind(.note_on));
+    try std.testing.expect(!writer.hasKind(.note_off));
+    try std.testing.expectEqual(@as(usize, 1), writer.countKind(.note_on));
+    try std.testing.expectEqual(EventKind.note_on, writer.firstKind(.note_on).?.kind);
+    try std.testing.expectEqual(EventKind.note_on, writer.latestKind(.note_on).?.kind);
+    try std.testing.expectEqual(@as(?usize, null), writer.nextSampleOffset(1));
     try std.testing.expectEqual(@as(usize, 1), writer.capacity());
     try std.testing.expectEqual(@as(usize, 0), writer.remainingCapacity());
     try std.testing.expectError(error.EventStorageFull, writer.append(Event.noteOff(1, 0, 60, 0.0)));
@@ -1049,6 +1075,11 @@ test "event writer validates offsets and capacity" {
     try std.testing.expectEqual(@as(usize, 0), writer.events().items.len);
     try std.testing.expectEqual(@as(?usize, null), writer.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, null), writer.latestSampleOffset());
+    try std.testing.expect(!writer.hasKind(.note_on));
+    try std.testing.expectEqual(@as(usize, 0), writer.countKind(.note_on));
+    try std.testing.expectEqual(@as(?Event, null), writer.firstKind(.note_on));
+    try std.testing.expectEqual(@as(?Event, null), writer.latestKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, null), writer.nextSampleOffset(0));
     try std.testing.expectEqual(@as(usize, 1), writer.remainingCapacity());
 
     var empty_storage: [1]Event = undefined;
@@ -1068,6 +1099,11 @@ test "event writer appends event views atomically" {
     try std.testing.expectEqual(@as(usize, 2), writer.events().items.len);
     try std.testing.expectEqual(@as(?usize, 0), writer.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 1), writer.latestSampleOffset());
+    try std.testing.expect(writer.hasKind(.note_on));
+    try std.testing.expectEqual(@as(usize, 1), writer.countKind(.note_off));
+    try std.testing.expectEqual(EventKind.note_on, writer.firstKind(.note_on).?.kind);
+    try std.testing.expectEqual(EventKind.note_off, writer.latestKind(.note_off).?.kind);
+    try std.testing.expectEqual(@as(?usize, 1), writer.nextSampleOffset(0));
     try std.testing.expectEqual(EventKind.note_on, writer.events().items[0].kind);
     try std.testing.expectEqual(EventKind.note_off, writer.events().items[1].kind);
 
