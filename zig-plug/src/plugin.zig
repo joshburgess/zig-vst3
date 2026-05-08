@@ -81,6 +81,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return &self.spec.values;
         }
 
+        pub fn applyParameterChanges(self: *Self, changes: process_api.ParameterChanges) void {
+            self.spec.values.applyChanges(&self.spec.parameter_set, changes);
+        }
+
         pub fn process(self: *Self, context: *process_api.ProcessContext(f32)) void {
             if (Spec.has_process) {
                 self.plugin.process(context);
@@ -257,6 +261,28 @@ test "plugin instance drives declared lifecycle hooks" {
     try std.testing.expectEqual(@as(f32, 0.125), output[0]);
     try std.testing.expectEqual(@as(f32, 0.25), output[1]);
     try std.testing.expectEqual(@as(?f64, 0.5), instance.parameterValues().loadById(instance.parameterSet(), 0));
+}
+
+test "plugin instance applies parameter changes to owned values" {
+    const Gain = struct {
+        pub const name = "Instance Parameters";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const changes = [_]process_api.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = 0.25 },
+        .{ .id = 99, .sample_offset = 0, .normalized = 1.0 },
+    };
+    const view = try process_api.ParameterChanges.init(&changes, 1);
+
+    instance.applyParameterChanges(view);
+
+    try std.testing.expectEqual(@as(?f64, 0.25), instance.parameterValues().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterValues().loadById(instance.parameterSet(), 99));
 }
 
 test "plugin instance accepts metadata-only plugins" {
