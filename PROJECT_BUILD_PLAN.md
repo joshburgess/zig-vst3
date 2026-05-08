@@ -31,7 +31,7 @@ A staged plan for building a VST3 plugin framework in Zig, structured for delega
 - A bundled GUI library (we expose the `IPlugView` hook; users plug in their own toolkit)
 - Plugin sandboxing or out-of-process hosting
 
-**Current status.** Layer 1 now builds reusable VST3 effect shells, emits `.vst3` bundles for macOS, Linux, and Windows, and validates the bundled gain, bypass, mode-gain, voice-mix, note-gate, and event-echo examples locally on macOS with `zig build validate-examples`. The reusable shells expose conservative default `IConnectionPoint` implementations for host/plugin connection setup, retain and release host callback interfaces across replacement and repeated initialization, clear fixed-size VST string output buffers before writing, and expose an optional edit-controller plug-view factory hook for plugin-provided editors.
+**Current status.** Layer 1 now builds reusable VST3 effect shells, emits `.vst3` bundles for macOS, Linux, and Windows, and validates the bundled gain, bypass, mode-gain, voice-mix, note-gate, and event-echo examples locally on macOS with `zig build validate-examples`. The reusable shells expose conservative default `IConnectionPoint` implementations for host/plugin connection setup, retain and release host callback interfaces across replacement and repeated initialization, clear fixed-size VST string output buffers before writing, harden fixed-capacity parameter-change and event-list helpers against stale outputs and overflow indices, and expose an optional edit-controller plug-view factory hook for plugin-provided editors.
 
 **Total estimated duration.** 6–9 months for a Layer 2 release that's genuinely useful to others. The first Layer 1 gain plugin milestone is complete locally on macOS; the remaining Layer 1 work is hardening the raw API, CI coverage, and host smoke testing.
 
@@ -184,7 +184,7 @@ Each phase is broken into **work units**. A work unit is sized so that one agent
 
 **Remaining hardening before Layer 2 should depend on this API.**
 - Keep CI validator and cross-target bundle checks green as the reusable shells expand.
-- Replace one-off plugin object wiring with reusable raw-layer helpers for interface maps and allocator-owned objects.
+- Replace remaining one-off plugin object wiring with reusable raw-layer helpers where it still reduces boilerplate without hiding ABI details.
 - Record real DAW smoke test results under `docs/host-matrix.md`.
 - Keep build steps aligned with the bundled example set as new shell coverage is added.
 
@@ -331,7 +331,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.7: Parameter changes and events
 
-`IParameterChanges`, `IParamValueQueue`, `IEventList`, `Event` and all event subtypes (`NoteOnEvent`, `NoteOffEvent`, `DataEvent`, `PolyPressureEvent`, `ChordEvent`, `ScaleEvent`, `LegacyMIDICCOutEvent`, `NoteExpressionValueEvent`, `NoteExpressionTextEvent`). `vst_parameter_changes.zig` provides reusable fixed-slot `IParameterChanges` and `IParamValueQueue` objects for host-side process tests, and `vst_event_list.zig` provides a reusable fixed-slot `IEventList` for input and output event tests.
+`IParameterChanges`, `IParamValueQueue`, `IEventList`, `Event` and all event subtypes (`NoteOnEvent`, `NoteOffEvent`, `DataEvent`, `PolyPressureEvent`, `ChordEvent`, `ScaleEvent`, `LegacyMIDICCOutEvent`, `NoteExpressionValueEvent`, `NoteExpressionTextEvent`). `vst_parameter_changes.zig` provides reusable fixed-slot `IParameterChanges` and `IParamValueQueue` objects for host-side process tests, rejects zero-capacity instantiations, covers failed point-read and queue-read bounds, and reports `-1` when adding a point or queue fails. `vst_event_list.zig` provides a reusable fixed-slot `IEventList` for input and output event tests, rejects zero-capacity instantiations, and clears failed event reads before returning.
 
 ### Work Unit 2.7a: MIDI 2.0 mapping interfaces
 
