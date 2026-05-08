@@ -540,66 +540,27 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
     const offset: usize = @intCast(event.sampleOffset);
     if (offset >= collector.frame_count) return;
     const converted: ?plug.process.Event = switch (event.type) {
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent) => if (isUnitValue(event.data.noteOn.velocity)) .{
-            .kind = .note_on,
-            .bus_index = event.busIndex,
-            .sample_offset = offset,
-            .channel = event.data.noteOn.channel,
-            .pitch = event.data.noteOn.pitch,
-            .velocity = event.data.noteOn.velocity,
-        } else null,
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent) => if (isUnitValue(event.data.noteOff.velocity)) .{
-            .kind = .note_off,
-            .bus_index = event.busIndex,
-            .sample_offset = offset,
-            .channel = event.data.noteOff.channel,
-            .pitch = event.data.noteOff.pitch,
-            .velocity = event.data.noteOff.velocity,
-        } else null,
-        @intFromEnum(ivstevents.Event.EventTypes.kDataEvent) => .{
-            .kind = .data,
-            .bus_index = event.busIndex,
-            .sample_offset = offset,
-            .data_type = event.data.data.type,
-            .data = dataEventBytes(event.data.data),
-        },
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent) => if (isUnitValue(event.data.noteOn.velocity))
+            plug.process.Event.noteOn(offset, event.data.noteOn.channel, event.data.noteOn.pitch, event.data.noteOn.velocity).withBusIndex(event.busIndex)
+        else
+            null,
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent) => if (isUnitValue(event.data.noteOff.velocity))
+            plug.process.Event.noteOff(offset, event.data.noteOff.channel, event.data.noteOff.pitch, event.data.noteOff.velocity).withBusIndex(event.busIndex)
+        else
+            null,
+        @intFromEnum(ivstevents.Event.EventTypes.kDataEvent) => plug.process.Event.dataEvent(offset, event.data.data.type, dataEventBytes(event.data.data)).withBusIndex(event.busIndex),
         @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent) => collectLegacyMidiCcEvent(event, offset),
-        @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent) => if (isUnitValue(event.data.polyPressure.pressure)) .{
-            .kind = .aftertouch,
-            .bus_index = event.busIndex,
-            .sample_offset = offset,
-            .channel = event.data.polyPressure.channel,
-            .pitch = event.data.polyPressure.pitch,
-            .value = event.data.polyPressure.pressure,
-        } else null,
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent) => if (isFiniteValue(event.data.noteExpressionValue.value)) .{
-            .kind = .note_expression_value,
-            .bus_index = event.busIndex,
-            .sample_offset = offset,
-            .note_id = event.data.noteExpressionValue.noteId,
-            .expression_type_id = event.data.noteExpressionValue.typeId,
-            .value = @floatCast(event.data.noteExpressionValue.value),
-        } else null,
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent) => .{
-            .kind = .note_expression_int,
-            .bus_index = event.busIndex,
-            .sample_offset = offset,
-            .note_id = event.data.noteExpressionIntValue.noteId,
-            .expression_type_id = event.data.noteExpressionIntValue.typeId,
-            .int_value = event.data.noteExpressionIntValue.value,
-        },
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent) => .{
-            .kind = .note_expression_text,
-            .bus_index = event.busIndex,
-            .sample_offset = offset,
-            .note_id = event.data.noteExpressionText.noteId,
-            .expression_type_id = event.data.noteExpressionText.typeId,
-        },
-        else => .{
-            .kind = .other,
-            .bus_index = event.busIndex,
-            .sample_offset = offset,
-        },
+        @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent) => if (isUnitValue(event.data.polyPressure.pressure))
+            plug.process.Event.aftertouch(offset, event.data.polyPressure.channel, event.data.polyPressure.pitch, event.data.polyPressure.pressure).withBusIndex(event.busIndex)
+        else
+            null,
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent) => if (isFiniteValue(event.data.noteExpressionValue.value))
+            plug.process.Event.noteExpressionValue(offset, event.data.noteExpressionValue.noteId, event.data.noteExpressionValue.typeId, @floatCast(event.data.noteExpressionValue.value)).withBusIndex(event.busIndex)
+        else
+            null,
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent) => plug.process.Event.noteExpressionInt(offset, event.data.noteExpressionIntValue.noteId, event.data.noteExpressionIntValue.typeId, event.data.noteExpressionIntValue.value).withBusIndex(event.busIndex),
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent) => plug.process.Event.noteExpressionText(offset, event.data.noteExpressionText.noteId, event.data.noteExpressionText.typeId).withBusIndex(event.busIndex),
+        else => plug.process.Event.other(offset).withBusIndex(event.busIndex),
     };
     collector.storage[collector.count] = converted orelse return;
     collector.count += 1;
