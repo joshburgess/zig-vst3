@@ -488,11 +488,21 @@ pub fn ParameterSet(comptime Params: type) type {
             return error.InvalidParameterIndex;
         }
 
+        pub fn formatPlainById(self: *const Self, wanted_id: u32, normalized: f64, buffer: []u8) ![]const u8 {
+            const index = self.indexOfId(wanted_id) orelse return error.InvalidParameterId;
+            return self.formatPlain(index, normalized, buffer);
+        }
+
         pub fn parsePlain(self: *const Self, index: usize, text: []const u8) !f64 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).parsePlain(text);
             }
             return error.InvalidParameterIndex;
+        }
+
+        pub fn parsePlainById(self: *const Self, wanted_id: u32, text: []const u8) !f64 {
+            const index = self.indexOfId(wanted_id) orelse return error.InvalidParameterId;
+            return self.parsePlain(index, text);
         }
 
         pub fn plainFromNormalized(self: *const Self, index: usize, normalized: f64) ?f64 {
@@ -502,11 +512,21 @@ pub fn ParameterSet(comptime Params: type) type {
             return null;
         }
 
+        pub fn plainFromNormalizedById(self: *const Self, wanted_id: u32, normalized: f64) ?f64 {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.plainFromNormalized(index, normalized);
+        }
+
         pub fn normalizedFromPlain(self: *const Self, index: usize, plain: f64) ?f64 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).normalizedFromPlain(plain);
             }
             return null;
+        }
+
+        pub fn normalizedFromPlainById(self: *const Self, wanted_id: u32, plain: f64) ?f64 {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.normalizedFromPlain(index, plain);
         }
     };
 }
@@ -713,16 +733,32 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.formatPlain(index, normalized, buffer);
         }
 
+        pub fn formatPlainById(self: Self, wanted_id: u32, normalized: f64, buffer: []u8) ![]const u8 {
+            return self.set.formatPlainById(wanted_id, normalized, buffer);
+        }
+
         pub fn parsePlainIndex(self: Self, index: usize, text: []const u8) !f64 {
             return self.set.parsePlain(index, text);
+        }
+
+        pub fn parsePlainById(self: Self, wanted_id: u32, text: []const u8) !f64 {
+            return self.set.parsePlainById(wanted_id, text);
         }
 
         pub fn plainFromNormalizedIndex(self: Self, index: usize, normalized: f64) ?f64 {
             return self.set.plainFromNormalized(index, normalized);
         }
 
+        pub fn plainFromNormalizedById(self: Self, wanted_id: u32, normalized: f64) ?f64 {
+            return self.set.plainFromNormalizedById(wanted_id, normalized);
+        }
+
         pub fn normalizedFromPlainIndex(self: Self, index: usize, plain: f64) ?f64 {
             return self.set.normalizedFromPlain(index, plain);
+        }
+
+        pub fn normalizedFromPlainById(self: Self, wanted_id: u32, plain: f64) ?f64 {
+            return self.set.normalizedFromPlainById(wanted_id, plain);
         }
 
         pub fn loadNormalized(self: Self, comptime field_name: []const u8) f64 {
@@ -832,16 +868,32 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.formatPlain(index, normalized, buffer);
         }
 
+        pub fn formatPlainById(self: Self, wanted_id: u32, normalized: f64, buffer: []u8) ![]const u8 {
+            return self.set.formatPlainById(wanted_id, normalized, buffer);
+        }
+
         pub fn parsePlainIndex(self: Self, index: usize, text: []const u8) !f64 {
             return self.set.parsePlain(index, text);
+        }
+
+        pub fn parsePlainById(self: Self, wanted_id: u32, text: []const u8) !f64 {
+            return self.set.parsePlainById(wanted_id, text);
         }
 
         pub fn plainFromNormalizedIndex(self: Self, index: usize, normalized: f64) ?f64 {
             return self.set.plainFromNormalized(index, normalized);
         }
 
+        pub fn plainFromNormalizedById(self: Self, wanted_id: u32, normalized: f64) ?f64 {
+            return self.set.plainFromNormalizedById(wanted_id, normalized);
+        }
+
         pub fn normalizedFromPlainIndex(self: Self, index: usize, plain: f64) ?f64 {
             return self.set.normalizedFromPlain(index, plain);
+        }
+
+        pub fn normalizedFromPlainById(self: Self, wanted_id: u32, plain: f64) ?f64 {
+            return self.set.normalizedFromPlainById(wanted_id, plain);
         }
 
         pub fn resetToDefaults(self: Self) void {
@@ -1274,10 +1326,18 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(f64, 1.0), try view.parsePlainIndex(1, "4"));
     try std.testing.expectEqual(@as(?f64, 2.0), view.plainFromNormalizedIndex(3, 1.0));
     try std.testing.expectEqual(@as(?f64, 1.0), view.normalizedFromPlainIndex(3, 2.0));
+    try std.testing.expectEqualStrings("4", try view.formatPlainById(1, 1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try view.parsePlainById(1, "4"));
+    try std.testing.expectEqual(@as(?f64, 2.0), view.plainFromNormalizedById(3, 1.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), view.normalizedFromPlainById(3, 2.0));
     try std.testing.expectError(error.InvalidParameterIndex, view.formatPlainIndex(99, 0.0, &buffer));
     try std.testing.expectError(error.InvalidParameterIndex, view.parsePlainIndex(99, "1"));
     try std.testing.expectEqual(@as(?f64, null), view.plainFromNormalizedIndex(99, 0.0));
     try std.testing.expectEqual(@as(?f64, null), view.normalizedFromPlainIndex(99, 0.0));
+    try std.testing.expectError(error.InvalidParameterId, view.formatPlainById(99, 0.0, &buffer));
+    try std.testing.expectError(error.InvalidParameterId, view.parsePlainById(99, "1"));
+    try std.testing.expectEqual(@as(?f64, null), view.plainFromNormalizedById(99, 0.0));
+    try std.testing.expectEqual(@as(?f64, null), view.normalizedFromPlainById(99, 0.0));
     try std.testing.expectEqual(@as(f64, 6.0), view.load("gain"));
     try std.testing.expectEqual(@as(i64, 4), view.load("voices"));
     try std.testing.expectEqual(true, view.load("bypass"));
@@ -1328,10 +1388,18 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(f64, 1.0), try editor.parsePlainIndex(1, "4"));
     try std.testing.expectEqual(@as(?f64, 2.0), editor.plainFromNormalizedIndex(3, 1.0));
     try std.testing.expectEqual(@as(?f64, 1.0), editor.normalizedFromPlainIndex(3, 2.0));
+    try std.testing.expectEqualStrings("4", try editor.formatPlainById(1, 1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try editor.parsePlainById(1, "4"));
+    try std.testing.expectEqual(@as(?f64, 2.0), editor.plainFromNormalizedById(3, 1.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), editor.normalizedFromPlainById(3, 2.0));
     try std.testing.expectError(error.InvalidParameterIndex, editor.formatPlainIndex(99, 0.0, &buffer));
     try std.testing.expectError(error.InvalidParameterIndex, editor.parsePlainIndex(99, "1"));
     try std.testing.expectEqual(@as(?f64, null), editor.plainFromNormalizedIndex(99, 0.0));
     try std.testing.expectEqual(@as(?f64, null), editor.normalizedFromPlainIndex(99, 0.0));
+    try std.testing.expectError(error.InvalidParameterId, editor.formatPlainById(99, 0.0, &buffer));
+    try std.testing.expectError(error.InvalidParameterId, editor.parsePlainById(99, "1"));
+    try std.testing.expectEqual(@as(?f64, null), editor.plainFromNormalizedById(99, 0.0));
+    try std.testing.expectEqual(@as(?f64, null), editor.normalizedFromPlainById(99, 0.0));
     try std.testing.expect(editor.store("gain", 6.0));
     try std.testing.expect(editor.store("voices", 4));
     try std.testing.expect(editor.store("bypass", true));
@@ -1449,4 +1517,30 @@ test "parameter sets convert normalized and plain values by reflected index" {
     try std.testing.expectEqual(@as(?f64, 1.0), set.normalizedFromPlain(2, 1.0));
     try std.testing.expectEqual(@as(?f64, 1.0), set.plainFromNormalized(3, 0.5));
     try std.testing.expectEqual(@as(?f64, 1.0), set.normalizedFromPlain(3, 2.0));
+}
+
+test "parameter sets convert normalized and plain values by reflected id" {
+    const Mode = enum { clean, crunch, lead };
+    const Params = struct {
+        gain: FloatParam = FloatParam.init(0, "Gain", 0.0, 2.0, 1.0),
+        voices: IntParam = IntParam.init(1, "Voices", 1, 16, 4),
+        bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
+        mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
+    };
+    const Set = ParameterSet(Params);
+    const set = Set.init(.{});
+
+    var buffer: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("1.000", try set.formatPlainById(0, 0.5, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try set.parsePlainById(1, "16"));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.plainFromNormalizedById(0, 0.5));
+    try std.testing.expectEqual(@as(?f64, 0.5), set.normalizedFromPlainById(0, 1.0));
+    try std.testing.expectEqual(@as(?f64, 9.0), set.plainFromNormalizedById(1, 0.5));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.normalizedFromPlainById(2, 1.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.plainFromNormalizedById(3, 0.5));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.normalizedFromPlainById(3, 2.0));
+    try std.testing.expectError(error.InvalidParameterId, set.formatPlainById(99, 0.0, &buffer));
+    try std.testing.expectError(error.InvalidParameterId, set.parsePlainById(99, "1"));
+    try std.testing.expectEqual(@as(?f64, null), set.plainFromNormalizedById(99, 0.0));
+    try std.testing.expectEqual(@as(?f64, null), set.normalizedFromPlainById(99, 0.0));
 }
