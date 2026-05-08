@@ -301,6 +301,10 @@ pub fn AudioInputs(comptime Sample: type) type {
             if (index >= self.channels.len) return null;
             return self.channels[index];
         }
+
+        pub fn channelCount(self: Self) usize {
+            return self.channels.len;
+        }
     };
 }
 
@@ -327,6 +331,10 @@ pub fn AudioOutputs(comptime Sample: type) type {
         pub fn channel(self: Self, index: usize) ?[]Sample {
             if (index >= self.channels.len) return null;
             return self.channels[index];
+        }
+
+        pub fn channelCount(self: Self) usize {
+            return self.channels.len;
         }
     };
 }
@@ -394,6 +402,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return writer.events();
         }
 
+        pub fn inputChannelCount(self: @This()) usize {
+            return self.inputs.channelCount();
+        }
+
+        pub fn outputChannelCount(self: @This()) usize {
+            return self.outputs.channelCount();
+        }
+
         pub fn frameCount(self: @This()) usize {
             return @min(self.inputs.frame_count, self.outputs.frame_count);
         }
@@ -407,6 +423,7 @@ test "audio input view validates channel frame counts" {
     const inputs = try AudioInputs(f32).init(&channels);
 
     try std.testing.expectEqual(@as(usize, 2), inputs.channels.len);
+    try std.testing.expectEqual(@as(usize, 2), inputs.channelCount());
     try std.testing.expectEqual(@as(usize, 2), inputs.frame_count);
     try std.testing.expectEqual(@as(f32, 0.3), inputs.channel(1).?[0]);
     try std.testing.expectEqual(@as(?[]const f32, null), inputs.channel(2));
@@ -430,6 +447,8 @@ test "process context reports usable frame count" {
     const context = try ProcessContext(f64).init(48_000.0, &input_channels, &output_channels);
 
     try std.testing.expectEqual(@as(usize, 3), context.frameCount());
+    try std.testing.expectEqual(@as(usize, 2), context.inputChannelCount());
+    try std.testing.expectEqual(@as(usize, 2), context.outputChannelCount());
 }
 
 test "process context validates attached parameter changes and events" {

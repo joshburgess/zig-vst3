@@ -21,7 +21,7 @@ pub const ModeGain = struct {
             .boost => 2.0,
             .mute => 0.0,
         };
-        for (0..context.outputs.channels.len) |channel| {
+        for (0..context.outputChannelCount()) |channel| {
             const input = context.inputs.channel(channel) orelse continue;
             const output = context.outputs.channel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {

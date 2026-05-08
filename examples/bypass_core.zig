@@ -14,7 +14,7 @@ pub const Bypass = struct {
         params: plug.parameters.ParameterView(Params),
     ) void {
         const bypassed = params.load("bypass");
-        for (0..context.outputs.channels.len) |channel| {
+        for (0..context.outputChannelCount()) |channel| {
             const input = context.inputs.channel(channel) orelse continue;
             const output = context.outputs.channel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
