@@ -445,6 +445,30 @@ pub fn ProcessContext(comptime Sample: type) type {
             self.output_events = writer;
         }
 
+        pub fn parameterChanges(self: @This()) ParameterChanges {
+            return self.parameter_changes;
+        }
+
+        pub fn latestParameterChange(self: @This(), id: u32) ?ParameterChange {
+            return self.parameter_changes.latest(id);
+        }
+
+        pub fn latestParameterNormalized(self: @This(), id: u32) ?f64 {
+            return self.parameter_changes.latestNormalized(id);
+        }
+
+        pub fn latestParameterNormalizedOr(self: @This(), id: u32, default: f64) f64 {
+            return self.parameter_changes.latestNormalizedOr(id, default);
+        }
+
+        pub fn parameterNormalizedAtOrBeforeOr(self: @This(), id: u32, sample_offset: usize, default: f64) f64 {
+            return self.parameter_changes.normalizedAtOrBeforeOr(id, sample_offset, default);
+        }
+
+        pub fn nextParameterChangeOffset(self: @This(), after_sample_offset: usize) ?usize {
+            return self.parameter_changes.nextSampleOffset(after_sample_offset);
+        }
+
         pub fn inputEvents(self: @This()) Events {
             return self.events;
         }
@@ -580,6 +604,14 @@ test "process context validates attached parameter changes and events" {
     });
 
     try std.testing.expectEqual(@as(f64, 0.5), context.parameter_changes.latest(1).?.normalized);
+    try std.testing.expectEqual(@as(usize, 1), context.parameterChanges().items.len);
+    try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChange(1).?.normalized);
+    try std.testing.expectEqual(@as(?f64, 0.5), context.latestParameterNormalized(1));
+    try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterNormalizedOr(1, 0.0));
+    try std.testing.expectEqual(@as(f64, 0.25), context.latestParameterNormalizedOr(2, 0.25));
+    try std.testing.expectEqual(@as(f64, 0.5), context.parameterNormalizedAtOrBeforeOr(1, 1, 0.0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextParameterChangeOffset(0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextParameterChangeOffset(1));
     try std.testing.expectEqual(@as(usize, 1), context.events.countKind(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.inputEvents().items.len);
     try std.testing.expect(context.hasEvent(.note_on));
