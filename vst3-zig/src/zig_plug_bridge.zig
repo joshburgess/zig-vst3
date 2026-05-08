@@ -338,14 +338,6 @@ pub fn writeOutputEvents(data: *ivstaudioprocessor.ProcessData, events: plug.pro
     return types.kResultOk;
 }
 
-pub fn copyParameterValues(
-    comptime Params: type,
-    source: *const plug.parameters.ParameterValues(Params),
-    dest: *plug.parameters.ParameterValues(Params),
-) void {
-    dest.copyFrom(source);
-}
-
 pub fn makeProcessContext(
     comptime Sample: type,
     input: ivstaudioprocessor.AudioBusBuffers,
@@ -839,26 +831,6 @@ test "zig-plug bridge reports failed IBStream writes" {
     var stream = Stream{ .write_limit = 4 };
 
     try std.testing.expectEqual(types.kResultFalse, writeParameterState(Params, stream.asStream(), &set, &values));
-}
-
-test "zig-plug bridge copies reflected parameter values" {
-    const Params = struct {
-        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
-        mix: plug.parameters.FloatParam = plug.parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
-    };
-    const Set = plug.parameters.ParameterSet(Params);
-    const Values = plug.parameters.ParameterValues(Params);
-    const set = Set.init(.{});
-    var source = Values.init(&set);
-    var dest = Values.init(&set);
-
-    try std.testing.expect(source.storeById(&set, 0, 0.25));
-    try std.testing.expect(source.storeById(&set, 1, 0.75));
-
-    copyParameterValues(Params, &source, &dest);
-
-    try std.testing.expectEqual(@as(?f64, 0.25), dest.loadById(&set, 0));
-    try std.testing.expectEqual(@as(?f64, 0.75), dest.loadById(&set, 1));
 }
 
 test "zig-plug bridge parameter state stores ids and persists streams" {
