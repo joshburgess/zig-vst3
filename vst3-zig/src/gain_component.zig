@@ -6,6 +6,7 @@ const ivstdataexchange = @import("pluginterfaces/vst/ivstdataexchange.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_host_application = @import("vst_host_application.zig");
 const zig_plug_effect = @import("zig_plug_effect.zig");
 
 pub const cid = tuid.inlineUid(0xA74E7A0D, 0x6B234163, 0xA0A83EBF, 0xD06F1401);
@@ -118,64 +119,7 @@ test "gain component exposes process context requirements" {
 test "gain component queries host application during initialize" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
-    const ivsthostapplication = @import("pluginterfaces/vst/ivsthostapplication.zig");
-    const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
-
-    const HostApplication = extern struct {
-        const Self = @This();
-
-        iface: ivsthostapplication.IHostApplication = .{ .vtable = &vtable },
-        query_count: types.uint32 = 0,
-        add_ref_count: types.uint32 = 0,
-        release_count: types.uint32 = 0,
-
-        const vtable = ivsthostapplication.IHostApplicationVTable{
-            .queryInterface = queryInterface,
-            .addRef = addRef,
-            .release = release,
-            .getName = getName,
-            .createInstance = createInstance,
-        };
-
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivsthostapplication.IHostApplication = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
-
-        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            const self = owner(ptr);
-            self.query_count += 1;
-            if (std.mem.eql(u8, requested_iid, &ivsthostapplication.ihost_application_iid)) {
-                _ = addRef(ptr);
-                out.* = ptr;
-                return types.kResultOk;
-            }
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
-            const self = owner(ptr);
-            self.add_ref_count += 1;
-            return self.add_ref_count + 1;
-        }
-
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
-            const self = owner(ptr);
-            self.release_count += 1;
-            return 1;
-        }
-
-        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
-            out[0] = 0;
-            return types.kResultOk;
-        }
-
-        fn createInstance(_: *anyopaque, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            out.* = null;
-            return types.kNoInterface;
-        }
-    };
+    const HostApplication = vst_host_application.HostApplication("Test Host", struct {});
 
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
@@ -184,7 +128,7 @@ test "gain component queries host application during initialize" {
     defer _ = component_iface.vtable.release(component_iface);
 
     var host = HostApplication{};
-    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, &host.iface));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asInterface()));
     try std.testing.expectEqual(@as(types.uint32, 4), host.query_count);
     try std.testing.expectEqual(@as(types.uint32, 1), host.add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 0), host.release_count);
