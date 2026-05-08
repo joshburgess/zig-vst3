@@ -42,6 +42,8 @@ test "event echo core example writes input events to output events" {
 
     plugin.process(&context);
 
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
+    try std.testing.expectEqual(@as(usize, 0), context.outputEventRemainingCapacity());
     try std.testing.expectEqual(@as(usize, 1), context.writtenOutputEvents().items.len);
     try std.testing.expectEqual(plug.process.EventKind.note_on, context.writtenOutputEvents().items[0].kind);
     try std.testing.expectEqual(@as(usize, 1), context.writtenOutputEvents().items[0].sample_offset);
@@ -65,6 +67,6 @@ test "event echo core example can run through plugin instance" {
 
     instance.process(&context);
 
-    try std.testing.expectEqual(@as(usize, 1), output_events.events().items.len);
-    try std.testing.expectEqual(plug.process.EventKind.note_off, output_events.events().items[0].kind);
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
+    try std.testing.expectEqual(plug.process.EventKind.note_off, context.writtenOutputEvents().items[0].kind);
 }
