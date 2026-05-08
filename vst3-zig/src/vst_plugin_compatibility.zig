@@ -8,6 +8,8 @@ const types = @import("pluginterfaces/base/types.zig");
 const vst_stream = @import("vst_stream.zig");
 
 pub fn PluginCompatibility(comptime json: []const u8) type {
+    if (json.len > std.math.maxInt(types.int32)) @compileError("PluginCompatibility JSON must fit in int32 bytes");
+
     return extern struct {
         const Self = @This();
 
