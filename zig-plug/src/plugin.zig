@@ -131,12 +131,28 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().load(field_name);
         }
 
+        pub fn loadParameterIndex(self: *const Self, index: usize) ?f64 {
+            return self.parameterView().loadIndex(index);
+        }
+
+        pub fn loadParameterPlainIndex(self: *const Self, index: usize) ?f64 {
+            return self.parameterView().loadPlainIndex(index);
+        }
+
         pub fn storeParameter(self: *Self, comptime field_name: []const u8, plain: parameters.FieldPlainType(Plugin.Params, field_name)) bool {
             return self.parameterEditor().store(field_name, plain);
         }
 
         pub fn storeParameterNormalized(self: *Self, comptime field_name: []const u8, normalized: f64) bool {
             return self.parameterEditor().storeNormalized(field_name, normalized);
+        }
+
+        pub fn storeParameterIndex(self: *Self, index: usize, normalized: f64) bool {
+            return self.parameterEditor().storeIndex(index, normalized);
+        }
+
+        pub fn storeParameterPlainIndex(self: *Self, index: usize, plain: f64) bool {
+            return self.parameterEditor().storePlainIndex(index, plain);
         }
 
         pub fn storeParameterById(self: *Self, id: u32, normalized: f64) bool {
@@ -479,8 +495,12 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expect(instance.storeParameter("bypass", true));
     try std.testing.expect(instance.storeParameter("mode", .mute));
     try std.testing.expect(instance.storeParameterNormalized("gain", 0.5));
+    try std.testing.expect(instance.storeParameterIndex(0, 0.75));
+    try std.testing.expect(instance.storeParameterPlainIndex(0, 6.0));
     try std.testing.expect(instance.storeParameterById(1, 0.0));
     try std.testing.expect(instance.storeParameterPlainById(0, 6.0));
+    try std.testing.expect(!instance.storeParameterIndex(99, 1.0));
+    try std.testing.expect(!instance.storeParameterPlainIndex(99, 1.0));
     try std.testing.expect(!instance.storeParameterById(99, 1.0));
     try std.testing.expect(!instance.storeParameterPlainById(99, 1.0));
 
@@ -489,6 +509,10 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(false, instance.loadParameter("bypass"));
     try std.testing.expectEqual(Mode.mute, instance.loadParameter("mode"));
     try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("mode"));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.loadParameterIndex(0));
+    try std.testing.expectEqual(@as(?f64, 6.0), instance.loadParameterPlainIndex(0));
+    try std.testing.expectEqual(@as(?f64, null), instance.loadParameterIndex(99));
+    try std.testing.expectEqual(@as(?f64, null), instance.loadParameterPlainIndex(99));
     try std.testing.expectEqual(@as(f64, 6.0), view.load("gain"));
     try std.testing.expectEqual(false, view.load("bypass"));
     try std.testing.expectEqual(Mode.mute, view.load("mode"));
