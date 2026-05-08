@@ -122,6 +122,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterEditor().storePlainById(id, plain);
         }
 
+        pub fn resetParametersToDefaults(self: *Self) void {
+            self.spec.values.resetToDefaults(&self.spec.parameter_set);
+        }
+
         pub fn applyParameterChanges(self: *Self, changes: process_api.ParameterChanges) void {
             self.spec.values.applyChanges(&self.spec.parameter_set, changes);
         }
@@ -446,6 +450,11 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(false, view.load("bypass"));
     try std.testing.expectEqual(Mode.mute, view.load("mode"));
     try std.testing.expectEqual(@as(f64, 1.0), view.loadNormalized("mode"));
+
+    instance.resetParametersToDefaults();
+    try std.testing.expectEqual(@as(f64, 0.0), instance.loadParameter("gain"));
+    try std.testing.expectEqual(false, instance.loadParameter("bypass"));
+    try std.testing.expectEqual(Mode.clean, instance.loadParameter("mode"));
 }
 
 test "plugin instance exposes parameter editor" {
