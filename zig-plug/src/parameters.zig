@@ -592,6 +592,45 @@ pub fn ParameterValues(comptime Params: type) type {
                 _ = self.storeById(set, change.id, change.normalized);
             }
         }
+
+        pub fn view(self: *const Self, set: *const Set) ParameterView(Params) {
+            return ParameterView(Params).init(set, self);
+        }
+    };
+}
+
+pub fn ParameterView(comptime Params: type) type {
+    const Set = ParameterSet(Params);
+    const Values = ParameterValues(Params);
+
+    return struct {
+        const Self = @This();
+
+        set: *const Set,
+        values: *const Values,
+
+        pub fn init(set: *const Set, values: *const Values) Self {
+            return .{
+                .set = set,
+                .values = values,
+            };
+        }
+
+        pub fn loadNormalized(self: Self, comptime field_name: []const u8) f64 {
+            return self.values.loadFieldNormalized(self.set, field_name);
+        }
+
+        pub fn load(self: Self, comptime field_name: []const u8) FieldPlainType(Params, field_name) {
+            return self.values.loadField(self.set, field_name);
+        }
+
+        pub fn loadById(self: Self, id: u32) ?f64 {
+            return self.values.loadById(self.set, id);
+        }
+
+        pub fn loadPlainById(self: Self, id: u32) ?f64 {
+            return self.values.loadPlainById(self.set, id);
+        }
     };
 }
 
@@ -913,6 +952,34 @@ test "parameter values expose typed field access" {
     try std.testing.expectEqual(true, values.loadField(&set, "bypass"));
     try std.testing.expectEqual(Mode.mute, values.loadField(&set, "mode"));
     try std.testing.expectEqual(@as(f64, 1.0), values.loadFieldNormalized(&set, "mode"));
+}
+
+test "parameter view binds reflected set and values" {
+    const Mode = enum { clean, boost, mute };
+    const Params = struct {
+        gain: FloatParam = FloatParam.init(0, "Gain", -12.0, 6.0, 0.0),
+        voices: IntParam = IntParam.init(1, "Voices", 1, 4, 1),
+        bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
+        mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
+    };
+    const Set = ParameterSet(Params);
+    const Values = ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+
+    try std.testing.expect(values.storeField(&set, "gain", 6.0));
+    try std.testing.expect(values.storeField(&set, "voices", 4));
+    try std.testing.expect(values.storeField(&set, "bypass", true));
+    try std.testing.expect(values.storeField(&set, "mode", .mute));
+
+    const view = values.view(&set);
+    try std.testing.expectEqual(@as(f64, 6.0), view.load("gain"));
+    try std.testing.expectEqual(@as(i64, 4), view.load("voices"));
+    try std.testing.expectEqual(true, view.load("bypass"));
+    try std.testing.expectEqual(Mode.mute, view.load("mode"));
+    try std.testing.expectEqual(@as(f64, 1.0), view.loadNormalized("mode"));
+    try std.testing.expectEqual(@as(?f64, 1.0), view.loadById(3));
+    try std.testing.expectEqual(@as(?f64, 2.0), view.loadPlainById(3));
 }
 
 test "parameter values apply reflected parameter changes by id" {

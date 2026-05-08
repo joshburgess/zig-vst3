@@ -88,6 +88,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return &self.spec.values;
         }
 
+        pub fn parameterView(self: *const Self) parameters.ParameterView(Plugin.Params) {
+            return self.spec.values.view(&self.spec.parameter_set);
+        }
+
         pub fn loadParameterNormalized(self: *const Self, comptime field_name: []const u8) f64 {
             return self.spec.values.loadFieldNormalized(&self.spec.parameter_set, field_name);
         }
@@ -389,10 +393,15 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expect(instance.storeParameter("mode", .mute));
     try std.testing.expect(instance.storeParameterNormalized("gain", 0.5));
 
+    const view = instance.parameterView();
     try std.testing.expectEqual(@as(f64, -3.0), instance.loadParameter("gain"));
     try std.testing.expectEqual(true, instance.loadParameter("bypass"));
     try std.testing.expectEqual(Mode.mute, instance.loadParameter("mode"));
     try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("mode"));
+    try std.testing.expectEqual(@as(f64, -3.0), view.load("gain"));
+    try std.testing.expectEqual(true, view.load("bypass"));
+    try std.testing.expectEqual(Mode.mute, view.load("mode"));
+    try std.testing.expectEqual(@as(f64, 1.0), view.loadNormalized("mode"));
 }
 
 test "plugin instance applies process parameter changes before dispatch" {

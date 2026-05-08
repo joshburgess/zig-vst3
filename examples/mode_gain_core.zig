@@ -17,7 +17,8 @@ pub const ModeGain = struct {
         set: *const Spec.ParameterSet,
         values: *const Spec.ParameterValues,
     ) void {
-        const gain: f32 = switch (values.loadField(set, "mode")) {
+        const params = values.view(set);
+        const gain: f32 = switch (params.load("mode")) {
             .clean => 1.0,
             .boost => 2.0,
             .mute => 0.0,
@@ -41,7 +42,7 @@ test "mode gain core example declares reflected enum parameter" {
 
     try std.testing.expectEqualStrings("zig-plug Core Mode Gain", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
-    try std.testing.expectEqual(Mode.clean, spec.values.loadField(&parameter_set, "mode"));
+    try std.testing.expectEqual(Mode.clean, spec.values.view(&parameter_set).load("mode"));
     plug.plugin.validateLifecycle(ModeGain);
 }
 
