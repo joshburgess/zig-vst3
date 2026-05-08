@@ -36,6 +36,7 @@ pub const vst_cloneable = @import("vst_cloneable.zig");
 pub const vst_content_scale_support = @import("vst_content_scale_support.zig");
 pub const vst_context_menu = @import("vst_context_menu.zig");
 pub const vst_error_context = @import("vst_error_context.zig");
+pub const vst_event_list = @import("vst_event_list.zig");
 pub const vst_host_application = @import("vst_host_application.zig");
 pub const vst_inter_app_audio = @import("vst_inter_app_audio.zig");
 pub const vst_linux_run_loop = @import("vst_linux_run_loop.zig");
