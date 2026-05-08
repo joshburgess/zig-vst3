@@ -143,7 +143,7 @@ pub fn PluginInstance(comptime Plugin: type) type {
         }
 
         pub fn process(self: *Self, context: *process_api.ProcessContext(f32)) void {
-            self.applyParameterChanges(context.parameter_changes);
+            self.applyParameterChanges(context.parameterChanges());
             if (Spec.has_process_with_parameter_view) {
                 self.plugin.processWithParameterView(context, self.parameterView());
             } else if (Spec.has_process_with_parameters) {
@@ -154,7 +154,7 @@ pub fn PluginInstance(comptime Plugin: type) type {
         }
 
         pub fn process64(self: *Self, context: *process_api.ProcessContext(f64)) void {
-            self.applyParameterChanges(context.parameter_changes);
+            self.applyParameterChanges(context.parameterChanges());
             if (Spec.has_process64_with_parameter_view) {
                 self.plugin.process64WithParameterView(context, self.parameterView());
             } else if (Spec.has_process64_with_parameters) {
@@ -355,8 +355,8 @@ test "plugin instance drives declared lifecycle hooks" {
         pub fn process(self: *@This(), context: *process_api.ProcessContext(f32)) void {
             self.processed = true;
             for (0..context.outputChannelCount()) |channel| {
-                const input = context.inputs.channel(channel) orelse continue;
-                const output = context.outputs.channel(channel) orelse continue;
+                const input = context.inputChannel(channel) orelse continue;
+                const output = context.outputChannel(channel) orelse continue;
                 for (0..context.frameCount()) |sample| {
                     output[sample] = input[sample] * 0.5;
                 }
@@ -480,7 +480,7 @@ test "plugin instance applies process parameter changes before dispatch" {
         };
 
         pub fn process(self: *@This(), context: *process_api.ProcessContext(f32)) void {
-            self.observed = context.parameter_changes.latestNormalized(0);
+            self.observed = context.latestParameterNormalized(0);
         }
     };
     const Instance = PluginInstance(Gain);
@@ -577,7 +577,7 @@ test "plugin instance applies process64 parameter changes before dispatch" {
         };
 
         pub fn process64(self: *@This(), context: *process_api.ProcessContext(f64)) void {
-            self.observed = context.parameter_changes.latestNormalized(0);
+            self.observed = context.latestParameterNormalized(0);
         }
     };
     const Instance = PluginInstance(Gain);

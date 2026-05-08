@@ -639,7 +639,7 @@ test "process context validates attached parameter changes and events" {
         .output_events = &writer,
     });
 
-    try std.testing.expectEqual(@as(f64, 0.5), context.parameter_changes.latest(1).?.normalized);
+    try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(usize, 1), context.parameterChanges().items.len);
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(?f64, 0.5), context.latestParameterNormalized(1));
@@ -648,7 +648,7 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(f64, 0.5), context.parameterNormalizedAtOrBeforeOr(1, 1, 0.0));
     try std.testing.expectEqual(@as(?usize, 1), context.nextParameterChangeOffset(0));
     try std.testing.expectEqual(@as(?usize, null), context.nextParameterChangeOffset(1));
-    try std.testing.expectEqual(@as(usize, 1), context.events.countKind(.note_on));
+    try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.inputEvents().items.len);
     try std.testing.expect(context.hasEvent(.note_on));
     try std.testing.expect(!context.hasEvent(.note_off));
