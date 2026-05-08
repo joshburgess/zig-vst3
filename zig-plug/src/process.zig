@@ -192,6 +192,18 @@ pub fn ProcessContext(comptime Sample: type) type {
             };
         }
 
+        pub fn setParameterChanges(self: *@This(), changes: []const ParameterChange) !void {
+            self.parameter_changes = try ParameterChanges.init(changes, self.frameCount());
+        }
+
+        pub fn setEvents(self: *@This(), events: []const Event) !void {
+            self.events = try Events.init(events, self.frameCount());
+        }
+
+        pub fn setOutputEvents(self: *@This(), writer: *EventWriter) void {
+            self.output_events = writer;
+        }
+
         pub fn frameCount(self: @This()) usize {
             return @min(self.inputs.frame_count, self.outputs.frame_count);
         }
@@ -228,6 +240,47 @@ test "process context reports usable frame count" {
     const context = try ProcessContext(f64).init(48_000.0, &input_channels, &output_channels);
 
     try std.testing.expectEqual(@as(usize, 3), context.frameCount());
+}
+
+test "process context validates attached parameter changes and events" {
+    const input = [_]f32{ 0.1, 0.2 };
+    var output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const changes = [_]ParameterChange{
+        .{ .id = 1, .sample_offset = 1, .normalized = 0.5 },
+    };
+    const events = [_]Event{
+        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 1, .pitch = 60 },
+    };
+    var storage: [1]Event = undefined;
+    var writer = EventWriter.init(&storage, input.len);
+    var context = try ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
+
+    try context.setParameterChanges(&changes);
+    try context.setEvents(&events);
+    context.setOutputEvents(&writer);
+
+    try std.testing.expectEqual(@as(f64, 0.5), context.parameter_changes.latest(1).?.normalized);
+    try std.testing.expectEqual(@as(usize, 1), context.events.countKind(.note_on));
+    try std.testing.expect(context.output_events != null);
+}
+
+test "process context rejects attached changes outside frame count" {
+    const input = [_]f32{0.1};
+    var output = [_]f32{0.0};
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const changes = [_]ParameterChange{
+        .{ .id = 1, .sample_offset = 1, .normalized = 0.5 },
+    };
+    const events = [_]Event{
+        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 1, .pitch = 60 },
+    };
+    var context = try ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
+
+    try std.testing.expectError(error.ParameterChangeOutsideBlock, context.setParameterChanges(&changes));
+    try std.testing.expectError(error.EventOutsideBlock, context.setEvents(&events));
 }
 
 test "parameter changes validate block offsets and normalized values" {
