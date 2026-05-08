@@ -45,7 +45,7 @@ Parameter helpers:
 - `ParameterSet.parameterChange` and `ParameterSet.parameterChangeNormalized` construct changes from reflected field names for tests and non-host callers.
 - `ParameterValues.view(set)` and `PluginInstance.parameterView()` bind descriptors and values into a `ParameterView`.
 - `ParameterValues.editor(set)` and `PluginInstance.parameterEditor()` bind descriptors and mutable values into a `ParameterEditor`.
-- `ProcessContext.parameterChanges`, `latestParameterChange`, `firstParameterChange`, `countParameterChanges`, `hasParameterChange`, `latestParameterNormalized`, `firstParameterNormalized`, `latestParameterNormalizedOr`, `parameterNormalizedAtOrBeforeOr`, and `nextParameterChangeOffset` expose common process-time reads.
+- `ProcessContext.parameterChanges`, `latestParameterChange`, `firstParameterChange`, `countParameterChanges`, `hasParameterChange`, `latestParameterNormalized`, `firstParameterNormalized`, `latestParameterNormalizedOr`, `latestParameterChangeAtOrBefore`, `latestParameterNormalizedAtOrBefore`, `parameterNormalizedAtOrBeforeOr`, and `nextParameterChangeOffset` expose common process-time reads.
 
 Event helpers:
 
