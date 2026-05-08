@@ -240,96 +240,7 @@ test "gain controller stores component handler 3 context menu callback" {
     const ivstcontextmenu = @import("pluginterfaces/vst/ivstcontextmenu.zig");
     const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 
-    const HostHandler = extern struct {
-        const Self = @This();
-
-        handler: ivsteditcontroller.IComponentHandler = .{ .vtable = &handler_vtable },
-        handler3: ivstcontextmenu.IComponentHandler3 = .{ .vtable = &handler3_vtable },
-        context_menu_count: types.uint32 = 0,
-        handler3_release_count: types.uint32 = 0,
-
-        const handler_vtable = ivsteditcontroller.IComponentHandlerVTable{
-            .queryInterface = queryFromHandler,
-            .addRef = addRefFromHandler,
-            .release = releaseFromHandler,
-            .beginEdit = beginEditCallback,
-            .performEdit = performEditCallback,
-            .endEdit = endEditCallback,
-            .restartComponent = restartComponent,
-        };
-
-        const handler3_vtable = ivstcontextmenu.IComponentHandler3VTable{
-            .queryInterface = queryFromHandler3,
-            .addRef = addRefFromHandler3,
-            .release = releaseFromHandler3,
-            .createContextMenu = createContextMenuCallback,
-        };
-
-        fn ownerFromHandler(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler", iface);
-        }
-
-        fn ownerFromHandler3(ptr: *anyopaque) *Self {
-            const iface: *ivstcontextmenu.IComponentHandler3 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler3", iface);
-        }
-
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            const self = ownerFromHandler(ptr);
-            if (std.mem.eql(u8, requested_iid, &ivstcontextmenu.icomponent_handler3_iid)) {
-                _ = self.handler3.vtable.addRef(&self.handler3);
-                out.* = &self.handler3;
-                return types.kResultOk;
-            }
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn queryFromHandler3(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn addRefFromHandler(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn releaseFromHandler(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn addRefFromHandler3(_: *anyopaque) callconv(.C) types.uint32 {
-            return 2;
-        }
-
-        fn releaseFromHandler3(ptr: *anyopaque) callconv(.C) types.uint32 {
-            const self = ownerFromHandler3(ptr);
-            self.handler3_release_count += 1;
-            return 1;
-        }
-
-        fn beginEditCallback(_: *anyopaque, _: vsttypes.ParamID) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn performEditCallback(_: *anyopaque, _: vsttypes.ParamID, _: vsttypes.ParamValue) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn endEditCallback(_: *anyopaque, _: vsttypes.ParamID) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn restartComponent(_: *anyopaque, _: types.int32) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn createContextMenuCallback(ptr: *anyopaque, _: ?*@import("pluginterfaces/gui/iplugview.zig").IPlugView, _: ?*const vsttypes.ParamID) callconv(.C) ?*ivstcontextmenu.IContextMenu {
-            ownerFromHandler3(ptr).context_menu_count += 1;
-            return null;
-        }
-    };
+    const HostHandler = vst_component_handler.ComponentHandler3(struct {});
 
     var controller_out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
@@ -340,7 +251,7 @@ test "gain controller stores component handler 3 context menu callback" {
     try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), createContextMenu(null));
 
     var handler = HostHandler{};
-    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, &handler.handler));
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
     try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), createContextMenu(&gain_param_id));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.context_menu_count);
 
