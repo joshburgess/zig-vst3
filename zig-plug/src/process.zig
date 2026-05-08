@@ -500,6 +500,11 @@ pub fn ProcessContext(comptime Sample: type) type {
             return writer.events();
         }
 
+        pub fn clearOutputEvents(self: @This()) void {
+            const writer = self.output_events orelse return;
+            writer.clear();
+        }
+
         pub fn hasOutputEventWriter(self: @This()) bool {
             return self.output_events != null;
         }
@@ -878,6 +883,9 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(usize, 2), context.writtenOutputEvents().items.len);
     try std.testing.expectEqual(EventKind.note_on, context.writtenOutputEvents().items[0].kind);
     try std.testing.expectEqual(EventKind.note_off, context.writtenOutputEvents().items[1].kind);
+    context.clearOutputEvents();
+    try std.testing.expectEqual(@as(usize, 0), context.outputEventCount());
+    try std.testing.expectEqual(@as(usize, 2), context.outputEventRemainingCapacity());
 
     var no_writer = try ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
     try std.testing.expect(!no_writer.hasOutputEventWriter());
@@ -888,4 +896,6 @@ test "process context exposes output event helpers" {
     try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvent(events[0]));
     try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvents(try Events.init(&events, input.len)));
     try std.testing.expectEqual(@as(usize, 0), no_writer.writtenOutputEvents().items.len);
+    no_writer.clearOutputEvents();
+    try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventCount());
 }
