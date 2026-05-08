@@ -2,6 +2,7 @@ const std = @import("std");
 const parameters = @import("parameters.zig");
 const process_api = @import("process.zig");
 const state = @import("state.zig");
+const units_api = @import("units.zig");
 
 pub fn PluginSpec(comptime Plugin: type) type {
     if (!@hasDecl(Plugin, "Params")) {
@@ -20,9 +21,11 @@ pub fn PluginSpec(comptime Plugin: type) type {
         pub const Params = Plugin.Params;
         pub const ParameterSet = parameters.ParameterSet(Params);
         pub const ParameterValues = parameters.ParameterValues(Params);
+        pub const Units = units_api.UnitSet(unit_config);
         pub const encoded_parameter_state_size = state.encodedSize(Params);
         pub const name = Plugin.name;
         pub const vendor = Plugin.vendor;
+        pub const unit_config = if (@hasDecl(Plugin, "units")) Plugin.units else units_api.Config{};
         pub const has_init = @hasDecl(Plugin, "init");
         pub const has_prepare = @hasDecl(Plugin, "prepare");
         pub const has_process = @hasDecl(Plugin, "process");
@@ -35,6 +38,7 @@ pub fn PluginSpec(comptime Plugin: type) type {
 
         parameter_set: ParameterSet,
         values: ParameterValues,
+        units: Units = .{},
 
         pub fn init(params: Params) Self {
             const set = ParameterSet.init(params);
@@ -89,6 +93,42 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn parameterValuesConst(self: *const Self) *const Spec.ParameterValues {
             return &self.spec.values;
+        }
+
+        pub fn unitSet(self: *const Self) *const Spec.Units {
+            return &self.spec.units;
+        }
+
+        pub fn unitCount(self: *const Self) usize {
+            return self.spec.units.unitCount();
+        }
+
+        pub fn unit(self: *const Self, index: usize) ?units_api.Unit {
+            return self.spec.units.unit(index);
+        }
+
+        pub fn unitById(self: *const Self, id: i32) ?units_api.Unit {
+            return self.spec.units.unitById(id);
+        }
+
+        pub fn programListCount(self: *const Self) usize {
+            return self.spec.units.programListCount();
+        }
+
+        pub fn programList(self: *const Self, index: usize) ?units_api.ProgramList {
+            return self.spec.units.programList(index);
+        }
+
+        pub fn programListById(self: *const Self, id: i32) ?units_api.ProgramList {
+            return self.spec.units.programListById(id);
+        }
+
+        pub fn programCount(self: *const Self, list_id: i32) ?usize {
+            return self.spec.units.programCount(list_id);
+        }
+
+        pub fn programName(self: *const Self, list_id: i32, program_index: usize) ?[]const u8 {
+            return self.spec.units.programName(list_id, program_index);
         }
 
         pub fn parameterView(self: *const Self) parameters.ParameterView(Plugin.Params) {
@@ -464,6 +504,51 @@ test "plugin spec exposes metadata and parameter defaults" {
     try std.testing.expectEqual(@as(f64, 1.0), spec.values.view(&spec.parameter_set).loadNormalized("gain"));
     try std.testing.expect(spec.values.editor(&spec.parameter_set).storeNormalized("gain", 0.5));
     try std.testing.expectEqual(@as(f64, 0.5), spec.values.view(&spec.parameter_set).loadNormalized("gain"));
+}
+
+test "plugin spec exposes default root unit metadata" {
+    const Gain = struct {
+        pub const name = "Unitless Gain";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+    };
+    const Spec = PluginSpec(Gain);
+    var spec = Spec.init(.{});
+
+    try std.testing.expectEqual(@as(usize, 1), spec.units.unitCount());
+    try std.testing.expectEqual(@as(usize, 0), spec.units.programListCount());
+    try std.testing.expectEqual(units_api.root_unit_id, spec.units.rootUnit().id);
+    try std.testing.expectEqualStrings("Root", spec.units.rootUnit().name);
+}
+
+test "plugin instance exposes custom unit and program metadata" {
+    const programs = [_]units_api.Program{
+        .{ .name = "Clean" },
+        .{ .name = "Lead" },
+    };
+    const Synth = struct {
+        pub const name = "Unit Synth";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const units = units_api.Config{
+            .units = &.{
+                units_api.Unit.root("Main"),
+                .{ .id = 1, .name = "Voice", .parent_id = units_api.root_unit_id, .program_list_id = 7 },
+            },
+            .program_lists = &.{
+                .{ .id = 7, .name = "Voice Programs", .programs = &programs },
+            },
+        };
+    };
+    const Instance = PluginInstance(Synth);
+    var instance = try Instance.init(std.testing.allocator, .{});
+
+    try std.testing.expectEqual(@as(usize, 2), instance.unitCount());
+    try std.testing.expectEqualStrings("Voice", instance.unitById(1).?.name);
+    try std.testing.expectEqual(@as(usize, 1), instance.programListCount());
+    try std.testing.expectEqualStrings("Voice Programs", instance.programListById(7).?.name);
+    try std.testing.expectEqual(@as(?usize, 2), instance.programCount(7));
+    try std.testing.expectEqualStrings("Lead", instance.programName(7, 1).?);
 }
 
 test "plugin spec detects lifecycle declarations" {

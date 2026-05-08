@@ -15,11 +15,12 @@ A plugin type declares:
 
 - `ParameterSet`: reflected descriptor metadata
 - `ParameterValues`: atomic normalized values initialized from descriptor defaults
+- `Units`: reflected unit and program-list metadata
 - `encoded_parameter_state_size`: byte count for a full reflected parameter snapshot
 - lifecycle flags for optional `init`, `prepare`, `process`, `process64`, and `deinit` declarations
 - `init(params)`: builds the reflected set and value storage
 
-`PluginInstance(Plugin)` owns a plugin value plus its reflected spec, exposes the instance parameter set and mutable or const value storage, exposes bound parameter view/editor handles, provides reflected parameter metadata by index or id, index lookup, plain/normalized conversion by index, id, display name, or field, and plain text formatting/parsing helpers, provides typed, normalized, index-based, id-based, name-based, and plain-id parameter load/store helpers, applies reflected parameter changes to instance-owned values before process dispatch, exposes the encoded reflected parameter-state size, reads and writes reflected parameter state for the instance, writes debug JSON for reflected parameter state, and drives only the lifecycle hooks the plugin declares. It creates the plugin through `init(allocator)` when present, otherwise it uses a default struct value for declaration-only plugin types.
+`PluginInstance(Plugin)` owns a plugin value plus its reflected spec, exposes the instance parameter set and mutable or const value storage, exposes bound parameter view/editor handles, provides reflected parameter metadata by index or id, index lookup, plain/normalized conversion by index, id, display name, or field, and plain text formatting/parsing helpers, provides typed, normalized, index-based, id-based, name-based, and plain-id parameter load/store helpers, exposes reflected unit and program-list metadata, applies reflected parameter changes to instance-owned values before process dispatch, exposes the encoded reflected parameter-state size, reads and writes reflected parameter state for the instance, writes debug JSON for reflected parameter state, and drives only the lifecycle hooks the plugin declares. It creates the plugin through `init(allocator)` when present, otherwise it uses a default struct value for declaration-only plugin types.
 
 `validateLifecycle(Plugin)` currently accepts:
 
@@ -34,6 +35,13 @@ A plugin type declares:
 - `deinit(self: *Plugin) void`
 
 `process.ProcessContext(Sample)` carries typed input/output channel views, parameter changes, input events, optional output events, and the current sample rate. `ProcessContext(Sample).init(sample_rate, input_channels, output_channels)` builds the audio views and validates matching frame counts. `ProcessContext(Sample).initWith(sample_rate, input_channels, output_channels, .{ ... })` also attaches parameter changes, input events, and output-event storage while validating them against the context frame count.
+
+Unit and program helpers:
+
+- Plugins may declare `pub const units = plug.units.Config{ ... }`.
+- `plug.units.Unit.root("Root")` declares the root unit. Additional units can attach to the root or another unit and may point at a program list.
+- `plug.units.ProgramList` and `plug.units.Program` describe host-facing program names without coupling them to parameter state yet.
+- `PluginInstance.unitCount`, `unit`, `unitById`, `programListCount`, `programList`, `programListById`, `programCount`, and `programName` expose the reflected metadata.
 
 Audio helpers:
 
