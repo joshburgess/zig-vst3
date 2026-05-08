@@ -44,11 +44,11 @@ pub fn ContentScaleSupport(comptime Config: type) type {
 
         fn setContentScaleFactor(ptr: *anyopaque, factor: scale_support.ScaleFactor) callconv(.C) types.tresult {
             if (factor <= 0 or std.math.isNan(factor)) return types.kInvalidArgument;
-            const self = owner(ptr);
-            self.scale_factor = factor;
             if (@hasDecl(Config, "setContentScaleFactor")) {
-                return Config.setContentScaleFactor(factor);
+                const result = Config.setContentScaleFactor(factor);
+                if (result != types.kResultOk) return result;
             }
+            owner(ptr).scale_factor = factor;
             return types.kResultOk;
         }
 
@@ -70,6 +70,21 @@ test "content scale support stores positive scale factors" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.setContentScaleFactor(iface, 2.0));
     try std.testing.expectEqual(@as(scale_support.ScaleFactor, 2.0), support.currentScaleFactor());
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setContentScaleFactor(iface, 0.0));
+    try std.testing.expectEqual(@as(scale_support.ScaleFactor, 2.0), support.currentScaleFactor());
+}
+
+test "content scale support preserves previous factor when config rejects changes" {
+    const Support = ContentScaleSupport(struct {
+        pub fn setContentScaleFactor(factor: scale_support.ScaleFactor) types.tresult {
+            return if (factor <= 2.0) types.kResultOk else types.kResultFalse;
+        }
+    });
+    var support = Support{};
+    const iface = support.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setContentScaleFactor(iface, 2.0));
+    try std.testing.expectEqual(@as(scale_support.ScaleFactor, 2.0), support.currentScaleFactor());
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.setContentScaleFactor(iface, 3.0));
     try std.testing.expectEqual(@as(scale_support.ScaleFactor, 2.0), support.currentScaleFactor());
 }
 
