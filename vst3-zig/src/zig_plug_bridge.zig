@@ -11,6 +11,7 @@ const plug = @import("zig-plug-core");
 const audio_processor_algo = @import("pluginterfaces/vst/vstaudioprocessoralgo.zig");
 const events_helper = @import("pluginterfaces/vst/vsteventshelper.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+const vst_stream = @import("vst_stream.zig");
 
 const max_audio_channels = 64;
 const empty_arrangement: vsttypes.SpeakerArrangement = 0;
@@ -735,12 +736,13 @@ test "zig-plug bridge round-trips parameter state through IBStream" {
     const set = Set.init(.{});
     var values = Values.init(&set);
     var restored = Values.init(&set);
-    var stream = MemoryStream{};
+    const Stream = vst_stream.FixedBufferStream(256);
+    var stream = Stream{};
 
     try std.testing.expect(values.store(0, 0.25));
-    try std.testing.expectEqual(types.kResultOk, writeParameterState(Params, &stream.iface, &set, &values));
-    try std.testing.expectEqual(types.kResultOk, stream.iface.vtable.seek(&stream.iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
-    try std.testing.expectEqual(types.kResultOk, readParameterState(Params, &stream.iface, &set, &restored));
+    try std.testing.expectEqual(types.kResultOk, writeParameterState(Params, stream.asStream(), &set, &values));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, readParameterState(Params, stream.asStream(), &set, &restored));
     try std.testing.expectEqual(@as(?f64, 0.25), restored.load(0));
 }
 
@@ -760,12 +762,13 @@ test "zig-plug bridge reads older parameter state without requiring current enco
     const new_set = NewSet.init(.{});
     var old_values = OldValues.init(&old_set);
     var new_values = NewValues.init(&new_set);
-    var stream = MemoryStream{};
+    const Stream = vst_stream.FixedBufferStream(256);
+    var stream = Stream{};
 
     try std.testing.expect(old_values.store(0, 0.25));
-    try std.testing.expectEqual(types.kResultOk, writeParameterState(OldParams, &stream.iface, &old_set, &old_values));
-    try std.testing.expectEqual(types.kResultOk, stream.iface.vtable.seek(&stream.iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
-    try std.testing.expectEqual(types.kResultOk, readParameterState(NewParams, &stream.iface, &new_set, &new_values));
+    try std.testing.expectEqual(types.kResultOk, writeParameterState(OldParams, stream.asStream(), &old_set, &old_values));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, readParameterState(NewParams, stream.asStream(), &new_set, &new_values));
 
     try std.testing.expectEqual(@as(?f64, 0.25), new_values.load(0));
     try std.testing.expectEqual(@as(?f64, 0.5), new_values.load(1));
@@ -779,13 +782,14 @@ test "zig-plug bridge rejects truncated IBStream state" {
     const Values = plug.parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var stream = MemoryStream{};
+    const Stream = vst_stream.FixedBufferStream(256);
+    var stream = Stream{};
 
     try std.testing.expect(values.store(0, 0.25));
-    try std.testing.expectEqual(types.kResultOk, writeParameterState(Params, &stream.iface, &set, &values));
+    try std.testing.expectEqual(types.kResultOk, writeParameterState(Params, stream.asStream(), &set, &values));
     stream.len -= 1;
-    try std.testing.expectEqual(types.kResultOk, stream.iface.vtable.seek(&stream.iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
-    try std.testing.expectEqual(types.kResultFalse, readParameterState(Params, &stream.iface, &set, &values));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultFalse, readParameterState(Params, stream.asStream(), &set, &values));
 }
 
 test "zig-plug bridge reports failed IBStream writes" {
@@ -796,9 +800,10 @@ test "zig-plug bridge reports failed IBStream writes" {
     const Values = plug.parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var stream = MemoryStream{ .write_limit = 4 };
+    const Stream = vst_stream.FixedBufferStream(256);
+    var stream = Stream{ .write_limit = 4 };
 
-    try std.testing.expectEqual(types.kResultFalse, writeParameterState(Params, &stream.iface, &set, &values));
+    try std.testing.expectEqual(types.kResultFalse, writeParameterState(Params, stream.asStream(), &set, &values));
 }
 
 test "zig-plug bridge copies reflected parameter values" {
@@ -830,16 +835,17 @@ test "zig-plug bridge parameter state stores ids and persists streams" {
     const set = Set.init(.{});
     var source = ParameterState(Params).init(&set);
     var restored = ParameterState(Params).init(&set);
-    var stream = MemoryStream{};
+    const Stream = vst_stream.FixedBufferStream(256);
+    var stream = Stream{};
 
     try std.testing.expectEqual(types.kResultOk, source.setNormalizedById(0, 0.25));
     try std.testing.expectEqual(types.kResultOk, source.setNormalizedById(1, 0.75));
     try std.testing.expectEqual(types.kInvalidArgument, source.setNormalizedById(99, 0.5));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), source.getNormalizedById(0));
 
-    try std.testing.expectEqual(types.kResultOk, source.writeToStream(&stream.iface));
-    try std.testing.expectEqual(types.kResultOk, stream.iface.vtable.seek(&stream.iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
-    try std.testing.expectEqual(types.kResultOk, restored.readFromStream(&stream.iface));
+    try std.testing.expectEqual(types.kResultOk, source.writeToStream(stream.asStream()));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, restored.readFromStream(stream.asStream()));
 
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), restored.getNormalizedById(0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), restored.getNormalizedById(1));
@@ -1496,85 +1502,6 @@ fn expectString128(expected: []const u8, actual: *const vsttypes.String128) !voi
     }
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), actual[expected.len]);
 }
-
-const MemoryStream = extern struct {
-    iface: ibstream.IBStream = .{ .vtable = &vtable },
-    bytes: [256]u8 = undefined,
-    len: usize = 0,
-    pos: usize = 0,
-    write_limit: usize = 256,
-
-    const vtable = ibstream.IBStreamVTable{
-        .queryInterface = queryInterface,
-        .addRef = addRef,
-        .release = release,
-        .read = read,
-        .write = write,
-        .seek = seek,
-        .tell = tell,
-    };
-
-    fn owner(ptr: *anyopaque) *MemoryStream {
-        const iface: *ibstream.IBStream = @ptrCast(@alignCast(ptr));
-        return @fieldParentPtr("iface", iface);
-    }
-
-    fn queryInterface(_: *anyopaque, _: *const @import("tuid.zig").TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-        out.* = null;
-        return types.kNoInterface;
-    }
-
-    fn addRef(_: *anyopaque) callconv(.C) types.uint32 {
-        return 1;
-    }
-
-    fn release(_: *anyopaque) callconv(.C) types.uint32 {
-        return 1;
-    }
-
-    fn read(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_read: ?*types.int32) callconv(.C) types.tresult {
-        if (buffer == null or byte_count < 0) return types.kInvalidArgument;
-        const self = owner(ptr);
-        const requested: usize = @intCast(byte_count);
-        if (self.pos + requested > self.len) return types.kResultFalse;
-        const output = @as([*]u8, @ptrCast(buffer.?))[0..requested];
-        @memcpy(output, self.bytes[self.pos..][0..requested]);
-        self.pos += requested;
-        if (bytes_read) |read_count| read_count.* = @intCast(requested);
-        return types.kResultOk;
-    }
-
-    fn write(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_written: ?*types.int32) callconv(.C) types.tresult {
-        if (buffer == null or byte_count < 0) return types.kInvalidArgument;
-        const self = owner(ptr);
-        const requested: usize = @intCast(byte_count);
-        if (self.pos + requested > self.bytes.len or self.pos + requested > self.write_limit) return types.kResultFalse;
-        const input = @as([*]const u8, @ptrCast(buffer.?))[0..requested];
-        @memcpy(self.bytes[self.pos..][0..requested], input);
-        self.pos += requested;
-        self.len = @max(self.len, self.pos);
-        if (bytes_written) |write_count| write_count.* = @intCast(requested);
-        return types.kResultOk;
-    }
-
-    fn seek(ptr: *anyopaque, pos: types.int64, mode: types.int32, result: ?*types.int64) callconv(.C) types.tresult {
-        const self = owner(ptr);
-        const next = switch (@as(ibstream.IStreamSeekMode, @enumFromInt(mode))) {
-            .kIBSeekSet => pos,
-            .kIBSeekCur => @as(types.int64, @intCast(self.pos)) + pos,
-            .kIBSeekEnd => @as(types.int64, @intCast(self.len)) + pos,
-        };
-        if (next < 0 or next > self.len) return types.kResultFalse;
-        self.pos = @intCast(next);
-        if (result) |out| out.* = next;
-        return types.kResultOk;
-    }
-
-    fn tell(ptr: *anyopaque, pos: *types.int64) callconv(.C) types.tresult {
-        pos.* = @intCast(owner(ptr).pos);
-        return types.kResultOk;
-    }
-};
 
 const TestParamPoint = struct {
     sample_offset: types.int32,
