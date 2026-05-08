@@ -156,7 +156,7 @@ pub fn ParameterState(comptime Params: type) type {
             var restored = Values.init(self.set);
             const result = readParameterState(Params, stream, self.set, &restored);
             if (result != types.kResultOk) return result;
-            copyParameterValues(Params, &restored, &self.values);
+            self.values.copyFrom(&restored);
             return types.kResultOk;
         }
 
@@ -343,11 +343,7 @@ pub fn copyParameterValues(
     source: *const plug.parameters.ParameterValues(Params),
     dest: *plug.parameters.ParameterValues(Params),
 ) void {
-    inline for (0..plug.parameters.ParameterSet(Params).count) |index| {
-        if (source.load(index)) |value| {
-            _ = dest.store(index, value);
-        }
-    }
+    dest.copyFrom(source);
 }
 
 pub fn makeProcessContext(
@@ -808,19 +804,26 @@ test "zig-plug bridge reads older parameter state without requiring current enco
 test "zig-plug bridge rejects truncated IBStream state" {
     const Params = struct {
         gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+        mix: plug.parameters.FloatParam = plug.parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
     };
     const Set = plug.parameters.ParameterSet(Params);
     const Values = plug.parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
+    var source = Values.init(&set);
     const Stream = vst_stream.FixedBufferStream(256);
     var stream = Stream{};
 
-    try std.testing.expect(values.store(0, 0.25));
-    try std.testing.expectEqual(types.kResultOk, writeParameterState(Params, stream.asStream(), &set, &values));
+    try std.testing.expect(values.store(0, 0.8));
+    try std.testing.expect(values.store(1, 0.6));
+    try std.testing.expect(source.store(0, 0.25));
+    try std.testing.expect(source.store(1, 0.75));
+    try std.testing.expectEqual(types.kResultOk, writeParameterState(Params, stream.asStream(), &set, &source));
     stream.len -= 1;
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultFalse, readParameterState(Params, stream.asStream(), &set, &values));
+    try std.testing.expectEqual(@as(?f64, 0.8), values.load(0));
+    try std.testing.expectEqual(@as(?f64, 0.6), values.load(1));
 }
 
 test "zig-plug bridge reports failed IBStream writes" {
