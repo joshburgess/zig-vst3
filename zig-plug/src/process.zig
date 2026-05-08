@@ -62,6 +62,10 @@ pub const ParameterChanges = struct {
         return self.latestNormalized(id) orelse default;
     }
 
+    pub fn firstNormalizedOr(self: ParameterChanges, id: u32, default: f64) f64 {
+        return self.firstNormalized(id) orelse default;
+    }
+
     pub fn latestAtOrBefore(self: ParameterChanges, id: u32, sample_offset: usize) ?ParameterChange {
         var result: ?ParameterChange = null;
         for (self.items) |item| {
@@ -473,6 +477,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.firstNormalized(id);
         }
 
+        pub fn firstParameterNormalizedOr(self: @This(), id: u32, default: f64) f64 {
+            return self.parameter_changes.firstNormalizedOr(id, default);
+        }
+
         pub fn latestParameterNormalizedOr(self: @This(), id: u32, default: f64) f64 {
             return self.parameter_changes.latestNormalizedOr(id, default);
         }
@@ -677,6 +685,8 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(!context.hasParameterChange(2));
     try std.testing.expectEqual(@as(?f64, 0.5), context.latestParameterNormalized(1));
     try std.testing.expectEqual(@as(?f64, 0.5), context.firstParameterNormalized(1));
+    try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterNormalizedOr(1, 0.0));
+    try std.testing.expectEqual(@as(f64, 0.25), context.firstParameterNormalizedOr(2, 0.25));
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterNormalizedOr(1, 0.0));
     try std.testing.expectEqual(@as(f64, 0.25), context.latestParameterNormalizedOr(2, 0.25));
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChangeAtOrBefore(1, 1).?.normalized);
@@ -741,11 +751,13 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(usize, 0), view.count(9));
     try std.testing.expectEqual(@as(f64, 0.25), view.first(7).?.normalized);
     try std.testing.expectEqual(@as(?f64, 0.25), view.firstNormalized(7));
+    try std.testing.expectEqual(@as(f64, 0.25), view.firstNormalizedOr(7, 0.0));
     try std.testing.expectEqual(@as(f64, 0.75), view.latest(7).?.normalized);
     try std.testing.expectEqual(@as(?f64, 0.75), view.latestNormalized(7));
     try std.testing.expectEqual(@as(f64, 0.75), view.latestNormalizedOr(7, 0.0));
     try std.testing.expectEqual(@as(?f64, null), view.firstNormalized(9));
     try std.testing.expectEqual(@as(?f64, null), view.latestNormalized(9));
+    try std.testing.expectEqual(@as(f64, 0.5), view.firstNormalizedOr(9, 0.5));
     try std.testing.expectEqual(@as(f64, 0.5), view.latestNormalizedOr(9, 0.5));
     try std.testing.expectEqual(@as(?ParameterChange, null), view.latest(9));
     try std.testing.expectEqual(@as(f64, 0.25), view.latestAtOrBefore(7, 0).?.normalized);
