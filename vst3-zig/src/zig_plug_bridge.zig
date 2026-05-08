@@ -373,14 +373,15 @@ pub fn makeProcessContext(
         output_channels[channel] = output_buffers[channel][0..frame_count];
     }
 
-    return .{
-        .sample_rate = if (data.processContext) |context| context.sampleRate else 0,
-        .inputs = try plug.process.AudioInputs(Sample).init(input_channels[0..channel_count]),
-        .outputs = try plug.process.AudioOutputs(Sample).init(output_channels[0..channel_count]),
-        .parameter_changes = parameter_changes,
-        .events = events,
-        .output_events = output_events,
-    };
+    var context = try plug.process.ProcessContext(Sample).init(
+        if (data.processContext) |process_context| process_context.sampleRate else 0,
+        input_channels[0..channel_count],
+        output_channels[0..channel_count],
+    );
+    context.parameter_changes = parameter_changes;
+    context.events = events;
+    if (output_events) |writer| context.setOutputEvents(writer);
+    return context;
 }
 
 pub fn makeMainAudioProcessContext(
