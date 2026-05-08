@@ -445,6 +445,22 @@ pub fn ProcessContext(comptime Sample: type) type {
             self.output_events = writer;
         }
 
+        pub fn inputEvents(self: @This()) Events {
+            return self.events;
+        }
+
+        pub fn firstEvent(self: @This(), kind: EventKind) ?Event {
+            return self.events.firstKind(kind);
+        }
+
+        pub fn hasEvent(self: @This(), kind: EventKind) bool {
+            return self.events.hasKind(kind);
+        }
+
+        pub fn countEvents(self: @This(), kind: EventKind) usize {
+            return self.events.countKind(kind);
+        }
+
         pub fn appendOutputEvent(self: *@This(), event: Event) !void {
             const writer = self.output_events orelse return error.OutputEventsUnavailable;
             try writer.append(event);
@@ -565,6 +581,12 @@ test "process context validates attached parameter changes and events" {
 
     try std.testing.expectEqual(@as(f64, 0.5), context.parameter_changes.latest(1).?.normalized);
     try std.testing.expectEqual(@as(usize, 1), context.events.countKind(.note_on));
+    try std.testing.expectEqual(@as(usize, 1), context.inputEvents().items.len);
+    try std.testing.expect(context.hasEvent(.note_on));
+    try std.testing.expect(!context.hasEvent(.note_off));
+    try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
+    try std.testing.expectEqual(@as(i16, 60), context.firstEvent(.note_on).?.pitch);
+    try std.testing.expectEqual(@as(?Event, null), context.firstEvent(.note_off));
     try std.testing.expect(context.output_events != null);
 }
 
