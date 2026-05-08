@@ -100,6 +100,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.values.storeField(&self.spec.parameter_set, field_name, plain);
         }
 
+        pub fn storeParameterNormalized(self: *Self, comptime field_name: []const u8, normalized: f64) bool {
+            return self.spec.values.store(self.spec.parameter_set.indexOfField(field_name), normalized);
+        }
+
         pub fn applyParameterChanges(self: *Self, changes: process_api.ParameterChanges) void {
             self.spec.values.applyChanges(&self.spec.parameter_set, changes);
         }
@@ -341,7 +345,7 @@ test "plugin instance drives declared lifecycle hooks" {
     try std.testing.expect(instance.plugin.deinitialized);
     try std.testing.expectEqual(@as(f32, 0.125), output[0]);
     try std.testing.expectEqual(@as(f32, 0.25), output[1]);
-    try std.testing.expectEqual(@as(?f64, 0.5), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("gain"));
 }
 
 test "plugin instance applies parameter changes to owned values" {
@@ -383,8 +387,9 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expect(instance.storeParameter("gain", 6.0));
     try std.testing.expect(instance.storeParameter("bypass", true));
     try std.testing.expect(instance.storeParameter("mode", .mute));
+    try std.testing.expect(instance.storeParameterNormalized("gain", 0.5));
 
-    try std.testing.expectEqual(@as(f64, 6.0), instance.loadParameter("gain"));
+    try std.testing.expectEqual(@as(f64, -3.0), instance.loadParameter("gain"));
     try std.testing.expectEqual(true, instance.loadParameter("bypass"));
     try std.testing.expectEqual(Mode.mute, instance.loadParameter("mode"));
     try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("mode"));
@@ -416,7 +421,7 @@ test "plugin instance applies process parameter changes before dispatch" {
 
     instance.process(&context);
 
-    try std.testing.expectEqual(@as(?f64, 0.25), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(?f64, 0.25), instance.plugin.observed);
 }
 
@@ -480,7 +485,7 @@ test "plugin instance applies process64 parameter changes before dispatch" {
 
     instance.process64(&context);
 
-    try std.testing.expectEqual(@as(?f64, 0.75), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(?f64, 0.75), instance.plugin.observed);
 }
 
@@ -532,8 +537,8 @@ test "plugin instance round-trips owned parameter state" {
     var restored = try Instance.init(std.testing.allocator, .{});
     var bytes: [state.encodedSize(Gain.Params)]u8 = undefined;
 
-    try std.testing.expect(instance.parameterValues().storeById(instance.parameterSet(), 0, 0.25));
-    try std.testing.expect(instance.parameterValues().storeById(instance.parameterSet(), 1, 0.75));
+    try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
+    try std.testing.expect(instance.storeParameterNormalized("mix", 0.75));
 
     var out_stream = std.io.fixedBufferStream(&bytes);
     try instance.writeParameterState(out_stream.writer());
@@ -541,8 +546,8 @@ test "plugin instance round-trips owned parameter state" {
     var in_stream = std.io.fixedBufferStream(&bytes);
     try restored.readParameterState(in_stream.reader());
 
-    try std.testing.expectEqual(@as(?f64, 0.25), restored.parameterValues().loadById(restored.parameterSet(), 0));
-    try std.testing.expectEqual(@as(?f64, 0.75), restored.parameterValues().loadById(restored.parameterSet(), 1));
+    try std.testing.expectEqual(@as(f64, 0.25), restored.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(f64, 0.75), restored.loadParameterNormalized("mix"));
 }
 
 test "plugin instance reads parameter state with migrations" {
@@ -566,7 +571,7 @@ test "plugin instance reads parameter state with migrations" {
     var new_instance = try NewInstance.init(std.testing.allocator, .{});
     var bytes: [state.encodedSize(OldGain.Params)]u8 = undefined;
 
-    try std.testing.expect(old_instance.parameterValues().storeById(old_instance.parameterSet(), 7, 0.25));
+    try std.testing.expect(old_instance.storeParameterNormalized("gain", 0.25));
     var out_stream = std.io.fixedBufferStream(&bytes);
     try old_instance.writeParameterState(out_stream.writer());
 
@@ -575,7 +580,7 @@ test "plugin instance reads parameter state with migrations" {
         .{ .old_id = 7, .new_id = 11 },
     });
 
-    try std.testing.expectEqual(@as(?f64, 0.25), new_instance.parameterValues().loadById(new_instance.parameterSet(), 11));
+    try std.testing.expectEqual(@as(f64, 0.25), new_instance.loadParameterNormalized("output"));
 }
 
 test "plugin instance accepts metadata-only plugins" {
