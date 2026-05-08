@@ -25,7 +25,9 @@ pub fn PluginSpec(comptime Plugin: type) type {
         pub const has_init = @hasDecl(Plugin, "init");
         pub const has_prepare = @hasDecl(Plugin, "prepare");
         pub const has_process = @hasDecl(Plugin, "process");
+        pub const has_process_with_parameters = @hasDecl(Plugin, "processWithParameters");
         pub const has_process64 = @hasDecl(Plugin, "process64");
+        pub const has_process64_with_parameters = @hasDecl(Plugin, "process64WithParameters");
         pub const has_deinit = @hasDecl(Plugin, "deinit");
 
         parameter_set: ParameterSet,
@@ -108,14 +110,18 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn process(self: *Self, context: *process_api.ProcessContext(f32)) void {
             self.applyParameterChanges(context.parameter_changes);
-            if (Spec.has_process) {
+            if (Spec.has_process_with_parameters) {
+                self.plugin.processWithParameters(context, &self.spec.parameter_set, &self.spec.values);
+            } else if (Spec.has_process) {
                 self.plugin.process(context);
             }
         }
 
         pub fn process64(self: *Self, context: *process_api.ProcessContext(f64)) void {
             self.applyParameterChanges(context.parameter_changes);
-            if (Spec.has_process64) {
+            if (Spec.has_process64_with_parameters) {
+                self.plugin.process64WithParameters(context, &self.spec.parameter_set, &self.spec.values);
+            } else if (Spec.has_process64) {
                 self.plugin.process64(context);
             }
         }
@@ -152,10 +158,34 @@ pub fn validateLifecycle(comptime Plugin: type) void {
             @compileError("process must be fn (*Plugin, *process.ProcessContext(f32)) void");
         }
     }
+    if (@hasDecl(Plugin, "processWithParameters")) {
+        const process = @typeInfo(@TypeOf(Plugin.processWithParameters)).@"fn";
+        if (process.params.len != 4 or
+            process.params[0].type.? != *Plugin or
+            process.params[1].type.? != *process_api.ProcessContext(f32) or
+            process.params[2].type.? != *const parameters.ParameterSet(Plugin.Params) or
+            process.params[3].type.? != *const parameters.ParameterValues(Plugin.Params) or
+            process.return_type.? != void)
+        {
+            @compileError("processWithParameters must be fn (*Plugin, *process.ProcessContext(f32), *const ParameterSet, *const ParameterValues) void");
+        }
+    }
     if (@hasDecl(Plugin, "process64")) {
         const process64 = @typeInfo(@TypeOf(Plugin.process64)).@"fn";
         if (process64.params.len != 2 or process64.params[0].type.? != *Plugin or process64.params[1].type.? != *process_api.ProcessContext(f64) or process64.return_type.? != void) {
             @compileError("process64 must be fn (*Plugin, *process.ProcessContext(f64)) void");
+        }
+    }
+    if (@hasDecl(Plugin, "process64WithParameters")) {
+        const process64 = @typeInfo(@TypeOf(Plugin.process64WithParameters)).@"fn";
+        if (process64.params.len != 4 or
+            process64.params[0].type.? != *Plugin or
+            process64.params[1].type.? != *process_api.ProcessContext(f64) or
+            process64.params[2].type.? != *const parameters.ParameterSet(Plugin.Params) or
+            process64.params[3].type.? != *const parameters.ParameterValues(Plugin.Params) or
+            process64.return_type.? != void)
+        {
+            @compileError("process64WithParameters must be fn (*Plugin, *process.ProcessContext(f64), *const ParameterSet, *const ParameterValues) void");
         }
     }
     if (@hasDecl(Plugin, "deinit")) {
@@ -198,7 +228,19 @@ test "plugin spec detects lifecycle declarations" {
 
         pub fn prepare(_: *@This(), _: PrepareConfig) void {}
         pub fn process(_: *@This(), _: *process_api.ProcessContext(f32)) void {}
+        pub fn processWithParameters(
+            _: *@This(),
+            _: *process_api.ProcessContext(f32),
+            _: *const parameters.ParameterSet(Params),
+            _: *const parameters.ParameterValues(Params),
+        ) void {}
         pub fn process64(_: *@This(), _: *process_api.ProcessContext(f64)) void {}
+        pub fn process64WithParameters(
+            _: *@This(),
+            _: *process_api.ProcessContext(f64),
+            _: *const parameters.ParameterSet(Params),
+            _: *const parameters.ParameterValues(Params),
+        ) void {}
         pub fn deinit(_: *@This()) void {}
     };
     const Spec = PluginSpec(Meter);
@@ -207,7 +249,9 @@ test "plugin spec detects lifecycle declarations" {
     try std.testing.expect(Spec.has_init);
     try std.testing.expect(Spec.has_prepare);
     try std.testing.expect(Spec.has_process);
+    try std.testing.expect(Spec.has_process_with_parameters);
     try std.testing.expect(Spec.has_process64);
+    try std.testing.expect(Spec.has_process64_with_parameters);
     try std.testing.expect(Spec.has_deinit);
 }
 
@@ -222,7 +266,9 @@ test "plugin spec allows missing lifecycle declarations during prototype phase" 
     try std.testing.expect(!Spec.has_init);
     try std.testing.expect(!Spec.has_prepare);
     try std.testing.expect(!Spec.has_process);
+    try std.testing.expect(!Spec.has_process_with_parameters);
     try std.testing.expect(!Spec.has_process64);
+    try std.testing.expect(!Spec.has_process64_with_parameters);
     try std.testing.expect(!Spec.has_deinit);
 }
 
@@ -338,6 +384,40 @@ test "plugin instance applies process parameter changes before dispatch" {
     try std.testing.expectEqual(@as(?f64, 0.25), instance.plugin.observed);
 }
 
+test "plugin instance passes reflected parameters to state-aware process hooks" {
+    const Gain = struct {
+        observed: ?f64 = null,
+
+        pub const name = "Instance State Aware Process";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+
+        pub fn processWithParameters(
+            self: *@This(),
+            _: *process_api.ProcessContext(f32),
+            set: *const parameters.ParameterSet(Params),
+            values: *const parameters.ParameterValues(Params),
+        ) void {
+            self.observed = values.loadById(set, 0);
+        }
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const changes = [_]process_api.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = 0.25 },
+    };
+    var context = process_api.ProcessContext(f32){
+        .sample_rate = 48_000.0,
+        .parameter_changes = try process_api.ParameterChanges.init(&changes, 1),
+    };
+
+    instance.process(&context);
+
+    try std.testing.expectEqual(@as(?f64, 0.25), instance.plugin.observed);
+}
+
 test "plugin instance applies process64 parameter changes before dispatch" {
     const Gain = struct {
         observed: ?f64 = null,
@@ -365,6 +445,40 @@ test "plugin instance applies process64 parameter changes before dispatch" {
     instance.process64(&context);
 
     try std.testing.expectEqual(@as(?f64, 0.75), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(@as(?f64, 0.75), instance.plugin.observed);
+}
+
+test "plugin instance passes reflected parameters to state-aware process64 hooks" {
+    const Gain = struct {
+        observed: ?f64 = null,
+
+        pub const name = "Instance State Aware Process64";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+
+        pub fn process64WithParameters(
+            self: *@This(),
+            _: *process_api.ProcessContext(f64),
+            set: *const parameters.ParameterSet(Params),
+            values: *const parameters.ParameterValues(Params),
+        ) void {
+            self.observed = values.loadById(set, 0);
+        }
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const changes = [_]process_api.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = 0.75 },
+    };
+    var context = process_api.ProcessContext(f64){
+        .sample_rate = 48_000.0,
+        .parameter_changes = try process_api.ParameterChanges.init(&changes, 1),
+    };
+
+    instance.process64(&context);
+
     try std.testing.expectEqual(@as(?f64, 0.75), instance.plugin.observed);
 }
 

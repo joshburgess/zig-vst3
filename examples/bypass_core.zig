@@ -2,21 +2,19 @@ const std = @import("std");
 const plug = @import("zig-plug-core");
 
 pub const Bypass = struct {
-    values: Spec.ParameterValues,
-
     pub const name = "zig-plug Core Bypass";
     pub const vendor = "zig-vst3";
     pub const Params = struct {
         bypass: plug.parameters.BoolParam = .{ .id = 0, .name = "Bypass", .default = false },
     };
 
-    pub fn init(_: std.mem.Allocator) !Bypass {
-        return .{ .values = Spec.ParameterValues.init(&parameter_set) };
-    }
-
-    pub fn process(self: *Bypass, context: *plug.process.ProcessContext(f32)) void {
-        self.values.applyChanges(&parameter_set, context.parameter_changes);
-        const bypassed = (self.values.loadById(&parameter_set, 0) orelse 0.0) >= 0.5;
+    pub fn processWithParameters(
+        _: *Bypass,
+        context: *plug.process.ProcessContext(f32),
+        set: *const Spec.ParameterSet,
+        values: *const Spec.ParameterValues,
+    ) void {
+        const bypassed = (values.loadById(set, 0) orelse 0.0) >= 0.5;
         for (0..context.outputs.channels.len) |channel| {
             const input = context.inputs.channel(channel) orelse continue;
             const output = context.outputs.channel(channel) orelse continue;
@@ -32,16 +30,16 @@ pub const Instance = plug.plugin.PluginInstance(Bypass);
 pub const parameter_set = Spec.ParameterSet.init(.{});
 
 test "bypass core example declares reflected bool parameter" {
-    var plugin = try Bypass.init(std.testing.allocator);
+    const spec = Spec.init(.{});
 
     try std.testing.expectEqualStrings("zig-plug Core Bypass", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
-    try std.testing.expectEqual(@as(?f64, 0.0), plugin.values.loadById(&parameter_set, 0));
+    try std.testing.expectEqual(@as(?f64, 0.0), spec.values.loadById(&parameter_set, 0));
     plug.plugin.validateLifecycle(Bypass);
 }
 
 test "bypass core example applies parameter changes by id" {
-    var plugin = try Bypass.init(std.testing.allocator);
+    var instance = try Instance.init(std.testing.allocator, .{});
     const input = [_]f32{ 0.25, 0.5, 1.0 };
     var output = [_]f32{ 0.0, 0.0, 0.0 };
     const input_channels = [_][]const f32{&input};
@@ -56,12 +54,12 @@ test "bypass core example applies parameter changes by id" {
         .parameter_changes = try plug.process.ParameterChanges.init(&changes, input.len),
     };
 
-    plugin.process(&context);
+    instance.process(&context);
 
     try std.testing.expectEqual(@as(f32, 0.25), output[0]);
     try std.testing.expectEqual(@as(f32, 0.5), output[1]);
     try std.testing.expectEqual(@as(f32, 1.0), output[2]);
-    try std.testing.expectEqual(@as(?f64, 1.0), plugin.values.loadById(&parameter_set, 0));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
 }
 
 test "bypass core example can run through plugin instance" {
