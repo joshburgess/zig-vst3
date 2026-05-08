@@ -851,7 +851,7 @@ test "zig-plug bridge collects VST3 parameter changes" {
 
     const collected = collectInputParameterChanges(&data, &storage);
 
-    try std.testing.expectEqual(@as(usize, 3), collected.items.len);
+    try std.testing.expectEqual(@as(usize, 3), collected.changeCount());
     try std.testing.expectEqual(@as(u32, 7), collected.items[0].id);
     try std.testing.expectEqual(@as(usize, 0), collected.items[0].sample_offset);
     try std.testing.expectEqual(@as(f64, 0.25), collected.items[0].normalized);
@@ -880,7 +880,7 @@ test "zig-plug bridge drops invalid and overflowing VST3 parameter changes" {
 
     const collected = collectInputParameterChanges(&data, &storage);
 
-    try std.testing.expectEqual(@as(usize, 2), collected.items.len);
+    try std.testing.expectEqual(@as(usize, 2), collected.changeCount());
     try std.testing.expectEqual(@as(usize, 0), collected.items[0].sample_offset);
     try std.testing.expectEqual(@as(usize, 3), collected.items[1].sample_offset);
 }
@@ -917,7 +917,7 @@ test "zig-plug bridge collects VST3 input events" {
 
     const collected = collectInputEvents(&data, &storage);
 
-    try std.testing.expectEqual(@as(usize, 2), collected.items.len);
+    try std.testing.expectEqual(@as(usize, 2), collected.eventCount());
     try std.testing.expectEqual(plug.process.EventKind.note_on, collected.items[0].kind);
     try std.testing.expectEqual(@as(usize, 1), collected.items[0].sample_offset);
     try std.testing.expectEqual(@as(i16, 2), collected.items[0].channel);
@@ -999,7 +999,7 @@ test "zig-plug bridge drops invalid and overflowing VST3 input events" {
 
     const collected = collectInputEvents(&data, &storage);
 
-    try std.testing.expectEqual(@as(usize, 2), collected.items.len);
+    try std.testing.expectEqual(@as(usize, 2), collected.eventCount());
     try std.testing.expectEqual(plug.process.EventKind.note_on, collected.items[0].kind);
     try std.testing.expectEqual(@as(usize, 0), collected.items[0].sample_offset);
     try std.testing.expectEqual(plug.process.EventKind.aftertouch, collected.items[1].kind);
@@ -1027,7 +1027,7 @@ test "zig-plug bridge preserves unknown VST3 input events as other" {
 
     const collected = collectInputEvents(&data, &storage);
 
-    try std.testing.expectEqual(@as(usize, 1), collected.items.len);
+    try std.testing.expectEqual(@as(usize, 1), collected.eventCount());
     try std.testing.expectEqual(plug.process.EventKind.other, collected.items[0].kind);
     try std.testing.expectEqual(@as(i32, 2), collected.items[0].bus_index);
     try std.testing.expectEqual(@as(usize, 1), collected.items[0].sample_offset);
@@ -1078,7 +1078,7 @@ test "zig-plug bridge maps legacy MIDI controller events" {
 
     const collected = collectInputEvents(&data, &storage);
 
-    try std.testing.expectEqual(@as(usize, 3), collected.items.len);
+    try std.testing.expectEqual(@as(usize, 3), collected.eventCount());
     try std.testing.expectEqual(plug.process.EventKind.midi_cc, collected.items[0].kind);
     try std.testing.expectEqual(@as(i16, ivstmidicontrollers.kCtrlModWheel), collected.items[0].control_number);
     try std.testing.expectApproxEqAbs(@as(f32, 64.0 / 127.0), collected.items[0].value, 0.0001);
@@ -1144,7 +1144,7 @@ test "zig-plug bridge maps poly pressure and note expression events" {
 
     const collected = collectInputEvents(&data, &storage);
 
-    try std.testing.expectEqual(@as(usize, 4), collected.items.len);
+    try std.testing.expectEqual(@as(usize, 4), collected.eventCount());
     try std.testing.expectEqual(plug.process.EventKind.aftertouch, collected.items[0].kind);
     try std.testing.expectEqual(@as(i16, 64), collected.items[0].pitch);
     try std.testing.expectApproxEqAbs(@as(f32, 0.625), collected.items[0].value, 0.0001);
@@ -1183,7 +1183,7 @@ test "zig-plug bridge preserves VST3 data event payloads" {
 
     const collected = collectInputEvents(&data, &storage);
 
-    try std.testing.expectEqual(@as(usize, 1), collected.items.len);
+    try std.testing.expectEqual(@as(usize, 1), collected.eventCount());
     try std.testing.expectEqual(plug.process.EventKind.data, collected.items[0].kind);
     try std.testing.expectEqual(@as(u32, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx)), collected.items[0].data_type);
     try std.testing.expectEqualSlices(u8, &payload, collected.items[0].data);
@@ -1585,7 +1585,7 @@ test "zig-plug bridge exposes output event writer to processors" {
     var writer = plug.process.EventWriter.init(&event_storage, 2);
 
     try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, &writer, EventEmitter{}));
-    try std.testing.expectEqual(@as(usize, 1), writer.events().items.len);
+    try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
     try std.testing.expectEqual(plug.process.EventKind.note_on, writer.events().items[0].kind);
     try std.testing.expectEqual(@as(usize, 1), writer.events().items[0].sample_offset);
 }
