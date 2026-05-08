@@ -558,10 +558,20 @@ pub fn ParameterValues(comptime Params: type) type {
             return self.values[index].load();
         }
 
+        pub fn loadPlain(self: *const Self, set: *const Set, index: usize) ?f64 {
+            const normalized = self.load(index) orelse return null;
+            return set.plainFromNormalized(index, normalized);
+        }
+
         pub fn store(self: *Self, index: usize, value: f64) bool {
             if (index >= Set.count) return false;
             self.values[index].store(value);
             return true;
+        }
+
+        pub fn storePlain(self: *Self, set: *const Set, index: usize, plain: f64) bool {
+            const normalized = set.normalizedFromPlain(index, plain) orelse return false;
+            return self.store(index, normalized);
         }
 
         pub fn copyFrom(self: *Self, source: *const Self) void {
@@ -583,8 +593,7 @@ pub fn ParameterValues(comptime Params: type) type {
 
         pub fn loadPlainById(self: *const Self, set: *const Set, id: u32) ?f64 {
             const index = set.indexOfId(id) orelse return null;
-            const normalized = self.load(index) orelse return null;
-            return set.plainFromNormalized(index, normalized);
+            return self.loadPlain(set, index);
         }
 
         pub fn loadFieldNormalized(self: *const Self, set: *const Set, comptime field_name: []const u8) f64 {
@@ -603,8 +612,7 @@ pub fn ParameterValues(comptime Params: type) type {
 
         pub fn storePlainById(self: *Self, set: *const Set, id: u32, plain: f64) bool {
             const index = set.indexOfId(id) orelse return false;
-            const normalized = set.normalizedFromPlain(index, plain) orelse return false;
-            return self.store(index, normalized);
+            return self.storePlain(set, index, plain);
         }
 
         pub fn storeField(self: *Self, set: *const Set, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) bool {
@@ -658,8 +666,7 @@ pub fn ParameterView(comptime Params: type) type {
         }
 
         pub fn loadPlainIndex(self: Self, index: usize) ?f64 {
-            const normalized = self.values.load(index) orelse return null;
-            return self.set.plainFromNormalized(index, normalized);
+            return self.values.loadPlain(self.set, index);
         }
 
         pub fn loadById(self: Self, id: u32) ?f64 {
@@ -710,8 +717,7 @@ pub fn ParameterEditor(comptime Params: type) type {
         }
 
         pub fn storePlainIndex(self: Self, index: usize, plain: f64) bool {
-            const normalized = self.set.normalizedFromPlain(index, plain) orelse return false;
-            return self.values.store(index, normalized);
+            return self.values.storePlain(self.set, index, plain);
         }
 
         pub fn storeById(self: Self, id: u32, normalized: f64) bool {
@@ -987,6 +993,11 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
     try std.testing.expect(!values.storeById(&set, 99, 0.5));
     try std.testing.expectEqual(@as(?f64, null), values.loadById(&set, 99));
+    try std.testing.expectEqual(@as(?f64, 0.75), values.loadPlain(&set, 0));
+    try std.testing.expect(values.storePlain(&set, 0, 0.5));
+    try std.testing.expectEqual(@as(?f64, 0.5), values.loadPlain(&set, 0));
+    try std.testing.expectEqual(@as(?f64, null), values.loadPlain(&set, 99));
+    try std.testing.expect(!values.storePlain(&set, 99, 0.5));
 
     var copied = Values.init(&set);
     copied.copyFrom(&values);
