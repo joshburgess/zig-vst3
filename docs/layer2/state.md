@@ -16,6 +16,7 @@ Malformed state headers, unsupported format versions, truncated entries, denorma
 ## Current API
 
 - `state.encodedSize(Params)`: byte count for a full parameter snapshot.
+- `state.format_version`: current binary and debug JSON state format version.
 - `state.writeParameterState(Params, set, values, writer)`: writes all reflected parameter values.
 - `state.writeParameterStateJson(Params, set, values, writer)`: writes the same reflected parameter values as compact debug JSON.
 - `state.readParameterState(Params, set, values, reader)`: reads entries and updates matching reflected values.

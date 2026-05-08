@@ -2,7 +2,7 @@ const std = @import("std");
 const parameters = @import("parameters.zig");
 
 const magic = "ZPLGSTAT";
-const version: u16 = 1;
+pub const format_version: u16 = 1;
 
 pub const ParameterIdMigration = struct {
     old_id: u32,
@@ -28,7 +28,7 @@ pub fn writeParameterState(
 ) !void {
     comptime assertEncodableParameterCount(Params);
     try writer.writeAll(magic);
-    try writer.writeInt(u16, version, .little);
+    try writer.writeInt(u16, format_version, .little);
     try writer.writeInt(u16, @intCast(parameters.ParameterSet(Params).count), .little);
     inline for (0..parameters.ParameterSet(Params).count) |index| {
         try writer.writeInt(u32, set.id(index).?, .little);
@@ -43,7 +43,7 @@ pub fn writeParameterStateJson(
     writer: anytype,
 ) !void {
     try writer.writeAll("{\"version\":");
-    try writer.print("{}", .{version});
+    try writer.print("{}", .{format_version});
     try writer.writeAll(",\"parameters\":[");
     inline for (0..parameters.ParameterSet(Params).count) |index| {
         if (index != 0) try writer.writeByte(',');
@@ -78,7 +78,7 @@ pub fn readParameterStateWithMigrations(
     try reader.readNoEof(&header);
     if (!std.mem.eql(u8, &header, magic)) return error.InvalidStateMagic;
     const state_version = try reader.readInt(u16, .little);
-    if (state_version != version) return error.UnsupportedStateVersion;
+    if (state_version != format_version) return error.UnsupportedStateVersion;
     const count = try reader.readInt(u16, .little);
     var restored = parameters.ParameterValues(Params).init(set);
     restored.copyFrom(values);
@@ -182,7 +182,7 @@ test "parameter state ignores unknown parameter ids" {
     const writer = out_stream.writer();
 
     try writer.writeAll(magic);
-    try writer.writeInt(u16, version, .little);
+    try writer.writeInt(u16, format_version, .little);
     try writer.writeInt(u16, 1, .little);
     try writer.writeInt(u32, 999, .little);
     try writer.writeInt(u64, @bitCast(@as(f64, 0.25)), .little);
@@ -209,7 +209,7 @@ test "parameter state rejects malformed headers and unsupported versions" {
     var bad_version: [magic.len + @sizeOf(u16) + @sizeOf(u16)]u8 = undefined;
     var out_stream = std.io.fixedBufferStream(&bad_version);
     try out_stream.writer().writeAll(magic);
-    try out_stream.writer().writeInt(u16, version + 1, .little);
+    try out_stream.writer().writeInt(u16, format_version + 1, .little);
     try out_stream.writer().writeInt(u16, 0, .little);
     var in_stream = std.io.fixedBufferStream(&bad_version);
     try std.testing.expectError(error.UnsupportedStateVersion, readParameterState(Params, &set, &values, in_stream.reader()));
@@ -227,7 +227,7 @@ test "parameter state rejects truncated entries without changing defaults" {
     var out_stream = std.io.fixedBufferStream(&bytes);
 
     try out_stream.writer().writeAll(magic);
-    try out_stream.writer().writeInt(u16, version, .little);
+    try out_stream.writer().writeInt(u16, format_version, .little);
     try out_stream.writer().writeInt(u16, 1, .little);
     try out_stream.writer().writeInt(u32, 0, .little);
 
@@ -253,7 +253,7 @@ test "parameter state rejects later truncated entries without partial updates" {
     try std.testing.expect(values.store(1, 0.6));
 
     try writer.writeAll(magic);
-    try writer.writeInt(u16, version, .little);
+    try writer.writeInt(u16, format_version, .little);
     try writer.writeInt(u16, 2, .little);
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u64, @bitCast(@as(f64, 0.25)), .little);
@@ -282,7 +282,7 @@ test "parameter state rejects normalized values outside range without partial up
     try std.testing.expect(values.store(1, 0.6));
 
     try writer.writeAll(magic);
-    try writer.writeInt(u16, version, .little);
+    try writer.writeInt(u16, format_version, .little);
     try writer.writeInt(u16, 2, .little);
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u64, @bitCast(@as(f64, 0.25)), .little);
@@ -310,7 +310,7 @@ test "parameter state rejects NaN normalized values without partial updates" {
     try std.testing.expect(values.store(0, 0.8));
 
     try writer.writeAll(magic);
-    try writer.writeInt(u16, version, .little);
+    try writer.writeInt(u16, format_version, .little);
     try writer.writeInt(u16, 1, .little);
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u64, @bitCast(std.math.nan(f64)), .little);

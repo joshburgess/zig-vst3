@@ -21,4 +21,5 @@ test "zig-plug re-exports core modules" {
     try std.testing.expect(@hasDecl(plugin, "PluginSpec"));
     try std.testing.expect(@hasDecl(process, "ProcessContext"));
     try std.testing.expect(@hasDecl(state, "writeParameterState"));
+    try std.testing.expect(@hasDecl(state, "format_version"));
 }
