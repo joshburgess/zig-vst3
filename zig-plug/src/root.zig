@@ -6,6 +6,7 @@ pub const parameters = core.parameters;
 pub const plugin = core.plugin;
 pub const process = core.process;
 pub const state = core.state;
+pub const units = core.units;
 pub const version = "0.1.0-dev";
 
 pub fn backendVersion() []const u8 {
@@ -22,4 +23,5 @@ test "zig-plug re-exports core modules" {
     try std.testing.expect(@hasDecl(process, "ProcessContext"));
     try std.testing.expect(@hasDecl(state, "writeParameterState"));
     try std.testing.expect(@hasDecl(state, "format_version"));
+    try std.testing.expect(@hasDecl(units, "UnitSet"));
 }
