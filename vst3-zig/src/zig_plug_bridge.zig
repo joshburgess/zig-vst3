@@ -544,8 +544,8 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
     if (event.sampleOffset < 0) return;
     const offset: usize = @intCast(event.sampleOffset);
     if (offset >= collector.frame_count) return;
-    collector.storage[collector.count] = switch (@as(ivstevents.Event.EventTypes, @enumFromInt(event.type))) {
-        .kNoteOnEvent => .{
+    collector.storage[collector.count] = switch (event.type) {
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent) => .{
             .kind = .note_on,
             .bus_index = event.busIndex,
             .sample_offset = offset,
@@ -553,7 +553,7 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
             .pitch = event.data.noteOn.pitch,
             .velocity = event.data.noteOn.velocity,
         },
-        .kNoteOffEvent => .{
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent) => .{
             .kind = .note_off,
             .bus_index = event.busIndex,
             .sample_offset = offset,
@@ -561,15 +561,15 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
             .pitch = event.data.noteOff.pitch,
             .velocity = event.data.noteOff.velocity,
         },
-        .kDataEvent => .{
+        @intFromEnum(ivstevents.Event.EventTypes.kDataEvent) => .{
             .kind = .data,
             .bus_index = event.busIndex,
             .sample_offset = offset,
             .data_type = event.data.data.type,
             .data = dataEventBytes(event.data.data),
         },
-        .kLegacyMIDICCOutEvent => collectLegacyMidiCcEvent(event, offset),
-        .kPolyPressureEvent => .{
+        @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent) => collectLegacyMidiCcEvent(event, offset),
+        @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent) => .{
             .kind = .aftertouch,
             .bus_index = event.busIndex,
             .sample_offset = offset,
@@ -577,7 +577,7 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
             .pitch = event.data.polyPressure.pitch,
             .value = event.data.polyPressure.pressure,
         },
-        .kNoteExpressionValueEvent => .{
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent) => .{
             .kind = .note_expression_value,
             .bus_index = event.busIndex,
             .sample_offset = offset,
@@ -585,7 +585,7 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
             .expression_type_id = event.data.noteExpressionValue.typeId,
             .value = @floatCast(event.data.noteExpressionValue.value),
         },
-        .kNoteExpressionIntValueEvent => .{
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent) => .{
             .kind = .note_expression_int,
             .bus_index = event.busIndex,
             .sample_offset = offset,
@@ -593,7 +593,7 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
             .expression_type_id = event.data.noteExpressionIntValue.typeId,
             .int_value = event.data.noteExpressionIntValue.value,
         },
-        .kNoteExpressionTextEvent => .{
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent) => .{
             .kind = .note_expression_text,
             .bus_index = event.busIndex,
             .sample_offset = offset,
@@ -995,6 +995,32 @@ test "zig-plug bridge drops invalid and overflowing VST3 input events" {
     try std.testing.expectEqual(plug.process.EventKind.aftertouch, collected.items[1].kind);
     try std.testing.expectEqual(@as(i32, 1), collected.items[1].bus_index);
     try std.testing.expectEqual(@as(usize, 2), collected.items[1].sample_offset);
+}
+
+test "zig-plug bridge preserves unknown VST3 input events as other" {
+    const items = [_]ivstevents.Event{
+        .{
+            .busIndex = 2,
+            .sampleOffset = 1,
+            .type = 9999,
+            .data = .{ .noteOn = .{} },
+        },
+    };
+    const List = vst_event_list.EventList(items.len);
+    var list = List{};
+    for (&items) |event| try std.testing.expectEqual(types.kResultOk, list.append(event));
+    var storage: [1]plug.process.Event = undefined;
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 2,
+        .inputEvents = list.asInterface(),
+    };
+
+    const collected = collectInputEvents(&data, &storage);
+
+    try std.testing.expectEqual(@as(usize, 1), collected.items.len);
+    try std.testing.expectEqual(plug.process.EventKind.other, collected.items[0].kind);
+    try std.testing.expectEqual(@as(i32, 2), collected.items[0].bus_index);
+    try std.testing.expectEqual(@as(usize, 1), collected.items[0].sample_offset);
 }
 
 test "zig-plug bridge maps legacy MIDI controller events" {
