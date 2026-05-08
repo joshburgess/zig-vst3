@@ -359,14 +359,14 @@ test "plugin instance applies parameter changes to owned values" {
     const Instance = PluginInstance(Gain);
     var instance = try Instance.init(std.testing.allocator, .{});
     const changes = [_]process_api.ParameterChange{
-        .{ .id = 0, .sample_offset = 0, .normalized = 0.25 },
+        instance.parameterSet().parameterChange("gain", 0, 0.25),
         .{ .id = 99, .sample_offset = 0, .normalized = 1.0 },
     };
     const view = try process_api.ParameterChanges.init(&changes, 1);
 
     instance.applyParameterChanges(view);
 
-    try std.testing.expectEqual(@as(?f64, 0.25), instance.parameterValues().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterValues().loadById(instance.parameterSet(), 99));
 }
 
@@ -406,13 +406,13 @@ test "plugin instance applies process parameter changes before dispatch" {
         };
 
         pub fn process(self: *@This(), context: *process_api.ProcessContext(f32)) void {
-            self.observed = context.parameter_changes.latest(0);
+            self.observed = context.parameter_changes.latestNormalized(0);
         }
     };
     const Instance = PluginInstance(Gain);
     var instance = try Instance.init(std.testing.allocator, .{});
     const changes = [_]process_api.ParameterChange{
-        .{ .id = 0, .sample_offset = 0, .normalized = 0.25 },
+        instance.parameterSet().parameterChange("gain", 0, 0.25),
     };
     var context = process_api.ProcessContext(f32){
         .sample_rate = 48_000.0,
@@ -441,13 +441,13 @@ test "plugin instance passes reflected parameters to state-aware process hooks" 
             set: *const parameters.ParameterSet(Params),
             values: *const parameters.ParameterValues(Params),
         ) void {
-            self.observed = values.loadById(set, 0);
+            self.observed = values.loadFieldNormalized(set, "gain");
         }
     };
     const Instance = PluginInstance(Gain);
     var instance = try Instance.init(std.testing.allocator, .{});
     const changes = [_]process_api.ParameterChange{
-        .{ .id = 0, .sample_offset = 0, .normalized = 0.25 },
+        instance.parameterSet().parameterChange("gain", 0, 0.25),
     };
     var context = process_api.ProcessContext(f32){
         .sample_rate = 48_000.0,
@@ -470,13 +470,13 @@ test "plugin instance applies process64 parameter changes before dispatch" {
         };
 
         pub fn process64(self: *@This(), context: *process_api.ProcessContext(f64)) void {
-            self.observed = context.parameter_changes.latest(0);
+            self.observed = context.parameter_changes.latestNormalized(0);
         }
     };
     const Instance = PluginInstance(Gain);
     var instance = try Instance.init(std.testing.allocator, .{});
     const changes = [_]process_api.ParameterChange{
-        .{ .id = 0, .sample_offset = 0, .normalized = 0.75 },
+        instance.parameterSet().parameterChange("gain", 0, 0.75),
     };
     var context = process_api.ProcessContext(f64){
         .sample_rate = 48_000.0,
@@ -505,13 +505,13 @@ test "plugin instance passes reflected parameters to state-aware process64 hooks
             set: *const parameters.ParameterSet(Params),
             values: *const parameters.ParameterValues(Params),
         ) void {
-            self.observed = values.loadById(set, 0);
+            self.observed = values.loadFieldNormalized(set, "gain");
         }
     };
     const Instance = PluginInstance(Gain);
     var instance = try Instance.init(std.testing.allocator, .{});
     const changes = [_]process_api.ParameterChange{
-        .{ .id = 0, .sample_offset = 0, .normalized = 0.75 },
+        instance.parameterSet().parameterChange("gain", 0, 0.75),
     };
     var context = process_api.ProcessContext(f64){
         .sample_rate = 48_000.0,
