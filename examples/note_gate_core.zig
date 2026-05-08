@@ -55,8 +55,9 @@ test "note gate core example passes audio when a note-on event is present" {
     const events = [_]plug.process.Event{
         plug.process.Event.noteOn(1, 0, 60, 0.75),
     };
-    var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
-    try context.setEvents(&events);
+    var context = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+    });
 
     plugin.process(&context);
 
@@ -74,8 +75,9 @@ test "note gate core example can run through plugin instance" {
     const events = [_]plug.process.Event{
         plug.process.Event.noteOn(0, 0, 60, 0.75),
     };
-    var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
-    try context.setEvents(&events);
+    var context = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+    });
 
     instance.process(&context);
 
