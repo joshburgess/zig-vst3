@@ -372,6 +372,16 @@ pub fn AudioOutputs(comptime Sample: type) type {
         pub fn channelCount(self: Self) usize {
             return self.channels.len;
         }
+
+        pub fn fill(self: Self, value: Sample) void {
+            for (self.channels) |channel_samples| {
+                @memset(channel_samples, value);
+            }
+        }
+
+        pub fn clear(self: Self) void {
+            self.fill(0);
+        }
     };
 }
 
@@ -471,6 +481,25 @@ test "audio output view rejects mismatched channel frame counts" {
     const channels = [_][]f32{ &left, &right };
 
     try std.testing.expectError(error.MismatchedFrameCount, AudioOutputs(f32).init(&channels));
+}
+
+test "audio output view fills and clears channels" {
+    var left = [_]f32{ 0.1, 0.2 };
+    var right = [_]f32{ 0.3, 0.4 };
+    const channels = [_][]f32{ &left, &right };
+    const outputs = try AudioOutputs(f32).init(&channels);
+
+    outputs.fill(0.5);
+    try std.testing.expectEqual(@as(f32, 0.5), left[0]);
+    try std.testing.expectEqual(@as(f32, 0.5), left[1]);
+    try std.testing.expectEqual(@as(f32, 0.5), right[0]);
+    try std.testing.expectEqual(@as(f32, 0.5), right[1]);
+
+    outputs.clear();
+    try std.testing.expectEqual(@as(f32, 0.0), left[0]);
+    try std.testing.expectEqual(@as(f32, 0.0), left[1]);
+    try std.testing.expectEqual(@as(f32, 0.0), right[0]);
+    try std.testing.expectEqual(@as(f32, 0.0), right[1]);
 }
 
 test "process context reports usable frame count" {
