@@ -38,13 +38,9 @@ test "event echo core example writes input events to output events" {
     };
     var output_event_storage: [1]plug.process.Event = undefined;
     var output_events = plug.process.EventWriter.init(&output_event_storage, input.len);
-    var context = plug.process.ProcessContext(f32){
-        .sample_rate = 48_000.0,
-        .inputs = try plug.process.AudioInputs(f32).init(&input_channels),
-        .outputs = try plug.process.AudioOutputs(f32).init(&output_channels),
-        .events = try plug.process.Events.init(&events, input.len),
-        .output_events = &output_events,
-    };
+    var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
+    context.events = try plug.process.Events.init(&events, input.len);
+    context.output_events = &output_events;
 
     plugin.process(&context);
 
@@ -64,13 +60,9 @@ test "event echo core example can run through plugin instance" {
     };
     var output_event_storage: [1]plug.process.Event = undefined;
     var output_events = plug.process.EventWriter.init(&output_event_storage, input.len);
-    var context = plug.process.ProcessContext(f32){
-        .sample_rate = 48_000.0,
-        .inputs = try plug.process.AudioInputs(f32).init(&input_channels),
-        .outputs = try plug.process.AudioOutputs(f32).init(&output_channels),
-        .events = try plug.process.Events.init(&events, input.len),
-        .output_events = &output_events,
-    };
+    var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
+    context.events = try plug.process.Events.init(&events, input.len);
+    context.output_events = &output_events;
 
     instance.process(&context);
 
