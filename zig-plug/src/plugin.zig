@@ -175,6 +175,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().isBypassById(wanted_id);
         }
 
+        pub fn parameterUnitId(self: *const Self, index: usize) ?i32 {
+            return self.parameterView().unitId(index);
+        }
+
+        pub fn parameterUnitIdById(self: *const Self, wanted_id: u32) ?i32 {
+            return self.parameterView().unitIdById(wanted_id);
+        }
+
         pub fn parameterStepCount(self: *const Self, index: usize) ?i32 {
             return self.parameterView().stepCount(index);
         }

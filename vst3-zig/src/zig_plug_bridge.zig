@@ -241,7 +241,7 @@ pub fn fillParameterInfo(
         .id = set.id(parameter_index).?,
         .stepCount = set.stepCount(parameter_index).?,
         .defaultNormalizedValue = set.defaultNormalized(parameter_index).?,
-        .unitId = 0,
+        .unitId = set.unitId(parameter_index).?,
         .flags = parameterInfoFlags(Params, set, parameter_index),
     };
     copyAscii16(&out.title, set.name(parameter_index).?);
@@ -1279,7 +1279,7 @@ test "zig-plug bridge reports output event write failures" {
 
 test "zig-plug bridge parameter controller exposes reflected edit operations" {
     const Params = struct {
-        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(7, "Gain", 0.0, 2.0, 1.0),
+        gain: plug.parameters.FloatParam = .{ .id = 7, .name = "Gain", .min = 0.0, .max = 2.0, .default = 1.0, .unit_id = 2 },
         bypass: plug.parameters.BoolParam = .{ .id = 8, .name = "Bypass" },
     };
     const Set = plug.parameters.ParameterSet(Params);
@@ -1296,6 +1296,7 @@ test "zig-plug bridge parameter controller exposes reflected edit operations" {
     try std.testing.expectEqual(@as(types.int32, 2), controller.parameterCount());
     try std.testing.expectEqual(types.kResultOk, controller.parameterInfo(0, &info));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 7), info.id);
+    try std.testing.expectEqual(@as(vsttypes.UnitID, 2), info.unitId);
     try expectString128("Gain", &info.title);
 
     try std.testing.expectEqual(types.kResultOk, controller.stringByValue(7, 0.5, &text));

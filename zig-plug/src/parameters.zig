@@ -149,6 +149,7 @@ pub const FloatParam = struct {
     max: f64 = 1.0,
     default: f64 = 0.0,
     is_bypass: bool = false,
+    unit_id: i32 = 0,
 
     pub fn init(id: u32, name: []const u8, min: f64, max: f64, default: f64) FloatParam {
         std.debug.assert(max > min);
@@ -206,6 +207,7 @@ pub const IntParam = struct {
     max: i64,
     default: i64,
     is_bypass: bool = false,
+    unit_id: i32 = 0,
 
     pub fn init(id: u32, name: []const u8, min: i64, max: i64, default: i64) IntParam {
         std.debug.assert(max > min);
@@ -259,6 +261,7 @@ pub const BoolParam = struct {
     name: []const u8,
     default: bool = false,
     is_bypass: bool = false,
+    unit_id: i32 = 0,
 
     pub fn normalize(_: BoolParam, plain: bool) f64 {
         return if (plain) 1.0 else 0.0;
@@ -313,6 +316,7 @@ pub fn EnumParam(comptime Enum: type) type {
         name: []const u8,
         default: Enum,
         is_bypass: bool = false,
+        unit_id: i32 = 0,
 
         pub fn normalize(_: Self, value: Enum) f64 {
             if (info.fields.len == 1) return 0.0;
@@ -420,6 +424,18 @@ pub fn ParameterSet(comptime Params: type) type {
         pub fn isBypassById(self: *const Self, wanted_id: u32) ?bool {
             const index = self.indexOfId(wanted_id) orelse return null;
             return self.isBypass(index);
+        }
+
+        pub fn unitId(self: *const Self, index: usize) ?i32 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field.name).unit_id;
+            }
+            return null;
+        }
+
+        pub fn unitIdById(self: *const Self, wanted_id: u32) ?i32 {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.unitId(index);
         }
 
         pub fn stepCount(self: *const Self, index: usize) ?i32 {
@@ -786,6 +802,14 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.isBypassById(wanted_id);
         }
 
+        pub fn unitId(self: Self, index: usize) ?i32 {
+            return self.set.unitId(index);
+        }
+
+        pub fn unitIdById(self: Self, wanted_id: u32) ?i32 {
+            return self.set.unitIdById(wanted_id);
+        }
+
         pub fn stepCount(self: Self, index: usize) ?i32 {
             return self.set.stepCount(index);
         }
@@ -979,6 +1003,14 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn isBypassById(self: Self, wanted_id: u32) ?bool {
             return self.set.isBypassById(wanted_id);
+        }
+
+        pub fn unitId(self: Self, index: usize) ?i32 {
+            return self.set.unitId(index);
+        }
+
+        pub fn unitIdById(self: Self, wanted_id: u32) ?i32 {
+            return self.set.unitIdById(wanted_id);
         }
 
         pub fn stepCount(self: Self, index: usize) ?i32 {
@@ -1337,7 +1369,7 @@ test "parameter set reflects descriptor fields" {
     const Mode = enum { clean, lead };
     const Params = struct {
         gain: FloatParam = FloatParam.init(0, "Gain", 0.0, 1.0, 0.75),
-        voices: IntParam = IntParam.init(1, "Voices", 1, 16, 4),
+        voices: IntParam = .{ .id = 1, .name = "Voices", .min = 1, .max = 16, .default = 4, .unit_id = 2 },
         bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
         mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .lead },
     };
@@ -1368,6 +1400,10 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqual(@as(?bool, null), set.isBypass(99));
     try std.testing.expectEqual(@as(?bool, false), set.isBypassById(0));
     try std.testing.expectEqual(@as(?bool, null), set.isBypassById(99));
+    try std.testing.expectEqual(@as(?i32, 0), set.unitId(0));
+    try std.testing.expectEqual(@as(?i32, 2), set.unitId(1));
+    try std.testing.expectEqual(@as(?i32, 2), set.unitIdById(1));
+    try std.testing.expectEqual(@as(?i32, null), set.unitIdById(99));
     try std.testing.expectEqual(@as(?i32, 0), set.stepCount(0));
     try std.testing.expectEqual(@as(?i32, 15), set.stepCount(1));
     try std.testing.expectEqual(@as(?i32, 1), set.stepCount(2));
@@ -1482,7 +1518,7 @@ test "parameter values expose typed field access" {
     const Mode = enum { clean, boost, mute };
     const Params = struct {
         gain: FloatParam = FloatParam.init(0, "Gain", -12.0, 6.0, 0.0),
-        voices: IntParam = IntParam.init(1, "Voices", 1, 4, 1),
+        voices: IntParam = .{ .id = 1, .name = "Voices", .min = 1, .max = 4, .default = 1, .unit_id = 2 },
         bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
         mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
     };
@@ -1535,6 +1571,8 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalizedById(3));
     try std.testing.expectEqual(@as(?bool, false), view.isBypass(0));
     try std.testing.expectEqual(@as(?bool, false), view.isBypassById(0));
+    try std.testing.expectEqual(@as(?i32, 2), view.unitId(1));
+    try std.testing.expectEqual(@as(?i32, 2), view.unitIdById(1));
     try std.testing.expectEqual(@as(?i32, 3), view.stepCount(1));
     try std.testing.expectEqual(@as(?i32, 2), view.stepCountById(3));
     try std.testing.expectEqual(@as(?bool, true), view.isList(3));
@@ -1546,6 +1584,7 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?[]const u8, null), view.nameById(99));
     try std.testing.expectEqual(@as(?f64, null), view.defaultNormalizedById(99));
     try std.testing.expectEqual(@as(?bool, null), view.isBypassById(99));
+    try std.testing.expectEqual(@as(?i32, null), view.unitIdById(99));
     try std.testing.expectEqual(@as(?i32, null), view.stepCountById(99));
     try std.testing.expectEqual(@as(?bool, null), view.isListById(99));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfId(99));

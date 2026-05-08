@@ -24,6 +24,8 @@ Hosts speak normalized `0.0...1.0` values. Descriptors clamp normalized input be
 
 VST3 parameter metadata is reflected from descriptors. Float parameters are continuous, bool parameters report one step, int parameters report their integer range as discrete steps, and enum parameters report one step per enum transition with the list flag set.
 
+Each descriptor has a `unit_id` field. It defaults to the root unit and is reflected into host parameter metadata when the VST3 shell builds `ParameterInfo`.
+
 Parameter state that may be read by the audio thread should use `NormalizedValue`. It uses monotonic atomic loads and stores because parameter values are independent scalars; cross-parameter ordering is not part of the contract.
 
 `BoolParam.is_bypass` marks a boolean parameter as the plugin bypass control for hosts that recognize dedicated bypass metadata.

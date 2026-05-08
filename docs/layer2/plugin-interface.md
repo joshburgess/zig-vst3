@@ -51,6 +51,7 @@ Audio helpers:
 Parameter helpers:
 
 - `ParameterSet.parameterChange` and `ParameterSet.parameterChangeNormalized` construct changes from reflected field names for tests and non-host callers.
+- Parameter descriptors can set `unit_id` to group host-facing parameters under a reflected unit.
 - `ParameterValues.view(set)` and `PluginInstance.parameterView()` bind descriptors and values into a `ParameterView`.
 - `ParameterValues.editor(set)` and `PluginInstance.parameterEditor()` bind descriptors and mutable values into a `ParameterEditor`.
 - `ProcessContext.parameterChanges`, `parameterChangeCount`, `parameterChangesEmpty`, first/latest/next parameter-change offsets, `latestParameterChange`, `firstParameterChange`, `countParameterChanges`, `hasParameterChange`, `latestParameterNormalized`, `firstParameterNormalized`, defaulted normalized reads, `latestParameterChangeAtOrBefore`, `latestParameterNormalizedAtOrBefore`, and `parameterNormalizedAtOrBeforeOr` expose common process-time reads.
