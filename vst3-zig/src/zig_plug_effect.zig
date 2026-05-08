@@ -25,7 +25,8 @@ const ivstprefetchablesupport = @import("pluginterfaces/vst/ivstprefetchablesupp
 const ivstremapparamid = @import("pluginterfaces/vst/ivstremapparamid.zig");
 const ivstrepresentation = @import("pluginterfaces/vst/ivstrepresentation.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
-const plug_process = @import("zig-plug-core").process;
+const plug_core = @import("zig-plug-core");
+const plug_process = plug_core.process;
 const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const zig_plug_bridge = @import("zig_plug_bridge.zig");
@@ -34,6 +35,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
     return struct {
         const Self = @This();
         const Params = Config.Params;
+        const unit_config = if (@hasDecl(Config, "unit_config")) Config.unit_config else plug_core.units.Config{};
+        const UnitSet = plug_core.units.UnitSet(unit_config);
+        const units = UnitSet{};
 
         const Controller = extern struct {
             iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
@@ -689,35 +693,54 @@ pub fn ReflectedEditController(comptime Config: type) type {
         };
 
         fn getUnitCount(_: *anyopaque) callconv(.C) types.int32 {
-            return 1;
+            return countToInt32(UnitSet.unit_count);
         }
 
         fn getUnitInfo(_: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.C) types.tresult {
-            if (index != 0) {
+            if (index < 0) {
                 out.* = .{};
                 return types.kInvalidArgument;
             }
-            out.* = .{
-                .id = ivstunits.kRootUnitId,
-                .parentUnitId = ivstunits.kNoParentUnitId,
-                .programListId = ivstunits.kNoProgramListId,
+            const reflected = units.unit(@intCast(index)) orelse {
+                out.* = .{};
+                return types.kInvalidArgument;
             };
-            copyString128(&out.name, "Root");
+            out.* = .{
+                .id = reflected.id,
+                .parentUnitId = reflected.parent_id,
+                .programListId = reflected.program_list_id,
+            };
+            copyString128(&out.name, reflected.name);
             return types.kResultOk;
         }
 
         fn getProgramListCount(_: *anyopaque) callconv(.C) types.int32 {
-            return 0;
+            return countToInt32(UnitSet.program_list_count);
         }
 
-        fn getProgramListInfo(_: *anyopaque, _: types.int32, out: *ivstunits.ProgramListInfo) callconv(.C) types.tresult {
-            out.* = .{};
-            return types.kInvalidArgument;
+        fn getProgramListInfo(_: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.C) types.tresult {
+            if (index < 0) {
+                out.* = .{};
+                return types.kInvalidArgument;
+            }
+            const reflected = units.programList(@intCast(index)) orelse {
+                out.* = .{};
+                return types.kInvalidArgument;
+            };
+            out.* = .{
+                .id = reflected.id,
+                .programCount = countToInt32(reflected.programs.len),
+            };
+            copyString128(&out.name, reflected.name);
+            return types.kResultOk;
         }
 
-        fn getProgramName(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+        fn getProgramName(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
             clearString128Ptr(out);
-            return types.kInvalidArgument;
+            if (program_index < 0) return types.kInvalidArgument;
+            const name = units.programName(list_id, @intCast(program_index)) orelse return types.kInvalidArgument;
+            copyString128Ptr(out, name);
+            return types.kResultOk;
         }
 
         fn getProgramInfo(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
@@ -735,16 +758,16 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getSelectedUnit(_: *anyopaque) callconv(.C) vsttypes.UnitID {
-            return ivstunits.kRootUnitId;
+            return units.rootUnit().id;
         }
 
         fn selectUnit(_: *anyopaque, id: vsttypes.UnitID) callconv(.C) types.tresult {
-            if (id != ivstunits.kRootUnitId) return types.kInvalidArgument;
+            if (units.unitById(id) == null) return types.kInvalidArgument;
             return types.kResultOk;
         }
 
         fn getUnitByBus(_: *anyopaque, _: vsttypes.MediaType, _: vsttypes.BusDirection, _: types.int32, _: types.int32, out: *vsttypes.UnitID) callconv(.C) types.tresult {
-            out.* = ivstunits.kRootUnitId;
+            out.* = units.rootUnit().id;
             return types.kResultOk;
         }
 
@@ -965,8 +988,79 @@ fn copyString128(dest: *vsttypes.String128, source: []const u8) void {
     }
 }
 
+fn copyString128Ptr(dest: [*]vsttypes.TChar, source: []const u8) void {
+    clearString128Ptr(dest);
+    const len = @min(source.len, 127);
+    for (source[0..len], 0..) |char, index| {
+        dest[index] = char;
+    }
+}
+
 fn clearString128Ptr(dest: [*]vsttypes.TChar) void {
     @memset(dest[0..128], 0);
+}
+
+fn countToInt32(count: usize) types.int32 {
+    return std.math.cast(types.int32, count) orelse std.math.maxInt(types.int32);
+}
+
+test "reflected edit controller exposes configured units and programs" {
+    const programs = [_]plug_core.units.Program{
+        .{ .name = "Clean" },
+        .{ .name = "Lead" },
+    };
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "UnitController";
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+        pub const unit_config = plug_core.units.Config{
+            .units = &.{
+                plug_core.units.Unit.root("Main"),
+                .{ .id = 1, .name = "Voice", .parent_id = plug_core.units.root_unit_id, .program_list_id = 7 },
+            },
+            .program_lists = &.{
+                .{ .id = 7, .name = "Voice Programs", .programs = &programs },
+            },
+        };
+    });
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var unit_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.queryInterface(controller_iface, &ivstunits.iunit_info_iid, &unit_out));
+    try std.testing.expect(unit_out != null);
+    const unit_info: *ivstunits.IUnitInfo = @ptrCast(@alignCast(unit_out.?));
+    defer _ = unit_info.vtable.release(unit_info);
+
+    try std.testing.expectEqual(@as(types.int32, 2), unit_info.vtable.getUnitCount(unit_info));
+    var unit: ivstunits.UnitInfo = .{};
+    try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getUnitInfo(unit_info, 1, &unit));
+    try std.testing.expectEqual(@as(vsttypes.UnitID, 1), unit.id);
+    try std.testing.expectEqual(@as(vsttypes.ProgramListID, 7), unit.programListId);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'V'), unit.name[0]);
+
+    try std.testing.expectEqual(@as(types.int32, 1), unit_info.vtable.getProgramListCount(unit_info));
+    var list: ivstunits.ProgramListInfo = .{};
+    try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getProgramListInfo(unit_info, 0, &list));
+    try std.testing.expectEqual(@as(vsttypes.ProgramListID, 7), list.id);
+    try std.testing.expectEqual(@as(types.int32, 2), list.programCount);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'V'), list.name[0]);
+
+    var program_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getProgramName(unit_info, 7, 1, &program_name));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'L'), program_name[0]);
+    try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramName(unit_info, 7, 2, &program_name));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[0]);
+
+    try std.testing.expectEqual(@as(vsttypes.UnitID, 0), unit_info.vtable.getSelectedUnit(unit_info));
+    try std.testing.expectEqual(types.kResultOk, unit_info.vtable.selectUnit(unit_info, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.selectUnit(unit_info, 99));
 }
 
 fn queryHostApplication(context: ?*anyopaque) ?*ivsthostapplication.IHostApplication {
