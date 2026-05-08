@@ -275,7 +275,7 @@ test "plugin spec detects lifecycle declarations" {
     try std.testing.expect(Spec.has_deinit);
 }
 
-test "plugin spec allows missing lifecycle declarations during prototype phase" {
+test "plugin spec allows declaration-only plugin types" {
     const Minimal = struct {
         pub const name = "Minimal";
         pub const vendor = "zig-vst3";
