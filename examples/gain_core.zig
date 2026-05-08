@@ -10,8 +10,8 @@ pub const Gain = struct {
 
     pub fn process(_: *Gain, context: *plug.process.ProcessContext(f32)) void {
         for (0..context.outputChannelCount()) |channel| {
-            const input = context.inputs.channel(channel) orelse continue;
-            const output = context.outputs.channel(channel) orelse continue;
+            const input = context.inputChannel(channel) orelse continue;
+            const output = context.outputChannel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
                 const gain = context.parameterNormalizedAtOrBeforeOr(0, sample, 1.0);
                 output[sample] = input[sample] * @as(f32, @floatCast(gain));

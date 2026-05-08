@@ -508,6 +508,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             self.outputs.clear();
         }
 
+        pub fn inputChannel(self: @This(), index: usize) ?[]const Sample {
+            return self.inputs.channel(index);
+        }
+
+        pub fn outputChannel(self: @This(), index: usize) ?[]Sample {
+            return self.outputs.channel(index);
+        }
+
         pub fn inputChannelCount(self: @This()) usize {
             return self.inputs.channelCount();
         }
@@ -574,6 +582,10 @@ test "process context reports usable frame count" {
     try std.testing.expectEqual(@as(usize, 3), context.frameCount());
     try std.testing.expectEqual(@as(usize, 2), context.inputChannelCount());
     try std.testing.expectEqual(@as(usize, 2), context.outputChannelCount());
+    try std.testing.expectEqual(@as(f64, 0.4), context.inputChannel(1).?[0]);
+    try std.testing.expectEqual(@as(?[]const f64, null), context.inputChannel(2));
+    try std.testing.expectEqual(@as(f64, 0.0), context.outputChannel(1).?[0]);
+    try std.testing.expectEqual(@as(?[]f64, null), context.outputChannel(2));
 
     context.fillOutputs(0.5);
     try std.testing.expectEqual(@as(f64, 0.5), out_left[0]);

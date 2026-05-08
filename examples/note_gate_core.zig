@@ -12,8 +12,8 @@ pub const NoteGate = struct {
             return;
         }
         for (0..context.outputChannelCount()) |channel| {
-            const input = context.inputs.channel(channel) orelse continue;
-            const output = context.outputs.channel(channel) orelse continue;
+            const input = context.inputChannel(channel) orelse continue;
+            const output = context.outputChannel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
                 output[sample] = input[sample];
             }
