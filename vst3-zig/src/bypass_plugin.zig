@@ -44,5 +44,5 @@ test "bypass plugin root exposes zig-plug metadata" {
     try std.testing.expectEqualStrings("zig-vst3", bypass_spec.Spec.vendor);
     try std.testing.expectEqual(@as(usize, 1), bypass_spec.Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 0), bypass_spec.bypass_param_index);
-    try std.testing.expectEqual(@as(?f64, 0.0), spec.values.load(bypass_spec.bypass_param_id));
+    try std.testing.expectEqual(@as(f64, 0.0), spec.values.view(&bypass_spec.parameter_set).loadNormalized("bypass"));
 }
