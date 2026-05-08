@@ -113,125 +113,19 @@ pub fn build(b: *std.Build) void {
     zig_plug_tests.root_module.addImport("vst3-zig", vst3_zig);
     zig_plug_tests.root_module.addImport("zig-plug-core", zig_plug_core);
 
-    const gain_test_module = b.createModule(.{
-        .root_source_file = b.path("vst3-zig/src/gain_plugin.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    gain_test_module.addImport("zig-plug-core", zig_plug_core);
-    const gain_tests = b.addTest(.{
-        .root_module = gain_test_module,
-    });
+    const gain_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/gain_plugin.zig");
+    const bypass_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/bypass_plugin.zig");
+    const mode_gain_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/mode_gain_plugin.zig");
+    const voice_mix_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/voice_mix_plugin.zig");
+    const note_gate_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/note_gate_plugin.zig");
+    const event_echo_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/event_echo_plugin.zig");
 
-    const bypass_test_module = b.createModule(.{
-        .root_source_file = b.path("vst3-zig/src/bypass_plugin.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    bypass_test_module.addImport("zig-plug-core", zig_plug_core);
-    const bypass_tests = b.addTest(.{
-        .root_module = bypass_test_module,
-    });
-
-    const mode_gain_test_module = b.createModule(.{
-        .root_source_file = b.path("vst3-zig/src/mode_gain_plugin.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    mode_gain_test_module.addImport("zig-plug-core", zig_plug_core);
-    const mode_gain_tests = b.addTest(.{
-        .root_module = mode_gain_test_module,
-    });
-
-    const voice_mix_test_module = b.createModule(.{
-        .root_source_file = b.path("vst3-zig/src/voice_mix_plugin.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    voice_mix_test_module.addImport("zig-plug-core", zig_plug_core);
-    const voice_mix_tests = b.addTest(.{
-        .root_module = voice_mix_test_module,
-    });
-
-    const note_gate_test_module = b.createModule(.{
-        .root_source_file = b.path("vst3-zig/src/note_gate_plugin.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    note_gate_test_module.addImport("zig-plug-core", zig_plug_core);
-    const note_gate_tests = b.addTest(.{
-        .root_module = note_gate_test_module,
-    });
-
-    const event_echo_test_module = b.createModule(.{
-        .root_source_file = b.path("vst3-zig/src/event_echo_plugin.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    event_echo_test_module.addImport("zig-plug-core", zig_plug_core);
-    const event_echo_tests = b.addTest(.{
-        .root_module = event_echo_test_module,
-    });
-
-    const gain_core_example_module = b.createModule(.{
-        .root_source_file = b.path("examples/gain_core.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    gain_core_example_module.addImport("zig-plug-core", zig_plug_core);
-    const gain_core_example_tests = b.addTest(.{
-        .root_module = gain_core_example_module,
-    });
-
-    const bypass_core_example_module = b.createModule(.{
-        .root_source_file = b.path("examples/bypass_core.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    bypass_core_example_module.addImport("zig-plug-core", zig_plug_core);
-    const bypass_core_example_tests = b.addTest(.{
-        .root_module = bypass_core_example_module,
-    });
-
-    const mode_gain_core_example_module = b.createModule(.{
-        .root_source_file = b.path("examples/mode_gain_core.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    mode_gain_core_example_module.addImport("zig-plug-core", zig_plug_core);
-    const mode_gain_core_example_tests = b.addTest(.{
-        .root_module = mode_gain_core_example_module,
-    });
-
-    const voice_mix_core_example_module = b.createModule(.{
-        .root_source_file = b.path("examples/voice_mix_core.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    voice_mix_core_example_module.addImport("zig-plug-core", zig_plug_core);
-    const voice_mix_core_example_tests = b.addTest(.{
-        .root_module = voice_mix_core_example_module,
-    });
-
-    const note_gate_core_example_module = b.createModule(.{
-        .root_source_file = b.path("examples/note_gate_core.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    note_gate_core_example_module.addImport("zig-plug-core", zig_plug_core);
-    const note_gate_core_example_tests = b.addTest(.{
-        .root_module = note_gate_core_example_module,
-    });
-
-    const event_echo_core_example_module = b.createModule(.{
-        .root_source_file = b.path("examples/event_echo_core.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    event_echo_core_example_module.addImport("zig-plug-core", zig_plug_core);
-    const event_echo_core_example_tests = b.addTest(.{
-        .root_module = event_echo_core_example_module,
-    });
+    const gain_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/gain_core.zig");
+    const bypass_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/bypass_core.zig");
+    const mode_gain_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/mode_gain_core.zig");
+    const voice_mix_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/voice_mix_core.zig");
+    const note_gate_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/note_gate_core.zig");
+    const event_echo_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/event_echo_core.zig");
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(vst3_tests).step);
@@ -628,6 +522,24 @@ fn addVst3PluginLibrary(
     });
     b.installArtifact(library);
     return library;
+}
+
+fn addZigPlugCoreTest(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    zig_plug_core: *std.Build.Module,
+    root_source_file: []const u8,
+) *std.Build.Step.Compile {
+    const module = b.createModule(.{
+        .root_source_file = b.path(root_source_file),
+        .target = target,
+        .optimize = optimize,
+    });
+    module.addImport("zig-plug-core", zig_plug_core);
+    return b.addTest(.{
+        .root_module = module,
+    });
 }
 
 fn addEntrySymbolsCheck(
