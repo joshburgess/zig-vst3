@@ -522,6 +522,12 @@ pub fn ParameterValues(comptime Params: type) type {
             return true;
         }
 
+        pub fn copyFrom(self: *Self, source: *const Self) void {
+            inline for (0..Set.count) |index| {
+                self.values[index].store(source.values[index].load());
+            }
+        }
+
         pub fn loadById(self: *const Self, set: *const Set, id: u32) ?f64 {
             const index = set.indexOfId(id) orelse return null;
             return self.load(index);
@@ -804,6 +810,11 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
     try std.testing.expect(!values.storeById(&set, 99, 0.5));
     try std.testing.expectEqual(@as(?f64, null), values.loadById(&set, 99));
+
+    var copied = Values.init(&set);
+    copied.copyFrom(&values);
+    try std.testing.expectEqual(@as(?f64, 0.75), copied.load(0));
+    try std.testing.expectEqual(@as(?f64, 1.0), copied.load(1));
 }
 
 test "parameter values expose plain value access by id" {

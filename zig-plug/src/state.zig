@@ -58,13 +58,16 @@ pub fn readParameterStateWithMigrations(
     const state_version = try reader.readInt(u16, .little);
     if (state_version != version) return error.UnsupportedStateVersion;
     const count = try reader.readInt(u16, .little);
+    var restored = parameters.ParameterValues(Params).init(set);
+    restored.copyFrom(values);
     for (0..count) |_| {
         const id = try reader.readInt(u32, .little);
         const normalized: f64 = @bitCast(try reader.readInt(u64, .little));
         if (set.indexOfId(migratedId(id, migrations))) |index| {
-            _ = values.store(index, normalized);
+            _ = restored.store(index, normalized);
         }
     }
+    values.copyFrom(&restored);
 }
 
 fn migratedId(id: u32, migrations: []const ParameterIdMigration) u32 {
@@ -164,6 +167,35 @@ test "parameter state rejects truncated entries without changing defaults" {
     var in_stream = std.io.fixedBufferStream(&bytes);
     try std.testing.expectError(error.EndOfStream, readParameterState(Params, &set, &values, in_stream.reader()));
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
+}
+
+test "parameter state rejects later truncated entries without partial updates" {
+    const Params = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+        mix: parameters.FloatParam = parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
+    };
+    const Set = parameters.ParameterSet(Params);
+    const Values = parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + (@sizeOf(u32) + @sizeOf(u64)) + @sizeOf(u32)]u8 = undefined;
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    const writer = out_stream.writer();
+
+    try std.testing.expect(values.store(0, 0.8));
+    try std.testing.expect(values.store(1, 0.6));
+
+    try writer.writeAll(magic);
+    try writer.writeInt(u16, version, .little);
+    try writer.writeInt(u16, 2, .little);
+    try writer.writeInt(u32, 0, .little);
+    try writer.writeInt(u64, @bitCast(@as(f64, 0.25)), .little);
+    try writer.writeInt(u32, 1, .little);
+
+    var in_stream = std.io.fixedBufferStream(&bytes);
+    try std.testing.expectError(error.EndOfStream, readParameterState(Params, &set, &values, in_stream.reader()));
+    try std.testing.expectEqual(@as(?f64, 0.8), values.load(0));
+    try std.testing.expectEqual(@as(?f64, 0.6), values.load(1));
 }
 
 test "parameter state migrates renamed parameter ids" {
