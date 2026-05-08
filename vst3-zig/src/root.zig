@@ -45,6 +45,7 @@ pub const vst_plug_frame = @import("vst_plug_frame.zig");
 pub const vst_plugin_compatibility = @import("vst_plugin_compatibility.zig");
 pub const vst_string_result = @import("vst_string_result.zig");
 pub const vst_test_interfaces = @import("vst_test_interfaces.zig");
+pub const vst_test_plug_provider = @import("vst_test_plug_provider.zig");
 pub const vst_update_handler = @import("vst_update_handler.zig");
 pub const vst_wayland_frame = @import("vst_wayland_frame.zig");
 pub const voice_mix_component = @import("voice_mix_component.zig");
