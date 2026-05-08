@@ -52,7 +52,7 @@ test "mode gain core example applies enum parameter changes" {
     const input_channels = [_][]const f32{&input};
     const output_channels = [_][]f32{&output};
     const changes = [_]plug.process.ParameterChange{
-        .{ .id = 0, .sample_offset = 0, .normalized = 0.5 },
+        parameter_set.parameterChange("mode", 0, .boost),
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
     try context.setParameterChanges(&changes);
@@ -71,7 +71,7 @@ test "mode gain core example can run through plugin instance" {
     const input_channels = [_][]const f32{&input};
     const output_channels = [_][]f32{&output};
     const changes = [_]plug.process.ParameterChange{
-        .{ .id = 0, .sample_offset = 0, .normalized = 1.0 },
+        parameter_set.parameterChange("mode", 0, .mute),
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
     try context.setParameterChanges(&changes);

@@ -38,14 +38,14 @@ test "bypass core example declares reflected bool parameter" {
     plug.plugin.validateLifecycle(Bypass);
 }
 
-test "bypass core example applies parameter changes by id" {
+test "bypass core example applies reflected parameter changes" {
     var instance = try Instance.init(std.testing.allocator, .{});
     const input = [_]f32{ 0.25, 0.5, 1.0 };
     var output = [_]f32{ 0.0, 0.0, 0.0 };
     const input_channels = [_][]const f32{&input};
     const output_channels = [_][]f32{&output};
     const changes = [_]plug.process.ParameterChange{
-        .{ .id = 0, .sample_offset = 0, .normalized = 1.0 },
+        parameter_set.parameterChange("bypass", 0, true),
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
     try context.setParameterChanges(&changes);
@@ -65,7 +65,7 @@ test "bypass core example can run through plugin instance" {
     const input_channels = [_][]const f32{&input};
     const output_channels = [_][]f32{&output};
     const changes = [_]plug.process.ParameterChange{
-        .{ .id = 0, .sample_offset = 0, .normalized = 1.0 },
+        parameter_set.parameterChange("bypass", 0, true),
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
     try context.setParameterChanges(&changes);

@@ -13,7 +13,7 @@
 - `LinearSmoother`: sample-counted ramp between normalized values.
 - `ExponentialSmoother`: coefficient-based smoothing toward a normalized target.
 - `LogSmoother`: sample-counted multiplicative ramp for normalized values that must stay above zero.
-- `ParameterSet(Params)`: comptime reflection over a struct of descriptors, including host-facing id/name/default lookup, descriptor lookup by field name, string conversion, and normalized/plain conversion by reflected index.
+- `ParameterSet(Params)`: comptime reflection over a struct of descriptors, including host-facing id/name/default lookup, descriptor lookup by field name, reflected `ParameterChange` construction, string conversion, and normalized/plain conversion by reflected index.
 - `ParameterValues(Params)`: atomic normalized value storage initialized from reflected descriptor defaults, with id-based normalized/plain load/store helpers and typed field-name load/store helpers for plugin code.
 
 ## Boundary Rules
