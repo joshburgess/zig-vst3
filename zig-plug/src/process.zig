@@ -250,6 +250,14 @@ pub const Events = struct {
         return .{ .items = items };
     }
 
+    pub fn eventCount(self: Events) usize {
+        return self.items.len;
+    }
+
+    pub fn isEmpty(self: Events) bool {
+        return self.items.len == 0;
+    }
+
     pub fn countKind(self: Events, kind: EventKind) usize {
         var count: usize = 0;
         for (self.items) |item| {
@@ -522,6 +530,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events;
         }
 
+        pub fn inputEventCount(self: @This()) usize {
+            return self.events.eventCount();
+        }
+
+        pub fn inputEventsEmpty(self: @This()) bool {
+            return self.events.isEmpty();
+        }
+
         pub fn firstEvent(self: @This(), kind: EventKind) ?Event {
             return self.events.firstKind(kind);
         }
@@ -727,6 +743,8 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?usize, 1), context.nextParameterChangeOffset(0));
     try std.testing.expectEqual(@as(?usize, null), context.nextParameterChangeOffset(1));
     try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
+    try std.testing.expectEqual(@as(usize, 1), context.inputEventCount());
+    try std.testing.expect(!context.inputEventsEmpty());
     try std.testing.expectEqual(@as(usize, 1), context.inputEvents().items.len);
     try std.testing.expect(context.hasEvent(.note_on));
     try std.testing.expect(!context.hasEvent(.note_off));
@@ -840,6 +858,8 @@ test "events validate block offsets and count kinds" {
     const view = try Events.init(&items, 4);
 
     try std.testing.expectEqual(@as(usize, 10), view.items.len);
+    try std.testing.expectEqual(@as(usize, 10), view.eventCount());
+    try std.testing.expect(!view.isEmpty());
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_on));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.midi_cc));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_off));
@@ -849,6 +869,8 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(i16, 60), view.firstKind(.note_on).?.pitch);
     try std.testing.expectEqual(@as(usize, 0), view.latestKind(.note_on).?.sample_offset);
     try std.testing.expect(view.hasKind(.data));
+    try std.testing.expectEqual(@as(usize, 0), (Events{}).eventCount());
+    try std.testing.expect((Events{}).isEmpty());
     try std.testing.expectEqual(@as(?Event, null), (Events{}).firstKind(.note_on));
     try std.testing.expectEqual(@as(?Event, null), (Events{}).latestKind(.note_on));
     try std.testing.expectEqual(@as(?usize, 1), view.nextSampleOffset(0));
