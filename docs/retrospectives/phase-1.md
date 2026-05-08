@@ -28,13 +28,13 @@ Status: first plugin milestone complete locally on macOS. This document records 
 
 ## Still Open
 
-- The interface map helper is still explicit per object. A future helper should derive interface entries from field offsets once more plugin object shapes exist.
+- The interface map helper can derive entries from object fields for the synthetic multi-interface harness. Wider adoption in VST3 helper objects is still incremental cleanup.
 - Refcount destruction is still callback-based in the low-level helpers. The raw layer now has a reusable allocator-owned callback, but higher-level object factory ergonomics are still open.
 - Windows C ABI harness execution is not wired yet. Cross-compilation passes, but the C harnesses run only on non-Windows CI jobs for now.
 - The current SDK C++ harness covers `FUnknown` dispatch but still uses local synthetic extension interfaces for the test-only `callA`/`callB`/`callC` methods.
-- REAPER smoke testing has started for `zig_vst3_bypass.vst3` and `zig_vst3_mode_gain.vst3`. The recorded results are partial passes because save/reload behavior has not been recorded yet.
+- REAPER smoke testing has save/reload passes for the non-MIDI examples. `zig_vst3_note_gate.vst3` remains deferred until a MIDI routing test is convenient, and `zig_vst3_event_echo.vst3` still needs direct event-output observation.
 
 ## Follow-Up Tasks
 
 - Decide whether Layer 2 hides raw callback-based destruction behind object factory helpers.
-- Complete save/reload smoke coverage for the REAPER-tested examples, then cover the remaining bundled examples in at least one real host.
+- Complete the deferred Note Gate MIDI host smoke test and directly observe Event Echo output events in at least one real host.
