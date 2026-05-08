@@ -7,12 +7,15 @@ pub const NoteGate = struct {
     pub const Params = struct {};
 
     pub fn process(_: *NoteGate, context: *plug.process.ProcessContext(f32)) void {
-        const gate_open = context.events.firstKind(.note_on) != null;
+        if (context.events.firstKind(.note_on) == null) {
+            context.clearOutputs();
+            return;
+        }
         for (0..context.outputChannelCount()) |channel| {
             const input = context.inputs.channel(channel) orelse continue;
             const output = context.outputs.channel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
-                output[sample] = if (gate_open) input[sample] else 0.0;
+                output[sample] = input[sample];
             }
         }
     }

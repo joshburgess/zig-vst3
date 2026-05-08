@@ -13,12 +13,15 @@ pub const Bypass = struct {
         context: *plug.process.ProcessContext(f32),
         params: plug.parameters.ParameterView(Params),
     ) void {
-        const bypassed = params.load("bypass");
+        if (!params.load("bypass")) {
+            context.clearOutputs();
+            return;
+        }
         for (0..context.outputChannelCount()) |channel| {
             const input = context.inputs.channel(channel) orelse continue;
             const output = context.outputs.channel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
-                output[sample] = if (bypassed) input[sample] else 0.0;
+                output[sample] = input[sample];
             }
         }
     }
