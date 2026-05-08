@@ -91,6 +91,12 @@ pub const Event = struct {
         return event;
     }
 
+    pub fn withControlNumber(self: Event, control_number: i16) Event {
+        var event = self;
+        event.control_number = control_number;
+        return event;
+    }
+
     pub fn noteOn(sample_offset: usize, channel: i16, pitch: i16, velocity: f32) Event {
         return .{
             .kind = .note_on,
@@ -525,6 +531,16 @@ test "event constructors can target non-main buses" {
     try std.testing.expectEqual(@as(i32, 2), event.bus_index);
     try std.testing.expectEqual(@as(usize, 1), event.sample_offset);
     try std.testing.expectEqual(@as(i16, 60), event.pitch);
+}
+
+test "event constructors can keep legacy MIDI controller numbers" {
+    const event = Event.pitchBend(3, 1, 0.25).withControlNumber(129);
+
+    try std.testing.expectEqual(EventKind.pitch_bend, event.kind);
+    try std.testing.expectEqual(@as(i16, 129), event.control_number);
+    try std.testing.expectEqual(@as(usize, 3), event.sample_offset);
+    try std.testing.expectEqual(@as(i16, 1), event.channel);
+    try std.testing.expectEqual(@as(f32, 0.25), event.value);
 }
 
 test "events reject values outside the process block" {
