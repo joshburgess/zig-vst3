@@ -209,117 +209,7 @@ test "gain controller stores component handler 2 callbacks" {
     const std = @import("std");
     const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 
-    const HostHandler = extern struct {
-        const Self = @This();
-
-        handler: ivsteditcontroller.IComponentHandler = .{ .vtable = &handler_vtable },
-        handler2: ivsteditcontroller.IComponentHandler2 = .{ .vtable = &handler2_vtable },
-        dirty_count: types.uint32 = 0,
-        open_editor_count: types.uint32 = 0,
-        start_group_count: types.uint32 = 0,
-        finish_group_count: types.uint32 = 0,
-        handler2_release_count: types.uint32 = 0,
-
-        const handler_vtable = ivsteditcontroller.IComponentHandlerVTable{
-            .queryInterface = queryFromHandler,
-            .addRef = addRefFromHandler,
-            .release = releaseFromHandler,
-            .beginEdit = beginEditCallback,
-            .performEdit = performEditCallback,
-            .endEdit = endEditCallback,
-            .restartComponent = restartComponent,
-        };
-
-        const handler2_vtable = ivsteditcontroller.IComponentHandler2VTable{
-            .queryInterface = queryFromHandler2,
-            .addRef = addRefFromHandler2,
-            .release = releaseFromHandler2,
-            .setDirty = setDirtyCallback,
-            .requestOpenEditor = requestOpenEditorCallback,
-            .startGroupEdit = startGroupEditCallback,
-            .finishGroupEdit = finishGroupEditCallback,
-        };
-
-        fn ownerFromHandler(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler", iface);
-        }
-
-        fn ownerFromHandler2(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler2 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler2", iface);
-        }
-
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            const self = ownerFromHandler(ptr);
-            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.icomponent_handler2_iid)) {
-                _ = self.handler2.vtable.addRef(&self.handler2);
-                out.* = &self.handler2;
-                return types.kResultOk;
-            }
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn queryFromHandler2(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn addRefFromHandler(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn releaseFromHandler(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn addRefFromHandler2(_: *anyopaque) callconv(.C) types.uint32 {
-            return 2;
-        }
-
-        fn releaseFromHandler2(ptr: *anyopaque) callconv(.C) types.uint32 {
-            const self = ownerFromHandler2(ptr);
-            self.handler2_release_count += 1;
-            return 1;
-        }
-
-        fn beginEditCallback(_: *anyopaque, _: vsttypes.ParamID) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn performEditCallback(_: *anyopaque, _: vsttypes.ParamID, _: vsttypes.ParamValue) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn endEditCallback(_: *anyopaque, _: vsttypes.ParamID) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn restartComponent(_: *anyopaque, _: types.int32) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn setDirtyCallback(ptr: *anyopaque, _: types.TBool) callconv(.C) types.tresult {
-            ownerFromHandler2(ptr).dirty_count += 1;
-            return types.kResultOk;
-        }
-
-        fn requestOpenEditorCallback(ptr: *anyopaque, _: types.FIDString) callconv(.C) types.tresult {
-            ownerFromHandler2(ptr).open_editor_count += 1;
-            return types.kResultOk;
-        }
-
-        fn startGroupEditCallback(ptr: *anyopaque) callconv(.C) types.tresult {
-            ownerFromHandler2(ptr).start_group_count += 1;
-            return types.kResultOk;
-        }
-
-        fn finishGroupEditCallback(ptr: *anyopaque) callconv(.C) types.tresult {
-            ownerFromHandler2(ptr).finish_group_count += 1;
-            return types.kResultOk;
-        }
-    };
+    const HostHandler = vst_component_handler.ComponentHandler2(struct {});
 
     var controller_out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
@@ -330,7 +220,7 @@ test "gain controller stores component handler 2 callbacks" {
     try std.testing.expectEqual(types.kResultFalse, setDirty(1));
 
     var handler = HostHandler{};
-    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, &handler.handler));
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
     try std.testing.expectEqual(types.kResultOk, setDirty(1));
     try std.testing.expectEqual(types.kResultOk, requestOpenEditor(""));
     try std.testing.expectEqual(types.kResultOk, startGroupEdit());
