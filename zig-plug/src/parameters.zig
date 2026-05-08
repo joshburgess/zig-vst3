@@ -132,10 +132,12 @@ pub const LogSmoother = struct {
 };
 
 fn clampNormalized(value: f64) f64 {
+    if (std.math.isNan(value)) return 0.0;
     return std.math.clamp(value, 0.0, 1.0);
 }
 
 fn clampNormalizedNonZero(value: f64) f64 {
+    if (std.math.isNan(value)) return std.math.floatEps(f64);
     return std.math.clamp(value, std.math.floatEps(f64), 1.0);
 }
 
@@ -159,6 +161,7 @@ pub const FloatParam = struct {
     }
 
     pub fn normalize(self: FloatParam, plain: f64) f64 {
+        if (std.math.isNan(plain)) return 0.0;
         const clamped = std.math.clamp(plain, self.min, self.max);
         return (clamped - self.min) / (self.max - self.min);
     }
@@ -238,6 +241,9 @@ pub const IntParam = struct {
     }
 
     pub fn normalizedFromPlain(self: IntParam, plain: f64) f64 {
+        if (std.math.isNan(plain)) return self.normalize(self.min);
+        if (plain <= @as(f64, @floatFromInt(self.min))) return self.normalize(self.min);
+        if (plain >= @as(f64, @floatFromInt(self.max))) return self.normalize(self.max);
         return self.normalize(@intFromFloat(@round(plain)));
     }
 
@@ -337,7 +343,12 @@ pub fn EnumParam(comptime Enum: type) type {
 
         pub fn normalizedFromPlain(self: Self, plain: f64) f64 {
             const max_index = info.fields.len - 1;
-            const index = std.math.clamp(@as(usize, @intFromFloat(@round(plain))), 0, max_index);
+            const index = if (std.math.isNan(plain) or plain <= 0)
+                0
+            else if (plain >= @as(f64, @floatFromInt(max_index)))
+                max_index
+            else
+                @as(usize, @intFromFloat(@round(plain)));
             return self.normalize(@enumFromInt(index));
         }
 
@@ -525,8 +536,10 @@ test "float parameter clamps defaults and values" {
     try std.testing.expectEqual(@as(f64, 6.0), param.default);
     try std.testing.expectEqual(@as(f64, 0.0), param.normalize(-24.0));
     try std.testing.expectEqual(@as(f64, 1.0), param.normalize(12.0));
+    try std.testing.expectEqual(@as(f64, 0.0), param.normalize(std.math.nan(f64)));
     try std.testing.expectEqual(@as(f64, -12.0), param.denormalize(-1.0));
     try std.testing.expectEqual(@as(f64, 6.0), param.denormalize(2.0));
+    try std.testing.expectEqual(@as(f64, -12.0), param.denormalize(std.math.nan(f64)));
 }
 
 test "normalized value clamps and updates atomically" {
@@ -534,6 +547,8 @@ test "normalized value clamps and updates atomically" {
 
     try std.testing.expectEqual(@as(f64, 1.0), value.load());
     value.store(-1.0);
+    try std.testing.expectEqual(@as(f64, 0.0), value.load());
+    value.store(std.math.nan(f64));
     try std.testing.expectEqual(@as(f64, 0.0), value.load());
     value.store(0.25);
     try std.testing.expectEqual(@as(f64, 0.25), value.load());
@@ -606,6 +621,8 @@ test "log smoother clamps zero and handles immediate target" {
     try std.testing.expect(smoother.current > 0.0);
     smoother.setTarget(2.0, 0);
     try std.testing.expectApproxEqAbs(1.0, smoother.current, 0.000001);
+    smoother.setTarget(std.math.nan(f64), 0);
+    try std.testing.expectApproxEqAbs(std.math.floatEps(f64), smoother.current, 0.0);
 }
 
 test "int parameter clamps and rounds normalized values" {
@@ -619,6 +636,10 @@ test "int parameter clamps and rounds normalized values" {
     try std.testing.expectEqual(@as(i64, 1), param.denormalize(-1.0));
     try std.testing.expectEqual(@as(i64, 16), param.denormalize(2.0));
     try std.testing.expectEqual(@as(i64, 9), param.denormalize(0.5));
+    try std.testing.expectEqual(@as(i64, 1), param.denormalize(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 0.0), param.normalizedFromPlain(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 0.0), param.normalizedFromPlain(-1.0e30));
+    try std.testing.expectEqual(@as(f64, 1.0), param.normalizedFromPlain(1.0e30));
 }
 
 test "bool parameter maps around midpoint" {
@@ -645,8 +666,12 @@ test "enum parameter maps tags to normalized positions" {
     try std.testing.expectEqual(@as(f64, 0.0), mode.normalize(.clean));
     try std.testing.expectEqual(@as(f64, 1.0), mode.normalize(.lead));
     try std.testing.expectEqual(Mode.clean, mode.denormalize(-1.0));
+    try std.testing.expectEqual(Mode.clean, mode.denormalize(std.math.nan(f64)));
     try std.testing.expectEqual(Mode.crunch, mode.denormalize(0.5));
     try std.testing.expectEqual(Mode.lead, mode.denormalize(2.0));
+    try std.testing.expectEqual(@as(f64, 0.0), mode.normalizedFromPlain(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 0.0), mode.normalizedFromPlain(-100.0));
+    try std.testing.expectEqual(@as(f64, 1.0), mode.normalizedFromPlain(100.0));
     try std.testing.expectEqualStrings("lead", mode.label(.lead));
 }
 
