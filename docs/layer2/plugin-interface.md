@@ -18,7 +18,7 @@ A plugin type declares:
 - lifecycle flags for optional `init`, `prepare`, `process`, `process64`, and `deinit` declarations
 - `init(params)`: builds the reflected set and value storage
 
-`PluginInstance(Plugin)` owns a plugin value plus its reflected spec, exposes the instance parameter set and mutable or const value storage, exposes a bound parameter view, provides typed and normalized parameter field load/store helpers, applies reflected parameter changes to instance-owned values before process dispatch, reads and writes reflected parameter state for the instance, and drives only the lifecycle hooks the plugin declares. It creates the plugin through `init(allocator)` when present, otherwise it uses a default struct value for declaration-only plugin types.
+`PluginInstance(Plugin)` owns a plugin value plus its reflected spec, exposes the instance parameter set and mutable or const value storage, exposes bound parameter view/editor handles, provides typed, normalized, and id-based parameter load/store helpers, applies reflected parameter changes to instance-owned values before process dispatch, reads and writes reflected parameter state for the instance, and drives only the lifecycle hooks the plugin declares. It creates the plugin through `init(allocator)` when present, otherwise it uses a default struct value for declaration-only plugin types.
 
 `validateLifecycle(Plugin)` currently accepts:
 

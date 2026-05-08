@@ -99,19 +99,27 @@ pub fn PluginInstance(comptime Plugin: type) type {
         }
 
         pub fn loadParameterNormalized(self: *const Self, comptime field_name: []const u8) f64 {
-            return self.spec.values.loadFieldNormalized(&self.spec.parameter_set, field_name);
+            return self.parameterView().loadNormalized(field_name);
         }
 
         pub fn loadParameter(self: *const Self, comptime field_name: []const u8) parameters.FieldPlainType(Plugin.Params, field_name) {
-            return self.spec.values.loadField(&self.spec.parameter_set, field_name);
+            return self.parameterView().load(field_name);
         }
 
         pub fn storeParameter(self: *Self, comptime field_name: []const u8, plain: parameters.FieldPlainType(Plugin.Params, field_name)) bool {
-            return self.spec.values.storeField(&self.spec.parameter_set, field_name, plain);
+            return self.parameterEditor().store(field_name, plain);
         }
 
         pub fn storeParameterNormalized(self: *Self, comptime field_name: []const u8, normalized: f64) bool {
-            return self.spec.values.store(self.spec.parameter_set.indexOfField(field_name), normalized);
+            return self.parameterEditor().storeNormalized(field_name, normalized);
+        }
+
+        pub fn storeParameterById(self: *Self, id: u32, normalized: f64) bool {
+            return self.parameterEditor().storeById(id, normalized);
+        }
+
+        pub fn storeParameterPlainById(self: *Self, id: u32, plain: f64) bool {
+            return self.parameterEditor().storePlainById(id, plain);
         }
 
         pub fn applyParameterChanges(self: *Self, changes: process_api.ParameterChanges) void {
@@ -424,14 +432,18 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expect(instance.storeParameter("bypass", true));
     try std.testing.expect(instance.storeParameter("mode", .mute));
     try std.testing.expect(instance.storeParameterNormalized("gain", 0.5));
+    try std.testing.expect(instance.storeParameterById(1, 0.0));
+    try std.testing.expect(instance.storeParameterPlainById(0, 6.0));
+    try std.testing.expect(!instance.storeParameterById(99, 1.0));
+    try std.testing.expect(!instance.storeParameterPlainById(99, 1.0));
 
     const view = instance.parameterView();
-    try std.testing.expectEqual(@as(f64, -3.0), instance.loadParameter("gain"));
-    try std.testing.expectEqual(true, instance.loadParameter("bypass"));
+    try std.testing.expectEqual(@as(f64, 6.0), instance.loadParameter("gain"));
+    try std.testing.expectEqual(false, instance.loadParameter("bypass"));
     try std.testing.expectEqual(Mode.mute, instance.loadParameter("mode"));
     try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("mode"));
-    try std.testing.expectEqual(@as(f64, -3.0), view.load("gain"));
-    try std.testing.expectEqual(true, view.load("bypass"));
+    try std.testing.expectEqual(@as(f64, 6.0), view.load("gain"));
+    try std.testing.expectEqual(false, view.load("bypass"));
     try std.testing.expectEqual(Mode.mute, view.load("mode"));
     try std.testing.expectEqual(@as(f64, 1.0), view.loadNormalized("mode"));
 }
