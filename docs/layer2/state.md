@@ -15,6 +15,9 @@ Malformed state headers, unsupported format versions, truncated entries, denorma
 
 ## Current API
 
+- `state.encoded_header_size`: byte count for the binary state header.
+- `state.encoded_entry_size`: byte count for one binary parameter entry.
+- `state.encodedSizeForCount(count)`: byte count for a binary state with `count` entries.
 - `state.encodedSize(Params)`: byte count for a full parameter snapshot.
 - `state.format_version`: current binary and debug JSON state format version.
 - `state.writeParameterState(Params, set, values, writer)`: writes all reflected parameter values.
