@@ -111,20 +111,40 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().name(index);
         }
 
+        pub fn parameterNameById(self: *const Self, wanted_id: u32) ?[]const u8 {
+            return self.parameterView().nameById(wanted_id);
+        }
+
         pub fn parameterDefaultNormalized(self: *const Self, index: usize) ?f64 {
             return self.parameterView().defaultNormalized(index);
+        }
+
+        pub fn parameterDefaultNormalizedById(self: *const Self, wanted_id: u32) ?f64 {
+            return self.parameterView().defaultNormalizedById(wanted_id);
         }
 
         pub fn parameterIsBypass(self: *const Self, index: usize) ?bool {
             return self.parameterView().isBypass(index);
         }
 
+        pub fn parameterIsBypassById(self: *const Self, wanted_id: u32) ?bool {
+            return self.parameterView().isBypassById(wanted_id);
+        }
+
         pub fn parameterStepCount(self: *const Self, index: usize) ?i32 {
             return self.parameterView().stepCount(index);
         }
 
+        pub fn parameterStepCountById(self: *const Self, wanted_id: u32) ?i32 {
+            return self.parameterView().stepCountById(wanted_id);
+        }
+
         pub fn parameterIsList(self: *const Self, index: usize) ?bool {
             return self.parameterView().isList(index);
+        }
+
+        pub fn parameterIsListById(self: *const Self, wanted_id: u32) ?bool {
+            return self.parameterView().isListById(wanted_id);
         }
 
         pub fn formatParameterPlainIndex(self: *const Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
@@ -557,12 +577,22 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(usize, 3), instance.parameterCount());
     try std.testing.expectEqual(@as(?u32, 0), instance.parameterId(0));
     try std.testing.expectEqualStrings("Bypass", instance.parameterName(1).?);
+    try std.testing.expectEqualStrings("Mode", instance.parameterNameById(2).?);
     try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalized(2));
+    try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalizedById(2));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsBypass(0));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsBypassById(0));
     try std.testing.expectEqual(@as(?i32, 2), instance.parameterStepCount(2));
+    try std.testing.expectEqual(@as(?i32, 2), instance.parameterStepCountById(2));
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsList(2));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterIsListById(2));
     try std.testing.expectEqual(@as(?u32, null), instance.parameterId(99));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterName(99));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterNameById(99));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterDefaultNormalizedById(99));
+    try std.testing.expectEqual(@as(?bool, null), instance.parameterIsBypassById(99));
+    try std.testing.expectEqual(@as(?i32, null), instance.parameterStepCountById(99));
+    try std.testing.expectEqual(@as(?bool, null), instance.parameterIsListById(99));
     var buffer: [16]u8 = undefined;
     try std.testing.expectEqualStrings("lead", try instance.formatParameterPlainIndex(2, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainIndex(2, "mute"));
