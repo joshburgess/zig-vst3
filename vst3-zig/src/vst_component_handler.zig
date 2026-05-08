@@ -534,7 +534,11 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             const value = if (@hasDecl(Config, "system_time")) Config.system_time else 0;
             self.last_system_time = value;
             out.* = value;
-            if (@hasDecl(Config, "getSystemTime")) return Config.getSystemTime(self, out);
+            if (@hasDecl(Config, "getSystemTime")) {
+                const result = Config.getSystemTime(self, out);
+                if (result != types.kResultOk) out.* = value;
+                return result;
+            }
             return types.kResultOk;
         }
 
@@ -672,7 +676,11 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
             const id = if (@hasDecl(Config, "progress_id")) Config.progress_id else 1;
             out.* = id;
             self.last_id = id;
-            if (@hasDecl(Config, "start")) return Config.start(self, progress_type, description, out);
+            if (@hasDecl(Config, "start")) {
+                const result = Config.start(self, progress_type, description, out);
+                if (result != types.kResultOk) out.* = id;
+                return result;
+            }
             return types.kResultOk;
         }
 
@@ -986,6 +994,29 @@ test "component handler exposes bus activation and system time extensions" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.time_release_count);
 }
 
+test "component handler resets failed delegated system time output" {
+    const Handler = ComponentHandlerBusAndTime(struct {
+        pub const system_time: types.int64 = 12345;
+
+        pub fn getSystemTime(self: anytype, out: *types.int64) types.tresult {
+            _ = self;
+            out.* = 99999;
+            return types.kResultFalse;
+        }
+    });
+    var handler = Handler{};
+    var queried: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.queryInterface(handler.asHandler(), &ivsteditcontroller.icomponent_handler_system_time_iid, &queried));
+    try std.testing.expect(queried != null);
+    const time: *ivsteditcontroller.IComponentHandlerSystemTime = @ptrCast(@alignCast(queried.?));
+
+    var value: types.int64 = 0;
+    try std.testing.expectEqual(types.kResultFalse, time.vtable.getSystemTime(time, &value));
+    try std.testing.expectEqual(@as(types.int64, 12345), value);
+    try std.testing.expectEqual(@as(types.uint32, 1), time.vtable.release(time));
+}
+
 test "component handler exposes progress callbacks" {
     const Handler = ComponentHandlerProgress(struct {
         pub const progress_id: ivsteditcontroller.ProgressID = 77;
@@ -1010,6 +1041,31 @@ test "component handler exposes progress callbacks" {
 
     try std.testing.expectEqual(@as(types.uint32, 1), progress.vtable.release(progress));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.progress_release_count);
+}
+
+test "component handler resets failed delegated progress id output" {
+    const Handler = ComponentHandlerProgress(struct {
+        pub const progress_id: ivsteditcontroller.ProgressID = 77;
+
+        pub fn start(self: anytype, progress_type: types.uint32, description: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) types.tresult {
+            _ = self;
+            _ = progress_type;
+            _ = description;
+            out.* = 999;
+            return types.kResultFalse;
+        }
+    });
+    var handler = Handler{};
+    var queried: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.queryInterface(handler.asHandler(), &ivsteditcontroller.iprogress_iid, &queried));
+    try std.testing.expect(queried != null);
+    const progress: *ivsteditcontroller.IProgress = @ptrCast(@alignCast(queried.?));
+
+    var progress_id: ivsteditcontroller.ProgressID = 0;
+    try std.testing.expectEqual(types.kResultFalse, progress.vtable.start(progress, @intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
+    try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 77), progress_id);
+    try std.testing.expectEqual(@as(types.uint32, 1), progress.vtable.release(progress));
 }
 
 test "component handler exposes unit handler extensions" {
