@@ -45,6 +45,54 @@ pub const PrepareConfig = struct {
     max_block_size: u32,
 };
 
+pub fn PluginInstance(comptime Plugin: type) type {
+    validateLifecycle(Plugin);
+
+    return struct {
+        const Self = @This();
+        pub const Spec = PluginSpec(Plugin);
+
+        spec: Spec,
+        plugin: Plugin,
+
+        pub fn init(allocator: std.mem.Allocator, params: Plugin.Params) !Self {
+            const plugin = if (Spec.has_init)
+                try Plugin.init(allocator)
+            else
+                Plugin{};
+
+            return .{
+                .spec = Spec.init(params),
+                .plugin = plugin,
+            };
+        }
+
+        pub fn prepare(self: *Self, config: PrepareConfig) void {
+            if (Spec.has_prepare) {
+                self.plugin.prepare(config);
+            }
+        }
+
+        pub fn process(self: *Self, context: *process_api.ProcessContext(f32)) void {
+            if (Spec.has_process) {
+                self.plugin.process(context);
+            }
+        }
+
+        pub fn process64(self: *Self, context: *process_api.ProcessContext(f64)) void {
+            if (Spec.has_process64) {
+                self.plugin.process64(context);
+            }
+        }
+
+        pub fn deinit(self: *Self) void {
+            if (Spec.has_deinit) {
+                self.plugin.deinit();
+            }
+        }
+    };
+}
+
 pub fn validateLifecycle(comptime Plugin: type) void {
     if (@hasDecl(Plugin, "init")) {
         const init_info = @typeInfo(@TypeOf(Plugin.init)).@"fn";
@@ -141,4 +189,89 @@ test "plugin spec allows missing lifecycle declarations during prototype phase" 
     try std.testing.expect(!Spec.has_process);
     try std.testing.expect(!Spec.has_process64);
     try std.testing.expect(!Spec.has_deinit);
+}
+
+test "plugin instance drives declared lifecycle hooks" {
+    const Gain = struct {
+        prepared: bool = false,
+        processed: bool = false,
+        deinitialized: bool = false,
+
+        pub const name = "Instance Gain";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+
+        pub fn init(_: std.mem.Allocator) !@This() {
+            return .{};
+        }
+
+        pub fn prepare(self: *@This(), config: PrepareConfig) void {
+            self.prepared = config.sample_rate == 48_000.0 and config.max_block_size == 64;
+        }
+
+        pub fn process(self: *@This(), context: *process_api.ProcessContext(f32)) void {
+            self.processed = true;
+            for (0..context.outputs.channels.len) |channel| {
+                const input = context.inputs.channel(channel) orelse continue;
+                const output = context.outputs.channel(channel) orelse continue;
+                for (0..context.frameCount()) |sample| {
+                    output[sample] = input[sample] * 0.5;
+                }
+            }
+        }
+
+        pub fn deinit(self: *@This()) void {
+            self.deinitialized = true;
+        }
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const input = [_]f32{ 0.25, 0.5 };
+    var output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    var context = process_api.ProcessContext(f32){
+        .sample_rate = 48_000.0,
+        .inputs = try process_api.AudioInputs(f32).init(&input_channels),
+        .outputs = try process_api.AudioOutputs(f32).init(&output_channels),
+    };
+
+    try std.testing.expectEqual(@as(?f64, 0.5), instance.spec.values.load(0));
+    instance.prepare(.{ .sample_rate = 48_000.0, .max_block_size = 64 });
+    instance.process(&context);
+    instance.deinit();
+
+    try std.testing.expect(instance.plugin.prepared);
+    try std.testing.expect(instance.plugin.processed);
+    try std.testing.expect(instance.plugin.deinitialized);
+    try std.testing.expectEqual(@as(f32, 0.125), output[0]);
+    try std.testing.expectEqual(@as(f32, 0.25), output[1]);
+}
+
+test "plugin instance accepts metadata-only plugins" {
+    const Minimal = struct {
+        pub const name = "Minimal";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+    };
+    const Instance = PluginInstance(Minimal);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const input = [_]f64{0.25};
+    var output = [_]f64{0.0};
+    const input_channels = [_][]const f64{&input};
+    const output_channels = [_][]f64{&output};
+    var context = process_api.ProcessContext(f64){
+        .sample_rate = 48_000.0,
+        .inputs = try process_api.AudioInputs(f64).init(&input_channels),
+        .outputs = try process_api.AudioOutputs(f64).init(&output_channels),
+    };
+
+    instance.prepare(.{ .sample_rate = 48_000.0, .max_block_size = 1 });
+    instance.process64(&context);
+    instance.deinit();
+
+    try std.testing.expectEqualStrings("Minimal", Instance.Spec.name);
+    try std.testing.expectEqual(@as(f64, 0.0), output[0]);
 }
