@@ -4,12 +4,12 @@ Tier 3 host smoke tests are release gates. Record only tests that were run in a 
 
 | Date | Host | Host Version | OS | CPU | Plugin Build | Bundle | Result | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Pending | Pending | Pending | Pending | Pending | Pending | `zig_vst3_gain.vst3` | Pending | No real-host smoke test has been recorded yet. |
-| 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | b8bd61a | `zig_vst3_bypass.vst3` | Partial Pass | Scanned in REAPER, inserted on a track, Bypass behavior confirmed; save/reload not recorded. |
-| 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | b8bd61a | `zig_vst3_mode_gain.vst3` | Partial Pass | Scanned in REAPER, inserted on a track, Mode parameter changes behavior; save/reload not recorded. |
-| 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 0dadeb0 | `zig_vst3_voice_mix.vst3` | Partial Pass | Scanned in REAPER, inserted on a track, Voices parameter behavior confirmed; save/reload not recorded. |
+| 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_gain.vst3` | Pass | Scanned in REAPER, inserted on a track, Gain parameter behavior confirmed, saved, reloaded. |
+| 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_bypass.vst3` | Pass | Scanned in REAPER, inserted on a track, Bypass behavior confirmed, saved, reloaded. |
+| 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_mode_gain.vst3` | Pass | Scanned in REAPER, inserted on a track, Mode parameter behavior confirmed, saved, reloaded. |
+| 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_voice_mix.vst3` | Pass | Scanned in REAPER, inserted on a track, Voices parameter behavior confirmed, saved, reloaded. |
 | Deferred | REAPER | Pending | Pending | Pending | Pending | `zig_vst3_note_gate.vst3` | TODO | Needs an audio-plus-MIDI routing smoke test in a real host. |
-| 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 907a279 | `zig_vst3_event_echo.vst3` | Partial Pass | Scanned in REAPER, inserted on a track, audio pass-through confirmed; event output and save/reload not recorded. |
+| 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_event_echo.vst3` | Partial Pass | Scanned in REAPER, inserted on a track, audio pass-through confirmed, saved, reloaded; event output not directly observed. |
 
 ## Minimum Smoke Test
 
