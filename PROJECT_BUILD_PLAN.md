@@ -31,7 +31,7 @@ A staged plan for building a VST3 plugin framework in Zig, structured for delega
 - A bundled GUI library (we expose the `IPlugView` hook; users plug in their own toolkit)
 - Plugin sandboxing or out-of-process hosting
 
-**Current status.** Layer 1 now builds reusable VST3 effect shells, emits `.vst3` bundles for macOS, Linux, and Windows, and validates the bundled gain, bypass, mode-gain, voice-mix, note-gate, and event-echo examples locally on macOS with `zig build validate-examples`. The reusable shells expose conservative default `IConnectionPoint` implementations for host/plugin connection setup, retain and release host callback interfaces across replacement and repeated initialization, clear fixed-size VST string output buffers before writing, harden fixed-capacity stream, message, attribute, parameter-change, event-list, unit-info, component-handler, host-context, inter-app, plug-frame, compatibility JSON, process bridge, audio-processor helper, bypass-delay helper, and MIDI conversion helpers against stale outputs, overflow indices, invalid values, invalid ranges, and oversized ABI casts, and expose an optional edit-controller plug-view factory hook for plugin-provided editors.
+**Current status.** Layer 1 now builds reusable VST3 effect shells, emits `.vst3` bundles for macOS, Linux, and Windows, and validates the bundled gain, bypass, mode-gain, voice-mix, note-gate, and event-echo examples locally on macOS with `zig build validate-examples`. The reusable shells expose conservative default `IConnectionPoint` implementations for host/plugin connection setup, retain and release host callback interfaces across replacement and repeated initialization, clear fixed-size VST string output buffers before writing, harden fixed-capacity stream, message, attribute, parameter-change, event-list, unit-info, component-handler, host-context, inter-app, plug-frame, compatibility JSON, process bridge, audio-processor helper, bypass-delay helper, speaker-array, factory count, note-expression value, and MIDI conversion helpers against stale outputs, corrupted counts, overflow indices, invalid values, invalid ranges, and oversized ABI casts, and expose an optional edit-controller plug-view factory hook for plugin-provided editors.
 
 **Total estimated duration.** 6–9 months for a Layer 2 release that's genuinely useful to others. The first Layer 1 gain plugin milestone is complete locally on macOS; the remaining Layer 1 work is hardening the raw API, CI coverage, and host smoke testing.
 
@@ -331,7 +331,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.7: Parameter changes and events
 
-`IParameterChanges`, `IParamValueQueue`, `IEventList`, `Event` and all event subtypes (`NoteOnEvent`, `NoteOffEvent`, `DataEvent`, `PolyPressureEvent`, `ChordEvent`, `ScaleEvent`, `LegacyMIDICCOutEvent`, `NoteExpressionValueEvent`, `NoteExpressionTextEvent`). `vst_parameter_changes.zig` provides reusable fixed-slot `IParameterChanges` and `IParamValueQueue` objects for host-side process tests, rejects zero-capacity instantiations, covers failed point-read and queue-read bounds, and reports `-1` when adding a point or queue fails. `vst_event_list.zig` provides a reusable fixed-slot `IEventList` for input and output event tests, rejects zero-capacity instantiations, and clears failed event reads before returning.
+`IParameterChanges`, `IParamValueQueue`, `IEventList`, `Event` and all event subtypes (`NoteOnEvent`, `NoteOffEvent`, `DataEvent`, `PolyPressureEvent`, `ChordEvent`, `ScaleEvent`, `LegacyMIDICCOutEvent`, `NoteExpressionValueEvent`, `NoteExpressionTextEvent`). `vst_parameter_changes.zig` provides reusable fixed-slot `IParameterChanges` and `IParamValueQueue` objects for host-side process tests, rejects zero-capacity instantiations, clamps corrupted signed point and queue counts to storage capacity, covers failed point-read and queue-read bounds, and reports `-1` when adding a point or queue fails. `vst_event_list.zig` provides a reusable fixed-slot `IEventList` for input and output event tests, rejects zero-capacity instantiations, clamps corrupted signed event counts to storage capacity, and clears failed event reads before returning.
 
 ### Work Unit 2.7a: MIDI 2.0 mapping interfaces
 
@@ -351,7 +351,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.10: Unit info and program lists
 
-`IUnitInfo`, `IProgramListData`, `IUnitData`, `UnitInfo`, `ProgramListInfo`. `vst_unit_data.zig` provides reusable fixed-slot `IUnitInfo` and `IProgramListData`/`IUnitData` objects for unit, program-list, and stream callbacks, including deterministic outputs for delegated program strings and unit-by-bus lookup failures.
+`IUnitInfo`, `IProgramListData`, `IUnitData`, `UnitInfo`, `ProgramListInfo`. `vst_unit_data.zig` provides reusable fixed-slot `IUnitInfo` and `IProgramListData`/`IUnitData` objects for unit, program-list, and stream callbacks, clamps corrupted signed unit and program-list counts to storage capacity, and includes deterministic outputs for delegated program strings and unit-by-bus lookup failures.
 
 ### Work Unit 2.10a: Legacy mobile and test-support interfaces
 
