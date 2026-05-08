@@ -506,6 +506,22 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.parameterChangeNormalized(field_name, sample_offset, param.normalize(plain));
         }
 
+        pub fn formatFieldPlain(self: *const Self, comptime field_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
+            return self.descriptor(field_name).formatPlain(normalized, buffer);
+        }
+
+        pub fn parseFieldPlain(self: *const Self, comptime field_name: []const u8, text: []const u8) !f64 {
+            return self.descriptor(field_name).parsePlain(text);
+        }
+
+        pub fn fieldPlainFromNormalized(self: *const Self, comptime field_name: []const u8, normalized: f64) FieldPlainType(Params, field_name) {
+            return self.descriptor(field_name).denormalize(normalized);
+        }
+
+        pub fn fieldNormalizedFromPlain(self: *const Self, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) f64 {
+            return self.descriptor(field_name).normalize(plain);
+        }
+
         pub fn formatPlain(self: *const Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).formatPlain(normalized, buffer);
@@ -774,6 +790,22 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.fieldDefaultNormalized(field_name);
         }
 
+        pub fn formatFieldPlain(self: Self, comptime field_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
+            return self.set.formatFieldPlain(field_name, normalized, buffer);
+        }
+
+        pub fn parseFieldPlain(self: Self, comptime field_name: []const u8, text: []const u8) !f64 {
+            return self.set.parseFieldPlain(field_name, text);
+        }
+
+        pub fn fieldPlainFromNormalized(self: Self, comptime field_name: []const u8, normalized: f64) FieldPlainType(Params, field_name) {
+            return self.set.fieldPlainFromNormalized(field_name, normalized);
+        }
+
+        pub fn fieldNormalizedFromPlain(self: Self, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) f64 {
+            return self.set.fieldNormalizedFromPlain(field_name, plain);
+        }
+
         pub fn formatPlainIndex(self: Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
             return self.set.formatPlain(index, normalized, buffer);
         }
@@ -927,6 +959,22 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn fieldDefaultNormalized(self: Self, comptime field_name: []const u8) f64 {
             return self.set.fieldDefaultNormalized(field_name);
+        }
+
+        pub fn formatFieldPlain(self: Self, comptime field_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
+            return self.set.formatFieldPlain(field_name, normalized, buffer);
+        }
+
+        pub fn parseFieldPlain(self: Self, comptime field_name: []const u8, text: []const u8) !f64 {
+            return self.set.parseFieldPlain(field_name, text);
+        }
+
+        pub fn fieldPlainFromNormalized(self: Self, comptime field_name: []const u8, normalized: f64) FieldPlainType(Params, field_name) {
+            return self.set.fieldPlainFromNormalized(field_name, normalized);
+        }
+
+        pub fn fieldNormalizedFromPlain(self: Self, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) f64 {
+            return self.set.fieldNormalizedFromPlain(field_name, plain);
         }
 
         pub fn formatPlainIndex(self: Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
@@ -1256,6 +1304,11 @@ test "parameter set reflects descriptor fields" {
         .sample_offset = 5,
         .normalized = 1.0,
     }, set.parameterChange("mode", 5, .lead));
+    var buffer: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("lead", try set.formatFieldPlain("mode", 1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try set.parseFieldPlain("mode", "lead"));
+    try std.testing.expectEqual(Mode.lead, set.fieldPlainFromNormalized("mode", 1.0));
+    try std.testing.expectEqual(@as(f64, 1.0), set.fieldNormalizedFromPlain("mode", .lead));
 }
 
 test "integer parameter step count saturates to VST limit" {
@@ -1407,6 +1460,10 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqualStrings("Bypass", view.fieldName("bypass"));
     try std.testing.expectEqual(@as(f64, 0.0), view.fieldDefaultNormalized("mode"));
     var buffer: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("mute", try view.formatFieldPlain("mode", 1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try view.parseFieldPlain("mode", "mute"));
+    try std.testing.expectEqual(Mode.mute, view.fieldPlainFromNormalized("mode", 1.0));
+    try std.testing.expectEqual(@as(f64, 1.0), view.fieldNormalizedFromPlain("mode", .mute));
     try std.testing.expectEqualStrings("4", try view.formatPlainIndex(1, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try view.parsePlainIndex(1, "4"));
     try std.testing.expectEqual(@as(?f64, 2.0), view.plainFromNormalizedIndex(3, 1.0));
@@ -1479,6 +1536,10 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqualStrings("Bypass", editor.fieldName("bypass"));
     try std.testing.expectEqual(@as(f64, 0.0), editor.fieldDefaultNormalized("mode"));
     var buffer: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("mute", try editor.formatFieldPlain("mode", 1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try editor.parseFieldPlain("mode", "mute"));
+    try std.testing.expectEqual(Mode.mute, editor.fieldPlainFromNormalized("mode", 1.0));
+    try std.testing.expectEqual(@as(f64, 1.0), editor.fieldNormalizedFromPlain("mode", .mute));
     try std.testing.expectEqualStrings("4", try editor.formatPlainIndex(1, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try editor.parsePlainIndex(1, "4"));
     try std.testing.expectEqual(@as(?f64, 2.0), editor.plainFromNormalizedIndex(3, 1.0));
