@@ -28,4 +28,4 @@ Parameter state that may be read by the audio thread should use `NormalizedValue
 
 ## Open Work
 
-- Add host smoke test notes for reflected string conversion and automation behavior.
+- Add real-host automation recording coverage for reflected parameter changes.
