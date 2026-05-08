@@ -278,6 +278,12 @@ pub fn AudioOutputs(comptime Sample: type) type {
     };
 }
 
+pub const ProcessAttachments = struct {
+    parameter_changes: []const ParameterChange = &.{},
+    events: []const Event = &.{},
+    output_events: ?*EventWriter = null,
+};
+
 pub fn ProcessContext(comptime Sample: type) type {
     return struct {
         sample_rate: f64,
@@ -293,6 +299,19 @@ pub fn ProcessContext(comptime Sample: type) type {
                 .inputs = try AudioInputs(Sample).init(input_channels),
                 .outputs = try AudioOutputs(Sample).init(output_channels),
             };
+        }
+
+        pub fn initWith(
+            sample_rate: f64,
+            input_channels: []const []const Sample,
+            output_channels: []const []Sample,
+            attachments: ProcessAttachments,
+        ) !@This() {
+            var context = try @This().init(sample_rate, input_channels, output_channels);
+            try context.setParameterChanges(attachments.parameter_changes);
+            try context.setEvents(attachments.events);
+            if (attachments.output_events) |writer| context.setOutputEvents(writer);
+            return context;
         }
 
         pub fn setParameterChanges(self: *@This(), changes: []const ParameterChange) !void {
@@ -358,11 +377,11 @@ test "process context validates attached parameter changes and events" {
     };
     var storage: [1]Event = undefined;
     var writer = EventWriter.init(&storage, input.len);
-    var context = try ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
-
-    try context.setParameterChanges(&changes);
-    try context.setEvents(&events);
-    context.setOutputEvents(&writer);
+    const context = try ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .parameter_changes = &changes,
+        .events = &events,
+        .output_events = &writer,
+    });
 
     try std.testing.expectEqual(@as(f64, 0.5), context.parameter_changes.latest(1).?.normalized);
     try std.testing.expectEqual(@as(usize, 1), context.events.countKind(.note_on));
@@ -384,6 +403,18 @@ test "process context rejects attached changes outside frame count" {
 
     try std.testing.expectError(error.ParameterChangeOutsideBlock, context.setParameterChanges(&changes));
     try std.testing.expectError(error.EventOutsideBlock, context.setEvents(&events));
+    try std.testing.expectError(error.ParameterChangeOutsideBlock, ProcessContext(f32).initWith(
+        48_000.0,
+        &input_channels,
+        &output_channels,
+        .{ .parameter_changes = &changes },
+    ));
+    try std.testing.expectError(error.EventOutsideBlock, ProcessContext(f32).initWith(
+        48_000.0,
+        &input_channels,
+        &output_channels,
+        .{ .events = &events },
+    ));
 }
 
 test "parameter changes validate block offsets and normalized values" {

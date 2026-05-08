@@ -47,8 +47,9 @@ test "voice mix core example applies int parameter changes" {
     const changes = [_]plug.process.ParameterChange{
         parameter_set.parameterChange("voices", 0, 4),
     };
-    var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
-    try context.setParameterChanges(&changes);
+    var context = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .parameter_changes = &changes,
+    });
 
     instance.process(&context);
 
@@ -66,8 +67,9 @@ test "voice mix core example can run through plugin instance" {
     const changes = [_]plug.process.ParameterChange{
         parameter_set.parameterChange("voices", 0, 4),
     };
-    var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
-    try context.setParameterChanges(&changes);
+    var context = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .parameter_changes = &changes,
+    });
 
     instance.process(&context);
 
