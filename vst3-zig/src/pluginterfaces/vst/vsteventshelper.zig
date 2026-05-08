@@ -1,5 +1,6 @@
 const base = @import("../base/types.zig");
 const events = @import("ivstevents.zig");
+const std = @import("std");
 const vsttypes = @import("vsttypes.zig");
 
 pub fn boundTo(comptime T: type, minval: T, maxval: T, x: T) T {
@@ -29,10 +30,12 @@ pub fn getMIDINormValue(value: base.uint8) vsttypes.ParamValue {
 }
 
 pub fn getMIDICCOutValue(value: vsttypes.ParamValue) base.int8 {
+    if (std.math.isNan(value)) return 0;
     return boundTo(base.int8, 0, 127, @intFromFloat(@min(@as(vsttypes.ParamValue, 127), value * 128)));
 }
 
 pub fn getMIDI14BitValue(value: vsttypes.ParamValue) base.int16 {
+    if (std.math.isNan(value)) return 0;
     return boundTo(base.int16, 0, 0x3FFF, @intFromFloat(@min(@as(vsttypes.ParamValue, 0x3FFF), value * 0x4000)));
 }
 
@@ -74,6 +77,8 @@ pub fn initLegacyMIDICCOutEvent(
 test "event helpers match expected MIDI behavior" {
     try @import("std").testing.expectEqual(@as(base.int8, 127), getMIDICCOutValue(1));
     try @import("std").testing.expectEqual(@as(base.int16, 0x3FFF), getMIDI14BitValue(1));
+    try @import("std").testing.expectEqual(@as(base.int8, 0), getMIDICCOutValue(std.math.nan(vsttypes.ParamValue)));
+    try @import("std").testing.expectEqual(@as(base.int16, 0), getMIDI14BitValue(std.math.nan(vsttypes.ParamValue)));
 
     var event = events.Event{};
     const midi = initLegacyMIDICCOutEvent(&event, 10, 2, 64, 1);
