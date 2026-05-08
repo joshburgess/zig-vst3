@@ -22,6 +22,7 @@ pub const Gain = struct {
 
 pub const Spec = plug.plugin.PluginSpec(Gain);
 pub const Instance = plug.plugin.PluginInstance(Gain);
+pub const parameter_set = Spec.ParameterSet.init(.{});
 
 test "gain core example declares reflected metadata" {
     const spec = Spec.init(.{});
@@ -40,7 +41,7 @@ test "gain core example processes through zig-plug context" {
     const input_channels = [_][]const f32{&input};
     const output_channels = [_][]f32{&output};
     const changes = [_]plug.process.ParameterChange{
-        .{ .id = 0, .sample_offset = 0, .normalized = 0.5 },
+        parameter_set.parameterChange("gain", 0, 0.5),
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
     try context.setParameterChanges(&changes);
@@ -59,7 +60,7 @@ test "gain core example can run through plugin instance" {
     const input_channels = [_][]const f32{&input};
     const output_channels = [_][]f32{&output};
     const changes = [_]plug.process.ParameterChange{
-        .{ .id = 0, .sample_offset = 0, .normalized = 0.25 },
+        parameter_set.parameterChange("gain", 0, 0.25),
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
     try context.setParameterChanges(&changes);
@@ -78,7 +79,7 @@ test "gain core example applies sample-offset parameter changes" {
     const input_channels = [_][]const f32{&input};
     const output_channels = [_][]f32{&output};
     const changes = [_]plug.process.ParameterChange{
-        .{ .id = 0, .sample_offset = 1, .normalized = 0.5 },
+        parameter_set.parameterChange("gain", 1, 0.5),
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
     try context.setParameterChanges(&changes);

@@ -439,6 +439,29 @@ pub fn ParameterSet(comptime Params: type) type {
             return @field(self.params, field_name);
         }
 
+        pub fn parameterChangeNormalized(
+            self: *const Self,
+            comptime field_name: []const u8,
+            sample_offset: usize,
+            normalized: f64,
+        ) process.ParameterChange {
+            return .{
+                .id = self.descriptor(field_name).id,
+                .sample_offset = sample_offset,
+                .normalized = normalized,
+            };
+        }
+
+        pub fn parameterChange(
+            self: *const Self,
+            comptime field_name: []const u8,
+            sample_offset: usize,
+            plain: FieldPlainType(Params, field_name),
+        ) process.ParameterChange {
+            const param = self.descriptor(field_name);
+            return self.parameterChangeNormalized(field_name, sample_offset, param.normalize(plain));
+        }
+
         pub fn formatPlain(self: *const Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).formatPlain(normalized, buffer);
@@ -778,6 +801,26 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqual(@as(?bool, false), set.isList(1));
     try std.testing.expectEqual(@as(?bool, true), set.isList(3));
     try std.testing.expectEqual(@as(?bool, null), set.isList(99));
+    try std.testing.expectEqual(process.ParameterChange{
+        .id = 0,
+        .sample_offset = 2,
+        .normalized = 0.25,
+    }, set.parameterChangeNormalized("gain", 2, 0.25));
+    try std.testing.expectEqual(process.ParameterChange{
+        .id = 1,
+        .sample_offset = 3,
+        .normalized = 1.0,
+    }, set.parameterChange("voices", 3, 16));
+    try std.testing.expectEqual(process.ParameterChange{
+        .id = 2,
+        .sample_offset = 4,
+        .normalized = 1.0,
+    }, set.parameterChange("bypass", 4, true));
+    try std.testing.expectEqual(process.ParameterChange{
+        .id = 3,
+        .sample_offset = 5,
+        .normalized = 1.0,
+    }, set.parameterChange("mode", 5, .lead));
 }
 
 test "integer parameter step count saturates to VST limit" {
