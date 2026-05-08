@@ -45,14 +45,14 @@ Parameter helpers:
 - `ParameterSet.parameterChange` and `ParameterSet.parameterChangeNormalized` construct changes from reflected field names for tests and non-host callers.
 - `ParameterValues.view(set)` and `PluginInstance.parameterView()` bind descriptors and values into a `ParameterView`.
 - `ParameterValues.editor(set)` and `PluginInstance.parameterEditor()` bind descriptors and mutable values into a `ParameterEditor`.
-- `ProcessContext.parameterChanges`, `parameterChangeCount`, `parameterChangesEmpty`, `latestParameterChange`, `firstParameterChange`, `countParameterChanges`, `hasParameterChange`, `latestParameterNormalized`, `firstParameterNormalized`, defaulted normalized reads, `latestParameterChangeAtOrBefore`, `latestParameterNormalizedAtOrBefore`, `parameterNormalizedAtOrBeforeOr`, and `nextParameterChangeOffset` expose common process-time reads.
+- `ProcessContext.parameterChanges`, `parameterChangeCount`, `parameterChangesEmpty`, first/latest/next parameter-change offsets, `latestParameterChange`, `firstParameterChange`, `countParameterChanges`, `hasParameterChange`, `latestParameterNormalized`, `firstParameterNormalized`, defaulted normalized reads, `latestParameterChangeAtOrBefore`, `latestParameterNormalizedAtOrBefore`, and `parameterNormalizedAtOrBeforeOr` expose common process-time reads.
 
 Event helpers:
 
 - `Event.noteOn`, `Event.noteOff`, `Event.midiCc`, `Event.pitchBend`, `Event.aftertouch`, `Event.noteExpressionValue`, `Event.noteExpressionInt`, `Event.noteExpressionText`, `Event.dataEvent`, and `Event.other` construct common input and output events.
 - `Event.withBusIndex` retargets a constructed event to another event bus.
 - `Event.withControlNumber` preserves legacy MIDI controller numbers when a host bridge needs to keep them attached to converted events.
-- `ProcessContext.inputEvents`, `inputEventCount`, `inputEventsEmpty`, `firstEvent`, `latestEvent`, `hasEvent`, `countEvents`, and `nextEventOffset` expose input-event reads without reaching into the event view field.
+- `ProcessContext.inputEvents`, `inputEventCount`, `inputEventsEmpty`, first/latest/next event offsets, `firstEvent`, `latestEvent`, `hasEvent`, and `countEvents` expose input-event reads without reaching into the event view field.
 - `EventWriter.appendAll` copies validated event views into bounded output storage.
 - `ProcessContext.appendOutputEvent`, `appendOutputEvents`, `writtenOutputEvents`, `clearOutputEvents`, `outputEventCount`, `outputEventCapacity`, `outputEventRemainingCapacity`, `outputEventsEmpty`, and `outputEventsFull` let processors write, inspect, reset, and plan output events without unwrapping the optional writer.
 

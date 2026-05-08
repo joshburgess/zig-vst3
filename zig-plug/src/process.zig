@@ -29,6 +29,22 @@ pub const ParameterChanges = struct {
         return self.items.len == 0;
     }
 
+    pub fn firstSampleOffset(self: ParameterChanges) ?usize {
+        var result: ?usize = null;
+        for (self.items) |item| {
+            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+        }
+        return result;
+    }
+
+    pub fn latestSampleOffset(self: ParameterChanges) ?usize {
+        var result: ?usize = null;
+        for (self.items) |item| {
+            if (result == null or item.sample_offset > result.?) result = item.sample_offset;
+        }
+        return result;
+    }
+
     pub fn latest(self: ParameterChanges, id: u32) ?ParameterChange {
         var result: ?ParameterChange = null;
         for (self.items) |item| {
@@ -266,6 +282,22 @@ pub const Events = struct {
         return self.items.len == 0;
     }
 
+    pub fn firstSampleOffset(self: Events) ?usize {
+        var result: ?usize = null;
+        for (self.items) |item| {
+            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+        }
+        return result;
+    }
+
+    pub fn latestSampleOffset(self: Events) ?usize {
+        var result: ?usize = null;
+        for (self.items) |item| {
+            if (result == null or item.sample_offset > result.?) result = item.sample_offset;
+        }
+        return result;
+    }
+
     pub fn countKind(self: Events, kind: EventKind) usize {
         var count: usize = 0;
         for (self.items) |item| {
@@ -494,6 +526,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.isEmpty();
         }
 
+        pub fn firstParameterChangeOffset(self: @This()) ?usize {
+            return self.parameter_changes.firstSampleOffset();
+        }
+
+        pub fn latestParameterChangeOffset(self: @This()) ?usize {
+            return self.parameter_changes.latestSampleOffset();
+        }
+
         pub fn latestParameterChange(self: @This(), id: u32) ?ParameterChange {
             return self.parameter_changes.latest(id);
         }
@@ -552,6 +592,14 @@ pub fn ProcessContext(comptime Sample: type) type {
 
         pub fn inputEventsEmpty(self: @This()) bool {
             return self.events.isEmpty();
+        }
+
+        pub fn firstEventOffset(self: @This()) ?usize {
+            return self.events.firstSampleOffset();
+        }
+
+        pub fn latestEventOffset(self: @This()) ?usize {
+            return self.events.latestSampleOffset();
         }
 
         pub fn firstEvent(self: @This(), kind: EventKind) ?Event {
@@ -742,6 +790,8 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(usize, 1), context.parameterChanges().items.len);
     try std.testing.expectEqual(@as(usize, 1), context.parameterChangeCount());
     try std.testing.expect(!context.parameterChangesEmpty());
+    try std.testing.expectEqual(@as(?usize, 1), context.firstParameterChangeOffset());
+    try std.testing.expectEqual(@as(?usize, 1), context.latestParameterChangeOffset());
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(usize, 1), context.countParameterChanges(1));
@@ -763,6 +813,8 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.inputEventCount());
     try std.testing.expect(!context.inputEventsEmpty());
+    try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffset());
+    try std.testing.expectEqual(@as(?usize, 1), context.latestEventOffset());
     try std.testing.expectEqual(@as(usize, 1), context.inputEvents().items.len);
     try std.testing.expect(context.hasEvent(.note_on));
     try std.testing.expect(!context.hasEvent(.note_off));
@@ -816,6 +868,8 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(usize, 3), view.items.len);
     try std.testing.expectEqual(@as(usize, 3), view.changeCount());
     try std.testing.expect(!view.isEmpty());
+    try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 3), view.latestSampleOffset());
     try std.testing.expect(view.has(7));
     try std.testing.expect(!view.has(9));
     try std.testing.expectEqual(@as(usize, 2), view.count(7));
@@ -846,6 +900,8 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffset(3));
     try std.testing.expectEqual(@as(usize, 0), (ParameterChanges{}).changeCount());
     try std.testing.expect((ParameterChanges{}).isEmpty());
+    try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).firstSampleOffset());
+    try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).latestSampleOffset());
 }
 
 test "parameter changes reject values outside the process block" {
@@ -882,6 +938,8 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(usize, 10), view.items.len);
     try std.testing.expectEqual(@as(usize, 10), view.eventCount());
     try std.testing.expect(!view.isEmpty());
+    try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 3), view.latestSampleOffset());
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_on));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.midi_cc));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_off));
@@ -893,6 +951,8 @@ test "events validate block offsets and count kinds" {
     try std.testing.expect(view.hasKind(.data));
     try std.testing.expectEqual(@as(usize, 0), (Events{}).eventCount());
     try std.testing.expect((Events{}).isEmpty());
+    try std.testing.expectEqual(@as(?usize, null), (Events{}).firstSampleOffset());
+    try std.testing.expectEqual(@as(?usize, null), (Events{}).latestSampleOffset());
     try std.testing.expectEqual(@as(?Event, null), (Events{}).firstKind(.note_on));
     try std.testing.expectEqual(@as(?Event, null), (Events{}).latestKind(.note_on));
     try std.testing.expectEqual(@as(?usize, 1), view.nextSampleOffset(0));
