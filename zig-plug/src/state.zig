@@ -36,6 +36,28 @@ pub fn writeParameterState(
     }
 }
 
+pub fn writeParameterStateJson(
+    comptime Params: type,
+    set: *const parameters.ParameterSet(Params),
+    values: *const parameters.ParameterValues(Params),
+    writer: anytype,
+) !void {
+    try writer.writeAll("{\"version\":");
+    try writer.print("{}", .{version});
+    try writer.writeAll(",\"parameters\":[");
+    inline for (0..parameters.ParameterSet(Params).count) |index| {
+        if (index != 0) try writer.writeByte(',');
+        try writer.writeAll("{\"id\":");
+        try writer.print("{}", .{set.id(index).?});
+        try writer.writeAll(",\"name\":");
+        try std.json.stringify(set.name(index).?, .{}, writer);
+        try writer.writeAll(",\"normalized\":");
+        try writer.print("{d}", .{values.load(index).?});
+        try writer.writeByte('}');
+    }
+    try writer.writeAll("]}");
+}
+
 pub fn readParameterState(
     comptime Params: type,
     set: *const parameters.ParameterSet(Params),
@@ -100,6 +122,29 @@ test "parameter state round-trips normalized values" {
 
     try std.testing.expectEqual(@as(?f64, 0.25), restored.load(0));
     try std.testing.expectEqual(@as(?f64, 0.75), restored.load(1));
+}
+
+test "parameter state writes debug json" {
+    const Params = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+        mix: parameters.FloatParam = parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
+    };
+    const Set = parameters.ParameterSet(Params);
+    const Values = parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var bytes: [160]u8 = undefined;
+
+    try std.testing.expect(values.store(0, 0.25));
+    try std.testing.expect(values.store(1, 0.75));
+
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    try writeParameterStateJson(Params, &set, &values, out_stream.writer());
+
+    try std.testing.expectEqualStrings(
+        "{\"version\":1,\"parameters\":[{\"id\":0,\"name\":\"Gain\",\"normalized\":0.25},{\"id\":1,\"name\":\"Mix\",\"normalized\":0.75}]}",
+        out_stream.getWritten(),
+    );
 }
 
 test "parameter state ignores unknown parameter ids" {
