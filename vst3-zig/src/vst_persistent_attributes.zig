@@ -245,6 +245,12 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
         }
 
         fn getBinaryData(ptr: *anyopaque, id: ipersistent.IAttrID, out: ?*anyopaque, size: types.uint32) callconv(.C) types.tresult {
+            if (out) |buffer| {
+                if (size > 0) {
+                    const bytes: [*]u8 = @ptrCast(buffer);
+                    @memset(bytes[0..size], 0);
+                }
+            }
             const entry = ownerFromAttributes(ptr).findEntry(id) orelse return types.kResultFalse;
             if (entry.binary_size > size) return types.kResultFalse;
             if (entry.binary_size > 0 and out == null) return types.kInvalidArgument;
@@ -428,6 +434,14 @@ test "persistent attributes copy binary payloads" {
     try std.testing.expectEqual(@as(types.uint32, 4), attrs.vtable.getBinaryDataSize(attrs, "blob"));
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.getBinaryData(attrs, "blob", &out, out.len));
     try std.testing.expectEqualSlices(u8, &.{ 1, 2, 3, 4 }, &out);
+
+    out = [_]u8{9} ** 4;
+    try std.testing.expectEqual(types.kResultFalse, attrs.vtable.getBinaryData(attrs, "missing", &out, out.len));
+    try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0 }, &out);
+
+    out = [_]u8{9} ** 4;
+    try std.testing.expectEqual(types.kResultFalse, attrs.vtable.getBinaryData(attrs, "blob", &out, 2));
+    try std.testing.expectEqualSlices(u8, &.{ 0, 0, 9, 9 }, &out);
 }
 
 test "persistent attributes supports attributes2 query interface" {
