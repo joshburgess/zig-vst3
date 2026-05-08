@@ -19,6 +19,8 @@ pub fn ComponentHandler(comptime Config: type) type {
         perform_count: types.uint32 = 0,
         end_count: types.uint32 = 0,
         restart_count: types.uint32 = 0,
+        add_ref_count: types.uint32 = 0,
+        release_count: types.uint32 = 0,
         last_param_id: vsttypes.ParamID = vsttypes.kNoParamId,
         last_value: vsttypes.ParamValue = -1,
         last_restart_flags: types.int32 = 0,
@@ -42,11 +44,15 @@ pub fn ComponentHandler(comptime Config: type) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            const self = owner(ptr);
+            self.add_ref_count += 1;
+            return self.ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
         fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
-            return funknown.decrementRefCount(&owner(ptr).ref_count, "IComponentHandler");
+            const self = owner(ptr);
+            self.release_count += 1;
+            return funknown.decrementRefCount(&self.ref_count, "IComponentHandler");
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
