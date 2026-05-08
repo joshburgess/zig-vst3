@@ -85,6 +85,12 @@ pub const Event = struct {
     value: f32 = 0,
     int_value: u64 = 0,
 
+    pub fn withBusIndex(self: Event, bus_index: i32) Event {
+        var event = self;
+        event.bus_index = bus_index;
+        return event;
+    }
+
     pub fn noteOn(sample_offset: usize, channel: i16, pitch: i16, velocity: f32) Event {
         return .{
             .kind = .note_on,
@@ -510,6 +516,15 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.other));
     try std.testing.expect(view.hasKind(.note_on));
     try std.testing.expect(view.hasKind(.data));
+}
+
+test "event constructors can target non-main buses" {
+    const event = Event.noteOn(1, 0, 60, 0.75).withBusIndex(2);
+
+    try std.testing.expectEqual(EventKind.note_on, event.kind);
+    try std.testing.expectEqual(@as(i32, 2), event.bus_index);
+    try std.testing.expectEqual(@as(usize, 1), event.sample_offset);
+    try std.testing.expectEqual(@as(i16, 60), event.pitch);
 }
 
 test "events reject values outside the process block" {
