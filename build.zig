@@ -93,6 +93,14 @@ pub fn build(b: *std.Build) void {
         .artifact_name = "zig_vst3_event_echo",
         .bundle_id = "dev.zig-vst3.event-echo",
     });
+    const example_bundle_steps = [_]Vst3BundleSteps{
+        bundle_gain_step,
+        bundle_bypass_step,
+        bundle_mode_gain_step,
+        bundle_voice_mix_step,
+        bundle_note_gate_step,
+        bundle_event_echo_step,
+    };
     const vst3_test_module = b.createModule(.{
         .root_source_file = b.path("vst3-zig/src/root.zig"),
         .target = target,
@@ -128,20 +136,22 @@ pub fn build(b: *std.Build) void {
     const event_echo_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/event_echo_core.zig");
 
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&b.addRunArtifact(vst3_tests).step);
-    test_step.dependOn(&b.addRunArtifact(zig_plug_tests).step);
-    test_step.dependOn(&b.addRunArtifact(gain_tests).step);
-    test_step.dependOn(&b.addRunArtifact(bypass_tests).step);
-    test_step.dependOn(&b.addRunArtifact(mode_gain_tests).step);
-    test_step.dependOn(&b.addRunArtifact(voice_mix_tests).step);
-    test_step.dependOn(&b.addRunArtifact(note_gate_tests).step);
-    test_step.dependOn(&b.addRunArtifact(event_echo_tests).step);
-    test_step.dependOn(&b.addRunArtifact(gain_core_example_tests).step);
-    test_step.dependOn(&b.addRunArtifact(bypass_core_example_tests).step);
-    test_step.dependOn(&b.addRunArtifact(mode_gain_core_example_tests).step);
-    test_step.dependOn(&b.addRunArtifact(voice_mix_core_example_tests).step);
-    test_step.dependOn(&b.addRunArtifact(note_gate_core_example_tests).step);
-    test_step.dependOn(&b.addRunArtifact(event_echo_core_example_tests).step);
+    addRunArtifactDependencies(b, test_step, &.{
+        vst3_tests,
+        zig_plug_tests,
+        gain_tests,
+        bypass_tests,
+        mode_gain_tests,
+        voice_mix_tests,
+        note_gate_tests,
+        event_echo_tests,
+        gain_core_example_tests,
+        bypass_core_example_tests,
+        mode_gain_core_example_tests,
+        voice_mix_core_example_tests,
+        note_gate_core_example_tests,
+        event_echo_core_example_tests,
+    });
 
     const validate_step = b.step("validate", "Run the VST3 SDK validator for -Dplugin=path/to/Plugin.vst3");
     if (b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate")) |plugin_path| {
@@ -183,36 +193,23 @@ pub fn build(b: *std.Build) void {
         .artifact_name = "zig_vst3_event_echo",
     });
     const validate_examples_step = b.step("validate-examples", "Build and validate all native VST3 example bundles");
-    validate_examples_step.dependOn(validate_gain_step);
-    validate_examples_step.dependOn(validate_bypass_step);
-    validate_examples_step.dependOn(validate_mode_gain_step);
-    validate_examples_step.dependOn(validate_voice_mix_step);
-    validate_examples_step.dependOn(validate_note_gate_step);
-    validate_examples_step.dependOn(validate_event_echo_step);
+    addStepDependencies(validate_examples_step, &.{
+        validate_gain_step,
+        validate_bypass_step,
+        validate_mode_gain_step,
+        validate_voice_mix_step,
+        validate_note_gate_step,
+        validate_event_echo_step,
+    });
 
     const bundle_examples_step = b.step("bundle-examples", "Build native VST3 bundles for all example plugins");
-    bundle_examples_step.dependOn(bundle_gain_step.native);
-    bundle_examples_step.dependOn(bundle_bypass_step.native);
-    bundle_examples_step.dependOn(bundle_mode_gain_step.native);
-    bundle_examples_step.dependOn(bundle_voice_mix_step.native);
-    bundle_examples_step.dependOn(bundle_note_gate_step.native);
-    bundle_examples_step.dependOn(bundle_event_echo_step.native);
+    addVst3BundleDependencies(bundle_examples_step, &example_bundle_steps, .native);
 
     const bundle_examples_linux_step = b.step("bundle-examples-linux", "Build Linux VST3 bundles for all example plugins");
-    bundle_examples_linux_step.dependOn(bundle_gain_step.linux);
-    bundle_examples_linux_step.dependOn(bundle_bypass_step.linux);
-    bundle_examples_linux_step.dependOn(bundle_mode_gain_step.linux);
-    bundle_examples_linux_step.dependOn(bundle_voice_mix_step.linux);
-    bundle_examples_linux_step.dependOn(bundle_note_gate_step.linux);
-    bundle_examples_linux_step.dependOn(bundle_event_echo_step.linux);
+    addVst3BundleDependencies(bundle_examples_linux_step, &example_bundle_steps, .linux);
 
     const bundle_examples_windows_step = b.step("bundle-examples-windows", "Build Windows VST3 bundles for all example plugins");
-    bundle_examples_windows_step.dependOn(bundle_gain_step.windows);
-    bundle_examples_windows_step.dependOn(bundle_bypass_step.windows);
-    bundle_examples_windows_step.dependOn(bundle_mode_gain_step.windows);
-    bundle_examples_windows_step.dependOn(bundle_voice_mix_step.windows);
-    bundle_examples_windows_step.dependOn(bundle_note_gate_step.windows);
-    bundle_examples_windows_step.dependOn(bundle_event_echo_step.windows);
+    addVst3BundleDependencies(bundle_examples_windows_step, &example_bundle_steps, .windows);
     const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
     validator_step.dependOn(&build_validator.step);
@@ -592,6 +589,42 @@ const Vst3BundleSteps = struct {
     linux: *std.Build.Step,
     windows: *std.Build.Step,
 };
+
+const Vst3BundleKind = enum {
+    native,
+    linux,
+    windows,
+};
+
+fn addStepDependencies(step: *std.Build.Step, dependencies: []const *std.Build.Step) void {
+    for (dependencies) |dependency| {
+        step.dependOn(dependency);
+    }
+}
+
+fn addRunArtifactDependencies(
+    b: *std.Build,
+    step: *std.Build.Step,
+    artifacts: []const *std.Build.Step.Compile,
+) void {
+    for (artifacts) |artifact| {
+        step.dependOn(&b.addRunArtifact(artifact).step);
+    }
+}
+
+fn addVst3BundleDependencies(
+    step: *std.Build.Step,
+    bundles: []const Vst3BundleSteps,
+    kind: Vst3BundleKind,
+) void {
+    for (bundles) |bundle| {
+        step.dependOn(switch (kind) {
+            .native => bundle.native,
+            .linux => bundle.linux,
+            .windows => bundle.windows,
+        });
+    }
+}
 
 fn addVst3BundleSteps(
     b: *std.Build,
