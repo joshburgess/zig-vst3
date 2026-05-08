@@ -653,6 +653,42 @@ pub fn ParameterView(comptime Params: type) type {
             };
         }
 
+        pub fn parameterCount(_: Self) usize {
+            return Set.count;
+        }
+
+        pub fn id(self: Self, index: usize) ?u32 {
+            return self.set.id(index);
+        }
+
+        pub fn name(self: Self, index: usize) ?[]const u8 {
+            return self.set.name(index);
+        }
+
+        pub fn defaultNormalized(self: Self, index: usize) ?f64 {
+            return self.set.defaultNormalized(index);
+        }
+
+        pub fn isBypass(self: Self, index: usize) ?bool {
+            return self.set.isBypass(index);
+        }
+
+        pub fn stepCount(self: Self, index: usize) ?i32 {
+            return self.set.stepCount(index);
+        }
+
+        pub fn isList(self: Self, index: usize) ?bool {
+            return self.set.isList(index);
+        }
+
+        pub fn indexOfId(self: Self, wanted_id: u32) ?usize {
+            return self.set.indexOfId(wanted_id);
+        }
+
+        pub fn indexOfName(self: Self, wanted_name: []const u8) ?usize {
+            return self.set.indexOfName(wanted_name);
+        }
+
         pub fn loadNormalized(self: Self, comptime field_name: []const u8) f64 {
             return self.values.loadFieldNormalized(self.set, field_name);
         }
@@ -669,12 +705,12 @@ pub fn ParameterView(comptime Params: type) type {
             return self.values.loadPlain(self.set, index);
         }
 
-        pub fn loadById(self: Self, id: u32) ?f64 {
-            return self.values.loadById(self.set, id);
+        pub fn loadById(self: Self, wanted_id: u32) ?f64 {
+            return self.values.loadById(self.set, wanted_id);
         }
 
-        pub fn loadPlainById(self: Self, id: u32) ?f64 {
-            return self.values.loadPlainById(self.set, id);
+        pub fn loadPlainById(self: Self, wanted_id: u32) ?f64 {
+            return self.values.loadPlainById(self.set, wanted_id);
         }
     };
 }
@@ -700,6 +736,42 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.values.view(self.set);
         }
 
+        pub fn parameterCount(_: Self) usize {
+            return Set.count;
+        }
+
+        pub fn id(self: Self, index: usize) ?u32 {
+            return self.set.id(index);
+        }
+
+        pub fn name(self: Self, index: usize) ?[]const u8 {
+            return self.set.name(index);
+        }
+
+        pub fn defaultNormalized(self: Self, index: usize) ?f64 {
+            return self.set.defaultNormalized(index);
+        }
+
+        pub fn isBypass(self: Self, index: usize) ?bool {
+            return self.set.isBypass(index);
+        }
+
+        pub fn stepCount(self: Self, index: usize) ?i32 {
+            return self.set.stepCount(index);
+        }
+
+        pub fn isList(self: Self, index: usize) ?bool {
+            return self.set.isList(index);
+        }
+
+        pub fn indexOfId(self: Self, wanted_id: u32) ?usize {
+            return self.set.indexOfId(wanted_id);
+        }
+
+        pub fn indexOfName(self: Self, wanted_name: []const u8) ?usize {
+            return self.set.indexOfName(wanted_name);
+        }
+
         pub fn resetToDefaults(self: Self) void {
             self.values.resetToDefaults(self.set);
         }
@@ -720,12 +792,12 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.values.storePlain(self.set, index, plain);
         }
 
-        pub fn storeById(self: Self, id: u32, normalized: f64) bool {
-            return self.values.storeById(self.set, id, normalized);
+        pub fn storeById(self: Self, wanted_id: u32, normalized: f64) bool {
+            return self.values.storeById(self.set, wanted_id, normalized);
         }
 
-        pub fn storePlainById(self: Self, id: u32, plain: f64) bool {
-            return self.values.storePlainById(self.set, id, plain);
+        pub fn storePlainById(self: Self, wanted_id: u32, plain: f64) bool {
+            return self.values.storePlainById(self.set, wanted_id, plain);
         }
     };
 }
@@ -1083,6 +1155,19 @@ test "parameter view binds reflected set and values" {
     try std.testing.expect(values.storeField(&set, "mode", .mute));
 
     const view = values.view(&set);
+    try std.testing.expectEqual(@as(usize, 4), view.parameterCount());
+    try std.testing.expectEqual(@as(?u32, 0), view.id(0));
+    try std.testing.expectEqualStrings("Voices", view.name(1).?);
+    try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalized(3));
+    try std.testing.expectEqual(@as(?bool, false), view.isBypass(0));
+    try std.testing.expectEqual(@as(?i32, 3), view.stepCount(1));
+    try std.testing.expectEqual(@as(?bool, true), view.isList(3));
+    try std.testing.expectEqual(@as(?usize, 2), view.indexOfId(2));
+    try std.testing.expectEqual(@as(?usize, 1), view.indexOfName("Voices"));
+    try std.testing.expectEqual(@as(?u32, null), view.id(99));
+    try std.testing.expectEqual(@as(?[]const u8, null), view.name(99));
+    try std.testing.expectEqual(@as(?usize, null), view.indexOfId(99));
+    try std.testing.expectEqual(@as(?usize, null), view.indexOfName("Missing"));
     try std.testing.expectEqual(@as(f64, 6.0), view.load("gain"));
     try std.testing.expectEqual(@as(i64, 4), view.load("voices"));
     try std.testing.expectEqual(true, view.load("bypass"));
@@ -1110,6 +1195,19 @@ test "parameter editor binds reflected set and mutable values" {
     var values = Values.init(&set);
     const editor = values.editor(&set);
 
+    try std.testing.expectEqual(@as(usize, 4), editor.parameterCount());
+    try std.testing.expectEqual(@as(?u32, 0), editor.id(0));
+    try std.testing.expectEqualStrings("Voices", editor.name(1).?);
+    try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalized(3));
+    try std.testing.expectEqual(@as(?bool, false), editor.isBypass(0));
+    try std.testing.expectEqual(@as(?i32, 3), editor.stepCount(1));
+    try std.testing.expectEqual(@as(?bool, true), editor.isList(3));
+    try std.testing.expectEqual(@as(?usize, 2), editor.indexOfId(2));
+    try std.testing.expectEqual(@as(?usize, 1), editor.indexOfName("Voices"));
+    try std.testing.expectEqual(@as(?u32, null), editor.id(99));
+    try std.testing.expectEqual(@as(?[]const u8, null), editor.name(99));
+    try std.testing.expectEqual(@as(?usize, null), editor.indexOfId(99));
+    try std.testing.expectEqual(@as(?usize, null), editor.indexOfName("Missing"));
     try std.testing.expect(editor.store("gain", 6.0));
     try std.testing.expect(editor.store("voices", 4));
     try std.testing.expect(editor.store("bypass", true));
