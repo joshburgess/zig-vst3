@@ -359,8 +359,12 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
 
         fn lockBlock(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) callconv(.C) types.tresult {
             const self = ownerFromDataExchange(ptr);
-            if (@hasDecl(Config, "lockBlock")) return Config.lockBlock(self, queue_id, block);
             block.* = .{};
+            if (@hasDecl(Config, "lockBlock")) {
+                const result = Config.lockBlock(self, queue_id, block);
+                if (result != types.kResultOk) block.* = .{};
+                return result;
+            }
             return types.kResultOk;
         }
 
@@ -497,6 +501,15 @@ test "data exchange host clears failed delegated outputs" {
             out.* = 44;
             return types.kResultFalse;
         }
+
+        pub fn lockBlock(_: anytype, _: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
+            block.* = .{
+                .blockID = 99,
+                .size = 128,
+                .data = @ptrFromInt(0x1000),
+            };
+            return types.kResultFalse;
+        }
     });
     var host = Host{};
 
@@ -512,5 +525,15 @@ test "data exchange host clears failed delegated outputs" {
     var queue_id: ivstdataexchange.DataExchangeQueueID = 88;
     try std.testing.expectEqual(types.kResultFalse, handler.vtable.openQueue(handler, null, 128, 2, 8, 77, &queue_id));
     try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
+
+    var block = ivstdataexchange.DataExchangeBlock{
+        .blockID = 1,
+        .size = 64,
+        .data = @ptrFromInt(0x2000),
+    };
+    try std.testing.expectEqual(types.kResultFalse, handler.vtable.lockBlock(handler, 44, &block));
+    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeBlockID, 0), block.blockID);
+    try std.testing.expectEqual(@as(types.uint32, 0), block.size);
+    try std.testing.expectEqual(@as(?*anyopaque, null), block.data);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
 }
