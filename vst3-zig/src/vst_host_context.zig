@@ -99,8 +99,12 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
 
         fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = ownerFromHost(ptr);
-            if (@hasDecl(Config, "createInstance")) return Config.createInstance(self, cid, iid, out);
             out.* = null;
+            if (@hasDecl(Config, "createInstance")) {
+                const result = Config.createInstance(self, cid, iid, out);
+                if (result != types.kResultOk) out.* = null;
+                return result;
+            }
             return types.kResultFalse;
         }
 
@@ -208,8 +212,12 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
 
         fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = ownerFromHost(ptr);
-            if (@hasDecl(Config, "createInstance")) return Config.createInstance(self, cid, iid, out);
             out.* = null;
+            if (@hasDecl(Config, "createInstance")) {
+                const result = Config.createInstance(self, cid, iid, out);
+                if (result != types.kResultOk) out.* = null;
+                return result;
+            }
             return types.kResultFalse;
         }
 
@@ -319,8 +327,12 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
 
         fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = ownerFromHost(ptr);
-            if (@hasDecl(Config, "createInstance")) return Config.createInstance(self, cid, iid, out);
             out.* = null;
+            if (@hasDecl(Config, "createInstance")) {
+                const result = Config.createInstance(self, cid, iid, out);
+                if (result != types.kResultOk) out.* = null;
+                return result;
+            }
             return types.kResultFalse;
         }
 
@@ -328,8 +340,12 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             const self = ownerFromDataExchange(ptr);
             self.open_count += 1;
             self.last_user_context_id = user_context_id;
-            if (@hasDecl(Config, "openQueue")) return Config.openQueue(self, processor, block_size, num_blocks, alignment, user_context_id, out);
             out.* = ivstdataexchange.InvalidDataExchangeQueueID;
+            if (@hasDecl(Config, "openQueue")) {
+                const result = Config.openQueue(self, processor, block_size, num_blocks, alignment, user_context_id, out);
+                if (result != types.kResultOk) out.* = ivstdataexchange.InvalidDataExchangeQueueID;
+                return result;
+            }
             return types.kResultFalse;
         }
 
@@ -394,6 +410,20 @@ test "channel context host exposes info listener and records callbacks" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.info_release_count);
 }
 
+test "channel context host clears failed delegated create-instance output" {
+    const Host = ChannelContextHost("Test Host", struct {
+        pub fn createInstance(_: anytype, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            out.* = @ptrFromInt(0x10);
+            return types.kNoInterface;
+        }
+    });
+    var host = Host{};
+
+    var created: ?*anyopaque = @ptrFromInt(0x20);
+    try std.testing.expectEqual(types.kNoInterface, host.asHostApplication().vtable.createInstance(host.asHostApplication(), &funknown.iid, &funknown.iid, &created));
+    try std.testing.expectEqual(@as(?*anyopaque, null), created);
+}
+
 test "automation state host exposes automation state and records callbacks" {
     const Host = AutomationStateHost("Test Host", struct {});
     var host = Host{};
@@ -407,6 +437,20 @@ test "automation state host exposes automation state and records callbacks" {
     try std.testing.expectEqual(ivstautomationstate.AutomationStates.kReadWriteState, host.last_state);
     try std.testing.expectEqual(@as(types.uint32, 1), automation.vtable.release(automation));
     try std.testing.expectEqual(@as(types.uint32, 1), host.automation_release_count);
+}
+
+test "automation state host clears failed delegated create-instance output" {
+    const Host = AutomationStateHost("Test Host", struct {
+        pub fn createInstance(_: anytype, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            out.* = @ptrFromInt(0x10);
+            return types.kNoInterface;
+        }
+    });
+    var host = Host{};
+
+    var created: ?*anyopaque = @ptrFromInt(0x20);
+    try std.testing.expectEqual(types.kNoInterface, host.asHostApplication().vtable.createInstance(host.asHostApplication(), &funknown.iid, &funknown.iid, &created));
+    try std.testing.expectEqual(@as(?*anyopaque, null), created);
 }
 
 test "data exchange host exposes handler and records queue callbacks" {
@@ -440,4 +484,33 @@ test "data exchange host exposes handler and records queue callbacks" {
 
     try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
     try std.testing.expectEqual(@as(types.uint32, 1), host.release_count);
+}
+
+test "data exchange host clears failed delegated outputs" {
+    const Host = DataExchangeHost("Test Host", struct {
+        pub fn createInstance(_: anytype, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            out.* = @ptrFromInt(0x10);
+            return types.kNoInterface;
+        }
+
+        pub fn openQueue(_: anytype, _: ?*ivstaudioprocessor.IAudioProcessor, _: types.uint32, _: types.uint32, _: types.uint32, _: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
+            out.* = 44;
+            return types.kResultFalse;
+        }
+    });
+    var host = Host{};
+
+    var created: ?*anyopaque = @ptrFromInt(0x20);
+    try std.testing.expectEqual(types.kNoInterface, host.asHostApplication().vtable.createInstance(host.asHostApplication(), &funknown.iid, &funknown.iid, &created));
+    try std.testing.expectEqual(@as(?*anyopaque, null), created);
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.queryInterface(host.asHostApplication(), &ivstdataexchange.idata_exchange_handler_iid, &queried));
+    try std.testing.expect(queried != null);
+    const handler: *ivstdataexchange.IDataExchangeHandler = @ptrCast(@alignCast(queried.?));
+
+    var queue_id: ivstdataexchange.DataExchangeQueueID = 88;
+    try std.testing.expectEqual(types.kResultFalse, handler.vtable.openQueue(handler, null, 128, 2, 8, 77, &queue_id));
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
 }
