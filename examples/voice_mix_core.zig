@@ -30,6 +30,7 @@ pub const VoiceMix = struct {
 };
 
 pub const Spec = plug.plugin.PluginSpec(VoiceMix);
+pub const Instance = plug.plugin.PluginInstance(VoiceMix);
 pub const parameter_set = Spec.ParameterSet.init(.{});
 
 test "voice mix core example declares reflected int parameter" {
@@ -62,4 +63,26 @@ test "voice mix core example applies int parameter changes" {
     try std.testing.expectEqual(@as(f32, 1.0), output[0]);
     try std.testing.expectEqual(@as(f32, 2.0), output[1]);
     try std.testing.expectEqual(@as(f32, 4.0), output[2]);
+}
+
+test "voice mix core example can run through plugin instance" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const input = [_]f32{ 0.25, 0.5 };
+    var output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const changes = [_]plug.process.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = 1.0 },
+    };
+    var context = plug.process.ProcessContext(f32){
+        .sample_rate = 48_000.0,
+        .inputs = try plug.process.AudioInputs(f32).init(&input_channels),
+        .outputs = try plug.process.AudioOutputs(f32).init(&output_channels),
+        .parameter_changes = try plug.process.ParameterChanges.init(&changes, input.len),
+    };
+
+    instance.process(&context);
+
+    try std.testing.expectEqual(@as(f32, 1.0), output[0]);
+    try std.testing.expectEqual(@as(f32, 2.0), output[1]);
 }
