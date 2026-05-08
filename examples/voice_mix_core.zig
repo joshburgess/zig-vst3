@@ -15,8 +15,8 @@ pub const VoiceMix = struct {
     ) void {
         const gain: f32 = @floatFromInt(params.load("voices"));
         for (0..context.outputChannelCount()) |channel| {
-            const input = context.inputs.channel(channel) orelse continue;
-            const output = context.outputs.channel(channel) orelse continue;
+            const input = context.inputChannel(channel) orelse continue;
+            const output = context.outputChannel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
                 output[sample] = input[sample] * gain;
             }
