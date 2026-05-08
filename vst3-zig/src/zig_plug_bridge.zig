@@ -11,6 +11,7 @@ const plug = @import("zig-plug-core");
 const audio_processor_algo = @import("pluginterfaces/vst/vstaudioprocessoralgo.zig");
 const events_helper = @import("pluginterfaces/vst/vsteventshelper.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+const vst_event_list = @import("vst_event_list.zig");
 const vst_parameter_changes = @import("vst_parameter_changes.zig");
 const vst_stream = @import("vst_stream.zig");
 
@@ -923,11 +924,13 @@ test "zig-plug bridge collects VST3 input events" {
             .data = .{ .data = .{} },
         },
     };
-    var list = TestEventList.init(&items, null);
+    const List = vst_event_list.EventList(items.len);
+    var list = List{};
+    for (&items) |event| try std.testing.expectEqual(types.kResultOk, list.append(event));
     var storage: [4]plug.process.Event = undefined;
     var data = ivstaudioprocessor.ProcessData{
         .numSamples = 4,
-        .inputEvents = &list.iface,
+        .inputEvents = list.asInterface(),
     };
 
     const collected = collectInputEvents(&data, &storage);
@@ -975,11 +978,13 @@ test "zig-plug bridge drops invalid and overflowing VST3 input events" {
             .data = .{ .data = .{} },
         },
     };
-    var list = TestEventList.init(&items, null);
+    const List = vst_event_list.EventList(items.len);
+    var list = List{};
+    for (&items) |event| try std.testing.expectEqual(types.kResultOk, list.append(event));
     var storage: [2]plug.process.Event = undefined;
     var data = ivstaudioprocessor.ProcessData{
         .numSamples = 4,
-        .inputEvents = &list.iface,
+        .inputEvents = list.asInterface(),
     };
 
     const collected = collectInputEvents(&data, &storage);
@@ -1026,11 +1031,13 @@ test "zig-plug bridge maps legacy MIDI controller events" {
             } },
         },
     };
-    var list = TestEventList.init(&items, null);
+    const List = vst_event_list.EventList(items.len);
+    var list = List{};
+    for (&items) |event| try std.testing.expectEqual(types.kResultOk, list.append(event));
     var storage: [3]plug.process.Event = undefined;
     var data = ivstaudioprocessor.ProcessData{
         .numSamples = 3,
-        .inputEvents = &list.iface,
+        .inputEvents = list.asInterface(),
     };
 
     const collected = collectInputEvents(&data, &storage);
@@ -1090,11 +1097,13 @@ test "zig-plug bridge maps poly pressure and note expression events" {
             } },
         },
     };
-    var list = TestEventList.init(&items, null);
+    const List = vst_event_list.EventList(items.len);
+    var list = List{};
+    for (&items) |event| try std.testing.expectEqual(types.kResultOk, list.append(event));
     var storage: [4]plug.process.Event = undefined;
     var data = ivstaudioprocessor.ProcessData{
         .numSamples = 4,
-        .inputEvents = &list.iface,
+        .inputEvents = list.asInterface(),
     };
 
     const collected = collectInputEvents(&data, &storage);
@@ -1127,11 +1136,13 @@ test "zig-plug bridge preserves VST3 data event payloads" {
             } },
         },
     };
-    var list = TestEventList.init(&items, null);
+    const List = vst_event_list.EventList(items.len);
+    var list = List{};
+    for (&items) |event| try std.testing.expectEqual(types.kResultOk, list.append(event));
     var storage: [1]plug.process.Event = undefined;
     var data = ivstaudioprocessor.ProcessData{
         .numSamples = 1,
-        .inputEvents = &list.iface,
+        .inputEvents = list.asInterface(),
     };
 
     const collected = collectInputEvents(&data, &storage);
@@ -1152,40 +1163,41 @@ test "zig-plug bridge writes output events to VST3 event lists" {
         .{ .kind = .data, .bus_index = 0, .sample_offset = 3, .data_type = @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx), .data = &payload },
         .{ .kind = .other, .bus_index = 0, .sample_offset = 3 },
     };
-    var storage: [5]ivstevents.Event = undefined;
-    var list = TestWritableEventList.init(&storage, null);
+    const List = vst_event_list.EventList(5);
+    var list = List{};
     var data = ivstaudioprocessor.ProcessData{
         .numSamples = 4,
-        .outputEvents = &list.iface,
+        .outputEvents = list.asInterface(),
     };
 
     try std.testing.expectEqual(types.kResultOk, writeOutputEvents(&data, .{ .items = &items }));
 
-    try std.testing.expectEqual(@as(usize, 5), list.count);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent), storage[0].type);
-    try std.testing.expectEqual(@as(i16, 60), storage[0].data.noteOn.pitch);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), storage[1].type);
-    try std.testing.expectEqual(@as(u8, ivstmidicontrollers.kCtrlModWheel), storage[1].data.midiCCOut.controlNumber);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), storage[2].type);
-    try std.testing.expectEqual(@as(u8, ivstmidicontrollers.kPitchBend), storage[2].data.midiCCOut.controlNumber);
-    try std.testing.expectEqual(@as(types.int16, 0x3FFF), events_helper.getPitchBendValue(&storage[2].data.midiCCOut));
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent), storage[3].type);
-    try std.testing.expectEqual(@as(u32, 5), storage[3].data.noteExpressionValue.typeId);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kDataEvent), storage[4].type);
-    try std.testing.expectEqual(@as(u32, payload.len), storage[4].data.data.size);
-    try std.testing.expectEqual(@as(u32, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx)), storage[4].data.data.type);
-    try std.testing.expectEqualSlices(u8, &payload, storage[4].data.data.bytes.?[0..payload.len]);
+    const written = list.items();
+    try std.testing.expectEqual(@as(usize, 5), written.len);
+    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent), written[0].type);
+    try std.testing.expectEqual(@as(i16, 60), written[0].data.noteOn.pitch);
+    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), written[1].type);
+    try std.testing.expectEqual(@as(u8, ivstmidicontrollers.kCtrlModWheel), written[1].data.midiCCOut.controlNumber);
+    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), written[2].type);
+    try std.testing.expectEqual(@as(u8, ivstmidicontrollers.kPitchBend), written[2].data.midiCCOut.controlNumber);
+    try std.testing.expectEqual(@as(types.int16, 0x3FFF), events_helper.getPitchBendValue(&written[2].data.midiCCOut));
+    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent), written[3].type);
+    try std.testing.expectEqual(@as(u32, 5), written[3].data.noteExpressionValue.typeId);
+    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kDataEvent), written[4].type);
+    try std.testing.expectEqual(@as(u32, payload.len), written[4].data.data.size);
+    try std.testing.expectEqual(@as(u32, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx)), written[4].data.data.type);
+    try std.testing.expectEqualSlices(u8, &payload, written[4].data.data.bytes.?[0..payload.len]);
 }
 
 test "zig-plug bridge reports output event write failures" {
     const items = [_]plug.process.Event{
         .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 0, .pitch = 60, .velocity = 0.75 },
     };
-    var storage: [1]ivstevents.Event = undefined;
-    var list = TestWritableEventList.init(&storage, 0);
+    const List = vst_event_list.EventList(1);
+    var list = List{ .fail_add_index = 0 };
     var data = ivstaudioprocessor.ProcessData{
         .numSamples = 1,
-        .outputEvents = &list.iface,
+        .outputEvents = list.asInterface(),
     };
 
     try std.testing.expectEqual(types.kResultFalse, writeOutputEvents(&data, .{ .items = &items }));
@@ -1501,118 +1513,3 @@ fn expectString128(expected: []const u8, actual: *const vsttypes.String128) !voi
     }
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), actual[expected.len]);
 }
-
-const TestEventList = struct {
-    iface: ivstevents.IEventList = .{ .vtable = &vtable },
-    items: []const ivstevents.Event,
-    fail_index: ?types.int32 = null,
-
-    const vtable = ivstevents.IEventListVTable{
-        .queryInterface = queryInterface,
-        .addRef = addRef,
-        .release = release,
-        .getEventCount = getEventCount,
-        .getEvent = getEvent,
-        .addEvent = addEvent,
-    };
-
-    fn init(items: []const ivstevents.Event, fail_index: ?types.int32) TestEventList {
-        return .{ .items = items, .fail_index = fail_index };
-    }
-
-    fn owner(ptr: *anyopaque) *TestEventList {
-        const iface: *ivstevents.IEventList = @ptrCast(@alignCast(ptr));
-        return @fieldParentPtr("iface", iface);
-    }
-
-    fn queryInterface(_: *anyopaque, _: *const @import("tuid.zig").TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-        out.* = null;
-        return types.kNoInterface;
-    }
-
-    fn addRef(_: *anyopaque) callconv(.C) types.uint32 {
-        return 1;
-    }
-
-    fn release(_: *anyopaque) callconv(.C) types.uint32 {
-        return 1;
-    }
-
-    fn getEventCount(ptr: *anyopaque) callconv(.C) types.int32 {
-        return @intCast(owner(ptr).items.len);
-    }
-
-    fn getEvent(ptr: *anyopaque, index: types.int32, event: *ivstevents.Event) callconv(.C) types.tresult {
-        if (index < 0) return types.kInvalidArgument;
-        const self = owner(ptr);
-        if (self.fail_index != null and index == self.fail_index.?) return types.kResultFalse;
-        const event_index: usize = @intCast(index);
-        if (event_index >= self.items.len) return types.kInvalidArgument;
-        event.* = self.items[event_index];
-        return types.kResultOk;
-    }
-
-    fn addEvent(_: *anyopaque, _: *ivstevents.Event) callconv(.C) types.tresult {
-        return types.kResultFalse;
-    }
-};
-
-const TestWritableEventList = struct {
-    iface: ivstevents.IEventList = .{ .vtable = &vtable },
-    storage: []ivstevents.Event,
-    count: usize = 0,
-    fail_index: ?usize = null,
-
-    const vtable = ivstevents.IEventListVTable{
-        .queryInterface = queryInterface,
-        .addRef = addRef,
-        .release = release,
-        .getEventCount = getEventCount,
-        .getEvent = getEvent,
-        .addEvent = addEvent,
-    };
-
-    fn init(storage: []ivstevents.Event, fail_index: ?usize) TestWritableEventList {
-        return .{ .storage = storage, .fail_index = fail_index };
-    }
-
-    fn owner(ptr: *anyopaque) *TestWritableEventList {
-        const iface: *ivstevents.IEventList = @ptrCast(@alignCast(ptr));
-        return @fieldParentPtr("iface", iface);
-    }
-
-    fn queryInterface(_: *anyopaque, _: *const @import("tuid.zig").TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-        out.* = null;
-        return types.kNoInterface;
-    }
-
-    fn addRef(_: *anyopaque) callconv(.C) types.uint32 {
-        return 1;
-    }
-
-    fn release(_: *anyopaque) callconv(.C) types.uint32 {
-        return 1;
-    }
-
-    fn getEventCount(ptr: *anyopaque) callconv(.C) types.int32 {
-        return @intCast(owner(ptr).count);
-    }
-
-    fn getEvent(ptr: *anyopaque, index: types.int32, event: *ivstevents.Event) callconv(.C) types.tresult {
-        if (index < 0) return types.kInvalidArgument;
-        const self = owner(ptr);
-        const event_index: usize = @intCast(index);
-        if (event_index >= self.count) return types.kInvalidArgument;
-        event.* = self.storage[event_index];
-        return types.kResultOk;
-    }
-
-    fn addEvent(ptr: *anyopaque, event: *ivstevents.Event) callconv(.C) types.tresult {
-        const self = owner(ptr);
-        if (self.fail_index != null and self.count == self.fail_index.?) return types.kResultFalse;
-        if (self.count >= self.storage.len) return types.kResultFalse;
-        self.storage[self.count] = event.*;
-        self.count += 1;
-        return types.kResultOk;
-    }
-};
