@@ -152,6 +152,10 @@ pub fn ParameterState(comptime Params: type) type {
             self.values.applyChanges(self.set, changes);
         }
 
+        pub fn encodedSize(_: *const Self) usize {
+            return plug.state.encodedSize(Params);
+        }
+
         pub fn readFromStream(self: *Self, stream: ?*ibstream.IBStream) types.tresult {
             var restored = Values.init(self.set);
             const result = readParameterState(Params, stream, self.set, &restored);
@@ -700,7 +704,7 @@ test "zig-plug bridge round-trips parameter state through IBStream" {
     const set = Set.init(.{});
     var values = Values.init(&set);
     var restored = Values.init(&set);
-    const Stream = vst_stream.FixedBufferStream(256);
+    const Stream = vst_stream.FixedBufferStream(plug.state.encodedSize(Params));
     var stream = Stream{};
 
     try std.testing.expect(values.store(0, 0.25));
@@ -786,9 +790,10 @@ test "zig-plug bridge parameter state stores ids and persists streams" {
     const set = Set.init(.{});
     var source = ParameterState(Params).init(&set);
     var restored = ParameterState(Params).init(&set);
-    const Stream = vst_stream.FixedBufferStream(256);
+    const Stream = vst_stream.FixedBufferStream(plug.state.encodedSize(Params));
     var stream = Stream{};
 
+    try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Params)), source.encodedSize());
     try std.testing.expectEqual(types.kResultOk, source.setNormalizedById(0, 0.25));
     try std.testing.expectEqual(types.kResultOk, source.setNormalizedById(1, 0.75));
     try std.testing.expectEqual(types.kInvalidArgument, source.setNormalizedById(99, 0.5));
