@@ -13,7 +13,7 @@ pub const Gain = struct {
             const input = context.inputs.channel(channel) orelse continue;
             const output = context.outputs.channel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
-                const gain = context.parameter_changes.normalizedAtOrBeforeOr(0, sample, 1.0);
+                const gain = context.parameterNormalizedAtOrBeforeOr(0, sample, 1.0);
                 output[sample] = input[sample] * @as(f32, @floatCast(gain));
             }
         }
