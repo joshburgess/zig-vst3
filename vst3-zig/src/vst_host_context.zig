@@ -12,11 +12,11 @@ const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 fn copyString128(dest: [*]vsttypes.TChar, source: []const u8) void {
+    @memset(dest[0..128], 0);
     const len = @min(source.len, 127);
     for (source[0..len], 0..) |char, index| {
         dest[index] = char;
     }
-    dest[len] = 0;
 }
 
 pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type {
@@ -378,6 +378,11 @@ test "channel context host exposes info listener and records callbacks" {
     const Host = ChannelContextHost("Test Host", struct {});
     var host = Host{};
     var queried: ?*anyopaque = null;
+    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+
+    try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.getName(host.asHostApplication(), &name));
+    try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Test Host"), std.mem.sliceTo(&name, 0));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[10]);
 
     try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.queryInterface(host.asHostApplication(), &ivstchannelcontextinfo.iinfo_listener_iid, &queried));
     try std.testing.expect(queried != null);
