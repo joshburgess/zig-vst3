@@ -85,6 +85,7 @@ pub fn readParameterStateWithMigrations(
     for (0..count) |_| {
         const id = try reader.readInt(u32, .little);
         const normalized: f64 = @bitCast(try reader.readInt(u64, .little));
+        if (normalized < 0.0 or normalized > 1.0 or std.math.isNan(normalized)) return error.ParameterStateOutsideNormalizedRange;
         if (set.indexOfId(migratedId(id, migrations))) |index| {
             _ = restored.store(index, normalized);
         }
@@ -260,6 +261,36 @@ test "parameter state rejects later truncated entries without partial updates" {
 
     var in_stream = std.io.fixedBufferStream(&bytes);
     try std.testing.expectError(error.EndOfStream, readParameterState(Params, &set, &values, in_stream.reader()));
+    try std.testing.expectEqual(@as(?f64, 0.8), values.load(0));
+    try std.testing.expectEqual(@as(?f64, 0.6), values.load(1));
+}
+
+test "parameter state rejects normalized values outside range without partial updates" {
+    const Params = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+        mix: parameters.FloatParam = parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
+    };
+    const Set = parameters.ParameterSet(Params);
+    const Values = parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + 2 * (@sizeOf(u32) + @sizeOf(u64))]u8 = undefined;
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    const writer = out_stream.writer();
+
+    try std.testing.expect(values.store(0, 0.8));
+    try std.testing.expect(values.store(1, 0.6));
+
+    try writer.writeAll(magic);
+    try writer.writeInt(u16, version, .little);
+    try writer.writeInt(u16, 2, .little);
+    try writer.writeInt(u32, 0, .little);
+    try writer.writeInt(u64, @bitCast(@as(f64, 0.25)), .little);
+    try writer.writeInt(u32, 1, .little);
+    try writer.writeInt(u64, @bitCast(@as(f64, 1.5)), .little);
+
+    var in_stream = std.io.fixedBufferStream(&bytes);
+    try std.testing.expectError(error.ParameterStateOutsideNormalizedRange, readParameterState(Params, &set, &values, in_stream.reader()));
     try std.testing.expectEqual(@as(?f64, 0.8), values.load(0));
     try std.testing.expectEqual(@as(?f64, 0.6), values.load(1));
 }
