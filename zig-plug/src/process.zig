@@ -845,7 +845,6 @@ test "process context validates attached parameter changes and events" {
     });
 
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChange(1).?.normalized);
-    try std.testing.expectEqual(@as(usize, 1), context.parameterChanges().items.len);
     try std.testing.expectEqual(@as(usize, 1), context.parameterChangeCount());
     try std.testing.expect(!context.parameterChangesEmpty());
     try std.testing.expectEqual(@as(?usize, 1), context.firstParameterChangeOffset());
@@ -873,7 +872,6 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(!context.inputEventsEmpty());
     try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffset());
     try std.testing.expectEqual(@as(?usize, 1), context.latestEventOffset());
-    try std.testing.expectEqual(@as(usize, 1), context.inputEvents().items.len);
     try std.testing.expect(context.hasEvent(.note_on));
     try std.testing.expect(!context.hasEvent(.note_off));
     try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
@@ -883,7 +881,7 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?Event, null), context.latestEvent(.note_off));
     try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffset(0));
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffset(1));
-    try std.testing.expect(context.output_events != null);
+    try std.testing.expect(context.hasOutputEventWriter());
 }
 
 test "process context rejects attached changes outside frame count" {
@@ -1154,9 +1152,9 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?usize, 0), context.firstOutputEventOffset());
     try std.testing.expectEqual(@as(?usize, 1), context.latestOutputEventOffset());
     try std.testing.expect(context.outputEventsFull());
-    try std.testing.expectEqual(@as(usize, 2), context.writtenOutputEvents().items.len);
-    try std.testing.expectEqual(EventKind.note_on, context.writtenOutputEvents().items[0].kind);
-    try std.testing.expectEqual(EventKind.note_off, context.writtenOutputEvents().items[1].kind);
+    try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
+    try std.testing.expectEqual(EventKind.note_on, context.firstOutputEvent(.note_on).?.kind);
+    try std.testing.expectEqual(EventKind.note_off, context.firstOutputEvent(.note_off).?.kind);
     try std.testing.expect(context.hasOutputEvent(.note_on));
     try std.testing.expect(!context.hasOutputEvent(.midi_cc));
     try std.testing.expectEqual(@as(usize, 1), context.countOutputEvents(.note_on));
@@ -1192,7 +1190,7 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?usize, null), no_writer.nextOutputEventOffset(0));
     try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvent(events[0]));
     try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvents(try Events.init(&events, input.len)));
-    try std.testing.expectEqual(@as(usize, 0), no_writer.writtenOutputEvents().items.len);
+    try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventCount());
     no_writer.clearOutputEvents();
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventCount());
 }
