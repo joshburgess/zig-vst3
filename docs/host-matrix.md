@@ -9,7 +9,7 @@ Tier 3 host smoke tests are release gates. Record only tests that were run in a 
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | b8bd61a | `zig_vst3_mode_gain.vst3` | Partial Pass | Scanned in REAPER, inserted on a track, Mode parameter changes behavior; save/reload not recorded. |
 | Pending | Pending | Pending | Pending | Pending | Pending | `zig_vst3_voice_mix.vst3` | Pending | No real-host smoke test has been recorded yet. |
 | Pending | Pending | Pending | Pending | Pending | Pending | `zig_vst3_note_gate.vst3` | Pending | No real-host smoke test has been recorded yet. |
-| Pending | Pending | Pending | Pending | Pending | Pending | `zig_vst3_event_echo.vst3` | Pending | No real-host smoke test has been recorded yet. |
+| 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 907a279 | `zig_vst3_event_echo.vst3` | Partial Pass | Scanned in REAPER, inserted on a track, audio pass-through confirmed; event output and save/reload not recorded. |
 
 ## Minimum Smoke Test
 
@@ -23,7 +23,7 @@ Tier 3 host smoke tests are release gates. Record only tests that were run in a 
    - `zig_vst3_mode_gain.vst3`: switch Mode and confirm the gain mode changes.
    - `zig_vst3_voice_mix.vst3`: change Voices and confirm stepped parameter automation.
    - `zig_vst3_note_gate.vst3`: send note input and confirm the gate opens and closes.
-   - `zig_vst3_event_echo.vst3`: route event output and confirm input events are echoed.
+   - `zig_vst3_event_echo.vst3`: route event output and confirm input events are echoed. This is not an audio delay effect.
 6. Save and reload the session, then confirm parameter state and scan status are preserved.
 
 ## Recording Helper
