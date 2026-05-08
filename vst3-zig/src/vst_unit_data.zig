@@ -107,14 +107,22 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         fn getProgramName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
             const self = owner(ptr);
             clearString128Ptr(out);
-            if (@hasDecl(Config, "getProgramName")) return Config.getProgramName(self, list_id, program_index, out);
+            if (@hasDecl(Config, "getProgramName")) {
+                const result = Config.getProgramName(self, list_id, program_index, out);
+                if (result != types.kResultOk) clearString128Ptr(out);
+                return result;
+            }
             return types.kInvalidArgument;
         }
 
         fn getProgramInfo(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
             const self = owner(ptr);
             clearString128Ptr(out);
-            if (@hasDecl(Config, "getProgramInfo")) return Config.getProgramInfo(self, list_id, program_index, attribute_id, out);
+            if (@hasDecl(Config, "getProgramInfo")) {
+                const result = Config.getProgramInfo(self, list_id, program_index, attribute_id, out);
+                if (result != types.kResultOk) clearString128Ptr(out);
+                return result;
+            }
             return types.kInvalidArgument;
         }
 
@@ -127,7 +135,11 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         fn getProgramPitchName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, pitch: types.int16, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
             const self = owner(ptr);
             clearString128Ptr(out);
-            if (@hasDecl(Config, "getProgramPitchName")) return Config.getProgramPitchName(self, list_id, program_index, pitch, out);
+            if (@hasDecl(Config, "getProgramPitchName")) {
+                const result = Config.getProgramPitchName(self, list_id, program_index, pitch, out);
+                if (result != types.kResultOk) clearString128Ptr(out);
+                return result;
+            }
             return types.kInvalidArgument;
         }
 
@@ -149,7 +161,11 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         fn getUnitByBus(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, channel: types.int32, out: *vsttypes.UnitID) callconv(.C) types.tresult {
             const self = owner(ptr);
             out.* = ivstunits.kRootUnitId;
-            if (@hasDecl(Config, "getUnitByBus")) return Config.getUnitByBus(self, media_type, direction, bus_index, channel, out);
+            if (@hasDecl(Config, "getUnitByBus")) {
+                const result = Config.getUnitByBus(self, media_type, direction, bus_index, channel, out);
+                if (result != types.kResultOk) out.* = ivstunits.kRootUnitId;
+                return result;
+            }
             return types.kResultOk;
         }
 
@@ -408,7 +424,7 @@ test "unit info clears delegated failure outputs" {
             _ = self;
             _ = list_id;
             _ = program_index;
-            _ = out;
+            out[0] = 'x';
             return types.kInvalidArgument;
         }
 
@@ -417,7 +433,7 @@ test "unit info clears delegated failure outputs" {
             _ = list_id;
             _ = program_index;
             _ = attribute_id;
-            _ = out;
+            out[0] = 'x';
             return types.kInvalidArgument;
         }
 
@@ -426,7 +442,7 @@ test "unit info clears delegated failure outputs" {
             _ = list_id;
             _ = program_index;
             _ = pitch;
-            _ = out;
+            out[0] = 'x';
             return types.kInvalidArgument;
         }
 
@@ -436,7 +452,7 @@ test "unit info clears delegated failure outputs" {
             _ = direction;
             _ = bus_index;
             _ = channel;
-            _ = out;
+            out.* = 99;
             return types.kInvalidArgument;
         }
     });
