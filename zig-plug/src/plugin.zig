@@ -73,6 +73,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
             }
         }
 
+        pub fn parameterSet(self: *const Self) *const Spec.ParameterSet {
+            return &self.spec.parameter_set;
+        }
+
+        pub fn parameterValues(self: *Self) *Spec.ParameterValues {
+            return &self.spec.values;
+        }
+
         pub fn process(self: *Self, context: *process_api.ProcessContext(f32)) void {
             if (Spec.has_process) {
                 self.plugin.process(context);
@@ -248,6 +256,7 @@ test "plugin instance drives declared lifecycle hooks" {
     try std.testing.expect(instance.plugin.deinitialized);
     try std.testing.expectEqual(@as(f32, 0.125), output[0]);
     try std.testing.expectEqual(@as(f32, 0.25), output[1]);
+    try std.testing.expectEqual(@as(?f64, 0.5), instance.parameterValues().loadById(instance.parameterSet(), 0));
 }
 
 test "plugin instance accepts metadata-only plugins" {
