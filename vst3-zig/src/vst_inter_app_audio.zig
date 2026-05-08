@@ -54,7 +54,14 @@ pub fn InterAppAudioHost(comptime Config: type) type {
             const self = owner(ptr);
             out_rect.* = self.screen;
             out_scale.* = self.scale_factor;
-            if (@hasDecl(Config, "getScreenSize")) return Config.getScreenSize(self, out_rect, out_scale);
+            if (@hasDecl(Config, "getScreenSize")) {
+                const result = Config.getScreenSize(self, out_rect, out_scale);
+                if (result != types.kResultOk) {
+                    out_rect.* = self.screen;
+                    out_scale.* = self.scale_factor;
+                }
+                return result;
+            }
             return types.kResultOk;
         }
 
@@ -82,8 +89,12 @@ pub fn InterAppAudioHost(comptime Config: type) type {
 
         fn getHostIcon(ptr: *anyopaque, out_icon: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
-            if (@hasDecl(Config, "getHostIcon")) return Config.getHostIcon(self, out_icon);
             out_icon.* = self.host_icon;
+            if (@hasDecl(Config, "getHostIcon")) {
+                const result = Config.getHostIcon(self, out_icon);
+                if (result != types.kResultOk) out_icon.* = self.host_icon;
+                return result;
+            }
             return if (self.host_icon == null) types.kResultFalse else types.kResultOk;
         }
 
@@ -315,6 +326,38 @@ test "inter-app audio host delegates hooks and supports query interface" {
     try std.testing.expect(queried != null);
     const out: *ivstinterappaudio.IInterAppAudioHost = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), out.vtable.release(out));
+}
+
+test "inter-app audio host resets delegated failure outputs" {
+    const Host = InterAppAudioHost(struct {
+        pub fn getScreenSize(self: anytype, out_rect: *iplugview.ViewRect, out_scale: *f32) types.tresult {
+            _ = self;
+            out_rect.* = .{ .left = 10, .top = 20, .right = 30, .bottom = 40 };
+            out_scale.* = 9.0;
+            return types.kResultFalse;
+        }
+
+        pub fn getHostIcon(self: anytype, out_icon: *?*anyopaque) types.tresult {
+            _ = self;
+            out_icon.* = @ptrFromInt(0x2000);
+            return types.kResultFalse;
+        }
+    });
+    var host = Host{ .screen = .{ .left = 1, .top = 2, .right = 101, .bottom = 202 }, .scale_factor = 2.0 };
+    const icon: *anyopaque = @ptrFromInt(0x1000);
+    host.host_icon = icon;
+    const iface = host.asInterface();
+
+    var screen = iplugview.ViewRect{};
+    var scale: f32 = 0;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getScreenSize(iface, &screen, &scale));
+    try std.testing.expectEqual(@as(types.int32, 1), screen.left);
+    try std.testing.expectEqual(@as(types.int32, 202), screen.bottom);
+    try std.testing.expectEqual(@as(f32, 2.0), scale);
+
+    var out_icon: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getHostIcon(iface, &out_icon));
+    try std.testing.expectEqual(icon, out_icon.?);
 }
 
 test "inter-app audio connection notification stores state" {
