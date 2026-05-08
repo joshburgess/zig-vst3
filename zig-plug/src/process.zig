@@ -453,8 +453,24 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.latest(id);
         }
 
+        pub fn firstParameterChange(self: @This(), id: u32) ?ParameterChange {
+            return self.parameter_changes.first(id);
+        }
+
+        pub fn countParameterChanges(self: @This(), id: u32) usize {
+            return self.parameter_changes.count(id);
+        }
+
+        pub fn hasParameterChange(self: @This(), id: u32) bool {
+            return self.parameter_changes.has(id);
+        }
+
         pub fn latestParameterNormalized(self: @This(), id: u32) ?f64 {
             return self.parameter_changes.latestNormalized(id);
+        }
+
+        pub fn firstParameterNormalized(self: @This(), id: u32) ?f64 {
+            return self.parameter_changes.firstNormalized(id);
         }
 
         pub fn latestParameterNormalizedOr(self: @This(), id: u32, default: f64) f64 {
@@ -647,7 +663,12 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(usize, 1), context.parameterChanges().items.len);
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChange(1).?.normalized);
+    try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterChange(1).?.normalized);
+    try std.testing.expectEqual(@as(usize, 1), context.countParameterChanges(1));
+    try std.testing.expect(context.hasParameterChange(1));
+    try std.testing.expect(!context.hasParameterChange(2));
     try std.testing.expectEqual(@as(?f64, 0.5), context.latestParameterNormalized(1));
+    try std.testing.expectEqual(@as(?f64, 0.5), context.firstParameterNormalized(1));
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterNormalizedOr(1, 0.0));
     try std.testing.expectEqual(@as(f64, 0.25), context.latestParameterNormalizedOr(2, 0.25));
     try std.testing.expectEqual(@as(f64, 0.5), context.parameterNormalizedAtOrBeforeOr(1, 1, 0.0));
