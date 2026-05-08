@@ -7,6 +7,84 @@ const ivstattributes = @import("pluginterfaces/vst/ivstattributes.zig");
 const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
+pub fn ConnectionPoint(comptime Config: type) type {
+    return extern struct {
+        const Self = @This();
+
+        iface: ivstmessage.IConnectionPoint = .{ .vtable = &vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        add_ref_count: types.uint32 = 0,
+        release_count: types.uint32 = 0,
+        connect_count: types.uint32 = 0,
+        disconnect_count: types.uint32 = 0,
+        notify_count: types.uint32 = 0,
+        connected_peer: ?*ivstmessage.IConnectionPoint = null,
+        last_message: ?*ivstmessage.IMessage = null,
+
+        pub fn asInterface(self: *Self) *ivstmessage.IConnectionPoint {
+            return &self.iface;
+        }
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &ivstmessage.iconnection_point_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = owner(ptr);
+            self.add_ref_count += 1;
+            return self.ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = owner(ptr);
+            self.release_count += 1;
+            return funknown.decrementRefCount(&self.ref_count, "IConnectionPoint");
+        }
+
+        fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.connect_count += 1;
+            self.connected_peer = peer;
+            if (@hasDecl(Config, "connect")) return Config.connect(self, peer);
+            return types.kResultOk;
+        }
+
+        fn disconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.disconnect_count += 1;
+            if (self.connected_peer == peer) self.connected_peer = null;
+            if (@hasDecl(Config, "disconnect")) return Config.disconnect(self, peer);
+            return types.kResultOk;
+        }
+
+        fn notify(ptr: *anyopaque, message: ?*ivstmessage.IMessage) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.notify_count += 1;
+            self.last_message = message;
+            if (@hasDecl(Config, "notify")) return Config.notify(self, message);
+            return types.kResultOk;
+        }
+
+        const vtable = ivstmessage.IConnectionPointVTable{
+            .queryInterface = query,
+            .addRef = addRef,
+            .release = release,
+            .connect = connect,
+            .disconnect = disconnect,
+            .notify = notify,
+        };
+    };
+}
+
 pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usize, comptime max_binary_bytes: usize) type {
     return extern struct {
         const Self = @This();
@@ -287,16 +365,14 @@ pub fn Message(comptime max_message_id_bytes: usize, comptime max_attributes: us
         }
 
         fn getMessageID(ptr: *anyopaque) callconv(.C) types.FIDString {
-            return &owner(ptr).message_id;
+            return @ptrCast(&owner(ptr).message_id);
         }
 
         fn setMessageID(ptr: *anyopaque, value: types.FIDString) callconv(.C) void {
             const self = owner(ptr);
             @memset(&self.message_id, 0);
-            if (value == null) return;
-            const source: [*:0]const types.char8 = @ptrCast(value.?);
-            const len = @min(std.mem.len(source), max_message_id_bytes - 1);
-            @memcpy(self.message_id[0..len], source[0..len]);
+            const len = @min(std.mem.len(value), max_message_id_bytes - 1);
+            @memcpy(self.message_id[0..len], value[0..len]);
         }
 
         fn getAttributes(ptr: *anyopaque) callconv(.C) ?*ivstattributes.IAttributeList {
@@ -354,7 +430,7 @@ test "message stores id and exposes attributes" {
     const iface = message.asInterface();
 
     iface.vtable.setMessageID(iface, "parameter-change");
-    try std.testing.expectEqualStrings("parameter-change", std.mem.span(iface.vtable.getMessageID(iface).?));
+    try std.testing.expectEqualStrings("parameter-change", std.mem.span(iface.vtable.getMessageID(iface)));
 
     const attrs = iface.vtable.getAttributes(iface).?;
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.setInt(attrs, "id", 42));
