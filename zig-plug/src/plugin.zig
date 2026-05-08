@@ -203,6 +203,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.parameter_set.fieldDefaultNormalized(field_name);
         }
 
+        pub fn formatParameterFieldPlain(self: *const Self, comptime field_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
+            return self.parameterView().formatFieldPlain(field_name, normalized, buffer);
+        }
+
+        pub fn parseParameterFieldPlain(self: *const Self, comptime field_name: []const u8, text: []const u8) !f64 {
+            return self.parameterView().parseFieldPlain(field_name, text);
+        }
+
+        pub fn parameterFieldPlainFromNormalized(self: *const Self, comptime field_name: []const u8, normalized: f64) parameters.FieldPlainType(Plugin.Params, field_name) {
+            return self.parameterView().fieldPlainFromNormalized(field_name, normalized);
+        }
+
+        pub fn parameterFieldNormalizedFromPlain(self: *const Self, comptime field_name: []const u8, plain: parameters.FieldPlainType(Plugin.Params, field_name)) f64 {
+            return self.parameterView().fieldNormalizedFromPlain(field_name, plain);
+        }
+
         pub fn loadParameterNormalized(self: *const Self, comptime field_name: []const u8) f64 {
             return self.parameterView().loadNormalized(field_name);
         }
@@ -614,6 +630,10 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(u32, 2), instance.parameterFieldId("mode"));
     try std.testing.expectEqualStrings("Gain", instance.parameterFieldName("gain"));
     try std.testing.expectEqual(@as(f64, 0.0), instance.parameterFieldDefaultNormalized("mode"));
+    try std.testing.expectEqualStrings("mute", try instance.formatParameterFieldPlain("mode", 1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterFieldPlain("mode", "mute"));
+    try std.testing.expectEqual(Mode.mute, instance.parameterFieldPlainFromNormalized("mode", 1.0));
+    try std.testing.expectEqual(@as(f64, 1.0), instance.parameterFieldNormalizedFromPlain("mode", .mute));
 
     try std.testing.expect(instance.storeParameter("gain", 6.0));
     try std.testing.expect(instance.storeParameter("bypass", true));
