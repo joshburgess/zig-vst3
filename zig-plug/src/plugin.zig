@@ -117,6 +117,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.unitById(id);
         }
 
+        pub fn hasUnit(self: *const Self, id: i32) bool {
+            return self.spec.units.hasUnit(id);
+        }
+
         pub fn programListCount(self: *const Self) usize {
             return self.spec.units.programListCount();
         }
@@ -129,6 +133,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programListById(id);
         }
 
+        pub fn hasProgramList(self: *const Self, id: i32) bool {
+            return self.spec.units.hasProgramList(id);
+        }
+
+        pub fn programListForUnit(self: *const Self, unit_id: i32) ?units_api.ProgramList {
+            return self.spec.units.programListForUnit(unit_id);
+        }
+
         pub fn programCount(self: *const Self, list_id: i32) ?usize {
             return self.spec.units.programCount(list_id);
         }
@@ -137,8 +149,16 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programName(list_id, program_index);
         }
 
+        pub fn programIndexOfName(self: *const Self, list_id: i32, name: []const u8) ?usize {
+            return self.spec.units.programIndexOfName(list_id, name);
+        }
+
         pub fn programInfo(self: *const Self, list_id: i32, program_index: usize, key: []const u8) ?[]const u8 {
             return self.spec.units.programInfo(list_id, program_index, key);
+        }
+
+        pub fn programInfoByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) ?[]const u8 {
+            return self.spec.units.programInfoByName(list_id, program_name, key);
         }
 
         pub fn parameterView(self: *const Self) parameters.ParameterView(Plugin.Params) {
@@ -591,11 +611,18 @@ test "plugin instance exposes custom unit and program metadata" {
 
     try std.testing.expectEqual(@as(usize, 2), instance.unitCount());
     try std.testing.expectEqualStrings("Voice", instance.unitById(1).?.name);
+    try std.testing.expect(instance.hasUnit(1));
+    try std.testing.expect(!instance.hasUnit(99));
     try std.testing.expectEqual(@as(usize, 1), instance.programListCount());
     try std.testing.expectEqualStrings("Voice Programs", instance.programListById(7).?.name);
+    try std.testing.expect(instance.hasProgramList(7));
+    try std.testing.expect(!instance.hasProgramList(99));
+    try std.testing.expectEqualStrings("Voice Programs", instance.programListForUnit(1).?.name);
     try std.testing.expectEqual(@as(?usize, 2), instance.programCount(7));
     try std.testing.expectEqualStrings("Lead", instance.programName(7, 1).?);
+    try std.testing.expectEqual(@as(?usize, 1), instance.programIndexOfName(7, "Lead"));
     try std.testing.expectEqualStrings("Clean", instance.programInfo(7, 0, "category").?);
+    try std.testing.expectEqualStrings("Clean", instance.programInfoByName(7, "Init", "category").?);
 }
 
 test "plugin spec detects lifecycle declarations" {
