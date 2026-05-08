@@ -22,15 +22,20 @@ pub fn EventList(comptime max_events: usize) type {
             return &self.iface;
         }
 
+        fn safeCount(self: *const Self) usize {
+            if (self.count <= 0) return 0;
+            return @min(@as(usize, @intCast(self.count)), max_events);
+        }
+
         pub fn append(self: *Self, event: ivstevents.Event) types.tresult {
-            if (self.count >= max_events) return types.kResultFalse;
+            if (self.count < 0 or self.count >= max_events) return types.kResultFalse;
             self.events[@intCast(self.count)] = event;
             self.count += 1;
             return types.kResultOk;
         }
 
         pub fn items(self: *const Self) []const ivstevents.Event {
-            return self.events[0..@intCast(self.count)];
+            return self.events[0..self.safeCount()];
         }
 
         fn owner(ptr: *anyopaque) *Self {
@@ -55,7 +60,7 @@ pub fn EventList(comptime max_events: usize) type {
         }
 
         fn getEventCount(ptr: *anyopaque) callconv(.C) types.int32 {
-            return owner(ptr).count;
+            return @intCast(owner(ptr).safeCount());
         }
 
         fn getEvent(ptr: *anyopaque, index: types.int32, event: *ivstevents.Event) callconv(.C) types.tresult {
@@ -68,7 +73,7 @@ pub fn EventList(comptime max_events: usize) type {
                 event.* = .{};
                 return types.kResultFalse;
             }
-            if (index >= self.count) {
+            if (@as(usize, @intCast(index)) >= self.safeCount()) {
                 event.* = .{};
                 return types.kInvalidArgument;
             }
@@ -141,4 +146,22 @@ test "event list enforces bounds and supports query interface" {
     try std.testing.expect(queried != null);
     const queried_events: *ivstevents.IEventList = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_events.vtable.release(queried_events));
+}
+
+test "event list clamps corrupted counts" {
+    const List = EventList(1);
+    var list = List{};
+    const iface = list.asInterface();
+    var event = ivstevents.Event{ .sampleOffset = 99 };
+
+    list.count = -1;
+    try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getEventCount(iface));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addEvent(iface, &event));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getEvent(iface, 0, &event));
+    try std.testing.expectEqual(@as(types.int32, 0), event.sampleOffset);
+
+    list.count = 2;
+    try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getEventCount(iface));
+    try std.testing.expectEqual(@as(usize, 1), list.items().len);
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addEvent(iface, &event));
 }

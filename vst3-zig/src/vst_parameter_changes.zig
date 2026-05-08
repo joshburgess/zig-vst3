@@ -31,8 +31,13 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
             return &self.iface;
         }
 
+        fn safePointCount(self: *const Self) usize {
+            if (self.point_count <= 0) return 0;
+            return @min(@as(usize, @intCast(self.point_count)), max_points);
+        }
+
         pub fn appendPoint(self: *Self, sample_offset: types.int32, value: vsttypes.ParamValue) types.tresult {
-            if (self.point_count >= max_points) return types.kResultFalse;
+            if (self.point_count < 0 or self.point_count >= max_points) return types.kResultFalse;
             self.points[@intCast(self.point_count)] = .{ .sample_offset = sample_offset, .value = value };
             self.point_count += 1;
             return types.kResultOk;
@@ -64,13 +69,13 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
         }
 
         fn getPointCount(ptr: *anyopaque) callconv(.C) types.int32 {
-            return owner(ptr).point_count;
+            return @intCast(owner(ptr).safePointCount());
         }
 
         fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.C) types.tresult {
             if (index < 0) return types.kInvalidArgument;
             const self = owner(ptr);
-            if (index >= self.point_count) return types.kInvalidArgument;
+            if (@as(usize, @intCast(index)) >= self.safePointCount()) return types.kInvalidArgument;
             const point = self.points[@intCast(index)];
             sample_offset.* = point.sample_offset;
             value.* = point.value;
@@ -79,7 +84,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
 
         fn addPoint(ptr: *anyopaque, sample_offset: types.int32, value: vsttypes.ParamValue, index: *types.int32) callconv(.C) types.tresult {
             const self = owner(ptr);
-            if (self.point_count >= max_points) {
+            if (self.point_count < 0 or self.point_count >= max_points) {
                 index.* = -1;
                 return types.kResultFalse;
             }
@@ -115,8 +120,13 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
             return &self.iface;
         }
 
+        fn safeQueueCount(self: *const Self) usize {
+            if (self.queue_count <= 0) return 0;
+            return @min(@as(usize, @intCast(self.queue_count)), max_queues);
+        }
+
         pub fn addQueue(self: *Self, id: vsttypes.ParamID) ?*Queue {
-            if (self.queue_count >= max_queues) return null;
+            if (self.queue_count < 0 or self.queue_count >= max_queues) return null;
             const index: usize = @intCast(self.queue_count);
             self.queues[index] = Queue.init(id);
             self.queue_count += 1;
@@ -124,7 +134,7 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
         }
 
         pub fn findQueue(self: *Self, id: vsttypes.ParamID) ?*Queue {
-            for (self.queues[0..@intCast(self.queue_count)]) |*queue| {
+            for (self.queues[0..self.safeQueueCount()]) |*queue| {
                 if (queue.id == id) return queue;
             }
             return null;
@@ -152,19 +162,19 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
         }
 
         fn getParameterCount(ptr: *anyopaque) callconv(.C) types.int32 {
-            return owner(ptr).queue_count;
+            return @intCast(owner(ptr).safeQueueCount());
         }
 
         fn getParameterData(ptr: *anyopaque, index: types.int32) callconv(.C) ?*ivstparameterchanges.IParamValueQueue {
             if (index < 0) return null;
             const self = owner(ptr);
-            if (index >= self.queue_count) return null;
+            if (@as(usize, @intCast(index)) >= self.safeQueueCount()) return null;
             return self.queues[@intCast(index)].asInterface();
         }
 
         fn addParameterData(ptr: *anyopaque, id: *const vsttypes.ParamID, index: *types.int32) callconv(.C) ?*ivstparameterchanges.IParamValueQueue {
             const self = owner(ptr);
-            for (self.queues[0..@intCast(self.queue_count)], 0..) |*queue, queue_index| {
+            for (self.queues[0..self.safeQueueCount()], 0..) |*queue, queue_index| {
                 if (queue.id == id.*) {
                     index.* = @intCast(queue_index);
                     return queue.asInterface();
@@ -245,4 +255,38 @@ test "parameter changes add parameter data and support query interface" {
     try std.testing.expect(queried != null);
     const queried_changes: *ivstparameterchanges.IParameterChanges = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_changes.vtable.release(queried_changes));
+}
+
+test "parameter changes clamp corrupted counts" {
+    const Changes = ParameterChanges(1, 1);
+    var changes = Changes{};
+    const iface = changes.asInterface();
+    var id: vsttypes.ParamID = 9;
+    var index: types.int32 = 42;
+
+    changes.queue_count = -1;
+    try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getParameterCount(iface));
+    try std.testing.expect(iface.vtable.getParameterData(iface, 0) == null);
+    try std.testing.expect(iface.vtable.addParameterData(iface, &id, &index) == null);
+    try std.testing.expectEqual(@as(types.int32, -1), index);
+
+    changes.queue_count = 2;
+    try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getParameterCount(iface));
+    try std.testing.expect(iface.vtable.addParameterData(iface, &id, &index) == null);
+
+    var queue = ParamValueQueue(1).init(7);
+    const queue_iface = queue.asInterface();
+    var sample_offset: types.int32 = 99;
+    var value: vsttypes.ParamValue = 99;
+    var point_index: types.int32 = 42;
+
+    queue.point_count = -1;
+    try std.testing.expectEqual(@as(types.int32, 0), queue_iface.vtable.getPointCount(queue_iface));
+    try std.testing.expectEqual(types.kInvalidArgument, queue_iface.vtable.getPoint(queue_iface, 0, &sample_offset, &value));
+    try std.testing.expectEqual(types.kResultFalse, queue_iface.vtable.addPoint(queue_iface, 0, 0.5, &point_index));
+    try std.testing.expectEqual(@as(types.int32, -1), point_index);
+
+    queue.point_count = 2;
+    try std.testing.expectEqual(@as(types.int32, 1), queue_iface.vtable.getPointCount(queue_iface));
+    try std.testing.expectEqual(types.kResultFalse, queue_iface.vtable.addPoint(queue_iface, 0, 0.5, &point_index));
 }
