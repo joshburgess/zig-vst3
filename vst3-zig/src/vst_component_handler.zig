@@ -370,6 +370,193 @@ pub fn ComponentHandler3(comptime Config: type) type {
     };
 }
 
+pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
+    return extern struct {
+        const Self = @This();
+
+        handler: ivsteditcontroller.IComponentHandler = .{ .vtable = &handler_vtable },
+        bus_activation: ivsteditcontroller.IComponentHandlerBusActivation = .{ .vtable = &bus_vtable },
+        system_time: ivsteditcontroller.IComponentHandlerSystemTime = .{ .vtable = &time_vtable },
+        handler_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        bus_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        time_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        bus_activation_count: types.uint32 = 0,
+        system_time_count: types.uint32 = 0,
+        bus_add_ref_count: types.uint32 = 0,
+        time_add_ref_count: types.uint32 = 0,
+        bus_release_count: types.uint32 = 0,
+        time_release_count: types.uint32 = 0,
+        last_media_type: vsttypes.MediaType = 0,
+        last_direction: vsttypes.BusDirection = 0,
+        last_bus_index: types.int32 = 0,
+        last_bus_state: types.TBool = 0,
+        last_system_time: types.int64 = 0,
+
+        pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
+            return &self.handler;
+        }
+
+        pub fn asBusActivation(self: *Self) *ivsteditcontroller.IComponentHandlerBusActivation {
+            return &self.bus_activation;
+        }
+
+        pub fn asSystemTime(self: *Self) *ivsteditcontroller.IComponentHandlerSystemTime {
+            return &self.system_time;
+        }
+
+        fn ownerFromHandler(ptr: *anyopaque) *Self {
+            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("handler", iface);
+        }
+
+        fn ownerFromBus(ptr: *anyopaque) *Self {
+            const iface: *ivsteditcontroller.IComponentHandlerBusActivation = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("bus_activation", iface);
+        }
+
+        fn ownerFromTime(ptr: *anyopaque) *Self {
+            const iface: *ivsteditcontroller.IComponentHandlerSystemTime = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("system_time", iface);
+        }
+
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = &self.handler },
+                .{ .iid = &ivsteditcontroller.icomponent_handler_iid, .ptr = &self.handler },
+                .{ .iid = &ivsteditcontroller.icomponent_handler_bus_activation_iid, .ptr = &self.bus_activation },
+                .{ .iid = &ivsteditcontroller.icomponent_handler_system_time_iid, .ptr = &self.system_time },
+            };
+            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.icomponent_handler_bus_activation_iid)) {
+                return interface_map.queryWithAddRef(&self.bus_activation, addRefFromBus, &entries, requested_iid, out);
+            }
+            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.icomponent_handler_system_time_iid)) {
+                return interface_map.queryWithAddRef(&self.system_time, addRefFromTime, &entries, requested_iid, out);
+            }
+            return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
+        }
+
+        fn queryFromBus(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromBus(ptr);
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = &self.bus_activation },
+                .{ .iid = &ivsteditcontroller.icomponent_handler_bus_activation_iid, .ptr = &self.bus_activation },
+            };
+            return interface_map.queryWithAddRef(&self.bus_activation, addRefFromBus, &entries, requested_iid, out);
+        }
+
+        fn queryFromTime(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromTime(ptr);
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = &self.system_time },
+                .{ .iid = &ivsteditcontroller.icomponent_handler_system_time_iid, .ptr = &self.system_time },
+            };
+            return interface_map.queryWithAddRef(&self.system_time, addRefFromTime, &entries, requested_iid, out);
+        }
+
+        fn addRefFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn releaseFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "IComponentHandler");
+        }
+
+        fn addRefFromBus(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromBus(ptr);
+            self.bus_add_ref_count += 1;
+            return self.bus_ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn releaseFromBus(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromBus(ptr);
+            self.bus_release_count += 1;
+            return funknown.decrementRefCount(&self.bus_ref_count, "IComponentHandlerBusActivation");
+        }
+
+        fn addRefFromTime(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromTime(ptr);
+            self.time_add_ref_count += 1;
+            return self.time_ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn releaseFromTime(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromTime(ptr);
+            self.time_release_count += 1;
+            return funknown.decrementRefCount(&self.time_ref_count, "IComponentHandlerSystemTime");
+        }
+
+        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
+            return types.kResultOk;
+        }
+
+        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
+            return types.kResultOk;
+        }
+
+        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
+            return types.kResultOk;
+        }
+
+        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
+            return types.kResultOk;
+        }
+
+        fn requestBusActivation(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, state: types.TBool) callconv(.C) types.tresult {
+            const self = ownerFromBus(ptr);
+            self.bus_activation_count += 1;
+            self.last_media_type = media_type;
+            self.last_direction = direction;
+            self.last_bus_index = bus_index;
+            self.last_bus_state = state;
+            if (@hasDecl(Config, "requestBusActivation")) return Config.requestBusActivation(self, media_type, direction, bus_index, state);
+            return types.kResultOk;
+        }
+
+        fn getSystemTime(ptr: *anyopaque, out: *types.int64) callconv(.C) types.tresult {
+            const self = ownerFromTime(ptr);
+            self.system_time_count += 1;
+            const value = if (@hasDecl(Config, "system_time")) Config.system_time else 0;
+            self.last_system_time = value;
+            out.* = value;
+            if (@hasDecl(Config, "getSystemTime")) return Config.getSystemTime(self, out);
+            return types.kResultOk;
+        }
+
+        const handler_vtable = ivsteditcontroller.IComponentHandlerVTable{
+            .queryInterface = queryFromHandler,
+            .addRef = addRefFromHandler,
+            .release = releaseFromHandler,
+            .beginEdit = beginEdit,
+            .performEdit = performEdit,
+            .endEdit = endEdit,
+            .restartComponent = restartComponent,
+        };
+
+        const bus_vtable = ivsteditcontroller.IComponentHandlerBusActivationVTable{
+            .queryInterface = queryFromBus,
+            .addRef = addRefFromBus,
+            .release = releaseFromBus,
+            .requestBusActivation = requestBusActivation,
+        };
+
+        const time_vtable = ivsteditcontroller.IComponentHandlerSystemTimeVTable{
+            .queryInterface = queryFromTime,
+            .addRef = addRefFromTime,
+            .release = releaseFromTime,
+            .getSystemTime = getSystemTime,
+        };
+    };
+}
+
 test "component handler records automation callbacks" {
     const Handler = ComponentHandler(struct {});
     var handler = Handler{};
@@ -419,4 +606,35 @@ test "component handler 3 exposes context menu extension" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.context_menu_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler3.vtable.release(handler3));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.handler3_release_count);
+}
+
+test "component handler exposes bus activation and system time extensions" {
+    const Handler = ComponentHandlerBusAndTime(struct {
+        pub const system_time: types.int64 = 12345;
+    });
+    var handler = Handler{};
+    var bus_out: ?*anyopaque = null;
+    var time_out: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.queryInterface(handler.asHandler(), &ivsteditcontroller.icomponent_handler_bus_activation_iid, &bus_out));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.queryInterface(handler.asHandler(), &ivsteditcontroller.icomponent_handler_system_time_iid, &time_out));
+    try std.testing.expect(bus_out != null);
+    try std.testing.expect(time_out != null);
+
+    const bus: *ivsteditcontroller.IComponentHandlerBusActivation = @ptrCast(@alignCast(bus_out.?));
+    const time: *ivsteditcontroller.IComponentHandlerSystemTime = @ptrCast(@alignCast(time_out.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.bus_add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.time_add_ref_count);
+
+    try std.testing.expectEqual(types.kResultOk, bus.vtable.requestBusActivation(bus, 1, 0, 2, 1));
+    var value: types.int64 = 0;
+    try std.testing.expectEqual(types.kResultOk, time.vtable.getSystemTime(time, &value));
+    try std.testing.expectEqual(@as(types.int64, 12345), value);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.bus_activation_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.system_time_count);
+
+    try std.testing.expectEqual(@as(types.uint32, 1), bus.vtable.release(bus));
+    try std.testing.expectEqual(@as(types.uint32, 1), time.vtable.release(time));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.bus_release_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.time_release_count);
 }

@@ -261,137 +261,10 @@ test "gain controller stores component handler 3 context menu callback" {
 
 test "gain controller stores bus activation and system time handlers" {
     const std = @import("std");
-    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 
-    const HostHandler = extern struct {
-        const Self = @This();
-
-        handler: ivsteditcontroller.IComponentHandler = .{ .vtable = &handler_vtable },
-        bus_activation: ivsteditcontroller.IComponentHandlerBusActivation = .{ .vtable = &bus_vtable },
-        system_time: ivsteditcontroller.IComponentHandlerSystemTime = .{ .vtable = &time_vtable },
-        bus_activation_count: types.uint32 = 0,
-        system_time_count: types.uint32 = 0,
-        bus_release_count: types.uint32 = 0,
-        time_release_count: types.uint32 = 0,
-
-        const handler_vtable = ivsteditcontroller.IComponentHandlerVTable{
-            .queryInterface = queryFromHandler,
-            .addRef = addRefFromHandler,
-            .release = releaseFromHandler,
-            .beginEdit = beginEditCallback,
-            .performEdit = performEditCallback,
-            .endEdit = endEditCallback,
-            .restartComponent = restartComponent,
-        };
-
-        const bus_vtable = ivsteditcontroller.IComponentHandlerBusActivationVTable{
-            .queryInterface = queryFromBus,
-            .addRef = addRefFromBus,
-            .release = releaseFromBus,
-            .requestBusActivation = requestBusActivationCallback,
-        };
-
-        const time_vtable = ivsteditcontroller.IComponentHandlerSystemTimeVTable{
-            .queryInterface = queryFromTime,
-            .addRef = addRefFromTime,
-            .release = releaseFromTime,
-            .getSystemTime = getSystemTimeCallback,
-        };
-
-        fn ownerFromHandler(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler", iface);
-        }
-
-        fn ownerFromBus(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandlerBusActivation = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("bus_activation", iface);
-        }
-
-        fn ownerFromTime(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandlerSystemTime = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("system_time", iface);
-        }
-
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            const self = ownerFromHandler(ptr);
-            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.icomponent_handler_bus_activation_iid)) {
-                _ = self.bus_activation.vtable.addRef(&self.bus_activation);
-                out.* = &self.bus_activation;
-                return types.kResultOk;
-            }
-            if (std.mem.eql(u8, requested_iid, &ivsteditcontroller.icomponent_handler_system_time_iid)) {
-                _ = self.system_time.vtable.addRef(&self.system_time);
-                out.* = &self.system_time;
-                return types.kResultOk;
-            }
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn queryFromBus(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn queryFromTime(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn addRefFromHandler(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn releaseFromHandler(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn addRefFromBus(_: *anyopaque) callconv(.C) types.uint32 {
-            return 2;
-        }
-
-        fn releaseFromBus(ptr: *anyopaque) callconv(.C) types.uint32 {
-            ownerFromBus(ptr).bus_release_count += 1;
-            return 1;
-        }
-
-        fn addRefFromTime(_: *anyopaque) callconv(.C) types.uint32 {
-            return 2;
-        }
-
-        fn releaseFromTime(ptr: *anyopaque) callconv(.C) types.uint32 {
-            ownerFromTime(ptr).time_release_count += 1;
-            return 1;
-        }
-
-        fn beginEditCallback(_: *anyopaque, _: vsttypes.ParamID) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn performEditCallback(_: *anyopaque, _: vsttypes.ParamID, _: vsttypes.ParamValue) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn endEditCallback(_: *anyopaque, _: vsttypes.ParamID) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn restartComponent(_: *anyopaque, _: types.int32) callconv(.C) types.tresult {
-            return types.kResultOk;
-        }
-
-        fn requestBusActivationCallback(ptr: *anyopaque, _: vsttypes.MediaType, _: vsttypes.BusDirection, _: types.int32, _: types.TBool) callconv(.C) types.tresult {
-            ownerFromBus(ptr).bus_activation_count += 1;
-            return types.kResultOk;
-        }
-
-        fn getSystemTimeCallback(ptr: *anyopaque, out: *types.int64) callconv(.C) types.tresult {
-            ownerFromTime(ptr).system_time_count += 1;
-            out.* = 12345;
-            return types.kResultOk;
-        }
-    };
+    const HostHandler = vst_component_handler.ComponentHandlerBusAndTime(struct {
+        pub const system_time: types.int64 = 12345;
+    });
 
     var controller_out: ?*anyopaque = null;
     const ivstedit = @import("pluginterfaces/vst/ivsteditcontroller.zig");
@@ -405,7 +278,7 @@ test "gain controller stores bus activation and system time handlers" {
     try std.testing.expectEqual(@as(types.int64, 0), time_value);
 
     var handler = HostHandler{};
-    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, &handler.handler));
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
     try std.testing.expectEqual(
         types.kResultOk,
         requestBusActivation(
