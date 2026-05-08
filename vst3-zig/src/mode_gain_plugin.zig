@@ -44,5 +44,5 @@ test "mode gain plugin root exposes zig-plug metadata" {
     try std.testing.expectEqualStrings("zig-vst3", mode_gain_spec.Spec.vendor);
     try std.testing.expectEqual(@as(usize, 1), mode_gain_spec.Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 0), mode_gain_spec.mode_param_index);
-    try std.testing.expectEqual(@as(?f64, 0.0), spec.values.load(mode_gain_spec.mode_param_id));
+    try std.testing.expectEqual(@as(f64, 0.0), spec.values.view(&mode_gain_spec.parameter_set).loadNormalized("mode"));
 }
