@@ -127,6 +127,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().isList(index);
         }
 
+        pub fn formatParameterPlainIndex(self: *const Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
+            return self.parameterView().formatPlainIndex(index, normalized, buffer);
+        }
+
+        pub fn parseParameterPlainIndex(self: *const Self, index: usize, text: []const u8) !f64 {
+            return self.parameterView().parsePlainIndex(index, text);
+        }
+
+        pub fn parameterPlainFromNormalizedIndex(self: *const Self, index: usize, normalized: f64) ?f64 {
+            return self.parameterView().plainFromNormalizedIndex(index, normalized);
+        }
+
+        pub fn parameterNormalizedFromPlainIndex(self: *const Self, index: usize, plain: f64) ?f64 {
+            return self.parameterView().normalizedFromPlainIndex(index, plain);
+        }
+
         pub fn parameterIndexOfId(self: *const Self, id: u32) ?usize {
             return self.spec.parameter_set.indexOfId(id);
         }
@@ -531,6 +547,15 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsList(2));
     try std.testing.expectEqual(@as(?u32, null), instance.parameterId(99));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterName(99));
+    var buffer: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("lead", try instance.formatParameterPlainIndex(2, 1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainIndex(2, "mute"));
+    try std.testing.expectEqual(@as(?f64, 2.0), instance.parameterPlainFromNormalizedIndex(2, 1.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterNormalizedFromPlainIndex(2, 2.0));
+    try std.testing.expectError(error.InvalidParameterIndex, instance.formatParameterPlainIndex(99, 0.0, &buffer));
+    try std.testing.expectError(error.InvalidParameterIndex, instance.parseParameterPlainIndex(99, "1"));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterPlainFromNormalizedIndex(99, 0.0));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterNormalizedFromPlainIndex(99, 0.0));
     try std.testing.expectEqual(@as(usize, 0), instance.parameterFieldIndex("gain"));
     try std.testing.expectEqual(@as(u32, 2), instance.parameterFieldId("mode"));
     try std.testing.expectEqualStrings("Gain", instance.parameterFieldName("gain"));
