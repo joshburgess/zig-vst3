@@ -9,17 +9,18 @@ const types = @import("pluginterfaces/base/types.zig");
 
 const ModeGainFactory = factory.StaticFactory(.{
     .vendor = mode_gain_spec.Spec.vendor,
-    .url = "https://github.com/joshburgess/zig-vst3",
+    .url = mode_gain_spec.Spec.url,
+    .email = mode_gain_spec.Spec.email,
 }, &.{
     .{
         .cid = mode_gain_component.cid,
-        .category = "Audio Module Class",
+        .category = mode_gain_spec.Spec.component_category,
         .name = mode_gain_spec.component_class_name,
         .create = mode_gain_component.create,
     },
     .{
         .cid = mode_gain_controller.cid,
-        .category = "Component Controller Class",
+        .category = mode_gain_spec.Spec.controller_category,
         .name = mode_gain_spec.controller_class_name,
         .create = mode_gain_controller.create,
     },

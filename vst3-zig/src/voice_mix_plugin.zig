@@ -9,17 +9,18 @@ const voice_mix_spec = @import("voice_mix_spec.zig");
 
 const VoiceMixFactory = factory.StaticFactory(.{
     .vendor = voice_mix_spec.Spec.vendor,
-    .url = "https://github.com/joshburgess/zig-vst3",
+    .url = voice_mix_spec.Spec.url,
+    .email = voice_mix_spec.Spec.email,
 }, &.{
     .{
         .cid = voice_mix_component.cid,
-        .category = "Audio Module Class",
+        .category = voice_mix_spec.Spec.component_category,
         .name = voice_mix_spec.component_class_name,
         .create = voice_mix_component.create,
     },
     .{
         .cid = voice_mix_controller.cid,
-        .category = "Component Controller Class",
+        .category = voice_mix_spec.Spec.controller_category,
         .name = voice_mix_spec.controller_class_name,
         .create = voice_mix_controller.create,
     },
