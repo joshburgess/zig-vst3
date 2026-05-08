@@ -921,7 +921,6 @@ test "parameter changes validate block offsets and normalized values" {
     };
     const view = try ParameterChanges.init(&changes, 4);
 
-    try std.testing.expectEqual(@as(usize, 3), view.items.len);
     try std.testing.expectEqual(@as(usize, 3), view.changeCount());
     try std.testing.expect(!view.isEmpty());
     try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffset());
@@ -991,7 +990,6 @@ test "events validate block offsets and count kinds" {
     };
     const view = try Events.init(&items, 4);
 
-    try std.testing.expectEqual(@as(usize, 10), view.items.len);
     try std.testing.expectEqual(@as(usize, 10), view.eventCount());
     try std.testing.expect(!view.isEmpty());
     try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffset());
@@ -1054,7 +1052,7 @@ test "event writer validates offsets and capacity" {
     try std.testing.expect(!writer.isEmpty());
     try std.testing.expect(writer.isFull());
     try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
-    try std.testing.expectEqual(@as(usize, 1), writer.events().items.len);
+    try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
     try std.testing.expectEqual(@as(?usize, 1), writer.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 1), writer.latestSampleOffset());
     try std.testing.expect(writer.hasKind(.note_on));
@@ -1070,7 +1068,7 @@ test "event writer validates offsets and capacity" {
     try std.testing.expect(writer.isEmpty());
     try std.testing.expect(!writer.isFull());
     try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
-    try std.testing.expectEqual(@as(usize, 0), writer.events().items.len);
+    try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
     try std.testing.expectEqual(@as(?usize, null), writer.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, null), writer.latestSampleOffset());
     try std.testing.expect(!writer.hasKind(.note_on));
@@ -1094,7 +1092,7 @@ test "event writer appends event views atomically" {
     var writer = EventWriter.init(&storage, 4);
 
     try writer.appendAll(try Events.init(&items, 4));
-    try std.testing.expectEqual(@as(usize, 2), writer.events().items.len);
+    try std.testing.expectEqual(@as(usize, 2), writer.eventCount());
     try std.testing.expectEqual(@as(?usize, 0), writer.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 1), writer.latestSampleOffset());
     try std.testing.expect(writer.hasKind(.note_on));
@@ -1108,13 +1106,13 @@ test "event writer appends event views atomically" {
     var full_storage: [1]Event = undefined;
     var full_writer = EventWriter.init(&full_storage, 4);
     try std.testing.expectError(error.EventStorageFull, full_writer.appendAll(try Events.init(&items, 4)));
-    try std.testing.expectEqual(@as(usize, 0), full_writer.events().items.len);
+    try std.testing.expectEqual(@as(usize, 0), full_writer.eventCount());
 
     const outside = [_]Event{Event.noteOn(4, 0, 60, 1.0)};
     var outside_storage: [1]Event = undefined;
     var outside_writer = EventWriter.init(&outside_storage, 4);
     try std.testing.expectError(error.EventOutsideBlock, outside_writer.appendAll(.{ .items = &outside }));
-    try std.testing.expectEqual(@as(usize, 0), outside_writer.events().items.len);
+    try std.testing.expectEqual(@as(usize, 0), outside_writer.eventCount());
 }
 
 test "process context exposes output event helpers" {
