@@ -20,6 +20,9 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
 
         iface: ivsthostapplication.IHostApplication = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        query_count: types.uint32 = 0,
+        add_ref_count: types.uint32 = 0,
+        release_count: types.uint32 = 0,
         create_instance_count: types.uint32 = 0,
 
         pub fn asInterface(self: *Self) *ivsthostapplication.IHostApplication {
@@ -32,6 +35,7 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
         }
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            owner(ptr).query_count += 1;
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivsthostapplication.ihost_application_iid, .ptr = ptr },
@@ -40,11 +44,15 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            const self = owner(ptr);
+            self.add_ref_count += 1;
+            return self.ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
         fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
-            return funknown.decrementRefCount(&owner(ptr).ref_count, "IHostApplication");
+            const self = owner(ptr);
+            self.release_count += 1;
+            return funknown.decrementRefCount(&self.ref_count, "IHostApplication");
         }
 
         fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
