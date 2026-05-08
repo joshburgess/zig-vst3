@@ -18,6 +18,8 @@ A plugin type declares:
 - lifecycle flags for optional `init`, `prepare`, `process`, `process64`, and `deinit` declarations
 - `init(params)`: builds the reflected set and value storage
 
+`PluginInstance(Plugin)` owns a plugin value plus its reflected spec, and drives only the lifecycle hooks the plugin declares. It creates the plugin through `init(allocator)` when present, otherwise it uses a default struct value for metadata-only prototypes.
+
 `validateLifecycle(Plugin)` currently accepts:
 
 - `init(allocator: std.mem.Allocator) !Plugin`
