@@ -24,6 +24,7 @@ Malformed state headers, unsupported format versions, truncated entries, denorma
 - `state.writeParameterStateJson(Params, set, values, writer)`: writes the same reflected parameter values as compact debug JSON.
 - `state.readParameterState(Params, set, values, reader)`: reads entries and updates matching reflected values.
 - `state.readParameterStateWithMigrations(Params, set, values, reader, migrations)`: reads entries and maps renamed parameter ids before lookup.
+- `state.migratedParameterId(id, migrations)`: resolves a saved parameter id through the same old-id to new-id migration list used by state loading.
 
 ## Open Work
 
