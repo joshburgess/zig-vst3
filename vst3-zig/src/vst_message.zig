@@ -86,6 +86,9 @@ pub fn ConnectionPoint(comptime Config: type) type {
 }
 
 pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usize, comptime max_binary_bytes: usize) type {
+    if (max_entries == 0) @compileError("AttributeList requires at least one entry");
+    if (max_string_chars == 0) @compileError("AttributeList requires at least one string code unit");
+
     return extern struct {
         const Self = @This();
         const Kind = enum(types.uint32) {
@@ -265,6 +268,8 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 }
 
 pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attributes: usize, comptime max_string_chars: usize, comptime max_binary_bytes: usize) type {
+    if (max_file_name_chars == 0) @compileError("StreamAttributes requires at least one file-name code unit");
+
     return extern struct {
         const Self = @This();
         const Attributes = AttributeList(max_attributes, max_string_chars, max_binary_bytes);
@@ -328,6 +333,8 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
 }
 
 pub fn Message(comptime max_message_id_bytes: usize, comptime max_attributes: usize, comptime max_string_chars: usize, comptime max_binary_bytes: usize) type {
+    if (max_message_id_bytes == 0) @compileError("Message requires at least one message-id byte");
+
     return extern struct {
         const Self = @This();
         const Attributes = AttributeList(max_attributes, max_string_chars, max_binary_bytes);
