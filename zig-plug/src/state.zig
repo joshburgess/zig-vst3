@@ -92,14 +92,14 @@ pub fn readParameterStateWithMigrations(
         const id = try reader.readInt(u32, .little);
         const normalized: f64 = @bitCast(try reader.readInt(u64, .little));
         if (normalized < 0.0 or normalized > 1.0 or std.math.isNan(normalized)) return error.ParameterStateOutsideNormalizedRange;
-        if (set.indexOfId(migratedId(id, migrations))) |index| {
+        if (set.indexOfId(migratedParameterId(id, migrations))) |index| {
             _ = restored.store(index, normalized);
         }
     }
     values.copyFrom(&restored);
 }
 
-fn migratedId(id: u32, migrations: []const ParameterIdMigration) u32 {
+pub fn migratedParameterId(id: u32, migrations: []const ParameterIdMigration) u32 {
     for (migrations) |migration| {
         if (migration.old_id == id) return migration.new_id;
     }
@@ -357,4 +357,15 @@ test "parameter state migrates renamed parameter ids" {
     });
 
     try std.testing.expectEqual(@as(?f64, 0.25), new_values.loadById(&new_set, 9));
+}
+
+test "parameter state exposes migration resolution" {
+    const migrations = [_]ParameterIdMigration{
+        .{ .old_id = 1, .new_id = 9 },
+        .{ .old_id = 2, .new_id = 10 },
+    };
+
+    try std.testing.expectEqual(@as(u32, 9), migratedParameterId(1, &migrations));
+    try std.testing.expectEqual(@as(u32, 10), migratedParameterId(2, &migrations));
+    try std.testing.expectEqual(@as(u32, 3), migratedParameterId(3, &migrations));
 }
