@@ -7,7 +7,7 @@ Tier 3 host smoke tests are release gates. Record only tests that were run in a 
 | Pending | Pending | Pending | Pending | Pending | Pending | `zig_vst3_gain.vst3` | Pending | No real-host smoke test has been recorded yet. |
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | b8bd61a | `zig_vst3_bypass.vst3` | Partial Pass | Scanned in REAPER, inserted on a track, Bypass behavior confirmed; save/reload not recorded. |
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | b8bd61a | `zig_vst3_mode_gain.vst3` | Partial Pass | Scanned in REAPER, inserted on a track, Mode parameter changes behavior; save/reload not recorded. |
-| Pending | Pending | Pending | Pending | Pending | Pending | `zig_vst3_voice_mix.vst3` | Pending | No real-host smoke test has been recorded yet. |
+| 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 0dadeb0 | `zig_vst3_voice_mix.vst3` | Partial Pass | Scanned in REAPER, inserted on a track, Voices parameter behavior confirmed; save/reload not recorded. |
 | Pending | Pending | Pending | Pending | Pending | Pending | `zig_vst3_note_gate.vst3` | Pending | No real-host smoke test has been recorded yet. |
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 907a279 | `zig_vst3_event_echo.vst3` | Partial Pass | Scanned in REAPER, inserted on a track, audio pass-through confirmed; event output and save/reload not recorded. |
 
