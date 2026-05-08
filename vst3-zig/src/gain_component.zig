@@ -309,102 +309,9 @@ test "gain component stores data exchange handler" {
     const std = @import("std");
     const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
-    const ivsthostapplication = @import("pluginterfaces/vst/ivsthostapplication.zig");
-    const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
-    const HostContext = extern struct {
-        const Self = @This();
-
-        host_application: ivsthostapplication.IHostApplication = .{ .vtable = &host_vtable },
-        data_exchange_handler: ivstdataexchange.IDataExchangeHandler = .{ .vtable = &data_exchange_vtable },
-        add_ref_count: types.uint32 = 0,
-        release_count: types.uint32 = 0,
-        open_count: types.uint32 = 0,
-        close_count: types.uint32 = 0,
-        last_user_context_id: ivstdataexchange.DataExchangeUserContextID = 0,
-
-        const host_vtable = ivsthostapplication.IHostApplicationVTable{
-            .queryInterface = queryFromHost,
-            .addRef = addRefFromHost,
-            .release = releaseFromHost,
-            .getName = getName,
-            .createInstance = createInstance,
-        };
-
-        const data_exchange_vtable = ivstdataexchange.IDataExchangeHandlerVTable{
-            .queryInterface = queryFromDataExchange,
-            .addRef = addRefFromDataExchange,
-            .release = releaseFromDataExchange,
-            .openQueue = openQueue,
-            .closeQueue = closeQueue,
-            .lockBlock = lockBlock,
-            .freeBlock = freeBlock,
-        };
-
-        fn ownerFromHost(ptr: *anyopaque) *Self {
-            const iface: *ivsthostapplication.IHostApplication = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("host_application", iface);
-        }
-
-        fn ownerFromDataExchange(ptr: *anyopaque) *Self {
-            const iface: *ivstdataexchange.IDataExchangeHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("data_exchange_handler", iface);
-        }
-
-        fn queryFromHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            const self = ownerFromHost(ptr);
-            if (std.mem.eql(u8, requested_iid, &ivsthostapplication.ihost_application_iid)) {
-                out.* = ptr;
-                return types.kResultOk;
-            }
-            if (std.mem.eql(u8, requested_iid, &ivstdataexchange.idata_exchange_handler_iid)) {
-                _ = addRefFromDataExchange(&self.data_exchange_handler);
-                out.* = &self.data_exchange_handler;
-                return types.kResultOk;
-            }
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn queryFromDataExchange(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn addRefFromHost(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn releaseFromHost(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn addRefFromDataExchange(ptr: *anyopaque) callconv(.C) types.uint32 {
-            const self = ownerFromDataExchange(ptr);
-            self.add_ref_count += 1;
-            return self.add_ref_count + 1;
-        }
-
-        fn releaseFromDataExchange(ptr: *anyopaque) callconv(.C) types.uint32 {
-            const self = ownerFromDataExchange(ptr);
-            self.release_count += 1;
-            return 1;
-        }
-
-        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
-            out[0] = 0;
-            return types.kResultOk;
-        }
-
-        fn createInstance(_: *anyopaque, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn openQueue(ptr: *anyopaque, processor: ?*ivstaudioprocessor.IAudioProcessor, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) callconv(.C) types.tresult {
-            const self = ownerFromDataExchange(ptr);
-            self.open_count += 1;
-            self.last_user_context_id = user_context_id;
+    const HostContext = vst_host_context.DataExchangeHost("Test Host", struct {
+        pub fn openQueue(_: anytype, processor: ?*ivstaudioprocessor.IAudioProcessor, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, _: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
             if (processor == null or block_size != 128 or num_blocks != 2 or alignment != 8) {
                 out.* = ivstdataexchange.InvalidDataExchangeQueueID;
                 return types.kInvalidArgument;
@@ -413,21 +320,19 @@ test "gain component stores data exchange handler" {
             return types.kResultOk;
         }
 
-        fn closeQueue(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID) callconv(.C) types.tresult {
-            const self = ownerFromDataExchange(ptr);
-            self.close_count += 1;
+        pub fn closeQueue(_: anytype, queue_id: ivstdataexchange.DataExchangeQueueID) types.tresult {
             return if (queue_id == 44) types.kResultOk else types.kInvalidArgument;
         }
 
-        fn lockBlock(_: *anyopaque, _: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) callconv(.C) types.tresult {
+        pub fn lockBlock(_: anytype, _: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
             block.* = .{ .blockID = 7 };
             return types.kResultOk;
         }
 
-        fn freeBlock(_: *anyopaque, _: ivstdataexchange.DataExchangeQueueID, _: ivstdataexchange.DataExchangeBlockID, _: types.TBool) callconv(.C) types.tresult {
+        pub fn freeBlock(_: anytype, _: ivstdataexchange.DataExchangeQueueID, _: ivstdataexchange.DataExchangeBlockID, _: types.TBool) types.tresult {
             return types.kResultOk;
         }
-    };
+    });
 
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
@@ -436,7 +341,7 @@ test "gain component stores data exchange handler" {
     defer _ = component_iface.vtable.release(component_iface);
 
     var host = HostContext{};
-    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, &host.host_application));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
     try std.testing.expectEqual(@as(types.uint32, 1), host.add_ref_count);
 
     var queue_id: ivstdataexchange.DataExchangeQueueID = 0;
