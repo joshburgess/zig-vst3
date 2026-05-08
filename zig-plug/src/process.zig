@@ -477,6 +477,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.latestNormalizedOr(id, default);
         }
 
+        pub fn latestParameterChangeAtOrBefore(self: @This(), id: u32, sample_offset: usize) ?ParameterChange {
+            return self.parameter_changes.latestAtOrBefore(id, sample_offset);
+        }
+
+        pub fn latestParameterNormalizedAtOrBefore(self: @This(), id: u32, sample_offset: usize) ?f64 {
+            return self.parameter_changes.latestNormalizedAtOrBefore(id, sample_offset);
+        }
+
         pub fn parameterNormalizedAtOrBeforeOr(self: @This(), id: u32, sample_offset: usize, default: f64) f64 {
             return self.parameter_changes.normalizedAtOrBeforeOr(id, sample_offset, default);
         }
@@ -671,6 +679,10 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?f64, 0.5), context.firstParameterNormalized(1));
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterNormalizedOr(1, 0.0));
     try std.testing.expectEqual(@as(f64, 0.25), context.latestParameterNormalizedOr(2, 0.25));
+    try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChangeAtOrBefore(1, 1).?.normalized);
+    try std.testing.expectEqual(@as(?ParameterChange, null), context.latestParameterChangeAtOrBefore(1, 0));
+    try std.testing.expectEqual(@as(?f64, 0.5), context.latestParameterNormalizedAtOrBefore(1, 1));
+    try std.testing.expectEqual(@as(?f64, null), context.latestParameterNormalizedAtOrBefore(1, 0));
     try std.testing.expectEqual(@as(f64, 0.5), context.parameterNormalizedAtOrBeforeOr(1, 1, 0.0));
     try std.testing.expectEqual(@as(?usize, 1), context.nextParameterChangeOffset(0));
     try std.testing.expectEqual(@as(?usize, null), context.nextParameterChangeOffset(1));
