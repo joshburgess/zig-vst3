@@ -767,6 +767,34 @@ test "zig-plug bridge rejects truncated IBStream state" {
     try std.testing.expectEqual(@as(?f64, 0.6), values.load(1));
 }
 
+test "zig-plug bridge rejects invalid normalized IBStream state" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+        mix: plug.parameters.FloatParam = plug.parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const set = Set.init(.{});
+    var source = ParameterState(Params).init(&set);
+    var restored = ParameterState(Params).init(&set);
+    const Stream = vst_stream.FixedBufferStream(plug.state.encodedSize(Params));
+    var stream = Stream{};
+
+    try std.testing.expectEqual(types.kResultOk, source.setNormalizedById(0, 0.25));
+    try std.testing.expectEqual(types.kResultOk, source.setNormalizedById(1, 0.75));
+    try std.testing.expectEqual(types.kResultOk, restored.setNormalizedById(0, 0.8));
+    try std.testing.expectEqual(types.kResultOk, restored.setNormalizedById(1, 0.6));
+
+    try std.testing.expectEqual(types.kResultOk, source.writeToStream(stream.asStream()));
+    const second_value_offset = 8 + @sizeOf(u16) + @sizeOf(u16) + @sizeOf(u32) + @sizeOf(u64) + @sizeOf(u32);
+    var invalid_value = std.io.fixedBufferStream(stream.bytes[second_value_offset..][0..@sizeOf(u64)]);
+    try invalid_value.writer().writeInt(u64, @bitCast(@as(f64, 1.5)), .little);
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultFalse, restored.readFromStream(stream.asStream()));
+
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.8), restored.getNormalizedById(0));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.6), restored.getNormalizedById(1));
+}
+
 test "zig-plug bridge reports failed IBStream writes" {
     const Params = struct {
         gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
