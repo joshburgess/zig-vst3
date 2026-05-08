@@ -184,6 +184,14 @@ pub fn ProcessContext(comptime Sample: type) type {
         events: Events = .{},
         output_events: ?*EventWriter = null,
 
+        pub fn init(sample_rate: f64, input_channels: []const []const Sample, output_channels: []const []Sample) !@This() {
+            return .{
+                .sample_rate = sample_rate,
+                .inputs = try AudioInputs(Sample).init(input_channels),
+                .outputs = try AudioOutputs(Sample).init(output_channels),
+            };
+        }
+
         pub fn frameCount(self: @This()) usize {
             return @min(self.inputs.frame_count, self.outputs.frame_count);
         }
@@ -217,11 +225,7 @@ test "process context reports usable frame count" {
     var out_right = [_]f64{ 0.0, 0.0, 0.0 };
     const input_channels = [_][]const f64{ &in_left, &in_right };
     const output_channels = [_][]f64{ &out_left, &out_right };
-    const context = ProcessContext(f64){
-        .sample_rate = 48_000.0,
-        .inputs = try AudioInputs(f64).init(&input_channels),
-        .outputs = try AudioOutputs(f64).init(&output_channels),
-    };
+    const context = try ProcessContext(f64).init(48_000.0, &input_channels, &output_channels);
 
     try std.testing.expectEqual(@as(usize, 3), context.frameCount());
 }
