@@ -147,6 +147,27 @@ test "parameter state writes debug json" {
     );
 }
 
+test "parameter state debug json escapes names" {
+    const Params = struct {
+        quoted: parameters.FloatParam = parameters.FloatParam.init(0, "Gain \"A\\B\"", 0.0, 1.0, 1.0),
+    };
+    const Set = parameters.ParameterSet(Params);
+    const Values = parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var bytes: [128]u8 = undefined;
+
+    try std.testing.expect(values.store(0, 0.25));
+
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    try writeParameterStateJson(Params, &set, &values, out_stream.writer());
+
+    try std.testing.expectEqualStrings(
+        "{\"version\":1,\"parameters\":[{\"id\":0,\"name\":\"Gain \\\"A\\\\B\\\"\",\"normalized\":0.25}]}",
+        out_stream.getWritten(),
+    );
+}
+
 test "parameter state ignores unknown parameter ids" {
     const Params = struct {
         gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
