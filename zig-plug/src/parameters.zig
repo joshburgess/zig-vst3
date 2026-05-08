@@ -689,6 +689,26 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.indexOfName(wanted_name);
         }
 
+        pub fn indexOfField(self: Self, comptime field_name: []const u8) usize {
+            return self.set.indexOfField(field_name);
+        }
+
+        pub fn descriptor(self: Self, comptime field_name: []const u8) FieldDescriptor(Params, field_name) {
+            return self.set.descriptor(field_name);
+        }
+
+        pub fn fieldId(self: Self, comptime field_name: []const u8) u32 {
+            return self.set.fieldId(field_name);
+        }
+
+        pub fn fieldName(self: Self, comptime field_name: []const u8) []const u8 {
+            return self.set.fieldName(field_name);
+        }
+
+        pub fn fieldDefaultNormalized(self: Self, comptime field_name: []const u8) f64 {
+            return self.set.fieldDefaultNormalized(field_name);
+        }
+
         pub fn formatPlainIndex(self: Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
             return self.set.formatPlain(index, normalized, buffer);
         }
@@ -788,6 +808,26 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.indexOfName(wanted_name);
         }
 
+        pub fn indexOfField(self: Self, comptime field_name: []const u8) usize {
+            return self.set.indexOfField(field_name);
+        }
+
+        pub fn descriptor(self: Self, comptime field_name: []const u8) FieldDescriptor(Params, field_name) {
+            return self.set.descriptor(field_name);
+        }
+
+        pub fn fieldId(self: Self, comptime field_name: []const u8) u32 {
+            return self.set.fieldId(field_name);
+        }
+
+        pub fn fieldName(self: Self, comptime field_name: []const u8) []const u8 {
+            return self.set.fieldName(field_name);
+        }
+
+        pub fn fieldDefaultNormalized(self: Self, comptime field_name: []const u8) f64 {
+            return self.set.fieldDefaultNormalized(field_name);
+        }
+
         pub fn formatPlainIndex(self: Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
             return self.set.formatPlain(index, normalized, buffer);
         }
@@ -806,6 +846,30 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn resetToDefaults(self: Self) void {
             self.values.resetToDefaults(self.set);
+        }
+
+        pub fn loadNormalized(self: Self, comptime field_name: []const u8) f64 {
+            return self.values.loadFieldNormalized(self.set, field_name);
+        }
+
+        pub fn load(self: Self, comptime field_name: []const u8) FieldPlainType(Params, field_name) {
+            return self.values.loadField(self.set, field_name);
+        }
+
+        pub fn loadIndex(self: Self, index: usize) ?f64 {
+            return self.values.load(index);
+        }
+
+        pub fn loadPlainIndex(self: Self, index: usize) ?f64 {
+            return self.values.loadPlain(self.set, index);
+        }
+
+        pub fn loadById(self: Self, wanted_id: u32) ?f64 {
+            return self.values.loadById(self.set, wanted_id);
+        }
+
+        pub fn loadPlainById(self: Self, wanted_id: u32) ?f64 {
+            return self.values.loadPlainById(self.set, wanted_id);
         }
 
         pub fn storeNormalized(self: Self, comptime field_name: []const u8, normalized: f64) bool {
@@ -1200,6 +1264,11 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?[]const u8, null), view.name(99));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfName("Missing"));
+    try std.testing.expectEqual(@as(usize, 3), view.indexOfField("mode"));
+    try std.testing.expectEqual(@as(u32, 0), view.descriptor("gain").id);
+    try std.testing.expectEqual(@as(u32, 3), view.fieldId("mode"));
+    try std.testing.expectEqualStrings("Bypass", view.fieldName("bypass"));
+    try std.testing.expectEqual(@as(f64, 0.0), view.fieldDefaultNormalized("mode"));
     var buffer: [16]u8 = undefined;
     try std.testing.expectEqualStrings("4", try view.formatPlainIndex(1, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try view.parsePlainIndex(1, "4"));
@@ -1249,6 +1318,11 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?[]const u8, null), editor.name(99));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfName("Missing"));
+    try std.testing.expectEqual(@as(usize, 3), editor.indexOfField("mode"));
+    try std.testing.expectEqual(@as(u32, 0), editor.descriptor("gain").id);
+    try std.testing.expectEqual(@as(u32, 3), editor.fieldId("mode"));
+    try std.testing.expectEqualStrings("Bypass", editor.fieldName("bypass"));
+    try std.testing.expectEqual(@as(f64, 0.0), editor.fieldDefaultNormalized("mode"));
     var buffer: [16]u8 = undefined;
     try std.testing.expectEqualStrings("4", try editor.formatPlainIndex(1, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try editor.parsePlainIndex(1, "4"));
@@ -1271,6 +1345,20 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expect(!editor.storePlainIndex(99, 1.0));
     try std.testing.expect(!editor.storeById(99, 1.0));
     try std.testing.expect(!editor.storePlainById(99, 1.0));
+
+    try std.testing.expectEqual(@as(f64, 1.5), editor.load("gain"));
+    try std.testing.expectEqual(@as(i64, 3), editor.load("voices"));
+    try std.testing.expectEqual(false, editor.load("bypass"));
+    try std.testing.expectEqual(Mode.mute, editor.load("mode"));
+    try std.testing.expectEqual(@as(f64, 1.0), editor.loadNormalized("mode"));
+    try std.testing.expectEqual(@as(?f64, 1.0), editor.loadIndex(3));
+    try std.testing.expectEqual(@as(?f64, 2.0), editor.loadPlainIndex(3));
+    try std.testing.expectEqual(@as(?f64, 0.0), editor.loadById(2));
+    try std.testing.expectEqual(@as(?f64, 0.0), editor.loadPlainById(2));
+    try std.testing.expectEqual(@as(?f64, null), editor.loadIndex(99));
+    try std.testing.expectEqual(@as(?f64, null), editor.loadPlainIndex(99));
+    try std.testing.expectEqual(@as(?f64, null), editor.loadById(99));
+    try std.testing.expectEqual(@as(?f64, null), editor.loadPlainById(99));
 
     const view = editor.view();
     try std.testing.expectEqual(@as(f64, 1.5), view.load("gain"));
