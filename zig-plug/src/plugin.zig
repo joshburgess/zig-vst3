@@ -107,12 +107,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
         }
 
         pub fn process(self: *Self, context: *process_api.ProcessContext(f32)) void {
+            self.applyParameterChanges(context.parameter_changes);
             if (Spec.has_process) {
                 self.plugin.process(context);
             }
         }
 
         pub fn process64(self: *Self, context: *process_api.ProcessContext(f64)) void {
+            self.applyParameterChanges(context.parameter_changes);
             if (Spec.has_process64) {
                 self.plugin.process64(context);
             }
@@ -304,6 +306,66 @@ test "plugin instance applies parameter changes to owned values" {
 
     try std.testing.expectEqual(@as(?f64, 0.25), instance.parameterValues().loadById(instance.parameterSet(), 0));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterValues().loadById(instance.parameterSet(), 99));
+}
+
+test "plugin instance applies process parameter changes before dispatch" {
+    const Gain = struct {
+        observed: ?f64 = null,
+
+        pub const name = "Instance Process Parameters";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+
+        pub fn process(self: *@This(), context: *process_api.ProcessContext(f32)) void {
+            self.observed = context.parameter_changes.latest(0);
+        }
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const changes = [_]process_api.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = 0.25 },
+    };
+    var context = process_api.ProcessContext(f32){
+        .sample_rate = 48_000.0,
+        .parameter_changes = try process_api.ParameterChanges.init(&changes, 1),
+    };
+
+    instance.process(&context);
+
+    try std.testing.expectEqual(@as(?f64, 0.25), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(@as(?f64, 0.25), instance.plugin.observed);
+}
+
+test "plugin instance applies process64 parameter changes before dispatch" {
+    const Gain = struct {
+        observed: ?f64 = null,
+
+        pub const name = "Instance Process64 Parameters";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+
+        pub fn process64(self: *@This(), context: *process_api.ProcessContext(f64)) void {
+            self.observed = context.parameter_changes.latest(0);
+        }
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const changes = [_]process_api.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = 0.75 },
+    };
+    var context = process_api.ProcessContext(f64){
+        .sample_rate = 48_000.0,
+        .parameter_changes = try process_api.ParameterChanges.init(&changes, 1),
+    };
+
+    instance.process64(&context);
+
+    try std.testing.expectEqual(@as(?f64, 0.75), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(@as(?f64, 0.75), instance.plugin.observed);
 }
 
 test "plugin instance round-trips owned parameter state" {

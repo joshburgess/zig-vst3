@@ -90,6 +90,7 @@ test "mode gain core example can run through plugin instance" {
 
     instance.process(&context);
 
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
     try std.testing.expectEqual(@as(f32, 0.0), output[0]);
     try std.testing.expectEqual(@as(f32, 0.0), output[1]);
 }
