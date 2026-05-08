@@ -84,6 +84,39 @@ pub const Event = struct {
     velocity: f32 = 0,
     value: f32 = 0,
     int_value: u64 = 0,
+
+    pub fn noteOn(sample_offset: usize, channel: i16, pitch: i16, velocity: f32) Event {
+        return .{
+            .kind = .note_on,
+            .bus_index = 0,
+            .sample_offset = sample_offset,
+            .channel = channel,
+            .pitch = pitch,
+            .velocity = velocity,
+        };
+    }
+
+    pub fn noteOff(sample_offset: usize, channel: i16, pitch: i16, velocity: f32) Event {
+        return .{
+            .kind = .note_off,
+            .bus_index = 0,
+            .sample_offset = sample_offset,
+            .channel = channel,
+            .pitch = pitch,
+            .velocity = velocity,
+        };
+    }
+
+    pub fn midiCc(sample_offset: usize, channel: i16, control_number: i16, value: f32) Event {
+        return .{
+            .kind = .midi_cc,
+            .bus_index = 0,
+            .sample_offset = sample_offset,
+            .channel = channel,
+            .control_number = control_number,
+            .value = value,
+        };
+    }
 };
 
 pub const Events = struct {
@@ -261,7 +294,7 @@ test "process context validates attached parameter changes and events" {
         .{ .id = 1, .sample_offset = 1, .normalized = 0.5 },
     };
     const events = [_]Event{
-        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 1, .pitch = 60 },
+        Event.noteOn(1, 0, 60, 1.0),
     };
     var storage: [1]Event = undefined;
     var writer = EventWriter.init(&storage, input.len);
@@ -285,7 +318,7 @@ test "process context rejects attached changes outside frame count" {
         .{ .id = 1, .sample_offset = 1, .normalized = 0.5 },
     };
     const events = [_]Event{
-        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 1, .pitch = 60 },
+        Event.noteOn(1, 0, 60, 1.0),
     };
     var context = try ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
 
@@ -336,9 +369,9 @@ test "parameter changes reject denormalized values" {
 
 test "events validate block offsets and count kinds" {
     const items = [_]Event{
-        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 0, .pitch = 60, .velocity = 0.75 },
-        .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 1, .channel = 0, .control_number = 1, .value = 0.5 },
-        .{ .kind = .note_off, .bus_index = 0, .sample_offset = 3, .channel = 0, .pitch = 60 },
+        Event.noteOn(0, 0, 60, 0.75),
+        Event.midiCc(1, 0, 1, 0.5),
+        Event.noteOff(3, 0, 60, 0.0),
     };
     const view = try Events.init(&items, 4);
 
@@ -351,7 +384,7 @@ test "events validate block offsets and count kinds" {
 
 test "events reject values outside the process block" {
     const items = [_]Event{
-        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 4 },
+        Event.noteOn(4, 0, 60, 1.0),
     };
 
     try std.testing.expectError(error.EventOutsideBlock, Events.init(&items, 4));
@@ -361,11 +394,11 @@ test "event writer validates offsets and capacity" {
     var storage: [1]Event = undefined;
     var writer = EventWriter.init(&storage, 4);
 
-    try writer.append(.{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .pitch = 60 });
+    try writer.append(Event.noteOn(0, 0, 60, 1.0));
     try std.testing.expectEqual(@as(usize, 1), writer.events().items.len);
-    try std.testing.expectError(error.EventStorageFull, writer.append(.{ .kind = .note_off, .bus_index = 0, .sample_offset = 1, .pitch = 60 }));
+    try std.testing.expectError(error.EventStorageFull, writer.append(Event.noteOff(1, 0, 60, 0.0)));
 
     var empty_storage: [1]Event = undefined;
     var empty_writer = EventWriter.init(&empty_storage, 4);
-    try std.testing.expectError(error.EventOutsideBlock, empty_writer.append(.{ .kind = .note_on, .bus_index = 0, .sample_offset = 4 }));
+    try std.testing.expectError(error.EventOutsideBlock, empty_writer.append(Event.noteOn(4, 0, 60, 1.0)));
 }
