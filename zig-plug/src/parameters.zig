@@ -428,6 +428,13 @@ pub fn ParameterSet(comptime Params: type) type {
             return null;
         }
 
+        pub fn indexOfName(self: *const Self, wanted_name: []const u8) ?usize {
+            inline for (fields, 0..) |field, index| {
+                if (std.mem.eql(u8, @field(self.params, field.name).name, wanted_name)) return index;
+            }
+            return null;
+        }
+
         pub fn indexOfField(_: *const Self, comptime field_name: []const u8) usize {
             inline for (fields, 0..) |field, index| {
                 if (comptime std.mem.eql(u8, field.name, field_name)) return index;
@@ -437,6 +444,18 @@ pub fn ParameterSet(comptime Params: type) type {
 
         pub fn descriptor(self: *const Self, comptime field_name: []const u8) FieldDescriptor(Params, field_name) {
             return @field(self.params, field_name);
+        }
+
+        pub fn fieldId(self: *const Self, comptime field_name: []const u8) u32 {
+            return self.descriptor(field_name).id;
+        }
+
+        pub fn fieldName(self: *const Self, comptime field_name: []const u8) []const u8 {
+            return self.descriptor(field_name).name;
+        }
+
+        pub fn fieldDefaultNormalized(self: *const Self, comptime field_name: []const u8) f64 {
+            return self.descriptor(field_name).defaultNormalized();
         }
 
         pub fn parameterChangeNormalized(
@@ -867,8 +886,13 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqualStrings("Voices", set.name(1).?);
     try std.testing.expectEqual(@as(?usize, 2), set.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, null), set.indexOfId(99));
+    try std.testing.expectEqual(@as(?usize, 1), set.indexOfName("Voices"));
+    try std.testing.expectEqual(@as(?usize, null), set.indexOfName("Missing"));
     try std.testing.expectEqual(@as(usize, 0), set.indexOfField("gain"));
     try std.testing.expectEqual(@as(u32, 3), set.descriptor("mode").id);
+    try std.testing.expectEqual(@as(u32, 0), set.fieldId("gain"));
+    try std.testing.expectEqualStrings("Mode", set.fieldName("mode"));
+    try std.testing.expectApproxEqAbs(1.0, set.fieldDefaultNormalized("mode"), 0.000001);
     try std.testing.expectApproxEqAbs(0.75, set.defaultNormalized(0).?, 0.000001);
     try std.testing.expectApproxEqAbs(0.2, set.defaultNormalized(1).?, 0.000001);
     try std.testing.expectApproxEqAbs(0.0, set.defaultNormalized(2).?, 0.000001);
