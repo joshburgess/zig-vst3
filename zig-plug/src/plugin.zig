@@ -98,6 +98,30 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.values.editor(&self.spec.parameter_set);
         }
 
+        pub fn parameterIndexOfId(self: *const Self, id: u32) ?usize {
+            return self.spec.parameter_set.indexOfId(id);
+        }
+
+        pub fn parameterIndexOfName(self: *const Self, name: []const u8) ?usize {
+            return self.spec.parameter_set.indexOfName(name);
+        }
+
+        pub fn parameterFieldIndex(self: *const Self, comptime field_name: []const u8) usize {
+            return self.spec.parameter_set.indexOfField(field_name);
+        }
+
+        pub fn parameterFieldId(self: *const Self, comptime field_name: []const u8) u32 {
+            return self.spec.parameter_set.fieldId(field_name);
+        }
+
+        pub fn parameterFieldName(self: *const Self, comptime field_name: []const u8) []const u8 {
+            return self.spec.parameter_set.fieldName(field_name);
+        }
+
+        pub fn parameterFieldDefaultNormalized(self: *const Self, comptime field_name: []const u8) f64 {
+            return self.spec.parameter_set.fieldDefaultNormalized(field_name);
+        }
+
         pub fn loadParameterNormalized(self: *const Self, comptime field_name: []const u8) f64 {
             return self.parameterView().loadNormalized(field_name);
         }
@@ -431,6 +455,15 @@ test "plugin instance exposes typed parameter field access" {
     };
     const Instance = PluginInstance(Gain);
     var instance = try Instance.init(std.testing.allocator, .{});
+
+    try std.testing.expectEqual(@as(?usize, 0), instance.parameterIndexOfId(0));
+    try std.testing.expectEqual(@as(?usize, null), instance.parameterIndexOfId(99));
+    try std.testing.expectEqual(@as(?usize, 2), instance.parameterIndexOfName("Mode"));
+    try std.testing.expectEqual(@as(?usize, null), instance.parameterIndexOfName("Missing"));
+    try std.testing.expectEqual(@as(usize, 0), instance.parameterFieldIndex("gain"));
+    try std.testing.expectEqual(@as(u32, 2), instance.parameterFieldId("mode"));
+    try std.testing.expectEqualStrings("Gain", instance.parameterFieldName("gain"));
+    try std.testing.expectEqual(@as(f64, 0.0), instance.parameterFieldDefaultNormalized("mode"));
 
     try std.testing.expect(instance.storeParameter("gain", 6.0));
     try std.testing.expect(instance.storeParameter("bypass", true));
