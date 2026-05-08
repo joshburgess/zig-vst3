@@ -54,4 +54,5 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 
 ## Open Work
 
-- Complete host smoke test notes for save/reload behavior and the remaining bundled examples.
+- Complete the deferred Note Gate MIDI-routing host smoke test.
+- Add a host smoke test that directly observes Event Echo output events.
