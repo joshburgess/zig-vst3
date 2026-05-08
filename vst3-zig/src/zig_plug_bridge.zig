@@ -1557,8 +1557,7 @@ test "zig-plug bridge dispatches main audio processing by sample size" {
 test "zig-plug bridge exposes output event writer to processors" {
     const EventEmitter = struct {
         pub fn process(_: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
-            const writer = context.output_events orelse return;
-            writer.append(plug.process.Event.noteOn(1, 0, 60, 0.75)) catch {};
+            context.appendOutputEvent(plug.process.Event.noteOn(1, 0, 60, 0.75)) catch {};
         }
     };
 
