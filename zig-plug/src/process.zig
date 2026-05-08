@@ -448,6 +448,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return writer.events();
         }
 
+        pub fn fillOutputs(self: @This(), value: Sample) void {
+            self.outputs.fill(value);
+        }
+
+        pub fn clearOutputs(self: @This()) void {
+            self.outputs.clear();
+        }
+
         pub fn inputChannelCount(self: @This()) usize {
             return self.inputs.channelCount();
         }
@@ -514,6 +522,14 @@ test "process context reports usable frame count" {
     try std.testing.expectEqual(@as(usize, 3), context.frameCount());
     try std.testing.expectEqual(@as(usize, 2), context.inputChannelCount());
     try std.testing.expectEqual(@as(usize, 2), context.outputChannelCount());
+
+    context.fillOutputs(0.5);
+    try std.testing.expectEqual(@as(f64, 0.5), out_left[0]);
+    try std.testing.expectEqual(@as(f64, 0.5), out_right[2]);
+
+    context.clearOutputs();
+    try std.testing.expectEqual(@as(f64, 0.0), out_left[0]);
+    try std.testing.expectEqual(@as(f64, 0.0), out_right[2]);
 }
 
 test "process context validates attached parameter changes and events" {
