@@ -1,6 +1,8 @@
 const std = @import("std");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
+const iplugview = @import("pluginterfaces/gui/iplugview.zig");
+const ivstcontextmenu = @import("pluginterfaces/vst/ivstcontextmenu.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
@@ -244,6 +246,130 @@ pub fn ComponentHandler2(comptime Config: type) type {
     };
 }
 
+pub fn ComponentHandler3(comptime Config: type) type {
+    return extern struct {
+        const Self = @This();
+
+        handler: ivsteditcontroller.IComponentHandler = .{ .vtable = &handler_vtable },
+        handler3: ivstcontextmenu.IComponentHandler3 = .{ .vtable = &handler3_vtable },
+        handler_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        handler3_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        context_menu_count: types.uint32 = 0,
+        handler3_add_ref_count: types.uint32 = 0,
+        handler3_release_count: types.uint32 = 0,
+        last_param_id: vsttypes.ParamID = vsttypes.kNoParamId,
+
+        pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
+            return &self.handler;
+        }
+
+        pub fn asHandler3(self: *Self) *ivstcontextmenu.IComponentHandler3 {
+            return &self.handler3;
+        }
+
+        fn ownerFromHandler(ptr: *anyopaque) *Self {
+            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("handler", iface);
+        }
+
+        fn ownerFromHandler3(ptr: *anyopaque) *Self {
+            const iface: *ivstcontextmenu.IComponentHandler3 = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("handler3", iface);
+        }
+
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = &self.handler },
+                .{ .iid = &ivsteditcontroller.icomponent_handler_iid, .ptr = &self.handler },
+                .{ .iid = &ivstcontextmenu.icomponent_handler3_iid, .ptr = &self.handler3 },
+            };
+            if (std.mem.eql(u8, requested_iid, &ivstcontextmenu.icomponent_handler3_iid)) {
+                return interface_map.queryWithAddRef(&self.handler3, addRefFromHandler3, &entries, requested_iid, out);
+            }
+            return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
+        }
+
+        fn queryFromHandler3(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromHandler3(ptr);
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = &self.handler3 },
+                .{ .iid = &ivstcontextmenu.icomponent_handler3_iid, .ptr = &self.handler3 },
+            };
+            return interface_map.queryWithAddRef(&self.handler3, addRefFromHandler3, &entries, requested_iid, out);
+        }
+
+        fn addRefFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn releaseFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "IComponentHandler");
+        }
+
+        fn addRefFromHandler3(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromHandler3(ptr);
+            self.handler3_add_ref_count += 1;
+            return self.handler3_ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn releaseFromHandler3(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromHandler3(ptr);
+            self.handler3_release_count += 1;
+            return funknown.decrementRefCount(&self.handler3_ref_count, "IComponentHandler3");
+        }
+
+        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
+            return types.kResultOk;
+        }
+
+        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
+            return types.kResultOk;
+        }
+
+        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
+            return types.kResultOk;
+        }
+
+        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
+            return types.kResultOk;
+        }
+
+        fn createContextMenu(ptr: *anyopaque, view: ?*iplugview.IPlugView, param_id: ?*const vsttypes.ParamID) callconv(.C) ?*ivstcontextmenu.IContextMenu {
+            const self = ownerFromHandler3(ptr);
+            self.context_menu_count += 1;
+            if (param_id) |id| self.last_param_id = id.*;
+            if (@hasDecl(Config, "createContextMenu")) return Config.createContextMenu(self, view, param_id);
+            return null;
+        }
+
+        const handler_vtable = ivsteditcontroller.IComponentHandlerVTable{
+            .queryInterface = queryFromHandler,
+            .addRef = addRefFromHandler,
+            .release = releaseFromHandler,
+            .beginEdit = beginEdit,
+            .performEdit = performEdit,
+            .endEdit = endEdit,
+            .restartComponent = restartComponent,
+        };
+
+        const handler3_vtable = ivstcontextmenu.IComponentHandler3VTable{
+            .queryInterface = queryFromHandler3,
+            .addRef = addRefFromHandler3,
+            .release = releaseFromHandler3,
+            .createContextMenu = createContextMenu,
+        };
+    };
+}
+
 test "component handler records automation callbacks" {
     const Handler = ComponentHandler(struct {});
     var handler = Handler{};
@@ -278,4 +404,19 @@ test "component handler 2 exposes extension and records callbacks" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.finish_group_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler2.vtable.release(handler2));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.handler2_release_count);
+}
+
+test "component handler 3 exposes context menu extension" {
+    const Handler = ComponentHandler3(struct {});
+    var handler = Handler{};
+    var queried: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.queryInterface(handler.asHandler(), &ivstcontextmenu.icomponent_handler3_iid, &queried));
+    try std.testing.expect(queried != null);
+    const handler3: *ivstcontextmenu.IComponentHandler3 = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.handler3_add_ref_count);
+    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), handler3.vtable.createContextMenu(handler3, null, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.context_menu_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler3.vtable.release(handler3));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.handler3_release_count);
 }
