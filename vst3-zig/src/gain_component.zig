@@ -7,6 +7,7 @@ const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_host_application = @import("vst_host_application.zig");
+const vst_host_context = @import("vst_host_context.zig");
 const zig_plug_effect = @import("zig_plug_effect.zig");
 
 pub const cid = tuid.inlineUid(0xA74E7A0D, 0x6B234163, 0xA0A83EBF, 0xD06F1401);
@@ -139,100 +140,8 @@ test "gain component queries host application during initialize" {
 
 test "gain component stores channel context info listener" {
     const std = @import("std");
-    const ivstchannelcontextinfo = @import("pluginterfaces/vst/ivstchannelcontextinfo.zig");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
-    const ivsthostapplication = @import("pluginterfaces/vst/ivsthostapplication.zig");
-    const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
-
-    const HostContext = extern struct {
-        const Self = @This();
-
-        host_application: ivsthostapplication.IHostApplication = .{ .vtable = &host_vtable },
-        info_listener: ivstchannelcontextinfo.IInfoListener = .{ .vtable = &info_vtable },
-        info_add_ref_count: types.uint32 = 0,
-        info_release_count: types.uint32 = 0,
-        channel_context_count: types.uint32 = 0,
-
-        const host_vtable = ivsthostapplication.IHostApplicationVTable{
-            .queryInterface = queryFromHost,
-            .addRef = addRefFromHost,
-            .release = releaseFromHost,
-            .getName = getName,
-            .createInstance = createInstance,
-        };
-
-        const info_vtable = ivstchannelcontextinfo.IInfoListenerVTable{
-            .queryInterface = queryFromInfo,
-            .addRef = addRefFromInfo,
-            .release = releaseFromInfo,
-            .setChannelContextInfos = setChannelContextInfosCallback,
-        };
-
-        fn ownerFromHost(ptr: *anyopaque) *Self {
-            const iface: *ivsthostapplication.IHostApplication = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("host_application", iface);
-        }
-
-        fn ownerFromInfo(ptr: *anyopaque) *Self {
-            const iface: *ivstchannelcontextinfo.IInfoListener = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("info_listener", iface);
-        }
-
-        fn queryFromHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            const self = ownerFromHost(ptr);
-            if (std.mem.eql(u8, requested_iid, &ivsthostapplication.ihost_application_iid)) {
-                out.* = ptr;
-                return types.kResultOk;
-            }
-            if (std.mem.eql(u8, requested_iid, &ivstchannelcontextinfo.iinfo_listener_iid)) {
-                _ = addRefFromInfo(&self.info_listener);
-                out.* = &self.info_listener;
-                return types.kResultOk;
-            }
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn queryFromInfo(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn addRefFromHost(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn releaseFromHost(_: *anyopaque) callconv(.C) types.uint32 {
-            return 1;
-        }
-
-        fn addRefFromInfo(ptr: *anyopaque) callconv(.C) types.uint32 {
-            const self = ownerFromInfo(ptr);
-            self.info_add_ref_count += 1;
-            return self.info_add_ref_count + 1;
-        }
-
-        fn releaseFromInfo(ptr: *anyopaque) callconv(.C) types.uint32 {
-            const self = ownerFromInfo(ptr);
-            self.info_release_count += 1;
-            return 1;
-        }
-
-        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
-            out[0] = 0;
-            return types.kResultOk;
-        }
-
-        fn createInstance(_: *anyopaque, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
-            out.* = null;
-            return types.kNoInterface;
-        }
-
-        fn setChannelContextInfosCallback(ptr: *anyopaque, _: ?*ivstattributes.IAttributeList) callconv(.C) types.tresult {
-            ownerFromInfo(ptr).channel_context_count += 1;
-            return types.kResultOk;
-        }
-    };
+    const HostContext = vst_host_context.ChannelContextHost("Test Host", struct {});
 
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
@@ -243,7 +152,7 @@ test "gain component stores channel context info listener" {
     try std.testing.expectEqual(types.kResultFalse, setChannelContextInfos(null));
 
     var host = HostContext{};
-    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, &host.host_application));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
     try std.testing.expectEqual(@as(types.uint32, 1), host.info_add_ref_count);
     try std.testing.expectEqual(types.kResultOk, setChannelContextInfos(null));
     try std.testing.expectEqual(@as(types.uint32, 1), host.channel_context_count);

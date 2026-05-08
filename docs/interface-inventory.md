@@ -124,7 +124,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IPlugInterfaceSupport`, `IPrefetchableSupport`, `IAutomationState` | Initial vtable translation complete; constants and IIDs checked with `zig build capability-state-abi` |
 | `IParameterFinder`, `IParameterFunctionName`, `IRemapParamID` | Initial vtable translation complete; constants and IIDs checked with `zig build parameter-helpers-abi` |
 | `IComponentHandler3`, `IContextMenu`, `IContextMenuTarget`, `IContextMenuItem` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build context-menu-abi` |
-| `INoteExpressionPhysicalUIMapping`, `IInfoListener`, `PhysicalUIMap`, and channel context keys | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build physical-channel-abi` |
+| `INoteExpressionPhysicalUIMapping`, `IInfoListener`, `PhysicalUIMap`, and channel context keys | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build physical-channel-abi`; reusable channel-context host helper added in `vst_host_context.zig` |
 | `IDataExchangeHandler`, `IDataExchangeReceiver`, `DataExchangeBlock` | Initial vtable and struct translation complete; layout checked against the pinned SDK with `zig build data-exchange-abi` |
 | `IXmlRepresentationController`, `RepresentationInfo`, and XML representation constants | Initial vtable, struct, and constant translation complete; layout checked against the pinned SDK with `zig build representation-abi` |
 | `IWaylandHost`, `IWaylandFrame` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build wayland-frame-abi` |
