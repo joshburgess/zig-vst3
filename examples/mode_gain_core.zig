@@ -1,5 +1,5 @@
 const std = @import("std");
-const plug = @import("zig-plug-core");
+const plug = @import("zig-plug");
 
 const Mode = enum { clean, boost, mute };
 const ModeParam = plug.parameters.EnumParam(Mode);
