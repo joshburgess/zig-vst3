@@ -99,6 +99,34 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.values.editor(&self.spec.parameter_set);
         }
 
+        pub fn parameterCount(self: *const Self) usize {
+            return self.parameterView().parameterCount();
+        }
+
+        pub fn parameterId(self: *const Self, index: usize) ?u32 {
+            return self.parameterView().id(index);
+        }
+
+        pub fn parameterName(self: *const Self, index: usize) ?[]const u8 {
+            return self.parameterView().name(index);
+        }
+
+        pub fn parameterDefaultNormalized(self: *const Self, index: usize) ?f64 {
+            return self.parameterView().defaultNormalized(index);
+        }
+
+        pub fn parameterIsBypass(self: *const Self, index: usize) ?bool {
+            return self.parameterView().isBypass(index);
+        }
+
+        pub fn parameterStepCount(self: *const Self, index: usize) ?i32 {
+            return self.parameterView().stepCount(index);
+        }
+
+        pub fn parameterIsList(self: *const Self, index: usize) ?bool {
+            return self.parameterView().isList(index);
+        }
+
         pub fn parameterIndexOfId(self: *const Self, id: u32) ?usize {
             return self.spec.parameter_set.indexOfId(id);
         }
@@ -494,6 +522,15 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?usize, null), instance.parameterIndexOfId(99));
     try std.testing.expectEqual(@as(?usize, 2), instance.parameterIndexOfName("Mode"));
     try std.testing.expectEqual(@as(?usize, null), instance.parameterIndexOfName("Missing"));
+    try std.testing.expectEqual(@as(usize, 3), instance.parameterCount());
+    try std.testing.expectEqual(@as(?u32, 0), instance.parameterId(0));
+    try std.testing.expectEqualStrings("Bypass", instance.parameterName(1).?);
+    try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalized(2));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsBypass(0));
+    try std.testing.expectEqual(@as(?i32, 2), instance.parameterStepCount(2));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterIsList(2));
+    try std.testing.expectEqual(@as(?u32, null), instance.parameterId(99));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterName(99));
     try std.testing.expectEqual(@as(usize, 0), instance.parameterFieldIndex("gain"));
     try std.testing.expectEqual(@as(u32, 2), instance.parameterFieldId("mode"));
     try std.testing.expectEqualStrings("Gain", instance.parameterFieldName("gain"));
