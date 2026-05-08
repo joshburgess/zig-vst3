@@ -6,6 +6,8 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 
 pub fn EventList(comptime max_events: usize) type {
+    if (max_events == 0) @compileError("EventList requires at least one event slot");
+
     return extern struct {
         const Self = @This();
 
@@ -57,10 +59,19 @@ pub fn EventList(comptime max_events: usize) type {
         }
 
         fn getEvent(ptr: *anyopaque, index: types.int32, event: *ivstevents.Event) callconv(.C) types.tresult {
-            if (index < 0) return types.kInvalidArgument;
+            if (index < 0) {
+                event.* = .{};
+                return types.kInvalidArgument;
+            }
             const self = owner(ptr);
-            if (index == self.fail_get_index) return types.kResultFalse;
-            if (index >= self.count) return types.kInvalidArgument;
+            if (index == self.fail_get_index) {
+                event.* = .{};
+                return types.kResultFalse;
+            }
+            if (index >= self.count) {
+                event.* = .{};
+                return types.kInvalidArgument;
+            }
             event.* = self.events[@intCast(index)];
             return types.kResultOk;
         }
@@ -108,10 +119,22 @@ test "event list enforces bounds and supports query interface" {
     var event = ivstevents.Event{};
 
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getEvent(iface, 0, &event));
+    try std.testing.expectEqual(@as(types.int32, 0), event.sampleOffset);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.addEvent(iface, &event));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.addEvent(iface, &event));
+
+    event.sampleOffset = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getEvent(iface, -1, &event));
+    try std.testing.expectEqual(@as(types.int32, 0), event.sampleOffset);
+
+    event.sampleOffset = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getEvent(iface, 1, &event));
+    try std.testing.expectEqual(@as(types.int32, 0), event.sampleOffset);
+
+    event.sampleOffset = 99;
     list.fail_get_index = 0;
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getEvent(iface, 0, &event));
+    try std.testing.expectEqual(@as(types.int32, 0), event.sampleOffset);
 
     var queried: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstevents.ievent_list_iid, &queried));
