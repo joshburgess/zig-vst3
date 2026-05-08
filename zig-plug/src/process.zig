@@ -265,8 +265,25 @@ pub const Events = struct {
         return null;
     }
 
+    pub fn latestKind(self: Events, kind: EventKind) ?Event {
+        var result: ?Event = null;
+        for (self.items) |item| {
+            if (item.kind == kind) result = item;
+        }
+        return result;
+    }
+
     pub fn hasKind(self: Events, kind: EventKind) bool {
         return self.firstKind(kind) != null;
+    }
+
+    pub fn nextSampleOffset(self: Events, after_sample_offset: usize) ?usize {
+        var result: ?usize = null;
+        for (self.items) |item| {
+            if (item.sample_offset <= after_sample_offset) continue;
+            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+        }
+        return result;
     }
 };
 
@@ -509,12 +526,20 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.firstKind(kind);
         }
 
+        pub fn latestEvent(self: @This(), kind: EventKind) ?Event {
+            return self.events.latestKind(kind);
+        }
+
         pub fn hasEvent(self: @This(), kind: EventKind) bool {
             return self.events.hasKind(kind);
         }
 
         pub fn countEvents(self: @This(), kind: EventKind) usize {
             return self.events.countKind(kind);
+        }
+
+        pub fn nextEventOffset(self: @This(), after_sample_offset: usize) ?usize {
+            return self.events.nextSampleOffset(after_sample_offset);
         }
 
         pub fn appendOutputEvent(self: *@This(), event: Event) !void {
@@ -702,7 +727,11 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(!context.hasEvent(.note_off));
     try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
     try std.testing.expectEqual(@as(i16, 60), context.firstEvent(.note_on).?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.latestEvent(.note_on).?.pitch);
     try std.testing.expectEqual(@as(?Event, null), context.firstEvent(.note_off));
+    try std.testing.expectEqual(@as(?Event, null), context.latestEvent(.note_off));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffset(0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextEventOffset(1));
     try std.testing.expect(context.output_events != null);
 }
 
@@ -813,8 +842,13 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.other));
     try std.testing.expect(view.hasKind(.note_on));
     try std.testing.expectEqual(@as(i16, 60), view.firstKind(.note_on).?.pitch);
+    try std.testing.expectEqual(@as(usize, 0), view.latestKind(.note_on).?.sample_offset);
     try std.testing.expect(view.hasKind(.data));
     try std.testing.expectEqual(@as(?Event, null), (Events{}).firstKind(.note_on));
+    try std.testing.expectEqual(@as(?Event, null), (Events{}).latestKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, 1), view.nextSampleOffset(0));
+    try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffset(1));
+    try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffset(3));
 }
 
 test "event constructors can target non-main buses" {
