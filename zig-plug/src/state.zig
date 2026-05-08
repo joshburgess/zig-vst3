@@ -295,6 +295,31 @@ test "parameter state rejects normalized values outside range without partial up
     try std.testing.expectEqual(@as(?f64, 0.6), values.load(1));
 }
 
+test "parameter state rejects NaN normalized values without partial updates" {
+    const Params = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+    };
+    const Set = parameters.ParameterSet(Params);
+    const Values = parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + @sizeOf(u32) + @sizeOf(u64)]u8 = undefined;
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    const writer = out_stream.writer();
+
+    try std.testing.expect(values.store(0, 0.8));
+
+    try writer.writeAll(magic);
+    try writer.writeInt(u16, version, .little);
+    try writer.writeInt(u16, 1, .little);
+    try writer.writeInt(u32, 0, .little);
+    try writer.writeInt(u64, @bitCast(std.math.nan(f64)), .little);
+
+    var in_stream = std.io.fixedBufferStream(&bytes);
+    try std.testing.expectError(error.ParameterStateOutsideNormalizedRange, readParameterState(Params, &set, &values, in_stream.reader()));
+    try std.testing.expectEqual(@as(?f64, 0.8), values.load(0));
+}
+
 test "parameter state migrates renamed parameter ids" {
     const OldParams = struct {
         gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
