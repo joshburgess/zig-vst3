@@ -450,7 +450,7 @@ test "plugin instance passes reflected parameters to state-aware process hooks" 
             set: *const parameters.ParameterSet(Params),
             values: *const parameters.ParameterValues(Params),
         ) void {
-            self.observed = values.loadFieldNormalized(set, "gain");
+            self.observed = values.view(set).loadNormalized("gain");
         }
     };
     const Instance = PluginInstance(Gain);
@@ -514,7 +514,7 @@ test "plugin instance passes reflected parameters to state-aware process64 hooks
             set: *const parameters.ParameterSet(Params),
             values: *const parameters.ParameterValues(Params),
         ) void {
-            self.observed = values.loadFieldNormalized(set, "gain");
+            self.observed = values.view(set).loadNormalized("gain");
         }
     };
     const Instance = PluginInstance(Gain);
