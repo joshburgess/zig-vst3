@@ -689,6 +689,22 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.indexOfName(wanted_name);
         }
 
+        pub fn formatPlainIndex(self: Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
+            return self.set.formatPlain(index, normalized, buffer);
+        }
+
+        pub fn parsePlainIndex(self: Self, index: usize, text: []const u8) !f64 {
+            return self.set.parsePlain(index, text);
+        }
+
+        pub fn plainFromNormalizedIndex(self: Self, index: usize, normalized: f64) ?f64 {
+            return self.set.plainFromNormalized(index, normalized);
+        }
+
+        pub fn normalizedFromPlainIndex(self: Self, index: usize, plain: f64) ?f64 {
+            return self.set.normalizedFromPlain(index, plain);
+        }
+
         pub fn loadNormalized(self: Self, comptime field_name: []const u8) f64 {
             return self.values.loadFieldNormalized(self.set, field_name);
         }
@@ -770,6 +786,22 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn indexOfName(self: Self, wanted_name: []const u8) ?usize {
             return self.set.indexOfName(wanted_name);
+        }
+
+        pub fn formatPlainIndex(self: Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
+            return self.set.formatPlain(index, normalized, buffer);
+        }
+
+        pub fn parsePlainIndex(self: Self, index: usize, text: []const u8) !f64 {
+            return self.set.parsePlain(index, text);
+        }
+
+        pub fn plainFromNormalizedIndex(self: Self, index: usize, normalized: f64) ?f64 {
+            return self.set.plainFromNormalized(index, normalized);
+        }
+
+        pub fn normalizedFromPlainIndex(self: Self, index: usize, plain: f64) ?f64 {
+            return self.set.normalizedFromPlain(index, plain);
         }
 
         pub fn resetToDefaults(self: Self) void {
@@ -1168,6 +1200,15 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?[]const u8, null), view.name(99));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfName("Missing"));
+    var buffer: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("4", try view.formatPlainIndex(1, 1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try view.parsePlainIndex(1, "4"));
+    try std.testing.expectEqual(@as(?f64, 2.0), view.plainFromNormalizedIndex(3, 1.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), view.normalizedFromPlainIndex(3, 2.0));
+    try std.testing.expectError(error.InvalidParameterIndex, view.formatPlainIndex(99, 0.0, &buffer));
+    try std.testing.expectError(error.InvalidParameterIndex, view.parsePlainIndex(99, "1"));
+    try std.testing.expectEqual(@as(?f64, null), view.plainFromNormalizedIndex(99, 0.0));
+    try std.testing.expectEqual(@as(?f64, null), view.normalizedFromPlainIndex(99, 0.0));
     try std.testing.expectEqual(@as(f64, 6.0), view.load("gain"));
     try std.testing.expectEqual(@as(i64, 4), view.load("voices"));
     try std.testing.expectEqual(true, view.load("bypass"));
@@ -1208,6 +1249,15 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?[]const u8, null), editor.name(99));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfName("Missing"));
+    var buffer: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("4", try editor.formatPlainIndex(1, 1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try editor.parsePlainIndex(1, "4"));
+    try std.testing.expectEqual(@as(?f64, 2.0), editor.plainFromNormalizedIndex(3, 1.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), editor.normalizedFromPlainIndex(3, 2.0));
+    try std.testing.expectError(error.InvalidParameterIndex, editor.formatPlainIndex(99, 0.0, &buffer));
+    try std.testing.expectError(error.InvalidParameterIndex, editor.parsePlainIndex(99, "1"));
+    try std.testing.expectEqual(@as(?f64, null), editor.plainFromNormalizedIndex(99, 0.0));
+    try std.testing.expectEqual(@as(?f64, null), editor.normalizedFromPlainIndex(99, 0.0));
     try std.testing.expect(editor.store("gain", 6.0));
     try std.testing.expect(editor.store("voices", 4));
     try std.testing.expect(editor.store("bypass", true));
