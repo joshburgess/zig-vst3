@@ -83,7 +83,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             const requested: usize = @intCast(byte_count);
             if (requested > 0 and buffer == null) return types.kInvalidArgument;
             const self = ownerFromStream(ptr);
-            if (self.pos + requested > self.len) {
+            if (requested > self.len - self.pos) {
                 return types.kResultFalse;
             }
             if (requested > 0) {
@@ -101,7 +101,10 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             const requested: usize = @intCast(byte_count);
             if (requested > 0 and buffer == null) return types.kInvalidArgument;
             const self = ownerFromStream(ptr);
-            if (self.pos + requested > capacity or self.pos + requested > self.write_limit) {
+            if (requested > capacity - self.pos) {
+                return types.kResultFalse;
+            }
+            if (self.pos > self.write_limit or requested > self.write_limit - self.pos) {
                 return types.kResultFalse;
             }
             if (requested > 0) {
@@ -239,4 +242,18 @@ test "fixed buffer stream enforces bounds and supports query interface" {
     const sizeable: *ibstream.ISizeableStream = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(types.kResultOk, sizeable.vtable.setStreamSize(sizeable, 4));
     try std.testing.expectEqual(@as(types.uint32, 1), sizeable.vtable.release(sizeable));
+}
+
+test "fixed buffer stream rejects writes when position is past write limit" {
+    const Stream = FixedBufferStream(8);
+    var stream = Stream{ .write_limit = 4 };
+    const iface = stream.asStream();
+    const sizeable = stream.asSizeableStream();
+    var input = [_]u8{ 1, 2 };
+    var count: types.int32 = 99;
+
+    try std.testing.expectEqual(types.kResultOk, sizeable.vtable.setStreamSize(sizeable, 8));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 6, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.write(iface, &input, input.len, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
 }
