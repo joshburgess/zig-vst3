@@ -486,11 +486,11 @@ fn copyAscii16(dest: *vsttypes.String128, source: []const u8) void {
 }
 
 fn copyAscii16Ptr(dest: [*]vsttypes.TChar, source: []const u8) void {
+    @memset(dest[0..128], 0);
     const len = @min(source.len, 127);
     for (source[0..len], 0..) |char, index| {
         dest[index] = char;
     }
-    dest[len] = 0;
 }
 
 fn readAscii16Ptr(source: [*]vsttypes.TChar, buffer: []u8) []const u8 {
@@ -1216,7 +1216,7 @@ test "zig-plug bridge parameter controller exposes reflected edit operations" {
         .state = &state,
     };
     var info = ivsteditcontroller.ParameterInfo{};
-    var text: vsttypes.String128 = undefined;
+    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
     var value: vsttypes.ParamValue = 0;
 
     try std.testing.expectEqual(@as(types.int32, 2), controller.parameterCount());
@@ -1226,6 +1226,7 @@ test "zig-plug bridge parameter controller exposes reflected edit operations" {
 
     try std.testing.expectEqual(types.kResultOk, controller.stringByValue(7, 0.5, &text));
     try expectString128("1.000", &text);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[6]);
     try std.testing.expectEqual(types.kResultOk, controller.valueByString(7, &text, &value));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), controller.plainFromNormalized(7, 0.5));
@@ -1336,11 +1337,12 @@ test "zig-plug bridge formats and parses VST3 parameter strings" {
     };
     const Set = plug.parameters.ParameterSet(Params);
     const set = Set.init(.{});
-    var text: vsttypes.String128 = undefined;
+    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
     var value: vsttypes.ParamValue = 0;
 
     try std.testing.expectEqual(types.kResultOk, getParamStringByValue(Params, &set, 7, 0.5, &text));
     try expectString128("1.000", &text);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[6]);
     try std.testing.expectEqual(types.kResultOk, getParamValueByString(Params, &set, 7, &text, &value));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
     try std.testing.expectEqual(types.kInvalidArgument, getParamStringByValue(Params, &set, 8, 0.5, &text));
