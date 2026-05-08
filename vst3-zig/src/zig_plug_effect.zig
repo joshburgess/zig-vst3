@@ -743,9 +743,12 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getProgramInfo(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+        fn getProgramInfo(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
             clearString128Ptr(out);
-            return types.kInvalidArgument;
+            if (program_index < 0) return types.kInvalidArgument;
+            const value = units.programInfo(list_id, @intCast(program_index), std.mem.span(attribute_id)) orelse return types.kInvalidArgument;
+            copyString128Ptr(out, value);
+            return types.kResultOk;
         }
 
         fn hasProgramPitchNames(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32) callconv(.C) types.tresult {
@@ -1006,7 +1009,7 @@ fn countToInt32(count: usize) types.int32 {
 
 test "reflected edit controller exposes configured units and programs" {
     const programs = [_]plug_core.units.Program{
-        .{ .name = "Clean" },
+        .{ .name = "Clean", .info = &.{.{ .key = "category", .value = "Clean" }} },
         .{ .name = "Lead" },
     };
     const EmptyParams = struct {};
@@ -1057,6 +1060,12 @@ test "reflected edit controller exposes configured units and programs" {
     try std.testing.expectEqual(@as(vsttypes.TChar, 'L'), program_name[0]);
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramName(unit_info, 7, 2, &program_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[0]);
+
+    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getProgramInfo(unit_info, 7, 0, "category", &program_info));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'C'), program_info[0]);
+    try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramInfo(unit_info, 7, 0, "missing", &program_info));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[0]);
 
     try std.testing.expectEqual(@as(vsttypes.UnitID, 0), unit_info.vtable.getSelectedUnit(unit_info));
     try std.testing.expectEqual(types.kResultOk, unit_info.vtable.selectUnit(unit_info, 1));

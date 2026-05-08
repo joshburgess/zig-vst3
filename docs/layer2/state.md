@@ -28,4 +28,4 @@ Malformed state headers, unsupported format versions, truncated entries, denorma
 
 ## Open Work
 
-- Add preset metadata once `zig-plug` exposes named programs.
+- Decide whether programs should capture parameter snapshots or remain metadata-only.

@@ -21,6 +21,12 @@ pub const Unit = struct {
 
 pub const Program = struct {
     name: []const u8,
+    info: []const ProgramInfo = &.{},
+};
+
+pub const ProgramInfo = struct {
+    key: []const u8,
+    value: []const u8,
 };
 
 pub const ProgramList = struct {
@@ -98,6 +104,15 @@ pub fn UnitSet(comptime config: Config) type {
             return list.programs[program_index].name;
         }
 
+        pub fn programInfo(self: Self, list_id: i32, program_index: usize, key: []const u8) ?[]const u8 {
+            const list = self.programListById(list_id) orelse return null;
+            if (program_index >= list.programs.len) return null;
+            for (list.programs[program_index].info) |item| {
+                if (std.mem.eql(u8, item.key, key)) return item.value;
+            }
+            return null;
+        }
+
         pub fn rootUnit(self: Self) Unit {
             return self.unitById(root_unit_id) orelse Unit.root("Root");
         }
@@ -120,7 +135,7 @@ test "default unit set exposes root unit only" {
 
 test "unit set exposes custom units and programs" {
     const programs = [_]Program{
-        .{ .name = "Clean" },
+        .{ .name = "Clean", .info = &.{.{ .key = "category", .value = "Clean" }} },
         .{ .name = "Drive" },
     };
     const Set = UnitSet(.{
@@ -145,4 +160,6 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?usize, 2), set.programCount(10));
     try std.testing.expectEqualStrings("Drive", set.programName(10, 1).?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programName(10, 2));
+    try std.testing.expectEqualStrings("Clean", set.programInfo(10, 0, "category").?);
+    try std.testing.expectEqual(@as(?[]const u8, null), set.programInfo(10, 0, "missing"));
 }

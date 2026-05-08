@@ -40,8 +40,8 @@ Unit and program helpers:
 
 - Plugins may declare `pub const units = plug.units.Config{ ... }`.
 - `plug.units.Unit.root("Root")` declares the root unit. Additional units can attach to the root or another unit and may point at a program list.
-- `plug.units.ProgramList` and `plug.units.Program` describe host-facing program names without coupling them to parameter state yet.
-- `PluginInstance.unitCount`, `unit`, `unitById`, `programListCount`, `programList`, `programListById`, `programCount`, and `programName` expose the reflected metadata.
+- `plug.units.ProgramList`, `plug.units.Program`, and `plug.units.ProgramInfo` describe host-facing program names and program metadata without coupling them to parameter state yet.
+- `PluginInstance.unitCount`, `unit`, `unitById`, `programListCount`, `programList`, `programListById`, `programCount`, `programName`, and `programInfo` expose the reflected metadata.
 
 Audio helpers:
 
