@@ -581,6 +581,11 @@ pub fn ProcessContext(comptime Sample: type) type {
             return writer.remainingCapacity();
         }
 
+        pub fn outputEventsEmpty(self: @This()) bool {
+            const writer = self.output_events orelse return true;
+            return writer.isEmpty();
+        }
+
         pub fn outputEventsFull(self: @This()) bool {
             const writer = self.output_events orelse return true;
             return writer.isFull();
@@ -949,11 +954,13 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(usize, 0), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCapacity());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventRemainingCapacity());
+    try std.testing.expect(context.outputEventsEmpty());
     try std.testing.expect(!context.outputEventsFull());
 
     try context.appendOutputEvent(events[0]);
     try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 1), context.outputEventRemainingCapacity());
+    try std.testing.expect(!context.outputEventsEmpty());
     try context.appendOutputEvents(try Events.init(events[1..], input.len));
 
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
@@ -965,12 +972,14 @@ test "process context exposes output event helpers" {
     context.clearOutputEvents();
     try std.testing.expectEqual(@as(usize, 0), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventRemainingCapacity());
+    try std.testing.expect(context.outputEventsEmpty());
 
     var no_writer = try ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
     try std.testing.expect(!no_writer.hasOutputEventWriter());
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventCount());
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventCapacity());
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventRemainingCapacity());
+    try std.testing.expect(no_writer.outputEventsEmpty());
     try std.testing.expect(no_writer.outputEventsFull());
     try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvent(events[0]));
     try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvents(try Events.init(&events, input.len)));
