@@ -18,7 +18,12 @@ result=$4
 notes=${5:-}
 
 date_value=$(date +%Y-%m-%d)
-os_value=$(uname -s)
+os_name=$(uname -s)
+if [ "$os_name" = "Darwin" ] && command -v sw_vers >/dev/null 2>&1; then
+  os_value="macOS $(sw_vers -productVersion)"
+else
+  os_value=$os_name
+fi
 cpu_value=$(uname -m)
 build_hash=$(git rev-parse --short HEAD)
 
