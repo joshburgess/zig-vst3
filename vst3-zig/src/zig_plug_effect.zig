@@ -580,7 +580,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         fn setComponentHandler(ptr: *anyopaque, handler: ?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             releaseComponentHandlers(self);
-            self.component_handler = if (handler) |value| @ptrCast(@alignCast(value)) else null;
+            self.component_handler = retainComponentHandler(handler);
             self.component_handler2 = queryComponentHandler2(handler);
             self.component_handler3 = queryComponentHandler3(handler);
             self.component_handler_bus_activation = queryComponentHandlerBusActivation(handler);
@@ -1100,6 +1100,13 @@ fn queryUnitHandler2(handler: ?*anyopaque) ?*ivstunits.IUnitHandler2 {
     return if (out) |value| @ptrCast(@alignCast(value)) else null;
 }
 
+fn retainComponentHandler(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentHandler {
+    const raw = handler orelse return null;
+    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
+    _ = base.vtable.addRef(base);
+    return base;
+}
+
 fn releaseComponentHandlers(controller: anytype) void {
     if (controller.unit_handler2) |unit_handler2| {
         _ = unit_handler2.vtable.release(unit_handler2);
@@ -1129,7 +1136,10 @@ fn releaseComponentHandlers(controller: anytype) void {
         _ = handler2.vtable.release(handler2);
         controller.component_handler2 = null;
     }
-    controller.component_handler = null;
+    if (controller.component_handler) |handler| {
+        _ = handler.vtable.release(handler);
+        controller.component_handler = null;
+    }
 }
 
 pub fn SimpleStereoEffect(comptime Config: type) type {

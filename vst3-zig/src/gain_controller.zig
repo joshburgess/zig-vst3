@@ -191,6 +191,7 @@ test "gain controller stores component handler for automation callbacks" {
 
     var handler = HostHandler{};
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.add_ref_count);
     try std.testing.expectEqual(types.kResultOk, beginEdit(gain_param_id));
     try std.testing.expectEqual(types.kResultOk, performEdit(gain_param_id, 0.25));
     try std.testing.expectEqual(types.kResultOk, endEdit(gain_param_id));
@@ -202,6 +203,7 @@ test "gain controller stores component handler for automation callbacks" {
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), gain());
 
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.release_count);
     try std.testing.expectEqual(types.kResultFalse, endEdit(gain_param_id));
 }
 
