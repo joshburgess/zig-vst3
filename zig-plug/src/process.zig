@@ -260,6 +260,18 @@ pub const EventWriter = struct {
         }
     }
 
+    pub fn clear(self: *EventWriter) void {
+        self.count = 0;
+    }
+
+    pub fn capacity(self: *const EventWriter) usize {
+        return self.storage.len;
+    }
+
+    pub fn remainingCapacity(self: *const EventWriter) usize {
+        return self.storage.len - self.count;
+    }
+
     pub fn events(self: *const EventWriter) Events {
         return .{ .items = self.storage[0..self.count] };
     }
@@ -365,6 +377,21 @@ pub fn ProcessContext(comptime Sample: type) type {
 
         pub fn setOutputEvents(self: *@This(), writer: *EventWriter) void {
             self.output_events = writer;
+        }
+
+        pub fn appendOutputEvent(self: *@This(), event: Event) !void {
+            const writer = self.output_events orelse return error.OutputEventsUnavailable;
+            try writer.append(event);
+        }
+
+        pub fn appendOutputEvents(self: *@This(), events: Events) !void {
+            const writer = self.output_events orelse return error.OutputEventsUnavailable;
+            try writer.appendAll(events);
+        }
+
+        pub fn writtenOutputEvents(self: @This()) Events {
+            const writer = self.output_events orelse return .{};
+            return writer.events();
         }
 
         pub fn frameCount(self: @This()) usize {
@@ -557,7 +584,12 @@ test "event writer validates offsets and capacity" {
 
     try writer.append(Event.noteOn(0, 0, 60, 1.0));
     try std.testing.expectEqual(@as(usize, 1), writer.events().items.len);
+    try std.testing.expectEqual(@as(usize, 1), writer.capacity());
+    try std.testing.expectEqual(@as(usize, 0), writer.remainingCapacity());
     try std.testing.expectError(error.EventStorageFull, writer.append(Event.noteOff(1, 0, 60, 0.0)));
+    writer.clear();
+    try std.testing.expectEqual(@as(usize, 0), writer.events().items.len);
+    try std.testing.expectEqual(@as(usize, 1), writer.remainingCapacity());
 
     var empty_storage: [1]Event = undefined;
     var empty_writer = EventWriter.init(&empty_storage, 4);
@@ -587,4 +619,32 @@ test "event writer appends event views atomically" {
     var outside_writer = EventWriter.init(&outside_storage, 4);
     try std.testing.expectError(error.EventOutsideBlock, outside_writer.appendAll(.{ .items = &outside }));
     try std.testing.expectEqual(@as(usize, 0), outside_writer.events().items.len);
+}
+
+test "process context exposes output event helpers" {
+    const input = [_]f32{ 0.0, 0.0 };
+    var output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const events = [_]Event{
+        Event.noteOn(0, 0, 60, 1.0),
+        Event.noteOff(1, 0, 60, 0.0),
+    };
+    var storage: [2]Event = undefined;
+    var writer = EventWriter.init(&storage, input.len);
+    var context = try ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .output_events = &writer,
+    });
+
+    try context.appendOutputEvent(events[0]);
+    try context.appendOutputEvents(try Events.init(events[1..], input.len));
+
+    try std.testing.expectEqual(@as(usize, 2), context.writtenOutputEvents().items.len);
+    try std.testing.expectEqual(EventKind.note_on, context.writtenOutputEvents().items[0].kind);
+    try std.testing.expectEqual(EventKind.note_off, context.writtenOutputEvents().items[1].kind);
+
+    var no_writer = try ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
+    try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvent(events[0]));
+    try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvents(try Events.init(&events, input.len)));
+    try std.testing.expectEqual(@as(usize, 0), no_writer.writtenOutputEvents().items.len);
 }
