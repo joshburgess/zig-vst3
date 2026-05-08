@@ -230,11 +230,15 @@ pub const Events = struct {
         return count;
     }
 
-    pub fn hasKind(self: Events, kind: EventKind) bool {
+    pub fn firstKind(self: Events, kind: EventKind) ?Event {
         for (self.items) |item| {
-            if (item.kind == kind) return true;
+            if (item.kind == kind) return item;
         }
-        return false;
+        return null;
+    }
+
+    pub fn hasKind(self: Events, kind: EventKind) bool {
+        return self.firstKind(kind) != null;
     }
 };
 
@@ -579,7 +583,9 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.data));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.other));
     try std.testing.expect(view.hasKind(.note_on));
+    try std.testing.expectEqual(@as(i16, 60), view.firstKind(.note_on).?.pitch);
     try std.testing.expect(view.hasKind(.data));
+    try std.testing.expectEqual(@as(?Event, null), (Events{}).firstKind(.note_on));
 }
 
 test "event constructors can target non-main buses" {

@@ -7,7 +7,7 @@ pub const NoteGate = struct {
     pub const Params = struct {};
 
     pub fn process(_: *NoteGate, context: *plug.process.ProcessContext(f32)) void {
-        const gate_open = context.events.hasKind(.note_on);
+        const gate_open = context.events.firstKind(.note_on) != null;
         for (0..context.outputChannelCount()) |channel| {
             const input = context.inputs.channel(channel) orelse continue;
             const output = context.outputs.channel(channel) orelse continue;
