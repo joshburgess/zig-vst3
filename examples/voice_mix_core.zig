@@ -1,5 +1,5 @@
 const std = @import("std");
-const plug = @import("zig-plug-core");
+const plug = @import("zig-plug");
 
 pub const VoiceMix = struct {
     pub const name = "zig-plug Core Voice Mix";

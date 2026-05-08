@@ -128,12 +128,12 @@ pub fn build(b: *std.Build) void {
     const note_gate_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/note_gate_plugin.zig");
     const event_echo_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/event_echo_plugin.zig");
 
-    const gain_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/gain_core.zig");
-    const bypass_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/bypass_core.zig");
-    const mode_gain_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/mode_gain_core.zig");
-    const voice_mix_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/voice_mix_core.zig");
-    const note_gate_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/note_gate_core.zig");
-    const event_echo_core_example_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "examples/event_echo_core.zig");
+    const gain_core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/gain_core.zig");
+    const bypass_core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/bypass_core.zig");
+    const mode_gain_core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/mode_gain_core.zig");
+    const voice_mix_core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/voice_mix_core.zig");
+    const note_gate_core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/note_gate_core.zig");
+    const event_echo_core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/event_echo_core.zig");
 
     const test_step = b.step("test", "Run unit tests");
     addRunArtifactDependencies(b, test_step, &.{
@@ -537,6 +537,24 @@ fn addZigPlugCoreTest(
         .optimize = optimize,
     });
     module.addImport("zig-plug-core", zig_plug_core);
+    return b.addTest(.{
+        .root_module = module,
+    });
+}
+
+fn addZigPlugTest(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    zig_plug: *std.Build.Module,
+    root_source_file: []const u8,
+) *std.Build.Step.Compile {
+    const module = b.createModule(.{
+        .root_source_file = b.path(root_source_file),
+        .target = target,
+        .optimize = optimize,
+    });
+    module.addImport("zig-plug", zig_plug);
     return b.addTest(.{
         .root_module = module,
     });
