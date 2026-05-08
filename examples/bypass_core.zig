@@ -8,13 +8,11 @@ pub const Bypass = struct {
         bypass: plug.parameters.BoolParam = .{ .id = 0, .name = "Bypass", .default = false },
     };
 
-    pub fn processWithParameters(
+    pub fn processWithParameterView(
         _: *Bypass,
         context: *plug.process.ProcessContext(f32),
-        set: *const Spec.ParameterSet,
-        values: *const Spec.ParameterValues,
+        params: plug.parameters.ParameterView(Params),
     ) void {
-        const params = values.view(set);
         const bypassed = params.load("bypass");
         for (0..context.outputs.channels.len) |channel| {
             const input = context.inputs.channel(channel) orelse continue;
