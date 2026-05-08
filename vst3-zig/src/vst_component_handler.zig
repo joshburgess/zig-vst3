@@ -4,6 +4,7 @@ const interface_map = @import("interface_map.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const ivstcontextmenu = @import("pluginterfaces/vst/ivstcontextmenu.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
@@ -707,6 +708,196 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
     };
 }
 
+pub fn ComponentHandlerUnits(comptime Config: type) type {
+    return extern struct {
+        const Self = @This();
+
+        handler: ivsteditcontroller.IComponentHandler = .{ .vtable = &handler_vtable },
+        unit_handler: ivstunits.IUnitHandler = .{ .vtable = &unit_vtable },
+        unit_handler2: ivstunits.IUnitHandler2 = .{ .vtable = &unit2_vtable },
+        handler_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        unit_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        unit2_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        unit_selection_count: types.uint32 = 0,
+        program_list_count: types.uint32 = 0,
+        unit_by_bus_count: types.uint32 = 0,
+        unit_add_ref_count: types.uint32 = 0,
+        unit2_add_ref_count: types.uint32 = 0,
+        unit_release_count: types.uint32 = 0,
+        unit2_release_count: types.uint32 = 0,
+        last_unit_id: vsttypes.UnitID = ivstunits.kNoParentUnitId,
+        last_program_list_id: vsttypes.ProgramListID = ivstunits.kNoProgramListId,
+        last_program_index: types.int32 = 0,
+
+        pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
+            return &self.handler;
+        }
+
+        pub fn asUnitHandler(self: *Self) *ivstunits.IUnitHandler {
+            return &self.unit_handler;
+        }
+
+        pub fn asUnitHandler2(self: *Self) *ivstunits.IUnitHandler2 {
+            return &self.unit_handler2;
+        }
+
+        fn ownerFromHandler(ptr: *anyopaque) *Self {
+            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("handler", iface);
+        }
+
+        fn ownerFromUnit(ptr: *anyopaque) *Self {
+            const iface: *ivstunits.IUnitHandler = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("unit_handler", iface);
+        }
+
+        fn ownerFromUnit2(ptr: *anyopaque) *Self {
+            const iface: *ivstunits.IUnitHandler2 = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("unit_handler2", iface);
+        }
+
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = &self.handler },
+                .{ .iid = &ivsteditcontroller.icomponent_handler_iid, .ptr = &self.handler },
+                .{ .iid = &ivstunits.iunit_handler_iid, .ptr = &self.unit_handler },
+                .{ .iid = &ivstunits.iunit_handler2_iid, .ptr = &self.unit_handler2 },
+            };
+            if (std.mem.eql(u8, requested_iid, &ivstunits.iunit_handler_iid)) {
+                return interface_map.queryWithAddRef(&self.unit_handler, addRefFromUnit, &entries, requested_iid, out);
+            }
+            if (std.mem.eql(u8, requested_iid, &ivstunits.iunit_handler2_iid)) {
+                return interface_map.queryWithAddRef(&self.unit_handler2, addRefFromUnit2, &entries, requested_iid, out);
+            }
+            return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
+        }
+
+        fn queryFromUnit(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromUnit(ptr);
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = &self.unit_handler },
+                .{ .iid = &ivstunits.iunit_handler_iid, .ptr = &self.unit_handler },
+            };
+            return interface_map.queryWithAddRef(&self.unit_handler, addRefFromUnit, &entries, requested_iid, out);
+        }
+
+        fn queryFromUnit2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromUnit2(ptr);
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = &self.unit_handler2 },
+                .{ .iid = &ivstunits.iunit_handler2_iid, .ptr = &self.unit_handler2 },
+            };
+            return interface_map.queryWithAddRef(&self.unit_handler2, addRefFromUnit2, &entries, requested_iid, out);
+        }
+
+        fn addRefFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn releaseFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "IComponentHandler");
+        }
+
+        fn addRefFromUnit(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromUnit(ptr);
+            self.unit_add_ref_count += 1;
+            return self.unit_ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn releaseFromUnit(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromUnit(ptr);
+            self.unit_release_count += 1;
+            return funknown.decrementRefCount(&self.unit_ref_count, "IUnitHandler");
+        }
+
+        fn addRefFromUnit2(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromUnit2(ptr);
+            self.unit2_add_ref_count += 1;
+            return self.unit2_ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn releaseFromUnit2(ptr: *anyopaque) callconv(.C) types.uint32 {
+            const self = ownerFromUnit2(ptr);
+            self.unit2_release_count += 1;
+            return funknown.decrementRefCount(&self.unit2_ref_count, "IUnitHandler2");
+        }
+
+        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
+            return types.kResultOk;
+        }
+
+        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
+            return types.kResultOk;
+        }
+
+        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
+            return types.kResultOk;
+        }
+
+        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.C) types.tresult {
+            const self = ownerFromHandler(ptr);
+            if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
+            return types.kResultOk;
+        }
+
+        fn notifyUnitSelection(ptr: *anyopaque, unit_id: vsttypes.UnitID) callconv(.C) types.tresult {
+            const self = ownerFromUnit(ptr);
+            self.unit_selection_count += 1;
+            self.last_unit_id = unit_id;
+            if (@hasDecl(Config, "notifyUnitSelection")) return Config.notifyUnitSelection(self, unit_id);
+            return types.kResultOk;
+        }
+
+        fn notifyProgramListChange(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32) callconv(.C) types.tresult {
+            const self = ownerFromUnit(ptr);
+            self.program_list_count += 1;
+            self.last_program_list_id = list_id;
+            self.last_program_index = program_index;
+            if (@hasDecl(Config, "notifyProgramListChange")) return Config.notifyProgramListChange(self, list_id, program_index);
+            return types.kResultOk;
+        }
+
+        fn notifyUnitByBusChange(ptr: *anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromUnit2(ptr);
+            self.unit_by_bus_count += 1;
+            if (@hasDecl(Config, "notifyUnitByBusChange")) return Config.notifyUnitByBusChange(self);
+            return types.kResultOk;
+        }
+
+        const handler_vtable = ivsteditcontroller.IComponentHandlerVTable{
+            .queryInterface = queryFromHandler,
+            .addRef = addRefFromHandler,
+            .release = releaseFromHandler,
+            .beginEdit = beginEdit,
+            .performEdit = performEdit,
+            .endEdit = endEdit,
+            .restartComponent = restartComponent,
+        };
+
+        const unit_vtable = ivstunits.IUnitHandlerVTable{
+            .queryInterface = queryFromUnit,
+            .addRef = addRefFromUnit,
+            .release = releaseFromUnit,
+            .notifyUnitSelection = notifyUnitSelection,
+            .notifyProgramListChange = notifyProgramListChange,
+        };
+
+        const unit2_vtable = ivstunits.IUnitHandler2VTable{
+            .queryInterface = queryFromUnit2,
+            .addRef = addRefFromUnit2,
+            .release = releaseFromUnit2,
+            .notifyUnitByBusChange = notifyUnitByBusChange,
+        };
+    };
+}
+
 test "component handler records automation callbacks" {
     const Handler = ComponentHandler(struct {});
     var handler = Handler{};
@@ -813,4 +1004,33 @@ test "component handler exposes progress callbacks" {
 
     try std.testing.expectEqual(@as(types.uint32, 1), progress.vtable.release(progress));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.progress_release_count);
+}
+
+test "component handler exposes unit handler extensions" {
+    const Handler = ComponentHandlerUnits(struct {});
+    var handler = Handler{};
+    var unit_out: ?*anyopaque = null;
+    var unit2_out: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.queryInterface(handler.asHandler(), &ivstunits.iunit_handler_iid, &unit_out));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.queryInterface(handler.asHandler(), &ivstunits.iunit_handler2_iid, &unit2_out));
+    try std.testing.expect(unit_out != null);
+    try std.testing.expect(unit2_out != null);
+
+    const unit: *ivstunits.IUnitHandler = @ptrCast(@alignCast(unit_out.?));
+    const unit2: *ivstunits.IUnitHandler2 = @ptrCast(@alignCast(unit2_out.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.unit_add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.unit2_add_ref_count);
+
+    try std.testing.expectEqual(types.kResultOk, unit.vtable.notifyUnitSelection(unit, ivstunits.kRootUnitId));
+    try std.testing.expectEqual(types.kResultOk, unit.vtable.notifyProgramListChange(unit, ivstunits.kNoProgramListId, ivstunits.kAllProgramInvalid));
+    try std.testing.expectEqual(types.kResultOk, unit2.vtable.notifyUnitByBusChange(unit2));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.unit_selection_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.program_list_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.unit_by_bus_count);
+
+    try std.testing.expectEqual(@as(types.uint32, 1), unit.vtable.release(unit));
+    try std.testing.expectEqual(@as(types.uint32, 1), unit2.vtable.release(unit2));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.unit_release_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.unit2_release_count);
 }
