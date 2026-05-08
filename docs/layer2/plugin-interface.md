@@ -52,7 +52,7 @@ Event helpers:
 - `Event.noteOn`, `Event.noteOff`, `Event.midiCc`, `Event.pitchBend`, `Event.aftertouch`, `Event.noteExpressionValue`, `Event.noteExpressionInt`, `Event.noteExpressionText`, `Event.dataEvent`, and `Event.other` construct common input and output events.
 - `Event.withBusIndex` retargets a constructed event to another event bus.
 - `Event.withControlNumber` preserves legacy MIDI controller numbers when a host bridge needs to keep them attached to converted events.
-- `ProcessContext.inputEvents`, `firstEvent`, `hasEvent`, and `countEvents` expose input-event reads without reaching into the event view field.
+- `ProcessContext.inputEvents`, `firstEvent`, `latestEvent`, `hasEvent`, `countEvents`, and `nextEventOffset` expose input-event reads without reaching into the event view field.
 - `EventWriter.appendAll` copies validated event views into bounded output storage.
 - `ProcessContext.appendOutputEvent`, `appendOutputEvents`, `writtenOutputEvents`, `clearOutputEvents`, `outputEventCount`, `outputEventCapacity`, and `outputEventRemainingCapacity` let processors write, inspect, reset, and plan output events without unwrapping the optional writer.
 
