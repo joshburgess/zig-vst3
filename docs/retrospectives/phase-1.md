@@ -16,9 +16,9 @@ Status: first plugin milestone complete locally on macOS. This document records 
 - A shared raw-layer interface map handles IID dispatch for the synthetic multi-interface object and the gain plugin query paths.
 - `FUnknown.release` detects release-after-zero before the atomic refcount can underflow.
 - `funknown.allocatorDestroyFn` provides a reusable allocator-owned destruction callback for raw-layer objects.
-- Layer 1 builds `zig_vst3_gain.vst3` with component, controller, processor, factory exports, sample-accurate gain automation, and state persistence.
-- `zig build validate-gain` passes Steinberg's official validator locally on macOS.
-- `zig build phase1` runs `validate-gain` on macOS.
+- Layer 1 builds bundled gain, bypass, mode-gain, voice-mix, note-gate, and event-echo `.vst3` examples with component, controller, processor, factory exports, parameter automation, state persistence, input events, and output events.
+- `zig build validate-examples` passes Steinberg's official validator locally on macOS for all bundled examples.
+- `zig build phase1` runs the bundled example validator path on macOS.
 
 ## Harder Than Expected
 
@@ -37,4 +37,4 @@ Status: first plugin milestone complete locally on macOS. This document records 
 ## Follow-Up Tasks
 
 - Decide whether Layer 2 hides raw callback-based destruction behind object factory helpers.
-- Fill `docs/host-matrix.md` after the gain plugin is loaded in at least one real host.
+- Fill `docs/host-matrix.md` after at least one bundled example is loaded in a real host.
