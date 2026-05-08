@@ -5,21 +5,19 @@ const Mode = enum { clean, boost, mute };
 const ModeParam = plug.parameters.EnumParam(Mode);
 
 pub const ModeGain = struct {
-    values: Spec.ParameterValues,
-
     pub const name = "zig-plug Core Mode Gain";
     pub const vendor = "zig-vst3";
     pub const Params = struct {
         mode: ModeParam = .{ .id = 0, .name = "Mode", .default = .clean },
     };
 
-    pub fn init(_: std.mem.Allocator) !ModeGain {
-        return .{ .values = Spec.ParameterValues.init(&parameter_set) };
-    }
-
-    pub fn process(self: *ModeGain, context: *plug.process.ProcessContext(f32)) void {
-        self.values.applyChanges(&parameter_set, context.parameter_changes);
-        const normalized = self.values.loadById(&parameter_set, 0) orelse 0.0;
+    pub fn processWithParameters(
+        _: *ModeGain,
+        context: *plug.process.ProcessContext(f32),
+        set: *const Spec.ParameterSet,
+        values: *const Spec.ParameterValues,
+    ) void {
+        const normalized = values.loadById(set, 0) orelse 0.0;
         const mode_param = ModeParam{ .id = 0, .name = "Mode", .default = .clean };
         const gain: f32 = switch (mode_param.denormalize(normalized)) {
             .clean => 1.0,
@@ -41,16 +39,16 @@ pub const Instance = plug.plugin.PluginInstance(ModeGain);
 pub const parameter_set = Spec.ParameterSet.init(.{});
 
 test "mode gain core example declares reflected enum parameter" {
-    var plugin = try ModeGain.init(std.testing.allocator);
+    const spec = Spec.init(.{});
 
     try std.testing.expectEqualStrings("zig-plug Core Mode Gain", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
-    try std.testing.expectEqual(@as(?f64, 0.0), plugin.values.loadById(&parameter_set, 0));
+    try std.testing.expectEqual(@as(?f64, 0.0), spec.values.loadById(&parameter_set, 0));
     plug.plugin.validateLifecycle(ModeGain);
 }
 
 test "mode gain core example applies enum parameter changes" {
-    var plugin = try ModeGain.init(std.testing.allocator);
+    var instance = try Instance.init(std.testing.allocator, .{});
     const input = [_]f32{ 0.25, 0.5, 1.0 };
     var output = [_]f32{ 0.0, 0.0, 0.0 };
     const input_channels = [_][]const f32{&input};
@@ -65,7 +63,7 @@ test "mode gain core example applies enum parameter changes" {
         .parameter_changes = try plug.process.ParameterChanges.init(&changes, input.len),
     };
 
-    plugin.process(&context);
+    instance.process(&context);
 
     try std.testing.expectEqual(@as(f32, 0.5), output[0]);
     try std.testing.expectEqual(@as(f32, 1.0), output[1]);

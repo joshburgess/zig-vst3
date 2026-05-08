@@ -2,21 +2,19 @@ const std = @import("std");
 const plug = @import("zig-plug-core");
 
 pub const VoiceMix = struct {
-    values: Spec.ParameterValues,
-
     pub const name = "zig-plug Core Voice Mix";
     pub const vendor = "zig-vst3";
     pub const Params = struct {
         voices: plug.parameters.IntParam = plug.parameters.IntParam.init(0, "Voices", 1, 4, 1),
     };
 
-    pub fn init(_: std.mem.Allocator) !VoiceMix {
-        return .{ .values = Spec.ParameterValues.init(&parameter_set) };
-    }
-
-    pub fn process(self: *VoiceMix, context: *plug.process.ProcessContext(f32)) void {
-        self.values.applyChanges(&parameter_set, context.parameter_changes);
-        const normalized = self.values.loadById(&parameter_set, 0) orelse 0.0;
+    pub fn processWithParameters(
+        _: *VoiceMix,
+        context: *plug.process.ProcessContext(f32),
+        set: *const Spec.ParameterSet,
+        values: *const Spec.ParameterValues,
+    ) void {
+        const normalized = values.loadById(set, 0) orelse 0.0;
         const voices = plug.parameters.IntParam.init(0, "Voices", 1, 4, 1).denormalize(normalized);
         const gain: f32 = @floatFromInt(voices);
         for (0..context.outputs.channels.len) |channel| {
@@ -34,16 +32,16 @@ pub const Instance = plug.plugin.PluginInstance(VoiceMix);
 pub const parameter_set = Spec.ParameterSet.init(.{});
 
 test "voice mix core example declares reflected int parameter" {
-    var plugin = try VoiceMix.init(std.testing.allocator);
+    const spec = Spec.init(.{});
 
     try std.testing.expectEqualStrings("zig-plug Core Voice Mix", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
-    try std.testing.expectEqual(@as(?f64, 0.0), plugin.values.loadById(&parameter_set, 0));
+    try std.testing.expectEqual(@as(?f64, 0.0), spec.values.loadById(&parameter_set, 0));
     plug.plugin.validateLifecycle(VoiceMix);
 }
 
 test "voice mix core example applies int parameter changes" {
-    var plugin = try VoiceMix.init(std.testing.allocator);
+    var instance = try Instance.init(std.testing.allocator, .{});
     const input = [_]f32{ 0.25, 0.5, 1.0 };
     var output = [_]f32{ 0.0, 0.0, 0.0 };
     const input_channels = [_][]const f32{&input};
@@ -58,7 +56,7 @@ test "voice mix core example applies int parameter changes" {
         .parameter_changes = try plug.process.ParameterChanges.init(&changes, input.len),
     };
 
-    plugin.process(&context);
+    instance.process(&context);
 
     try std.testing.expectEqual(@as(f32, 1.0), output[0]);
     try std.testing.expectEqual(@as(f32, 2.0), output[1]);

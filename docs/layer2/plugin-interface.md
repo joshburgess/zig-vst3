@@ -25,7 +25,9 @@ A plugin type declares:
 - `init(allocator: std.mem.Allocator) !Plugin`
 - `prepare(self: *Plugin, config: PrepareConfig) void`
 - `process(self: *Plugin, context: *process.ProcessContext(f32)) void`
+- `processWithParameters(self: *Plugin, context: *process.ProcessContext(f32), set: *const ParameterSet, values: *const ParameterValues) void`
 - `process64(self: *Plugin, context: *process.ProcessContext(f64)) void`
+- `process64WithParameters(self: *Plugin, context: *process.ProcessContext(f64), set: *const ParameterSet, values: *const ParameterValues) void`
 - `deinit(self: *Plugin) void`
 
 `process.ProcessContext(Sample)` carries typed input and output channel views, parameter changes, input events, optional output events, and the current sample rate. The input and output views validate that each channel has the same frame count before a context is created. Parameter changes validate normalized values and sample offsets within the current block, expose block-latest lookup, expose latest-at-sample lookup, and expose the next sample offset with an automation change. Events currently expose note-on, note-off, MIDI CC, pitch bend, aftertouch, note-expression value/int/text, data payloads such as SysEx, and other event kinds with block-offset validation. The VST3 shell gives processors a bounded output-event writer and flushes written events to the host after audio processing.
