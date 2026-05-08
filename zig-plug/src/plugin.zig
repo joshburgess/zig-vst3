@@ -92,6 +92,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.values.view(&self.spec.parameter_set);
         }
 
+        pub fn parameterEditor(self: *Self) parameters.ParameterEditor(Plugin.Params) {
+            return self.spec.values.editor(&self.spec.parameter_set);
+        }
+
         pub fn loadParameterNormalized(self: *const Self, comptime field_name: []const u8) f64 {
             return self.spec.values.loadFieldNormalized(&self.spec.parameter_set, field_name);
         }
@@ -402,6 +406,27 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(true, view.load("bypass"));
     try std.testing.expectEqual(Mode.mute, view.load("mode"));
     try std.testing.expectEqual(@as(f64, 1.0), view.loadNormalized("mode"));
+}
+
+test "plugin instance exposes parameter editor" {
+    const Gain = struct {
+        pub const name = "Instance Parameter Editor";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+            bypass: parameters.BoolParam = .{ .id = 1, .name = "Bypass" },
+        };
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+
+    const editor = instance.parameterEditor();
+    try std.testing.expect(editor.store("gain", 0.75));
+    try std.testing.expect(editor.storePlainById(1, 1.0));
+
+    const view = instance.parameterView();
+    try std.testing.expectEqual(@as(f64, 0.75), view.load("gain"));
+    try std.testing.expectEqual(true, view.load("bypass"));
 }
 
 test "plugin instance applies process parameter changes before dispatch" {

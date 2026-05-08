@@ -596,6 +596,10 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn view(self: *const Self, set: *const Set) ParameterView(Params) {
             return ParameterView(Params).init(set, self);
         }
+
+        pub fn editor(self: *Self, set: *const Set) ParameterEditor(Params) {
+            return ParameterEditor(Params).init(set, self);
+        }
     };
 }
 
@@ -630,6 +634,45 @@ pub fn ParameterView(comptime Params: type) type {
 
         pub fn loadPlainById(self: Self, id: u32) ?f64 {
             return self.values.loadPlainById(self.set, id);
+        }
+    };
+}
+
+pub fn ParameterEditor(comptime Params: type) type {
+    const Set = ParameterSet(Params);
+    const Values = ParameterValues(Params);
+
+    return struct {
+        const Self = @This();
+
+        set: *const Set,
+        values: *Values,
+
+        pub fn init(set: *const Set, values: *Values) Self {
+            return .{
+                .set = set,
+                .values = values,
+            };
+        }
+
+        pub fn view(self: Self) ParameterView(Params) {
+            return self.values.view(self.set);
+        }
+
+        pub fn storeNormalized(self: Self, comptime field_name: []const u8, normalized: f64) bool {
+            return self.values.store(self.set.indexOfField(field_name), normalized);
+        }
+
+        pub fn store(self: Self, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) bool {
+            return self.values.storeField(self.set, field_name, plain);
+        }
+
+        pub fn storeById(self: Self, id: u32, normalized: f64) bool {
+            return self.values.storeById(self.set, id, normalized);
+        }
+
+        pub fn storePlainById(self: Self, id: u32, plain: f64) bool {
+            return self.values.storePlainById(self.set, id, plain);
         }
     };
 }
@@ -980,6 +1023,37 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(f64, 1.0), view.loadNormalized("mode"));
     try std.testing.expectEqual(@as(?f64, 1.0), view.loadById(3));
     try std.testing.expectEqual(@as(?f64, 2.0), view.loadPlainById(3));
+}
+
+test "parameter editor binds reflected set and mutable values" {
+    const Mode = enum { clean, boost, mute };
+    const Params = struct {
+        gain: FloatParam = FloatParam.init(0, "Gain", -12.0, 6.0, 0.0),
+        voices: IntParam = IntParam.init(1, "Voices", 1, 4, 1),
+        bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
+        mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
+    };
+    const Set = ParameterSet(Params);
+    const Values = ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    const editor = values.editor(&set);
+
+    try std.testing.expect(editor.store("gain", 6.0));
+    try std.testing.expect(editor.store("voices", 4));
+    try std.testing.expect(editor.store("bypass", true));
+    try std.testing.expect(editor.store("mode", .mute));
+    try std.testing.expect(editor.storeNormalized("gain", 0.5));
+    try std.testing.expect(editor.storeById(2, 0.0));
+    try std.testing.expect(editor.storePlainById(1, 3.0));
+    try std.testing.expect(!editor.storeById(99, 1.0));
+    try std.testing.expect(!editor.storePlainById(99, 1.0));
+
+    const view = editor.view();
+    try std.testing.expectEqual(@as(f64, -3.0), view.load("gain"));
+    try std.testing.expectEqual(@as(i64, 3), view.load("voices"));
+    try std.testing.expectEqual(false, view.load("bypass"));
+    try std.testing.expectEqual(Mode.mute, view.load("mode"));
 }
 
 test "parameter values apply reflected parameter changes by id" {
