@@ -1242,11 +1242,11 @@ test "zig-plug bridge preserves VST3 data event payloads" {
 test "zig-plug bridge writes output events to VST3 event lists" {
     const payload = [_]u8{ 0xF0, 0x7D, 0x02, 0xF7 };
     const items = [_]plug.process.Event{
-        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = 60, .velocity = 0.75 },
-        .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 1, .channel = 1, .control_number = ivstmidicontrollers.kCtrlModWheel, .value = 0.5 },
-        .{ .kind = .pitch_bend, .bus_index = 0, .sample_offset = 2, .channel = 1, .value = 1.0 },
-        .{ .kind = .note_expression_value, .bus_index = 0, .sample_offset = 3, .note_id = 42, .expression_type_id = 5, .value = 0.25 },
-        .{ .kind = .data, .bus_index = 0, .sample_offset = 3, .data_type = @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx), .data = &payload },
+        plug.process.Event.noteOn(0, 1, 60, 0.75),
+        plug.process.Event.midiCc(1, 1, ivstmidicontrollers.kCtrlModWheel, 0.5),
+        plug.process.Event.pitchBend(2, 1, 1.0),
+        plug.process.Event.noteExpressionValue(3, 42, 5, 0.25),
+        plug.process.Event.dataEvent(3, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx), &payload),
         .{ .kind = .other, .bus_index = 0, .sample_offset = 3 },
     };
     const List = vst_event_list.EventList(5);
@@ -1309,7 +1309,7 @@ test "zig-plug bridge drops output MIDI events with invalid legacy fields" {
 
 test "zig-plug bridge reports output event write failures" {
     const items = [_]plug.process.Event{
-        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 0, .pitch = 60, .velocity = 0.75 },
+        plug.process.Event.noteOn(0, 0, 60, 0.75),
     };
     const List = vst_event_list.EventList(1);
     var list = List{ .fail_add_index = 0 };
