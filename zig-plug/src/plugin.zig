@@ -131,6 +131,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programName(list_id, program_index);
         }
 
+        pub fn programInfo(self: *const Self, list_id: i32, program_index: usize, key: []const u8) ?[]const u8 {
+            return self.spec.units.programInfo(list_id, program_index, key);
+        }
+
         pub fn parameterView(self: *const Self) parameters.ParameterView(Plugin.Params) {
             return self.spec.values.view(&self.spec.parameter_set);
         }
@@ -523,7 +527,7 @@ test "plugin spec exposes default root unit metadata" {
 
 test "plugin instance exposes custom unit and program metadata" {
     const programs = [_]units_api.Program{
-        .{ .name = "Clean" },
+        .{ .name = "Clean", .info = &.{.{ .key = "category", .value = "Clean" }} },
         .{ .name = "Lead" },
     };
     const Synth = struct {
@@ -549,6 +553,7 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqualStrings("Voice Programs", instance.programListById(7).?.name);
     try std.testing.expectEqual(@as(?usize, 2), instance.programCount(7));
     try std.testing.expectEqualStrings("Lead", instance.programName(7, 1).?);
+    try std.testing.expectEqualStrings("Clean", instance.programInfo(7, 0, "category").?);
 }
 
 test "plugin spec detects lifecycle declarations" {
