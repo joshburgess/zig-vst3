@@ -54,12 +54,8 @@ test "mode gain core example applies enum parameter changes" {
     const changes = [_]plug.process.ParameterChange{
         .{ .id = 0, .sample_offset = 0, .normalized = 0.5 },
     };
-    var context = plug.process.ProcessContext(f32){
-        .sample_rate = 48_000.0,
-        .inputs = try plug.process.AudioInputs(f32).init(&input_channels),
-        .outputs = try plug.process.AudioOutputs(f32).init(&output_channels),
-        .parameter_changes = try plug.process.ParameterChanges.init(&changes, input.len),
-    };
+    var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
+    context.parameter_changes = try plug.process.ParameterChanges.init(&changes, input.len);
 
     instance.process(&context);
 
@@ -77,12 +73,8 @@ test "mode gain core example can run through plugin instance" {
     const changes = [_]plug.process.ParameterChange{
         .{ .id = 0, .sample_offset = 0, .normalized = 1.0 },
     };
-    var context = plug.process.ProcessContext(f32){
-        .sample_rate = 48_000.0,
-        .inputs = try plug.process.AudioInputs(f32).init(&input_channels),
-        .outputs = try plug.process.AudioOutputs(f32).init(&output_channels),
-        .parameter_changes = try plug.process.ParameterChanges.init(&changes, input.len),
-    };
+    var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
+    context.parameter_changes = try plug.process.ParameterChanges.init(&changes, input.len);
 
     instance.process(&context);
 
