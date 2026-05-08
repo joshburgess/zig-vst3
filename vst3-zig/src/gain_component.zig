@@ -162,8 +162,12 @@ test "gain component stores channel context info listener" {
     try std.testing.expectEqual(types.kResultOk, setChannelContextInfos(null));
     try std.testing.expectEqual(@as(types.uint32, 1), host.channel_context_count);
 
-    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
+    try std.testing.expectEqual(@as(types.uint32, 2), host.info_add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), host.info_release_count);
+
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
+    try std.testing.expectEqual(@as(types.uint32, 2), host.info_release_count);
 }
 
 test "gain component stores automation state host interface" {
@@ -186,8 +190,12 @@ test "gain component stores automation state host interface" {
     try std.testing.expectEqual(types.kResultOk, setAutomationState(ivstautomationstate.AutomationStates.kReadWriteState));
     try std.testing.expectEqual(ivstautomationstate.AutomationStates.kReadWriteState, host.last_state);
 
-    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
+    try std.testing.expectEqual(@as(types.uint32, 2), host.automation_add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), host.automation_release_count);
+
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
+    try std.testing.expectEqual(@as(types.uint32, 2), host.automation_release_count);
 }
 
 test "gain component exposes default connection point" {
@@ -364,6 +372,10 @@ test "gain component stores data exchange handler" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.open_count);
     try std.testing.expectEqual(@as(types.uint32, 1), host.close_count);
 
-    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
+    try std.testing.expectEqual(@as(types.uint32, 2), host.add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), host.release_count);
+
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
+    try std.testing.expectEqual(@as(types.uint32, 2), host.release_count);
 }
