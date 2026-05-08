@@ -331,7 +331,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.7: Parameter changes and events
 
-`IParameterChanges`, `IParamValueQueue`, `IEventList`, `Event` and all event subtypes (`NoteOnEvent`, `NoteOffEvent`, `DataEvent`, `PolyPressureEvent`, `ChordEvent`, `ScaleEvent`, `LegacyMIDICCOutEvent`, `NoteExpressionValueEvent`, `NoteExpressionTextEvent`).
+`IParameterChanges`, `IParamValueQueue`, `IEventList`, `Event` and all event subtypes (`NoteOnEvent`, `NoteOffEvent`, `DataEvent`, `PolyPressureEvent`, `ChordEvent`, `ScaleEvent`, `LegacyMIDICCOutEvent`, `NoteExpressionValueEvent`, `NoteExpressionTextEvent`). `vst_parameter_changes.zig` provides reusable fixed-slot `IParameterChanges` and `IParamValueQueue` objects for host-side process tests.
 
 ### Work Unit 2.7a: MIDI 2.0 mapping interfaces
 
