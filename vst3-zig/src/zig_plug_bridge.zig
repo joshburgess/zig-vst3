@@ -667,17 +667,25 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
                 .velocity = event.velocity,
             } };
         },
-        .midi_cc, .pitch_bend => {
+        .midi_cc => {
+            const control_number = std.math.cast(types.uint8, event.control_number) orelse return null;
+            const channel = std.math.cast(types.int8, event.channel) orelse return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent);
             result.data = .{ .midiCCOut = .{
-                .controlNumber = @intCast(event.control_number),
-                .channel = @intCast(event.channel),
+                .controlNumber = control_number,
+                .channel = channel,
                 .value = events_helper.getMIDICCOutValue(event.value),
             } };
-            if (event.kind == .pitch_bend) {
-                result.data.midiCCOut.controlNumber = ivstmidicontrollers.kPitchBend;
-                events_helper.setPitchBendValue(&result.data.midiCCOut, event.value);
-            }
+        },
+        .pitch_bend => {
+            const channel = std.math.cast(types.int8, event.channel) orelse return null;
+            result.type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent);
+            result.data = .{ .midiCCOut = .{
+                .controlNumber = ivstmidicontrollers.kPitchBend,
+                .channel = channel,
+                .value = 0,
+            } };
+            events_helper.setPitchBendValue(&result.data.midiCCOut, event.value);
         },
         .aftertouch => {
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent);
@@ -1215,6 +1223,30 @@ test "zig-plug bridge writes output events to VST3 event lists" {
     try std.testing.expectEqual(@as(u32, payload.len), written[4].data.data.size);
     try std.testing.expectEqual(@as(u32, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx)), written[4].data.data.type);
     try std.testing.expectEqualSlices(u8, &payload, written[4].data.data.bytes.?[0..payload.len]);
+}
+
+test "zig-plug bridge drops output MIDI events with invalid legacy fields" {
+    const items = [_]plug.process.Event{
+        .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = -1, .value = 0.5 },
+        .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = 256, .value = 0.5 },
+        .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 128, .control_number = ivstmidicontrollers.kCtrlModWheel, .value = 0.5 },
+        .{ .kind = .pitch_bend, .bus_index = 0, .sample_offset = 0, .channel = 128, .value = 0.5 },
+        .{ .kind = .pitch_bend, .bus_index = 0, .sample_offset = 1, .channel = 1, .control_number = 512, .value = 0.5 },
+    };
+    const List = vst_event_list.EventList(1);
+    var list = List{};
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 2,
+        .outputEvents = list.asInterface(),
+    };
+
+    try std.testing.expectEqual(types.kResultOk, writeOutputEvents(&data, .{ .items = &items }));
+
+    const written = list.items();
+    try std.testing.expectEqual(@as(usize, 1), written.len);
+    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), written[0].type);
+    try std.testing.expectEqual(@as(u8, ivstmidicontrollers.kPitchBend), written[0].data.midiCCOut.controlNumber);
+    try std.testing.expectEqual(@as(types.int8, 1), written[0].data.midiCCOut.channel);
 }
 
 test "zig-plug bridge reports output event write failures" {
