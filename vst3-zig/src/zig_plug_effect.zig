@@ -528,6 +528,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn terminate(ptr: *anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
+            releaseConnectionPeer(&self.connected_peer);
             releaseComponentHandlers(self);
             releaseHostApplication(&self.host_application);
             return types.kResultOk;
@@ -610,17 +611,18 @@ pub fn ReflectedEditController(comptime Config: type) type {
         fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
             const self = ownerFromConnectionPoint(ptr);
             if (peer == null) {
-                self.connected_peer = null;
+                releaseConnectionPeer(&self.connected_peer);
                 return types.kInvalidArgument;
             }
-            self.connected_peer = peer;
+            releaseConnectionPeer(&self.connected_peer);
+            self.connected_peer = retainConnectionPeer(peer);
             return types.kResultOk;
         }
 
         fn disconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
             const self = ownerFromConnectionPoint(ptr);
             if (peer == null or self.connected_peer == null or self.connected_peer == peer) {
-                self.connected_peer = null;
+                releaseConnectionPeer(&self.connected_peer);
                 return types.kResultOk;
             }
             return types.kResultFalse;
@@ -1107,6 +1109,19 @@ fn retainComponentHandler(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentH
     return base;
 }
 
+fn retainConnectionPeer(peer: ?*ivstmessage.IConnectionPoint) ?*ivstmessage.IConnectionPoint {
+    const value = peer orelse return null;
+    _ = value.vtable.addRef(value);
+    return value;
+}
+
+fn releaseConnectionPeer(peer: *?*ivstmessage.IConnectionPoint) void {
+    if (peer.*) |value| {
+        _ = value.vtable.release(value);
+        peer.* = null;
+    }
+}
+
 fn releaseComponentHandlers(controller: anytype) void {
     if (controller.unit_handler2) |unit_handler2| {
         _ = unit_handler2.vtable.release(unit_handler2);
@@ -1331,6 +1346,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn terminate(ptr: *anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
+            releaseConnectionPeer(&self.connected_peer);
             releaseDataExchangeHandler(&self.data_exchange_handler);
             releaseAutomationState(&self.automation_state);
             releaseInfoListener(&self.info_listener);
@@ -1457,17 +1473,18 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         fn componentConnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
             if (peer == null) {
-                self.connected_peer = null;
+                releaseConnectionPeer(&self.connected_peer);
                 return types.kInvalidArgument;
             }
-            self.connected_peer = peer;
+            releaseConnectionPeer(&self.connected_peer);
+            self.connected_peer = retainConnectionPeer(peer);
             return types.kResultOk;
         }
 
         fn componentDisconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
             if (peer == null or self.connected_peer == null or self.connected_peer == peer) {
-                self.connected_peer = null;
+                releaseConnectionPeer(&self.connected_peer);
                 return types.kResultOk;
             }
             return types.kResultFalse;

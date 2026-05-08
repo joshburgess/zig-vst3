@@ -189,6 +189,7 @@ test "gain component exposes default connection point" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
     const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
+    const vst_message = @import("vst_message.zig");
 
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
@@ -207,7 +208,13 @@ test "gain component exposes default connection point" {
 
     try std.testing.expectEqual(types.kInvalidArgument, connection.vtable.connect(connection, null));
     try std.testing.expectEqual(types.kResultFalse, connection.vtable.notify(connection, null));
-    try std.testing.expectEqual(types.kResultOk, connection.vtable.disconnect(connection, null));
+
+    const PeerConnection = vst_message.ConnectionPoint(struct {});
+    var peer = PeerConnection{};
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.connect(connection, peer.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), peer.add_ref_count);
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.disconnect(connection, peer.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), peer.release_count);
 }
 
 test "gain component exposes default processor capability interfaces" {

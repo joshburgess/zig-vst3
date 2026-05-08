@@ -390,6 +390,7 @@ test "gain controller exposes default connection point" {
     const std = @import("std");
     const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
     const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
+    const vst_message = @import("vst_message.zig");
 
     var controller_out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
@@ -408,7 +409,13 @@ test "gain controller exposes default connection point" {
 
     try std.testing.expectEqual(types.kInvalidArgument, connection.vtable.connect(connection, null));
     try std.testing.expectEqual(types.kResultFalse, connection.vtable.notify(connection, null));
-    try std.testing.expectEqual(types.kResultOk, connection.vtable.disconnect(connection, null));
+
+    const PeerConnection = vst_message.ConnectionPoint(struct {});
+    var peer = PeerConnection{};
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.connect(connection, peer.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), peer.add_ref_count);
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.disconnect(connection, peer.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), peer.release_count);
 }
 
 test "gain controller exposes default root unit info" {
