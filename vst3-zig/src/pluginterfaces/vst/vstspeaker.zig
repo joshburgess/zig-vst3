@@ -813,6 +813,7 @@ pub const SpeakerArray = struct {
     }
 
     pub fn at(self: *const SpeakerArray, index: base.int32) SpeakerType {
+        if (index < 0 or index >= self.count or index >= kMaxSpeakers) return 0;
         return self.speaker[@intCast(index)];
     }
 
@@ -835,7 +836,7 @@ pub const SpeakerArray = struct {
     pub fn getArrangement(self: *const SpeakerArray) vsttypes.SpeakerArrangement {
         var arrangement: vsttypes.SpeakerArrangement = 0;
         var index: base.int32 = 0;
-        while (index < self.count) : (index += 1) {
+        while (index < self.count and index < kMaxSpeakers) : (index += 1) {
             arrangement |= self.speaker[@intCast(index)];
         }
         return arrangement;
@@ -843,7 +844,7 @@ pub const SpeakerArray = struct {
 
     pub fn getSpeakerIndex(self: *const SpeakerArray, which: SpeakerType) base.int32 {
         var index: base.int32 = 0;
-        while (index < self.count) : (index += 1) {
+        while (index < self.count and index < kMaxSpeakers) : (index += 1) {
             if (self.speaker[@intCast(index)] == which) return index;
         }
         return -1;
@@ -870,4 +871,10 @@ test "speaker helpers match expected core behavior" {
     try @import("std").testing.expectEqual(@as(base.int32, 6), speakers.total());
     try @import("std").testing.expectEqual(SpeakerArr.k51, speakers.getArrangement());
     try @import("std").testing.expectEqual(@as(base.int32, 3), speakers.getSpeakerIndex(kSpeakerLfe));
+    try @import("std").testing.expectEqual(@as(base.uint64, 0), speakers.at(-1));
+    try @import("std").testing.expectEqual(@as(base.uint64, 0), speakers.at(64));
+    var corrupted = SpeakerArray.init(SpeakerArr.kStereo);
+    corrupted.count = SpeakerArray.kMaxSpeakers + 1;
+    try @import("std").testing.expectEqual(@as(base.uint64, 0), corrupted.at(SpeakerArray.kMaxSpeakers));
+    try @import("std").testing.expectEqual(SpeakerArr.kStereo, corrupted.getArrangement());
 }
