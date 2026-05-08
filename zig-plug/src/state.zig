@@ -10,7 +10,14 @@ pub const ParameterIdMigration = struct {
 };
 
 pub fn encodedSize(comptime Params: type) usize {
+    assertEncodableParameterCount(Params);
     return magic.len + @sizeOf(u16) + @sizeOf(u16) + parameters.ParameterSet(Params).count * (@sizeOf(u32) + @sizeOf(u64));
+}
+
+fn assertEncodableParameterCount(comptime Params: type) void {
+    if (parameters.ParameterSet(Params).count > std.math.maxInt(u16)) {
+        @compileError("parameter state format supports at most 65535 parameters");
+    }
 }
 
 pub fn writeParameterState(
@@ -19,6 +26,7 @@ pub fn writeParameterState(
     values: *const parameters.ParameterValues(Params),
     writer: anytype,
 ) !void {
+    comptime assertEncodableParameterCount(Params);
     try writer.writeAll(magic);
     try writer.writeInt(u16, version, .little);
     try writer.writeInt(u16, @intCast(parameters.ParameterSet(Params).count), .little);

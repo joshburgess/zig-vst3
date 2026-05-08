@@ -461,13 +461,13 @@ fn parameterStepCount(param: anytype) i32 {
     const Param = @TypeOf(param);
     if (Param == FloatParam) return 0;
     if (Param == BoolParam) return 1;
-    if (Param == IntParam) return @intCast(param.max - param.min);
+    if (Param == IntParam) return std.math.cast(i32, param.max - param.min) orelse std.math.maxInt(i32);
 
     const info = @typeInfo(Param);
     if (info == .@"struct" and @hasDecl(Param, "denormalize")) {
         const default_type = @TypeOf(param.default);
         if (@typeInfo(default_type) == .@"enum") {
-            return @intCast(@typeInfo(default_type).@"enum".fields.len - 1);
+            return std.math.cast(i32, @typeInfo(default_type).@"enum".fields.len - 1) orelse std.math.maxInt(i32);
         }
     }
     return 0;
@@ -715,6 +715,16 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqual(@as(?bool, false), set.isList(1));
     try std.testing.expectEqual(@as(?bool, true), set.isList(3));
     try std.testing.expectEqual(@as(?bool, null), set.isList(99));
+}
+
+test "integer parameter step count saturates to VST limit" {
+    const Params = struct {
+        huge: IntParam = IntParam.init(0, "Huge", 0, @as(i64, std.math.maxInt(i32)) + 1, 0),
+    };
+    const Set = ParameterSet(Params);
+    const set = Set.init(.{});
+
+    try std.testing.expectEqual(@as(?i32, std.math.maxInt(i32)), set.stepCount(0));
 }
 
 test "parameter values initialize from reflected defaults" {
