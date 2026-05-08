@@ -717,12 +717,12 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getProgramName(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
-            out[0] = 0;
+            clearString128Ptr(out);
             return types.kInvalidArgument;
         }
 
         fn getProgramInfo(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
-            out[0] = 0;
+            clearString128Ptr(out);
             return types.kInvalidArgument;
         }
 
@@ -731,7 +731,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getProgramPitchName(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: types.int16, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
-            out[0] = 0;
+            clearString128Ptr(out);
             return types.kInvalidArgument;
         }
 
@@ -880,7 +880,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getNoteExpressionStringByValue(_: *anyopaque, _: types.int32, _: types.int16, _: ivstnoteexpression.NoteExpressionTypeID, _: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
-            out[0] = 0;
+            clearString128Ptr(out);
             return types.kInvalidArgument;
         }
 
@@ -964,6 +964,10 @@ fn copyString128(dest: *vsttypes.String128, source: []const u8) void {
     for (source[0..len], 0..) |char, index| {
         dest[index] = char;
     }
+}
+
+fn clearString128Ptr(dest: [*]vsttypes.TChar) void {
+    @memset(dest[0..128], 0);
 }
 
 fn queryHostApplication(context: ?*anyopaque) ?*ivsthostapplication.IHostApplication {
