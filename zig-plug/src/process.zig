@@ -166,6 +166,17 @@ pub const EventWriter = struct {
         self.count += 1;
     }
 
+    pub fn appendAll(self: *EventWriter, source: Events) !void {
+        if (source.items.len > self.storage.len - self.count) return error.EventStorageFull;
+        for (source.items) |event| {
+            if (event.sample_offset >= self.frame_count) return error.EventOutsideBlock;
+        }
+        for (source.items) |event| {
+            self.storage[self.count] = event;
+            self.count += 1;
+        }
+    }
+
     pub fn events(self: *const EventWriter) Events {
         return .{ .items = self.storage[0..self.count] };
     }
@@ -410,4 +421,29 @@ test "event writer validates offsets and capacity" {
     var empty_storage: [1]Event = undefined;
     var empty_writer = EventWriter.init(&empty_storage, 4);
     try std.testing.expectError(error.EventOutsideBlock, empty_writer.append(Event.noteOn(4, 0, 60, 1.0)));
+}
+
+test "event writer appends event views atomically" {
+    const items = [_]Event{
+        Event.noteOn(0, 0, 60, 1.0),
+        Event.noteOff(1, 0, 60, 0.0),
+    };
+    var storage: [2]Event = undefined;
+    var writer = EventWriter.init(&storage, 4);
+
+    try writer.appendAll(try Events.init(&items, 4));
+    try std.testing.expectEqual(@as(usize, 2), writer.events().items.len);
+    try std.testing.expectEqual(EventKind.note_on, writer.events().items[0].kind);
+    try std.testing.expectEqual(EventKind.note_off, writer.events().items[1].kind);
+
+    var full_storage: [1]Event = undefined;
+    var full_writer = EventWriter.init(&full_storage, 4);
+    try std.testing.expectError(error.EventStorageFull, full_writer.appendAll(try Events.init(&items, 4)));
+    try std.testing.expectEqual(@as(usize, 0), full_writer.events().items.len);
+
+    const outside = [_]Event{Event.noteOn(4, 0, 60, 1.0)};
+    var outside_storage: [1]Event = undefined;
+    var outside_writer = EventWriter.init(&outside_storage, 4);
+    try std.testing.expectError(error.EventOutsideBlock, outside_writer.appendAll(.{ .items = &outside }));
+    try std.testing.expectEqual(@as(usize, 0), outside_writer.events().items.len);
 }
