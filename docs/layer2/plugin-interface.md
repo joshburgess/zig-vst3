@@ -15,6 +15,7 @@ A plugin type declares:
 
 - `ParameterSet`: reflected descriptor metadata
 - `ParameterValues`: atomic normalized values initialized from descriptor defaults
+- `encoded_parameter_state_size`: byte count for a full reflected parameter snapshot
 - lifecycle flags for optional `init`, `prepare`, `process`, `process64`, and `deinit` declarations
 - `init(params)`: builds the reflected set and value storage
 
