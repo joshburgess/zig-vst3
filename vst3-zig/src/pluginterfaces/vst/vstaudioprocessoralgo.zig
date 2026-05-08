@@ -1,3 +1,4 @@
+const std = @import("std");
 const base = @import("../base/types.zig");
 const audio_processor = @import("ivstaudioprocessor.zig");
 const events = @import("ivstevents.zig");
@@ -18,11 +19,14 @@ pub fn getSampleFramesSizeInBytes(
     process_setup: *const audio_processor.ProcessSetup,
     num_samples: base.int32,
 ) base.uint32 {
+    if (num_samples <= 0) return 0;
     const sample_size: base.int32 = if (process_setup.symbolicSampleSize == @intFromEnum(audio_processor.SymbolicSampleSizes.kSample32))
         @intCast(@sizeOf(vsttypes.Sample32))
     else
         @intCast(@sizeOf(vsttypes.Sample64));
-    return @intCast(num_samples * sample_size);
+    const max_samples = std.math.maxInt(base.uint32) / @as(base.uint32, @intCast(sample_size));
+    const safe_samples: base.uint32 = @min(@as(base.uint32, @intCast(num_samples)), max_samples);
+    return safe_samples * @as(base.uint32, @intCast(sample_size));
 }
 
 pub fn getChannelMask(num_channels: base.int32) base.uint64 {
@@ -37,6 +41,7 @@ pub fn copy32(
     slice_size: base.int32,
     start_index: base.int32,
 ) void {
+    if (slice_size <= 0 or start_index < 0) return;
     const src_buffer = src orelse return;
     const dest_buffer = dest orelse return;
     const src_channels = src_buffer.channelBuffers.channelBuffers32 orelse return;
@@ -59,6 +64,7 @@ pub fn copy64(
     slice_size: base.int32,
     start_index: base.int32,
 ) void {
+    if (slice_size <= 0 or start_index < 0) return;
     const src_buffer = src orelse return;
     const dest_buffer = dest orelse return;
     const src_channels = src_buffer.channelBuffers.channelBuffers64 orelse return;
@@ -76,6 +82,7 @@ pub fn copy64(
 }
 
 pub fn clear32(audio_bus_buffers: ?[*]audio_processor.AudioBusBuffers, sample_count: base.int32, bus_count: base.int32) void {
+    if (sample_count <= 0 or bus_count <= 0) return;
     const buses = audio_bus_buffers orelse return;
     var bus: base.int32 = 0;
     while (bus < bus_count) : (bus += 1) {
@@ -93,6 +100,7 @@ pub fn clear32(audio_bus_buffers: ?[*]audio_processor.AudioBusBuffers, sample_co
 }
 
 pub fn clear64(audio_bus_buffers: ?[*]audio_processor.AudioBusBuffers, sample_count: base.int32, bus_count: base.int32) void {
+    if (sample_count <= 0 or bus_count <= 0) return;
     const buses = audio_bus_buffers orelse return;
     var bus: base.int32 = 0;
     while (bus < bus_count) : (bus += 1) {
@@ -110,6 +118,7 @@ pub fn clear64(audio_bus_buffers: ?[*]audio_processor.AudioBusBuffers, sample_co
 }
 
 pub fn mix32(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.AudioBusBuffers, sample_count: base.int32) void {
+    if (sample_count <= 0) return;
     const src_channels = src.channelBuffers.channelBuffers32 orelse return;
     const dest_channels = dest.channelBuffers.channelBuffers32 orelse return;
     const num_channels = @min(src.numChannels, dest.numChannels);
@@ -125,6 +134,7 @@ pub fn mix32(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.Audio
 }
 
 pub fn mix64(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.AudioBusBuffers, sample_count: base.int32) void {
+    if (sample_count <= 0) return;
     const src_channels = src.channelBuffers.channelBuffers64 orelse return;
     const dest_channels = dest.channelBuffers.channelBuffers64 orelse return;
     const num_channels = @min(src.numChannels, dest.numChannels);
@@ -140,6 +150,7 @@ pub fn mix64(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.Audio
 }
 
 pub fn multiply32(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.AudioBusBuffers, sample_count: base.int32, factor: f32) void {
+    if (sample_count <= 0) return;
     const src_channels = src.channelBuffers.channelBuffers32 orelse return;
     const dest_channels = dest.channelBuffers.channelBuffers32 orelse return;
     const num_channels = @min(src.numChannels, dest.numChannels);
@@ -155,6 +166,7 @@ pub fn multiply32(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.
 }
 
 pub fn multiply64(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.AudioBusBuffers, sample_count: base.int32, factor: f64) void {
+    if (sample_count <= 0) return;
     const src_channels = src.channelBuffers.channelBuffers64 orelse return;
     const dest_channels = dest.channelBuffers.channelBuffers64 orelse return;
     const num_channels = @min(src.numChannels, dest.numChannels);
@@ -170,6 +182,7 @@ pub fn multiply64(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.
 }
 
 pub fn isSilent32(audio_buffer: *audio_processor.AudioBusBuffers, sample_count: base.int32, start_index: base.int32) bool {
+    if (sample_count <= 0 or start_index < 0) return true;
     const channels = audio_buffer.channelBuffers.channelBuffers32 orelse return true;
     const end = sample_count + start_index;
     var channel: base.int32 = 0;
@@ -184,6 +197,7 @@ pub fn isSilent32(audio_buffer: *audio_processor.AudioBusBuffers, sample_count: 
 }
 
 pub fn isSilent64(audio_buffer: *audio_processor.AudioBusBuffers, sample_count: base.int32, start_index: base.int32) bool {
+    if (sample_count <= 0 or start_index < 0) return true;
     const channels = audio_buffer.channelBuffers.channelBuffers64 orelse return true;
     const end = sample_count + start_index;
     var channel: base.int32 = 0;
@@ -257,14 +271,39 @@ fn collectEvent(collector: *EventCollector, event: *const events.Event) void {
 test "audio processor helpers match expected core behavior" {
     var setup32 = audio_processor.ProcessSetup{ .symbolicSampleSize = @intFromEnum(audio_processor.SymbolicSampleSizes.kSample32) };
     var setup64 = audio_processor.ProcessSetup{ .symbolicSampleSize = @intFromEnum(audio_processor.SymbolicSampleSizes.kSample64) };
+    try @import("std").testing.expectEqual(@as(base.uint32, 0), getSampleFramesSizeInBytes(&setup32, -1));
     try @import("std").testing.expectEqual(@as(base.uint32, 32), getSampleFramesSizeInBytes(&setup32, 8));
     try @import("std").testing.expectEqual(@as(base.uint32, 64), getSampleFramesSizeInBytes(&setup64, 8));
+    try @import("std").testing.expectEqual(@as(base.uint32, 0xFFFFFFFC), getSampleFramesSizeInBytes(&setup32, std.math.maxInt(base.int32)));
     try @import("std").testing.expectEqual(@as(base.uint64, 0x3f), getChannelMask(6));
     try @import("std").testing.expectEqual(@as(base.uint64, 0xFFFFFFFFFFFFFFFF), getChannelMask(64));
 }
 
+test "audio processor buffer helpers ignore invalid ranges" {
+    var input_samples = [_]vsttypes.Sample32{ 1, 2 };
+    var output_samples = [_]vsttypes.Sample32{ 3, 4 };
+    var input_channels = [_][*]vsttypes.Sample32{&input_samples};
+    var output_channels = [_][*]vsttypes.Sample32{&output_samples};
+    var input = audio_processor.AudioBusBuffers{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &input_channels },
+    };
+    var output = audio_processor.AudioBusBuffers{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &output_channels },
+    };
+
+    copy32(&input, &output, 1, -1);
+    mix32(&input, &output, -1);
+    multiply32(&input, &output, -1, 0);
+    var output_buses = [_]audio_processor.AudioBusBuffers{output};
+    clear32(&output_buses, -1, 1);
+
+    try std.testing.expectEqual(@as(vsttypes.Sample32, 3), output_samples[0]);
+    try std.testing.expect(isSilent32(&output, 1, -1));
+}
+
 test "audio processor helper iterates event lists and skips failed reads" {
-    const std = @import("std");
     const event_items = [_]events.Event{
         .{
             .sampleOffset = 1,
