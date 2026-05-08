@@ -30,7 +30,8 @@ pub const ModulatedValue = struct {
     }
 
     pub fn storeModulation(self: *ModulatedValue, offset: f64) void {
-        self.modulation.store((std.math.clamp(offset, -1.0, 1.0) + 1.0) * 0.5);
+        const safe_offset = if (std.math.isNan(offset)) 0.0 else std.math.clamp(offset, -1.0, 1.0);
+        self.modulation.store((safe_offset + 1.0) * 0.5);
     }
 
     pub fn load(self: *const ModulatedValue) f64 {
@@ -156,7 +157,7 @@ pub const FloatParam = struct {
             .name = name,
             .min = min,
             .max = max,
-            .default = std.math.clamp(default, min, max),
+            .default = if (std.math.isNan(default)) min else std.math.clamp(default, min, max),
         };
     }
 
@@ -530,10 +531,12 @@ pub fn ParameterValues(comptime Params: type) type {
 
 test "float parameter clamps defaults and values" {
     const param = FloatParam.init(7, "Gain", -12.0, 6.0, 12.0);
+    const nan_default = FloatParam.init(8, "Safe", -12.0, 6.0, std.math.nan(f64));
 
     try std.testing.expectEqual(@as(u32, 7), param.id);
     try std.testing.expectEqualStrings("Gain", param.name);
     try std.testing.expectEqual(@as(f64, 6.0), param.default);
+    try std.testing.expectEqual(@as(f64, -12.0), nan_default.default);
     try std.testing.expectEqual(@as(f64, 0.0), param.normalize(-24.0));
     try std.testing.expectEqual(@as(f64, 1.0), param.normalize(12.0));
     try std.testing.expectEqual(@as(f64, 0.0), param.normalize(std.math.nan(f64)));
@@ -565,6 +568,9 @@ test "modulated value combines base and bipolar offset" {
     try std.testing.expectEqual(@as(f64, 0.0), value.load());
     value.storeModulation(2.0);
     try std.testing.expectEqual(@as(f64, 1.0), value.load());
+    value.storeBase(0.25);
+    value.storeModulation(std.math.nan(f64));
+    try std.testing.expectEqual(@as(f64, 0.25), value.load());
 }
 
 test "linear smoother reaches target after requested samples" {
