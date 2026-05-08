@@ -139,6 +139,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().loadPlainIndex(index);
         }
 
+        pub fn loadParameterById(self: *const Self, id: u32) ?f64 {
+            return self.parameterView().loadById(id);
+        }
+
+        pub fn loadParameterPlainById(self: *const Self, id: u32) ?f64 {
+            return self.parameterView().loadPlainById(id);
+        }
+
         pub fn storeParameter(self: *Self, comptime field_name: []const u8, plain: parameters.FieldPlainType(Plugin.Params, field_name)) bool {
             return self.parameterEditor().store(field_name, plain);
         }
@@ -513,6 +521,10 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?f64, 6.0), instance.loadParameterPlainIndex(0));
     try std.testing.expectEqual(@as(?f64, null), instance.loadParameterIndex(99));
     try std.testing.expectEqual(@as(?f64, null), instance.loadParameterPlainIndex(99));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.loadParameterById(0));
+    try std.testing.expectEqual(@as(?f64, 6.0), instance.loadParameterPlainById(0));
+    try std.testing.expectEqual(@as(?f64, null), instance.loadParameterById(99));
+    try std.testing.expectEqual(@as(?f64, null), instance.loadParameterPlainById(99));
     try std.testing.expectEqual(@as(f64, 6.0), view.load("gain"));
     try std.testing.expectEqual(false, view.load("bypass"));
     try std.testing.expectEqual(Mode.mute, view.load("mode"));
