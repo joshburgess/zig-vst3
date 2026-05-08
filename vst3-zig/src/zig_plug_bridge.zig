@@ -369,15 +369,16 @@ pub fn makeProcessContext(
         output_channels[channel] = output_buffers[channel][0..frame_count];
     }
 
-    var context = try plug.process.ProcessContext(Sample).init(
+    return try plug.process.ProcessContext(Sample).initWith(
         if (data.processContext) |process_context| process_context.sampleRate else 0,
         input_channels[0..channel_count],
         output_channels[0..channel_count],
+        .{
+            .parameter_changes = parameter_changes.items,
+            .events = events.items,
+            .output_events = output_events,
+        },
     );
-    context.parameter_changes = parameter_changes;
-    context.events = events;
-    if (output_events) |writer| context.setOutputEvents(writer);
-    return context;
 }
 
 pub fn makeMainAudioProcessContext(
@@ -1602,14 +1603,7 @@ test "zig-plug bridge exposes output event writer to processors" {
     const EventEmitter = struct {
         pub fn process(_: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
             const writer = context.output_events orelse return;
-            writer.append(.{
-                .kind = .note_on,
-                .bus_index = 0,
-                .sample_offset = 1,
-                .channel = 0,
-                .pitch = 60,
-                .velocity = 0.75,
-            }) catch {};
+            writer.append(plug.process.Event.noteOn(1, 0, 60, 0.75)) catch {};
         }
     };
 
