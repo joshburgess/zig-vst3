@@ -389,6 +389,14 @@ pub const EventWriter = struct {
         return self.storage.len - self.count;
     }
 
+    pub fn firstSampleOffset(self: *const EventWriter) ?usize {
+        return self.events().firstSampleOffset();
+    }
+
+    pub fn latestSampleOffset(self: *const EventWriter) ?usize {
+        return self.events().latestSampleOffset();
+    }
+
     pub fn events(self: *const EventWriter) Events {
         return .{ .items = self.storage[0..self.count] };
     }
@@ -635,6 +643,16 @@ pub fn ProcessContext(comptime Sample: type) type {
         pub fn writtenOutputEvents(self: @This()) Events {
             const writer = self.output_events orelse return .{};
             return writer.events();
+        }
+
+        pub fn firstOutputEventOffset(self: @This()) ?usize {
+            const writer = self.output_events orelse return null;
+            return writer.firstSampleOffset();
+        }
+
+        pub fn latestOutputEventOffset(self: @This()) ?usize {
+            const writer = self.output_events orelse return null;
+            return writer.latestSampleOffset();
         }
 
         pub fn clearOutputEvents(self: @This()) void {
@@ -999,6 +1017,8 @@ test "event writer validates offsets and capacity" {
     try std.testing.expect(writer.isFull());
     try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
     try std.testing.expectEqual(@as(usize, 1), writer.events().items.len);
+    try std.testing.expectEqual(@as(?usize, 1), writer.firstSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 1), writer.latestSampleOffset());
     try std.testing.expectEqual(@as(usize, 1), writer.capacity());
     try std.testing.expectEqual(@as(usize, 0), writer.remainingCapacity());
     try std.testing.expectError(error.EventStorageFull, writer.append(Event.noteOff(1, 0, 60, 0.0)));
@@ -1007,6 +1027,8 @@ test "event writer validates offsets and capacity" {
     try std.testing.expect(!writer.isFull());
     try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
     try std.testing.expectEqual(@as(usize, 0), writer.events().items.len);
+    try std.testing.expectEqual(@as(?usize, null), writer.firstSampleOffset());
+    try std.testing.expectEqual(@as(?usize, null), writer.latestSampleOffset());
     try std.testing.expectEqual(@as(usize, 1), writer.remainingCapacity());
 
     var empty_storage: [1]Event = undefined;
@@ -1024,6 +1046,8 @@ test "event writer appends event views atomically" {
 
     try writer.appendAll(try Events.init(&items, 4));
     try std.testing.expectEqual(@as(usize, 2), writer.events().items.len);
+    try std.testing.expectEqual(@as(?usize, 0), writer.firstSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 1), writer.latestSampleOffset());
     try std.testing.expectEqual(EventKind.note_on, writer.events().items[0].kind);
     try std.testing.expectEqual(EventKind.note_off, writer.events().items[1].kind);
 
@@ -1064,11 +1088,15 @@ test "process context exposes output event helpers" {
     try context.appendOutputEvent(events[0]);
     try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 1), context.outputEventRemainingCapacity());
+    try std.testing.expectEqual(@as(?usize, 0), context.firstOutputEventOffset());
+    try std.testing.expectEqual(@as(?usize, 0), context.latestOutputEventOffset());
     try std.testing.expect(!context.outputEventsEmpty());
     try context.appendOutputEvents(try Events.init(events[1..], input.len));
 
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 0), context.outputEventRemainingCapacity());
+    try std.testing.expectEqual(@as(?usize, 0), context.firstOutputEventOffset());
+    try std.testing.expectEqual(@as(?usize, 1), context.latestOutputEventOffset());
     try std.testing.expect(context.outputEventsFull());
     try std.testing.expectEqual(@as(usize, 2), context.writtenOutputEvents().items.len);
     try std.testing.expectEqual(EventKind.note_on, context.writtenOutputEvents().items[0].kind);
@@ -1076,6 +1104,8 @@ test "process context exposes output event helpers" {
     context.clearOutputEvents();
     try std.testing.expectEqual(@as(usize, 0), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventRemainingCapacity());
+    try std.testing.expectEqual(@as(?usize, null), context.firstOutputEventOffset());
+    try std.testing.expectEqual(@as(?usize, null), context.latestOutputEventOffset());
     try std.testing.expect(context.outputEventsEmpty());
 
     var no_writer = try ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
@@ -1085,6 +1115,8 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventRemainingCapacity());
     try std.testing.expect(no_writer.outputEventsEmpty());
     try std.testing.expect(no_writer.outputEventsFull());
+    try std.testing.expectEqual(@as(?usize, null), no_writer.firstOutputEventOffset());
+    try std.testing.expectEqual(@as(?usize, null), no_writer.latestOutputEventOffset());
     try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvent(events[0]));
     try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvents(try Events.init(&events, input.len)));
     try std.testing.expectEqual(@as(usize, 0), no_writer.writtenOutputEvents().items.len);
