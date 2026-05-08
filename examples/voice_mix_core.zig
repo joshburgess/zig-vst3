@@ -1,11 +1,35 @@
 const std = @import("std");
 const plug = @import("zig-plug");
 
+const voice_unit_id: i32 = 1;
+const voice_program_list_id: i32 = 7;
+
 pub const VoiceMix = struct {
     pub const name = "zig-plug Core Voice Mix";
     pub const vendor = "zig-vst3";
+    pub const units = plug.units.Config{
+        .units = &.{
+            plug.units.Unit.root("Main"),
+            .{
+                .id = voice_unit_id,
+                .name = "Voices",
+                .parent_id = plug.units.root_unit_id,
+                .program_list_id = voice_program_list_id,
+            },
+        },
+        .program_lists = &.{
+            .{
+                .id = voice_program_list_id,
+                .name = "Voice Presets",
+                .programs = &.{
+                    .{ .name = "Single", .info = &.{.{ .key = "voices", .value = "1" }} },
+                    .{ .name = "Quad", .info = &.{.{ .key = "voices", .value = "4" }} },
+                },
+            },
+        },
+    };
     pub const Params = struct {
-        voices: plug.parameters.IntParam = plug.parameters.IntParam.init(0, "Voices", 1, 4, 1),
+        voices: plug.parameters.IntParam = .{ .id = 0, .name = "Voices", .min = 1, .max = 4, .default = 1, .unit_id = voice_unit_id },
     };
 
     pub fn processWithParameterView(
@@ -33,8 +57,22 @@ test "voice mix core example declares reflected int parameter" {
 
     try std.testing.expectEqualStrings("zig-plug Core Voice Mix", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
+    try std.testing.expectEqual(@as(?i32, voice_unit_id), parameter_set.unitId(0));
     try std.testing.expectEqual(@as(i64, 1), spec.values.view(&parameter_set).load("voices"));
     plug.plugin.validateLifecycle(VoiceMix);
+}
+
+test "voice mix core example declares reflected unit and program metadata" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+
+    try std.testing.expectEqual(@as(usize, 2), instance.unitCount());
+    try std.testing.expectEqualStrings("Voices", instance.unitById(voice_unit_id).?.name);
+    try std.testing.expect(instance.hasUnit(voice_unit_id));
+    try std.testing.expectEqualStrings("Voice Presets", instance.programListForUnit(voice_unit_id).?.name);
+    try std.testing.expectEqual(@as(?usize, 2), instance.programCount(voice_program_list_id));
+    try std.testing.expectEqualStrings("Quad", instance.programName(voice_program_list_id, 1).?);
+    try std.testing.expectEqual(@as(?usize, 1), instance.programIndexOfName(voice_program_list_id, "Quad"));
+    try std.testing.expectEqualStrings("4", instance.programInfoByName(voice_program_list_id, "Quad", "voices").?);
 }
 
 test "voice mix core example applies int parameter changes" {
