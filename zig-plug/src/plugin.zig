@@ -88,6 +88,18 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return &self.spec.values;
         }
 
+        pub fn loadParameterNormalized(self: *const Self, comptime field_name: []const u8) f64 {
+            return self.spec.values.loadFieldNormalized(&self.spec.parameter_set, field_name);
+        }
+
+        pub fn loadParameter(self: *const Self, comptime field_name: []const u8) parameters.FieldPlainType(Plugin.Params, field_name) {
+            return self.spec.values.loadField(&self.spec.parameter_set, field_name);
+        }
+
+        pub fn storeParameter(self: *Self, comptime field_name: []const u8, plain: parameters.FieldPlainType(Plugin.Params, field_name)) bool {
+            return self.spec.values.storeField(&self.spec.parameter_set, field_name, plain);
+        }
+
         pub fn applyParameterChanges(self: *Self, changes: process_api.ParameterChanges) void {
             self.spec.values.applyChanges(&self.spec.parameter_set, changes);
         }
@@ -352,6 +364,30 @@ test "plugin instance applies parameter changes to owned values" {
 
     try std.testing.expectEqual(@as(?f64, 0.25), instance.parameterValues().loadById(instance.parameterSet(), 0));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterValues().loadById(instance.parameterSet(), 99));
+}
+
+test "plugin instance exposes typed parameter field access" {
+    const Mode = enum { clean, boost, mute };
+    const Gain = struct {
+        pub const name = "Instance Field Parameters";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", -12.0, 6.0, 0.0),
+            bypass: parameters.BoolParam = .{ .id = 1, .name = "Bypass" },
+            mode: parameters.EnumParam(Mode) = .{ .id = 2, .name = "Mode", .default = .clean },
+        };
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+
+    try std.testing.expect(instance.storeParameter("gain", 6.0));
+    try std.testing.expect(instance.storeParameter("bypass", true));
+    try std.testing.expect(instance.storeParameter("mode", .mute));
+
+    try std.testing.expectEqual(@as(f64, 6.0), instance.loadParameter("gain"));
+    try std.testing.expectEqual(true, instance.loadParameter("bypass"));
+    try std.testing.expectEqual(Mode.mute, instance.loadParameter("mode"));
+    try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("mode"));
 }
 
 test "plugin instance applies process parameter changes before dispatch" {

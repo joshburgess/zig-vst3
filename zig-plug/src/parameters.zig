@@ -566,14 +566,14 @@ pub fn ParameterValues(comptime Params: type) type {
     };
 }
 
-fn FieldDescriptor(comptime Params: type, comptime field_name: []const u8) type {
+pub fn FieldDescriptor(comptime Params: type, comptime field_name: []const u8) type {
     inline for (@typeInfo(Params).@"struct".fields) |field| {
         if (comptime std.mem.eql(u8, field.name, field_name)) return field.type;
     }
     @compileError("unknown parameter field: " ++ field_name);
 }
 
-fn FieldPlainType(comptime Params: type, comptime field_name: []const u8) type {
+pub fn FieldPlainType(comptime Params: type, comptime field_name: []const u8) type {
     const Descriptor = FieldDescriptor(Params, field_name);
     return @TypeOf(@as(Descriptor, undefined).denormalize(0.0));
 }
