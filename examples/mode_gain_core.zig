@@ -17,9 +17,7 @@ pub const ModeGain = struct {
         set: *const Spec.ParameterSet,
         values: *const Spec.ParameterValues,
     ) void {
-        const normalized = values.loadById(set, 0) orelse 0.0;
-        const mode_param = ModeParam{ .id = 0, .name = "Mode", .default = .clean };
-        const gain: f32 = switch (mode_param.denormalize(normalized)) {
+        const gain: f32 = switch (values.loadField(set, "mode")) {
             .clean => 1.0,
             .boost => 2.0,
             .mute => 0.0,
@@ -88,7 +86,7 @@ test "mode gain core example can run through plugin instance" {
 
     instance.process(&context);
 
-    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(Mode.mute, instance.parameterValuesConst().loadField(instance.parameterSet(), "mode"));
     try std.testing.expectEqual(@as(f32, 0.0), output[0]);
     try std.testing.expectEqual(@as(f32, 0.0), output[1]);
 }

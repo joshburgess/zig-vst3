@@ -14,7 +14,7 @@ pub const Bypass = struct {
         set: *const Spec.ParameterSet,
         values: *const Spec.ParameterValues,
     ) void {
-        const bypassed = (values.loadById(set, 0) orelse 0.0) >= 0.5;
+        const bypassed = values.loadField(set, "bypass");
         for (0..context.outputs.channels.len) |channel| {
             const input = context.inputs.channel(channel) orelse continue;
             const output = context.outputs.channel(channel) orelse continue;
@@ -59,7 +59,7 @@ test "bypass core example applies parameter changes by id" {
     try std.testing.expectEqual(@as(f32, 0.25), output[0]);
     try std.testing.expectEqual(@as(f32, 0.5), output[1]);
     try std.testing.expectEqual(@as(f32, 1.0), output[2]);
-    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(true, instance.parameterValuesConst().loadField(instance.parameterSet(), "bypass"));
 }
 
 test "bypass core example can run through plugin instance" {
@@ -80,7 +80,7 @@ test "bypass core example can run through plugin instance" {
 
     instance.process(&context);
 
-    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(true, instance.parameterValuesConst().loadField(instance.parameterSet(), "bypass"));
     try std.testing.expectEqual(@as(f32, 0.25), output[0]);
     try std.testing.expectEqual(@as(f32, 0.5), output[1]);
 }

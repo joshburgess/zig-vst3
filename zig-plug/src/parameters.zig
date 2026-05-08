@@ -428,6 +428,17 @@ pub fn ParameterSet(comptime Params: type) type {
             return null;
         }
 
+        pub fn indexOfField(_: *const Self, comptime field_name: []const u8) usize {
+            inline for (fields, 0..) |field, index| {
+                if (comptime std.mem.eql(u8, field.name, field_name)) return index;
+            }
+            @compileError("unknown parameter field: " ++ field_name);
+        }
+
+        pub fn descriptor(self: *const Self, comptime field_name: []const u8) FieldDescriptor(Params, field_name) {
+            return @field(self.params, field_name);
+        }
+
         pub fn formatPlain(self: *const Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).formatPlain(normalized, buffer);
@@ -522,6 +533,15 @@ pub fn ParameterValues(comptime Params: type) type {
             return set.plainFromNormalized(index, normalized);
         }
 
+        pub fn loadFieldNormalized(self: *const Self, set: *const Set, comptime field_name: []const u8) f64 {
+            return self.load(set.indexOfField(field_name)).?;
+        }
+
+        pub fn loadField(self: *const Self, set: *const Set, comptime field_name: []const u8) FieldPlainType(Params, field_name) {
+            const param = set.descriptor(field_name);
+            return param.denormalize(self.loadFieldNormalized(set, field_name));
+        }
+
         pub fn storeById(self: *Self, set: *const Set, id: u32, value: f64) bool {
             const index = set.indexOfId(id) orelse return false;
             return self.store(index, value);
@@ -533,12 +553,29 @@ pub fn ParameterValues(comptime Params: type) type {
             return self.store(index, normalized);
         }
 
+        pub fn storeField(self: *Self, set: *const Set, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) bool {
+            const param = set.descriptor(field_name);
+            return self.store(set.indexOfField(field_name), param.normalize(plain));
+        }
+
         pub fn applyChanges(self: *Self, set: *const Set, changes: process.ParameterChanges) void {
             for (changes.items) |change| {
                 _ = self.storeById(set, change.id, change.normalized);
             }
         }
     };
+}
+
+fn FieldDescriptor(comptime Params: type, comptime field_name: []const u8) type {
+    inline for (@typeInfo(Params).@"struct".fields) |field| {
+        if (comptime std.mem.eql(u8, field.name, field_name)) return field.type;
+    }
+    @compileError("unknown parameter field: " ++ field_name);
+}
+
+fn FieldPlainType(comptime Params: type, comptime field_name: []const u8) type {
+    const Descriptor = FieldDescriptor(Params, field_name);
+    return @TypeOf(@as(Descriptor, undefined).denormalize(0.0));
 }
 
 test "float parameter clamps defaults and values" {
@@ -719,6 +756,8 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqualStrings("Voices", set.name(1).?);
     try std.testing.expectEqual(@as(?usize, 2), set.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, null), set.indexOfId(99));
+    try std.testing.expectEqual(@as(usize, 0), set.indexOfField("gain"));
+    try std.testing.expectEqual(@as(u32, 3), set.descriptor("mode").id);
     try std.testing.expectApproxEqAbs(0.75, set.defaultNormalized(0).?, 0.000001);
     try std.testing.expectApproxEqAbs(0.2, set.defaultNormalized(1).?, 0.000001);
     try std.testing.expectApproxEqAbs(0.0, set.defaultNormalized(2).?, 0.000001);
@@ -790,6 +829,36 @@ test "parameter values expose plain value access by id" {
     try std.testing.expectEqual(@as(?f64, 1.0), values.loadPlainById(&set, 2));
     try std.testing.expect(!values.storePlainById(&set, 99, 1.0));
     try std.testing.expectEqual(@as(?f64, null), values.loadPlainById(&set, 99));
+}
+
+test "parameter values expose typed field access" {
+    const Mode = enum { clean, boost, mute };
+    const Params = struct {
+        gain: FloatParam = FloatParam.init(0, "Gain", -12.0, 6.0, 0.0),
+        voices: IntParam = IntParam.init(1, "Voices", 1, 4, 1),
+        bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
+        mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
+    };
+    const Set = ParameterSet(Params);
+    const Values = ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+
+    try std.testing.expectEqual(@as(f64, 0.0), values.loadField(&set, "gain"));
+    try std.testing.expectEqual(@as(i64, 1), values.loadField(&set, "voices"));
+    try std.testing.expectEqual(false, values.loadField(&set, "bypass"));
+    try std.testing.expectEqual(Mode.clean, values.loadField(&set, "mode"));
+
+    try std.testing.expect(values.storeField(&set, "gain", 6.0));
+    try std.testing.expect(values.storeField(&set, "voices", 4));
+    try std.testing.expect(values.storeField(&set, "bypass", true));
+    try std.testing.expect(values.storeField(&set, "mode", .mute));
+
+    try std.testing.expectEqual(@as(f64, 6.0), values.loadField(&set, "gain"));
+    try std.testing.expectEqual(@as(i64, 4), values.loadField(&set, "voices"));
+    try std.testing.expectEqual(true, values.loadField(&set, "bypass"));
+    try std.testing.expectEqual(Mode.mute, values.loadField(&set, "mode"));
+    try std.testing.expectEqual(@as(f64, 1.0), values.loadFieldNormalized(&set, "mode"));
 }
 
 test "parameter values apply reflected parameter changes by id" {

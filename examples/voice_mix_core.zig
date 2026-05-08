@@ -14,9 +14,7 @@ pub const VoiceMix = struct {
         set: *const Spec.ParameterSet,
         values: *const Spec.ParameterValues,
     ) void {
-        const normalized = values.loadById(set, 0) orelse 0.0;
-        const voices = plug.parameters.IntParam.init(0, "Voices", 1, 4, 1).denormalize(normalized);
-        const gain: f32 = @floatFromInt(voices);
+        const gain: f32 = @floatFromInt(values.loadField(set, "voices"));
         for (0..context.outputs.channels.len) |channel| {
             const input = context.inputs.channel(channel) orelse continue;
             const output = context.outputs.channel(channel) orelse continue;
@@ -81,7 +79,7 @@ test "voice mix core example can run through plugin instance" {
 
     instance.process(&context);
 
-    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(@as(i64, 4), instance.parameterValuesConst().loadField(instance.parameterSet(), "voices"));
     try std.testing.expectEqual(@as(f32, 1.0), output[0]);
     try std.testing.expectEqual(@as(f32, 2.0), output[1]);
 }
