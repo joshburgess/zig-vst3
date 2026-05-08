@@ -15,8 +15,8 @@
 - `LogSmoother`: sample-counted multiplicative ramp for normalized values that must stay above zero.
 - `ParameterSet(Params)`: comptime reflection over a struct of descriptors, including host-facing id/name/default lookup, id/name/field index lookup, field metadata helpers, reflected `ParameterChange` construction, string conversion, and normalized/plain conversion by reflected index.
 - `ParameterValues(Params)`: atomic normalized value storage initialized from reflected descriptor defaults, with id-based normalized/plain load/store helpers, typed field-name load/store helpers for plugin code, default reset, a `view(set)` helper for bound typed reads, and an `editor(set)` helper for bound typed writes.
-- `ParameterView(Params)`: a descriptor/value pair for typed `load`, normalized `loadNormalized`, and id-based reads without passing the set into each call.
-- `ParameterEditor(Params)`: a descriptor/value pair for typed, normalized, plain-id, and normalized-id stores plus default reset without passing the set into each call.
+- `ParameterView(Params)`: a descriptor/value pair for typed `load`, normalized `loadNormalized`, index-based reads, and id-based reads without passing the set into each call.
+- `ParameterEditor(Params)`: a descriptor/value pair for typed, normalized, index-based, plain-id, and normalized-id stores plus default reset without passing the set into each call.
 
 ## Boundary Rules
 
