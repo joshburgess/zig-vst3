@@ -48,4 +48,4 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 
 ## Open Work
 
-- Record host smoke test notes for the reusable component and controller shells.
+- Complete host smoke test notes for save/reload behavior and the remaining bundled examples.

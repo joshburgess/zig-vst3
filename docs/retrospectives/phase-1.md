@@ -32,9 +32,9 @@ Status: first plugin milestone complete locally on macOS. This document records 
 - Refcount destruction is still callback-based in the low-level helpers. The raw layer now has a reusable allocator-owned callback, but higher-level object factory ergonomics are still open.
 - Windows C ABI harness execution is not wired yet. Cross-compilation passes, but the C harnesses run only on non-Windows CI jobs for now.
 - The current SDK C++ harness covers `FUnknown` dispatch but still uses local synthetic extension interfaces for the test-only `callA`/`callB`/`callC` methods.
-- Host smoke testing has not been recorded yet. `docs/host-matrix.md` now defines the release-gate record, but the validator pass does not replace DAW loading tests.
+- REAPER smoke testing has started for `zig_vst3_bypass.vst3` and `zig_vst3_mode_gain.vst3`. The recorded results are partial passes because save/reload behavior has not been recorded yet.
 
 ## Follow-Up Tasks
 
 - Decide whether Layer 2 hides raw callback-based destruction behind object factory helpers.
-- Fill `docs/host-matrix.md` after at least one bundled example is loaded in a real host.
+- Complete save/reload smoke coverage for the REAPER-tested examples, then cover the remaining bundled examples in at least one real host.
