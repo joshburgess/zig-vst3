@@ -13,6 +13,8 @@ Tier 3 host smoke tests are release gates. Record only tests that were run in a 
 
 ## Minimum Smoke Test
 
+Run `zig build clean-bundles bundle-examples` before pointing a host at `zig-out/bundle/` so stale bundles from older builds do not show up in the plugin browser.
+
 1. Build the bundle with `zig build bundle-<short-name>`.
 2. Load the matching bundle from `zig-out/bundle/` in the host.
 3. Confirm the plugin scans successfully.
@@ -25,6 +27,12 @@ Tier 3 host smoke tests are release gates. Record only tests that were run in a 
    - `zig_vst3_note_gate.vst3`: send note input and confirm the gate opens and closes.
    - `zig_vst3_event_echo.vst3`: route event output and confirm input events are echoed. This is not an audio delay effect.
 6. Save and reload the session, then confirm parameter state and scan status are preserved.
+
+## REAPER Notes
+
+- `zig_vst3_gain.vst3`: insert on an audio track, play steady audio, then move Gain and listen for continuous level changes.
+- `zig_vst3_note_gate.vst3`: create an audio track with the plugin, route audio into it, route MIDI notes into the same track, then confirm audio passes only while notes are held.
+- `zig_vst3_event_echo.vst3`: this passes audio through and echoes VST3 events to the output event bus. It is not an audio delay effect.
 
 ## Recording Helper
 
