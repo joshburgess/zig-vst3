@@ -8,13 +8,11 @@ pub const VoiceMix = struct {
         voices: plug.parameters.IntParam = plug.parameters.IntParam.init(0, "Voices", 1, 4, 1),
     };
 
-    pub fn processWithParameters(
+    pub fn processWithParameterView(
         _: *VoiceMix,
         context: *plug.process.ProcessContext(f32),
-        set: *const Spec.ParameterSet,
-        values: *const Spec.ParameterValues,
+        params: plug.parameters.ParameterView(Params),
     ) void {
-        const params = values.view(set);
         const gain: f32 = @floatFromInt(params.load("voices"));
         for (0..context.outputs.channels.len) |channel| {
             const input = context.inputs.channel(channel) orelse continue;

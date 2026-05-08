@@ -11,13 +11,11 @@ pub const ModeGain = struct {
         mode: ModeParam = .{ .id = 0, .name = "Mode", .default = .clean },
     };
 
-    pub fn processWithParameters(
+    pub fn processWithParameterView(
         _: *ModeGain,
         context: *plug.process.ProcessContext(f32),
-        set: *const Spec.ParameterSet,
-        values: *const Spec.ParameterValues,
+        params: plug.parameters.ParameterView(Params),
     ) void {
-        const params = values.view(set);
         const gain: f32 = switch (params.load("mode")) {
             .clean => 1.0,
             .boost => 2.0,
