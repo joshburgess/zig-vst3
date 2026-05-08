@@ -7,7 +7,7 @@ pub const NoteGate = struct {
     pub const Params = struct {};
 
     pub fn process(_: *NoteGate, context: *plug.process.ProcessContext(f32)) void {
-        if (context.events.firstKind(.note_on) == null) {
+        if (!context.hasEvent(.note_on)) {
             context.clearOutputs();
             return;
         }
