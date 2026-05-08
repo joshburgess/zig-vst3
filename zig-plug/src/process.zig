@@ -29,12 +29,22 @@ pub const ParameterChanges = struct {
         return result;
     }
 
+    pub fn latestNormalized(self: ParameterChanges, id: u32) ?f64 {
+        const change = self.latest(id) orelse return null;
+        return change.normalized;
+    }
+
     pub fn latestAtOrBefore(self: ParameterChanges, id: u32, sample_offset: usize) ?ParameterChange {
         var result: ?ParameterChange = null;
         for (self.items) |item| {
             if (item.id == id and item.sample_offset <= sample_offset) result = item;
         }
         return result;
+    }
+
+    pub fn latestNormalizedAtOrBefore(self: ParameterChanges, id: u32, sample_offset: usize) ?f64 {
+        const change = self.latestAtOrBefore(id, sample_offset) orelse return null;
+        return change.normalized;
     }
 
     pub fn nextSampleOffset(self: ParameterChanges, after_sample_offset: usize) ?usize {
@@ -293,11 +303,16 @@ test "parameter changes validate block offsets and normalized values" {
 
     try std.testing.expectEqual(@as(usize, 3), view.items.len);
     try std.testing.expectEqual(@as(f64, 0.75), view.latest(7).?.normalized);
+    try std.testing.expectEqual(@as(?f64, 0.75), view.latestNormalized(7));
+    try std.testing.expectEqual(@as(?f64, null), view.latestNormalized(9));
     try std.testing.expectEqual(@as(?ParameterChange, null), view.latest(9));
     try std.testing.expectEqual(@as(f64, 0.25), view.latestAtOrBefore(7, 0).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.25), view.latestAtOrBefore(7, 2).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.75), view.latestAtOrBefore(7, 3).?.normalized);
+    try std.testing.expectEqual(@as(?f64, 0.25), view.latestNormalizedAtOrBefore(7, 2));
+    try std.testing.expectEqual(@as(?f64, 0.75), view.latestNormalizedAtOrBefore(7, 3));
     try std.testing.expectEqual(@as(?ParameterChange, null), view.latestAtOrBefore(8, 1));
+    try std.testing.expectEqual(@as(?f64, null), view.latestNormalizedAtOrBefore(8, 1));
     try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffset(0));
     try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffset(2));
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffset(3));
