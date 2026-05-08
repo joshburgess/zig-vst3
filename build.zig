@@ -24,82 +24,63 @@ pub fn build(b: *std.Build) void {
     zig_plug.addImport("zig-plug-core", zig_plug_core);
     zig_plug.addImport("vst3-zig", vst3_zig);
 
-    const gain = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
-        .artifact_name = "zig_vst3_gain",
-        .root_source_file = "vst3-zig/src/gain_plugin.zig",
-    });
-    const bypass = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
-        .artifact_name = "zig_vst3_bypass",
-        .root_source_file = "vst3-zig/src/bypass_plugin.zig",
-    });
-    const mode_gain = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
-        .artifact_name = "zig_vst3_mode_gain",
-        .root_source_file = "vst3-zig/src/mode_gain_plugin.zig",
-    });
-    const voice_mix = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
-        .artifact_name = "zig_vst3_voice_mix",
-        .root_source_file = "vst3-zig/src/voice_mix_plugin.zig",
-    });
-    const note_gate = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
-        .artifact_name = "zig_vst3_note_gate",
-        .root_source_file = "vst3-zig/src/note_gate_plugin.zig",
-    });
-    const event_echo = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
-        .artifact_name = "zig_vst3_event_echo",
-        .root_source_file = "vst3-zig/src/event_echo_plugin.zig",
-    });
-
     const entry_symbols_step = b.step("entry-symbols", "Verify native VST3 module entry exports");
-    addEntrySymbolsCheck(b, entry_symbols_step, gain);
-    addEntrySymbolsCheck(b, entry_symbols_step, bypass);
-    addEntrySymbolsCheck(b, entry_symbols_step, mode_gain);
-    addEntrySymbolsCheck(b, entry_symbols_step, voice_mix);
-    addEntrySymbolsCheck(b, entry_symbols_step, note_gate);
-    addEntrySymbolsCheck(b, entry_symbols_step, event_echo);
 
-    const bundle_gain_step = addVst3BundleSteps(b, target, gain, .{
+    const gain = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
         .short_name = "gain",
         .display_name = "gain",
         .artifact_name = "zig_vst3_gain",
+        .root_source_file = "vst3-zig/src/gain_plugin.zig",
+        .core_example_source_file = "examples/gain_core.zig",
         .bundle_id = "dev.zig-vst3.gain",
     });
-    const bundle_bypass_step = addVst3BundleSteps(b, target, bypass, .{
+    const bypass = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
         .short_name = "bypass",
         .display_name = "bypass",
         .artifact_name = "zig_vst3_bypass",
+        .root_source_file = "vst3-zig/src/bypass_plugin.zig",
+        .core_example_source_file = "examples/bypass_core.zig",
         .bundle_id = "dev.zig-vst3.bypass",
     });
-    const bundle_mode_gain_step = addVst3BundleSteps(b, target, mode_gain, .{
+    const mode_gain = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
         .short_name = "mode-gain",
         .display_name = "mode gain",
         .artifact_name = "zig_vst3_mode_gain",
+        .root_source_file = "vst3-zig/src/mode_gain_plugin.zig",
+        .core_example_source_file = "examples/mode_gain_core.zig",
         .bundle_id = "dev.zig-vst3.mode-gain",
     });
-    const bundle_voice_mix_step = addVst3BundleSteps(b, target, voice_mix, .{
+    const voice_mix = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
         .short_name = "voice-mix",
         .display_name = "voice mix",
         .artifact_name = "zig_vst3_voice_mix",
+        .root_source_file = "vst3-zig/src/voice_mix_plugin.zig",
+        .core_example_source_file = "examples/voice_mix_core.zig",
         .bundle_id = "dev.zig-vst3.voice-mix",
     });
-    const bundle_note_gate_step = addVst3BundleSteps(b, target, note_gate, .{
+    const note_gate = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
         .short_name = "note-gate",
         .display_name = "note gate",
         .artifact_name = "zig_vst3_note_gate",
+        .root_source_file = "vst3-zig/src/note_gate_plugin.zig",
+        .core_example_source_file = "examples/note_gate_core.zig",
         .bundle_id = "dev.zig-vst3.note-gate",
     });
-    const bundle_event_echo_step = addVst3BundleSteps(b, target, event_echo, .{
+    const event_echo = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
         .short_name = "event-echo",
         .display_name = "event echo",
         .artifact_name = "zig_vst3_event_echo",
+        .root_source_file = "vst3-zig/src/event_echo_plugin.zig",
+        .core_example_source_file = "examples/event_echo_core.zig",
         .bundle_id = "dev.zig-vst3.event-echo",
     });
     const example_bundle_steps = [_]Vst3BundleSteps{
-        bundle_gain_step,
-        bundle_bypass_step,
-        bundle_mode_gain_step,
-        bundle_voice_mix_step,
-        bundle_note_gate_step,
-        bundle_event_echo_step,
+        gain.bundles,
+        bypass.bundles,
+        mode_gain.bundles,
+        voice_mix.bundles,
+        note_gate.bundles,
+        event_echo.bundles,
     };
     const vst3_test_module = b.createModule(.{
         .root_source_file = b.path("vst3-zig/src/root.zig"),
@@ -121,36 +102,22 @@ pub fn build(b: *std.Build) void {
     zig_plug_tests.root_module.addImport("vst3-zig", vst3_zig);
     zig_plug_tests.root_module.addImport("zig-plug-core", zig_plug_core);
 
-    const gain_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/gain_plugin.zig");
-    const bypass_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/bypass_plugin.zig");
-    const mode_gain_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/mode_gain_plugin.zig");
-    const voice_mix_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/voice_mix_plugin.zig");
-    const note_gate_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/note_gate_plugin.zig");
-    const event_echo_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, "vst3-zig/src/event_echo_plugin.zig");
-
-    const gain_core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/gain_core.zig");
-    const bypass_core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/bypass_core.zig");
-    const mode_gain_core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/mode_gain_core.zig");
-    const voice_mix_core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/voice_mix_core.zig");
-    const note_gate_core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/note_gate_core.zig");
-    const event_echo_core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/event_echo_core.zig");
-
     const test_step = b.step("test", "Run unit tests");
     addRunArtifactDependencies(b, test_step, &.{
         vst3_tests,
         zig_plug_tests,
-        gain_tests,
-        bypass_tests,
-        mode_gain_tests,
-        voice_mix_tests,
-        note_gate_tests,
-        event_echo_tests,
-        gain_core_example_tests,
-        bypass_core_example_tests,
-        mode_gain_core_example_tests,
-        voice_mix_core_example_tests,
-        note_gate_core_example_tests,
-        event_echo_core_example_tests,
+        gain.plugin_tests,
+        bypass.plugin_tests,
+        mode_gain.plugin_tests,
+        voice_mix.plugin_tests,
+        note_gate.plugin_tests,
+        event_echo.plugin_tests,
+        gain.core_example_tests,
+        bypass.core_example_tests,
+        mode_gain.core_example_tests,
+        voice_mix.core_example_tests,
+        note_gate.core_example_tests,
+        event_echo.core_example_tests,
     });
 
     const validate_step = b.step("validate", "Run the VST3 SDK validator for -Dplugin=path/to/Plugin.vst3");
@@ -162,32 +129,32 @@ pub fn build(b: *std.Build) void {
         validate_step.dependOn(&missing_plugin.step);
     }
 
-    const validate_gain_step = addVst3ValidationStep(b, target, bundle_gain_step.native, .{
+    const validate_gain_step = addVst3ValidationStep(b, target, gain.bundles.native, .{
         .short_name = "gain",
         .display_name = "gain",
         .artifact_name = "zig_vst3_gain",
     });
-    const validate_bypass_step = addVst3ValidationStep(b, target, bundle_bypass_step.native, .{
+    const validate_bypass_step = addVst3ValidationStep(b, target, bypass.bundles.native, .{
         .short_name = "bypass",
         .display_name = "bypass",
         .artifact_name = "zig_vst3_bypass",
     });
-    const validate_mode_gain_step = addVst3ValidationStep(b, target, bundle_mode_gain_step.native, .{
+    const validate_mode_gain_step = addVst3ValidationStep(b, target, mode_gain.bundles.native, .{
         .short_name = "mode-gain",
         .display_name = "mode gain",
         .artifact_name = "zig_vst3_mode_gain",
     });
-    const validate_voice_mix_step = addVst3ValidationStep(b, target, bundle_voice_mix_step.native, .{
+    const validate_voice_mix_step = addVst3ValidationStep(b, target, voice_mix.bundles.native, .{
         .short_name = "voice-mix",
         .display_name = "voice mix",
         .artifact_name = "zig_vst3_voice_mix",
     });
-    const validate_note_gate_step = addVst3ValidationStep(b, target, bundle_note_gate_step.native, .{
+    const validate_note_gate_step = addVst3ValidationStep(b, target, note_gate.bundles.native, .{
         .short_name = "note-gate",
         .display_name = "note gate",
         .artifact_name = "zig_vst3_note_gate",
     });
-    const validate_event_echo_step = addVst3ValidationStep(b, target, bundle_event_echo_step.native, .{
+    const validate_event_echo_step = addVst3ValidationStep(b, target, event_echo.bundles.native, .{
         .short_name = "event-echo",
         .display_name = "event echo",
         .artifact_name = "zig_vst3_event_echo",
@@ -611,6 +578,22 @@ const Vst3BundleSteps = struct {
     windows: *std.Build.Step,
 };
 
+const ExamplePluginOptions = struct {
+    short_name: []const u8,
+    display_name: []const u8,
+    artifact_name: []const u8,
+    root_source_file: []const u8,
+    core_example_source_file: []const u8,
+    bundle_id: []const u8,
+};
+
+const ExamplePluginSteps = struct {
+    library: *std.Build.Step.Compile,
+    bundles: Vst3BundleSteps,
+    plugin_tests: *std.Build.Step.Compile,
+    core_example_tests: *std.Build.Step.Compile,
+};
+
 const Vst3BundleKind = enum {
     native,
     linux,
@@ -631,6 +614,34 @@ fn addRunArtifactDependencies(
     for (artifacts) |artifact| {
         step.dependOn(&b.addRunArtifact(artifact).step);
     }
+}
+
+fn addExamplePlugin(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    zig_plug_core: *std.Build.Module,
+    zig_plug: *std.Build.Module,
+    entry_symbols_step: *std.Build.Step,
+    options: ExamplePluginOptions,
+) ExamplePluginSteps {
+    const library = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
+        .artifact_name = options.artifact_name,
+        .root_source_file = options.root_source_file,
+    });
+    addEntrySymbolsCheck(b, entry_symbols_step, library);
+
+    return .{
+        .library = library,
+        .bundles = addVst3BundleSteps(b, target, library, .{
+            .short_name = options.short_name,
+            .display_name = options.display_name,
+            .artifact_name = options.artifact_name,
+            .bundle_id = options.bundle_id,
+        }),
+        .plugin_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, options.root_source_file),
+        .core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, options.core_example_source_file),
+    };
 }
 
 fn addVst3BundleDependencies(
