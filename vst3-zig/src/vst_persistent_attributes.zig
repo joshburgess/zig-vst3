@@ -77,6 +77,8 @@ pub fn Persistent(comptime Config: type) type {
 
 pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize) type {
     if (max_entries == 0) @compileError("Attributes requires at least one entry");
+    if (max_entries > std.math.maxInt(types.int32)) @compileError("Attributes entry count exceeds int32 range");
+    if (max_binary_bytes > std.math.maxInt(types.uint32)) @compileError("Attributes binary payload size exceeds uint32 range");
 
     return extern struct {
         const Self = @This();

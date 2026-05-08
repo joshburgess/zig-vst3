@@ -60,6 +60,7 @@ pub fn ContextMenuTarget(comptime Config: type) type {
 
 pub fn ContextMenu(comptime max_items: usize) type {
     if (max_items == 0) @compileError("ContextMenu requires at least one item slot");
+    if (max_items > std.math.maxInt(types.int32)) @compileError("ContextMenu item count exceeds int32 range");
 
     return extern struct {
         const Self = @This();
