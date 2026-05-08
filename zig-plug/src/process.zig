@@ -150,6 +150,27 @@ pub const Event = struct {
         };
     }
 
+    pub fn noteExpressionInt(sample_offset: usize, note_id: i32, expression_type_id: u32, value: u64) Event {
+        return .{
+            .kind = .note_expression_int,
+            .bus_index = 0,
+            .sample_offset = sample_offset,
+            .note_id = note_id,
+            .expression_type_id = expression_type_id,
+            .int_value = value,
+        };
+    }
+
+    pub fn noteExpressionText(sample_offset: usize, note_id: i32, expression_type_id: u32) Event {
+        return .{
+            .kind = .note_expression_text,
+            .bus_index = 0,
+            .sample_offset = sample_offset,
+            .note_id = note_id,
+            .expression_type_id = expression_type_id,
+        };
+    }
+
     pub fn dataEvent(sample_offset: usize, data_type: u32, data: []const u8) Event {
         return .{
             .kind = .data,
@@ -157,6 +178,14 @@ pub const Event = struct {
             .sample_offset = sample_offset,
             .data_type = data_type,
             .data = data,
+        };
+    }
+
+    pub fn other(sample_offset: usize) Event {
+        return .{
+            .kind = .other,
+            .bus_index = 0,
+            .sample_offset = sample_offset,
         };
     }
 };
@@ -466,15 +495,19 @@ test "events validate block offsets and count kinds" {
         Event.pitchBend(3, 0, 1.0),
         Event.aftertouch(3, 0, 60, 0.25),
         Event.noteExpressionValue(3, 42, 5, 0.5),
+        Event.noteExpressionInt(3, 42, 5, 7),
+        Event.noteExpressionText(3, 42, 5),
         Event.dataEvent(3, 1, &.{ 0x01, 0x02 }),
+        Event.other(3),
     };
     const view = try Events.init(&items, 4);
 
-    try std.testing.expectEqual(@as(usize, 7), view.items.len);
+    try std.testing.expectEqual(@as(usize, 10), view.items.len);
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_on));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.midi_cc));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_off));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.data));
+    try std.testing.expectEqual(@as(usize, 1), view.countKind(.other));
     try std.testing.expect(view.hasKind(.note_on));
     try std.testing.expect(view.hasKind(.data));
 }

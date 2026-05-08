@@ -1219,10 +1219,12 @@ test "zig-plug bridge writes output events to VST3 event lists" {
         plug.process.Event.midiCc(1, 1, ivstmidicontrollers.kCtrlModWheel, 0.5),
         plug.process.Event.pitchBend(2, 1, 1.0),
         plug.process.Event.noteExpressionValue(3, 42, 5, 0.25),
+        plug.process.Event.noteExpressionInt(3, 42, 5, 7),
+        plug.process.Event.noteExpressionText(3, 42, 5),
         plug.process.Event.dataEvent(3, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx), &payload),
-        .{ .kind = .other, .bus_index = 0, .sample_offset = 3 },
+        plug.process.Event.other(3),
     };
-    const List = vst_event_list.EventList(5);
+    const List = vst_event_list.EventList(7);
     var list = List{};
     var data = ivstaudioprocessor.ProcessData{
         .numSamples = 4,
@@ -1232,7 +1234,7 @@ test "zig-plug bridge writes output events to VST3 event lists" {
     try std.testing.expectEqual(types.kResultOk, writeOutputEvents(&data, .{ .items = &items }));
 
     const written = list.items();
-    try std.testing.expectEqual(@as(usize, 5), written.len);
+    try std.testing.expectEqual(@as(usize, 7), written.len);
     try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent), written[0].type);
     try std.testing.expectEqual(@as(i16, 60), written[0].data.noteOn.pitch);
     try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), written[1].type);
@@ -1242,10 +1244,14 @@ test "zig-plug bridge writes output events to VST3 event lists" {
     try std.testing.expectEqual(@as(types.int16, 0x3FFF), events_helper.getPitchBendValue(&written[2].data.midiCCOut));
     try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent), written[3].type);
     try std.testing.expectEqual(@as(u32, 5), written[3].data.noteExpressionValue.typeId);
-    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kDataEvent), written[4].type);
-    try std.testing.expectEqual(@as(u32, payload.len), written[4].data.data.size);
-    try std.testing.expectEqual(@as(u32, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx)), written[4].data.data.type);
-    try std.testing.expectEqualSlices(u8, &payload, written[4].data.data.bytes.?[0..payload.len]);
+    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionIntValueEvent), written[4].type);
+    try std.testing.expectEqual(@as(u64, 7), written[4].data.noteExpressionIntValue.value);
+    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent), written[5].type);
+    try std.testing.expectEqual(@as(u32, 5), written[5].data.noteExpressionText.typeId);
+    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kDataEvent), written[6].type);
+    try std.testing.expectEqual(@as(u32, payload.len), written[6].data.data.size);
+    try std.testing.expectEqual(@as(u32, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx)), written[6].data.data.type);
+    try std.testing.expectEqualSlices(u8, &payload, written[6].data.data.bytes.?[0..payload.len]);
 }
 
 test "zig-plug bridge drops output MIDI events with invalid legacy fields" {
