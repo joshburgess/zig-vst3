@@ -228,6 +228,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
             entry.kind = @intFromEnum(Kind.binary);
             entry.binary_size = size;
+            @memset(&entry.binary_value, 0);
             if (size > 0) {
                 const bytes: [*]const u8 = @ptrCast(value.?);
                 @memcpy(entry.binary_value[0..size], bytes[0..size]);
@@ -428,6 +429,15 @@ test "attribute list stores scalar string and binary values" {
     const binary_bytes: [*]const u8 = @ptrCast(binary_out.?);
     try std.testing.expectEqual(@as(u8, 1), binary_bytes[0]);
     try std.testing.expectEqual(@as(u8, 3), binary_bytes[2]);
+
+    const shorter_bytes = [_]u8{9};
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setBinary(iface, "data", &shorter_bytes, shorter_bytes.len));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getBinary(iface, "data", &binary_out, &binary_size));
+    try std.testing.expectEqual(@as(types.uint32, shorter_bytes.len), binary_size);
+    const shorter_binary_bytes: [*]const u8 = @ptrCast(binary_out.?);
+    try std.testing.expectEqual(@as(u8, 9), shorter_binary_bytes[0]);
+    try std.testing.expectEqual(@as(u8, 0), shorter_binary_bytes[1]);
+    try std.testing.expectEqual(@as(u8, 0), shorter_binary_bytes[2]);
 }
 
 test "message stores id and exposes attributes" {
