@@ -1,6 +1,7 @@
 const std = @import("std");
 const parameters = @import("parameters.zig");
 const process_api = @import("process.zig");
+const state = @import("state.zig");
 
 pub fn PluginSpec(comptime Plugin: type) type {
     if (!@hasDecl(Plugin, "Params")) {
@@ -83,6 +84,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn applyParameterChanges(self: *Self, changes: process_api.ParameterChanges) void {
             self.spec.values.applyChanges(&self.spec.parameter_set, changes);
+        }
+
+        pub fn writeParameterState(self: *const Self, writer: anytype) !void {
+            try state.writeParameterState(Plugin.Params, &self.spec.parameter_set, &self.spec.values, writer);
+        }
+
+        pub fn readParameterState(self: *Self, reader: anytype) !void {
+            try state.readParameterState(Plugin.Params, &self.spec.parameter_set, &self.spec.values, reader);
+        }
+
+        pub fn readParameterStateWithMigrations(
+            self: *Self,
+            reader: anytype,
+            migrations: []const state.ParameterIdMigration,
+        ) !void {
+            try state.readParameterStateWithMigrations(Plugin.Params, &self.spec.parameter_set, &self.spec.values, reader, migrations);
         }
 
         pub fn process(self: *Self, context: *process_api.ProcessContext(f32)) void {
@@ -283,6 +300,66 @@ test "plugin instance applies parameter changes to owned values" {
 
     try std.testing.expectEqual(@as(?f64, 0.25), instance.parameterValues().loadById(instance.parameterSet(), 0));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterValues().loadById(instance.parameterSet(), 99));
+}
+
+test "plugin instance round-trips owned parameter state" {
+    const Gain = struct {
+        pub const name = "Instance State";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+            mix: parameters.FloatParam = parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 1.0),
+        };
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    var restored = try Instance.init(std.testing.allocator, .{});
+    var bytes: [state.encodedSize(Gain.Params)]u8 = undefined;
+
+    try std.testing.expect(instance.parameterValues().storeById(instance.parameterSet(), 0, 0.25));
+    try std.testing.expect(instance.parameterValues().storeById(instance.parameterSet(), 1, 0.75));
+
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    try instance.writeParameterState(out_stream.writer());
+
+    var in_stream = std.io.fixedBufferStream(&bytes);
+    try restored.readParameterState(in_stream.reader());
+
+    try std.testing.expectEqual(@as(?f64, 0.25), restored.parameterValues().loadById(restored.parameterSet(), 0));
+    try std.testing.expectEqual(@as(?f64, 0.75), restored.parameterValues().loadById(restored.parameterSet(), 1));
+}
+
+test "plugin instance reads parameter state with migrations" {
+    const OldGain = struct {
+        pub const name = "Old Instance State";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(7, "Gain", 0.0, 1.0, 0.5),
+        };
+    };
+    const NewGain = struct {
+        pub const name = "New Instance State";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            output: parameters.FloatParam = parameters.FloatParam.init(11, "Output", 0.0, 1.0, 0.5),
+        };
+    };
+    const OldInstance = PluginInstance(OldGain);
+    const NewInstance = PluginInstance(NewGain);
+    var old_instance = try OldInstance.init(std.testing.allocator, .{});
+    var new_instance = try NewInstance.init(std.testing.allocator, .{});
+    var bytes: [state.encodedSize(OldGain.Params)]u8 = undefined;
+
+    try std.testing.expect(old_instance.parameterValues().storeById(old_instance.parameterSet(), 7, 0.25));
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    try old_instance.writeParameterState(out_stream.writer());
+
+    var in_stream = std.io.fixedBufferStream(&bytes);
+    try new_instance.readParameterStateWithMigrations(in_stream.reader(), &.{
+        .{ .old_id = 7, .new_id = 11 },
+    });
+
+    try std.testing.expectEqual(@as(?f64, 0.25), new_instance.parameterValues().loadById(new_instance.parameterSet(), 11));
 }
 
 test "plugin instance accepts metadata-only plugins" {
