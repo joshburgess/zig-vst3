@@ -95,10 +95,10 @@ fn objectFromC(ptr: *anyopaque) *TestObject {
 
 fn query(object: *TestObject, requested_iid: *const tuid.TUID, out: *?*anyopaque) funknown.tresult {
     const entries = [_]interface_map.Entry{
-        .{ .iid = &funknown.iid, .ptr = &object.unknown },
-        .{ .iid = &test_a_iid, .ptr = &object.a },
-        .{ .iid = &test_b_iid, .ptr = &object.b },
-        .{ .iid = &test_c_iid, .ptr = &object.c },
+        interface_map.fieldEntry("unknown", object, &funknown.iid),
+        interface_map.fieldEntry("a", object, &test_a_iid),
+        interface_map.fieldEntry("b", object, &test_b_iid),
+        interface_map.fieldEntry("c", object, &test_c_iid),
     };
     return interface_map.query(&object.unknown, &entries, requested_iid, out);
 }

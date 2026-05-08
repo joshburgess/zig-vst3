@@ -7,6 +7,17 @@ pub const Entry = struct {
     ptr: *anyopaque,
 };
 
+pub fn fieldEntry(
+    comptime field_name: []const u8,
+    object: anytype,
+    iid: *const tuid.TUID,
+) Entry {
+    return .{
+        .iid = iid,
+        .ptr = @ptrCast(&@field(object, field_name)),
+    };
+}
+
 pub fn query(
     unknown: *funknown.Header,
     entries: []const Entry,
@@ -65,6 +76,19 @@ test "query clears output for missing interface" {
     try std.testing.expectEqual(funknown.kNoInterface, query(object.asUnknown(), &.{}, &missing_iid, &out));
     try std.testing.expectEqual(@as(?*anyopaque, null), out);
     try std.testing.expectEqual(@as(funknown.uint32, 1), object.refCount());
+}
+
+test "fieldEntry derives interface pointer from object field" {
+    const Object = struct {
+        unknown: funknown.Header = funknown.Header.init(&funknown.test_vtable, null),
+        alternate: funknown.Header = funknown.Header.init(&funknown.test_vtable, null),
+    };
+    var object = Object{};
+
+    const entry = fieldEntry("alternate", &object, &funknown.iid);
+
+    try std.testing.expectEqual(&funknown.iid, entry.iid);
+    try std.testing.expectEqual(@as(*anyopaque, @ptrCast(&object.alternate)), entry.ptr);
 }
 
 test "queryWithAddRef uses caller supplied canonical pointer" {
