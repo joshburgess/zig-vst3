@@ -34,7 +34,7 @@ test "voice mix core example declares reflected int parameter" {
 
     try std.testing.expectEqualStrings("zig-plug Core Voice Mix", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
-    try std.testing.expectEqual(@as(?f64, 0.0), spec.values.loadById(&parameter_set, 0));
+    try std.testing.expectEqual(@as(i64, 1), spec.values.loadField(&parameter_set, "voices"));
     plug.plugin.validateLifecycle(VoiceMix);
 }
 

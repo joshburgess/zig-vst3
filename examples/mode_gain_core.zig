@@ -41,7 +41,7 @@ test "mode gain core example declares reflected enum parameter" {
 
     try std.testing.expectEqualStrings("zig-plug Core Mode Gain", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
-    try std.testing.expectEqual(@as(?f64, 0.0), spec.values.loadById(&parameter_set, 0));
+    try std.testing.expectEqual(Mode.clean, spec.values.loadField(&parameter_set, "mode"));
     plug.plugin.validateLifecycle(ModeGain);
 }
 
