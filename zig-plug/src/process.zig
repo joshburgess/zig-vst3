@@ -300,6 +300,18 @@ pub const EventWriter = struct {
         self.count = 0;
     }
 
+    pub fn eventCount(self: *const EventWriter) usize {
+        return self.count;
+    }
+
+    pub fn isEmpty(self: *const EventWriter) bool {
+        return self.count == 0;
+    }
+
+    pub fn isFull(self: *const EventWriter) bool {
+        return self.count == self.storage.len;
+    }
+
     pub fn capacity(self: *const EventWriter) usize {
         return self.storage.len;
     }
@@ -696,12 +708,21 @@ test "event writer validates offsets and capacity" {
     var storage: [1]Event = undefined;
     var writer = EventWriter.init(&storage, 4);
 
+    try std.testing.expect(writer.isEmpty());
+    try std.testing.expect(!writer.isFull());
+    try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
     try writer.append(Event.noteOn(0, 0, 60, 1.0));
+    try std.testing.expect(!writer.isEmpty());
+    try std.testing.expect(writer.isFull());
+    try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
     try std.testing.expectEqual(@as(usize, 1), writer.events().items.len);
     try std.testing.expectEqual(@as(usize, 1), writer.capacity());
     try std.testing.expectEqual(@as(usize, 0), writer.remainingCapacity());
     try std.testing.expectError(error.EventStorageFull, writer.append(Event.noteOff(1, 0, 60, 0.0)));
     writer.clear();
+    try std.testing.expect(writer.isEmpty());
+    try std.testing.expect(!writer.isFull());
+    try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
     try std.testing.expectEqual(@as(usize, 0), writer.events().items.len);
     try std.testing.expectEqual(@as(usize, 1), writer.remainingCapacity());
 
