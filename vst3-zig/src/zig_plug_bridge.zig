@@ -546,23 +546,23 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
     if (event.sampleOffset < 0) return;
     const offset: usize = @intCast(event.sampleOffset);
     if (offset >= collector.frame_count) return;
-    collector.storage[collector.count] = switch (event.type) {
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent) => .{
+    const converted: ?plug.process.Event = switch (event.type) {
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent) => if (isUnitValue(event.data.noteOn.velocity)) .{
             .kind = .note_on,
             .bus_index = event.busIndex,
             .sample_offset = offset,
             .channel = event.data.noteOn.channel,
             .pitch = event.data.noteOn.pitch,
             .velocity = event.data.noteOn.velocity,
-        },
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent) => .{
+        } else null,
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent) => if (isUnitValue(event.data.noteOff.velocity)) .{
             .kind = .note_off,
             .bus_index = event.busIndex,
             .sample_offset = offset,
             .channel = event.data.noteOff.channel,
             .pitch = event.data.noteOff.pitch,
             .velocity = event.data.noteOff.velocity,
-        },
+        } else null,
         @intFromEnum(ivstevents.Event.EventTypes.kDataEvent) => .{
             .kind = .data,
             .bus_index = event.busIndex,
@@ -571,14 +571,14 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
             .data = dataEventBytes(event.data.data),
         },
         @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent) => collectLegacyMidiCcEvent(event, offset),
-        @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent) => .{
+        @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent) => if (isUnitValue(event.data.polyPressure.pressure)) .{
             .kind = .aftertouch,
             .bus_index = event.busIndex,
             .sample_offset = offset,
             .channel = event.data.polyPressure.channel,
             .pitch = event.data.polyPressure.pitch,
             .value = event.data.polyPressure.pressure,
-        },
+        } else null,
         @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent) => .{
             .kind = .note_expression_value,
             .bus_index = event.busIndex,
@@ -608,6 +608,7 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
             .sample_offset = offset,
         },
     };
+    collector.storage[collector.count] = converted orelse return;
     collector.count += 1;
 }
 
@@ -985,10 +986,28 @@ test "zig-plug bridge drops invalid and overflowing VST3 input events" {
             .data = .{ .noteOff = .{ .channel = 0, .pitch = 60, .velocity = 0.25 } },
         },
         .{
+            .busIndex = 0,
+            .sampleOffset = 1,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .data = .{ .noteOn = .{ .channel = 0, .pitch = 61, .velocity = std.math.nan(f32) } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 1,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+            .data = .{ .noteOff = .{ .channel = 0, .pitch = 61, .velocity = -0.1 } },
+        },
+        .{
             .busIndex = 1,
             .sampleOffset = 2,
             .type = @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent),
             .data = .{ .polyPressure = .{ .channel = 1, .pitch = 64, .pressure = 0.5 } },
+        },
+        .{
+            .busIndex = 1,
+            .sampleOffset = 2,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent),
+            .data = .{ .polyPressure = .{ .channel = 1, .pitch = 64, .pressure = 1.1 } },
         },
         .{
             .busIndex = 0,
