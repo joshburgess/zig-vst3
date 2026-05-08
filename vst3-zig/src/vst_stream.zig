@@ -116,10 +116,14 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
 
         fn seek(ptr: *anyopaque, offset: types.int64, mode: types.int32, result: ?*types.int64) callconv(.C) types.tresult {
             const self = ownerFromStream(ptr);
-            const next = switch (@as(ibstream.IStreamSeekMode, @enumFromInt(mode))) {
-                .kIBSeekSet => offset,
-                .kIBSeekCur => @as(types.int64, @intCast(self.pos)) + offset,
-                .kIBSeekEnd => @as(types.int64, @intCast(self.len)) + offset,
+            const next = switch (mode) {
+                @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet) => offset,
+                @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur) => @as(types.int64, @intCast(self.pos)) + offset,
+                @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd) => @as(types.int64, @intCast(self.len)) + offset,
+                else => {
+                    if (result) |out| out.* = -1;
+                    return types.kInvalidArgument;
+                },
             };
             if (next < 0 or next > self.len) {
                 if (result) |out| out.* = -1;
@@ -223,6 +227,9 @@ test "fixed buffer stream enforces bounds and supports query interface" {
     try std.testing.expectEqual(@as(types.int32, 0), count);
 
     var pos: types.int64 = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.seek(iface, 0, 99, &pos));
+    try std.testing.expectEqual(@as(types.int64, -1), pos);
+    pos = 99;
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.seek(iface, 100, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), &pos));
     try std.testing.expectEqual(@as(types.int64, -1), pos);
 
