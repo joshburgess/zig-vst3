@@ -44,6 +44,16 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             copyString128(&self.units[0].name, name);
         }
 
+        fn safeUnitCount(self: *const Self) usize {
+            if (self.unit_count <= 0) return 0;
+            return @min(@as(usize, @intCast(self.unit_count)), max_units);
+        }
+
+        fn safeProgramListCount(self: *const Self) usize {
+            if (self.program_list_count <= 0) return 0;
+            return @min(@as(usize, @intCast(self.program_list_count)), max_program_lists);
+        }
+
         fn rootUnits() [max_units]ivstunits.UnitInfo {
             var values: [max_units]ivstunits.UnitInfo = [_]ivstunits.UnitInfo{.{}} ** max_units;
             values[0] = .{
@@ -77,12 +87,12 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         }
 
         fn getUnitCount(ptr: *anyopaque) callconv(.C) types.int32 {
-            return owner(ptr).unit_count;
+            return @intCast(owner(ptr).safeUnitCount());
         }
 
         fn getUnitInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.C) types.tresult {
             const self = owner(ptr);
-            if (index < 0 or index >= self.unit_count) {
+            if (index < 0 or @as(usize, @intCast(index)) >= self.safeUnitCount()) {
                 out.* = .{};
                 return types.kInvalidArgument;
             }
@@ -91,12 +101,12 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         }
 
         fn getProgramListCount(ptr: *anyopaque) callconv(.C) types.int32 {
-            return owner(ptr).program_list_count;
+            return @intCast(owner(ptr).safeProgramListCount());
         }
 
         fn getProgramListInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.C) types.tresult {
             const self = owner(ptr);
-            if (index < 0 or index >= self.program_list_count) {
+            if (index < 0 or @as(usize, @intCast(index)) >= self.safeProgramListCount()) {
                 out.* = .{};
                 return types.kInvalidArgument;
             }
@@ -149,7 +159,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn selectUnit(ptr: *anyopaque, id: vsttypes.UnitID) callconv(.C) types.tresult {
             const self = owner(ptr);
-            for (self.units[0..@intCast(self.unit_count)]) |unit| {
+            for (self.units[0..self.safeUnitCount()]) |unit| {
                 if (unit.id == id) {
                     self.selected_unit = id;
                     return types.kResultOk;
@@ -391,6 +401,33 @@ test "unit info stores program list entries and selected unit" {
     try std.testing.expectEqual(@as(types.int32, 3), list.programCount);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.selectUnit(iface, 7));
     try std.testing.expectEqual(@as(vsttypes.UnitID, 7), iface.vtable.getSelectedUnit(iface));
+}
+
+test "unit info clamps corrupted counts" {
+    const Info = UnitInfo(2, 1, struct {});
+    var info = Info{};
+    const iface = info.asInterface();
+    var unit = ivstunits.UnitInfo{ .id = 99 };
+    var list = ivstunits.ProgramListInfo{ .id = 99 };
+
+    info.unit_count = -1;
+    try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getUnitCount(iface));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getUnitInfo(iface, 0, &unit));
+    try std.testing.expectEqual(@as(vsttypes.UnitID, 0), unit.id);
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.selectUnit(iface, ivstunits.kRootUnitId));
+
+    info.unit_count = 3;
+    try std.testing.expectEqual(@as(types.int32, 2), iface.vtable.getUnitCount(iface));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getUnitInfo(iface, 2, &unit));
+
+    info.program_list_count = -1;
+    try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getProgramListCount(iface));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramListInfo(iface, 0, &list));
+    try std.testing.expectEqual(@as(vsttypes.ProgramListID, 0), list.id);
+
+    info.program_list_count = 2;
+    try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getProgramListCount(iface));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramListInfo(iface, 1, &list));
 }
 
 test "unit info delegates optional callbacks and supports query interface" {
