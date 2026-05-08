@@ -267,6 +267,7 @@ pub fn getParamStringByValue(
     value: vsttypes.ParamValue,
     out: [*]vsttypes.TChar,
 ) types.tresult {
+    copyAscii16Ptr(out, "");
     const index = set.indexOfId(id) orelse return types.kInvalidArgument;
     var buffer: [64]u8 = undefined;
     const text = set.formatPlain(index, value, &buffer) catch return types.kResultFalse;
@@ -281,6 +282,7 @@ pub fn getParamValueByString(
     text: [*]vsttypes.TChar,
     out: *vsttypes.ParamValue,
 ) types.tresult {
+    out.* = 0;
     const index = set.indexOfId(id) orelse return types.kInvalidArgument;
     var buffer: [128]u8 = undefined;
     const parsed_text = readAscii16Ptr(text, &buffer);
@@ -1371,7 +1373,14 @@ test "zig-plug bridge formats and parses VST3 parameter strings" {
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[6]);
     try std.testing.expectEqual(types.kResultOk, getParamValueByString(Params, &set, 7, &text, &value));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
+    text = [_]vsttypes.TChar{'x'} ** 128;
     try std.testing.expectEqual(types.kInvalidArgument, getParamStringByValue(Params, &set, 8, 0.5, &text));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[127]);
+
+    value = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, getParamValueByString(Params, &set, 8, &text, &value));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0), value);
 }
 
 test "zig-plug bridge converts VST3 normalized and plain values" {
