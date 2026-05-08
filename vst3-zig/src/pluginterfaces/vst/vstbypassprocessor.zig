@@ -3,6 +3,10 @@ const base = @import("../base/types.zig");
 
 pub const kMaxChannelsSupported: base.int32 = 64;
 
+fn cappedStorageLen(len: usize) base.int32 {
+    return @intCast(@min(len, @as(usize, @intCast(std.math.maxInt(base.int32)))));
+}
+
 pub fn AudioBuffer(comptime T: type) type {
     return struct {
         allocator: std.mem.Allocator,
@@ -22,13 +26,14 @@ pub fn AudioBuffer(comptime T: type) type {
         pub fn resize(self: *Self, max_samples: base.int32) !void {
             if (self.max_samples == max_samples) return;
 
-            self.max_samples = max_samples;
-            if (self.max_samples <= 0) {
+            if (max_samples <= 0) {
                 self.allocator.free(self.buffer);
                 self.buffer = &.{};
+                self.max_samples = 0;
                 return;
             }
 
+            self.max_samples = max_samples;
             self.buffer = try self.allocator.realloc(self.buffer, @intCast(self.max_samples));
         }
 
@@ -68,6 +73,10 @@ pub fn delay(
     buffer_in_pos: base.int32,
     buffer_out_pos: base.int32,
 ) bool {
+    if (sample_frames <= 0 or buffer_size <= 0) return false;
+    if (buffer_in_pos < 0 or buffer_in_pos >= buffer_size) return false;
+    if (buffer_out_pos < 0 or buffer_out_pos >= buffer_size) return false;
+
     var remain = sample_frames;
     var input_index: base.int32 = 0;
     var output_index: base.int32 = 0;
@@ -130,11 +139,19 @@ pub fn Delay(comptime T: type) type {
         const Self = @This();
 
         pub fn init(storage: []T, max_samples_per_block: base.int32, delay_samples: base.int32) Self {
-            const buffer_samples = if (delay_samples > 0) max_samples_per_block + delay_samples else 0;
+            const storage_samples = cappedStorageLen(storage.len);
+            const requested_samples = if (delay_samples > 0 and max_samples_per_block > 0)
+                @addWithOverflow(max_samples_per_block, delay_samples)
+            else
+                .{ 0, 0 };
+            const buffer_samples: base.int32 = if (requested_samples[1] == 0)
+                @min(requested_samples[0], storage_samples)
+            else
+                storage_samples;
             return .{
                 .buffer = storage[0..@intCast(buffer_samples)],
                 .buffer_samples = buffer_samples,
-                .delay_samples = delay_samples,
+                .delay_samples = @min(@max(delay_samples, 0), buffer_samples),
             };
         }
 
@@ -147,6 +164,7 @@ pub fn Delay(comptime T: type) type {
         }
 
         pub fn process(self: *Self, src: ?[*]const T, dst: [*]T, num_samples: base.int32, silent_in: bool) bool {
+            if (num_samples <= 0) return silent_in;
             var silent_out = false;
             if (self.hasDelay() and src != null) {
                 const buffer_size = self.getBufferSamples();
@@ -213,4 +231,27 @@ test "delay helper copies through circular buffer" {
     try @import("std").testing.expectEqual(@as(f32, 0), audio_buffer.buffer[0]);
     try audio_buffer.resize(0);
     try @import("std").testing.expectEqual(@as(base.int32, 0), audio_buffer.getMaxSamples());
+}
+
+test "bypass helpers reject invalid sizes and positions" {
+    var input = [_]f32{ 1, 2 };
+    var output = [_]f32{ 9, 9 };
+    var buffer = [_]f32{ 0, 0 };
+    try std.testing.expect(!delay(f32, -1, &input, &output, &buffer, 2, 0, 0));
+    try std.testing.expect(!delay(f32, 1, &input, &output, &buffer, 2, -1, 0));
+    try std.testing.expect(!delay(f32, 1, &input, &output, &buffer, 2, 0, 2));
+    try std.testing.expectEqual(@as(f32, 9), output[0]);
+
+    var storage = [_]f32{0} ** 4;
+    var processor_delay = Delay(f32).init(&storage, std.math.maxInt(base.int32), 2);
+    try std.testing.expectEqual(@as(base.int32, 4), processor_delay.getBufferSamples());
+    const silent = processor_delay.process(&input, &output, -1, true);
+    try std.testing.expect(silent);
+
+    var audio_buffer = AudioBuffer(f32).init(std.testing.allocator);
+    defer audio_buffer.deinit();
+    try audio_buffer.resize(2);
+    try audio_buffer.resize(-1);
+    try std.testing.expectEqual(@as(base.int32, 0), audio_buffer.getMaxSamples());
+    try std.testing.expectEqual(@as(usize, 0), audio_buffer.buffer.len);
 }
