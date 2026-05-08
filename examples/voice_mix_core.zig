@@ -79,7 +79,7 @@ test "voice mix core example can run through plugin instance" {
 
     instance.process(&context);
 
-    try std.testing.expectEqual(@as(i64, 4), instance.parameterValuesConst().loadField(instance.parameterSet(), "voices"));
+    try std.testing.expectEqual(@as(i64, 4), instance.loadParameter("voices"));
     try std.testing.expectEqual(@as(f32, 1.0), output[0]);
     try std.testing.expectEqual(@as(f32, 2.0), output[1]);
 }

@@ -59,7 +59,7 @@ test "bypass core example applies parameter changes by id" {
     try std.testing.expectEqual(@as(f32, 0.25), output[0]);
     try std.testing.expectEqual(@as(f32, 0.5), output[1]);
     try std.testing.expectEqual(@as(f32, 1.0), output[2]);
-    try std.testing.expectEqual(true, instance.parameterValuesConst().loadField(instance.parameterSet(), "bypass"));
+    try std.testing.expectEqual(true, instance.loadParameter("bypass"));
 }
 
 test "bypass core example can run through plugin instance" {
@@ -80,7 +80,7 @@ test "bypass core example can run through plugin instance" {
 
     instance.process(&context);
 
-    try std.testing.expectEqual(true, instance.parameterValuesConst().loadField(instance.parameterSet(), "bypass"));
+    try std.testing.expectEqual(true, instance.loadParameter("bypass"));
     try std.testing.expectEqual(@as(f32, 0.25), output[0]);
     try std.testing.expectEqual(@as(f32, 0.5), output[1]);
 }
