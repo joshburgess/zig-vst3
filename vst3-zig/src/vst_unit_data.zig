@@ -15,6 +15,10 @@ fn copyString128(dest: *vsttypes.String128, source: []const u8) void {
     }
 }
 
+fn clearString128Ptr(dest: [*]vsttypes.TChar) void {
+    @memset(dest[0..128], 0);
+}
+
 pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, comptime Config: type) type {
     if (max_units == 0) @compileError("UnitInfo requires at least one unit slot");
 
@@ -103,14 +107,14 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         fn getProgramName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
             const self = owner(ptr);
             if (@hasDecl(Config, "getProgramName")) return Config.getProgramName(self, list_id, program_index, out);
-            out[0] = 0;
+            clearString128Ptr(out);
             return types.kInvalidArgument;
         }
 
         fn getProgramInfo(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
             const self = owner(ptr);
             if (@hasDecl(Config, "getProgramInfo")) return Config.getProgramInfo(self, list_id, program_index, attribute_id, out);
-            out[0] = 0;
+            clearString128Ptr(out);
             return types.kInvalidArgument;
         }
 
@@ -123,7 +127,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         fn getProgramPitchName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, pitch: types.int16, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
             const self = owner(ptr);
             if (@hasDecl(Config, "getProgramPitchName")) return Config.getProgramPitchName(self, list_id, program_index, pitch, out);
-            out[0] = 0;
+            clearString128Ptr(out);
             return types.kInvalidArgument;
         }
 
@@ -329,6 +333,22 @@ test "unit info exposes root unit defaults" {
     var missing = ivstunits.UnitInfo{};
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getUnitInfo(iface, 1, &missing));
     try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getProgramListCount(iface));
+
+    var program_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramName(iface, ivstunits.kNoProgramListId, 0, &program_name));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[1]);
+
+    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramInfo(iface, ivstunits.kNoProgramListId, 0, "name", &program_info));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[1]);
+
+    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramPitchName(iface, ivstunits.kNoProgramListId, 0, 60, &pitch_name));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[1]);
+
     try std.testing.expectEqual(ivstunits.kRootUnitId, iface.vtable.getSelectedUnit(iface));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.selectUnit(iface, ivstunits.kRootUnitId));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.selectUnit(iface, 99));
