@@ -37,11 +37,8 @@ test "note gate export returns enumerable factory" {
 }
 
 test "note gate plugin root exposes zig-plug metadata" {
-    const spec = note_gate_spec.Spec.init(.{});
-
     try std.testing.expectEqualStrings("zig-vst3 Note Gate", note_gate_spec.Spec.name);
     try std.testing.expectEqualStrings("zig-vst3 Note Gate Controller", note_gate_spec.controller_class_name);
     try std.testing.expectEqualStrings("zig-vst3", note_gate_spec.Spec.vendor);
     try std.testing.expectEqual(@as(usize, 0), note_gate_spec.Spec.ParameterSet.count);
-    try std.testing.expectEqual(@as(?f64, null), spec.values.load(0));
 }

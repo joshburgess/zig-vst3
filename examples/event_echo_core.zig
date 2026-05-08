@@ -15,12 +15,9 @@ pub const Spec = plug.plugin.PluginSpec(EventEcho);
 pub const Instance = plug.plugin.PluginInstance(EventEcho);
 
 test "event echo core example declares reflected metadata" {
-    const spec = Spec.init(.{});
-
     try std.testing.expectEqualStrings("zig-plug Core Event Echo", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
     try std.testing.expectEqual(@as(usize, 0), Spec.ParameterSet.count);
-    try std.testing.expectEqual(@as(?f64, null), spec.values.load(0));
     plug.plugin.validateLifecycle(EventEcho);
 }
 

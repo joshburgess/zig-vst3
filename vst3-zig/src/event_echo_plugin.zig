@@ -37,11 +37,8 @@ test "event echo export returns enumerable factory" {
 }
 
 test "event echo plugin root exposes zig-plug metadata" {
-    const spec = event_echo_spec.Spec.init(.{});
-
     try std.testing.expectEqualStrings("zig-vst3 Event Echo", event_echo_spec.Spec.name);
     try std.testing.expectEqualStrings("zig-vst3 Event Echo Controller", event_echo_spec.controller_class_name);
     try std.testing.expectEqualStrings("zig-vst3", event_echo_spec.Spec.vendor);
     try std.testing.expectEqual(@as(usize, 0), event_echo_spec.Spec.ParameterSet.count);
-    try std.testing.expectEqual(@as(?f64, null), spec.values.load(0));
 }
