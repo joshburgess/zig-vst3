@@ -207,17 +207,15 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn getString(ptr: *anyopaque, id: ivstattributes.AttrID, out: [*]vsttypes.TChar, size: types.uint32) callconv(.C) types.tresult {
             if (size == 0) return types.kInvalidArgument;
+            @memset(out[0..size], 0);
             const entry = owner(ptr).findEntry(id) orelse {
-                out[0] = 0;
                 return types.kResultFalse;
             };
             if (entry.kind != @intFromEnum(Kind.string)) {
-                out[0] = 0;
                 return types.kInvalidArgument;
             }
             const len = @min(std.mem.len(@as([*:0]const vsttypes.TChar, @ptrCast(&entry.string_value))), size - 1);
             @memcpy(out[0..len], entry.string_value[0..len]);
-            out[len] = 0;
             return types.kResultOk;
         }
 
@@ -309,9 +307,9 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
 
         fn getFileName(ptr: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
             const self = owner(ptr);
+            @memset(out[0..128], 0);
             const len = std.mem.len(@as([*:0]const vsttypes.TChar, @ptrCast(&self.file_name)));
             @memcpy(out[0..len], self.file_name[0..len]);
-            out[len] = 0;
             return types.kResultOk;
         }
 
@@ -407,11 +405,12 @@ test "attribute list stores scalar string and binary values" {
 
     const text: [6:0]vsttypes.TChar = .{ 'h', 'e', 'l', 'l', 'o', 0 };
     try std.testing.expectEqual(types.kResultOk, iface.vtable.setString(iface, "text", &text));
-    var text_out: [16]vsttypes.TChar = [_]vsttypes.TChar{0} ** 16;
+    var text_out: [16]vsttypes.TChar = [_]vsttypes.TChar{'x'} ** 16;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getString(iface, "text", &text_out, text_out.len));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'h'), text_out[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 'o'), text_out[4]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text_out[5]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text_out[6]);
 
     const bytes = [_]u8{ 1, 2, 3 };
     try std.testing.expectEqual(types.kResultOk, iface.vtable.setBinary(iface, "data", &bytes, bytes.len));
@@ -453,11 +452,12 @@ test "stream attributes expose filename and attribute list" {
     const file_name: [11:0]vsttypes.TChar = .{ 'p', 'r', 'e', 's', 'e', 't', '.', 'v', 's', 't', 0 };
     stream_attributes.setFileName(&file_name);
 
-    var file_name_out: [32]vsttypes.TChar = [_]vsttypes.TChar{0} ** 32;
+    var file_name_out: [128]vsttypes.TChar = [_]vsttypes.TChar{'x'} ** 128;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getFileName(iface, &file_name_out));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'p'), file_name_out[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 't'), file_name_out[9]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), file_name_out[10]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), file_name_out[11]);
 
     const attrs = iface.vtable.getAttributes(iface).?;
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.setInt(attrs, "version", 1));
