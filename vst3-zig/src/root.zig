@@ -44,6 +44,7 @@ pub const vst_persistent_attributes = @import("vst_persistent_attributes.zig");
 pub const vst_plug_frame = @import("vst_plug_frame.zig");
 pub const vst_plugin_compatibility = @import("vst_plugin_compatibility.zig");
 pub const vst_string_result = @import("vst_string_result.zig");
+pub const vst_stream = @import("vst_stream.zig");
 pub const vst_test_interfaces = @import("vst_test_interfaces.zig");
 pub const vst_test_plug_provider = @import("vst_test_plug_provider.zig");
 pub const vst_unit_data = @import("vst_unit_data.zig");
