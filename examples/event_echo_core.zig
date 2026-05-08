@@ -8,9 +8,7 @@ pub const EventEcho = struct {
 
     pub fn process(_: *EventEcho, context: *plug.process.ProcessContext(f32)) void {
         const writer = context.output_events orelse return;
-        for (context.events.items) |event| {
-            writer.append(event) catch {};
-        }
+        writer.appendAll(context.events) catch {};
     }
 };
 
