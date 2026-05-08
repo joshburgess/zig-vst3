@@ -14,7 +14,8 @@ pub const VoiceMix = struct {
         set: *const Spec.ParameterSet,
         values: *const Spec.ParameterValues,
     ) void {
-        const gain: f32 = @floatFromInt(values.loadField(set, "voices"));
+        const params = values.view(set);
+        const gain: f32 = @floatFromInt(params.load("voices"));
         for (0..context.outputs.channels.len) |channel| {
             const input = context.inputs.channel(channel) orelse continue;
             const output = context.outputs.channel(channel) orelse continue;
@@ -34,7 +35,7 @@ test "voice mix core example declares reflected int parameter" {
 
     try std.testing.expectEqualStrings("zig-plug Core Voice Mix", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
-    try std.testing.expectEqual(@as(i64, 1), spec.values.loadField(&parameter_set, "voices"));
+    try std.testing.expectEqual(@as(i64, 1), spec.values.view(&parameter_set).load("voices"));
     plug.plugin.validateLifecycle(VoiceMix);
 }
 

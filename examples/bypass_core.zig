@@ -14,7 +14,8 @@ pub const Bypass = struct {
         set: *const Spec.ParameterSet,
         values: *const Spec.ParameterValues,
     ) void {
-        const bypassed = values.loadField(set, "bypass");
+        const params = values.view(set);
+        const bypassed = params.load("bypass");
         for (0..context.outputs.channels.len) |channel| {
             const input = context.inputs.channel(channel) orelse continue;
             const output = context.outputs.channel(channel) orelse continue;
@@ -34,7 +35,7 @@ test "bypass core example declares reflected bool parameter" {
 
     try std.testing.expectEqualStrings("zig-plug Core Bypass", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
-    try std.testing.expectEqual(false, spec.values.loadField(&parameter_set, "bypass"));
+    try std.testing.expectEqual(false, spec.values.view(&parameter_set).load("bypass"));
     plug.plugin.validateLifecycle(Bypass);
 }
 
