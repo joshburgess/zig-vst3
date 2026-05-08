@@ -106,15 +106,15 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn getProgramName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
             const self = owner(ptr);
-            if (@hasDecl(Config, "getProgramName")) return Config.getProgramName(self, list_id, program_index, out);
             clearString128Ptr(out);
+            if (@hasDecl(Config, "getProgramName")) return Config.getProgramName(self, list_id, program_index, out);
             return types.kInvalidArgument;
         }
 
         fn getProgramInfo(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
             const self = owner(ptr);
-            if (@hasDecl(Config, "getProgramInfo")) return Config.getProgramInfo(self, list_id, program_index, attribute_id, out);
             clearString128Ptr(out);
+            if (@hasDecl(Config, "getProgramInfo")) return Config.getProgramInfo(self, list_id, program_index, attribute_id, out);
             return types.kInvalidArgument;
         }
 
@@ -126,8 +126,8 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn getProgramPitchName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, pitch: types.int16, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
             const self = owner(ptr);
-            if (@hasDecl(Config, "getProgramPitchName")) return Config.getProgramPitchName(self, list_id, program_index, pitch, out);
             clearString128Ptr(out);
+            if (@hasDecl(Config, "getProgramPitchName")) return Config.getProgramPitchName(self, list_id, program_index, pitch, out);
             return types.kInvalidArgument;
         }
 
@@ -148,8 +148,8 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn getUnitByBus(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, channel: types.int32, out: *vsttypes.UnitID) callconv(.C) types.tresult {
             const self = owner(ptr);
-            if (@hasDecl(Config, "getUnitByBus")) return Config.getUnitByBus(self, media_type, direction, bus_index, channel, out);
             out.* = ivstunits.kRootUnitId;
+            if (@hasDecl(Config, "getUnitByBus")) return Config.getUnitByBus(self, media_type, direction, bus_index, channel, out);
             return types.kResultOk;
         }
 
@@ -400,6 +400,67 @@ test "unit info delegates optional callbacks and supports query interface" {
     try std.testing.expect(queried != null);
     const queried_info: *ivstunits.IUnitInfo = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_info.vtable.release(queried_info));
+}
+
+test "unit info clears delegated failure outputs" {
+    const Info = UnitInfo(1, 0, struct {
+        pub fn getProgramName(self: anytype, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) types.tresult {
+            _ = self;
+            _ = list_id;
+            _ = program_index;
+            _ = out;
+            return types.kInvalidArgument;
+        }
+
+        pub fn getProgramInfo(self: anytype, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) types.tresult {
+            _ = self;
+            _ = list_id;
+            _ = program_index;
+            _ = attribute_id;
+            _ = out;
+            return types.kInvalidArgument;
+        }
+
+        pub fn getProgramPitchName(self: anytype, list_id: vsttypes.ProgramListID, program_index: types.int32, pitch: types.int16, out: [*]vsttypes.TChar) types.tresult {
+            _ = self;
+            _ = list_id;
+            _ = program_index;
+            _ = pitch;
+            _ = out;
+            return types.kInvalidArgument;
+        }
+
+        pub fn getUnitByBus(self: anytype, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, channel: types.int32, out: *vsttypes.UnitID) types.tresult {
+            _ = self;
+            _ = media_type;
+            _ = direction;
+            _ = bus_index;
+            _ = channel;
+            _ = out;
+            return types.kInvalidArgument;
+        }
+    });
+    var info = Info{};
+    const iface = info.asInterface();
+
+    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramName(iface, 1, 2, &name));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[127]);
+
+    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramInfo(iface, 1, 2, "name", &program_info));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[127]);
+
+    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramPitchName(iface, 1, 2, 60, &pitch_name));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[127]);
+
+    var unit_id: vsttypes.UnitID = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getUnitByBus(iface, vsttypes.MediaTypes.kAudio, vsttypes.BusDirections.kInput, 0, 0, &unit_id));
+    try std.testing.expectEqual(ivstunits.kRootUnitId, unit_id);
 }
 
 test "unit program data tracks default calls" {
