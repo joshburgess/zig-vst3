@@ -455,6 +455,22 @@ test "gain controller exposes default root unit info" {
     var missing: ivstunits.UnitInfo = .{};
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getUnitInfo(unit_info, 1, &missing));
     try std.testing.expectEqual(@as(types.int32, 0), unit_info.vtable.getProgramListCount(unit_info));
+
+    var program_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramName(unit_info, ivstunits.kNoProgramListId, 0, &program_name));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[1]);
+
+    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramInfo(unit_info, ivstunits.kNoProgramListId, 0, "name", &program_info));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[1]);
+
+    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramPitchName(unit_info, ivstunits.kNoProgramListId, 0, 60, &pitch_name));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[1]);
+
     try std.testing.expectEqual(ivstunits.kRootUnitId, unit_info.vtable.getSelectedUnit(unit_info));
     try std.testing.expectEqual(types.kResultOk, unit_info.vtable.selectUnit(unit_info, ivstunits.kRootUnitId));
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.selectUnit(unit_info, 42));
@@ -599,6 +615,20 @@ test "gain controller exposes default note expression and keyswitch interfaces" 
         types.kInvalidArgument,
         expression.vtable.getNoteExpressionInfo(expression, 0, 0, 0, &expression_info),
     );
+    var expression_text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    const empty_expression_text: [1:0]vsttypes.TChar = .{0};
+    var expression_value: ivstnoteexpression.NoteExpressionValue = 1.0;
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        expression.vtable.getNoteExpressionStringByValue(expression, 0, 0, 0, 0.5, &expression_text),
+    );
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), expression_text[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), expression_text[1]);
+    try std.testing.expectEqual(
+        types.kInvalidArgument,
+        expression.vtable.getNoteExpressionValueByString(expression, 0, 0, 0, &empty_expression_text, &expression_value),
+    );
+    try std.testing.expectEqual(@as(ivstnoteexpression.NoteExpressionValue, 0), expression_value);
 
     var keyswitch_out: ?*anyopaque = null;
     try std.testing.expectEqual(
