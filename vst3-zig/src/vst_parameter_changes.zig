@@ -12,6 +12,8 @@ pub const ParamPoint = extern struct {
 };
 
 pub fn ParamValueQueue(comptime max_points: usize) type {
+    if (max_points == 0) @compileError("ParamValueQueue requires at least one point slot");
+
     return extern struct {
         const Self = @This();
 
@@ -77,6 +79,10 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
 
         fn addPoint(ptr: *anyopaque, sample_offset: types.int32, value: vsttypes.ParamValue, index: *types.int32) callconv(.C) types.tresult {
             const self = owner(ptr);
+            if (self.point_count >= max_points) {
+                index.* = -1;
+                return types.kResultFalse;
+            }
             index.* = self.point_count;
             return self.appendPoint(sample_offset, value);
         }
@@ -94,6 +100,8 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
 }
 
 pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queue: usize) type {
+    if (max_queues == 0) @compileError("ParameterChanges requires at least one parameter queue slot");
+
     return extern struct {
         const Self = @This();
         const Queue = ParamValueQueue(max_points_per_queue);
@@ -162,7 +170,10 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
                     return queue.asInterface();
                 }
             }
-            const queue = self.addQueue(id.*) orelse return null;
+            const queue = self.addQueue(id.*) orelse {
+                index.* = -1;
+                return null;
+            };
             index.* = self.queue_count - 1;
             return queue.asInterface();
         }
@@ -196,6 +207,15 @@ test "parameter changes expose queued points" {
     try std.testing.expectEqual(types.kResultOk, queue_iface.vtable.getPoint(queue_iface, 1, &sample_offset, &value));
     try std.testing.expectEqual(@as(types.int32, 3), sample_offset);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), value);
+
+    sample_offset = 99;
+    value = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, queue_iface.vtable.getPoint(queue_iface, -1, &sample_offset, &value));
+    try std.testing.expectEqual(@as(types.int32, 99), sample_offset);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 99), value);
+    try std.testing.expectEqual(types.kInvalidArgument, queue_iface.vtable.getPoint(queue_iface, 2, &sample_offset, &value));
+    try std.testing.expect(iface.vtable.getParameterData(iface, -1) == null);
+    try std.testing.expect(iface.vtable.getParameterData(iface, 1) == null);
 }
 
 test "parameter changes add parameter data and support query interface" {
@@ -210,7 +230,15 @@ test "parameter changes add parameter data and support query interface" {
     var point_index: types.int32 = -1;
     try std.testing.expectEqual(types.kResultOk, queue_iface.vtable.addPoint(queue_iface, 2, 0.5, &point_index));
     try std.testing.expectEqual(@as(types.int32, 0), point_index);
+    point_index = 42;
+    try std.testing.expectEqual(types.kResultFalse, queue_iface.vtable.addPoint(queue_iface, 3, 0.75, &point_index));
+    try std.testing.expectEqual(@as(types.int32, -1), point_index);
     try std.testing.expect(iface.vtable.addParameterData(iface, &id, &index) != null);
+
+    var other_id: vsttypes.ParamID = 10;
+    index = 42;
+    try std.testing.expect(iface.vtable.addParameterData(iface, &other_id, &index) == null);
+    try std.testing.expectEqual(@as(types.int32, -1), index);
 
     var queried: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstparameterchanges.iparameter_changes_iid, &queried));
