@@ -61,3 +61,9 @@ zig build bundle-event-echo
 zig build -Dtarget=x86_64-linux-gnu bundle-examples-linux
 zig build -Dtarget=x86_64-windows-gnu bundle-examples-windows
 ```
+
+Remove stale generated bundles before host smoke testing:
+
+```sh
+zig build clean-bundles
+```
