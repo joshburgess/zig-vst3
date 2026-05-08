@@ -643,6 +643,10 @@ fn collectLegacyMidiCcEvent(event: *const ivstevents.Event, offset: usize) plug.
     };
 }
 
+fn isUnitValue(value: f32) bool {
+    return !std.math.isNan(value) and value >= 0.0 and value <= 1.0;
+}
+
 fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
     if (event.sample_offset > std.math.maxInt(types.int32)) return null;
     const offset: types.int32 = @intCast(event.sample_offset);
@@ -652,6 +656,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
     };
     switch (event.kind) {
         .note_on => {
+            if (!isUnitValue(event.velocity)) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent);
             result.data = .{ .noteOn = .{
                 .channel = event.channel,
@@ -660,6 +665,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
             } };
         },
         .note_off => {
+            if (!isUnitValue(event.velocity)) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent);
             result.data = .{ .noteOff = .{
                 .channel = event.channel,
@@ -670,6 +676,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
         .midi_cc => {
             const control_number = std.math.cast(types.uint8, event.control_number) orelse return null;
             const channel = std.math.cast(types.int8, event.channel) orelse return null;
+            if (!isUnitValue(event.value)) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent);
             result.data = .{ .midiCCOut = .{
                 .controlNumber = control_number,
@@ -679,6 +686,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
         },
         .pitch_bend => {
             const channel = std.math.cast(types.int8, event.channel) orelse return null;
+            if (!isUnitValue(event.value)) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent);
             result.data = .{ .midiCCOut = .{
                 .controlNumber = ivstmidicontrollers.kPitchBend,
@@ -688,6 +696,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
             events_helper.setPitchBendValue(&result.data.midiCCOut, event.value);
         },
         .aftertouch => {
+            if (!isUnitValue(event.value)) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent);
             result.data = .{ .polyPressure = .{
                 .channel = event.channel,
@@ -1230,8 +1239,15 @@ test "zig-plug bridge drops output MIDI events with invalid legacy fields" {
         .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = -1, .value = 0.5 },
         .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = 256, .value = 0.5 },
         .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 128, .control_number = ivstmidicontrollers.kCtrlModWheel, .value = 0.5 },
+        .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = ivstmidicontrollers.kCtrlModWheel, .value = std.math.nan(f32) },
+        .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = ivstmidicontrollers.kCtrlModWheel, .value = -0.1 },
+        .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = ivstmidicontrollers.kCtrlModWheel, .value = 1.1 },
         .{ .kind = .pitch_bend, .bus_index = 0, .sample_offset = 0, .channel = 128, .value = 0.5 },
+        .{ .kind = .pitch_bend, .bus_index = 0, .sample_offset = 0, .channel = 1, .value = std.math.nan(f32) },
         .{ .kind = .pitch_bend, .bus_index = 0, .sample_offset = 1, .channel = 1, .control_number = 512, .value = 0.5 },
+        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = 60, .velocity = std.math.nan(f32) },
+        .{ .kind = .note_off, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = 60, .velocity = -0.1 },
+        .{ .kind = .aftertouch, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = 60, .value = 1.1 },
     };
     const List = vst_event_list.EventList(1);
     var list = List{};
