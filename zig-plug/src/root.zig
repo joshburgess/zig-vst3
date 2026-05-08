@@ -5,6 +5,7 @@ pub const core = @import("zig-plug-core");
 pub const parameters = core.parameters;
 pub const plugin = core.plugin;
 pub const process = core.process;
+pub const state = core.state;
 pub const version = "0.1.0-dev";
 
 pub fn backendVersion() []const u8 {
@@ -13,4 +14,11 @@ pub fn backendVersion() []const u8 {
 
 test "zig-plug sees vst3-zig" {
     try std.testing.expectEqualStrings("0.1.0-dev", backendVersion());
+}
+
+test "zig-plug re-exports core modules" {
+    try std.testing.expect(@hasDecl(parameters, "FloatParam"));
+    try std.testing.expect(@hasDecl(plugin, "PluginSpec"));
+    try std.testing.expect(@hasDecl(process, "ProcessContext"));
+    try std.testing.expect(@hasDecl(state, "writeParameterState"));
 }
