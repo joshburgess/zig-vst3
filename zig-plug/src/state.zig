@@ -3,6 +3,8 @@ const parameters = @import("parameters.zig");
 
 const magic = "ZPLGSTAT";
 pub const format_version: u16 = 1;
+pub const encoded_header_size: usize = magic.len + @sizeOf(u16) + @sizeOf(u16);
+pub const encoded_entry_size: usize = @sizeOf(u32) + @sizeOf(u64);
 
 pub const ParameterIdMigration = struct {
     old_id: u32,
@@ -11,7 +13,11 @@ pub const ParameterIdMigration = struct {
 
 pub fn encodedSize(comptime Params: type) usize {
     assertEncodableParameterCount(Params);
-    return magic.len + @sizeOf(u16) + @sizeOf(u16) + parameters.ParameterSet(Params).count * (@sizeOf(u32) + @sizeOf(u64));
+    return encodedSizeForCount(parameters.ParameterSet(Params).count);
+}
+
+pub fn encodedSizeForCount(count: usize) usize {
+    return encoded_header_size + count * encoded_entry_size;
 }
 
 fn assertEncodableParameterCount(comptime Params: type) void {
@@ -112,6 +118,10 @@ test "parameter state round-trips normalized values" {
     var restored = Values.init(&set);
     var bytes: [encodedSize(Params)]u8 = undefined;
 
+    try std.testing.expectEqual(@as(usize, 12), encoded_header_size);
+    try std.testing.expectEqual(@as(usize, 12), encoded_entry_size);
+    try std.testing.expectEqual(@as(usize, 36), encodedSizeForCount(2));
+    try std.testing.expectEqual(@as(usize, 36), encodedSize(Params));
     try std.testing.expect(values.store(0, 0.25));
     try std.testing.expect(values.store(1, 0.75));
 
