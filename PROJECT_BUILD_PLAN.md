@@ -351,7 +351,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.10: Unit info and program lists
 
-`IUnitInfo`, `IProgramListData`, `IUnitData`, `UnitInfo`, `ProgramListInfo`. Lower priority; can defer if time runs short.
+`IUnitInfo`, `IProgramListData`, `IUnitData`, `UnitInfo`, `ProgramListInfo`. `vst_unit_data.zig` provides a reusable `IProgramListData`/`IUnitData` object for program and unit stream callbacks. Full `IUnitInfo` modeling is lower priority and can defer if time runs short.
 
 ### Work Unit 2.10a: Legacy mobile and test-support interfaces
 
