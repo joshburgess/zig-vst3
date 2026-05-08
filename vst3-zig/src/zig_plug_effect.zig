@@ -298,25 +298,25 @@ pub fn ReflectedEditController(comptime Config: type) type {
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
-                .{ .iid = &funknown.iid, .ptr = ptr },
-                .{ .iid = &ipluginbase.iplugin_base_iid, .ptr = ptr },
-                .{ .iid = &ivsteditcontroller.iedit_controller_iid, .ptr = ptr },
-                .{ .iid = &ivstmessage.iconnection_point_iid, .ptr = &self.connection_point },
-                .{ .iid = &ivsteditcontroller.iedit_controller2_iid, .ptr = &self.controller2 },
-                .{ .iid = &ivsteditcontroller.iedit_controller_host_editing_iid, .ptr = &self.host_editing },
-                .{ .iid = &ivstunits.iunit_info_iid, .ptr = &self.unit_info },
-                .{ .iid = &ivstunits.iprogram_list_data_iid, .ptr = &self.program_list_data },
-                .{ .iid = &ivstunits.iunit_data_iid, .ptr = &self.unit_data },
-                .{ .iid = &ivsteditcontroller.imidi_mapping_iid, .ptr = &self.midi_mapping },
-                .{ .iid = &ivstmidilearn.imidi_learn_iid, .ptr = &self.midi_learn },
-                .{ .iid = &ivstmidimapping2.imidi_mapping2_iid, .ptr = &self.midi_mapping2 },
-                .{ .iid = &ivstmidimapping2.imidi_learn2_iid, .ptr = &self.midi_learn2 },
-                .{ .iid = &ivstnoteexpression.inote_expression_controller_iid, .ptr = &self.note_expression },
-                .{ .iid = &ivstnoteexpression.ikeyswitch_controller_iid, .ptr = &self.keyswitch },
-                .{ .iid = &ivstphysicalui.inote_expression_physical_ui_mapping_iid, .ptr = &self.physical_ui_mapping },
-                .{ .iid = &ivstparameterfunctionname.iparameter_function_name_iid, .ptr = &self.parameter_function_name },
-                .{ .iid = &ivstremapparamid.iremap_param_id_iid, .ptr = &self.remap_param_id },
-                .{ .iid = &ivstrepresentation.ixml_representation_controller_iid, .ptr = &self.xml_representation },
+                interface_map.fieldEntry("iface", self, &funknown.iid),
+                interface_map.fieldEntry("iface", self, &ipluginbase.iplugin_base_iid),
+                interface_map.fieldEntry("iface", self, &ivsteditcontroller.iedit_controller_iid),
+                interface_map.fieldEntry("connection_point", self, &ivstmessage.iconnection_point_iid),
+                interface_map.fieldEntry("controller2", self, &ivsteditcontroller.iedit_controller2_iid),
+                interface_map.fieldEntry("host_editing", self, &ivsteditcontroller.iedit_controller_host_editing_iid),
+                interface_map.fieldEntry("unit_info", self, &ivstunits.iunit_info_iid),
+                interface_map.fieldEntry("program_list_data", self, &ivstunits.iprogram_list_data_iid),
+                interface_map.fieldEntry("unit_data", self, &ivstunits.iunit_data_iid),
+                interface_map.fieldEntry("midi_mapping", self, &ivsteditcontroller.imidi_mapping_iid),
+                interface_map.fieldEntry("midi_learn", self, &ivstmidilearn.imidi_learn_iid),
+                interface_map.fieldEntry("midi_mapping2", self, &ivstmidimapping2.imidi_mapping2_iid),
+                interface_map.fieldEntry("midi_learn2", self, &ivstmidimapping2.imidi_learn2_iid),
+                interface_map.fieldEntry("note_expression", self, &ivstnoteexpression.inote_expression_controller_iid),
+                interface_map.fieldEntry("keyswitch", self, &ivstnoteexpression.ikeyswitch_controller_iid),
+                interface_map.fieldEntry("physical_ui_mapping", self, &ivstphysicalui.inote_expression_physical_ui_mapping_iid),
+                interface_map.fieldEntry("parameter_function_name", self, &ivstparameterfunctionname.iparameter_function_name_iid),
+                interface_map.fieldEntry("remap_param_id", self, &ivstremapparamid.iremap_param_id_iid),
+                interface_map.fieldEntry("xml_representation", self, &ivstrepresentation.ixml_representation_controller_iid),
             };
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
@@ -1290,16 +1290,16 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
-                .{ .iid = &funknown.iid, .ptr = ptr },
-                .{ .iid = &ipluginbase.iplugin_base_iid, .ptr = ptr },
-                .{ .iid = &ivstcomponent.icomponent_iid, .ptr = ptr },
-                .{ .iid = &ivstmessage.iconnection_point_iid, .ptr = &self.connection_point },
-                .{ .iid = &ivstaudioprocessor.iaudio_processor_iid, .ptr = &self.processor },
-                .{ .iid = &ivstaudioprocessor.iprocess_context_requirements_iid, .ptr = &self.process_context_requirements },
-                .{ .iid = &ivstaudioprocessor.iaudio_presentation_latency_iid, .ptr = &self.audio_presentation_latency },
-                .{ .iid = &ivstpluginterfacesupport.iplug_interface_support_iid, .ptr = &self.plug_interface_support },
-                .{ .iid = &ivstprefetchablesupport.iprefetchable_support_iid, .ptr = &self.prefetchable_support },
-                .{ .iid = &ivstdataexchange.idata_exchange_receiver_iid, .ptr = &self.data_exchange_receiver },
+                interface_map.fieldEntry("iface", self, &funknown.iid),
+                interface_map.fieldEntry("iface", self, &ipluginbase.iplugin_base_iid),
+                interface_map.fieldEntry("iface", self, &ivstcomponent.icomponent_iid),
+                interface_map.fieldEntry("connection_point", self, &ivstmessage.iconnection_point_iid),
+                interface_map.fieldEntry("processor", self, &ivstaudioprocessor.iaudio_processor_iid),
+                interface_map.fieldEntry("process_context_requirements", self, &ivstaudioprocessor.iprocess_context_requirements_iid),
+                interface_map.fieldEntry("audio_presentation_latency", self, &ivstaudioprocessor.iaudio_presentation_latency_iid),
+                interface_map.fieldEntry("plug_interface_support", self, &ivstpluginterfacesupport.iplug_interface_support_iid),
+                interface_map.fieldEntry("prefetchable_support", self, &ivstprefetchablesupport.iprefetchable_support_iid),
+                interface_map.fieldEntry("data_exchange_receiver", self, &ivstdataexchange.idata_exchange_receiver_iid),
             };
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
