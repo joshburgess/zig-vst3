@@ -158,6 +158,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             try state.writeParameterState(Plugin.Params, &self.spec.parameter_set, &self.spec.values, writer);
         }
 
+        pub fn writeParameterStateJson(self: *const Self, writer: anytype) !void {
+            try state.writeParameterStateJson(Plugin.Params, &self.spec.parameter_set, &self.spec.values, writer);
+        }
+
         pub fn readParameterState(self: *Self, reader: anytype) !void {
             try state.readParameterState(Plugin.Params, &self.spec.parameter_set, &self.spec.values, reader);
         }
@@ -730,6 +734,31 @@ test "plugin instance round-trips owned parameter state" {
 
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(f64, 0.75), restored.loadParameterNormalized("mix"));
+}
+
+test "plugin instance writes parameter state debug json" {
+    const Gain = struct {
+        pub const name = "Instance State JSON";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+            mix: parameters.FloatParam = parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 1.0),
+        };
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    var bytes: [160]u8 = undefined;
+
+    try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
+    try std.testing.expect(instance.storeParameterNormalized("mix", 0.75));
+
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    try instance.writeParameterStateJson(out_stream.writer());
+
+    try std.testing.expectEqualStrings(
+        "{\"version\":1,\"parameters\":[{\"id\":0,\"name\":\"Gain\",\"normalized\":0.25},{\"id\":1,\"name\":\"Mix\",\"normalized\":0.75}]}",
+        out_stream.getWritten(),
+    );
 }
 
 test "plugin instance reads parameter state with migrations" {
