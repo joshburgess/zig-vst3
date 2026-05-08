@@ -170,23 +170,23 @@ Each phase is broken into **work units**. A work unit is sized so that one agent
 
 ## Phase 1: COM/Vtable Foundation
 
-**Status.** Substantially complete for the first plugin milestone. The raw layer has enough COM, factory, component, controller, audio processor, bundle, and validator support to ship a minimal gain plugin through Steinberg's validator on macOS.
+**Status.** Substantially complete for the first plugin milestone. The raw layer has enough COM, factory, component, controller, audio processor, bundle, and validator support to ship the bundled example plugins through Steinberg's validator on macOS.
 
 **Duration.** 2–3 weeks originally planned. The phase expanded to include the first real VST3 bundle and validator pass.
 
-**Goal.** Build the machinery needed for ABI-compatible COM objects and prove it against a real VST3 plugin. This phase now exits when the gain plugin validates and the remaining raw-layer hardening work is tracked separately.
+**Goal.** Build the machinery needed for ABI-compatible COM objects and prove it against real VST3 plugins. This phase now exits when the bundled example plugins validate and the remaining raw-layer hardening work is tracked separately.
 
 **Current exit status.**
 - `zig build test` passes locally.
-- `zig build validate-gain` passes locally on macOS.
-- `zig build phase1` runs the gain validator path on macOS.
-- `bundle-gain`, `bundle-gain-linux`, and `bundle-gain-windows` produce platform bundle layouts.
+- `zig build validate-examples` passes locally on macOS.
+- `zig build phase1` runs the bundled example validator path on macOS.
+- `bundle-examples`, `bundle-examples-linux`, and `bundle-examples-windows` produce platform bundle layouts.
 
 **Remaining hardening before Layer 2 should depend on this API.**
-- Add CI jobs for validator and cross-target bundle checks where the platform supports them.
+- Keep CI validator and cross-target bundle checks green as the reusable shells expand.
 - Replace one-off plugin object wiring with reusable raw-layer helpers for interface maps and allocator-owned objects.
 - Record real DAW smoke test results under `docs/host-matrix.md`.
-- Keep build steps aligned with the gain plugin naming now that the scaffold-era stub artifact has been retired.
+- Keep build steps aligned with the bundled example set as new shell coverage is added.
 
 ### Work Unit 1.1: TUID/FUID handling
 

@@ -53,4 +53,4 @@ zig build validator
 zig build validate-examples
 ```
 
-`zig build phase1` also runs the gain validator path on macOS.
+`zig build phase1` also runs the bundled example validator path on macOS.
