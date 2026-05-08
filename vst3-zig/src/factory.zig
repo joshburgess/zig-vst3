@@ -121,6 +121,9 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
 
         comptime {
             _ = Self;
+            if (classes.len > std.math.maxInt(types.int32)) {
+                @compileError("VST3 factory class count exceeds int32 range");
+            }
         }
     };
 }
