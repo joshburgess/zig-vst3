@@ -5,6 +5,7 @@ pub const gain_param_id: u32 = 0;
 const GainPlugin = struct {
     pub const name = "zig-vst3 Gain";
     pub const vendor = "zig-vst3";
+    pub const url = "https://github.com/joshburgess/zig-vst3";
     pub const Params = struct {
         gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(gain_param_id, "Gain", 0.0, 1.0, 1.0),
     };
@@ -14,5 +15,5 @@ pub const Spec = plug.plugin.PluginSpec(GainPlugin);
 pub const parameter_set = Spec.ParameterSet.init(.{});
 pub const gain_param_index = parameter_set.indexOfId(gain_param_id).?;
 pub const default_gain = parameter_set.defaultNormalized(gain_param_index).?;
-pub const component_class_name = Spec.name;
-pub const controller_class_name = Spec.name ++ " Controller";
+pub const component_class_name = Spec.component_class_name;
+pub const controller_class_name = Spec.controller_class_name;

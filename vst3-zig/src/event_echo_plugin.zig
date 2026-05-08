@@ -9,17 +9,18 @@ const types = @import("pluginterfaces/base/types.zig");
 
 const EventEchoFactory = factory.StaticFactory(.{
     .vendor = event_echo_spec.Spec.vendor,
-    .url = "https://github.com/joshburgess/zig-vst3",
+    .url = event_echo_spec.Spec.url,
+    .email = event_echo_spec.Spec.email,
 }, &.{
     .{
         .cid = event_echo_component.cid,
-        .category = "Audio Module Class",
+        .category = event_echo_spec.Spec.component_category,
         .name = event_echo_spec.component_class_name,
         .create = event_echo_component.create,
     },
     .{
         .cid = event_echo_controller.cid,
-        .category = "Component Controller Class",
+        .category = event_echo_spec.Spec.controller_category,
         .name = event_echo_spec.controller_class_name,
         .create = event_echo_controller.create,
     },

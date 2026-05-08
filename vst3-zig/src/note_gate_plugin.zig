@@ -9,17 +9,18 @@ const types = @import("pluginterfaces/base/types.zig");
 
 const NoteGateFactory = factory.StaticFactory(.{
     .vendor = note_gate_spec.Spec.vendor,
-    .url = "https://github.com/joshburgess/zig-vst3",
+    .url = note_gate_spec.Spec.url,
+    .email = note_gate_spec.Spec.email,
 }, &.{
     .{
         .cid = note_gate_component.cid,
-        .category = "Audio Module Class",
+        .category = note_gate_spec.Spec.component_category,
         .name = note_gate_spec.component_class_name,
         .create = note_gate_component.create,
     },
     .{
         .cid = note_gate_controller.cid,
-        .category = "Component Controller Class",
+        .category = note_gate_spec.Spec.controller_category,
         .name = note_gate_spec.controller_class_name,
         .create = note_gate_controller.create,
     },

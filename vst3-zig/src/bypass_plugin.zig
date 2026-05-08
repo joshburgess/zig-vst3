@@ -9,17 +9,18 @@ const types = @import("pluginterfaces/base/types.zig");
 
 const BypassFactory = factory.StaticFactory(.{
     .vendor = bypass_spec.Spec.vendor,
-    .url = "https://github.com/joshburgess/zig-vst3",
+    .url = bypass_spec.Spec.url,
+    .email = bypass_spec.Spec.email,
 }, &.{
     .{
         .cid = bypass_component.cid,
-        .category = "Audio Module Class",
+        .category = bypass_spec.Spec.component_category,
         .name = bypass_spec.component_class_name,
         .create = bypass_component.create,
     },
     .{
         .cid = bypass_controller.cid,
-        .category = "Component Controller Class",
+        .category = bypass_spec.Spec.controller_category,
         .name = bypass_spec.controller_class_name,
         .create = bypass_controller.create,
     },

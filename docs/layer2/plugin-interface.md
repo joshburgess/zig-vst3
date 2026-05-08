@@ -8,6 +8,9 @@ A plugin type declares:
 
 - `name`: display name
 - `vendor`: vendor string
+- optional `url` and `email`: factory contact metadata
+- optional `component_class_name` and `controller_class_name`: host-facing VST3 class names
+- optional `component_category` and `controller_category`: host-facing VST3 class categories
 - `Params`: struct of `zig-plug` parameter descriptors
 - optional lifecycle methods
 
@@ -16,6 +19,7 @@ A plugin type declares:
 - `ParameterSet`: reflected descriptor metadata
 - `ParameterValues`: atomic normalized values initialized from descriptor defaults
 - `Units`: reflected unit and program-list metadata
+- normalized plugin, factory, component, and controller metadata with conservative defaults
 - `encoded_parameter_state_size`: byte count for a full reflected parameter snapshot
 - lifecycle flags for optional `init`, `prepare`, `process`, `process64`, and `deinit` declarations
 - `init(params)`: builds the reflected set and value storage
@@ -77,6 +81,7 @@ const plug = @import("zig-plug");
 const Gain = struct {
     pub const name = "Gain";
     pub const vendor = "zig-vst3";
+    pub const url = "https://github.com/joshburgess/zig-vst3";
     pub const Params = struct {
         gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
     };

@@ -25,6 +25,12 @@ pub fn PluginSpec(comptime Plugin: type) type {
         pub const encoded_parameter_state_size = state.encodedSize(Params);
         pub const name = Plugin.name;
         pub const vendor = Plugin.vendor;
+        pub const url = if (@hasDecl(Plugin, "url")) Plugin.url else "";
+        pub const email = if (@hasDecl(Plugin, "email")) Plugin.email else "";
+        pub const component_class_name = if (@hasDecl(Plugin, "component_class_name")) Plugin.component_class_name else Plugin.name;
+        pub const controller_class_name = if (@hasDecl(Plugin, "controller_class_name")) Plugin.controller_class_name else Plugin.name ++ " Controller";
+        pub const component_category = if (@hasDecl(Plugin, "component_category")) Plugin.component_category else "Audio Module Class";
+        pub const controller_category = if (@hasDecl(Plugin, "controller_category")) Plugin.controller_category else "Component Controller Class";
         pub const unit_config = if (@hasDecl(Plugin, "units")) Plugin.units else units_api.Config{};
         pub const has_init = @hasDecl(Plugin, "init");
         pub const has_prepare = @hasDecl(Plugin, "prepare");
@@ -511,11 +517,39 @@ test "plugin spec exposes metadata and parameter defaults" {
 
     try std.testing.expectEqualStrings("Gain", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
+    try std.testing.expectEqualStrings("", Spec.url);
+    try std.testing.expectEqualStrings("", Spec.email);
+    try std.testing.expectEqualStrings("Gain", Spec.component_class_name);
+    try std.testing.expectEqualStrings("Gain Controller", Spec.controller_class_name);
+    try std.testing.expectEqualStrings("Audio Module Class", Spec.component_category);
+    try std.testing.expectEqualStrings("Component Controller Class", Spec.controller_category);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
     try std.testing.expectEqualStrings("Gain", spec.parameter_set.name(0).?);
     try std.testing.expectEqual(@as(f64, 1.0), spec.values.view(&spec.parameter_set).loadNormalized("gain"));
     try std.testing.expect(spec.values.editor(&spec.parameter_set).storeNormalized("gain", 0.5));
     try std.testing.expectEqual(@as(f64, 0.5), spec.values.view(&spec.parameter_set).loadNormalized("gain"));
+}
+
+test "plugin spec exposes optional plugin metadata overrides" {
+    const Custom = struct {
+        pub const name = "Custom";
+        pub const vendor = "Vendor";
+        pub const url = "https://example.test/custom";
+        pub const email = "plugins@example.test";
+        pub const component_class_name = "Custom Processor";
+        pub const controller_class_name = "Custom Editor";
+        pub const component_category = "Custom Processor Category";
+        pub const controller_category = "Custom Controller Category";
+        pub const Params = struct {};
+    };
+    const Spec = PluginSpec(Custom);
+
+    try std.testing.expectEqualStrings("https://example.test/custom", Spec.url);
+    try std.testing.expectEqualStrings("plugins@example.test", Spec.email);
+    try std.testing.expectEqualStrings("Custom Processor", Spec.component_class_name);
+    try std.testing.expectEqualStrings("Custom Editor", Spec.controller_class_name);
+    try std.testing.expectEqualStrings("Custom Processor Category", Spec.component_category);
+    try std.testing.expectEqualStrings("Custom Controller Category", Spec.controller_category);
 }
 
 test "plugin spec exposes default root unit metadata" {
