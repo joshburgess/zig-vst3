@@ -360,6 +360,7 @@ pub fn makeProcessContext(
     output_events: ?*plug.process.EventWriter,
 ) !plug.process.ProcessContext(Sample) {
     if (data.numSamples < 0) return error.InvalidFrameCount;
+    if (input.numChannels < 0 or output.numChannels < 0) return error.InvalidChannelCount;
     const frame_count: usize = @intCast(data.numSamples);
     const channel_count: usize = @intCast(@min(@min(input.numChannels, output.numChannels), max_audio_channels));
     var input_channels: [max_audio_channels][]const Sample = undefined;
@@ -454,6 +455,7 @@ const IBStreamReader = struct {
 
     fn read(self: *IBStreamReader, buffer: []u8) StreamError!usize {
         if (buffer.len == 0) return 0;
+        if (buffer.len > std.math.maxInt(types.int32)) return error.StreamReadFailed;
         var bytes_read: types.int32 = 0;
         const result = self.stream.vtable.read(self.stream, buffer.ptr, @intCast(buffer.len), &bytes_read);
         if (result != types.kResultOk or bytes_read < 0) return error.StreamReadFailed;
@@ -472,6 +474,7 @@ const IBStreamWriter = struct {
 
     fn write(self: *IBStreamWriter, bytes: []const u8) StreamError!usize {
         if (bytes.len == 0) return 0;
+        if (bytes.len > std.math.maxInt(types.int32)) return error.StreamWriteFailed;
         var bytes_written: types.int32 = 0;
         const result = self.stream.vtable.write(self.stream, @constCast(bytes.ptr), @intCast(bytes.len), &bytes_written);
         if (result != types.kResultOk or bytes_written < 0) return error.StreamWriteFailed;
@@ -1487,6 +1490,14 @@ test "zig-plug bridge builds process context from VST3 buffers" {
     try std.testing.expectEqual(@as(f32, 3.0), context.inputs.channel(1).?[0]);
     context.outputs.channel(0).?[1] = 9.0;
     try std.testing.expectEqual(@as(f32, 9.0), out_left[1]);
+}
+
+test "zig-plug bridge rejects negative process channel counts" {
+    const input = ivstaudioprocessor.AudioBusBuffers{ .numChannels = -1 };
+    const output = ivstaudioprocessor.AudioBusBuffers{ .numChannels = 1 };
+    const data = ivstaudioprocessor.ProcessData{ .numSamples = 2 };
+
+    try std.testing.expectError(error.InvalidChannelCount, makeProcessContext(f32, input, output, &data, .{}, .{}, null));
 }
 
 test "zig-plug bridge builds process context from main VST3 buses" {
