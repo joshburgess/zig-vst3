@@ -14,7 +14,7 @@
 - `ExponentialSmoother`: coefficient-based smoothing toward a normalized target.
 - `LogSmoother`: sample-counted multiplicative ramp for normalized values that must stay above zero.
 - `ParameterSet(Params)`: comptime reflection over a struct of descriptors, including host-facing id/name/default lookup, string conversion, and normalized/plain conversion by reflected index.
-- `ParameterValues(Params)`: atomic normalized value storage initialized from reflected descriptor defaults.
+- `ParameterValues(Params)`: atomic normalized value storage initialized from reflected descriptor defaults, with id-based normalized and plain-value load/store helpers.
 
 ## Boundary Rules
 

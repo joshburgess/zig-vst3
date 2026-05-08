@@ -516,9 +516,21 @@ pub fn ParameterValues(comptime Params: type) type {
             return self.load(index);
         }
 
+        pub fn loadPlainById(self: *const Self, set: *const Set, id: u32) ?f64 {
+            const index = set.indexOfId(id) orelse return null;
+            const normalized = self.load(index) orelse return null;
+            return set.plainFromNormalized(index, normalized);
+        }
+
         pub fn storeById(self: *Self, set: *const Set, id: u32, value: f64) bool {
             const index = set.indexOfId(id) orelse return false;
             return self.store(index, value);
+        }
+
+        pub fn storePlainById(self: *Self, set: *const Set, id: u32, plain: f64) bool {
+            const index = set.indexOfId(id) orelse return false;
+            const normalized = set.normalizedFromPlain(index, plain) orelse return false;
+            return self.store(index, normalized);
         }
 
         pub fn applyChanges(self: *Self, set: *const Set, changes: process.ParameterChanges) void {
@@ -753,6 +765,31 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
     try std.testing.expect(!values.storeById(&set, 99, 0.5));
     try std.testing.expectEqual(@as(?f64, null), values.loadById(&set, 99));
+}
+
+test "parameter values expose plain value access by id" {
+    const Params = struct {
+        gain: FloatParam = FloatParam.init(0, "Gain", -12.0, 6.0, 0.0),
+        voices: IntParam = IntParam.init(1, "Voices", 1, 16, 4),
+        bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
+    };
+    const Set = ParameterSet(Params);
+    const Values = ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+
+    try std.testing.expectEqual(@as(?f64, 0.0), values.loadPlainById(&set, 0));
+    try std.testing.expect(values.storePlainById(&set, 0, 6.0));
+    try std.testing.expectEqual(@as(?f64, 6.0), values.loadPlainById(&set, 0));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.loadById(&set, 0));
+
+    try std.testing.expect(values.storePlainById(&set, 1, 8.8));
+    try std.testing.expectEqual(@as(?f64, 9.0), values.loadPlainById(&set, 1));
+
+    try std.testing.expect(values.storePlainById(&set, 2, 1.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.loadPlainById(&set, 2));
+    try std.testing.expect(!values.storePlainById(&set, 99, 1.0));
+    try std.testing.expectEqual(@as(?f64, null), values.loadPlainById(&set, 99));
 }
 
 test "parameter values apply reflected parameter changes by id" {
