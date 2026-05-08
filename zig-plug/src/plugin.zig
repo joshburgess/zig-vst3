@@ -179,6 +179,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().normalizedFromPlainById(wanted_id, plain);
         }
 
+        pub fn formatParameterPlainByName(self: *const Self, wanted_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
+            return self.parameterView().formatPlainByName(wanted_name, normalized, buffer);
+        }
+
+        pub fn parseParameterPlainByName(self: *const Self, wanted_name: []const u8, text: []const u8) !f64 {
+            return self.parameterView().parsePlainByName(wanted_name, text);
+        }
+
+        pub fn parameterPlainFromNormalizedByName(self: *const Self, wanted_name: []const u8, normalized: f64) ?f64 {
+            return self.parameterView().plainFromNormalizedByName(wanted_name, normalized);
+        }
+
+        pub fn parameterNormalizedFromPlainByName(self: *const Self, wanted_name: []const u8, plain: f64) ?f64 {
+            return self.parameterView().normalizedFromPlainByName(wanted_name, plain);
+        }
+
         pub fn parameterIndexOfId(self: *const Self, wanted_id: u32) ?usize {
             return self.spec.parameter_set.indexOfId(wanted_id);
         }
@@ -243,6 +259,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().loadPlainById(id);
         }
 
+        pub fn loadParameterByName(self: *const Self, name: []const u8) ?f64 {
+            return self.parameterView().loadByName(name);
+        }
+
+        pub fn loadParameterPlainByName(self: *const Self, name: []const u8) ?f64 {
+            return self.parameterView().loadPlainByName(name);
+        }
+
         pub fn storeParameter(self: *Self, comptime field_name: []const u8, plain: parameters.FieldPlainType(Plugin.Params, field_name)) bool {
             return self.parameterEditor().store(field_name, plain);
         }
@@ -265,6 +289,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn storeParameterPlainById(self: *Self, id: u32, plain: f64) bool {
             return self.parameterEditor().storePlainById(id, plain);
+        }
+
+        pub fn storeParameterByName(self: *Self, name: []const u8, normalized: f64) bool {
+            return self.parameterEditor().storeByName(name, normalized);
+        }
+
+        pub fn storeParameterPlainByName(self: *Self, name: []const u8, plain: f64) bool {
+            return self.parameterEditor().storePlainByName(name, plain);
         }
 
         pub fn resetParametersToDefaults(self: *Self) void {
@@ -618,6 +650,10 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainById(2, "mute"));
     try std.testing.expectEqual(@as(?f64, 2.0), instance.parameterPlainFromNormalizedById(2, 1.0));
     try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterNormalizedFromPlainById(2, 2.0));
+    try std.testing.expectEqualStrings("mute", try instance.formatParameterPlainByName("Mode", 1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainByName("Mode", "mute"));
+    try std.testing.expectEqual(@as(?f64, 2.0), instance.parameterPlainFromNormalizedByName("Mode", 1.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterNormalizedFromPlainByName("Mode", 2.0));
     try std.testing.expectError(error.InvalidParameterIndex, instance.formatParameterPlainIndex(99, 0.0, &buffer));
     try std.testing.expectError(error.InvalidParameterIndex, instance.parseParameterPlainIndex(99, "1"));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterPlainFromNormalizedIndex(99, 0.0));
@@ -626,6 +662,10 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectError(error.InvalidParameterId, instance.parseParameterPlainById(99, "1"));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterPlainFromNormalizedById(99, 0.0));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterNormalizedFromPlainById(99, 0.0));
+    try std.testing.expectError(error.InvalidParameterName, instance.formatParameterPlainByName("Missing", 0.0, &buffer));
+    try std.testing.expectError(error.InvalidParameterName, instance.parseParameterPlainByName("Missing", "1"));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterPlainFromNormalizedByName("Missing", 0.0));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterNormalizedFromPlainByName("Missing", 0.0));
     try std.testing.expectEqual(@as(usize, 0), instance.parameterFieldIndex("gain"));
     try std.testing.expectEqual(@as(u32, 2), instance.parameterFieldId("mode"));
     try std.testing.expectEqualStrings("Gain", instance.parameterFieldName("gain"));
@@ -643,28 +683,36 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expect(instance.storeParameterPlainIndex(0, 6.0));
     try std.testing.expect(instance.storeParameterById(1, 0.0));
     try std.testing.expect(instance.storeParameterPlainById(0, 6.0));
+    try std.testing.expect(instance.storeParameterByName("Mode", 0.5));
+    try std.testing.expect(instance.storeParameterPlainByName("Gain", 3.0));
     try std.testing.expect(!instance.storeParameterIndex(99, 1.0));
     try std.testing.expect(!instance.storeParameterPlainIndex(99, 1.0));
     try std.testing.expect(!instance.storeParameterById(99, 1.0));
     try std.testing.expect(!instance.storeParameterPlainById(99, 1.0));
+    try std.testing.expect(!instance.storeParameterByName("Missing", 1.0));
+    try std.testing.expect(!instance.storeParameterPlainByName("Missing", 1.0));
 
     const view = instance.parameterView();
-    try std.testing.expectEqual(@as(f64, 6.0), instance.loadParameter("gain"));
+    try std.testing.expectEqual(@as(f64, 3.0), instance.loadParameter("gain"));
     try std.testing.expectEqual(false, instance.loadParameter("bypass"));
-    try std.testing.expectEqual(Mode.mute, instance.loadParameter("mode"));
-    try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("mode"));
-    try std.testing.expectEqual(@as(?f64, 1.0), instance.loadParameterIndex(0));
-    try std.testing.expectEqual(@as(?f64, 6.0), instance.loadParameterPlainIndex(0));
+    try std.testing.expectEqual(Mode.boost, instance.loadParameter("mode"));
+    try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("mode"));
+    try std.testing.expectApproxEqAbs(0.8333333333333334, instance.loadParameterIndex(0).?, 0.000001);
+    try std.testing.expectEqual(@as(?f64, 3.0), instance.loadParameterPlainIndex(0));
     try std.testing.expectEqual(@as(?f64, null), instance.loadParameterIndex(99));
     try std.testing.expectEqual(@as(?f64, null), instance.loadParameterPlainIndex(99));
-    try std.testing.expectEqual(@as(?f64, 1.0), instance.loadParameterById(0));
-    try std.testing.expectEqual(@as(?f64, 6.0), instance.loadParameterPlainById(0));
+    try std.testing.expectApproxEqAbs(0.8333333333333334, instance.loadParameterById(0).?, 0.000001);
+    try std.testing.expectEqual(@as(?f64, 3.0), instance.loadParameterPlainById(0));
     try std.testing.expectEqual(@as(?f64, null), instance.loadParameterById(99));
     try std.testing.expectEqual(@as(?f64, null), instance.loadParameterPlainById(99));
-    try std.testing.expectEqual(@as(f64, 6.0), view.load("gain"));
+    try std.testing.expectEqual(@as(?f64, 0.5), instance.loadParameterByName("Mode"));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.loadParameterPlainByName("Mode"));
+    try std.testing.expectEqual(@as(?f64, null), instance.loadParameterByName("Missing"));
+    try std.testing.expectEqual(@as(?f64, null), instance.loadParameterPlainByName("Missing"));
+    try std.testing.expectEqual(@as(f64, 3.0), view.load("gain"));
     try std.testing.expectEqual(false, view.load("bypass"));
-    try std.testing.expectEqual(Mode.mute, view.load("mode"));
-    try std.testing.expectEqual(@as(f64, 1.0), view.loadNormalized("mode"));
+    try std.testing.expectEqual(Mode.boost, view.load("mode"));
+    try std.testing.expectEqual(@as(f64, 0.5), view.loadNormalized("mode"));
 
     instance.resetParametersToDefaults();
     try std.testing.expectEqual(@as(f64, 0.0), instance.loadParameter("gain"));
