@@ -1,9 +1,128 @@
 const std = @import("std");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
+const events = @import("pluginterfaces/vst/ivstevents.zig");
+const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const ivstinterappaudio = @import("pluginterfaces/vst/ivstinterappaudio.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+
+pub fn InterAppAudioHost(comptime Config: type) type {
+    return extern struct {
+        const Self = @This();
+
+        iface: ivstinterappaudio.IInterAppAudioHost = .{ .vtable = &vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        screen: iplugview.ViewRect = .{},
+        scale_factor: f32 = 1.0,
+        connected_count: types.uint32 = 0,
+        switch_count: types.uint32 = 0,
+        settings_count: types.uint32 = 0,
+        remote_control_count: types.uint32 = 0,
+        last_remote_control_event: types.uint32 = 0,
+        scheduled_event_count: types.uint32 = 0,
+        last_preset_uid: ?tuid.TUID = null,
+        host_icon: ?*anyopaque = null,
+        preset_manager: ?*ivstinterappaudio.IInterAppAudioPresetManager = null,
+
+        pub fn asInterface(self: *Self) *ivstinterappaudio.IInterAppAudioHost {
+            return &self.iface;
+        }
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *ivstinterappaudio.IInterAppAudioHost = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &ivstinterappaudio.iinter_app_audio_host_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&owner(ptr).ref_count, "IInterAppAudioHost");
+        }
+
+        fn getScreenSize(ptr: *anyopaque, out_rect: *iplugview.ViewRect, out_scale: *f32) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            out_rect.* = self.screen;
+            out_scale.* = self.scale_factor;
+            if (@hasDecl(Config, "getScreenSize")) return Config.getScreenSize(self, out_rect, out_scale);
+            return types.kResultOk;
+        }
+
+        fn connectedToHost(ptr: *anyopaque) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.connected_count += 1;
+            if (@hasDecl(Config, "connectedToHost")) return Config.connectedToHost(self);
+            return types.kResultOk;
+        }
+
+        fn switchToHost(ptr: *anyopaque) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.switch_count += 1;
+            if (@hasDecl(Config, "switchToHost")) return Config.switchToHost(self);
+            return types.kResultOk;
+        }
+
+        fn sendRemoteControlEvent(ptr: *anyopaque, event_id: types.uint32) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.remote_control_count += 1;
+            self.last_remote_control_event = event_id;
+            if (@hasDecl(Config, "sendRemoteControlEvent")) return Config.sendRemoteControlEvent(self, event_id);
+            return types.kResultOk;
+        }
+
+        fn getHostIcon(ptr: *anyopaque, out_icon: *?*anyopaque) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            if (@hasDecl(Config, "getHostIcon")) return Config.getHostIcon(self, out_icon);
+            out_icon.* = self.host_icon;
+            return if (self.host_icon == null) types.kResultFalse else types.kResultOk;
+        }
+
+        fn scheduleEventFromUI(ptr: *anyopaque, event: *events.Event) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.scheduled_event_count += 1;
+            if (@hasDecl(Config, "scheduleEventFromUI")) return Config.scheduleEventFromUI(self, event);
+            return types.kResultOk;
+        }
+
+        fn createPresetManager(ptr: *anyopaque, uid: *const tuid.TUID) callconv(.C) ?*ivstinterappaudio.IInterAppAudioPresetManager {
+            const self = owner(ptr);
+            self.last_preset_uid = uid.*;
+            if (@hasDecl(Config, "createPresetManager")) return Config.createPresetManager(self, uid);
+            return self.preset_manager;
+        }
+
+        fn showSettingsView(ptr: *anyopaque) callconv(.C) types.tresult {
+            const self = owner(ptr);
+            self.settings_count += 1;
+            if (@hasDecl(Config, "showSettingsView")) return Config.showSettingsView(self);
+            return types.kResultOk;
+        }
+
+        const vtable = ivstinterappaudio.IInterAppAudioHostVTable{
+            .queryInterface = query,
+            .addRef = addRef,
+            .release = release,
+            .getScreenSize = getScreenSize,
+            .connectedToHost = connectedToHost,
+            .switchToHost = switchToHost,
+            .sendRemoteControlEvent = sendRemoteControlEvent,
+            .getHostIcon = getHostIcon,
+            .scheduleEventFromUI = scheduleEventFromUI,
+            .createPresetManager = createPresetManager,
+            .showSettingsView = showSettingsView,
+        };
+    };
+}
 
 pub fn InterAppAudioConnectionNotification(comptime Config: type) type {
     return extern struct {
@@ -131,6 +250,71 @@ pub fn InterAppAudioPresetManager(comptime Config: type) type {
             .loadPreviousPreset = loadPreviousPreset,
         };
     };
+}
+
+test "inter-app audio host returns default state and tracks callbacks" {
+    const Host = InterAppAudioHost(struct {});
+    var host = Host{ .screen = .{ .left = 1, .top = 2, .right = 101, .bottom = 202 }, .scale_factor = 2.0 };
+    const iface = host.asInterface();
+
+    var screen = iplugview.ViewRect{};
+    var scale: f32 = 0;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getScreenSize(iface, &screen, &scale));
+    try std.testing.expectEqual(@as(types.int32, 101), screen.right);
+    try std.testing.expectEqual(@as(f32, 2.0), scale);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.connectedToHost(iface));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.switchToHost(iface));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.sendRemoteControlEvent(iface, 42));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.showSettingsView(iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.connected_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.switch_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.remote_control_count);
+    try std.testing.expectEqual(@as(types.uint32, 42), host.last_remote_control_event);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.settings_count);
+}
+
+test "inter-app audio host returns icon and preset manager" {
+    const Host = InterAppAudioHost(struct {});
+    const Presets = InterAppAudioPresetManager(struct {});
+    var host = Host{};
+    var presets = Presets{};
+    const icon: *anyopaque = @ptrFromInt(0x1000);
+    const preset_uid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
+    host.host_icon = icon;
+    host.preset_manager = presets.asInterface();
+    const iface = host.asInterface();
+
+    var out_icon: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getHostIcon(iface, &out_icon));
+    try std.testing.expectEqual(icon, out_icon.?);
+    try std.testing.expectEqual(presets.asInterface(), iface.vtable.createPresetManager(iface, &preset_uid).?);
+    try std.testing.expectEqualSlices(u8, &preset_uid, &host.last_preset_uid.?);
+}
+
+test "inter-app audio host delegates hooks and supports query interface" {
+    const Host = InterAppAudioHost(struct {
+        pub fn connectedToHost(self: anytype) types.tresult {
+            _ = self;
+            return types.kResultFalse;
+        }
+
+        pub fn showSettingsView(self: anytype) types.tresult {
+            _ = self;
+            return types.kInvalidArgument;
+        }
+    });
+    var host = Host{};
+    const iface = host.asInterface();
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.connectedToHost(iface));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.showSettingsView(iface));
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstinterappaudio.iinter_app_audio_host_iid, &queried));
+    try std.testing.expect(queried != null);
+    const out: *ivstinterappaudio.IInterAppAudioHost = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), out.vtable.release(out));
 }
 
 test "inter-app audio connection notification stores state" {

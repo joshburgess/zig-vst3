@@ -355,7 +355,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.10a: Legacy mobile and test-support interfaces
 
-`IInterAppAudioHost`, `IInterAppAudioConnectionNotification`, `IInterAppAudioPresetManager`, `ITestPlugProvider`, `ITestPlugProvider2`. These are P3 legacy/mobile/test-support interfaces. `vst_inter_app_audio.zig` provides reusable stateful `IInterAppAudioConnectionNotification` and hook-based `IInterAppAudioPresetManager` objects. `vst_test_plug_provider.zig` provides a reusable `ITestPlugProvider`/`ITestPlugProvider2` object for local validator and host-test harnesses.
+`IInterAppAudioHost`, `IInterAppAudioConnectionNotification`, `IInterAppAudioPresetManager`, `ITestPlugProvider`, `ITestPlugProvider2`. These are P3 legacy/mobile/test-support interfaces. `vst_inter_app_audio.zig` provides reusable hook-based `IInterAppAudioHost`, stateful `IInterAppAudioConnectionNotification`, and hook-based `IInterAppAudioPresetManager` objects. `vst_test_plug_provider.zig` provides a reusable `ITestPlugProvider`/`ITestPlugProvider2` object for local validator and host-test harnesses.
 
 ### Work Unit 2.10b: Test interface helpers
 
