@@ -54,7 +54,7 @@ Event helpers:
 - `Event.withControlNumber` preserves legacy MIDI controller numbers when a host bridge needs to keep them attached to converted events.
 - `ProcessContext.inputEvents`, `inputEventCount`, `inputEventsEmpty`, first/latest/next event offsets, `firstEvent`, `latestEvent`, `hasEvent`, and `countEvents` expose input-event reads without reaching into the event view field.
 - `EventWriter.appendAll` copies validated event views into bounded output storage.
-- `ProcessContext.appendOutputEvent`, `appendOutputEvents`, `writtenOutputEvents`, `clearOutputEvents`, `firstOutputEventOffset`, `latestOutputEventOffset`, `outputEventCount`, `outputEventCapacity`, `outputEventRemainingCapacity`, `outputEventsEmpty`, and `outputEventsFull` let processors write, inspect, reset, and plan output events without unwrapping the optional writer.
+- `ProcessContext.appendOutputEvent`, `appendOutputEvents`, `writtenOutputEvents`, `clearOutputEvents`, output-event kind and offset reads, `outputEventCount`, `outputEventCapacity`, `outputEventRemainingCapacity`, `outputEventsEmpty`, and `outputEventsFull` let processors write, inspect, reset, and plan output events without unwrapping the optional writer.
 
 The VST3 shell gives processors a bounded output-event writer and flushes written events to the host after audio processing.
 
