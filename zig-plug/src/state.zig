@@ -122,8 +122,8 @@ test "parameter state round-trips normalized values" {
     try std.testing.expectEqual(@as(usize, 12), encoded_entry_size);
     try std.testing.expectEqual(@as(usize, 36), encodedSizeForCount(2));
     try std.testing.expectEqual(@as(usize, 36), encodedSize(Params));
-    try std.testing.expect(values.store(0, 0.25));
-    try std.testing.expect(values.store(1, 0.75));
+    try std.testing.expect(values.storeField(&set, "gain", 0.25));
+    try std.testing.expect(values.storeField(&set, "mix", 0.75));
 
     var out_stream = std.io.fixedBufferStream(&bytes);
     try writeParameterState(Params, &set, &values, out_stream.writer());
@@ -131,8 +131,8 @@ test "parameter state round-trips normalized values" {
     var in_stream = std.io.fixedBufferStream(&bytes);
     try readParameterState(Params, &set, &restored, in_stream.reader());
 
-    try std.testing.expectEqual(@as(?f64, 0.25), restored.load(0));
-    try std.testing.expectEqual(@as(?f64, 0.75), restored.load(1));
+    try std.testing.expectEqual(@as(f64, 0.25), restored.loadField(&set, "gain"));
+    try std.testing.expectEqual(@as(f64, 0.75), restored.loadField(&set, "mix"));
 }
 
 test "parameter state writes debug json" {
@@ -146,8 +146,8 @@ test "parameter state writes debug json" {
     var values = Values.init(&set);
     var bytes: [160]u8 = undefined;
 
-    try std.testing.expect(values.store(0, 0.25));
-    try std.testing.expect(values.store(1, 0.75));
+    try std.testing.expect(values.storeField(&set, "gain", 0.25));
+    try std.testing.expect(values.storeField(&set, "mix", 0.75));
 
     var out_stream = std.io.fixedBufferStream(&bytes);
     try writeParameterStateJson(Params, &set, &values, out_stream.writer());
@@ -168,7 +168,7 @@ test "parameter state debug json escapes names" {
     var values = Values.init(&set);
     var bytes: [128]u8 = undefined;
 
-    try std.testing.expect(values.store(0, 0.25));
+    try std.testing.expect(values.storeField(&set, "quoted", 0.25));
 
     var out_stream = std.io.fixedBufferStream(&bytes);
     try writeParameterStateJson(Params, &set, &values, out_stream.writer());
@@ -200,7 +200,7 @@ test "parameter state ignores unknown parameter ids" {
     var in_stream = std.io.fixedBufferStream(&bytes);
     try readParameterState(Params, &set, &values, in_stream.reader());
 
-    try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
+    try std.testing.expectEqual(@as(f64, 1.0), values.loadField(&set, "gain"));
 }
 
 test "parameter state rejects malformed headers and unsupported versions" {
@@ -243,7 +243,7 @@ test "parameter state rejects truncated entries without changing defaults" {
 
     var in_stream = std.io.fixedBufferStream(&bytes);
     try std.testing.expectError(error.EndOfStream, readParameterState(Params, &set, &values, in_stream.reader()));
-    try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
+    try std.testing.expectEqual(@as(f64, 1.0), values.loadField(&set, "gain"));
 }
 
 test "parameter state rejects later truncated entries without partial updates" {
@@ -259,8 +259,8 @@ test "parameter state rejects later truncated entries without partial updates" {
     var out_stream = std.io.fixedBufferStream(&bytes);
     const writer = out_stream.writer();
 
-    try std.testing.expect(values.store(0, 0.8));
-    try std.testing.expect(values.store(1, 0.6));
+    try std.testing.expect(values.storeField(&set, "gain", 0.8));
+    try std.testing.expect(values.storeField(&set, "mix", 0.6));
 
     try writer.writeAll(magic);
     try writer.writeInt(u16, format_version, .little);
@@ -271,8 +271,8 @@ test "parameter state rejects later truncated entries without partial updates" {
 
     var in_stream = std.io.fixedBufferStream(&bytes);
     try std.testing.expectError(error.EndOfStream, readParameterState(Params, &set, &values, in_stream.reader()));
-    try std.testing.expectEqual(@as(?f64, 0.8), values.load(0));
-    try std.testing.expectEqual(@as(?f64, 0.6), values.load(1));
+    try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
+    try std.testing.expectEqual(@as(f64, 0.6), values.loadField(&set, "mix"));
 }
 
 test "parameter state rejects normalized values outside range without partial updates" {
@@ -288,8 +288,8 @@ test "parameter state rejects normalized values outside range without partial up
     var out_stream = std.io.fixedBufferStream(&bytes);
     const writer = out_stream.writer();
 
-    try std.testing.expect(values.store(0, 0.8));
-    try std.testing.expect(values.store(1, 0.6));
+    try std.testing.expect(values.storeField(&set, "gain", 0.8));
+    try std.testing.expect(values.storeField(&set, "mix", 0.6));
 
     try writer.writeAll(magic);
     try writer.writeInt(u16, format_version, .little);
@@ -301,8 +301,8 @@ test "parameter state rejects normalized values outside range without partial up
 
     var in_stream = std.io.fixedBufferStream(&bytes);
     try std.testing.expectError(error.ParameterStateOutsideNormalizedRange, readParameterState(Params, &set, &values, in_stream.reader()));
-    try std.testing.expectEqual(@as(?f64, 0.8), values.load(0));
-    try std.testing.expectEqual(@as(?f64, 0.6), values.load(1));
+    try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
+    try std.testing.expectEqual(@as(f64, 0.6), values.loadField(&set, "mix"));
 }
 
 test "parameter state rejects NaN normalized values without partial updates" {
@@ -317,7 +317,7 @@ test "parameter state rejects NaN normalized values without partial updates" {
     var out_stream = std.io.fixedBufferStream(&bytes);
     const writer = out_stream.writer();
 
-    try std.testing.expect(values.store(0, 0.8));
+    try std.testing.expect(values.storeField(&set, "gain", 0.8));
 
     try writer.writeAll(magic);
     try writer.writeInt(u16, format_version, .little);
@@ -327,7 +327,7 @@ test "parameter state rejects NaN normalized values without partial updates" {
 
     var in_stream = std.io.fixedBufferStream(&bytes);
     try std.testing.expectError(error.ParameterStateOutsideNormalizedRange, readParameterState(Params, &set, &values, in_stream.reader()));
-    try std.testing.expectEqual(@as(?f64, 0.8), values.load(0));
+    try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
 }
 
 test "parameter state migrates renamed parameter ids" {
@@ -347,7 +347,7 @@ test "parameter state migrates renamed parameter ids" {
     var new_values = NewValues.init(&new_set);
     var bytes: [encodedSize(OldParams)]u8 = undefined;
 
-    try std.testing.expect(old_values.storeById(&old_set, 1, 0.25));
+    try std.testing.expect(old_values.storeField(&old_set, "gain", 0.25));
     var out_stream = std.io.fixedBufferStream(&bytes);
     try writeParameterState(OldParams, &old_set, &old_values, out_stream.writer());
 
@@ -356,7 +356,7 @@ test "parameter state migrates renamed parameter ids" {
         .{ .old_id = 1, .new_id = 9 },
     });
 
-    try std.testing.expectEqual(@as(?f64, 0.25), new_values.loadById(&new_set, 9));
+    try std.testing.expectEqual(@as(f64, 0.25), new_values.loadField(&new_set, "output"));
 }
 
 test "parameter state exposes migration resolution" {
