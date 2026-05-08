@@ -67,6 +67,10 @@ pub fn UnitSet(comptime config: Config) type {
             return null;
         }
 
+        pub fn hasUnit(self: Self, id: i32) bool {
+            return self.unitById(id) != null;
+        }
+
         pub fn unitIndexOfId(_: Self, id: i32) ?usize {
             for (config.units, 0..) |item, index| {
                 if (item.id == id) return index;
@@ -84,6 +88,16 @@ pub fn UnitSet(comptime config: Config) type {
                 if (item.id == id) return item;
             }
             return null;
+        }
+
+        pub fn hasProgramList(self: Self, id: i32) bool {
+            return self.programListById(id) != null;
+        }
+
+        pub fn programListForUnit(self: Self, unit_id: i32) ?ProgramList {
+            const item = self.unitById(unit_id) orelse return null;
+            if (item.program_list_id == no_program_list_id) return null;
+            return self.programListById(item.program_list_id);
         }
 
         pub fn programListIndexOfId(_: Self, id: i32) ?usize {
@@ -104,6 +118,14 @@ pub fn UnitSet(comptime config: Config) type {
             return list.programs[program_index].name;
         }
 
+        pub fn programIndexOfName(self: Self, list_id: i32, name: []const u8) ?usize {
+            const list = self.programListById(list_id) orelse return null;
+            for (list.programs, 0..) |program, index| {
+                if (std.mem.eql(u8, program.name, name)) return index;
+            }
+            return null;
+        }
+
         pub fn programInfo(self: Self, list_id: i32, program_index: usize, key: []const u8) ?[]const u8 {
             const list = self.programListById(list_id) orelse return null;
             if (program_index >= list.programs.len) return null;
@@ -111,6 +133,11 @@ pub fn UnitSet(comptime config: Config) type {
                 if (std.mem.eql(u8, item.key, key)) return item.value;
             }
             return null;
+        }
+
+        pub fn programInfoByName(self: Self, list_id: i32, program_name: []const u8, key: []const u8) ?[]const u8 {
+            const index = self.programIndexOfName(list_id, program_name) orelse return null;
+            return self.programInfo(list_id, index, key);
         }
 
         pub fn rootUnit(self: Self) Unit {
@@ -129,6 +156,10 @@ test "default unit set exposes root unit only" {
     try std.testing.expectEqual(no_parent_unit_id, set.rootUnit().parent_id);
     try std.testing.expectEqual(no_program_list_id, set.rootUnit().program_list_id);
     try std.testing.expectEqualStrings("Root", set.rootUnit().name);
+    try std.testing.expect(set.hasUnit(root_unit_id));
+    try std.testing.expect(!set.hasUnit(99));
+    try std.testing.expect(!set.hasProgramList(10));
+    try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnit(root_unit_id));
     try std.testing.expectEqual(@as(?Unit, null), set.unit(1));
     try std.testing.expectEqual(@as(?ProgramList, null), set.programList(0));
 }
@@ -153,13 +184,23 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(usize, 1), set.programListCount());
     try std.testing.expectEqual(@as(?usize, 1), set.unitIndexOfId(1));
     try std.testing.expectEqual(@as(?usize, null), set.unitIndexOfId(99));
+    try std.testing.expect(set.hasUnit(1));
+    try std.testing.expect(!set.hasUnit(99));
     try std.testing.expectEqualStrings("Oscillator", set.unitById(1).?.name);
     try std.testing.expectEqual(@as(i32, 10), set.unitById(1).?.program_list_id);
     try std.testing.expectEqual(@as(?usize, 0), set.programListIndexOfId(10));
+    try std.testing.expect(set.hasProgramList(10));
+    try std.testing.expect(!set.hasProgramList(99));
     try std.testing.expectEqualStrings("Oscillator Presets", set.programListById(10).?.name);
+    try std.testing.expectEqualStrings("Oscillator Presets", set.programListForUnit(1).?.name);
+    try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnit(root_unit_id));
     try std.testing.expectEqual(@as(?usize, 2), set.programCount(10));
     try std.testing.expectEqualStrings("Drive", set.programName(10, 1).?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programName(10, 2));
+    try std.testing.expectEqual(@as(?usize, 1), set.programIndexOfName(10, "Drive"));
+    try std.testing.expectEqual(@as(?usize, null), set.programIndexOfName(10, "Missing"));
     try std.testing.expectEqualStrings("Clean", set.programInfo(10, 0, "category").?);
+    try std.testing.expectEqualStrings("Clean", set.programInfoByName(10, "Clean", "category").?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programInfo(10, 0, "missing"));
+    try std.testing.expectEqual(@as(?[]const u8, null), set.programInfoByName(10, "Missing", "category"));
 }
