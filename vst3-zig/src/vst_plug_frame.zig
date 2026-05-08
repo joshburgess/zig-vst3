@@ -42,12 +42,13 @@ pub fn PlugFrame(comptime Config: type) type {
 
         fn resizeView(ptr: *anyopaque, view: ?*iplugview.IPlugView, rect: *iplugview.ViewRect) callconv(.C) types.tresult {
             const self = owner(ptr);
-            self.last_view = view;
-            self.last_rect = rect.*;
             self.resize_count += 1;
             if (@hasDecl(Config, "resizeView")) {
-                return Config.resizeView(view, rect);
+                const result = Config.resizeView(view, rect);
+                if (result != types.kResultOk) return result;
             }
+            self.last_view = view;
+            self.last_rect = rect.*;
             return types.kResultOk;
         }
 
@@ -92,6 +93,25 @@ test "plug frame delegates resize requests to config" {
     try std.testing.expectEqual(@as(types.uint32, 1), Config.resize_count);
     try std.testing.expectEqual(@as(types.int32, 32), Config.last_width);
     try std.testing.expectEqual(@as(types.uint32, 1), frame.resize_count);
+}
+
+test "plug frame preserves accepted resize state when delegation fails" {
+    const Config = struct {
+        fn resizeView(_: ?*iplugview.IPlugView, _: *iplugview.ViewRect) types.tresult {
+            return types.kResultFalse;
+        }
+    };
+    const Frame = PlugFrame(Config);
+    var frame = Frame{
+        .last_rect = .{ .left = 1, .top = 2, .right = 101, .bottom = 202 },
+    };
+    const iface = frame.asInterface();
+    var rejected = iplugview.ViewRect{ .left = 10, .top = 20, .right = 30, .bottom = 40 };
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.resizeView(iface, null, &rejected));
+    try std.testing.expectEqual(@as(types.uint32, 1), frame.resize_count);
+    try std.testing.expectEqual(iplugview.ViewRect{ .left = 1, .top = 2, .right = 101, .bottom = 202 }, frame.last_rect);
+    try std.testing.expectEqual(@as(?*iplugview.IPlugView, null), frame.last_view);
 }
 
 test "plug frame supports query interface" {
