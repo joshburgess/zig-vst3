@@ -185,9 +185,9 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
 
         fn setBinaryData(ptr: *anyopaque, id: ipersistent.IAttrID, data: ?*anyopaque, size: types.uint32, copy: bool) callconv(.C) types.tresult {
             if (size > 0 and data == null) return types.kInvalidArgument;
+            if (copy and size > max_binary_bytes) return types.kResultFalse;
             const entry = ownerFromAttributes(ptr).slotFor(id) orelse return types.kResultFalse;
             if (copy) {
-                if (size > max_binary_bytes) return types.kResultFalse;
                 if (size > 0) {
                     const bytes: [*]const u8 = @ptrCast(data.?);
                     @memcpy(entry.binary[0..size], bytes[0..size]);
@@ -442,6 +442,18 @@ test "persistent attributes copy binary payloads" {
     out = [_]u8{9} ** 4;
     try std.testing.expectEqual(types.kResultFalse, attrs.vtable.getBinaryData(attrs, "blob", &out, 2));
     try std.testing.expectEqualSlices(u8, &.{ 0, 0, 9, 9 }, &out);
+}
+
+test "persistent attributes reject oversized copied binary without creating attributes" {
+    const Store = Attributes(1, 2);
+    var store = Store{};
+    const attrs = store.asAttributes();
+    const attrs2 = store.asAttributes2();
+    var payload = [_]u8{ 1, 2, 3 };
+
+    try std.testing.expectEqual(types.kResultFalse, attrs.vtable.setBinaryData(attrs, "blob", &payload, payload.len, true));
+    try std.testing.expectEqual(@as(types.uint32, 0), attrs.vtable.getBinaryDataSize(attrs, "blob"));
+    try std.testing.expectEqual(@as(types.int32, 0), attrs2.vtable.countAttributes(attrs2));
 }
 
 test "persistent attributes supports attributes2 query interface" {
