@@ -138,6 +138,13 @@ pub const Events = struct {
         }
         return count;
     }
+
+    pub fn hasKind(self: Events, kind: EventKind) bool {
+        for (self.items) |item| {
+            if (item.kind == kind) return true;
+        }
+        return false;
+    }
 };
 
 pub const EventWriter = struct {
@@ -380,6 +387,8 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.midi_cc));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_off));
     try std.testing.expectEqual(@as(usize, 0), view.countKind(.data));
+    try std.testing.expect(view.hasKind(.note_on));
+    try std.testing.expect(!view.hasKind(.data));
 }
 
 test "events reject values outside the process block" {
