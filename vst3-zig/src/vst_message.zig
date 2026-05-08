@@ -53,16 +53,22 @@ pub fn ConnectionPoint(comptime Config: type) type {
         fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
             const self = owner(ptr);
             self.connect_count += 1;
+            if (@hasDecl(Config, "connect")) {
+                const result = Config.connect(self, peer);
+                if (result != types.kResultOk) return result;
+            }
             self.connected_peer = peer;
-            if (@hasDecl(Config, "connect")) return Config.connect(self, peer);
             return types.kResultOk;
         }
 
         fn disconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
             const self = owner(ptr);
             self.disconnect_count += 1;
+            if (@hasDecl(Config, "disconnect")) {
+                const result = Config.disconnect(self, peer);
+                if (result != types.kResultOk) return result;
+            }
             if (self.connected_peer == peer) self.connected_peer = null;
-            if (@hasDecl(Config, "disconnect")) return Config.disconnect(self, peer);
             return types.kResultOk;
         }
 
@@ -83,6 +89,30 @@ pub fn ConnectionPoint(comptime Config: type) type {
             .notify = notify,
         };
     };
+}
+
+test "connection point preserves peer when delegated connection changes fail" {
+    const Config = struct {
+        fn connect(_: anytype, peer: ?*ivstmessage.IConnectionPoint) types.tresult {
+            return if (peer == null) types.kInvalidArgument else types.kResultFalse;
+        }
+
+        fn disconnect(_: anytype, _: ?*ivstmessage.IConnectionPoint) types.tresult {
+            return types.kResultFalse;
+        }
+    };
+    const Point = ConnectionPoint(Config);
+    const Peer = ConnectionPoint(struct {});
+    var point = Point{};
+    var existing_peer = Peer{};
+    var rejected_peer = Peer{};
+    point.connected_peer = existing_peer.asInterface();
+    const iface = point.asInterface();
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.connect(iface, rejected_peer.asInterface()));
+    try std.testing.expectEqual(existing_peer.asInterface(), point.connected_peer.?);
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.disconnect(iface, existing_peer.asInterface()));
+    try std.testing.expectEqual(existing_peer.asInterface(), point.connected_peer.?);
 }
 
 pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usize, comptime max_binary_bytes: usize) type {
