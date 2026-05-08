@@ -178,6 +178,7 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
 
         fn registerEventHandler(ptr: *anyopaque, handler: ?*Linux.IEventHandler, fd: Linux.FileDescriptor) callconv(.C) types.tresult {
             const event_handler = handler orelse return types.kInvalidArgument;
+            if (fd < 0) return types.kInvalidArgument;
             const self = owner(ptr);
             for (&self.event_handlers) |*entry| {
                 if (entry.handler == event_handler) {
@@ -266,6 +267,19 @@ test "linux run loop registers and triggers event handlers" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.event_count);
     try std.testing.expectEqual(@as(Linux.FileDescriptor, 7), handler.last_fd);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.unregisterEventHandler(iface, event_handler));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.ref_count.load(.monotonic));
+}
+
+test "linux run loop rejects invalid event handler registrations" {
+    const Loop = RunLoop(1, 1);
+    const Handler = EventHandler(struct {});
+    var loop = Loop{};
+    var handler = Handler{};
+    const iface = loop.asInterface();
+    const event_handler = handler.asInterface();
+
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.registerEventHandler(iface, null, 7));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.registerEventHandler(iface, event_handler, -1));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.ref_count.load(.monotonic));
 }
 
