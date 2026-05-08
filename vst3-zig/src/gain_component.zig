@@ -15,9 +15,9 @@ pub const cid = tuid.inlineUid(0xA74E7A0D, 0x6B234163, 0xA0A83EBF, 0xD06F1401);
 const GainProcessor = struct {
     pub fn process(_: GainProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
         const gain: Sample = @floatCast(gain_controller.gain());
-        for (0..context.outputs.channels.len) |channel| {
-            const input = context.inputs.channel(channel) orelse continue;
-            const output = context.outputs.channel(channel) orelse continue;
+        for (0..context.outputChannelCount()) |channel| {
+            const input = context.inputChannel(channel) orelse continue;
+            const output = context.outputChannel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
                 output[sample] = input[sample] * gain;
             }

@@ -9,18 +9,15 @@ pub const cid = tuid.inlineUid(0xD9C97C5A, 0x062A4B52, 0x9C3DF51C, 0xFFAC4B41);
 
 const EventEchoProcessor = struct {
     pub fn process(_: EventEchoProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-        for (0..context.outputs.channels.len) |channel| {
-            const input = context.inputs.channel(channel) orelse continue;
-            const output = context.outputs.channel(channel) orelse continue;
+        for (0..context.outputChannelCount()) |channel| {
+            const input = context.inputChannel(channel) orelse continue;
+            const output = context.outputChannel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
                 output[sample] = input[sample];
             }
         }
 
-        const writer = context.output_events orelse return;
-        for (context.events.items) |event| {
-            writer.append(event) catch {};
-        }
+        context.appendOutputEvents(context.inputEvents()) catch {};
     }
 };
 
@@ -57,4 +54,30 @@ test "event echo component can be created with input and output event buses" {
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput)));
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput)));
     try std.testing.expect(component_iface.vtable.release(component_iface) >= 1);
+}
+
+test "event echo processor copies audio and input events" {
+    const std = @import("std");
+
+    const input = [_]f32{ 0.25, -0.5 };
+    var output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const events = [_]plug_process.Event{
+        plug_process.Event.noteOn(1, 0, 60, 0.75),
+    };
+    var output_event_storage: [1]plug_process.Event = undefined;
+    var output_events = plug_process.EventWriter.init(&output_event_storage, input.len);
+    var context = try plug_process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+        .output_events = &output_events,
+    });
+
+    const processor = EventEchoProcessor{};
+    processor.process(f32, &context);
+
+    try std.testing.expectEqualSlices(f32, &input, &output);
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
+    try std.testing.expect(context.hasOutputEvent(.note_on));
+    try std.testing.expectEqual(@as(usize, 1), context.firstOutputEvent(.note_on).?.sample_offset);
 }

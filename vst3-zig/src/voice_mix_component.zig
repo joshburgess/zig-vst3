@@ -10,9 +10,9 @@ pub const cid = tuid.inlineUid(0x1B74B03C, 0xFA7B4B7D, 0x8B8429F7, 0xA1A1418F);
 const VoiceMixProcessor = struct {
     pub fn process(_: VoiceMixProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
         const gain: Sample = @floatCast(voice_mix_controller.voiceGain());
-        for (0..context.outputs.channels.len) |channel| {
-            const input = context.inputs.channel(channel) orelse continue;
-            const output = context.outputs.channel(channel) orelse continue;
+        for (0..context.outputChannelCount()) |channel| {
+            const input = context.inputChannel(channel) orelse continue;
+            const output = context.outputChannel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
                 output[sample] = input[sample] * gain;
             }

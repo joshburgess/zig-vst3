@@ -10,9 +10,9 @@ pub const cid = tuid.inlineUid(0x69B21F85, 0x804045F7, 0x9F452845, 0xC7B18EE0);
 const BypassProcessor = struct {
     pub fn process(_: BypassProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
         const bypassed = bypass_controller.bypassed();
-        for (0..context.outputs.channels.len) |channel| {
-            const input = context.inputs.channel(channel) orelse continue;
-            const output = context.outputs.channel(channel) orelse continue;
+        for (0..context.outputChannelCount()) |channel| {
+            const input = context.inputChannel(channel) orelse continue;
+            const output = context.outputChannel(channel) orelse continue;
             for (0..context.frameCount()) |sample| {
                 output[sample] = if (bypassed) input[sample] else 0;
             }
