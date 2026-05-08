@@ -82,6 +82,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return &self.spec.values;
         }
 
+        pub fn parameterValuesConst(self: *const Self) *const Spec.ParameterValues {
+            return &self.spec.values;
+        }
+
         pub fn applyParameterChanges(self: *Self, changes: process_api.ParameterChanges) void {
             self.spec.values.applyChanges(&self.spec.parameter_set, changes);
         }
@@ -277,7 +281,7 @@ test "plugin instance drives declared lifecycle hooks" {
     try std.testing.expect(instance.plugin.deinitialized);
     try std.testing.expectEqual(@as(f32, 0.125), output[0]);
     try std.testing.expectEqual(@as(f32, 0.25), output[1]);
-    try std.testing.expectEqual(@as(?f64, 0.5), instance.parameterValues().loadById(instance.parameterSet(), 0));
+    try std.testing.expectEqual(@as(?f64, 0.5), instance.parameterValuesConst().loadById(instance.parameterSet(), 0));
 }
 
 test "plugin instance applies parameter changes to owned values" {
