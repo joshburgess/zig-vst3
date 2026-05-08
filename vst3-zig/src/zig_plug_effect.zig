@@ -613,7 +613,6 @@ pub fn ReflectedEditController(comptime Config: type) type {
         fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
             const self = ownerFromConnectionPoint(ptr);
             if (peer == null) {
-                releaseConnectionPeer(&self.connected_peer);
                 return types.kInvalidArgument;
             }
             releaseConnectionPeer(&self.connected_peer);
@@ -1483,7 +1482,6 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         fn componentConnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
             if (peer == null) {
-                releaseConnectionPeer(&self.connected_peer);
                 return types.kInvalidArgument;
             }
             releaseConnectionPeer(&self.connected_peer);
