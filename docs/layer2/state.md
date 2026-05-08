@@ -17,9 +17,10 @@ Malformed state headers, unsupported format versions, truncated entries, and fai
 
 - `state.encodedSize(Params)`: byte count for a full parameter snapshot.
 - `state.writeParameterState(Params, set, values, writer)`: writes all reflected parameter values.
+- `state.writeParameterStateJson(Params, set, values, writer)`: writes the same reflected parameter values as compact debug JSON.
 - `state.readParameterState(Params, set, values, reader)`: reads entries and updates matching reflected values.
 - `state.readParameterStateWithMigrations(Params, set, values, reader, migrations)`: reads entries and maps renamed parameter ids before lookup.
 
 ## Open Work
 
-- Add an optional debug JSON format.
+- Add preset metadata once `zig-plug` exposes named programs.
