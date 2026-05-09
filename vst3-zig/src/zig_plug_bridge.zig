@@ -150,10 +150,7 @@ pub fn ParameterState(comptime Params: type) type {
         }
 
         pub fn applyChanges(self: *Self, changes: plug.process.ParameterChanges) void {
-            for (changes.items) |change| {
-                if (self.set.isReadOnlyById(change.id) orelse true) continue;
-                _ = self.values.storeById(self.set, change.id, change.normalized);
-            }
+            self.values.applyChanges(self.set, changes);
         }
 
         pub fn encodedSize(_: *const Self) usize {
