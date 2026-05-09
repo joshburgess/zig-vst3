@@ -965,6 +965,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.writtenOutputEvents().atOffset(sample_offset);
         }
 
+        pub fn outputEventsOfKind(self: @This(), kind: EventKind) EventKindIterator {
+            return self.writtenOutputEvents().ofKind(kind);
+        }
+
         pub fn firstOutputEventOffset(self: @This()) ?usize {
             const writer = self.output_events orelse return null;
             return writer.firstSampleOffset();
@@ -1734,6 +1738,9 @@ test "process context exposes output event helpers" {
     var output_offset_events = context.outputEventsAtOffset(1);
     try std.testing.expectEqual(EventKind.note_off, output_offset_events.next().?.kind);
     try std.testing.expectEqual(@as(?Event, null), output_offset_events.next());
+    var output_note_offs = context.outputEventsOfKind(.note_off);
+    try std.testing.expectEqual(@as(i16, 60), output_note_offs.next().?.pitch);
+    try std.testing.expectEqual(@as(?Event, null), output_note_offs.next());
     var output_segments = context.outputEventBlockSegments();
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, output_segments.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 2 }, output_segments.next().?);
@@ -1762,6 +1769,8 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?Event, null), context.latestOutputEvent(.note_on));
     try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffset(0));
     try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForKind(.note_on, 0));
+    var cleared_output_notes = context.outputEventsOfKind(.note_on);
+    try std.testing.expectEqual(@as(?Event, null), cleared_output_notes.next());
     var cleared_output_segments = context.outputEventBlockSegments();
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 2 }, cleared_output_segments.next().?);
     try std.testing.expectEqual(@as(?BlockSegment, null), cleared_output_segments.next());
@@ -1782,6 +1791,8 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?Event, null), no_writer.latestOutputEvent(.note_on));
     try std.testing.expectEqual(@as(?usize, null), no_writer.nextOutputEventOffset(0));
     try std.testing.expectEqual(@as(?usize, null), no_writer.nextOutputEventOffsetForKind(.note_on, 0));
+    var missing_output_notes = no_writer.outputEventsOfKind(.note_on);
+    try std.testing.expectEqual(@as(?Event, null), missing_output_notes.next());
     try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvent(events[0]));
     try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvents(try Events.init(&events, input.len)));
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventCount());
