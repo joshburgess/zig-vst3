@@ -31,6 +31,26 @@ pub const BlockSegmentIterator = struct {
     }
 };
 
+pub const ProcessBlockSegmentIterator = struct {
+    parameter_changes: ParameterChanges,
+    events: Events,
+    frame_count: usize,
+    next_start: usize = 0,
+
+    pub fn next(self: *ProcessBlockSegmentIterator) ?BlockSegment {
+        if (self.next_start >= self.frame_count) return null;
+        const start = self.next_start;
+        const next_parameter_offset = self.parameter_changes.nextSampleOffset(start);
+        const next_event_offset = self.events.nextSampleOffset(start);
+        const end = if (next_parameter_offset) |parameter_offset|
+            if (next_event_offset) |event_offset| @min(parameter_offset, event_offset) else parameter_offset
+        else
+            next_event_offset orelse self.frame_count;
+        self.next_start = @min(end, self.frame_count);
+        return .{ .start_offset = start, .end_offset = self.next_start };
+    }
+};
+
 pub const ParameterSegmentIterator = struct {
     changes: ParameterChanges,
     id: u32,
@@ -826,6 +846,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.blockSegments(self.frameCount());
         }
 
+        pub fn processBlockSegments(self: @This()) ProcessBlockSegmentIterator {
+            return .{
+                .parameter_changes = self.parameter_changes,
+                .events = self.events,
+                .frame_count = self.frameCount(),
+            };
+        }
+
         pub fn inputEvents(self: @This()) Events {
             return self.events;
         }
@@ -1168,6 +1196,10 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, event_segments.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 2 }, event_segments.next().?);
     try std.testing.expectEqual(@as(?BlockSegment, null), event_segments.next());
+    var process_segments = context.processBlockSegments();
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, process_segments.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 2 }, process_segments.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), process_segments.next());
     try std.testing.expect(context.hasOutputEventWriter());
 }
 
@@ -1399,6 +1431,37 @@ test "events iterate block segments split at event offsets" {
     try std.testing.expectEqual(@as(?BlockSegment, null), empty.next());
 
     var zero = view.blockSegments(0);
+    try std.testing.expectEqual(@as(?BlockSegment, null), zero.next());
+}
+
+test "process block segments split at parameter and event offsets" {
+    const changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 5, .normalized = 0.75 },
+        .{ .id = 7, .sample_offset = 2, .normalized = 0.25 },
+    };
+    const events = [_]Event{
+        Event.noteOn(3, 0, 60, 1.0),
+        Event.noteOff(5, 0, 60, 0.0),
+    };
+    const parameter_changes = try ParameterChanges.init(&changes, 8);
+    const input_events = try Events.init(&events, 8);
+    var iterator = ProcessBlockSegmentIterator{
+        .parameter_changes = parameter_changes,
+        .events = input_events,
+        .frame_count = 8,
+    };
+
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 2 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 2, .end_offset = 3 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 3, .end_offset = 5 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 5, .end_offset = 8 }, iterator.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+
+    var empty = ProcessBlockSegmentIterator{ .parameter_changes = .{}, .events = .{}, .frame_count = 4 };
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 4 }, empty.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), empty.next());
+
+    var zero = ProcessBlockSegmentIterator{ .parameter_changes = parameter_changes, .events = input_events, .frame_count = 0 };
     try std.testing.expectEqual(@as(?BlockSegment, null), zero.next());
 }
 
