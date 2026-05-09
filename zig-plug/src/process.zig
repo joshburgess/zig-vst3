@@ -746,6 +746,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         output_events: ?*EventWriter = null,
 
         pub fn init(sample_rate: f64, input_channels: []const []const Sample, output_channels: []const []Sample) !@This() {
+            if (sample_rate <= 0.0 or !std.math.isFinite(sample_rate)) return error.InvalidSampleRate;
             return .{
                 .sample_rate = sample_rate,
                 .inputs = try AudioInputs(Sample).init(input_channels),
@@ -1127,6 +1128,18 @@ test "process context reports usable frame count" {
     context.clearOutputs();
     try std.testing.expectEqual(@as(f64, 0.0), out_left[0]);
     try std.testing.expectEqual(@as(f64, 0.0), out_right[2]);
+}
+
+test "process context rejects invalid sample rates" {
+    const input = [_]f32{0.0};
+    var output = [_]f32{0.0};
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+
+    try std.testing.expectError(error.InvalidSampleRate, ProcessContext(f32).init(0.0, &input_channels, &output_channels));
+    try std.testing.expectError(error.InvalidSampleRate, ProcessContext(f32).init(-48_000.0, &input_channels, &output_channels));
+    try std.testing.expectError(error.InvalidSampleRate, ProcessContext(f32).init(std.math.inf(f64), &input_channels, &output_channels));
+    try std.testing.expectError(error.InvalidSampleRate, ProcessContext(f32).init(std.math.nan(f64), &input_channels, &output_channels));
 }
 
 test "process context validates attached parameter changes and events" {

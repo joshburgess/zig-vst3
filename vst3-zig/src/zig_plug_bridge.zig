@@ -6,6 +6,7 @@ const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const ivstevents = @import("pluginterfaces/vst/ivstevents.zig");
 const ivstmidicontrollers = @import("pluginterfaces/vst/ivstmidicontrollers.zig");
 const ivstparameterchanges = @import("pluginterfaces/vst/ivstparameterchanges.zig");
+const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const plug = @import("zig-plug-core");
 const audio_processor_algo = @import("pluginterfaces/vst/vstaudioprocessoralgo.zig");
@@ -18,6 +19,7 @@ const vst_stream = @import("vst_stream.zig");
 const max_audio_channels = 64;
 const empty_arrangement: vsttypes.SpeakerArrangement = 0;
 const stereo_arrangement: vsttypes.SpeakerArrangement = 3;
+const test_sample_rate: f64 = 48_000.0;
 
 pub const StereoAudioBuses = struct {
     pub fn busCount(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection) types.int32 {
@@ -1476,8 +1478,10 @@ test "zig-plug bridge builds process context from VST3 buffers" {
         .numChannels = 2,
         .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
     };
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
         .numSamples = 2,
+        .processContext = &process_context,
     };
 
     const context = try makeProcessContext(f32, input, output, &data, .{}, .{}, null);
@@ -1491,9 +1495,32 @@ test "zig-plug bridge builds process context from VST3 buffers" {
 test "zig-plug bridge rejects negative process channel counts" {
     const input = ivstaudioprocessor.AudioBusBuffers{ .numChannels = -1 };
     const output = ivstaudioprocessor.AudioBusBuffers{ .numChannels = 1 };
-    const data = ivstaudioprocessor.ProcessData{ .numSamples = 2 };
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    const data = ivstaudioprocessor.ProcessData{ .numSamples = 2, .processContext = &process_context };
 
     try std.testing.expectError(error.InvalidChannelCount, makeProcessContext(f32, input, output, &data, .{}, .{}, null));
+}
+
+test "zig-plug bridge rejects invalid process context sample rates" {
+    var in_left = [_]f32{ 1.0, 2.0 };
+    var out_left = [_]f32{ 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f32{&in_left};
+    var output_channel_ptrs = [_][*]f32{&out_left};
+    const input = ivstaudioprocessor.AudioBusBuffers{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+    };
+    const output = ivstaudioprocessor.AudioBusBuffers{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+    };
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 0.0 };
+    const data = ivstaudioprocessor.ProcessData{
+        .numSamples = 2,
+        .processContext = &process_context,
+    };
+
+    try std.testing.expectError(error.InvalidSampleRate, makeProcessContext(f32, input, output, &data, .{}, .{}, null));
 }
 
 test "zig-plug bridge builds process context from main VST3 buses" {
@@ -1511,12 +1538,14 @@ test "zig-plug bridge builds process context from main VST3 buses" {
         .numChannels = 2,
         .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
     }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
         .numInputs = 1,
         .numOutputs = 1,
         .inputs = &inputs,
         .outputs = &outputs,
         .numSamples = 2,
+        .processContext = &process_context,
     };
 
     const context = try makeMainAudioProcessContext(f32, &data, .{}, .{}, null);
@@ -1526,10 +1555,12 @@ test "zig-plug bridge builds process context from main VST3 buses" {
 }
 
 test "zig-plug bridge rejects missing main process buses" {
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
         .numInputs = 0,
         .numOutputs = 1,
         .numSamples = 2,
+        .processContext = &process_context,
     };
 
     try std.testing.expectError(error.MissingMainAudioBus, makeMainAudioProcessContext(f32, &data, .{}, .{}, null));
@@ -1560,6 +1591,7 @@ test "zig-plug bridge dispatches main audio processing by sample size" {
         .numChannels = 1,
         .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
     }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
         .numInputs = 1,
         .numOutputs = 1,
@@ -1567,6 +1599,7 @@ test "zig-plug bridge dispatches main audio processing by sample size" {
         .outputs = &outputs,
         .numSamples = 2,
         .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .processContext = &process_context,
     };
 
     try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, null, Doubler{}));
@@ -1593,6 +1626,7 @@ test "zig-plug bridge exposes output event writer to processors" {
         .numChannels = 1,
         .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
     }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
         .numInputs = 1,
         .numOutputs = 1,
@@ -1600,6 +1634,7 @@ test "zig-plug bridge exposes output event writer to processors" {
         .outputs = &outputs,
         .numSamples = 2,
         .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .processContext = &process_context,
     };
     var event_storage: [1]plug.process.Event = undefined;
     var writer = plug.process.EventWriter.init(&event_storage, 2);
