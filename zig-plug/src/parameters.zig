@@ -806,6 +806,8 @@ pub fn ParameterValues(comptime Params: type) type {
 
         pub fn applyChanges(self: *Self, set: *const Set, changes: process.ParameterChanges) void {
             for (changes.items) |change| {
+                if (!(set.canAutomateById(change.id) orelse false)) continue;
+                if (set.isReadOnlyById(change.id) orelse true) continue;
                 _ = self.storeById(set, change.id, change.normalized);
             }
         }
@@ -1927,6 +1929,8 @@ test "parameter values apply reflected parameter changes by id" {
     const Params = struct {
         gain: FloatParam = FloatParam.init(0, "Gain", 0.0, 1.0, 0.25),
         mix: FloatParam = FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
+        manual: FloatParam = .{ .id = 2, .name = "Manual", .min = 0.0, .max = 1.0, .default = 0.25, .can_automate = false },
+        meter: FloatParam = .{ .id = 3, .name = "Meter", .min = 0.0, .max = 1.0, .default = 0.5, .is_read_only = true },
     };
     const Set = ParameterSet(Params);
     const Values = ParameterValues(Params);
@@ -1936,6 +1940,8 @@ test "parameter values apply reflected parameter changes by id" {
         .{ .id = 0, .sample_offset = 0, .normalized = 0.75 },
         .{ .id = 99, .sample_offset = 0, .normalized = 0.25 },
         .{ .id = 1, .sample_offset = 4, .normalized = 1.0 },
+        .{ .id = 2, .sample_offset = 5, .normalized = 1.0 },
+        .{ .id = 3, .sample_offset = 6, .normalized = 1.0 },
     };
     const changes = try process.ParameterChanges.init(&items, 8);
 
@@ -1943,6 +1949,8 @@ test "parameter values apply reflected parameter changes by id" {
 
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
     try std.testing.expectEqual(@as(?f64, 1.0), values.loadById(&set, 1));
+    try std.testing.expectEqual(@as(?f64, 0.25), values.loadById(&set, 2));
+    try std.testing.expectEqual(@as(?f64, 0.5), values.loadById(&set, 3));
 }
 
 test "float parameter round-trips normalized values" {
