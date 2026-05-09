@@ -782,6 +782,7 @@ fn parameterDescriptorError(param: anytype) ?anyerror {
             return error.InvalidParameterRange;
         }
         if (!std.math.isFinite(param.default)) return error.InvalidParameterDefault;
+        if (param.default < param.min or param.default > param.max) return error.InvalidParameterDefault;
     } else if (Param == IntParam) {
         if (param.max <= param.min) return error.InvalidParameterRange;
         if (param.default < param.min or param.default > param.max) return error.InvalidParameterDefault;
@@ -1745,6 +1746,9 @@ test "parameter set validates descriptor names and ranges" {
     const InvalidFloatDefaultParams = struct {
         gain: FloatParam = .{ .id = 0, .name = "Gain", .min = 0.0, .max = 1.0, .default = std.math.inf(f64) },
     };
+    const OutOfRangeFloatDefaultParams = struct {
+        gain: FloatParam = .{ .id = 0, .name = "Gain", .min = 0.0, .max = 1.0, .default = 2.0 },
+    };
     const InvalidIntParams = struct {
         voices: IntParam = .{ .id = 0, .name = "Voices", .min = 4, .max = 4, .default = 4 },
     };
@@ -1755,6 +1759,7 @@ test "parameter set validates descriptor names and ranges" {
     const empty_name_set = ParameterSet(EmptyNameParams).init(.{});
     const invalid_float_set = ParameterSet(InvalidFloatParams).init(.{});
     const invalid_float_default_set = ParameterSet(InvalidFloatDefaultParams).init(.{});
+    const out_of_range_float_default_set = ParameterSet(OutOfRangeFloatDefaultParams).init(.{});
     const invalid_int_set = ParameterSet(InvalidIntParams).init(.{});
     const invalid_int_default_set = ParameterSet(InvalidIntDefaultParams).init(.{});
 
@@ -1762,6 +1767,7 @@ test "parameter set validates descriptor names and ranges" {
     try std.testing.expectError(error.EmptyParameterName, empty_name_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterRange, invalid_float_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterDefault, invalid_float_default_set.validateDescriptors());
+    try std.testing.expectError(error.InvalidParameterDefault, out_of_range_float_default_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterRange, invalid_int_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterDefault, invalid_int_default_set.validateDescriptors());
 }
