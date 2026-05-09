@@ -26,6 +26,4 @@ Malformed state headers, unsupported format versions, truncated entries, denorma
 - `state.readParameterStateWithMigrations(Params, set, values, reader, migrations)`: reads entries and maps renamed parameter ids before lookup.
 - `state.migratedParameterId(id, migrations)`: resolves a saved parameter id through the same old-id to new-id migration list used by state loading.
 
-## Open Work
-
-- Decide whether programs should capture parameter snapshots or remain metadata-only.
+Program lists can remain metadata-only, or each program can carry a normalized parameter snapshot through `plug.units.ProgramParameter`. `PluginInstance.applyProgram` and `applyProgramByName` validate the complete snapshot and then apply matching parameter ids.

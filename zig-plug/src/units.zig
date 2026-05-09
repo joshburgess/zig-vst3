@@ -21,7 +21,13 @@ pub const Unit = struct {
 
 pub const Program = struct {
     name: []const u8,
+    parameters: []const ProgramParameter = &.{},
     info: []const ProgramInfo = &.{},
+};
+
+pub const ProgramParameter = struct {
+    parameter_id: u32,
+    normalized: f64,
 };
 
 pub const ProgramInfo = struct {
@@ -118,10 +124,35 @@ pub fn UnitSet(comptime config: Config) type {
             return list.programs[program_index].name;
         }
 
+        pub fn program(self: Self, list_id: i32, program_index: usize) ?Program {
+            const list = self.programListById(list_id) orelse return null;
+            if (program_index >= list.programs.len) return null;
+            return list.programs[program_index];
+        }
+
         pub fn programIndexOfName(self: Self, list_id: i32, name: []const u8) ?usize {
             const list = self.programListById(list_id) orelse return null;
-            for (list.programs, 0..) |program, index| {
-                if (std.mem.eql(u8, program.name, name)) return index;
+            for (list.programs, 0..) |item, index| {
+                if (std.mem.eql(u8, item.name, name)) return index;
+            }
+            return null;
+        }
+
+        pub fn programParameterCount(self: Self, list_id: i32, program_index: usize) ?usize {
+            const item = self.program(list_id, program_index) orelse return null;
+            return item.parameters.len;
+        }
+
+        pub fn programParameter(self: Self, list_id: i32, program_index: usize, parameter_index: usize) ?ProgramParameter {
+            const item = self.program(list_id, program_index) orelse return null;
+            if (parameter_index >= item.parameters.len) return null;
+            return item.parameters[parameter_index];
+        }
+
+        pub fn programParameterById(self: Self, list_id: i32, program_index: usize, parameter_id: u32) ?ProgramParameter {
+            const item = self.program(list_id, program_index) orelse return null;
+            for (item.parameters) |parameter| {
+                if (parameter.parameter_id == parameter_id) return parameter;
             }
             return null;
         }
@@ -166,8 +197,15 @@ test "default unit set exposes root unit only" {
 
 test "unit set exposes custom units and programs" {
     const programs = [_]Program{
-        .{ .name = "Clean", .info = &.{.{ .key = "category", .value = "Clean" }} },
-        .{ .name = "Drive" },
+        .{
+            .name = "Clean",
+            .parameters = &.{.{ .parameter_id = 3, .normalized = 0.25 }},
+            .info = &.{.{ .key = "category", .value = "Clean" }},
+        },
+        .{
+            .name = "Drive",
+            .parameters = &.{.{ .parameter_id = 3, .normalized = 0.75 }},
+        },
     };
     const Set = UnitSet(.{
         .units = &.{
@@ -197,8 +235,15 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?usize, 2), set.programCount(10));
     try std.testing.expectEqualStrings("Drive", set.programName(10, 1).?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programName(10, 2));
+    try std.testing.expectEqualStrings("Drive", set.program(10, 1).?.name);
     try std.testing.expectEqual(@as(?usize, 1), set.programIndexOfName(10, "Drive"));
     try std.testing.expectEqual(@as(?usize, null), set.programIndexOfName(10, "Missing"));
+    try std.testing.expectEqual(@as(?usize, 1), set.programParameterCount(10, 1));
+    try std.testing.expectEqual(@as(u32, 3), set.programParameter(10, 1, 0).?.parameter_id);
+    try std.testing.expectEqual(@as(f64, 0.75), set.programParameter(10, 1, 0).?.normalized);
+    try std.testing.expectEqual(@as(f64, 0.25), set.programParameterById(10, 0, 3).?.normalized);
+    try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameter(10, 1, 1));
+    try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterById(10, 1, 99));
     try std.testing.expectEqualStrings("Clean", set.programInfo(10, 0, "category").?);
     try std.testing.expectEqualStrings("Clean", set.programInfoByName(10, "Clean", "category").?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programInfo(10, 0, "missing"));

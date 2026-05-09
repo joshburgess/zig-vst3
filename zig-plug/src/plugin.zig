@@ -149,8 +149,24 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programName(list_id, program_index);
         }
 
+        pub fn program(self: *const Self, list_id: i32, program_index: usize) ?units_api.Program {
+            return self.spec.units.program(list_id, program_index);
+        }
+
         pub fn programIndexOfName(self: *const Self, list_id: i32, name: []const u8) ?usize {
             return self.spec.units.programIndexOfName(list_id, name);
+        }
+
+        pub fn programParameterCount(self: *const Self, list_id: i32, program_index: usize) ?usize {
+            return self.spec.units.programParameterCount(list_id, program_index);
+        }
+
+        pub fn programParameter(self: *const Self, list_id: i32, program_index: usize, parameter_index: usize) ?units_api.ProgramParameter {
+            return self.spec.units.programParameter(list_id, program_index, parameter_index);
+        }
+
+        pub fn programParameterById(self: *const Self, list_id: i32, program_index: usize, parameter_id: u32) ?units_api.ProgramParameter {
+            return self.spec.units.programParameterById(list_id, program_index, parameter_id);
         }
 
         pub fn programInfo(self: *const Self, list_id: i32, program_index: usize, key: []const u8) ?[]const u8 {
@@ -159,6 +175,24 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn programInfoByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) ?[]const u8 {
             return self.spec.units.programInfoByName(list_id, program_name, key);
+        }
+
+        pub fn applyProgram(self: *Self, list_id: i32, program_index: usize) !bool {
+            const item = self.program(list_id, program_index) orelse return false;
+            for (item.parameters) |parameter| {
+                if (parameter.normalized < 0.0 or parameter.normalized > 1.0 or std.math.isNan(parameter.normalized)) {
+                    return error.ProgramParameterOutsideNormalizedRange;
+                }
+            }
+            for (item.parameters) |parameter| {
+                _ = self.storeParameterById(parameter.parameter_id, parameter.normalized);
+            }
+            return true;
+        }
+
+        pub fn applyProgramByName(self: *Self, list_id: i32, program_name: []const u8) !bool {
+            const index = self.programIndexOfName(list_id, program_name) orelse return false;
+            return self.applyProgram(list_id, index);
         }
 
         pub fn parameterView(self: *const Self) parameters.ParameterView(Plugin.Params) {
@@ -589,8 +623,15 @@ test "plugin spec exposes default root unit metadata" {
 
 test "plugin instance exposes custom unit and program metadata" {
     const programs = [_]units_api.Program{
-        .{ .name = "Clean", .info = &.{.{ .key = "category", .value = "Clean" }} },
-        .{ .name = "Lead" },
+        .{
+            .name = "Clean",
+            .parameters = &.{.{ .parameter_id = 1, .normalized = 0.25 }},
+            .info = &.{.{ .key = "category", .value = "Clean" }},
+        },
+        .{
+            .name = "Lead",
+            .parameters = &.{.{ .parameter_id = 1, .normalized = 0.75 }},
+        },
     };
     const Synth = struct {
         pub const name = "Unit Synth";
@@ -620,9 +661,71 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqualStrings("Voice Programs", instance.programListForUnit(1).?.name);
     try std.testing.expectEqual(@as(?usize, 2), instance.programCount(7));
     try std.testing.expectEqualStrings("Lead", instance.programName(7, 1).?);
+    try std.testing.expectEqualStrings("Lead", instance.program(7, 1).?.name);
     try std.testing.expectEqual(@as(?usize, 1), instance.programIndexOfName(7, "Lead"));
+    try std.testing.expectEqual(@as(?usize, 1), instance.programParameterCount(7, 1));
+    try std.testing.expectEqual(@as(f64, 0.75), instance.programParameterById(7, 1, 1).?.normalized);
     try std.testing.expectEqualStrings("Clean", instance.programInfo(7, 0, "category").?);
-    try std.testing.expectEqualStrings("Clean", instance.programInfoByName(7, "Init", "category").?);
+    try std.testing.expectEqualStrings("Clean", instance.programInfoByName(7, "Clean", "category").?);
+}
+
+test "plugin instance applies program parameter snapshots" {
+    const programs = [_]units_api.Program{
+        .{
+            .name = "Low",
+            .parameters = &.{.{ .parameter_id = 1, .normalized = 0.25 }},
+        },
+        .{
+            .name = "High",
+            .parameters = &.{.{ .parameter_id = 1, .normalized = 0.75 }},
+        },
+    };
+    const Gain = struct {
+        pub const name = "Program Gain";
+        pub const vendor = "zig-vst3";
+        pub const units = units_api.Config{
+            .program_lists = &.{.{ .id = 7, .name = "Programs", .programs = &programs }},
+        };
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
+        };
+    };
+    var instance = try PluginInstance(Gain).init(std.testing.allocator, .{});
+
+    try std.testing.expect(try instance.applyProgram(7, 0));
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
+    try std.testing.expect(try instance.applyProgramByName(7, "High"));
+    try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
+    try std.testing.expect(!try instance.applyProgram(7, 99));
+    try std.testing.expect(!try instance.applyProgramByName(7, "Missing"));
+}
+
+test "plugin instance rejects invalid program parameter snapshots without partial updates" {
+    const programs = [_]units_api.Program{
+        .{
+            .name = "Invalid",
+            .parameters = &.{
+                .{ .parameter_id = 1, .normalized = 0.25 },
+                .{ .parameter_id = 2, .normalized = 1.5 },
+            },
+        },
+    };
+    const Gain = struct {
+        pub const name = "Invalid Program Gain";
+        pub const vendor = "zig-vst3";
+        pub const units = units_api.Config{
+            .program_lists = &.{.{ .id = 7, .name = "Programs", .programs = &programs }},
+        };
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
+            mix: parameters.FloatParam = parameters.FloatParam.init(2, "Mix", 0.0, 1.0, 0.5),
+        };
+    };
+    var instance = try PluginInstance(Gain).init(std.testing.allocator, .{});
+
+    try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, instance.applyProgram(7, 0));
+    try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("mix"));
 }
 
 test "plugin spec detects lifecycle declarations" {
