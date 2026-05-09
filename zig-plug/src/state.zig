@@ -17,7 +17,12 @@ pub fn encodedSize(comptime Params: type) usize {
 }
 
 pub fn encodedSizeForCount(count: usize) usize {
-    return encoded_header_size + count * encoded_entry_size;
+    return encodedSizeForCountChecked(count) catch std.math.maxInt(usize);
+}
+
+pub fn encodedSizeForCountChecked(count: usize) !usize {
+    const entries_size = try std.math.mul(usize, count, encoded_entry_size);
+    return std.math.add(usize, encoded_header_size, entries_size);
 }
 
 fn assertEncodableParameterCount(comptime Params: type) void {
@@ -161,7 +166,10 @@ test "parameter state round-trips normalized values" {
     try std.testing.expectEqual(@as(usize, 12), encoded_header_size);
     try std.testing.expectEqual(@as(usize, 12), encoded_entry_size);
     try std.testing.expectEqual(@as(usize, 36), encodedSizeForCount(2));
+    try std.testing.expectEqual(@as(usize, 36), try encodedSizeForCountChecked(2));
     try std.testing.expectEqual(@as(usize, 36), encodedSize(Params));
+    try std.testing.expectError(error.Overflow, encodedSizeForCountChecked(std.math.maxInt(usize)));
+    try std.testing.expectEqual(std.math.maxInt(usize), encodedSizeForCount(std.math.maxInt(usize)));
     try std.testing.expect(values.storeField(&set, "gain", 0.25));
     try std.testing.expect(values.storeField(&set, "mix", 0.75));
 
