@@ -12,6 +12,20 @@ pub const ParameterSegment = struct {
     normalized: f64,
 };
 
+pub const ParameterSegmentIterator = struct {
+    changes: ParameterChanges,
+    id: u32,
+    frame_count: usize,
+    default: f64,
+    next_start: usize = 0,
+
+    pub fn next(self: *ParameterSegmentIterator) ?ParameterSegment {
+        const segment = self.changes.segmentAt(self.id, self.next_start, self.frame_count, self.default) orelse return null;
+        self.next_start = segment.end_offset;
+        return segment;
+    }
+};
+
 pub const ParameterChanges = struct {
     items: []const ParameterChange = &.{},
 
@@ -142,6 +156,15 @@ pub const ParameterChanges = struct {
             .start_offset = start_offset,
             .end_offset = @min(next_offset, frame_count),
             .normalized = self.normalizedAtOrBeforeOr(id, start_offset, default),
+        };
+    }
+
+    pub fn segments(self: ParameterChanges, id: u32, frame_count: usize, default: f64) ParameterSegmentIterator {
+        return .{
+            .changes = self,
+            .id = id,
+            .frame_count = frame_count,
+            .default = default,
         };
     }
 };
@@ -647,6 +670,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.segmentAt(id, start_offset, self.frameCount(), default);
         }
 
+        pub fn parameterSegments(self: @This(), id: u32, default: f64) ParameterSegmentIterator {
+            return self.parameter_changes.segments(id, self.frameCount(), default);
+        }
+
         pub fn inputEvents(self: @This()) Events {
             return self.events;
         }
@@ -908,6 +935,10 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?usize, null), context.nextParameterChangeOffsetForId(2, 0));
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 0.25 }, context.parameterSegmentAt(1, 0, 0.25).?);
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 2, .normalized = 0.5 }, context.parameterSegmentAt(1, 1, 0.25).?);
+    var parameter_segments = context.parameterSegments(1, 0.25);
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 0.25 }, parameter_segments.next().?);
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 2, .normalized = 0.5 }, parameter_segments.next().?);
+    try std.testing.expectEqual(@as(?ParameterSegment, null), parameter_segments.next());
     try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.inputEventCount());
     try std.testing.expect(!context.inputEventsEmpty());
@@ -1022,6 +1053,21 @@ test "parameter changes query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(?f64, 1.0), view.latestNormalizedAtOrBefore(7, 5));
     try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffsetForId(7, 1));
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 5, .normalized = 0.25 }, view.segmentAt(7, 1, 8, 0.0).?);
+}
+
+test "parameter changes iterate stable automation segments without allocation" {
+    const changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 5, .normalized = 0.75 },
+        .{ .id = 7, .sample_offset = 1, .normalized = 0.25 },
+        .{ .id = 8, .sample_offset = 2, .normalized = 0.5 },
+    };
+    const view = try ParameterChanges.init(&changes, 8);
+    var iterator = view.segments(7, 8, 0.0);
+
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 0.0 }, iterator.next().?);
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 5, .normalized = 0.25 }, iterator.next().?);
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 5, .end_offset = 8, .normalized = 0.75 }, iterator.next().?);
+    try std.testing.expectEqual(@as(?ParameterSegment, null), iterator.next());
 }
 
 test "parameter changes reject values outside the process block" {
