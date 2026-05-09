@@ -48,6 +48,7 @@ pub fn PluginSpec(comptime Plugin: type) type {
 
         pub fn init(params: Params) Self {
             const set = ParameterSet.init(params);
+            set.validateUniqueIds() catch @panic("duplicate parameter id");
             return .{
                 .parameter_set = set,
                 .values = ParameterValues.init(&set),
