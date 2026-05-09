@@ -230,13 +230,19 @@ pub const IntParam = struct {
 
     pub fn normalize(self: IntParam, plain: i64) f64 {
         const clamped = std.math.clamp(plain, self.min, self.max);
-        return @as(f64, @floatFromInt(clamped - self.min)) / @as(f64, @floatFromInt(self.max - self.min));
+        const range = @as(f64, @floatFromInt(self.max)) - @as(f64, @floatFromInt(self.min));
+        const offset = @as(f64, @floatFromInt(clamped)) - @as(f64, @floatFromInt(self.min));
+        return offset / range;
     }
 
     pub fn denormalize(self: IntParam, normalized: f64) i64 {
         const clamped = clampNormalized(normalized);
-        const range = @as(f64, @floatFromInt(self.max - self.min));
-        return self.min + @as(i64, @intFromFloat(@round(clamped * range)));
+        const min = @as(f64, @floatFromInt(self.min));
+        const max = @as(f64, @floatFromInt(self.max));
+        const plain = @round(min + clamped * (max - min));
+        if (plain <= min) return self.min;
+        if (plain >= max) return self.max;
+        return @intFromFloat(plain);
     }
 
     pub fn defaultNormalized(self: IntParam) f64 {
@@ -419,6 +425,26 @@ pub fn ParameterSet(comptime Params: type) type {
             if (self.hasDuplicateIds()) return error.DuplicateParameterId;
         }
 
+        pub fn duplicateName(self: *const Self) ?[]const u8 {
+            inline for (fields, 0..) |left_field, left_index| {
+                const left_name = @field(self.params, left_field.name).name;
+                inline for (fields, 0..) |right_field, right_index| {
+                    if (right_index > left_index and std.mem.eql(u8, @field(self.params, right_field.name).name, left_name)) {
+                        return left_name;
+                    }
+                }
+            }
+            return null;
+        }
+
+        pub fn hasDuplicateNames(self: *const Self) bool {
+            return self.duplicateName() != null;
+        }
+
+        pub fn validateUniqueNames(self: *const Self) !void {
+            if (self.hasDuplicateNames()) return error.DuplicateParameterName;
+        }
+
         pub fn firstDescriptorError(self: *const Self) ?anyerror {
             inline for (fields) |field| {
                 if (parameterDescriptorError(@field(self.params, field.name))) |err| return err;
@@ -432,6 +458,7 @@ pub fn ParameterSet(comptime Params: type) type {
 
         pub fn validate(self: *const Self) !void {
             try self.validateUniqueIds();
+            try self.validateUniqueNames();
             try self.validateDescriptors();
         }
 
@@ -715,7 +742,10 @@ fn parameterStepCount(param: anytype) i32 {
     const Param = @TypeOf(param);
     if (Param == FloatParam) return 0;
     if (Param == BoolParam) return 1;
-    if (Param == IntParam) return std.math.cast(i32, param.max - param.min) orelse std.math.maxInt(i32);
+    if (Param == IntParam) {
+        const range = std.math.sub(i64, param.max, param.min) catch return std.math.maxInt(i32);
+        return std.math.cast(i32, range) orelse std.math.maxInt(i32);
+    }
 
     const info = @typeInfo(Param);
     if (info == .@"struct" and @hasDecl(Param, "denormalize")) {
@@ -1504,6 +1534,17 @@ test "int parameter clamps and rounds normalized values" {
     try std.testing.expectEqual(@as(f64, 1.0), param.normalizedFromPlain(1.0e30));
 }
 
+test "int parameter handles full-width ranges without overflow" {
+    const param = IntParam.init(9, "Wide", std.math.minInt(i64), std.math.maxInt(i64), 0);
+
+    try std.testing.expectEqual(@as(f64, 0.0), param.normalize(std.math.minInt(i64)));
+    try std.testing.expectEqual(@as(f64, 1.0), param.normalize(std.math.maxInt(i64)));
+    try std.testing.expectEqual(std.math.minInt(i64), param.denormalize(0.0));
+    try std.testing.expectEqual(std.math.maxInt(i64), param.denormalize(1.0));
+    try std.testing.expect(param.defaultNormalized() > 0.49);
+    try std.testing.expect(param.defaultNormalized() < 0.51);
+}
+
 test "bool parameter maps around midpoint" {
     const bypass = BoolParam{ .id = 3, .name = "Bypass", .default = true, .is_bypass = true };
 
@@ -1664,6 +1705,20 @@ test "parameter set accepts unique ids" {
     try set.validateUniqueIds();
 }
 
+test "parameter set reports duplicate names" {
+    const Params = struct {
+        gain: FloatParam = .{ .id = 0, .name = "Level", .min = 0.0, .max = 1.0, .default = 0.5 },
+        output: FloatParam = .{ .id = 1, .name = "Level", .min = 0.0, .max = 1.0, .default = 0.25 },
+    };
+    const Set = ParameterSet(Params);
+    const set = Set.init(.{});
+
+    try std.testing.expectEqualStrings("Level", set.duplicateName().?);
+    try std.testing.expect(set.hasDuplicateNames());
+    try std.testing.expectError(error.DuplicateParameterName, set.validateUniqueNames());
+    try std.testing.expectError(error.DuplicateParameterName, set.validate());
+}
+
 test "parameter set validates descriptor names and ranges" {
     const EmptyNameParams = struct {
         gain: FloatParam = .{ .id = 0, .name = "", .min = 0.0, .max = 1.0, .default = 0.5 },
@@ -1699,11 +1754,13 @@ test "parameter set validates complete metadata" {
 test "integer parameter step count saturates to VST limit" {
     const Params = struct {
         huge: IntParam = IntParam.init(0, "Huge", 0, @as(i64, std.math.maxInt(i32)) + 1, 0),
+        full_width: IntParam = IntParam.init(1, "Full Width", std.math.minInt(i64), std.math.maxInt(i64), 0),
     };
     const Set = ParameterSet(Params);
     const set = Set.init(.{});
 
     try std.testing.expectEqual(@as(?i32, std.math.maxInt(i32)), set.stepCount(0));
+    try std.testing.expectEqual(@as(?i32, std.math.maxInt(i32)), set.stepCount(1));
 }
 
 test "parameter values initialize from reflected defaults" {
