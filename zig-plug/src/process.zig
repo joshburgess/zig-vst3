@@ -419,16 +419,32 @@ pub const Event = struct {
             .sample_offset = sample_offset,
         };
     }
+
+    pub fn validate(self: Event, frame_count: usize) !void {
+        if (self.sample_offset >= frame_count) return error.EventOutsideBlock;
+        switch (self.kind) {
+            .note_on, .note_off => try validateUnitEventValue(self.velocity),
+            .midi_cc, .aftertouch, .note_expression_value => try validateUnitEventValue(self.value),
+            .pitch_bend => try validateBipolarEventValue(self.value),
+            .note_expression_int, .note_expression_text, .data, .other => {},
+        }
+    }
 };
+
+fn validateUnitEventValue(value: f32) !void {
+    if (std.math.isNan(value) or value < 0.0 or value > 1.0) return error.EventValueOutsideNormalizedRange;
+}
+
+fn validateBipolarEventValue(value: f32) !void {
+    if (std.math.isNan(value) or value < -1.0 or value > 1.0) return error.EventValueOutsideNormalizedRange;
+}
 
 pub const Events = struct {
     items: []const Event = &.{},
 
     pub fn init(items: []const Event, frame_count: usize) !Events {
         for (items) |item| {
-            if (item.sample_offset >= frame_count) {
-                return error.EventOutsideBlock;
-            }
+            try item.validate(frame_count);
         }
         return .{ .items = items };
     }
@@ -544,7 +560,7 @@ pub const EventWriter = struct {
     }
 
     pub fn append(self: *EventWriter, event: Event) !void {
-        if (event.sample_offset >= self.frame_count) return error.EventOutsideBlock;
+        try event.validate(self.frame_count);
         if (self.count >= self.storage.len) return error.EventStorageFull;
         self.storage[self.count] = event;
         self.count += 1;
@@ -553,7 +569,7 @@ pub const EventWriter = struct {
     pub fn appendAll(self: *EventWriter, source: Events) !void {
         if (source.items.len > self.storage.len - self.count) return error.EventStorageFull;
         for (source.items) |event| {
-            if (event.sample_offset >= self.frame_count) return error.EventOutsideBlock;
+            try event.validate(self.frame_count);
         }
         for (source.items) |event| {
             self.storage[self.count] = event;
@@ -1516,6 +1532,22 @@ test "events reject values outside the process block" {
     try std.testing.expectError(error.EventOutsideBlock, Events.init(&items, 4));
 }
 
+test "events reject invalid normalized values" {
+    const too_loud_note = [_]Event{
+        Event.noteOn(0, 0, 60, 1.5),
+    };
+    const nan_cc = [_]Event{
+        Event.midiCc(0, 0, 1, std.math.nan(f32)),
+    };
+    const wide_bend = [_]Event{
+        Event.pitchBend(0, 0, 1.5),
+    };
+
+    try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&too_loud_note, 4));
+    try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&nan_cc, 4));
+    try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&wide_bend, 4));
+}
+
 test "event writer validates offsets and capacity" {
     var storage: [1]Event = undefined;
     var writer = EventWriter.init(&storage, 4);
@@ -1560,6 +1592,7 @@ test "event writer validates offsets and capacity" {
     var empty_storage: [1]Event = undefined;
     var empty_writer = EventWriter.init(&empty_storage, 4);
     try std.testing.expectError(error.EventOutsideBlock, empty_writer.append(Event.noteOn(4, 0, 60, 1.0)));
+    try std.testing.expectError(error.EventValueOutsideNormalizedRange, empty_writer.append(Event.noteOn(0, 0, 60, -0.25)));
 }
 
 test "event writer appends event views atomically" {
@@ -1605,6 +1638,10 @@ test "event writer appends event views atomically" {
     var outside_storage: [1]Event = undefined;
     var outside_writer = EventWriter.init(&outside_storage, 4);
     try std.testing.expectError(error.EventOutsideBlock, outside_writer.appendAll(.{ .items = &outside }));
+    try std.testing.expectEqual(@as(usize, 0), outside_writer.eventCount());
+
+    const invalid = [_]Event{Event.midiCc(0, 0, 1, 2.0)};
+    try std.testing.expectError(error.EventValueOutsideNormalizedRange, outside_writer.appendAll(.{ .items = &invalid }));
     try std.testing.expectEqual(@as(usize, 0), outside_writer.eventCount());
 }
 
