@@ -182,6 +182,36 @@ pub const EventKind = enum {
     other,
 };
 
+pub const EventKindIterator = struct {
+    events: Events,
+    kind: EventKind,
+    last_offset: ?usize = null,
+    last_index: usize = 0,
+
+    pub fn next(self: *EventKindIterator) ?Event {
+        var result: ?Event = null;
+        var result_index: usize = 0;
+        for (self.events.items, 0..) |item, index| {
+            if (item.kind != self.kind) continue;
+            if (self.last_offset) |offset| {
+                if (item.sample_offset < offset) continue;
+                if (item.sample_offset == offset and index <= self.last_index) continue;
+            }
+            if (result == null or item.sample_offset < result.?.sample_offset or
+                (item.sample_offset == result.?.sample_offset and index < result_index))
+            {
+                result = item;
+                result_index = index;
+            }
+        }
+        if (result) |item| {
+            self.last_offset = item.sample_offset;
+            self.last_index = result_index;
+        }
+        return result;
+    }
+};
+
 pub const Event = struct {
     kind: EventKind,
     bus_index: i32,
@@ -396,6 +426,10 @@ pub const Events = struct {
             if (result == null or item.sample_offset < result.?) result = item.sample_offset;
         }
         return result;
+    }
+
+    pub fn ofKind(self: Events, kind: EventKind) EventKindIterator {
+        return .{ .events = self, .kind = kind };
     }
 };
 
@@ -690,6 +724,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events;
         }
 
+        pub fn inputEventsOfKind(self: @This(), kind: EventKind) EventKindIterator {
+            return self.events.ofKind(kind);
+        }
+
         pub fn inputEventCount(self: @This()) usize {
             return self.events.eventCount();
         }
@@ -971,6 +1009,9 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffset(1));
     try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffsetForKind(.note_on, 0));
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffsetForKind(.note_off, 0));
+    var note_events = context.inputEventsOfKind(.note_on);
+    try std.testing.expectEqual(@as(i16, 60), note_events.next().?.pitch);
+    try std.testing.expectEqual(@as(?Event, null), note_events.next());
     try std.testing.expect(context.hasOutputEventWriter());
 }
 
@@ -1160,6 +1201,11 @@ test "events query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffset(3));
     try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffsetForKind(.note_on, 1));
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForKind(.note_off, 3));
+    var note_ons = view.ofKind(.note_on);
+    try std.testing.expectEqual(@as(i16, 60), note_ons.next().?.pitch);
+    try std.testing.expectEqual(@as(i16, 67), note_ons.next().?.pitch);
+    try std.testing.expectEqual(@as(i16, 72), note_ons.next().?.pitch);
+    try std.testing.expectEqual(@as(?Event, null), note_ons.next());
 }
 
 test "event constructors can target non-main buses" {
