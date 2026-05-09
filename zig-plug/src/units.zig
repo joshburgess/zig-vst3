@@ -231,6 +231,9 @@ pub fn UnitSet(comptime config: Config) type {
                         }
                     }
                     for (item.parameters, 0..) |parameter, parameter_index| {
+                        if (parameter.normalized < 0.0 or parameter.normalized > 1.0 or std.math.isNan(parameter.normalized)) {
+                            return error.ProgramParameterOutsideNormalizedRange;
+                        }
                         for (item.parameters, 0..) |other, other_index| {
                             if (other_index > parameter_index and other.parameter_id == parameter.parameter_id) {
                                 return error.DuplicateProgramParameter;
@@ -378,6 +381,12 @@ test "unit set validates ids names and links" {
     const DuplicateProgramParameters = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .parameters = &.{ .{ .parameter_id = 1, .normalized = 0.25 }, .{ .parameter_id = 1, .normalized = 0.75 } } }} }},
     });
+    const InvalidProgramParameter = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .parameters = &.{.{ .parameter_id = 1, .normalized = 1.5 }} }} }},
+    });
+    const NanProgramParameter = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .parameters = &.{.{ .parameter_id = 1, .normalized = std.math.nan(f64) }} }} }},
+    });
     const EmptyProgramInfoKey = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .info = &.{.{ .key = "", .value = "x" }} }} }},
     });
@@ -396,6 +405,8 @@ test "unit set validates ids names and links" {
     try std.testing.expectError(error.EmptyProgramName, (EmptyProgramName{}).validate());
     try std.testing.expectError(error.DuplicateProgramName, (DuplicateProgramNames{}).validate());
     try std.testing.expectError(error.DuplicateProgramParameter, (DuplicateProgramParameters{}).validate());
+    try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, (InvalidProgramParameter{}).validate());
+    try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, (NanProgramParameter{}).validate());
     try std.testing.expectError(error.EmptyProgramInfoKey, (EmptyProgramInfoKey{}).validate());
     try std.testing.expectError(error.DuplicateProgramInfoKey, (DuplicateProgramInfoKeys{}).validate());
 }
