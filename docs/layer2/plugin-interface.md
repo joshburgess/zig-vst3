@@ -61,7 +61,7 @@ Parameter helpers:
 - `ParameterValues.view(set)` and `PluginInstance.parameterView()` bind descriptors and values into a `ParameterView`.
 - `ParameterValues.editor(set)` and `PluginInstance.parameterEditor()` bind descriptors and mutable values into a `ParameterEditor`.
 - `ParameterValues.applyChangesCount` and `PluginInstance.applyParameterChangesCount` apply process changes and return the number accepted by reflected metadata. Unknown, non-automatable, and read-only parameters are ignored.
-- `ProcessContext.parameterChanges`, `parameterChangeCount`, `parameterChangesEmpty`, first/latest/next parameter-change offsets, per-id next offsets, `latestParameterChange`, `firstParameterChange`, `countParameterChanges`, `hasParameterChange`, `latestParameterNormalized`, `firstParameterNormalized`, defaulted normalized reads, `latestParameterChangeAtOrBefore`, `latestParameterNormalizedAtOrBefore`, `parameterNormalizedAtOrBeforeOr`, `parameterSegmentAt`, `parameterSegments`, `parameterBlockSegments`, and `processBlockSegments` expose common process-time reads and no-allocation stable automation ranges.
+- `ProcessContext.parameterChanges`, `parameterChangeCount`, `parameterChangesEmpty`, first/latest/next parameter-change offsets, per-id next offsets, `latestParameterChange`, `firstParameterChange`, `countParameterChanges`, `hasParameterChange`, `latestParameterNormalized`, `firstParameterNormalized`, clamped defaulted normalized reads, `latestParameterChangeAtOrBefore`, `latestParameterNormalizedAtOrBefore`, `parameterNormalizedAtOrBeforeOr`, `parameterSegmentAt`, `parameterSegments`, `parameterBlockSegments`, and `processBlockSegments` expose common process-time reads and no-allocation stable automation ranges.
 
 Event helpers:
 
