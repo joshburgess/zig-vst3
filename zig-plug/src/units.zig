@@ -61,6 +61,24 @@ pub fn UnitSet(comptime config: Config) type {
             return program_list_count;
         }
 
+        pub fn duplicateUnitId(_: Self) ?i32 {
+            for (config.units, 0..) |left, left_index| {
+                for (config.units, 0..) |right, right_index| {
+                    if (right_index > left_index and right.id == left.id) return left.id;
+                }
+            }
+            return null;
+        }
+
+        pub fn duplicateProgramListId(_: Self) ?i32 {
+            for (config.program_lists, 0..) |left, left_index| {
+                for (config.program_lists, 0..) |right, right_index| {
+                    if (right_index > left_index and right.id == left.id) return left.id;
+                }
+            }
+            return null;
+        }
+
         pub fn unit(_: Self, index: usize) ?Unit {
             if (index >= config.units.len) return null;
             return config.units[index];
@@ -174,6 +192,39 @@ pub fn UnitSet(comptime config: Config) type {
         pub fn rootUnit(self: Self) Unit {
             return self.unitById(root_unit_id) orelse Unit.root("Root");
         }
+
+        pub fn validateUnits(self: Self) !void {
+            if (config.units.len == 0) return error.MissingRootUnit;
+            if (self.duplicateUnitId() != null) return error.DuplicateUnitId;
+            const root = self.unitById(root_unit_id) orelse return error.MissingRootUnit;
+            if (root.name.len == 0) return error.EmptyUnitName;
+            if (root.parent_id != no_parent_unit_id) return error.InvalidUnitParent;
+            for (config.units) |item| {
+                if (item.name.len == 0) return error.EmptyUnitName;
+                if (item.id != root_unit_id and self.unitById(item.parent_id) == null) return error.InvalidUnitParent;
+                if (item.program_list_id != no_program_list_id and self.programListById(item.program_list_id) == null) {
+                    return error.InvalidUnitProgramList;
+                }
+            }
+        }
+
+        pub fn validateProgramLists(self: Self) !void {
+            if (self.duplicateProgramListId() != null) return error.DuplicateProgramListId;
+            for (config.program_lists) |list| {
+                if (list.name.len == 0) return error.EmptyProgramListName;
+                for (list.programs) |item| {
+                    if (item.name.len == 0) return error.EmptyProgramName;
+                    for (item.info) |info| {
+                        if (info.key.len == 0) return error.EmptyProgramInfoKey;
+                    }
+                }
+            }
+        }
+
+        pub fn validate(self: Self) !void {
+            try self.validateProgramLists();
+            try self.validateUnits();
+        }
     };
 }
 
@@ -248,4 +299,45 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqualStrings("Clean", set.programInfoByName(10, "Clean", "category").?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programInfo(10, 0, "missing"));
     try std.testing.expectEqual(@as(?[]const u8, null), set.programInfoByName(10, "Missing", "category"));
+    try set.validate();
+}
+
+test "unit set validates ids names and links" {
+    const DuplicateUnits = UnitSet(.{
+        .units = &.{ Unit.root("Root"), .{ .id = root_unit_id, .name = "Other" } },
+    });
+    const MissingRoot = UnitSet(.{
+        .units = &.{.{ .id = 1, .name = "Oscillator", .parent_id = root_unit_id }},
+    });
+    const EmptyUnitName = UnitSet(.{
+        .units = &.{Unit.root("")},
+    });
+    const InvalidParent = UnitSet(.{
+        .units = &.{ Unit.root("Root"), .{ .id = 1, .name = "Oscillator", .parent_id = 99 } },
+    });
+    const InvalidProgramListLink = UnitSet(.{
+        .units = &.{ Unit.root("Root"), .{ .id = 1, .name = "Oscillator", .program_list_id = 99 } },
+    });
+    const DuplicateProgramLists = UnitSet(.{
+        .program_lists = &.{ .{ .id = 1, .name = "A" }, .{ .id = 1, .name = "B" } },
+    });
+    const EmptyProgramListName = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "" }},
+    });
+    const EmptyProgramName = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "" }} }},
+    });
+    const EmptyProgramInfoKey = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .info = &.{.{ .key = "", .value = "x" }} }} }},
+    });
+
+    try std.testing.expectError(error.DuplicateUnitId, (DuplicateUnits{}).validate());
+    try std.testing.expectError(error.MissingRootUnit, (MissingRoot{}).validate());
+    try std.testing.expectError(error.EmptyUnitName, (EmptyUnitName{}).validate());
+    try std.testing.expectError(error.InvalidUnitParent, (InvalidParent{}).validate());
+    try std.testing.expectError(error.InvalidUnitProgramList, (InvalidProgramListLink{}).validate());
+    try std.testing.expectError(error.DuplicateProgramListId, (DuplicateProgramLists{}).validate());
+    try std.testing.expectError(error.EmptyProgramListName, (EmptyProgramListName{}).validate());
+    try std.testing.expectError(error.EmptyProgramName, (EmptyProgramName{}).validate());
+    try std.testing.expectError(error.EmptyProgramInfoKey, (EmptyProgramInfoKey{}).validate());
 }

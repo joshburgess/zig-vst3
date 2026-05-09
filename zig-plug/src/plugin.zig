@@ -49,9 +49,12 @@ pub fn PluginSpec(comptime Plugin: type) type {
         pub fn initChecked(params: Params) !Self {
             const set = ParameterSet.init(params);
             try set.validate();
+            const units = Units{};
+            try units.validate();
             return .{
                 .parameter_set = set,
                 .values = ParameterValues.init(&set),
+                .units = units,
             };
         }
 
@@ -698,6 +701,22 @@ test "plugin spec exposes default root unit metadata" {
     try std.testing.expectEqual(@as(usize, 0), spec.units.programListCount());
     try std.testing.expectEqual(units_api.root_unit_id, spec.units.rootUnit().id);
     try std.testing.expectEqualStrings("Root", spec.units.rootUnit().name);
+}
+
+test "plugin spec rejects invalid unit metadata" {
+    const InvalidUnits = struct {
+        pub const name = "Invalid Units";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const units = units_api.Config{
+            .units = &.{
+                units_api.Unit.root("Root"),
+                .{ .id = 1, .name = "Voice", .parent_id = 99 },
+            },
+        };
+    };
+
+    try std.testing.expectError(error.InvalidUnitParent, PluginSpec(InvalidUnits).initChecked(.{}));
 }
 
 test "plugin instance exposes custom unit and program metadata" {
