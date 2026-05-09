@@ -630,6 +630,14 @@ test "plugin spec and instance surface invalid parameter metadata" {
             mix: parameters.FloatParam = .{ .id = 0, .name = "Mix", .min = 0.0, .max = 1.0, .default = 0.25 },
         };
     };
+    const DuplicateName = struct {
+        pub const name = "Duplicate Name";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = .{ .id = 0, .name = "Level", .min = 0.0, .max = 1.0, .default = 0.5 },
+            output: parameters.FloatParam = .{ .id = 1, .name = "Level", .min = 0.0, .max = 1.0, .default = 0.25 },
+        };
+    };
     const Invalid = struct {
         pub const name = "Invalid";
         pub const vendor = "zig-vst3";
@@ -639,6 +647,7 @@ test "plugin spec and instance surface invalid parameter metadata" {
     };
 
     try std.testing.expectError(error.DuplicateParameterId, PluginSpec(Duplicate).initChecked(.{}));
+    try std.testing.expectError(error.DuplicateParameterName, PluginSpec(DuplicateName).initChecked(.{}));
     try std.testing.expectError(error.InvalidParameterRange, PluginInstance(Invalid).init(std.testing.allocator, .{}));
 }
 
