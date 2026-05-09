@@ -100,10 +100,18 @@ pub fn readParameterStateWithMigrations(
 }
 
 pub fn migratedParameterId(id: u32, migrations: []const ParameterIdMigration) u32 {
-    for (migrations) |migration| {
-        if (migration.old_id == id) return migration.new_id;
+    var current = id;
+    for (0..migrations.len) |_| {
+        var next: ?u32 = null;
+        for (migrations) |migration| {
+            if (migration.old_id == current) {
+                next = migration.new_id;
+                break;
+            }
+        }
+        current = next orelse return current;
     }
-    return id;
+    return current;
 }
 
 test "parameter state round-trips normalized values" {
@@ -359,13 +367,49 @@ test "parameter state migrates renamed parameter ids" {
     try std.testing.expectEqual(@as(f64, 0.25), new_values.loadField(&new_set, "output"));
 }
 
+test "parameter state migrates renamed parameter ids through chains" {
+    const OldParams = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
+    };
+    const NewParams = struct {
+        output: parameters.FloatParam = parameters.FloatParam.init(11, "Output", 0.0, 1.0, 1.0),
+    };
+    const OldSet = parameters.ParameterSet(OldParams);
+    const OldValues = parameters.ParameterValues(OldParams);
+    const NewSet = parameters.ParameterSet(NewParams);
+    const NewValues = parameters.ParameterValues(NewParams);
+    const old_set = OldSet.init(.{});
+    const new_set = NewSet.init(.{});
+    var old_values = OldValues.init(&old_set);
+    var new_values = NewValues.init(&new_set);
+    var bytes: [encodedSize(OldParams)]u8 = undefined;
+
+    try std.testing.expect(old_values.storeField(&old_set, "gain", 0.25));
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    try writeParameterState(OldParams, &old_set, &old_values, out_stream.writer());
+
+    var in_stream = std.io.fixedBufferStream(&bytes);
+    try readParameterStateWithMigrations(NewParams, &new_set, &new_values, in_stream.reader(), &.{
+        .{ .old_id = 1, .new_id = 9 },
+        .{ .old_id = 9, .new_id = 11 },
+    });
+
+    try std.testing.expectEqual(@as(f64, 0.25), new_values.loadField(&new_set, "output"));
+}
+
 test "parameter state exposes migration resolution" {
     const migrations = [_]ParameterIdMigration{
         .{ .old_id = 1, .new_id = 9 },
         .{ .old_id = 2, .new_id = 10 },
+        .{ .old_id = 9, .new_id = 11 },
+    };
+    const cycle = [_]ParameterIdMigration{
+        .{ .old_id = 1, .new_id = 2 },
+        .{ .old_id = 2, .new_id = 1 },
     };
 
-    try std.testing.expectEqual(@as(u32, 9), migratedParameterId(1, &migrations));
+    try std.testing.expectEqual(@as(u32, 11), migratedParameterId(1, &migrations));
     try std.testing.expectEqual(@as(u32, 10), migratedParameterId(2, &migrations));
     try std.testing.expectEqual(@as(u32, 3), migratedParameterId(3, &migrations));
+    try std.testing.expectEqual(@as(u32, 1), migratedParameterId(1, &cycle));
 }
