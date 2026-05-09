@@ -238,6 +238,20 @@ pub const EventKindIterator = struct {
     }
 };
 
+pub const EventBlockSegmentIterator = struct {
+    events: Events,
+    frame_count: usize,
+    next_start: usize = 0,
+
+    pub fn next(self: *EventBlockSegmentIterator) ?BlockSegment {
+        if (self.next_start >= self.frame_count) return null;
+        const start = self.next_start;
+        const end = self.events.nextSampleOffset(start) orelse self.frame_count;
+        self.next_start = @min(end, self.frame_count);
+        return .{ .start_offset = start, .end_offset = self.next_start };
+    }
+};
+
 pub const Event = struct {
     kind: EventKind,
     bus_index: i32,
@@ -467,6 +481,13 @@ pub const Events = struct {
     pub fn ofKind(self: Events, kind: EventKind) EventKindIterator {
         return .{ .events = self, .kind = kind };
     }
+
+    pub fn blockSegments(self: Events, frame_count: usize) EventBlockSegmentIterator {
+        return .{
+            .events = self,
+            .frame_count = frame_count,
+        };
+    }
 };
 
 pub const EventWriter = struct {
@@ -565,6 +586,10 @@ pub const EventWriter = struct {
 
     pub fn ofKind(self: *const EventWriter, kind: EventKind) EventKindIterator {
         return self.events().ofKind(kind);
+    }
+
+    pub fn blockSegments(self: *const EventWriter) EventBlockSegmentIterator {
+        return self.events().blockSegments(self.frame_count);
     }
 
     pub fn events(self: *const EventWriter) Events {
@@ -784,6 +809,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.ofKind(kind);
         }
 
+        pub fn inputEventBlockSegments(self: @This()) EventBlockSegmentIterator {
+            return self.events.blockSegments(self.frameCount());
+        }
+
         pub fn inputEventCount(self: @This()) usize {
             return self.events.eventCount();
         }
@@ -845,6 +874,11 @@ pub fn ProcessContext(comptime Sample: type) type {
         pub fn writtenOutputEvents(self: @This()) Events {
             const writer = self.output_events orelse return .{};
             return writer.events();
+        }
+
+        pub fn outputEventBlockSegments(self: @This()) EventBlockSegmentIterator {
+            const writer = self.output_events orelse return (Events{}).blockSegments(self.frameCount());
+            return writer.blockSegments();
         }
 
         pub fn firstOutputEventOffset(self: @This()) ?usize {
@@ -1094,6 +1128,10 @@ test "process context validates attached parameter changes and events" {
     var note_events = context.inputEventsOfKind(.note_on);
     try std.testing.expectEqual(@as(i16, 60), note_events.next().?.pitch);
     try std.testing.expectEqual(@as(?Event, null), note_events.next());
+    var event_segments = context.inputEventBlockSegments();
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, event_segments.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 2 }, event_segments.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), event_segments.next());
     try std.testing.expect(context.hasOutputEventWriter());
 }
 
@@ -1294,6 +1332,30 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffset(3));
 }
 
+test "events iterate block segments split at event offsets" {
+    const items = [_]Event{
+        Event.noteOn(5, 0, 60, 1.0),
+        Event.midiCc(1, 0, 1, 0.5),
+        Event.noteOff(3, 0, 60, 0.0),
+        Event.pitchBend(5, 0, 0.25),
+    };
+    const view = try Events.init(&items, 8);
+    var iterator = view.blockSegments(8);
+
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 3 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 3, .end_offset = 5 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 5, .end_offset = 8 }, iterator.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+
+    var empty = (Events{}).blockSegments(4);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 4 }, empty.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), empty.next());
+
+    var zero = view.blockSegments(0);
+    try std.testing.expectEqual(@as(?BlockSegment, null), zero.next());
+}
+
 test "events query by sample offset without requiring sorted input" {
     const items = [_]Event{
         Event.noteOn(5, 0, 67, 0.5),
@@ -1415,6 +1477,10 @@ test "event writer appends event views atomically" {
     var written_note_offs = writer.ofKind(.note_off);
     try std.testing.expectEqual(@as(i16, 60), written_note_offs.next().?.pitch);
     try std.testing.expectEqual(@as(?Event, null), written_note_offs.next());
+    var written_segments = writer.blockSegments();
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, written_segments.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 4 }, written_segments.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), written_segments.next());
     try std.testing.expectEqual(EventKind.note_on, writer.events().items[0].kind);
     try std.testing.expectEqual(EventKind.note_off, writer.events().items[1].kind);
 
@@ -1467,6 +1533,10 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?usize, 0), context.firstOutputEventOffsetForKind(.note_on));
     try std.testing.expectEqual(@as(?usize, 1), context.latestOutputEventOffsetForKind(.note_off));
     try std.testing.expectEqual(@as(?usize, null), context.firstOutputEventOffsetForKind(.midi_cc));
+    var output_segments = context.outputEventBlockSegments();
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, output_segments.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 2 }, output_segments.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), output_segments.next());
     try std.testing.expect(context.outputEventsFull());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
     try std.testing.expectEqual(EventKind.note_on, context.firstOutputEvent(.note_on).?.kind);
@@ -1488,6 +1558,9 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?Event, null), context.firstOutputEvent(.note_on));
     try std.testing.expectEqual(@as(?Event, null), context.latestOutputEvent(.note_on));
     try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffset(0));
+    var cleared_output_segments = context.outputEventBlockSegments();
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 2 }, cleared_output_segments.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), cleared_output_segments.next());
     try std.testing.expect(context.outputEventsEmpty());
 
     var no_writer = try ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
