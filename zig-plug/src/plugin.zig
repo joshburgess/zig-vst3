@@ -127,6 +127,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.unitById(id);
         }
 
+        pub fn unitIndexOfId(self: *const Self, id: i32) ?usize {
+            return self.spec.units.unitIndexOfId(id);
+        }
+
         pub fn hasUnit(self: *const Self, id: i32) bool {
             return self.spec.units.hasUnit(id);
         }
@@ -141,6 +145,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn programListById(self: *const Self, id: i32) ?units_api.ProgramList {
             return self.spec.units.programListById(id);
+        }
+
+        pub fn programListIndexOfId(self: *const Self, id: i32) ?usize {
+            return self.spec.units.programListIndexOfId(id);
         }
 
         pub fn hasProgramList(self: *const Self, id: i32) bool {
@@ -822,10 +830,14 @@ test "plugin instance exposes custom unit and program metadata" {
     var instance = try Instance.init(std.testing.allocator, .{});
 
     try std.testing.expectEqual(@as(usize, 2), instance.unitCount());
+    try std.testing.expectEqual(@as(?usize, 1), instance.unitIndexOfId(1));
+    try std.testing.expectEqual(@as(?usize, null), instance.unitIndexOfId(99));
     try std.testing.expectEqualStrings("Voice", instance.unitById(1).?.name);
     try std.testing.expect(instance.hasUnit(1));
     try std.testing.expect(!instance.hasUnit(99));
     try std.testing.expectEqual(@as(usize, 1), instance.programListCount());
+    try std.testing.expectEqual(@as(?usize, 0), instance.programListIndexOfId(7));
+    try std.testing.expectEqual(@as(?usize, null), instance.programListIndexOfId(99));
     try std.testing.expectEqualStrings("Voice Programs", instance.programListById(7).?.name);
     try std.testing.expect(instance.hasProgramList(7));
     try std.testing.expect(!instance.hasProgramList(99));
