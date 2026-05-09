@@ -651,8 +651,40 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.descriptor(field_name).name;
         }
 
+        pub fn fieldShortName(self: *const Self, comptime field_name: []const u8) []const u8 {
+            return self.shortName(self.indexOfField(field_name)).?;
+        }
+
+        pub fn fieldUnits(self: *const Self, comptime field_name: []const u8) []const u8 {
+            return self.descriptor(field_name).units;
+        }
+
         pub fn fieldDefaultNormalized(self: *const Self, comptime field_name: []const u8) f64 {
             return self.descriptor(field_name).defaultNormalized();
+        }
+
+        pub fn fieldIsBypass(self: *const Self, comptime field_name: []const u8) bool {
+            return self.descriptor(field_name).is_bypass;
+        }
+
+        pub fn fieldCanAutomate(self: *const Self, comptime field_name: []const u8) bool {
+            return self.descriptor(field_name).can_automate;
+        }
+
+        pub fn fieldIsReadOnly(self: *const Self, comptime field_name: []const u8) bool {
+            return self.descriptor(field_name).is_read_only;
+        }
+
+        pub fn fieldUnitId(self: *const Self, comptime field_name: []const u8) i32 {
+            return self.descriptor(field_name).unit_id;
+        }
+
+        pub fn fieldStepCount(self: *const Self, comptime field_name: []const u8) i32 {
+            return parameterStepCount(self.descriptor(field_name));
+        }
+
+        pub fn fieldIsList(self: *const Self, comptime field_name: []const u8) bool {
+            return parameterIsList(self.descriptor(field_name));
         }
 
         pub fn parameterChangeNormalized(
@@ -1066,8 +1098,40 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.fieldName(field_name);
         }
 
+        pub fn fieldShortName(self: Self, comptime field_name: []const u8) []const u8 {
+            return self.set.fieldShortName(field_name);
+        }
+
+        pub fn fieldUnits(self: Self, comptime field_name: []const u8) []const u8 {
+            return self.set.fieldUnits(field_name);
+        }
+
         pub fn fieldDefaultNormalized(self: Self, comptime field_name: []const u8) f64 {
             return self.set.fieldDefaultNormalized(field_name);
+        }
+
+        pub fn fieldIsBypass(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldIsBypass(field_name);
+        }
+
+        pub fn fieldCanAutomate(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldCanAutomate(field_name);
+        }
+
+        pub fn fieldIsReadOnly(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldIsReadOnly(field_name);
+        }
+
+        pub fn fieldUnitId(self: Self, comptime field_name: []const u8) i32 {
+            return self.set.fieldUnitId(field_name);
+        }
+
+        pub fn fieldStepCount(self: Self, comptime field_name: []const u8) i32 {
+            return self.set.fieldStepCount(field_name);
+        }
+
+        pub fn fieldIsList(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldIsList(field_name);
         }
 
         pub fn formatFieldPlain(self: Self, comptime field_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
@@ -1301,8 +1365,40 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.fieldName(field_name);
         }
 
+        pub fn fieldShortName(self: Self, comptime field_name: []const u8) []const u8 {
+            return self.set.fieldShortName(field_name);
+        }
+
+        pub fn fieldUnits(self: Self, comptime field_name: []const u8) []const u8 {
+            return self.set.fieldUnits(field_name);
+        }
+
         pub fn fieldDefaultNormalized(self: Self, comptime field_name: []const u8) f64 {
             return self.set.fieldDefaultNormalized(field_name);
+        }
+
+        pub fn fieldIsBypass(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldIsBypass(field_name);
+        }
+
+        pub fn fieldCanAutomate(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldCanAutomate(field_name);
+        }
+
+        pub fn fieldIsReadOnly(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldIsReadOnly(field_name);
+        }
+
+        pub fn fieldUnitId(self: Self, comptime field_name: []const u8) i32 {
+            return self.set.fieldUnitId(field_name);
+        }
+
+        pub fn fieldStepCount(self: Self, comptime field_name: []const u8) i32 {
+            return self.set.fieldStepCount(field_name);
+        }
+
+        pub fn fieldIsList(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldIsList(field_name);
         }
 
         pub fn formatFieldPlain(self: Self, comptime field_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
@@ -2018,7 +2114,16 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(u32, 0), view.descriptor("gain").id);
     try std.testing.expectEqual(@as(u32, 3), view.fieldId("mode"));
     try std.testing.expectEqualStrings("Bypass", view.fieldName("bypass"));
+    try std.testing.expectEqualStrings("Vox", view.fieldShortName("voices"));
+    try std.testing.expectEqualStrings("dB", view.fieldUnits("gain"));
     try std.testing.expectEqual(@as(f64, 0.0), view.fieldDefaultNormalized("mode"));
+    try std.testing.expect(!view.fieldIsBypass("gain"));
+    try std.testing.expect(view.fieldCanAutomate("gain"));
+    try std.testing.expect(!view.fieldCanAutomate("voices"));
+    try std.testing.expect(view.fieldIsReadOnly("voices"));
+    try std.testing.expectEqual(@as(i32, 0), view.fieldUnitId("gain"));
+    try std.testing.expectEqual(@as(i32, 2), view.fieldStepCount("mode"));
+    try std.testing.expect(view.fieldIsList("mode"));
     var buffer: [16]u8 = undefined;
     try std.testing.expectEqualStrings("mute", try view.formatFieldPlain("mode", 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try view.parseFieldPlain("mode", "mute"));
@@ -2114,7 +2219,16 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(u32, 0), editor.descriptor("gain").id);
     try std.testing.expectEqual(@as(u32, 3), editor.fieldId("mode"));
     try std.testing.expectEqualStrings("Bypass", editor.fieldName("bypass"));
+    try std.testing.expectEqualStrings("Vox", editor.fieldShortName("voices"));
+    try std.testing.expectEqualStrings("dB", editor.fieldUnits("gain"));
     try std.testing.expectEqual(@as(f64, 0.0), editor.fieldDefaultNormalized("mode"));
+    try std.testing.expect(!editor.fieldIsBypass("gain"));
+    try std.testing.expect(editor.fieldCanAutomate("gain"));
+    try std.testing.expect(!editor.fieldCanAutomate("voices"));
+    try std.testing.expect(editor.fieldIsReadOnly("voices"));
+    try std.testing.expectEqual(@as(i32, 0), editor.fieldUnitId("gain"));
+    try std.testing.expectEqual(@as(i32, 2), editor.fieldStepCount("mode"));
+    try std.testing.expect(editor.fieldIsList("mode"));
     var buffer: [16]u8 = undefined;
     try std.testing.expectEqualStrings("mute", try editor.formatFieldPlain("mode", 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try editor.parseFieldPlain("mode", "mute"));
