@@ -22,7 +22,7 @@
 
 Hosts speak normalized `0.0...1.0` values. Descriptors clamp normalized input before converting it to plain values. Plain input is clamped to each descriptor's declared range before normalization.
 
-VST3 parameter metadata is reflected from descriptors. Float parameters are continuous, bool parameters report one step, int parameters report their integer range as discrete steps, and enum parameters report one step per enum transition with the list flag set. Descriptors can set `short_name` and `units` for host parameter displays; empty `short_name` falls back to the full display name. Descriptors also expose `can_automate` and `is_read_only` so framework users can control the matching host parameter flags without dropping to the VST3 layer.
+VST3 parameter metadata is reflected from descriptors. Float parameters are continuous, bool parameters report one step, int parameters report their integer range as discrete steps, and enum parameters report one step per enum transition with the list flag set. Descriptors can set `short_name` and `units` for host parameter displays; empty `short_name` falls back to the full display name. Descriptors also expose `can_automate` and `is_read_only` so framework users can control the matching host parameter flags without dropping to the VST3 layer. The VST3 bridge rejects host-side edits and process changes for read-only parameters while still allowing state restore and plugin-owned value updates.
 
 Each descriptor has a `unit_id` field. It defaults to the root unit and is reflected into host parameter metadata when the VST3 shell builds `ParameterInfo`.
 

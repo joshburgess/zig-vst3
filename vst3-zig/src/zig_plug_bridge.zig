@@ -144,12 +144,16 @@ pub fn ParameterState(comptime Params: type) type {
         }
 
         pub fn setNormalizedById(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+            if (self.set.isReadOnlyById(id) orelse return types.kInvalidArgument) return types.kResultFalse;
             if (!self.values.storeById(self.set, id, value)) return types.kInvalidArgument;
             return types.kResultOk;
         }
 
         pub fn applyChanges(self: *Self, changes: plug.process.ParameterChanges) void {
-            self.values.applyChanges(self.set, changes);
+            for (changes.items) |change| {
+                if (self.set.isReadOnlyById(change.id) orelse true) continue;
+                _ = self.values.storeById(self.set, change.id, change.normalized);
+            }
         }
 
         pub fn encodedSize(_: *const Self) usize {
@@ -1288,6 +1292,7 @@ test "zig-plug bridge parameter controller exposes reflected edit operations" {
     const Params = struct {
         gain: plug.parameters.FloatParam = .{ .id = 7, .name = "Gain", .short_name = "Gn", .units = "dB", .min = 0.0, .max = 2.0, .default = 1.0, .unit_id = 2 },
         bypass: plug.parameters.BoolParam = .{ .id = 8, .name = "Bypass" },
+        meter: plug.parameters.FloatParam = .{ .id = 9, .name = "Meter", .min = 0.0, .max = 1.0, .default = 0.5, .is_read_only = true },
     };
     const Set = plug.parameters.ParameterSet(Params);
     const set = Set.init(.{});
@@ -1300,7 +1305,7 @@ test "zig-plug bridge parameter controller exposes reflected edit operations" {
     var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
     var value: vsttypes.ParamValue = 0;
 
-    try std.testing.expectEqual(@as(types.int32, 2), controller.parameterCount());
+    try std.testing.expectEqual(@as(types.int32, 3), controller.parameterCount());
     try std.testing.expectEqual(types.kResultOk, controller.parameterInfo(0, &info));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 7), info.id);
     try std.testing.expectEqual(@as(vsttypes.UnitID, 2), info.unitId);
@@ -1318,15 +1323,19 @@ test "zig-plug bridge parameter controller exposes reflected edit operations" {
 
     try std.testing.expectEqual(types.kResultOk, controller.setNormalized(8, 1.0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), controller.getNormalized(8));
+    try std.testing.expectEqual(types.kResultFalse, controller.setNormalized(9, 0.9));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), controller.getNormalized(9));
     try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(99, 0.5));
 
     const changes = [_]plug.process.ParameterChange{
         .{ .id = 7, .sample_offset = 0, .normalized = 0.25 },
         .{ .id = 8, .sample_offset = 1, .normalized = 0.0 },
+        .{ .id = 9, .sample_offset = 2, .normalized = 1.0 },
     };
-    controller.applyChanges(try plug.process.ParameterChanges.init(&changes, 2));
+    controller.applyChanges(try plug.process.ParameterChanges.init(&changes, 3));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), controller.getNormalized(7));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), controller.getNormalized(8));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), controller.getNormalized(9));
 }
 
 test "zig-plug bridge stereo buses expose audio and event input metadata" {
