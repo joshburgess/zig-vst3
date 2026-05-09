@@ -22,8 +22,16 @@ pub const VoiceMix = struct {
                 .id = voice_program_list_id,
                 .name = "Voice Presets",
                 .programs = &.{
-                    .{ .name = "Single", .info = &.{.{ .key = "voices", .value = "1" }} },
-                    .{ .name = "Quad", .info = &.{.{ .key = "voices", .value = "4" }} },
+                    .{
+                        .name = "Single",
+                        .parameters = &.{.{ .parameter_id = 0, .normalized = 0.0 }},
+                        .info = &.{.{ .key = "voices", .value = "1" }},
+                    },
+                    .{
+                        .name = "Quad",
+                        .parameters = &.{.{ .parameter_id = 0, .normalized = 1.0 }},
+                        .info = &.{.{ .key = "voices", .value = "4" }},
+                    },
                 },
             },
         },
@@ -72,7 +80,18 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expectEqual(@as(?usize, 2), instance.programCount(voice_program_list_id));
     try std.testing.expectEqualStrings("Quad", instance.programName(voice_program_list_id, 1).?);
     try std.testing.expectEqual(@as(?usize, 1), instance.programIndexOfName(voice_program_list_id, "Quad"));
+    try std.testing.expectEqual(@as(?usize, 1), instance.programParameterCount(voice_program_list_id, 1));
+    try std.testing.expectEqual(@as(f64, 1.0), instance.programParameterById(voice_program_list_id, 1, 0).?.normalized);
     try std.testing.expectEqualStrings("4", instance.programInfoByName(voice_program_list_id, "Quad", "voices").?);
+}
+
+test "voice mix core example applies reflected program snapshots" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+
+    try std.testing.expect(try instance.applyProgramByName(voice_program_list_id, "Quad"));
+    try std.testing.expectEqual(@as(i64, 4), instance.loadParameter("voices"));
+    try std.testing.expect(try instance.applyProgramByName(voice_program_list_id, "Single"));
+    try std.testing.expectEqual(@as(i64, 1), instance.loadParameter("voices"));
 }
 
 test "voice mix core example applies int parameter changes" {
