@@ -82,13 +82,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
         plugin: Plugin,
 
         pub fn init(allocator: std.mem.Allocator, params: Plugin.Params) !Self {
+            const spec = try Spec.initChecked(params);
             const plugin = if (Spec.has_init)
                 try Plugin.init(allocator)
             else
                 Plugin{};
 
             return .{
-                .spec = try Spec.initChecked(params),
+                .spec = spec,
                 .plugin = plugin,
             };
         }
@@ -707,6 +708,27 @@ test "plugin spec and instance surface invalid parameter metadata" {
     try std.testing.expectError(error.DuplicateParameterName, PluginSpec(DuplicateName).initChecked(.{}));
     try std.testing.expectError(error.InvalidParameterRange, PluginInstance(Invalid).init(std.testing.allocator, .{}));
     try std.testing.expectError(error.InvalidParameterDefault, PluginInstance(InvalidDefault).init(std.testing.allocator, .{}));
+}
+
+var invalid_metadata_init_called = false;
+
+test "plugin instance validates metadata before plugin init hook" {
+    invalid_metadata_init_called = false;
+    const Invalid = struct {
+        pub const name = "Invalid Init Ordering";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = .{ .id = 0, .name = "Gain", .min = 1.0, .max = 1.0, .default = 1.0 },
+        };
+
+        pub fn init(_: std.mem.Allocator) !@This() {
+            invalid_metadata_init_called = true;
+            return .{};
+        }
+    };
+
+    try std.testing.expectError(error.InvalidParameterRange, PluginInstance(Invalid).init(std.testing.allocator, .{}));
+    try std.testing.expect(!invalid_metadata_init_called);
 }
 
 test "plugin spec exposes optional plugin metadata overrides" {
