@@ -192,6 +192,7 @@ pub fn PluginInstance(comptime Plugin: type) type {
                 if (parameter.normalized < 0.0 or parameter.normalized > 1.0 or std.math.isNan(parameter.normalized)) {
                     return error.ProgramParameterOutsideNormalizedRange;
                 }
+                if (self.parameterIndexOfId(parameter.parameter_id) == null) return error.UnknownProgramParameter;
             }
             for (item.parameters) |parameter| {
                 _ = self.storeParameterById(parameter.parameter_id, parameter.normalized);
@@ -838,6 +839,32 @@ test "plugin instance rejects invalid program parameter snapshots without partia
     try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, instance.applyProgram(7, 0));
     try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("mix"));
+}
+
+test "plugin instance rejects unknown program parameter ids without partial updates" {
+    const programs = [_]units_api.Program{
+        .{
+            .name = "Unknown",
+            .parameters = &.{
+                .{ .parameter_id = 1, .normalized = 0.25 },
+                .{ .parameter_id = 99, .normalized = 0.75 },
+            },
+        },
+    };
+    const Gain = struct {
+        pub const name = "Unknown Program Gain";
+        pub const vendor = "zig-vst3";
+        pub const units = units_api.Config{
+            .program_lists = &.{.{ .id = 7, .name = "Programs", .programs = &programs }},
+        };
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
+        };
+    };
+    var instance = try PluginInstance(Gain).init(std.testing.allocator, .{});
+
+    try std.testing.expectError(error.UnknownProgramParameter, instance.applyProgram(7, 0));
+    try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("gain"));
 }
 
 test "plugin spec detects lifecycle declarations" {
