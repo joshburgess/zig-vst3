@@ -1400,6 +1400,21 @@ test "parameter changes iterate stable automation segments without allocation" {
     try std.testing.expectEqual(@as(?ParameterSegment, null), iterator.next());
 }
 
+test "parameter changes collapse same-offset values into one segment" {
+    const changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 1, .normalized = 0.25 },
+        .{ .id = 7, .sample_offset = 1, .normalized = 0.75 },
+        .{ .id = 7, .sample_offset = 4, .normalized = 1.0 },
+    };
+    const view = try ParameterChanges.init(&changes, 8);
+    var iterator = view.segments(7, 8, 0.0);
+
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 0.0 }, iterator.next().?);
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 4, .normalized = 0.75 }, iterator.next().?);
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 4, .end_offset = 8, .normalized = 1.0 }, iterator.next().?);
+    try std.testing.expectEqual(@as(?ParameterSegment, null), iterator.next());
+}
+
 test "parameter changes iterate block segments split at change offsets" {
     const changes = [_]ParameterChange{
         .{ .id = 7, .sample_offset = 5, .normalized = 0.75 },
@@ -1422,6 +1437,21 @@ test "parameter changes iterate block segments split at change offsets" {
 
     var zero = view.blockSegments(0);
     try std.testing.expectEqual(@as(?BlockSegment, null), zero.next());
+}
+
+test "parameter changes block segments ignore duplicate offsets" {
+    const changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 1, .normalized = 0.25 },
+        .{ .id = 8, .sample_offset = 1, .normalized = 0.5 },
+        .{ .id = 9, .sample_offset = 3, .normalized = 0.75 },
+    };
+    const view = try ParameterChanges.init(&changes, 5);
+    var iterator = view.blockSegments(5);
+
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 3 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 3, .end_offset = 5 }, iterator.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
 }
 
 test "parameter changes reject values outside the process block" {
