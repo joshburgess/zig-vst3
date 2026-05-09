@@ -342,14 +342,14 @@ pub fn EnumParam(comptime Enum: type) type {
 
         pub fn normalize(_: Self, value: Enum) f64 {
             if (info.fields.len == 1) return 0.0;
-            return @as(f64, @floatFromInt(@intFromEnum(value))) / @as(f64, @floatFromInt(info.fields.len - 1));
+            return normalizedFromIndex(indexOf(value));
         }
 
         pub fn denormalize(_: Self, normalized: f64) Enum {
             const clamped = clampNormalized(normalized);
             const max_index = info.fields.len - 1;
             const index = @as(usize, @intFromFloat(@round(clamped * @as(f64, @floatFromInt(max_index)))));
-            return @enumFromInt(index);
+            return valueAtIndex(index);
         }
 
         pub fn defaultNormalized(self: Self) f64 {
@@ -365,10 +365,10 @@ pub fn EnumParam(comptime Enum: type) type {
         }
 
         pub fn plainFromNormalized(self: Self, normalized: f64) f64 {
-            return @floatFromInt(@intFromEnum(self.denormalize(normalized)));
+            return @floatFromInt(indexOf(self.denormalize(normalized)));
         }
 
-        pub fn normalizedFromPlain(self: Self, plain: f64) f64 {
+        pub fn normalizedFromPlain(_: Self, plain: f64) f64 {
             const max_index = info.fields.len - 1;
             const index = if (std.math.isNan(plain) or plain <= 0)
                 0
@@ -376,17 +376,36 @@ pub fn EnumParam(comptime Enum: type) type {
                 max_index
             else
                 @as(usize, @intFromFloat(@round(plain)));
-            return self.normalize(@enumFromInt(index));
+            return normalizedFromIndex(index);
         }
 
-        pub fn parsePlain(self: Self, text: []const u8) !f64 {
+        pub fn parsePlain(_: Self, text: []const u8) !f64 {
             const trimmed = std.mem.trim(u8, text, " \t\r\n");
-            inline for (info.fields) |field| {
+            inline for (info.fields, 0..) |field, index| {
                 if (std.mem.eql(u8, trimmed, field.name)) {
-                    return self.normalize(@enumFromInt(field.value));
+                    return normalizedFromIndex(index);
                 }
             }
             return error.InvalidEnumTag;
+        }
+
+        fn indexOf(value: Enum) usize {
+            inline for (info.fields, 0..) |field, index| {
+                if (field.value == @intFromEnum(value)) return index;
+            }
+            unreachable;
+        }
+
+        fn valueAtIndex(wanted_index: usize) Enum {
+            inline for (info.fields, 0..) |field, index| {
+                if (index == wanted_index) return @enumFromInt(field.value);
+            }
+            unreachable;
+        }
+
+        fn normalizedFromIndex(index: usize) f64 {
+            if (info.fields.len == 1) return 0.0;
+            return @as(f64, @floatFromInt(index)) / @as(f64, @floatFromInt(info.fields.len - 1));
         }
     };
 }
@@ -1593,6 +1612,23 @@ test "enum parameter maps tags to normalized positions" {
     try std.testing.expectEqual(@as(f64, 0.0), mode.normalizedFromPlain(-100.0));
     try std.testing.expectEqual(@as(f64, 1.0), mode.normalizedFromPlain(100.0));
     try std.testing.expectEqualStrings("lead", mode.label(.lead));
+}
+
+test "enum parameter supports sparse tag values" {
+    const Mode = enum(u8) { clean = 2, crunch = 7, lead = 42 };
+    const ModeParam = EnumParam(Mode);
+    const mode = ModeParam{ .id = 4, .name = "Mode", .default = .crunch };
+
+    try std.testing.expectEqual(@as(f64, 0.5), mode.defaultNormalized());
+    try std.testing.expectEqual(@as(f64, 0.0), mode.normalize(.clean));
+    try std.testing.expectEqual(@as(f64, 0.5), mode.normalize(.crunch));
+    try std.testing.expectEqual(@as(f64, 1.0), mode.normalize(.lead));
+    try std.testing.expectEqual(Mode.clean, mode.denormalize(0.0));
+    try std.testing.expectEqual(Mode.crunch, mode.denormalize(0.5));
+    try std.testing.expectEqual(Mode.lead, mode.denormalize(1.0));
+    try std.testing.expectEqual(@as(f64, 1.0), mode.plainFromNormalized(0.5));
+    try std.testing.expectEqual(@as(f64, 1.0), mode.normalizedFromPlain(2.0));
+    try std.testing.expectEqual(@as(f64, 1.0), try mode.parsePlain("lead"));
 }
 
 test "single-value enum parameter stays at zero" {
