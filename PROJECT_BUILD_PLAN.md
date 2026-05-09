@@ -576,6 +576,8 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 - Tests with synthetic automation curves verifying sample-accurate behavior
 - Tests that verify no allocation occurs while processing automation in the audio callback
 
+**Current status.** `process.ParameterChanges` exposes first/latest/next change offsets, per-parameter stable segments, and block-wide segments split at every parameter-change offset without allocation. `ProcessContext.parameterBlockSegments` gives processors the same block-split view, and `examples/gain_core.zig` now uses it for sample-accurate f32 and f64 gain processing.
+
 **Exit criteria.**
 - An automated parameter sweep in Bitwig produces a correctly sample-accurate output (verified by recording the plugin's output and comparing to the automation curve)
 
@@ -583,7 +585,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 **Inputs.** Phase 2's event list translation.
 
-**Current status.** Basic VST3 input and output event translation is implemented. `process.ProcessContext` exposes note-on, note-off, MIDI CC, pitch bend, aftertouch, note-expression value/int/text, data payloads such as SysEx, and other event kinds with block-offset validation. The reusable shell advertises an input event bus, can opt into an output event bus, collects bounded event lists during `process`, gives processors a bounded output-event writer, and flushes written events to the host. The pure `note_gate_core` example and bundled `zig_vst3_note_gate` plugin exercise event consumption. The pure `event_echo_core` example and bundled `zig_vst3_event_echo` plugin exercise event production, and the bundled event echo validates locally on macOS with one input and one output event bus.
+**Current status.** Basic VST3 input and output event translation is implemented. `process.ProcessContext` exposes note-on, note-off, MIDI CC, pitch bend, aftertouch, note-expression value/int/text, data payloads such as SysEx, and other event kinds with block-offset validation, per-kind iteration, and per-kind first/latest/next offset helpers. The reusable shell advertises an input event bus, can opt into an output event bus, collects bounded event lists during `process`, gives processors a bounded output-event writer, and flushes written events to the host. The pure `note_gate_core` example and bundled `zig_vst3_note_gate` plugin exercise event consumption. The pure `event_echo_core` example and bundled `zig_vst3_event_echo` plugin exercise event production, `event_monitor_core` exercises event-kind summaries for MIDI-style code, and the bundled event echo validates locally on macOS with one input and one output event bus.
 
 **Deliverables.**
 - Rich high-level event types in the framework: `NoteOn`, `NoteOff`, `MidiCC`, `PitchBend`, `Aftertouch`, `NoteExpression`
