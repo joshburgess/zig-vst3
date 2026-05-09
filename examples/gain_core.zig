@@ -103,7 +103,7 @@ test "gain core example supports double precision processing" {
     const input_channels = [_][]const f64{&input};
     const output_channels = [_][]f64{&output};
     const changes = [_]plug.process.ParameterChange{
-        parameter_set.parameterChange("gain", 0, 0.5),
+        instance.parameterChange("gain", 0, 0.5),
     };
     var context = try plug.process.ProcessContext(f64).initWith(48_000.0, &input_channels, &output_channels, .{
         .parameter_changes = &changes,
@@ -122,7 +122,7 @@ test "gain core example can run through plugin instance" {
     const input_channels = [_][]const f32{&input};
     const output_channels = [_][]f32{&output};
     const changes = [_]plug.process.ParameterChange{
-        parameter_set.parameterChange("gain", 0, 0.25),
+        instance.parameterChange("gain", 0, 0.25),
     };
     var context = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
         .parameter_changes = &changes,
