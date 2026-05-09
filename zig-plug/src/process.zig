@@ -515,6 +515,14 @@ pub const EventWriter = struct {
         return self.events().nextSampleOffset(after_sample_offset);
     }
 
+    pub fn nextSampleOffsetForKind(self: *const EventWriter, kind: EventKind, after_sample_offset: usize) ?usize {
+        return self.events().nextSampleOffsetForKind(kind, after_sample_offset);
+    }
+
+    pub fn ofKind(self: *const EventWriter, kind: EventKind) EventKindIterator {
+        return self.events().ofKind(kind);
+    }
+
     pub fn events(self: *const EventWriter) Events {
         return .{ .items = self.storage[0..self.count] };
     }
@@ -1255,6 +1263,10 @@ test "event writer validates offsets and capacity" {
     try std.testing.expectEqual(EventKind.note_on, writer.firstKind(.note_on).?.kind);
     try std.testing.expectEqual(EventKind.note_on, writer.latestKind(.note_on).?.kind);
     try std.testing.expectEqual(@as(?usize, null), writer.nextSampleOffset(1));
+    try std.testing.expectEqual(@as(?usize, null), writer.nextSampleOffsetForKind(.note_on, 1));
+    var written_notes = writer.ofKind(.note_on);
+    try std.testing.expectEqual(@as(i16, 60), written_notes.next().?.pitch);
+    try std.testing.expectEqual(@as(?Event, null), written_notes.next());
     try std.testing.expectEqual(@as(usize, 1), writer.capacity());
     try std.testing.expectEqual(@as(usize, 0), writer.remainingCapacity());
     try std.testing.expectError(error.EventStorageFull, writer.append(Event.noteOff(1, 0, 60, 0.0)));
@@ -1294,6 +1306,10 @@ test "event writer appends event views atomically" {
     try std.testing.expectEqual(EventKind.note_on, writer.firstKind(.note_on).?.kind);
     try std.testing.expectEqual(EventKind.note_off, writer.latestKind(.note_off).?.kind);
     try std.testing.expectEqual(@as(?usize, 1), writer.nextSampleOffset(0));
+    try std.testing.expectEqual(@as(?usize, 1), writer.nextSampleOffsetForKind(.note_off, 0));
+    var written_note_offs = writer.ofKind(.note_off);
+    try std.testing.expectEqual(@as(i16, 60), written_note_offs.next().?.pitch);
+    try std.testing.expectEqual(@as(?Event, null), written_note_offs.next());
     try std.testing.expectEqual(EventKind.note_on, writer.events().items[0].kind);
     try std.testing.expectEqual(EventKind.note_off, writer.events().items[1].kind);
 
