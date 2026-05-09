@@ -399,6 +399,26 @@ pub fn ParameterSet(comptime Params: type) type {
             return .{ .params = params };
         }
 
+        pub fn duplicateId(self: *const Self) ?u32 {
+            inline for (fields, 0..) |left_field, left_index| {
+                const left_id = @field(self.params, left_field.name).id;
+                inline for (fields, 0..) |right_field, right_index| {
+                    if (right_index > left_index and @field(self.params, right_field.name).id == left_id) {
+                        return left_id;
+                    }
+                }
+            }
+            return null;
+        }
+
+        pub fn hasDuplicateIds(self: *const Self) bool {
+            return self.duplicateId() != null;
+        }
+
+        pub fn validateUniqueIds(self: *const Self) !void {
+            if (self.hasDuplicateIds()) return error.DuplicateParameterId;
+        }
+
         pub fn id(self: *const Self, index: usize) ?u32 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).id;
@@ -1586,6 +1606,33 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqual(@as(f64, 1.0), try set.parseFieldPlain("mode", "lead"));
     try std.testing.expectEqual(Mode.lead, set.fieldPlainFromNormalized("mode", 1.0));
     try std.testing.expectEqual(@as(f64, 1.0), set.fieldNormalizedFromPlain("mode", .lead));
+}
+
+test "parameter set reports duplicate ids" {
+    const Params = struct {
+        gain: FloatParam = .{ .id = 7, .name = "Gain", .min = 0.0, .max = 1.0, .default = 0.5 },
+        mix: FloatParam = .{ .id = 7, .name = "Mix", .min = 0.0, .max = 1.0, .default = 0.25 },
+        output: FloatParam = .{ .id = 8, .name = "Output", .min = 0.0, .max = 1.0, .default = 1.0 },
+    };
+    const Set = ParameterSet(Params);
+    const set = Set.init(.{});
+
+    try std.testing.expectEqual(@as(?u32, 7), set.duplicateId());
+    try std.testing.expect(set.hasDuplicateIds());
+    try std.testing.expectError(error.DuplicateParameterId, set.validateUniqueIds());
+}
+
+test "parameter set accepts unique ids" {
+    const Params = struct {
+        gain: FloatParam = .{ .id = 0, .name = "Gain", .min = 0.0, .max = 1.0, .default = 0.5 },
+        mix: FloatParam = .{ .id = 1, .name = "Mix", .min = 0.0, .max = 1.0, .default = 0.25 },
+    };
+    const Set = ParameterSet(Params);
+    const set = Set.init(.{});
+
+    try std.testing.expectEqual(@as(?u32, null), set.duplicateId());
+    try std.testing.expect(!set.hasDuplicateIds());
+    try set.validateUniqueIds();
 }
 
 test "integer parameter step count saturates to VST limit" {
