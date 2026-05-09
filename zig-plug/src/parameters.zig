@@ -2255,8 +2255,10 @@ test "parameters format and parse plain values" {
     try std.testing.expectApproxEqAbs(1.0, try voices.parsePlain("16"), 0.000001);
     try std.testing.expectEqualStrings("On", try bypass.formatPlain(1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 0.0), try bypass.parsePlain("off"));
+    try std.testing.expectError(error.InvalidBool, bypass.parsePlain("maybe"));
     try std.testing.expectEqualStrings("crunch", try mode.formatPlain(0.5, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try mode.parsePlain("lead"));
+    try std.testing.expectError(error.InvalidEnumTag, mode.parsePlain("solo"));
 }
 
 test "parameter sets convert normalized and plain values by reflected index" {

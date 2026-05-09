@@ -7,7 +7,7 @@
 - `FloatParam`: bounded `f64` values with normalized/plain conversion, percent display, plain formatting, and plain parsing.
 - `IntParam`: bounded `i64` values with normalized/plain conversion, rounding on denormalization, plain formatting, and plain parsing.
 - `BoolParam`: midpoint-based boolean conversion with `On`/`Off` display and permissive parsing for `on`, `off`, `true`, `false`, `1`, and `0`.
-- `EnumParam(Enum)`: comptime enum descriptor with tag-name labels and normalized tag positions.
+- `EnumParam(Enum)`: comptime enum descriptor with tag-name labels and normalized declaration-order positions, including enums with sparse explicit tag values.
 - `NormalizedValue`: lock-free atomic storage for normalized `f64` values, stored as raw bits.
 - `ModulatedValue`: lock-free base value plus bipolar modulation offset, clamped to the normalized range.
 - `LinearSmoother`: sample-counted ramp between normalized values.
