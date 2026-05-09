@@ -12,6 +12,25 @@ pub const ParameterSegment = struct {
     normalized: f64,
 };
 
+pub const BlockSegment = struct {
+    start_offset: usize,
+    end_offset: usize,
+};
+
+pub const BlockSegmentIterator = struct {
+    changes: ParameterChanges,
+    frame_count: usize,
+    next_start: usize = 0,
+
+    pub fn next(self: *BlockSegmentIterator) ?BlockSegment {
+        if (self.next_start >= self.frame_count) return null;
+        const start = self.next_start;
+        const end = self.changes.nextSampleOffset(start) orelse self.frame_count;
+        self.next_start = @min(end, self.frame_count);
+        return .{ .start_offset = start, .end_offset = self.next_start };
+    }
+};
+
 pub const ParameterSegmentIterator = struct {
     changes: ParameterChanges,
     id: u32,
@@ -165,6 +184,13 @@ pub const ParameterChanges = struct {
             .id = id,
             .frame_count = frame_count,
             .default = default,
+        };
+    }
+
+    pub fn blockSegments(self: ParameterChanges, frame_count: usize) BlockSegmentIterator {
+        return .{
+            .changes = self,
+            .frame_count = frame_count,
         };
     }
 };
@@ -728,6 +754,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.segments(id, self.frameCount(), default);
         }
 
+        pub fn parameterBlockSegments(self: @This()) BlockSegmentIterator {
+            return self.parameter_changes.blockSegments(self.frameCount());
+        }
+
         pub fn inputEvents(self: @This()) Events {
             return self.events;
         }
@@ -1001,6 +1031,10 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 0.25 }, parameter_segments.next().?);
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 2, .normalized = 0.5 }, parameter_segments.next().?);
     try std.testing.expectEqual(@as(?ParameterSegment, null), parameter_segments.next());
+    var block_segments = context.parameterBlockSegments();
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, block_segments.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 2 }, block_segments.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), block_segments.next());
     try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.inputEventCount());
     try std.testing.expect(!context.inputEventsEmpty());
@@ -1135,6 +1169,30 @@ test "parameter changes iterate stable automation segments without allocation" {
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 5, .normalized = 0.25 }, iterator.next().?);
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 5, .end_offset = 8, .normalized = 0.75 }, iterator.next().?);
     try std.testing.expectEqual(@as(?ParameterSegment, null), iterator.next());
+}
+
+test "parameter changes iterate block segments split at change offsets" {
+    const changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 5, .normalized = 0.75 },
+        .{ .id = 8, .sample_offset = 1, .normalized = 0.25 },
+        .{ .id = 9, .sample_offset = 3, .normalized = 0.5 },
+        .{ .id = 7, .sample_offset = 5, .normalized = 1.0 },
+    };
+    const view = try ParameterChanges.init(&changes, 8);
+    var iterator = view.blockSegments(8);
+
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 3 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 3, .end_offset = 5 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 5, .end_offset = 8 }, iterator.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+
+    var empty = (ParameterChanges{}).blockSegments(4);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 4 }, empty.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), empty.next());
+
+    var zero = view.blockSegments(0);
+    try std.testing.expectEqual(@as(?BlockSegment, null), zero.next());
 }
 
 test "parameter changes reject values outside the process block" {
