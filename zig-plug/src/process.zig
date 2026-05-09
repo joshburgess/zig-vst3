@@ -388,6 +388,15 @@ pub const Events = struct {
         }
         return result;
     }
+
+    pub fn nextSampleOffsetForKind(self: Events, kind: EventKind, after_sample_offset: usize) ?usize {
+        var result: ?usize = null;
+        for (self.items) |item| {
+            if (item.kind != kind or item.sample_offset <= after_sample_offset) continue;
+            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+        }
+        return result;
+    }
 };
 
 pub const EventWriter = struct {
@@ -717,6 +726,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.nextSampleOffset(after_sample_offset);
         }
 
+        pub fn nextEventOffsetForKind(self: @This(), kind: EventKind, after_sample_offset: usize) ?usize {
+            return self.events.nextSampleOffsetForKind(kind, after_sample_offset);
+        }
+
         pub fn appendOutputEvent(self: *@This(), event: Event) !void {
             const writer = self.output_events orelse return error.OutputEventsUnavailable;
             try writer.append(event);
@@ -956,6 +969,8 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?Event, null), context.latestEvent(.note_off));
     try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffset(0));
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffset(1));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffsetForKind(.note_on, 0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextEventOffsetForKind(.note_off, 0));
     try std.testing.expect(context.hasOutputEventWriter());
 }
 
@@ -1143,6 +1158,8 @@ test "events query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(i16, 72), view.latestKind(.note_on).?.pitch);
     try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffset(1));
     try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffset(3));
+    try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffsetForKind(.note_on, 1));
+    try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForKind(.note_off, 3));
 }
 
 test "event constructors can target non-main buses" {
