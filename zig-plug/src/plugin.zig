@@ -251,6 +251,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().isBypassById(wanted_id);
         }
 
+        pub fn parameterCanAutomate(self: *const Self, index: usize) ?bool {
+            return self.parameterView().canAutomate(index);
+        }
+
+        pub fn parameterCanAutomateById(self: *const Self, wanted_id: u32) ?bool {
+            return self.parameterView().canAutomateById(wanted_id);
+        }
+
+        pub fn parameterIsReadOnly(self: *const Self, index: usize) ?bool {
+            return self.parameterView().isReadOnly(index);
+        }
+
+        pub fn parameterIsReadOnlyById(self: *const Self, wanted_id: u32) ?bool {
+            return self.parameterView().isReadOnlyById(wanted_id);
+        }
+
         pub fn parameterUnitId(self: *const Self, index: usize) ?i32 {
             return self.parameterView().unitId(index);
         }
@@ -889,7 +905,7 @@ test "plugin instance exposes typed parameter field access" {
         pub const vendor = "zig-vst3";
         pub const Params = struct {
             gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", -12.0, 6.0, 0.0),
-            bypass: parameters.BoolParam = .{ .id = 1, .name = "Bypass" },
+            bypass: parameters.BoolParam = .{ .id = 1, .name = "Bypass", .can_automate = false, .is_read_only = true },
             mode: parameters.EnumParam(Mode) = .{ .id = 2, .name = "Mode", .default = .clean },
         };
     };
@@ -908,6 +924,10 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalizedById(2));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsBypass(0));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsBypassById(0));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterCanAutomate(0));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterCanAutomateById(1));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterIsReadOnly(1));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsReadOnlyById(0));
     try std.testing.expectEqual(@as(?i32, 2), instance.parameterStepCount(2));
     try std.testing.expectEqual(@as(?i32, 2), instance.parameterStepCountById(2));
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsList(2));
@@ -917,6 +937,8 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterNameById(99));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterDefaultNormalizedById(99));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsBypassById(99));
+    try std.testing.expectEqual(@as(?bool, null), instance.parameterCanAutomateById(99));
+    try std.testing.expectEqual(@as(?bool, null), instance.parameterIsReadOnlyById(99));
     try std.testing.expectEqual(@as(?i32, null), instance.parameterStepCountById(99));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsListById(99));
     var buffer: [16]u8 = undefined;

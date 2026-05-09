@@ -151,6 +151,8 @@ pub const FloatParam = struct {
     max: f64 = 1.0,
     default: f64 = 0.0,
     is_bypass: bool = false,
+    can_automate: bool = true,
+    is_read_only: bool = false,
     unit_id: i32 = 0,
 
     pub fn init(id: u32, name: []const u8, min: f64, max: f64, default: f64) FloatParam {
@@ -211,6 +213,8 @@ pub const IntParam = struct {
     max: i64,
     default: i64,
     is_bypass: bool = false,
+    can_automate: bool = true,
+    is_read_only: bool = false,
     unit_id: i32 = 0,
 
     pub fn init(id: u32, name: []const u8, min: i64, max: i64, default: i64) IntParam {
@@ -267,6 +271,8 @@ pub const BoolParam = struct {
     units: []const u8 = "",
     default: bool = false,
     is_bypass: bool = false,
+    can_automate: bool = true,
+    is_read_only: bool = false,
     unit_id: i32 = 0,
 
     pub fn normalize(_: BoolParam, plain: bool) f64 {
@@ -324,6 +330,8 @@ pub fn EnumParam(comptime Enum: type) type {
         units: []const u8 = "",
         default: Enum,
         is_bypass: bool = false,
+        can_automate: bool = true,
+        is_read_only: bool = false,
         unit_id: i32 = 0,
 
         pub fn normalize(_: Self, value: Enum) f64 {
@@ -459,6 +467,30 @@ pub fn ParameterSet(comptime Params: type) type {
         pub fn isBypassById(self: *const Self, wanted_id: u32) ?bool {
             const index = self.indexOfId(wanted_id) orelse return null;
             return self.isBypass(index);
+        }
+
+        pub fn canAutomate(self: *const Self, index: usize) ?bool {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field.name).can_automate;
+            }
+            return null;
+        }
+
+        pub fn canAutomateById(self: *const Self, wanted_id: u32) ?bool {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.canAutomate(index);
+        }
+
+        pub fn isReadOnly(self: *const Self, index: usize) ?bool {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field.name).is_read_only;
+            }
+            return null;
+        }
+
+        pub fn isReadOnlyById(self: *const Self, wanted_id: u32) ?bool {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.isReadOnly(index);
         }
 
         pub fn unitId(self: *const Self, index: usize) ?i32 {
@@ -853,6 +885,22 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.isBypassById(wanted_id);
         }
 
+        pub fn canAutomate(self: Self, index: usize) ?bool {
+            return self.set.canAutomate(index);
+        }
+
+        pub fn canAutomateById(self: Self, wanted_id: u32) ?bool {
+            return self.set.canAutomateById(wanted_id);
+        }
+
+        pub fn isReadOnly(self: Self, index: usize) ?bool {
+            return self.set.isReadOnly(index);
+        }
+
+        pub fn isReadOnlyById(self: Self, wanted_id: u32) ?bool {
+            return self.set.isReadOnlyById(wanted_id);
+        }
+
         pub fn unitId(self: Self, index: usize) ?i32 {
             return self.set.unitId(index);
         }
@@ -1070,6 +1118,22 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn isBypassById(self: Self, wanted_id: u32) ?bool {
             return self.set.isBypassById(wanted_id);
+        }
+
+        pub fn canAutomate(self: Self, index: usize) ?bool {
+            return self.set.canAutomate(index);
+        }
+
+        pub fn canAutomateById(self: Self, wanted_id: u32) ?bool {
+            return self.set.canAutomateById(wanted_id);
+        }
+
+        pub fn isReadOnly(self: Self, index: usize) ?bool {
+            return self.set.isReadOnly(index);
+        }
+
+        pub fn isReadOnlyById(self: Self, wanted_id: u32) ?bool {
+            return self.set.isReadOnlyById(wanted_id);
         }
 
         pub fn unitId(self: Self, index: usize) ?i32 {
@@ -1436,7 +1500,7 @@ test "parameter set reflects descriptor fields" {
     const Mode = enum { clean, lead };
     const Params = struct {
         gain: FloatParam = .{ .id = 0, .name = "Gain", .short_name = "Gain", .units = "dB", .min = 0.0, .max = 1.0, .default = 0.75 },
-        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 16, .default = 4, .unit_id = 2 },
+        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 16, .default = 4, .can_automate = false, .is_read_only = true, .unit_id = 2 },
         bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
         mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .lead },
     };
@@ -1469,6 +1533,12 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectApproxEqAbs(1.0, set.defaultNormalized(3).?, 0.000001);
     try std.testing.expectApproxEqAbs(1.0, set.defaultNormalizedById(3).?, 0.000001);
     try std.testing.expectEqual(@as(?f64, null), set.defaultNormalizedById(99));
+    try std.testing.expectEqual(@as(?bool, true), set.canAutomate(0));
+    try std.testing.expectEqual(@as(?bool, false), set.canAutomateById(1));
+    try std.testing.expectEqual(@as(?bool, true), set.isReadOnly(1));
+    try std.testing.expectEqual(@as(?bool, false), set.isReadOnlyById(0));
+    try std.testing.expectEqual(@as(?bool, null), set.canAutomateById(99));
+    try std.testing.expectEqual(@as(?bool, null), set.isReadOnlyById(99));
     try std.testing.expectEqual(@as(?bool, false), set.isBypass(0));
     try std.testing.expectEqual(@as(?bool, null), set.isBypass(99));
     try std.testing.expectEqual(@as(?bool, false), set.isBypassById(0));
@@ -1621,7 +1691,7 @@ test "parameter view binds reflected set and values" {
     const Mode = enum { clean, boost, mute };
     const Params = struct {
         gain: FloatParam = .{ .id = 0, .name = "Gain", .units = "dB", .min = -12.0, .max = 6.0, .default = 0.0 },
-        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 4, .default = 1 },
+        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 4, .default = 1, .can_automate = false, .is_read_only = true },
         bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
         mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
     };
@@ -1648,6 +1718,10 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalizedById(3));
     try std.testing.expectEqual(@as(?bool, false), view.isBypass(0));
     try std.testing.expectEqual(@as(?bool, false), view.isBypassById(0));
+    try std.testing.expectEqual(@as(?bool, true), view.canAutomate(0));
+    try std.testing.expectEqual(@as(?bool, false), view.canAutomateById(1));
+    try std.testing.expectEqual(@as(?bool, true), view.isReadOnly(1));
+    try std.testing.expectEqual(@as(?bool, false), view.isReadOnlyById(0));
     try std.testing.expectEqual(@as(?i32, 2), view.unitId(1));
     try std.testing.expectEqual(@as(?i32, 2), view.unitIdById(1));
     try std.testing.expectEqual(@as(?i32, 3), view.stepCount(1));
@@ -1663,6 +1737,8 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?[]const u8, null), view.unitsById(99));
     try std.testing.expectEqual(@as(?f64, null), view.defaultNormalizedById(99));
     try std.testing.expectEqual(@as(?bool, null), view.isBypassById(99));
+    try std.testing.expectEqual(@as(?bool, null), view.canAutomateById(99));
+    try std.testing.expectEqual(@as(?bool, null), view.isReadOnlyById(99));
     try std.testing.expectEqual(@as(?i32, null), view.unitIdById(99));
     try std.testing.expectEqual(@as(?i32, null), view.stepCountById(99));
     try std.testing.expectEqual(@as(?bool, null), view.isListById(99));
@@ -1723,7 +1799,7 @@ test "parameter editor binds reflected set and mutable values" {
     const Mode = enum { clean, boost, mute };
     const Params = struct {
         gain: FloatParam = .{ .id = 0, .name = "Gain", .units = "dB", .min = -12.0, .max = 6.0, .default = 0.0 },
-        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 4, .default = 1 },
+        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 4, .default = 1, .can_automate = false, .is_read_only = true },
         bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
         mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
     };
@@ -1745,6 +1821,10 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalizedById(3));
     try std.testing.expectEqual(@as(?bool, false), editor.isBypass(0));
     try std.testing.expectEqual(@as(?bool, false), editor.isBypassById(0));
+    try std.testing.expectEqual(@as(?bool, true), editor.canAutomate(0));
+    try std.testing.expectEqual(@as(?bool, false), editor.canAutomateById(1));
+    try std.testing.expectEqual(@as(?bool, true), editor.isReadOnly(1));
+    try std.testing.expectEqual(@as(?bool, false), editor.isReadOnlyById(0));
     try std.testing.expectEqual(@as(?i32, 3), editor.stepCount(1));
     try std.testing.expectEqual(@as(?i32, 2), editor.stepCountById(3));
     try std.testing.expectEqual(@as(?bool, true), editor.isList(3));
