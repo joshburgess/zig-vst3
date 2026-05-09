@@ -359,16 +359,19 @@ pub const Events = struct {
     }
 
     pub fn firstKind(self: Events, kind: EventKind) ?Event {
+        var result: ?Event = null;
         for (self.items) |item| {
-            if (item.kind == kind) return item;
+            if (item.kind != kind) continue;
+            if (result == null or item.sample_offset < result.?.sample_offset) result = item;
         }
-        return null;
+        return result;
     }
 
     pub fn latestKind(self: Events, kind: EventKind) ?Event {
         var result: ?Event = null;
         for (self.items) |item| {
-            if (item.kind == kind) result = item;
+            if (item.kind != kind) continue;
+            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
         }
         return result;
     }
@@ -1123,6 +1126,23 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(?usize, 1), view.nextSampleOffset(0));
     try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffset(1));
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffset(3));
+}
+
+test "events query by sample offset without requiring sorted input" {
+    const items = [_]Event{
+        Event.noteOn(5, 0, 67, 0.5),
+        Event.noteOff(3, 0, 60, 0.0),
+        Event.noteOn(1, 0, 60, 1.0),
+        Event.noteOn(5, 0, 72, 0.25),
+    };
+    const view = try Events.init(&items, 8);
+
+    try std.testing.expectEqual(@as(usize, 1), view.firstKind(.note_on).?.sample_offset);
+    try std.testing.expectEqual(@as(i16, 60), view.firstKind(.note_on).?.pitch);
+    try std.testing.expectEqual(@as(usize, 5), view.latestKind(.note_on).?.sample_offset);
+    try std.testing.expectEqual(@as(i16, 72), view.latestKind(.note_on).?.pitch);
+    try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffset(1));
+    try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffset(3));
 }
 
 test "event constructors can target non-main buses" {
