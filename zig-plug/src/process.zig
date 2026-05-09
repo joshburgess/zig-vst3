@@ -6,6 +6,12 @@ pub const ParameterChange = struct {
     normalized: f64,
 };
 
+pub const ParameterSegment = struct {
+    start_offset: usize,
+    end_offset: usize,
+    normalized: f64,
+};
+
 pub const ParameterChanges = struct {
     items: []const ParameterChange = &.{},
 
@@ -114,6 +120,25 @@ pub const ParameterChanges = struct {
             if (result == null or item.sample_offset < result.?) result = item.sample_offset;
         }
         return result;
+    }
+
+    pub fn nextSampleOffsetForId(self: ParameterChanges, id: u32, after_sample_offset: usize) ?usize {
+        var result: ?usize = null;
+        for (self.items) |item| {
+            if (item.id != id or item.sample_offset <= after_sample_offset) continue;
+            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+        }
+        return result;
+    }
+
+    pub fn segmentAt(self: ParameterChanges, id: u32, start_offset: usize, frame_count: usize, default: f64) ?ParameterSegment {
+        if (start_offset >= frame_count) return null;
+        const next_offset = self.nextSampleOffsetForId(id, start_offset) orelse frame_count;
+        return .{
+            .start_offset = start_offset,
+            .end_offset = @min(next_offset, frame_count),
+            .normalized = self.normalizedAtOrBeforeOr(id, start_offset, default),
+        };
     }
 };
 
@@ -610,6 +635,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.nextSampleOffset(after_sample_offset);
         }
 
+        pub fn nextParameterChangeOffsetForId(self: @This(), id: u32, after_sample_offset: usize) ?usize {
+            return self.parameter_changes.nextSampleOffsetForId(id, after_sample_offset);
+        }
+
+        pub fn parameterSegmentAt(self: @This(), id: u32, start_offset: usize, default: f64) ?ParameterSegment {
+            return self.parameter_changes.segmentAt(id, start_offset, self.frameCount(), default);
+        }
+
         pub fn inputEvents(self: @This()) Events {
             return self.events;
         }
@@ -867,6 +900,10 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(f64, 0.5), context.parameterNormalizedAtOrBeforeOr(1, 1, 0.0));
     try std.testing.expectEqual(@as(?usize, 1), context.nextParameterChangeOffset(0));
     try std.testing.expectEqual(@as(?usize, null), context.nextParameterChangeOffset(1));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextParameterChangeOffsetForId(1, 0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextParameterChangeOffsetForId(2, 0));
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 0.25 }, context.parameterSegmentAt(1, 0, 0.25).?);
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 2, .normalized = 0.5 }, context.parameterSegmentAt(1, 1, 0.25).?);
     try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.inputEventCount());
     try std.testing.expect(!context.inputEventsEmpty());
@@ -953,6 +990,13 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffset(0));
     try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffset(2));
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffset(3));
+    try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffsetForId(7, 0));
+    try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForId(7, 3));
+    try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForId(9, 0));
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 3, .normalized = 0.25 }, view.segmentAt(7, 0, 4, 1.0).?);
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 3, .end_offset = 4, .normalized = 0.75 }, view.segmentAt(7, 3, 4, 1.0).?);
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 2, .normalized = 0.5 }, view.segmentAt(8, 0, 4, 0.5).?);
+    try std.testing.expectEqual(@as(?ParameterSegment, null), view.segmentAt(7, 4, 4, 1.0));
     try std.testing.expectEqual(@as(usize, 0), (ParameterChanges{}).changeCount());
     try std.testing.expect((ParameterChanges{}).isEmpty());
     try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).firstSampleOffset());
