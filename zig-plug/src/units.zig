@@ -242,6 +242,16 @@ pub fn UnitSet(comptime config: Config) type {
             try self.validateProgramLists();
             try self.validateUnits();
         }
+
+        pub fn validateProgramParameterIds(_: Self, parameter_set: anytype) !void {
+            for (config.program_lists) |list| {
+                for (list.programs) |item| {
+                    for (item.parameters) |parameter| {
+                        if (parameter_set.indexOfId(parameter.parameter_id) == null) return error.UnknownProgramParameter;
+                    }
+                }
+            }
+        }
     };
 }
 

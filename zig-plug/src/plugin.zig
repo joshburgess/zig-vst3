@@ -52,6 +52,7 @@ pub fn PluginSpec(comptime Plugin: type) type {
             const units = Units{};
             try units.validate();
             try set.validateUnitIds(units);
+            try units.validateProgramParameterIds(&set);
             return .{
                 .parameter_set = set,
                 .values = ParameterValues.init(&set),
@@ -841,12 +842,11 @@ test "plugin instance rejects invalid program parameter snapshots without partia
     try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("mix"));
 }
 
-test "plugin instance rejects unknown program parameter ids without partial updates" {
+test "plugin spec rejects unknown program parameter ids" {
     const programs = [_]units_api.Program{
         .{
             .name = "Unknown",
             .parameters = &.{
-                .{ .parameter_id = 1, .normalized = 0.25 },
                 .{ .parameter_id = 99, .normalized = 0.75 },
             },
         },
@@ -861,10 +861,8 @@ test "plugin instance rejects unknown program parameter ids without partial upda
             gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
         };
     };
-    var instance = try PluginInstance(Gain).init(std.testing.allocator, .{});
 
-    try std.testing.expectError(error.UnknownProgramParameter, instance.applyProgram(7, 0));
-    try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("gain"));
+    try std.testing.expectError(error.UnknownProgramParameter, PluginSpec(Gain).initChecked(.{}));
 }
 
 test "plugin spec detects lifecycle declarations" {
