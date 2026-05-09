@@ -1316,7 +1316,8 @@ test "plugin instance reads parameter state with migrations" {
 
     var in_stream = std.io.fixedBufferStream(&bytes);
     try new_instance.readParameterStateWithMigrations(in_stream.reader(), &.{
-        .{ .old_id = 7, .new_id = 11 },
+        .{ .old_id = 7, .new_id = 9 },
+        .{ .old_id = 9, .new_id = 11 },
     });
 
     try std.testing.expectEqual(@as(f64, 0.25), new_instance.loadParameterNormalized("output"));
