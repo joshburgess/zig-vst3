@@ -46,13 +46,17 @@ pub fn PluginSpec(comptime Plugin: type) type {
         values: ParameterValues,
         units: Units = .{},
 
-        pub fn init(params: Params) Self {
+        pub fn initChecked(params: Params) !Self {
             const set = ParameterSet.init(params);
-            set.validate() catch @panic("invalid parameter metadata");
+            try set.validate();
             return .{
                 .parameter_set = set,
                 .values = ParameterValues.init(&set),
             };
+        }
+
+        pub fn init(params: Params) Self {
+            return initChecked(params) catch @panic("invalid parameter metadata");
         }
     };
 }
@@ -79,7 +83,7 @@ pub fn PluginInstance(comptime Plugin: type) type {
                 Plugin{};
 
             return .{
-                .spec = Spec.init(params),
+                .spec = try Spec.initChecked(params),
                 .plugin = plugin,
             };
         }
@@ -615,6 +619,27 @@ test "plugin spec exposes metadata and parameter defaults" {
     try std.testing.expectEqual(@as(f64, 1.0), spec.values.view(&spec.parameter_set).loadNormalized("gain"));
     try std.testing.expect(spec.values.editor(&spec.parameter_set).storeNormalized("gain", 0.5));
     try std.testing.expectEqual(@as(f64, 0.5), spec.values.view(&spec.parameter_set).loadNormalized("gain"));
+}
+
+test "plugin spec and instance surface invalid parameter metadata" {
+    const Duplicate = struct {
+        pub const name = "Duplicate";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = .{ .id = 0, .name = "Gain", .min = 0.0, .max = 1.0, .default = 0.5 },
+            mix: parameters.FloatParam = .{ .id = 0, .name = "Mix", .min = 0.0, .max = 1.0, .default = 0.25 },
+        };
+    };
+    const Invalid = struct {
+        pub const name = "Invalid";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = .{ .id = 0, .name = "Gain", .min = 1.0, .max = 1.0, .default = 1.0 },
+        };
+    };
+
+    try std.testing.expectError(error.DuplicateParameterId, PluginSpec(Duplicate).initChecked(.{}));
+    try std.testing.expectError(error.InvalidParameterRange, PluginInstance(Invalid).init(std.testing.allocator, .{}));
 }
 
 test "plugin spec exposes optional plugin metadata overrides" {

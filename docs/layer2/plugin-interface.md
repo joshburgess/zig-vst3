@@ -22,7 +22,8 @@ A plugin type declares:
 - normalized plugin, factory, component, and controller metadata with conservative defaults
 - `encoded_parameter_state_size`: byte count for a full reflected parameter snapshot
 - lifecycle flags for optional `init`, `prepare`, `process`, `process64`, and `deinit` declarations
-- `init(params)`: builds the reflected set and value storage
+- `initChecked(params)`: validates parameter metadata, then builds the reflected set and value storage
+- `init(params)`: builds the reflected set and value storage, panicking if metadata is invalid
 
 `PluginInstance(Plugin)` owns a plugin value plus its reflected spec, exposes the instance parameter set and mutable or const value storage, exposes bound parameter view/editor handles, provides reflected parameter metadata by index or id, index lookup, plain/normalized conversion by index, id, display name, or field, and plain text formatting/parsing helpers, provides typed, normalized, index-based, id-based, name-based, and plain-id parameter load/store helpers, exposes reflected unit and program-list metadata, applies reflected parameter changes to instance-owned values before process dispatch, exposes the encoded reflected parameter-state size, reads and writes reflected parameter state for the instance, writes debug JSON for reflected parameter state, and drives only the lifecycle hooks the plugin declares. It creates the plugin through `init(allocator)` when present, otherwise it uses a default struct value for declaration-only plugin types.
 
