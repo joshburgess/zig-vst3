@@ -13,7 +13,7 @@ pub const SineSynth = struct {
     pub fn process(self: *SineSynth, context: *plug.process.ProcessContext(f32)) void {
         context.clearOutputs();
 
-        var segments = context.inputEventBlockSegments();
+        var segments = context.processBlockSegments();
         while (segments.next()) |segment| {
             self.applyEventsAt(context, segment.start_offset);
             if (!self.active) continue;
