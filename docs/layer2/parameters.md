@@ -20,7 +20,7 @@
 
 ## Boundary Rules
 
-Hosts speak normalized `0.0...1.0` values. Descriptors clamp normalized input before converting it to plain values. Plain input is clamped to each descriptor's declared range before normalization.
+Hosts speak normalized `0.0...1.0` values. Descriptors clamp normalized input before converting it to plain values, and direct normalized stores reject non-finite values. Plain input is clamped to each descriptor's declared range before normalization.
 
 VST3 parameter metadata is reflected from descriptors. Float parameters are continuous, bool parameters report one step, int parameters report their integer range as discrete steps, and enum parameters report one step per enum transition with the list flag set. Descriptor validation rejects empty display names, duplicate ids or names, invalid ranges, and non-finite float defaults. Descriptors can set `short_name` and `units` for host parameter displays; empty `short_name` falls back to the full display name. Descriptors also expose `can_automate` and `is_read_only` so framework users can control the matching host parameter flags without dropping to the VST3 layer. Applying process-time parameter changes ignores non-automatable and read-only parameters. The VST3 bridge also rejects direct host-side edits for read-only parameters while still allowing state restore and plugin-owned value updates.
 

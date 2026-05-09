@@ -816,6 +816,7 @@ pub fn ParameterValues(comptime Params: type) type {
 
         pub fn store(self: *Self, index: usize, value: f64) bool {
             if (index >= Set.count) return false;
+            if (!std.math.isFinite(value)) return false;
             self.values[index].store(value);
             return true;
         }
@@ -1820,6 +1821,10 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expectEqual(@as(?f64, null), values.load(2));
     try std.testing.expect(values.store(0, 2.0));
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
+    try std.testing.expect(!values.store(0, std.math.nan(f64)));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
+    try std.testing.expect(!values.storeById(&set, 0, std.math.inf(f64)));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.loadById(&set, 0));
     try std.testing.expect(!values.store(2, 0.5));
     try std.testing.expect(values.storeById(&set, 0, 0.75));
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
@@ -2094,6 +2099,10 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expect(editor.storePlainById(1, 3.0));
     try std.testing.expect(editor.storeByName("Gain", 0.75));
     try std.testing.expect(editor.storePlainByName("Voices", 4.0));
+    try std.testing.expect(!editor.storeNormalized("gain", std.math.nan(f64)));
+    try std.testing.expect(!editor.storeIndex(0, std.math.inf(f64)));
+    try std.testing.expect(!editor.storeById(0, -std.math.inf(f64)));
+    try std.testing.expect(!editor.storeByName("Gain", std.math.nan(f64)));
     try std.testing.expect(!editor.storeIndex(99, 1.0));
     try std.testing.expect(!editor.storePlainIndex(99, 1.0));
     try std.testing.expect(!editor.storeById(99, 1.0));
