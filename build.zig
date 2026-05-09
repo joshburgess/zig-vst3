@@ -74,6 +74,7 @@ pub fn build(b: *std.Build) void {
         .core_example_source_file = "examples/event_echo_core.zig",
         .bundle_id = "dev.zig-vst3.event-echo",
     });
+    const event_monitor_core_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/event_monitor_core.zig");
     const example_bundle_steps = [_]Vst3BundleSteps{
         gain.bundles,
         bypass.bundles,
@@ -118,6 +119,7 @@ pub fn build(b: *std.Build) void {
         voice_mix.core_example_tests,
         note_gate.core_example_tests,
         event_echo.core_example_tests,
+        event_monitor_core_tests,
     });
 
     const validate_step = b.step("validate", "Run the VST3 SDK validator for -Dplugin=path/to/Plugin.vst3");
