@@ -54,16 +54,19 @@ pub const ParameterChanges = struct {
     pub fn latest(self: ParameterChanges, id: u32) ?ParameterChange {
         var result: ?ParameterChange = null;
         for (self.items) |item| {
-            if (item.id == id) result = item;
+            if (item.id != id) continue;
+            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
         }
         return result;
     }
 
     pub fn first(self: ParameterChanges, id: u32) ?ParameterChange {
+        var result: ?ParameterChange = null;
         for (self.items) |item| {
-            if (item.id == id) return item;
+            if (item.id != id) continue;
+            if (result == null or item.sample_offset < result.?.sample_offset) result = item;
         }
-        return null;
+        return result;
     }
 
     pub fn count(self: ParameterChanges, id: u32) usize {
@@ -99,7 +102,8 @@ pub const ParameterChanges = struct {
     pub fn latestAtOrBefore(self: ParameterChanges, id: u32, sample_offset: usize) ?ParameterChange {
         var result: ?ParameterChange = null;
         for (self.items) |item| {
-            if (item.id == id and item.sample_offset <= sample_offset) result = item;
+            if (item.id != id or item.sample_offset > sample_offset) continue;
+            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
         }
         return result;
     }
@@ -1001,6 +1005,23 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expect((ParameterChanges{}).isEmpty());
     try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).latestSampleOffset());
+}
+
+test "parameter changes query by sample offset without requiring sorted input" {
+    const changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 5, .normalized = 0.75 },
+        .{ .id = 8, .sample_offset = 2, .normalized = 0.5 },
+        .{ .id = 7, .sample_offset = 1, .normalized = 0.25 },
+        .{ .id = 7, .sample_offset = 5, .normalized = 1.0 },
+    };
+    const view = try ParameterChanges.init(&changes, 8);
+
+    try std.testing.expectEqual(@as(f64, 0.25), view.first(7).?.normalized);
+    try std.testing.expectEqual(@as(f64, 1.0), view.latest(7).?.normalized);
+    try std.testing.expectEqual(@as(?f64, 0.25), view.latestNormalizedAtOrBefore(7, 4));
+    try std.testing.expectEqual(@as(?f64, 1.0), view.latestNormalizedAtOrBefore(7, 5));
+    try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffsetForId(7, 1));
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 5, .normalized = 0.25 }, view.segmentAt(7, 1, 8, 0.0).?);
 }
 
 test "parameter changes reject values outside the process block" {
