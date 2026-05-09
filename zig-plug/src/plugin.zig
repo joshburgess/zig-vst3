@@ -814,7 +814,7 @@ test "plugin instance applies program parameter snapshots" {
     try std.testing.expect(!try instance.applyProgramByName(7, "Missing"));
 }
 
-test "plugin instance rejects invalid program parameter snapshots without partial updates" {
+test "plugin spec rejects invalid program parameter snapshots" {
     const programs = [_]units_api.Program{
         .{
             .name = "Invalid",
@@ -835,11 +835,8 @@ test "plugin instance rejects invalid program parameter snapshots without partia
             mix: parameters.FloatParam = parameters.FloatParam.init(2, "Mix", 0.0, 1.0, 0.5),
         };
     };
-    var instance = try PluginInstance(Gain).init(std.testing.allocator, .{});
 
-    try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, instance.applyProgram(7, 0));
-    try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("gain"));
-    try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("mix"));
+    try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, PluginSpec(Gain).initChecked(.{}));
 }
 
 test "plugin spec rejects unknown program parameter ids" {

@@ -14,7 +14,7 @@ A plugin type declares:
 - `Params`: struct of `zig-plug` parameter descriptors
 - optional lifecycle methods
 
-`PluginSpec(Plugin)` validates those declarations at compile time and exposes:
+`PluginSpec(Plugin)` validates those declarations at compile time, including program snapshot parameter ids and normalized values, and exposes:
 
 - `ParameterSet`: reflected descriptor metadata
 - `ParameterValues`: atomic normalized values initialized from descriptor defaults
