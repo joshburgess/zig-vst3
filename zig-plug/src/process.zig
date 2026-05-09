@@ -12,6 +12,11 @@ pub const ParameterSegment = struct {
     normalized: f64,
 };
 
+fn clampNormalized(value: f64) f64 {
+    if (std.math.isNan(value)) return 0.0;
+    return std.math.clamp(value, 0.0, 1.0);
+}
+
 pub const BlockSegment = struct {
     start_offset: usize,
     end_offset: usize,
@@ -145,11 +150,11 @@ pub const ParameterChanges = struct {
     }
 
     pub fn latestNormalizedOr(self: ParameterChanges, id: u32, default: f64) f64 {
-        return self.latestNormalized(id) orelse default;
+        return self.latestNormalized(id) orelse clampNormalized(default);
     }
 
     pub fn firstNormalizedOr(self: ParameterChanges, id: u32, default: f64) f64 {
-        return self.firstNormalized(id) orelse default;
+        return self.firstNormalized(id) orelse clampNormalized(default);
     }
 
     pub fn latestAtOrBefore(self: ParameterChanges, id: u32, sample_offset: usize) ?ParameterChange {
@@ -167,7 +172,7 @@ pub const ParameterChanges = struct {
     }
 
     pub fn normalizedAtOrBeforeOr(self: ParameterChanges, id: u32, sample_offset: usize, default: f64) f64 {
-        return self.latestNormalizedAtOrBefore(id, sample_offset) orelse default;
+        return self.latestNormalizedAtOrBefore(id, sample_offset) orelse clampNormalized(default);
     }
 
     pub fn nextSampleOffset(self: ParameterChanges, after_sample_offset: usize) ?usize {
@@ -1399,6 +1404,22 @@ test "parameter changes reject denormalized values" {
     };
 
     try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, ParameterChanges.init(&changes, 4));
+}
+
+test "parameter changes clamp defaulted normalized reads" {
+    const changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 2, .normalized = 0.5 },
+    };
+    const view = try ParameterChanges.init(&changes, 4);
+
+    try std.testing.expectEqual(@as(f64, 1.0), view.firstNormalizedOr(9, 1.5));
+    try std.testing.expectEqual(@as(f64, 0.0), view.latestNormalizedOr(9, -0.25));
+    try std.testing.expectEqual(@as(f64, 0.0), view.normalizedAtOrBeforeOr(7, 1, std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 0.5), view.normalizedAtOrBeforeOr(7, 2, 1.5));
+
+    var segments = view.segments(9, 4, 1.5);
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 4, .normalized = 1.0 }, segments.next().?);
+    try std.testing.expectEqual(@as(?ParameterSegment, null), segments.next());
 }
 
 test "events validate block offsets and count kinds" {
