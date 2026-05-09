@@ -1563,6 +1563,21 @@ test "events iterate block segments split at event offsets" {
     try std.testing.expectEqual(@as(?BlockSegment, null), zero.next());
 }
 
+test "events block segments ignore duplicate offsets" {
+    const items = [_]Event{
+        Event.noteOn(1, 0, 60, 1.0),
+        Event.midiCc(1, 0, 1, 0.5),
+        Event.noteOff(3, 0, 60, 0.0),
+    };
+    const view = try Events.init(&items, 5);
+    var iterator = view.blockSegments(5);
+
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 3 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 3, .end_offset = 5 }, iterator.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+}
+
 test "process block segments split at parameter and event offsets" {
     const changes = [_]ParameterChange{
         .{ .id = 7, .sample_offset = 5, .normalized = 0.75 },
@@ -1592,6 +1607,31 @@ test "process block segments split at parameter and event offsets" {
 
     var zero = ProcessBlockSegmentIterator{ .parameter_changes = parameter_changes, .events = input_events, .frame_count = 0 };
     try std.testing.expectEqual(@as(?BlockSegment, null), zero.next());
+}
+
+test "process block segments ignore duplicate parameter and event offsets" {
+    const changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 1, .normalized = 0.25 },
+        .{ .id = 8, .sample_offset = 1, .normalized = 0.5 },
+        .{ .id = 7, .sample_offset = 3, .normalized = 0.75 },
+    };
+    const events = [_]Event{
+        Event.noteOn(1, 0, 60, 1.0),
+        Event.midiCc(3, 0, 1, 0.5),
+        Event.noteOff(3, 0, 60, 0.0),
+    };
+    const parameter_changes = try ParameterChanges.init(&changes, 5);
+    const input_events = try Events.init(&events, 5);
+    var iterator = ProcessBlockSegmentIterator{
+        .parameter_changes = parameter_changes,
+        .events = input_events,
+        .frame_count = 5,
+    };
+
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 3 }, iterator.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 3, .end_offset = 5 }, iterator.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
 }
 
 test "events query by sample offset without requiring sorted input" {
