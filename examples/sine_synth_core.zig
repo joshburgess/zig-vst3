@@ -32,18 +32,19 @@ pub const SineSynth = struct {
     }
 
     fn applyEventsAt(self: *SineSynth, context: *plug.process.ProcessContext(f32), sample_offset: usize) void {
-        var note_ons = context.inputEventsOfKind(.note_on);
-        while (note_ons.next()) |event| {
-            if (event.sample_offset != sample_offset) continue;
-            self.active = event.velocity > 0.0;
-            self.note = event.pitch;
-            self.phase = 0.0;
-        }
-
-        var note_offs = context.inputEventsOfKind(.note_off);
-        while (note_offs.next()) |event| {
-            if (event.sample_offset != sample_offset or event.pitch != self.note) continue;
-            self.active = false;
+        var events = context.inputEventsAtOffset(sample_offset);
+        while (events.next()) |event| {
+            switch (event.kind) {
+                .note_on => {
+                    self.active = event.velocity > 0.0;
+                    self.note = event.pitch;
+                    self.phase = 0.0;
+                },
+                .note_off => {
+                    if (event.pitch == self.note) self.active = false;
+                },
+                else => {},
+            }
         }
     }
 

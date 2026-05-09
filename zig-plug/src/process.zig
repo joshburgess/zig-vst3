@@ -238,6 +238,23 @@ pub const EventKindIterator = struct {
     }
 };
 
+pub const EventOffsetIterator = struct {
+    events: Events,
+    sample_offset: usize,
+    next_index: usize = 0,
+
+    pub fn next(self: *EventOffsetIterator) ?Event {
+        while (self.next_index < self.events.items.len) : (self.next_index += 1) {
+            const item = self.events.items[self.next_index];
+            if (item.sample_offset == self.sample_offset) {
+                self.next_index += 1;
+                return item;
+            }
+        }
+        return null;
+    }
+};
+
 pub const EventBlockSegmentIterator = struct {
     events: Events,
     frame_count: usize,
@@ -482,6 +499,10 @@ pub const Events = struct {
         return .{ .events = self, .kind = kind };
     }
 
+    pub fn atOffset(self: Events, sample_offset: usize) EventOffsetIterator {
+        return .{ .events = self, .sample_offset = sample_offset };
+    }
+
     pub fn blockSegments(self: Events, frame_count: usize) EventBlockSegmentIterator {
         return .{
             .events = self,
@@ -586,6 +607,10 @@ pub const EventWriter = struct {
 
     pub fn ofKind(self: *const EventWriter, kind: EventKind) EventKindIterator {
         return self.events().ofKind(kind);
+    }
+
+    pub fn atOffset(self: *const EventWriter, sample_offset: usize) EventOffsetIterator {
+        return self.events().atOffset(sample_offset);
     }
 
     pub fn blockSegments(self: *const EventWriter) EventBlockSegmentIterator {
@@ -809,6 +834,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.ofKind(kind);
         }
 
+        pub fn inputEventsAtOffset(self: @This(), sample_offset: usize) EventOffsetIterator {
+            return self.events.atOffset(sample_offset);
+        }
+
         pub fn inputEventBlockSegments(self: @This()) EventBlockSegmentIterator {
             return self.events.blockSegments(self.frameCount());
         }
@@ -879,6 +908,10 @@ pub fn ProcessContext(comptime Sample: type) type {
         pub fn outputEventBlockSegments(self: @This()) EventBlockSegmentIterator {
             const writer = self.output_events orelse return (Events{}).blockSegments(self.frameCount());
             return writer.blockSegments();
+        }
+
+        pub fn outputEventsAtOffset(self: @This(), sample_offset: usize) EventOffsetIterator {
+            return self.writtenOutputEvents().atOffset(sample_offset);
         }
 
         pub fn firstOutputEventOffset(self: @This()) ?usize {
@@ -1128,6 +1161,9 @@ test "process context validates attached parameter changes and events" {
     var note_events = context.inputEventsOfKind(.note_on);
     try std.testing.expectEqual(@as(i16, 60), note_events.next().?.pitch);
     try std.testing.expectEqual(@as(?Event, null), note_events.next());
+    var offset_events = context.inputEventsAtOffset(1);
+    try std.testing.expectEqual(EventKind.note_on, offset_events.next().?.kind);
+    try std.testing.expectEqual(@as(?Event, null), offset_events.next());
     var event_segments = context.inputEventBlockSegments();
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, event_segments.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 2 }, event_segments.next().?);
@@ -1330,6 +1366,16 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(?usize, 1), view.nextSampleOffset(0));
     try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffset(1));
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffset(3));
+    var offset_events = view.atOffset(3);
+    try std.testing.expectEqual(EventKind.note_off, offset_events.next().?.kind);
+    try std.testing.expectEqual(EventKind.pitch_bend, offset_events.next().?.kind);
+    try std.testing.expectEqual(EventKind.aftertouch, offset_events.next().?.kind);
+    try std.testing.expectEqual(EventKind.note_expression_value, offset_events.next().?.kind);
+    try std.testing.expectEqual(EventKind.note_expression_int, offset_events.next().?.kind);
+    try std.testing.expectEqual(EventKind.note_expression_text, offset_events.next().?.kind);
+    try std.testing.expectEqual(EventKind.data, offset_events.next().?.kind);
+    try std.testing.expectEqual(EventKind.other, offset_events.next().?.kind);
+    try std.testing.expectEqual(@as(?Event, null), offset_events.next());
 }
 
 test "events iterate block segments split at event offsets" {
@@ -1477,6 +1523,9 @@ test "event writer appends event views atomically" {
     var written_note_offs = writer.ofKind(.note_off);
     try std.testing.expectEqual(@as(i16, 60), written_note_offs.next().?.pitch);
     try std.testing.expectEqual(@as(?Event, null), written_note_offs.next());
+    var written_offset_events = writer.atOffset(1);
+    try std.testing.expectEqual(EventKind.note_off, written_offset_events.next().?.kind);
+    try std.testing.expectEqual(@as(?Event, null), written_offset_events.next());
     var written_segments = writer.blockSegments();
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, written_segments.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 4 }, written_segments.next().?);
@@ -1533,6 +1582,9 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?usize, 0), context.firstOutputEventOffsetForKind(.note_on));
     try std.testing.expectEqual(@as(?usize, 1), context.latestOutputEventOffsetForKind(.note_off));
     try std.testing.expectEqual(@as(?usize, null), context.firstOutputEventOffsetForKind(.midi_cc));
+    var output_offset_events = context.outputEventsAtOffset(1);
+    try std.testing.expectEqual(EventKind.note_off, output_offset_events.next().?.kind);
+    try std.testing.expectEqual(@as(?Event, null), output_offset_events.next());
     var output_segments = context.outputEventBlockSegments();
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, output_segments.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 2 }, output_segments.next().?);
