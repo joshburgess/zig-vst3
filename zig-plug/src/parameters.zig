@@ -419,6 +419,22 @@ pub fn ParameterSet(comptime Params: type) type {
             if (self.hasDuplicateIds()) return error.DuplicateParameterId;
         }
 
+        pub fn firstDescriptorError(self: *const Self) ?anyerror {
+            inline for (fields) |field| {
+                if (parameterDescriptorError(@field(self.params, field.name))) |err| return err;
+            }
+            return null;
+        }
+
+        pub fn validateDescriptors(self: *const Self) !void {
+            if (self.firstDescriptorError()) |err| return err;
+        }
+
+        pub fn validate(self: *const Self) !void {
+            try self.validateUniqueIds();
+            try self.validateDescriptors();
+        }
+
         pub fn id(self: *const Self, index: usize) ?u32 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).id;
@@ -719,6 +735,19 @@ fn parameterIsList(param: anytype) bool {
         return @typeInfo(@TypeOf(param.default)) == .@"enum";
     }
     return false;
+}
+
+fn parameterDescriptorError(param: anytype) ?anyerror {
+    const Param = @TypeOf(param);
+    if (param.name.len == 0) return error.EmptyParameterName;
+    if (Param == FloatParam) {
+        if (!std.math.isFinite(param.min) or !std.math.isFinite(param.max) or param.max <= param.min) {
+            return error.InvalidParameterRange;
+        }
+    } else if (Param == IntParam) {
+        if (param.max <= param.min) return error.InvalidParameterRange;
+    }
+    return null;
 }
 
 pub fn ParameterValues(comptime Params: type) type {
@@ -1633,6 +1662,38 @@ test "parameter set accepts unique ids" {
     try std.testing.expectEqual(@as(?u32, null), set.duplicateId());
     try std.testing.expect(!set.hasDuplicateIds());
     try set.validateUniqueIds();
+}
+
+test "parameter set validates descriptor names and ranges" {
+    const EmptyNameParams = struct {
+        gain: FloatParam = .{ .id = 0, .name = "", .min = 0.0, .max = 1.0, .default = 0.5 },
+    };
+    const InvalidFloatParams = struct {
+        gain: FloatParam = .{ .id = 0, .name = "Gain", .min = 1.0, .max = 1.0, .default = 1.0 },
+    };
+    const InvalidIntParams = struct {
+        voices: IntParam = .{ .id = 0, .name = "Voices", .min = 4, .max = 4, .default = 4 },
+    };
+
+    const empty_name_set = ParameterSet(EmptyNameParams).init(.{});
+    const invalid_float_set = ParameterSet(InvalidFloatParams).init(.{});
+    const invalid_int_set = ParameterSet(InvalidIntParams).init(.{});
+
+    try std.testing.expectEqual(error.EmptyParameterName, empty_name_set.firstDescriptorError().?);
+    try std.testing.expectError(error.EmptyParameterName, empty_name_set.validateDescriptors());
+    try std.testing.expectError(error.InvalidParameterRange, invalid_float_set.validateDescriptors());
+    try std.testing.expectError(error.InvalidParameterRange, invalid_int_set.validateDescriptors());
+}
+
+test "parameter set validates complete metadata" {
+    const Params = struct {
+        gain: FloatParam = .{ .id = 0, .name = "Gain", .min = 0.0, .max = 1.0, .default = 0.5 },
+        bypass: BoolParam = .{ .id = 1, .name = "Bypass" },
+    };
+    const Set = ParameterSet(Params);
+    const set = Set.init(.{});
+
+    try set.validate();
 }
 
 test "integer parameter step count saturates to VST limit" {
