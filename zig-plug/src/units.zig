@@ -212,10 +212,27 @@ pub fn UnitSet(comptime config: Config) type {
             if (self.duplicateProgramListId() != null) return error.DuplicateProgramListId;
             for (config.program_lists) |list| {
                 if (list.name.len == 0) return error.EmptyProgramListName;
-                for (list.programs) |item| {
+                for (list.programs, 0..) |item, item_index| {
                     if (item.name.len == 0) return error.EmptyProgramName;
-                    for (item.info) |info| {
+                    for (list.programs, 0..) |other, other_index| {
+                        if (other_index > item_index and std.mem.eql(u8, other.name, item.name)) {
+                            return error.DuplicateProgramName;
+                        }
+                    }
+                    for (item.parameters, 0..) |parameter, parameter_index| {
+                        for (item.parameters, 0..) |other, other_index| {
+                            if (other_index > parameter_index and other.parameter_id == parameter.parameter_id) {
+                                return error.DuplicateProgramParameter;
+                            }
+                        }
+                    }
+                    for (item.info, 0..) |info, info_index| {
                         if (info.key.len == 0) return error.EmptyProgramInfoKey;
+                        for (item.info, 0..) |other, other_index| {
+                            if (other_index > info_index and std.mem.eql(u8, other.key, info.key)) {
+                                return error.DuplicateProgramInfoKey;
+                            }
+                        }
                     }
                 }
             }
@@ -327,8 +344,17 @@ test "unit set validates ids names and links" {
     const EmptyProgramName = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "" }} }},
     });
+    const DuplicateProgramNames = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{ .{ .name = "Clean" }, .{ .name = "Clean" } } }},
+    });
+    const DuplicateProgramParameters = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .parameters = &.{ .{ .parameter_id = 1, .normalized = 0.25 }, .{ .parameter_id = 1, .normalized = 0.75 } } }} }},
+    });
     const EmptyProgramInfoKey = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .info = &.{.{ .key = "", .value = "x" }} }} }},
+    });
+    const DuplicateProgramInfoKeys = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .info = &.{ .{ .key = "category", .value = "clean" }, .{ .key = "category", .value = "lead" } } }} }},
     });
 
     try std.testing.expectError(error.DuplicateUnitId, (DuplicateUnits{}).validate());
@@ -339,5 +365,8 @@ test "unit set validates ids names and links" {
     try std.testing.expectError(error.DuplicateProgramListId, (DuplicateProgramLists{}).validate());
     try std.testing.expectError(error.EmptyProgramListName, (EmptyProgramListName{}).validate());
     try std.testing.expectError(error.EmptyProgramName, (EmptyProgramName{}).validate());
+    try std.testing.expectError(error.DuplicateProgramName, (DuplicateProgramNames{}).validate());
+    try std.testing.expectError(error.DuplicateProgramParameter, (DuplicateProgramParameters{}).validate());
     try std.testing.expectError(error.EmptyProgramInfoKey, (EmptyProgramInfoKey{}).validate());
+    try std.testing.expectError(error.DuplicateProgramInfoKey, (DuplicateProgramInfoKeys{}).validate());
 }
