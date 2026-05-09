@@ -255,7 +255,13 @@ fn parameterInfoFlags(
     set: *const plug.parameters.ParameterSet(Params),
     index: usize,
 ) types.int32 {
-    var flags = ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate;
+    var flags: types.int32 = 0;
+    if (set.canAutomate(index) orelse false) {
+        flags |= ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate;
+    }
+    if (set.isReadOnly(index) orelse false) {
+        flags |= ivsteditcontroller.ParameterInfo.ParameterFlags.kIsReadOnly;
+    }
     if (set.isList(index) orelse false) {
         flags |= ivsteditcontroller.ParameterInfo.ParameterFlags.kIsList;
     }
@@ -1385,7 +1391,7 @@ test "zig-plug bridge fills VST3 parameter info from reflected set" {
     const Params = struct {
         gain: plug.parameters.FloatParam = .{ .id = 7, .name = "Gain", .short_name = "Gn", .units = "dB", .min = 0.0, .max = 2.0, .default = 1.0 },
         bypass: plug.parameters.BoolParam = .{ .id = 8, .name = "Bypass", .is_bypass = true },
-        voices: plug.parameters.IntParam = plug.parameters.IntParam.init(9, "Voices", 1, 4, 1),
+        voices: plug.parameters.IntParam = .{ .id = 9, .name = "Voices", .min = 1, .max = 4, .default = 1, .can_automate = false, .is_read_only = true },
         mode: plug.parameters.EnumParam(Mode) = .{ .id = 10, .name = "Mode", .default = .clean },
     };
     const Set = plug.parameters.ParameterSet(Params);
@@ -1405,6 +1411,8 @@ test "zig-plug bridge fills VST3 parameter info from reflected set" {
     try std.testing.expect((info.flags & ivsteditcontroller.ParameterInfo.ParameterFlags.kIsBypass) != 0);
     try std.testing.expectEqual(types.kResultOk, fillParameterInfo(Params, &set, 2, &info));
     try std.testing.expectEqual(@as(types.int32, 3), info.stepCount);
+    try std.testing.expect((info.flags & ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate) == 0);
+    try std.testing.expect((info.flags & ivsteditcontroller.ParameterInfo.ParameterFlags.kIsReadOnly) != 0);
     try std.testing.expectEqual(types.kResultOk, fillParameterInfo(Params, &set, 3, &info));
     try std.testing.expectEqual(@as(types.int32, 2), info.stepCount);
     try std.testing.expect((info.flags & ivsteditcontroller.ParameterInfo.ParameterFlags.kIsList) != 0);
