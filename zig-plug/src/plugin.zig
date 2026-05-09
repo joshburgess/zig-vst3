@@ -370,8 +370,40 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.parameter_set.fieldName(field_name);
         }
 
+        pub fn parameterFieldShortName(self: *const Self, comptime field_name: []const u8) []const u8 {
+            return self.spec.parameter_set.fieldShortName(field_name);
+        }
+
+        pub fn parameterFieldUnits(self: *const Self, comptime field_name: []const u8) []const u8 {
+            return self.spec.parameter_set.fieldUnits(field_name);
+        }
+
         pub fn parameterFieldDefaultNormalized(self: *const Self, comptime field_name: []const u8) f64 {
             return self.spec.parameter_set.fieldDefaultNormalized(field_name);
+        }
+
+        pub fn parameterFieldIsBypass(self: *const Self, comptime field_name: []const u8) bool {
+            return self.spec.parameter_set.fieldIsBypass(field_name);
+        }
+
+        pub fn parameterFieldCanAutomate(self: *const Self, comptime field_name: []const u8) bool {
+            return self.spec.parameter_set.fieldCanAutomate(field_name);
+        }
+
+        pub fn parameterFieldIsReadOnly(self: *const Self, comptime field_name: []const u8) bool {
+            return self.spec.parameter_set.fieldIsReadOnly(field_name);
+        }
+
+        pub fn parameterFieldUnitId(self: *const Self, comptime field_name: []const u8) i32 {
+            return self.spec.parameter_set.fieldUnitId(field_name);
+        }
+
+        pub fn parameterFieldStepCount(self: *const Self, comptime field_name: []const u8) i32 {
+            return self.spec.parameter_set.fieldStepCount(field_name);
+        }
+
+        pub fn parameterFieldIsList(self: *const Self, comptime field_name: []const u8) bool {
+            return self.spec.parameter_set.fieldIsList(field_name);
         }
 
         pub fn formatParameterFieldPlain(self: *const Self, comptime field_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
@@ -1061,8 +1093,8 @@ test "plugin instance exposes typed parameter field access" {
         pub const name = "Instance Field Parameters";
         pub const vendor = "zig-vst3";
         pub const Params = struct {
-            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", -12.0, 6.0, 0.0),
-            bypass: parameters.BoolParam = .{ .id = 1, .name = "Bypass", .can_automate = false, .is_read_only = true },
+            gain: parameters.FloatParam = .{ .id = 0, .name = "Gain", .short_name = "G", .units = "dB", .min = -12.0, .max = 6.0, .default = 0.0 },
+            bypass: parameters.BoolParam = .{ .id = 1, .name = "Bypass", .can_automate = false, .is_read_only = true, .is_bypass = true },
             mode: parameters.EnumParam(Mode) = .{ .id = 2, .name = "Mode", .default = .clean },
         };
     };
@@ -1126,7 +1158,16 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(usize, 0), instance.parameterFieldIndex("gain"));
     try std.testing.expectEqual(@as(u32, 2), instance.parameterFieldId("mode"));
     try std.testing.expectEqualStrings("Gain", instance.parameterFieldName("gain"));
+    try std.testing.expectEqualStrings("G", instance.parameterFieldShortName("gain"));
+    try std.testing.expectEqualStrings("dB", instance.parameterFieldUnits("gain"));
     try std.testing.expectEqual(@as(f64, 0.0), instance.parameterFieldDefaultNormalized("mode"));
+    try std.testing.expect(instance.parameterFieldIsBypass("bypass"));
+    try std.testing.expect(instance.parameterFieldCanAutomate("gain"));
+    try std.testing.expect(!instance.parameterFieldCanAutomate("bypass"));
+    try std.testing.expect(instance.parameterFieldIsReadOnly("bypass"));
+    try std.testing.expectEqual(@as(i32, 0), instance.parameterFieldUnitId("gain"));
+    try std.testing.expectEqual(@as(i32, 2), instance.parameterFieldStepCount("mode"));
+    try std.testing.expect(instance.parameterFieldIsList("mode"));
     try std.testing.expectEqualStrings("mute", try instance.formatParameterFieldPlain("mode", 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterFieldPlain("mode", "mute"));
     try std.testing.expectEqual(Mode.mute, instance.parameterFieldPlainFromNormalized("mode", 1.0));
