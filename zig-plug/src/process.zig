@@ -602,10 +602,10 @@ pub const EventWriter = struct {
     }
 
     pub fn appendAll(self: *EventWriter, source: Events) !void {
-        if (source.items.len > self.storage.len - self.count) return error.EventStorageFull;
         for (source.items) |event| {
             try event.validate(self.frame_count);
         }
+        if (source.items.len > self.storage.len - self.count) return error.EventStorageFull;
         for (source.items) |event| {
             self.storage[self.count] = event;
             self.count += 1;
@@ -1735,6 +1735,13 @@ test "event writer appends event views atomically" {
     var full_storage: [1]Event = undefined;
     var full_writer = EventWriter.init(&full_storage, 4);
     try std.testing.expectError(error.EventStorageFull, full_writer.appendAll(try Events.init(&items, 4)));
+    try std.testing.expectEqual(@as(usize, 0), full_writer.eventCount());
+
+    const invalid_and_too_large = [_]Event{
+        Event.noteOn(0, 0, 60, 1.0),
+        Event.noteOn(0, 0, 128, 1.0),
+    };
+    try std.testing.expectError(error.InvalidEventPitch, full_writer.appendAll(.{ .items = &invalid_and_too_large }));
     try std.testing.expectEqual(@as(usize, 0), full_writer.eventCount());
 
     const outside = [_]Event{Event.noteOn(4, 0, 60, 1.0)};
