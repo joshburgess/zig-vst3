@@ -75,6 +75,7 @@ pub fn build(b: *std.Build) void {
         .bundle_id = "dev.zig-vst3.event-echo",
     });
     const event_monitor_core_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/event_monitor_core.zig");
+    const sine_synth_core_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/sine_synth_core.zig");
     const example_bundle_steps = [_]Vst3BundleSteps{
         gain.bundles,
         bypass.bundles,
@@ -120,6 +121,7 @@ pub fn build(b: *std.Build) void {
         note_gate.core_example_tests,
         event_echo.core_example_tests,
         event_monitor_core_tests,
+        sine_synth_core_tests,
     });
 
     const validate_step = b.step("validate", "Run the VST3 SDK validator for -Dplugin=path/to/Plugin.vst3");
