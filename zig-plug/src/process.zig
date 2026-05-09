@@ -406,6 +406,16 @@ pub const Events = struct {
         return result;
     }
 
+    pub fn firstSampleOffsetForKind(self: Events, kind: EventKind) ?usize {
+        const event = self.firstKind(kind) orelse return null;
+        return event.sample_offset;
+    }
+
+    pub fn latestSampleOffsetForKind(self: Events, kind: EventKind) ?usize {
+        const event = self.latestKind(kind) orelse return null;
+        return event.sample_offset;
+    }
+
     pub fn countKind(self: Events, kind: EventKind) usize {
         var count: usize = 0;
         for (self.items) |item| {
@@ -519,6 +529,14 @@ pub const EventWriter = struct {
 
     pub fn latestSampleOffset(self: *const EventWriter) ?usize {
         return self.events().latestSampleOffset();
+    }
+
+    pub fn firstSampleOffsetForKind(self: *const EventWriter, kind: EventKind) ?usize {
+        return self.events().firstSampleOffsetForKind(kind);
+    }
+
+    pub fn latestSampleOffsetForKind(self: *const EventWriter, kind: EventKind) ?usize {
+        return self.events().latestSampleOffsetForKind(kind);
     }
 
     pub fn countKind(self: *const EventWriter, kind: EventKind) usize {
@@ -782,6 +800,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.latestSampleOffset();
         }
 
+        pub fn firstEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
+            return self.events.firstSampleOffsetForKind(kind);
+        }
+
+        pub fn latestEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
+            return self.events.latestSampleOffsetForKind(kind);
+        }
+
         pub fn firstEvent(self: @This(), kind: EventKind) ?Event {
             return self.events.firstKind(kind);
         }
@@ -829,6 +855,16 @@ pub fn ProcessContext(comptime Sample: type) type {
         pub fn latestOutputEventOffset(self: @This()) ?usize {
             const writer = self.output_events orelse return null;
             return writer.latestSampleOffset();
+        }
+
+        pub fn firstOutputEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
+            const writer = self.output_events orelse return null;
+            return writer.firstSampleOffsetForKind(kind);
+        }
+
+        pub fn latestOutputEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
+            const writer = self.output_events orelse return null;
+            return writer.latestSampleOffsetForKind(kind);
         }
 
         pub fn firstOutputEvent(self: @This(), kind: EventKind) ?Event {
@@ -1040,6 +1076,10 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(!context.inputEventsEmpty());
     try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffset());
     try std.testing.expectEqual(@as(?usize, 1), context.latestEventOffset());
+    try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffsetForKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, 1), context.latestEventOffsetForKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, null), context.firstEventOffsetForKind(.note_off));
+    try std.testing.expectEqual(@as(?usize, null), context.latestEventOffsetForKind(.note_off));
     try std.testing.expect(context.hasEvent(.note_on));
     try std.testing.expect(!context.hasEvent(.note_off));
     try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
@@ -1230,6 +1270,10 @@ test "events validate block offsets and count kinds" {
     try std.testing.expect(!view.isEmpty());
     try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 3), view.latestSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffsetForKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, 3), view.firstSampleOffsetForKind(.note_off));
+    try std.testing.expectEqual(@as(?usize, 0), view.latestSampleOffsetForKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, null), view.firstSampleOffsetForKind(.other));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_on));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.midi_cc));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_off));
@@ -1359,6 +1403,9 @@ test "event writer appends event views atomically" {
     try std.testing.expectEqual(@as(usize, 2), writer.eventCount());
     try std.testing.expectEqual(@as(?usize, 0), writer.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 1), writer.latestSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 0), writer.firstSampleOffsetForKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, 1), writer.latestSampleOffsetForKind(.note_off));
+    try std.testing.expectEqual(@as(?usize, null), writer.firstSampleOffsetForKind(.midi_cc));
     try std.testing.expect(writer.hasKind(.note_on));
     try std.testing.expectEqual(@as(usize, 1), writer.countKind(.note_off));
     try std.testing.expectEqual(EventKind.note_on, writer.firstKind(.note_on).?.kind);
@@ -1417,6 +1464,9 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(usize, 0), context.outputEventRemainingCapacity());
     try std.testing.expectEqual(@as(?usize, 0), context.firstOutputEventOffset());
     try std.testing.expectEqual(@as(?usize, 1), context.latestOutputEventOffset());
+    try std.testing.expectEqual(@as(?usize, 0), context.firstOutputEventOffsetForKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, 1), context.latestOutputEventOffsetForKind(.note_off));
+    try std.testing.expectEqual(@as(?usize, null), context.firstOutputEventOffsetForKind(.midi_cc));
     try std.testing.expect(context.outputEventsFull());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
     try std.testing.expectEqual(EventKind.note_on, context.firstOutputEvent(.note_on).?.kind);
