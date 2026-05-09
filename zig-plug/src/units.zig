@@ -205,6 +205,17 @@ pub fn UnitSet(comptime config: Config) type {
                 if (item.program_list_id != no_program_list_id and self.programListById(item.program_list_id) == null) {
                     return error.InvalidUnitProgramList;
                 }
+                if (item.id != root_unit_id) {
+                    var parent_id = item.parent_id;
+                    var depth: usize = 0;
+                    while (parent_id != root_unit_id) {
+                        if (depth >= config.units.len) return error.CyclicUnitParent;
+                        const parent = self.unitById(parent_id) orelse return error.InvalidUnitParent;
+                        if (parent.parent_id == no_parent_unit_id) return error.InvalidUnitParent;
+                        parent_id = parent.parent_id;
+                        depth += 1;
+                    }
+                }
             }
         }
 
@@ -342,6 +353,13 @@ test "unit set validates ids names and links" {
     const InvalidParent = UnitSet(.{
         .units = &.{ Unit.root("Root"), .{ .id = 1, .name = "Oscillator", .parent_id = 99 } },
     });
+    const CyclicParent = UnitSet(.{
+        .units = &.{
+            Unit.root("Root"),
+            .{ .id = 1, .name = "Oscillator", .parent_id = 2 },
+            .{ .id = 2, .name = "Filter", .parent_id = 1 },
+        },
+    });
     const InvalidProgramListLink = UnitSet(.{
         .units = &.{ Unit.root("Root"), .{ .id = 1, .name = "Oscillator", .program_list_id = 99 } },
     });
@@ -371,6 +389,7 @@ test "unit set validates ids names and links" {
     try std.testing.expectError(error.MissingRootUnit, (MissingRoot{}).validate());
     try std.testing.expectError(error.EmptyUnitName, (EmptyUnitName{}).validate());
     try std.testing.expectError(error.InvalidUnitParent, (InvalidParent{}).validate());
+    try std.testing.expectError(error.CyclicUnitParent, (CyclicParent{}).validate());
     try std.testing.expectError(error.InvalidUnitProgramList, (InvalidProgramListLink{}).validate());
     try std.testing.expectError(error.DuplicateProgramListId, (DuplicateProgramLists{}).validate());
     try std.testing.expectError(error.EmptyProgramListName, (EmptyProgramListName{}).validate());
