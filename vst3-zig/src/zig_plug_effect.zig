@@ -29,6 +29,7 @@ const plug_core = @import("zig-plug-core");
 const plug_process = plug_core.process;
 const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+const vst_stream = @import("vst_stream.zig");
 const zig_plug_bridge = @import("zig_plug_bridge.zig");
 
 pub fn ReflectedEditController(comptime Config: type) type {
@@ -787,12 +788,29 @@ pub fn ReflectedEditController(comptime Config: type) type {
             .setProgramData = setProgramData,
         };
 
-        fn programDataSupported(_: *anyopaque, _: vsttypes.ProgramListID) callconv(.C) types.tresult {
+        fn programDataSupported(_: *anyopaque, list_id: vsttypes.ProgramListID) callconv(.C) types.tresult {
+            const count = units.programCount(list_id) orelse return types.kResultFalse;
+            for (0..count) |program_index| {
+                if ((units.programParameterCount(list_id, program_index) orelse 0) != 0) return types.kResultOk;
+            }
             return types.kResultFalse;
         }
 
-        fn getProgramData(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
-            return types.kResultFalse;
+        fn getProgramData(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.C) types.tresult {
+            if (program_index < 0) return types.kInvalidArgument;
+            const count = units.programCount(list_id) orelse return types.kResultFalse;
+            if (@as(usize, @intCast(program_index)) >= count) return types.kInvalidArgument;
+            const reflected = units.program(list_id, @intCast(program_index)) orelse return types.kInvalidArgument;
+            if (reflected.parameters.len == 0) return types.kResultFalse;
+
+            var values = plug_core.parameters.ParameterValues(Params).init(Config.parameter_set);
+            for (reflected.parameters) |parameter| {
+                if (parameter.normalized < 0.0 or parameter.normalized > 1.0 or std.math.isNan(parameter.normalized)) {
+                    return types.kResultFalse;
+                }
+                _ = values.storeById(Config.parameter_set, parameter.parameter_id, parameter.normalized);
+            }
+            return zig_plug_bridge.writeParameterState(Params, stream, Config.parameter_set, &values);
         }
 
         fn setProgramData(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: ?*ibstream.IBStream) callconv(.C) types.tresult {
@@ -1070,6 +1088,60 @@ test "reflected edit controller exposes configured units and programs" {
     try std.testing.expectEqual(@as(vsttypes.UnitID, 0), unit_info.vtable.getSelectedUnit(unit_info));
     try std.testing.expectEqual(types.kResultOk, unit_info.vtable.selectUnit(unit_info, 1));
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.selectUnit(unit_info, 99));
+}
+
+test "reflected edit controller exposes program snapshot data" {
+    const Fixture = struct {
+        const Params = struct {
+            gain: plug_core.parameters.FloatParam = plug_core.parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
+        };
+        const ParameterSet = plug_core.parameters.ParameterSet(Params);
+        const parameter_set = ParameterSet.init(.{});
+        const programs = [_]plug_core.units.Program{
+            .{
+                .name = "Quiet",
+                .parameters = &.{.{ .parameter_id = 1, .normalized = 0.25 }},
+            },
+            .{ .name = "Metadata Only" },
+        };
+    };
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "ProgramDataController";
+        pub const Params = Fixture.Params;
+        pub const parameter_set = &Fixture.parameter_set;
+        pub const unit_config = plug_core.units.Config{
+            .program_lists = &.{
+                .{ .id = 7, .name = "Gain Programs", .programs = &Fixture.programs },
+            },
+        };
+    });
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var program_data_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.queryInterface(controller_iface, &ivstunits.iprogram_list_data_iid, &program_data_out));
+    try std.testing.expect(program_data_out != null);
+    const program_data: *ivstunits.IProgramListData = @ptrCast(@alignCast(program_data_out.?));
+    defer _ = program_data.vtable.release(program_data);
+
+    const Stream = vst_stream.FixedBufferStream(plug_core.state.encodedSize(Fixture.Params));
+    var stream = Stream{};
+    var restored = plug_core.parameters.ParameterValues(Fixture.Params).init(&Fixture.parameter_set);
+    var pos: types.int64 = -1;
+
+    try std.testing.expectEqual(types.kResultOk, program_data.vtable.programDataSupported(program_data, 7));
+    try std.testing.expectEqual(types.kResultOk, program_data.vtable.getProgramData(program_data, 7, 0, stream.asStream()));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), &pos));
+    try std.testing.expectEqual(types.kResultOk, zig_plug_bridge.readParameterState(Fixture.Params, stream.asStream(), &Fixture.parameter_set, &restored));
+    try std.testing.expectEqual(@as(f64, 0.25), restored.loadById(&Fixture.parameter_set, 1).?);
+    try std.testing.expectEqual(types.kResultFalse, program_data.vtable.getProgramData(program_data, 7, 1, stream.asStream()));
+    try std.testing.expectEqual(types.kInvalidArgument, program_data.vtable.getProgramData(program_data, 7, 2, stream.asStream()));
+    try std.testing.expectEqual(types.kResultFalse, program_data.vtable.programDataSupported(program_data, 99));
+    try std.testing.expectEqual(types.kResultFalse, program_data.vtable.setProgramData(program_data, 7, 0, stream.asStream()));
 }
 
 fn queryHostApplication(context: ?*anyopaque) ?*ivsthostapplication.IHostApplication {
