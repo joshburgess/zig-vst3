@@ -245,7 +245,8 @@ pub fn fillParameterInfo(
         .flags = parameterInfoFlags(Params, set, parameter_index),
     };
     copyAscii16(&out.title, set.name(parameter_index).?);
-    copyAscii16(&out.shortTitle, set.name(parameter_index).?);
+    copyAscii16(&out.shortTitle, set.shortName(parameter_index).?);
+    copyAscii16(&out.units, set.units(parameter_index).?);
     return types.kResultOk;
 }
 
@@ -1279,7 +1280,7 @@ test "zig-plug bridge reports output event write failures" {
 
 test "zig-plug bridge parameter controller exposes reflected edit operations" {
     const Params = struct {
-        gain: plug.parameters.FloatParam = .{ .id = 7, .name = "Gain", .min = 0.0, .max = 2.0, .default = 1.0, .unit_id = 2 },
+        gain: plug.parameters.FloatParam = .{ .id = 7, .name = "Gain", .short_name = "Gn", .units = "dB", .min = 0.0, .max = 2.0, .default = 1.0, .unit_id = 2 },
         bypass: plug.parameters.BoolParam = .{ .id = 8, .name = "Bypass" },
     };
     const Set = plug.parameters.ParameterSet(Params);
@@ -1298,6 +1299,8 @@ test "zig-plug bridge parameter controller exposes reflected edit operations" {
     try std.testing.expectEqual(@as(vsttypes.ParamID, 7), info.id);
     try std.testing.expectEqual(@as(vsttypes.UnitID, 2), info.unitId);
     try expectString128("Gain", &info.title);
+    try expectString128("Gn", &info.shortTitle);
+    try expectString128("dB", &info.units);
 
     try std.testing.expectEqual(types.kResultOk, controller.stringByValue(7, 0.5, &text));
     try expectString128("1.000", &text);
@@ -1380,7 +1383,7 @@ test "zig-plug bridge realtime processor defaults accept 32 and 64 bit samples" 
 test "zig-plug bridge fills VST3 parameter info from reflected set" {
     const Mode = enum { clean, boost, mute };
     const Params = struct {
-        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(7, "Gain", 0.0, 2.0, 1.0),
+        gain: plug.parameters.FloatParam = .{ .id = 7, .name = "Gain", .short_name = "Gn", .units = "dB", .min = 0.0, .max = 2.0, .default = 1.0 },
         bypass: plug.parameters.BoolParam = .{ .id = 8, .name = "Bypass", .is_bypass = true },
         voices: plug.parameters.IntParam = plug.parameters.IntParam.init(9, "Voices", 1, 4, 1),
         mode: plug.parameters.EnumParam(Mode) = .{ .id = 10, .name = "Mode", .default = .clean },
@@ -1394,6 +1397,8 @@ test "zig-plug bridge fills VST3 parameter info from reflected set" {
     try std.testing.expectEqual(@as(types.int32, 0), info.stepCount);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), info.defaultNormalizedValue);
     try expectString128("Gain", &info.title);
+    try expectString128("Gn", &info.shortTitle);
+    try expectString128("dB", &info.units);
     try std.testing.expectEqual(ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate, info.flags);
     try std.testing.expectEqual(types.kResultOk, fillParameterInfo(Params, &set, 1, &info));
     try std.testing.expectEqual(@as(types.int32, 1), info.stepCount);

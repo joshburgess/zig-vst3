@@ -7,7 +7,7 @@ const GainPlugin = struct {
     pub const vendor = "zig-vst3";
     pub const url = "https://github.com/joshburgess/zig-vst3";
     pub const Params = struct {
-        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(gain_param_id, "Gain", 0.0, 1.0, 1.0),
+        gain: plug.parameters.FloatParam = .{ .id = gain_param_id, .name = "Gain", .short_name = "Gain", .units = "x", .min = 0.0, .max = 1.0, .default = 1.0 },
     };
 };
 

@@ -13,7 +13,7 @@
 - `LinearSmoother`: sample-counted ramp between normalized values.
 - `ExponentialSmoother`: coefficient-based smoothing toward a normalized target.
 - `LogSmoother`: sample-counted multiplicative ramp for normalized values that must stay above zero.
-- `ParameterSet(Params)`: comptime reflection over a struct of descriptors, including host-facing id/name/default lookup by reflected index or id, id/name/field index lookup, field metadata helpers, reflected `ParameterChange` construction, string conversion, and normalized/plain conversion by reflected index, id, display name, or field.
+- `ParameterSet(Params)`: comptime reflection over a struct of descriptors, including host-facing id/name/short-name/units/default lookup by reflected index or id, id/name/field index lookup, field metadata helpers, reflected `ParameterChange` construction, string conversion, and normalized/plain conversion by reflected index, id, display name, or field.
 - `ParameterValues(Params)`: atomic normalized value storage initialized from reflected descriptor defaults, with index-based, id-based, and name-based normalized/plain load/store helpers, typed field-name load/store helpers for plugin code, default reset, a `view(set)` helper for bound typed reads, and an `editor(set)` helper for bound typed writes.
 - `ParameterView(Params)`: a descriptor/value pair for parameter metadata, id/name/field index lookup, index-based and id-based metadata helpers, field metadata helpers, plain/normalized conversion, id-based, name-based, and field-based plain conversion, plain text formatting/parsing, typed `load`, normalized `loadNormalized`, index-based reads, and id-based/name-based reads without passing the set into each call.
 - `ParameterEditor(Params)`: a descriptor/value pair for parameter metadata, id/name/field index lookup, index-based and id-based metadata helpers, field metadata helpers, plain/normalized conversion, id-based, name-based, and field-based plain conversion, plain text formatting/parsing, typed, normalized, index-based, id-based, and name-based reads and stores plus default reset without passing the set into each call.
@@ -22,7 +22,7 @@
 
 Hosts speak normalized `0.0...1.0` values. Descriptors clamp normalized input before converting it to plain values. Plain input is clamped to each descriptor's declared range before normalization.
 
-VST3 parameter metadata is reflected from descriptors. Float parameters are continuous, bool parameters report one step, int parameters report their integer range as discrete steps, and enum parameters report one step per enum transition with the list flag set.
+VST3 parameter metadata is reflected from descriptors. Float parameters are continuous, bool parameters report one step, int parameters report their integer range as discrete steps, and enum parameters report one step per enum transition with the list flag set. Descriptors can set `short_name` and `units` for host parameter displays; empty `short_name` falls back to the full display name.
 
 Each descriptor has a `unit_id` field. It defaults to the root unit and is reflected into host parameter metadata when the VST3 shell builds `ParameterInfo`.
 
