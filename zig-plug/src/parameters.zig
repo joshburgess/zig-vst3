@@ -784,6 +784,7 @@ fn parameterDescriptorError(param: anytype) ?anyerror {
         if (!std.math.isFinite(param.default)) return error.InvalidParameterDefault;
     } else if (Param == IntParam) {
         if (param.max <= param.min) return error.InvalidParameterRange;
+        if (param.default < param.min or param.default > param.max) return error.InvalidParameterDefault;
     }
     return null;
 }
@@ -1747,17 +1748,22 @@ test "parameter set validates descriptor names and ranges" {
     const InvalidIntParams = struct {
         voices: IntParam = .{ .id = 0, .name = "Voices", .min = 4, .max = 4, .default = 4 },
     };
+    const InvalidIntDefaultParams = struct {
+        voices: IntParam = .{ .id = 0, .name = "Voices", .min = 1, .max = 4, .default = 8 },
+    };
 
     const empty_name_set = ParameterSet(EmptyNameParams).init(.{});
     const invalid_float_set = ParameterSet(InvalidFloatParams).init(.{});
     const invalid_float_default_set = ParameterSet(InvalidFloatDefaultParams).init(.{});
     const invalid_int_set = ParameterSet(InvalidIntParams).init(.{});
+    const invalid_int_default_set = ParameterSet(InvalidIntDefaultParams).init(.{});
 
     try std.testing.expectEqual(error.EmptyParameterName, empty_name_set.firstDescriptorError().?);
     try std.testing.expectError(error.EmptyParameterName, empty_name_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterRange, invalid_float_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterDefault, invalid_float_default_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterRange, invalid_int_set.validateDescriptors());
+    try std.testing.expectError(error.InvalidParameterDefault, invalid_int_default_set.validateDescriptors());
 }
 
 test "parameter set validates complete metadata" {
