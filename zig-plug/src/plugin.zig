@@ -1120,6 +1120,10 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expect(instance.storeParameterPlainById(0, 6.0));
     try std.testing.expect(instance.storeParameterByName("Mode", 0.5));
     try std.testing.expect(instance.storeParameterPlainByName("Gain", 3.0));
+    try std.testing.expect(!instance.storeParameterNormalized("gain", std.math.nan(f64)));
+    try std.testing.expect(!instance.storeParameterIndex(0, std.math.inf(f64)));
+    try std.testing.expect(!instance.storeParameterById(0, -std.math.inf(f64)));
+    try std.testing.expect(!instance.storeParameterByName("Gain", std.math.nan(f64)));
     try std.testing.expect(!instance.storeParameterIndex(99, 1.0));
     try std.testing.expect(!instance.storeParameterPlainIndex(99, 1.0));
     try std.testing.expect(!instance.storeParameterById(99, 1.0));
