@@ -80,6 +80,7 @@ pub fn readParameterStateWithMigrations(
     reader: anytype,
     migrations: []const ParameterIdMigration,
 ) !void {
+    try validateParameterIdMigrations(migrations);
     var header: [magic.len]u8 = undefined;
     try reader.readNoEof(&header);
     if (!std.mem.eql(u8, &header, magic)) return error.InvalidStateMagic;
@@ -97,6 +98,29 @@ pub fn readParameterStateWithMigrations(
         }
     }
     values.copyFrom(&restored);
+}
+
+pub fn validateParameterIdMigrations(migrations: []const ParameterIdMigration) !void {
+    for (migrations, 0..) |left, left_index| {
+        for (migrations[left_index + 1 ..]) |right| {
+            if (left.old_id == right.old_id) return error.DuplicateParameterMigration;
+        }
+    }
+    for (migrations) |migration| {
+        var current = migration.old_id;
+        for (0..migrations.len + 1) |_| {
+            var next: ?u32 = null;
+            for (migrations) |candidate| {
+                if (candidate.old_id == current) {
+                    next = candidate.new_id;
+                    break;
+                }
+            }
+            current = next orelse break;
+        } else {
+            return error.CyclicParameterMigration;
+        }
+    }
 }
 
 pub fn migratedParameterId(id: u32, migrations: []const ParameterIdMigration) u32 {
@@ -418,4 +442,45 @@ test "parameter state exposes migration resolution" {
     try std.testing.expectEqual(@as(u32, 3), migratedParameterId(3, &migrations));
     try std.testing.expectEqual(@as(u32, 1), migratedParameterId(1, &cycle));
     try std.testing.expectEqual(@as(u32, 1), migratedParameterId(1, &longer_cycle));
+    try validateParameterIdMigrations(&migrations);
+    try std.testing.expectError(error.CyclicParameterMigration, validateParameterIdMigrations(&cycle));
+    try std.testing.expectError(error.CyclicParameterMigration, validateParameterIdMigrations(&longer_cycle));
+}
+
+test "parameter state rejects ambiguous migrations before partial updates" {
+    const OldParams = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
+    };
+    const NewParams = struct {
+        output: parameters.FloatParam = parameters.FloatParam.init(9, "Output", 0.0, 1.0, 1.0),
+        mix: parameters.FloatParam = parameters.FloatParam.init(10, "Mix", 0.0, 1.0, 0.5),
+    };
+    const OldSet = parameters.ParameterSet(OldParams);
+    const OldValues = parameters.ParameterValues(OldParams);
+    const NewSet = parameters.ParameterSet(NewParams);
+    const NewValues = parameters.ParameterValues(NewParams);
+    const old_set = OldSet.init(.{});
+    const new_set = NewSet.init(.{});
+    var old_values = OldValues.init(&old_set);
+    var new_values = NewValues.init(&new_set);
+    var bytes: [encodedSize(OldParams)]u8 = undefined;
+
+    try std.testing.expect(old_values.storeField(&old_set, "gain", 0.25));
+    try std.testing.expect(new_values.storeField(&new_set, "output", 0.8));
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    try writeParameterState(OldParams, &old_set, &old_values, out_stream.writer());
+
+    var duplicate_stream = std.io.fixedBufferStream(&bytes);
+    try std.testing.expectError(error.DuplicateParameterMigration, readParameterStateWithMigrations(NewParams, &new_set, &new_values, duplicate_stream.reader(), &.{
+        .{ .old_id = 1, .new_id = 9 },
+        .{ .old_id = 1, .new_id = 10 },
+    }));
+    try std.testing.expectEqual(@as(f64, 0.8), new_values.loadField(&new_set, "output"));
+
+    var cycle_stream = std.io.fixedBufferStream(&bytes);
+    try std.testing.expectError(error.CyclicParameterMigration, readParameterStateWithMigrations(NewParams, &new_set, &new_values, cycle_stream.reader(), &.{
+        .{ .old_id = 1, .new_id = 2 },
+        .{ .old_id = 2, .new_id = 1 },
+    }));
+    try std.testing.expectEqual(@as(f64, 0.8), new_values.loadField(&new_set, "output"));
 }
