@@ -101,7 +101,7 @@ pub fn readParameterStateWithMigrations(
 
 pub fn migratedParameterId(id: u32, migrations: []const ParameterIdMigration) u32 {
     var current = id;
-    for (0..migrations.len) |_| {
+    for (0..migrations.len + 1) |_| {
         var next: ?u32 = null;
         for (migrations) |migration| {
             if (migration.old_id == current) {
@@ -111,7 +111,7 @@ pub fn migratedParameterId(id: u32, migrations: []const ParameterIdMigration) u3
         }
         current = next orelse return current;
     }
-    return current;
+    return id;
 }
 
 test "parameter state round-trips normalized values" {
@@ -407,9 +407,15 @@ test "parameter state exposes migration resolution" {
         .{ .old_id = 1, .new_id = 2 },
         .{ .old_id = 2, .new_id = 1 },
     };
+    const longer_cycle = [_]ParameterIdMigration{
+        .{ .old_id = 1, .new_id = 2 },
+        .{ .old_id = 2, .new_id = 3 },
+        .{ .old_id = 3, .new_id = 2 },
+    };
 
     try std.testing.expectEqual(@as(u32, 11), migratedParameterId(1, &migrations));
     try std.testing.expectEqual(@as(u32, 10), migratedParameterId(2, &migrations));
     try std.testing.expectEqual(@as(u32, 3), migratedParameterId(3, &migrations));
     try std.testing.expectEqual(@as(u32, 1), migratedParameterId(1, &cycle));
+    try std.testing.expectEqual(@as(u32, 1), migratedParameterId(1, &longer_cycle));
 }
