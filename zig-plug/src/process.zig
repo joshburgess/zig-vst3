@@ -427,14 +427,44 @@ pub const Event = struct {
 
     pub fn validate(self: Event, frame_count: usize) !void {
         if (self.sample_offset >= frame_count) return error.EventOutsideBlock;
+        if (self.bus_index < 0) return error.InvalidEventBusIndex;
         switch (self.kind) {
-            .note_on, .note_off => try validateUnitEventValue(self.velocity),
-            .midi_cc, .aftertouch, .note_expression_value => try validateUnitEventValue(self.value),
-            .pitch_bend => try validateBipolarEventValue(self.value),
+            .note_on, .note_off => {
+                try validateMidiChannel(self.channel);
+                try validateMidiPitch(self.pitch);
+                try validateUnitEventValue(self.velocity);
+            },
+            .midi_cc => {
+                try validateMidiChannel(self.channel);
+                try validateMidiControlNumber(self.control_number);
+                try validateUnitEventValue(self.value);
+            },
+            .pitch_bend => {
+                try validateMidiChannel(self.channel);
+                try validateBipolarEventValue(self.value);
+            },
+            .aftertouch => {
+                try validateMidiChannel(self.channel);
+                try validateMidiPitch(self.pitch);
+                try validateUnitEventValue(self.value);
+            },
+            .note_expression_value => try validateUnitEventValue(self.value),
             .note_expression_int, .note_expression_text, .data, .other => {},
         }
     }
 };
+
+fn validateMidiChannel(channel: i16) !void {
+    if (channel < 0 or channel > 15) return error.InvalidEventChannel;
+}
+
+fn validateMidiPitch(pitch: i16) !void {
+    if (pitch < 0 or pitch > 127) return error.InvalidEventPitch;
+}
+
+fn validateMidiControlNumber(control_number: i16) !void {
+    if (control_number < 0 or control_number > 127) return error.InvalidEventControlNumber;
+}
 
 fn validateUnitEventValue(value: f32) !void {
     if (std.math.isNan(value) or value < 0.0 or value > 1.0) return error.EventValueOutsideNormalizedRange;
@@ -1599,6 +1629,26 @@ test "events reject invalid normalized values" {
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&too_loud_note, 4));
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&nan_cc, 4));
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&wide_bend, 4));
+}
+
+test "events reject invalid MIDI metadata" {
+    const bad_channel = [_]Event{
+        Event.noteOn(0, 16, 60, 1.0),
+    };
+    const bad_pitch = [_]Event{
+        Event.noteOff(0, 0, 128, 0.0),
+    };
+    const bad_control = [_]Event{
+        Event.midiCc(0, 0, 128, 0.5),
+    };
+    const bad_bus = [_]Event{
+        Event.pitchBend(0, 0, 0.0).withBusIndex(-1),
+    };
+
+    try std.testing.expectError(error.InvalidEventChannel, Events.init(&bad_channel, 4));
+    try std.testing.expectError(error.InvalidEventPitch, Events.init(&bad_pitch, 4));
+    try std.testing.expectError(error.InvalidEventControlNumber, Events.init(&bad_control, 4));
+    try std.testing.expectError(error.InvalidEventBusIndex, Events.init(&bad_bus, 4));
 }
 
 test "event writer validates offsets and capacity" {
