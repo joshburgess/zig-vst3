@@ -59,7 +59,7 @@ Parameter helpers:
 - Parameter descriptors can set `unit_id` to group host-facing parameters under a reflected unit.
 - `ParameterValues.view(set)` and `PluginInstance.parameterView()` bind descriptors and values into a `ParameterView`.
 - `ParameterValues.editor(set)` and `PluginInstance.parameterEditor()` bind descriptors and mutable values into a `ParameterEditor`.
-- `ProcessContext.parameterChanges`, `parameterChangeCount`, `parameterChangesEmpty`, first/latest/next parameter-change offsets, per-id next offsets, `latestParameterChange`, `firstParameterChange`, `countParameterChanges`, `hasParameterChange`, `latestParameterNormalized`, `firstParameterNormalized`, defaulted normalized reads, `latestParameterChangeAtOrBefore`, `latestParameterNormalizedAtOrBefore`, `parameterNormalizedAtOrBeforeOr`, `parameterSegmentAt`, `parameterSegments`, and `parameterBlockSegments` expose common process-time reads and no-allocation stable automation ranges.
+- `ProcessContext.parameterChanges`, `parameterChangeCount`, `parameterChangesEmpty`, first/latest/next parameter-change offsets, per-id next offsets, `latestParameterChange`, `firstParameterChange`, `countParameterChanges`, `hasParameterChange`, `latestParameterNormalized`, `firstParameterNormalized`, defaulted normalized reads, `latestParameterChangeAtOrBefore`, `latestParameterNormalizedAtOrBefore`, `parameterNormalizedAtOrBeforeOr`, `parameterSegmentAt`, `parameterSegments`, `parameterBlockSegments`, and `processBlockSegments` expose common process-time reads and no-allocation stable automation ranges.
 
 Event helpers:
 
@@ -72,7 +72,7 @@ Event helpers:
 
 The VST3 shell gives processors a bounded output-event writer and flushes written events to the host after audio processing.
 
-Use `processWithParameterView` when a processor needs block-latest reflected parameter state. `processWithParameters` remains available for code that needs direct access to the reflected set and raw value storage. Use `context.parameterBlockSegments` or `context.inputEventBlockSegments` when sample-accurate automation or MIDI timing matters, and use `context.parameterNormalizedAtOrBeforeOr` at the segment start to resolve the descriptor/default value before the first automation point.
+Use `processWithParameterView` when a processor needs block-latest reflected parameter state. `processWithParameters` remains available for code that needs direct access to the reflected set and raw value storage. Use `context.parameterBlockSegments`, `context.inputEventBlockSegments`, or `context.processBlockSegments` when sample-accurate automation, MIDI timing, or both matter, and use `context.parameterNormalizedAtOrBeforeOr` at the segment start to resolve the descriptor/default value before the first automation point.
 
 ## Example
 
