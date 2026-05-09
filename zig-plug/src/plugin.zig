@@ -456,6 +456,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             self.spec.values.applyChanges(&self.spec.parameter_set, changes);
         }
 
+        pub fn applyParameterChangesCount(self: *Self, changes: process_api.ParameterChanges) usize {
+            return self.spec.values.applyChangesCount(&self.spec.parameter_set, changes);
+        }
+
         pub fn encodedParameterStateSize(self: *const Self) usize {
             _ = self;
             return Spec.encoded_parameter_state_size;
@@ -927,10 +931,14 @@ test "plugin instance applies parameter changes to owned values" {
     };
     const view = try process_api.ParameterChanges.init(&changes, 1);
 
-    instance.applyParameterChanges(view);
+    try std.testing.expectEqual(@as(usize, 1), instance.applyParameterChangesCount(view));
 
     try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterView().loadById(99));
+
+    instance.storeParameterNormalized("gain", 0.5);
+    instance.applyParameterChanges(view);
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
 }
 
 test "plugin instance exposes typed parameter field access" {

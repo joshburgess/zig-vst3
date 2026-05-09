@@ -883,12 +883,18 @@ pub fn ParameterValues(comptime Params: type) type {
             return self.store(set.indexOfField(field_name), param.normalize(plain));
         }
 
-        pub fn applyChanges(self: *Self, set: *const Set, changes: process.ParameterChanges) void {
+        pub fn applyChangesCount(self: *Self, set: *const Set, changes: process.ParameterChanges) usize {
+            var applied: usize = 0;
             for (changes.items) |change| {
                 if (!(set.canAutomateById(change.id) orelse false)) continue;
                 if (set.isReadOnlyById(change.id) orelse true) continue;
-                _ = self.storeById(set, change.id, change.normalized);
+                if (self.storeById(set, change.id, change.normalized)) applied += 1;
             }
+            return applied;
+        }
+
+        pub fn applyChanges(self: *Self, set: *const Set, changes: process.ParameterChanges) void {
+            _ = self.applyChangesCount(set, changes);
         }
 
         pub fn view(self: *const Self, set: *const Set) ParameterView(Params) {
@@ -2110,12 +2116,17 @@ test "parameter values apply reflected parameter changes by id" {
     };
     const changes = try process.ParameterChanges.init(&items, 8);
 
-    values.applyChanges(&set, changes);
+    try std.testing.expectEqual(@as(usize, 2), values.applyChangesCount(&set, changes));
 
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
     try std.testing.expectEqual(@as(?f64, 1.0), values.loadById(&set, 1));
     try std.testing.expectEqual(@as(?f64, 0.25), values.loadById(&set, 2));
     try std.testing.expectEqual(@as(?f64, 0.5), values.loadById(&set, 3));
+
+    values.resetToDefaults(&set);
+    values.applyChanges(&set, changes);
+    try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.loadById(&set, 1));
 }
 
 test "float parameter round-trips normalized values" {
