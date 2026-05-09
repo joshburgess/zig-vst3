@@ -762,7 +762,7 @@ pub fn ProcessContext(comptime Sample: type) type {
             var context = try @This().init(sample_rate, input_channels, output_channels);
             try context.setParameterChanges(attachments.parameter_changes);
             try context.setEvents(attachments.events);
-            if (attachments.output_events) |writer| context.setOutputEvents(writer);
+            if (attachments.output_events) |writer| try context.setOutputEvents(writer);
             return context;
         }
 
@@ -774,7 +774,8 @@ pub fn ProcessContext(comptime Sample: type) type {
             self.events = try Events.init(events, self.frameCount());
         }
 
-        pub fn setOutputEvents(self: *@This(), writer: *EventWriter) void {
+        pub fn setOutputEvents(self: *@This(), writer: *EventWriter) !void {
+            if (writer.frame_count != self.frameCount()) return error.MismatchedFrameCount;
             self.output_events = writer;
         }
 
@@ -1245,6 +1246,16 @@ test "process context rejects attached changes outside frame count" {
         &input_channels,
         &output_channels,
         .{ .events = &events },
+    ));
+
+    var output_storage: [1]Event = undefined;
+    var mismatched_writer = EventWriter.init(&output_storage, 2);
+    try std.testing.expectError(error.MismatchedFrameCount, context.setOutputEvents(&mismatched_writer));
+    try std.testing.expectError(error.MismatchedFrameCount, ProcessContext(f32).initWith(
+        48_000.0,
+        &input_channels,
+        &output_channels,
+        .{ .output_events = &mismatched_writer },
     ));
 }
 
