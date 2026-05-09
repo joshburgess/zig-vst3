@@ -21,7 +21,7 @@ pub const EventMonitor = struct {
         self.midi_cc_count = 0;
         self.pitch_bend_count = 0;
         self.data_count = 0;
-        self.first_note_offset = context.nextEventOffsetForKind(.note_on, 0);
+        self.first_note_offset = context.firstEventOffsetForKind(.note_on);
         self.latest_event_offset = context.latestEventOffset();
         self.latest_midi_cc_value = 0.0;
 
