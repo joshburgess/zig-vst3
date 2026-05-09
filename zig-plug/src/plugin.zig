@@ -941,6 +941,32 @@ test "plugin instance applies parameter changes to owned values" {
     try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
 }
 
+test "plugin instance counts only applied automatable parameter changes" {
+    const Gain = struct {
+        pub const name = "Instance Parameter Apply Count";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+            bypass: parameters.BoolParam = .{ .id = 1, .name = "Bypass", .can_automate = false },
+            meter: parameters.FloatParam = .{ .id = 2, .name = "Meter", .is_read_only = true },
+        };
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const changes = [_]process_api.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = 0.25 },
+        .{ .id = 1, .sample_offset = 0, .normalized = 1.0 },
+        .{ .id = 2, .sample_offset = 0, .normalized = 0.75 },
+        .{ .id = 99, .sample_offset = 0, .normalized = 0.5 },
+    };
+    const view = try process_api.ParameterChanges.init(&changes, 1);
+
+    try std.testing.expectEqual(@as(usize, 1), instance.applyParameterChangesCount(view));
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(f64, 0.0), instance.loadParameterNormalized("bypass"));
+    try std.testing.expectEqual(@as(f64, 0.0), instance.loadParameterNormalized("meter"));
+}
+
 test "plugin instance exposes typed parameter field access" {
     const Mode = enum { clean, boost, mute };
     const Gain = struct {
