@@ -51,6 +51,7 @@ pub fn PluginSpec(comptime Plugin: type) type {
             try set.validate();
             const units = Units{};
             try units.validate();
+            try set.validateUnitIds(units);
             return .{
                 .parameter_set = set,
                 .values = ParameterValues.init(&set),
@@ -717,6 +718,19 @@ test "plugin spec rejects invalid unit metadata" {
     };
 
     try std.testing.expectError(error.InvalidUnitParent, PluginSpec(InvalidUnits).initChecked(.{}));
+}
+
+test "plugin spec rejects parameters linked to unknown units" {
+    const InvalidParameterUnit = struct {
+        pub const name = "Invalid Parameter Unit";
+        pub const vendor = "zig-vst3";
+        pub const units = units_api.Config{};
+        pub const Params = struct {
+            gain: parameters.FloatParam = .{ .id = 0, .name = "Gain", .min = 0.0, .max = 1.0, .default = 0.5, .unit_id = 99 },
+        };
+    };
+
+    try std.testing.expectError(error.InvalidParameterUnit, PluginSpec(InvalidParameterUnit).initChecked(.{}));
 }
 
 test "plugin instance exposes custom unit and program metadata" {

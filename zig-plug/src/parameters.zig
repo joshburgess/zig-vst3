@@ -462,6 +462,13 @@ pub fn ParameterSet(comptime Params: type) type {
             try self.validateDescriptors();
         }
 
+        pub fn validateUnitIds(self: *const Self, unit_set: anytype) !void {
+            inline for (fields) |field| {
+                const unit_id = @field(self.params, field.name).unit_id;
+                if (!unit_set.hasUnit(unit_id)) return error.InvalidParameterUnit;
+            }
+        }
+
         pub fn id(self: *const Self, index: usize) ?u32 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).id;
@@ -1761,6 +1768,29 @@ test "parameter set validates complete metadata" {
     const set = Set.init(.{});
 
     try set.validate();
+}
+
+test "parameter set validates unit ids against reflected units" {
+    const unit_api = @import("units.zig");
+    const Units = unit_api.UnitSet(.{
+        .units = &.{
+            unit_api.Unit.root("Root"),
+            .{ .id = 2, .name = "Voice", .parent_id = unit_api.root_unit_id },
+        },
+    });
+    const Params = struct {
+        gain: FloatParam = .{ .id = 0, .name = "Gain", .min = 0.0, .max = 1.0, .default = 0.5, .unit_id = 2 },
+    };
+    const InvalidParams = struct {
+        gain: FloatParam = .{ .id = 0, .name = "Gain", .min = 0.0, .max = 1.0, .default = 0.5, .unit_id = 99 },
+    };
+
+    const units = Units{};
+    const set = ParameterSet(Params).init(.{});
+    const invalid_set = ParameterSet(InvalidParams).init(.{});
+
+    try set.validateUnitIds(units);
+    try std.testing.expectError(error.InvalidParameterUnit, invalid_set.validateUnitIds(units));
 }
 
 test "integer parameter step count saturates to VST limit" {
