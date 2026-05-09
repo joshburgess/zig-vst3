@@ -1373,6 +1373,14 @@ pub fn ParameterEditor(comptime Params: type) type {
             self.values.resetToDefaults(self.set);
         }
 
+        pub fn applyChangesCount(self: Self, changes: process.ParameterChanges) usize {
+            return self.values.applyChangesCount(self.set, changes);
+        }
+
+        pub fn applyChanges(self: Self, changes: process.ParameterChanges) void {
+            self.values.applyChanges(self.set, changes);
+        }
+
         pub fn loadNormalized(self: Self, comptime field_name: []const u8) f64 {
             return self.values.loadFieldNormalized(self.set, field_name);
         }
@@ -2181,6 +2189,24 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(i64, 4), view.load("voices"));
     try std.testing.expectEqual(false, view.load("bypass"));
     try std.testing.expectEqual(Mode.mute, view.load("mode"));
+
+    const changes = [_]process.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = 0.0 },
+        .{ .id = 1, .sample_offset = 0, .normalized = 0.0 },
+        .{ .id = 2, .sample_offset = 0, .normalized = 1.0 },
+        .{ .id = 3, .sample_offset = 0, .normalized = 0.5 },
+    };
+    const parameter_changes = try process.ParameterChanges.init(&changes, 1);
+    try std.testing.expectEqual(@as(usize, 3), editor.applyChangesCount(parameter_changes));
+    try std.testing.expectEqual(@as(f64, -12.0), editor.load("gain"));
+    try std.testing.expectEqual(@as(i64, 4), editor.load("voices"));
+    try std.testing.expectEqual(true, editor.load("bypass"));
+    try std.testing.expectEqual(Mode.boost, editor.load("mode"));
+
+    editor.resetToDefaults();
+    editor.applyChanges(parameter_changes);
+    try std.testing.expectEqual(@as(f64, -12.0), editor.load("gain"));
+    try std.testing.expectEqual(true, editor.load("bypass"));
 
     editor.resetToDefaults();
     try std.testing.expectEqual(@as(f64, 0.0), view.load("gain"));
