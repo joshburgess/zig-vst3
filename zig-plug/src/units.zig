@@ -200,6 +200,7 @@ pub fn UnitSet(comptime config: Config) type {
             if (root.name.len == 0) return error.EmptyUnitName;
             if (root.parent_id != no_parent_unit_id) return error.InvalidUnitParent;
             for (config.units) |item| {
+                if (item.id == no_parent_unit_id) return error.ReservedUnitId;
                 if (item.name.len == 0) return error.EmptyUnitName;
                 if (item.id != root_unit_id and self.unitById(item.parent_id) == null) return error.InvalidUnitParent;
                 if (item.program_list_id != no_program_list_id and self.programListById(item.program_list_id) == null) {
@@ -222,6 +223,7 @@ pub fn UnitSet(comptime config: Config) type {
         pub fn validateProgramLists(self: Self) !void {
             if (self.duplicateProgramListId() != null) return error.DuplicateProgramListId;
             for (config.program_lists) |list| {
+                if (list.id == no_program_list_id) return error.ReservedProgramListId;
                 if (list.name.len == 0) return error.EmptyProgramListName;
                 for (list.programs, 0..) |item, item_index| {
                     if (item.name.len == 0) return error.EmptyProgramName;
@@ -356,6 +358,9 @@ test "unit set validates ids names and links" {
     const InvalidParent = UnitSet(.{
         .units = &.{ Unit.root("Root"), .{ .id = 1, .name = "Oscillator", .parent_id = 99 } },
     });
+    const ReservedUnitId = UnitSet(.{
+        .units = &.{ Unit.root("Root"), .{ .id = no_parent_unit_id, .name = "Reserved", .parent_id = root_unit_id } },
+    });
     const CyclicParent = UnitSet(.{
         .units = &.{
             Unit.root("Root"),
@@ -368,6 +373,9 @@ test "unit set validates ids names and links" {
     });
     const DuplicateProgramLists = UnitSet(.{
         .program_lists = &.{ .{ .id = 1, .name = "A" }, .{ .id = 1, .name = "B" } },
+    });
+    const ReservedProgramListId = UnitSet(.{
+        .program_lists = &.{.{ .id = no_program_list_id, .name = "Reserved" }},
     });
     const EmptyProgramListName = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "" }},
@@ -398,9 +406,11 @@ test "unit set validates ids names and links" {
     try std.testing.expectError(error.MissingRootUnit, (MissingRoot{}).validate());
     try std.testing.expectError(error.EmptyUnitName, (EmptyUnitName{}).validate());
     try std.testing.expectError(error.InvalidUnitParent, (InvalidParent{}).validate());
+    try std.testing.expectError(error.ReservedUnitId, (ReservedUnitId{}).validate());
     try std.testing.expectError(error.CyclicUnitParent, (CyclicParent{}).validate());
     try std.testing.expectError(error.InvalidUnitProgramList, (InvalidProgramListLink{}).validate());
     try std.testing.expectError(error.DuplicateProgramListId, (DuplicateProgramLists{}).validate());
+    try std.testing.expectError(error.ReservedProgramListId, (ReservedProgramListId{}).validate());
     try std.testing.expectError(error.EmptyProgramListName, (EmptyProgramListName{}).validate());
     try std.testing.expectError(error.EmptyProgramName, (EmptyProgramName{}).validate());
     try std.testing.expectError(error.DuplicateProgramName, (DuplicateProgramNames{}).validate());

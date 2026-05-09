@@ -722,6 +722,31 @@ test "plugin spec rejects invalid unit metadata" {
     try std.testing.expectError(error.InvalidUnitParent, PluginSpec(InvalidUnits).initChecked(.{}));
 }
 
+test "plugin spec rejects reserved unit metadata ids" {
+    const ReservedUnit = struct {
+        pub const name = "Reserved Unit";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const units = units_api.Config{
+            .units = &.{
+                units_api.Unit.root("Root"),
+                .{ .id = units_api.no_parent_unit_id, .name = "Reserved", .parent_id = units_api.root_unit_id },
+            },
+        };
+    };
+    const ReservedProgramList = struct {
+        pub const name = "Reserved Program List";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const units = units_api.Config{
+            .program_lists = &.{.{ .id = units_api.no_program_list_id, .name = "Reserved" }},
+        };
+    };
+
+    try std.testing.expectError(error.ReservedUnitId, PluginSpec(ReservedUnit).initChecked(.{}));
+    try std.testing.expectError(error.ReservedProgramListId, PluginSpec(ReservedProgramList).initChecked(.{}));
+}
+
 test "plugin spec rejects parameters linked to unknown units" {
     const InvalidParameterUnit = struct {
         pub const name = "Invalid Parameter Unit";
