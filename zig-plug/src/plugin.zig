@@ -219,6 +219,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().nameById(wanted_id);
         }
 
+        pub fn parameterShortName(self: *const Self, index: usize) ?[]const u8 {
+            return self.parameterView().shortName(index);
+        }
+
+        pub fn parameterShortNameById(self: *const Self, wanted_id: u32) ?[]const u8 {
+            return self.parameterView().shortNameById(wanted_id);
+        }
+
+        pub fn parameterUnits(self: *const Self, index: usize) ?[]const u8 {
+            return self.parameterView().units(index);
+        }
+
+        pub fn parameterUnitsById(self: *const Self, wanted_id: u32) ?[]const u8 {
+            return self.parameterView().unitsById(wanted_id);
+        }
+
         pub fn parameterDefaultNormalized(self: *const Self, index: usize) ?f64 {
             return self.parameterView().defaultNormalized(index);
         }

@@ -5,7 +5,7 @@ pub const Gain = struct {
     pub const name = "zig-plug Core Gain";
     pub const vendor = "zig-vst3";
     pub const Params = struct {
-        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+        gain: plug.parameters.FloatParam = .{ .id = 0, .name = "Gain", .short_name = "Gain", .units = "x", .min = 0.0, .max = 1.0, .default = 1.0 },
     };
 
     pub fn process(_: *Gain, context: *plug.process.ProcessContext(f32)) void {
@@ -30,6 +30,8 @@ test "gain core example declares reflected metadata" {
     try std.testing.expectEqualStrings("zig-plug Core Gain", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
+    try std.testing.expectEqualStrings("Gain", parameter_set.shortName(0).?);
+    try std.testing.expectEqualStrings("x", parameter_set.units(0).?);
     try std.testing.expectEqual(@as(f64, 1.0), spec.values.view(&parameter_set).loadNormalized("gain"));
     plug.plugin.validateLifecycle(Gain);
 }

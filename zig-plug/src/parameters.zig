@@ -145,6 +145,8 @@ fn clampNormalizedNonZero(value: f64) f64 {
 pub const FloatParam = struct {
     id: u32,
     name: []const u8,
+    short_name: []const u8 = "",
+    units: []const u8 = "",
     min: f64 = 0.0,
     max: f64 = 1.0,
     default: f64 = 0.0,
@@ -203,6 +205,8 @@ pub const FloatParam = struct {
 pub const IntParam = struct {
     id: u32,
     name: []const u8,
+    short_name: []const u8 = "",
+    units: []const u8 = "",
     min: i64,
     max: i64,
     default: i64,
@@ -259,6 +263,8 @@ pub const IntParam = struct {
 pub const BoolParam = struct {
     id: u32,
     name: []const u8,
+    short_name: []const u8 = "",
+    units: []const u8 = "",
     default: bool = false,
     is_bypass: bool = false,
     unit_id: i32 = 0,
@@ -314,6 +320,8 @@ pub fn EnumParam(comptime Enum: type) type {
 
         id: u32,
         name: []const u8,
+        short_name: []const u8 = "",
+        units: []const u8 = "",
         default: Enum,
         is_bypass: bool = false,
         unit_id: i32 = 0,
@@ -400,6 +408,33 @@ pub fn ParameterSet(comptime Params: type) type {
         pub fn nameById(self: *const Self, wanted_id: u32) ?[]const u8 {
             const index = self.indexOfId(wanted_id) orelse return null;
             return self.name(index);
+        }
+
+        pub fn shortName(self: *const Self, index: usize) ?[]const u8 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) {
+                    const value = @field(self.params, field.name).short_name;
+                    return if (value.len == 0) @field(self.params, field.name).name else value;
+                }
+            }
+            return null;
+        }
+
+        pub fn shortNameById(self: *const Self, wanted_id: u32) ?[]const u8 {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.shortName(index);
+        }
+
+        pub fn units(self: *const Self, index: usize) ?[]const u8 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return @field(self.params, field.name).units;
+            }
+            return null;
+        }
+
+        pub fn unitsById(self: *const Self, wanted_id: u32) ?[]const u8 {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.units(index);
         }
 
         pub fn defaultNormalized(self: *const Self, index: usize) ?f64 {
@@ -786,6 +821,22 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.nameById(wanted_id);
         }
 
+        pub fn shortName(self: Self, index: usize) ?[]const u8 {
+            return self.set.shortName(index);
+        }
+
+        pub fn shortNameById(self: Self, wanted_id: u32) ?[]const u8 {
+            return self.set.shortNameById(wanted_id);
+        }
+
+        pub fn units(self: Self, index: usize) ?[]const u8 {
+            return self.set.units(index);
+        }
+
+        pub fn unitsById(self: Self, wanted_id: u32) ?[]const u8 {
+            return self.set.unitsById(wanted_id);
+        }
+
         pub fn defaultNormalized(self: Self, index: usize) ?f64 {
             return self.set.defaultNormalized(index);
         }
@@ -987,6 +1038,22 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn nameById(self: Self, wanted_id: u32) ?[]const u8 {
             return self.set.nameById(wanted_id);
+        }
+
+        pub fn shortName(self: Self, index: usize) ?[]const u8 {
+            return self.set.shortName(index);
+        }
+
+        pub fn shortNameById(self: Self, wanted_id: u32) ?[]const u8 {
+            return self.set.shortNameById(wanted_id);
+        }
+
+        pub fn units(self: Self, index: usize) ?[]const u8 {
+            return self.set.units(index);
+        }
+
+        pub fn unitsById(self: Self, wanted_id: u32) ?[]const u8 {
+            return self.set.unitsById(wanted_id);
         }
 
         pub fn defaultNormalized(self: Self, index: usize) ?f64 {
@@ -1368,8 +1435,8 @@ test "single-value enum parameter stays at zero" {
 test "parameter set reflects descriptor fields" {
     const Mode = enum { clean, lead };
     const Params = struct {
-        gain: FloatParam = FloatParam.init(0, "Gain", 0.0, 1.0, 0.75),
-        voices: IntParam = .{ .id = 1, .name = "Voices", .min = 1, .max = 16, .default = 4, .unit_id = 2 },
+        gain: FloatParam = .{ .id = 0, .name = "Gain", .short_name = "Gain", .units = "dB", .min = 0.0, .max = 1.0, .default = 0.75 },
+        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 16, .default = 4, .unit_id = 2 },
         bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
         mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .lead },
     };
@@ -1381,6 +1448,12 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqualStrings("Voices", set.name(1).?);
     try std.testing.expectEqualStrings("Bypass", set.nameById(2).?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.nameById(99));
+    try std.testing.expectEqualStrings("Vox", set.shortName(1).?);
+    try std.testing.expectEqualStrings("Mode", set.shortNameById(3).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), set.shortNameById(99));
+    try std.testing.expectEqualStrings("dB", set.units(0).?);
+    try std.testing.expectEqualStrings("", set.unitsById(1).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), set.unitsById(99));
     try std.testing.expectEqual(@as(?usize, 2), set.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, null), set.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, 1), set.indexOfName("Voices"));
@@ -1547,8 +1620,8 @@ test "parameter values expose typed field access" {
 test "parameter view binds reflected set and values" {
     const Mode = enum { clean, boost, mute };
     const Params = struct {
-        gain: FloatParam = FloatParam.init(0, "Gain", -12.0, 6.0, 0.0),
-        voices: IntParam = IntParam.init(1, "Voices", 1, 4, 1),
+        gain: FloatParam = .{ .id = 0, .name = "Gain", .units = "dB", .min = -12.0, .max = 6.0, .default = 0.0 },
+        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 4, .default = 1 },
         bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
         mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
     };
@@ -1567,6 +1640,10 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?u32, 0), view.id(0));
     try std.testing.expectEqualStrings("Voices", view.name(1).?);
     try std.testing.expectEqualStrings("Bypass", view.nameById(2).?);
+    try std.testing.expectEqualStrings("Vox", view.shortName(1).?);
+    try std.testing.expectEqualStrings("Mode", view.shortNameById(3).?);
+    try std.testing.expectEqualStrings("dB", view.units(0).?);
+    try std.testing.expectEqualStrings("", view.unitsById(1).?);
     try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalized(3));
     try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalizedById(3));
     try std.testing.expectEqual(@as(?bool, false), view.isBypass(0));
@@ -1582,6 +1659,8 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?u32, null), view.id(99));
     try std.testing.expectEqual(@as(?[]const u8, null), view.name(99));
     try std.testing.expectEqual(@as(?[]const u8, null), view.nameById(99));
+    try std.testing.expectEqual(@as(?[]const u8, null), view.shortNameById(99));
+    try std.testing.expectEqual(@as(?[]const u8, null), view.unitsById(99));
     try std.testing.expectEqual(@as(?f64, null), view.defaultNormalizedById(99));
     try std.testing.expectEqual(@as(?bool, null), view.isBypassById(99));
     try std.testing.expectEqual(@as(?i32, null), view.unitIdById(99));
@@ -1643,8 +1722,8 @@ test "parameter view binds reflected set and values" {
 test "parameter editor binds reflected set and mutable values" {
     const Mode = enum { clean, boost, mute };
     const Params = struct {
-        gain: FloatParam = FloatParam.init(0, "Gain", -12.0, 6.0, 0.0),
-        voices: IntParam = IntParam.init(1, "Voices", 1, 4, 1),
+        gain: FloatParam = .{ .id = 0, .name = "Gain", .units = "dB", .min = -12.0, .max = 6.0, .default = 0.0 },
+        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 4, .default = 1 },
         bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
         mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
     };
@@ -1658,6 +1737,10 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?u32, 0), editor.id(0));
     try std.testing.expectEqualStrings("Voices", editor.name(1).?);
     try std.testing.expectEqualStrings("Bypass", editor.nameById(2).?);
+    try std.testing.expectEqualStrings("Vox", editor.shortName(1).?);
+    try std.testing.expectEqualStrings("Mode", editor.shortNameById(3).?);
+    try std.testing.expectEqualStrings("dB", editor.units(0).?);
+    try std.testing.expectEqualStrings("", editor.unitsById(1).?);
     try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalized(3));
     try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalizedById(3));
     try std.testing.expectEqual(@as(?bool, false), editor.isBypass(0));
