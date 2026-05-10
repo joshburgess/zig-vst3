@@ -1498,6 +1498,16 @@ pub fn ParameterValues(comptime Params: type) type {
             return applied;
         }
 
+        pub fn applyChangesChangedCount(self: *Self, set: *const Set, changes: process.ParameterChanges) usize {
+            var changed: usize = 0;
+            for (changes.items) |change| {
+                if (!(set.canAutomateById(change.id) orelse false)) continue;
+                if (set.isReadOnlyById(change.id) orelse true) continue;
+                changed += self.storeByIdCount(set, change.id, change.normalized) orelse 0;
+            }
+            return changed;
+        }
+
         pub fn applyChanges(self: *Self, set: *const Set, changes: process.ParameterChanges) void {
             _ = self.applyChangesCount(set, changes);
         }
@@ -2442,6 +2452,10 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn applyChangesCount(self: Self, changes: process.ParameterChanges) usize {
             return self.values.applyChangesCount(self.set, changes);
+        }
+
+        pub fn applyChangesChangedCount(self: Self, changes: process.ParameterChanges) usize {
+            return self.values.applyChangesChangedCount(self.set, changes);
         }
 
         pub fn applyChanges(self: Self, changes: process.ParameterChanges) void {
@@ -3787,7 +3801,9 @@ test "parameter editor binds reflected set and mutable values" {
         .{ .id = 3, .sample_offset = 0, .normalized = 0.5 },
     };
     const parameter_changes = try process.ParameterChanges.init(&changes, 1);
+    try std.testing.expectEqual(@as(usize, 3), editor.applyChangesChangedCount(parameter_changes));
     try std.testing.expectEqual(@as(usize, 3), editor.applyChangesCount(parameter_changes));
+    try std.testing.expectEqual(@as(usize, 0), editor.applyChangesChangedCount(parameter_changes));
     try std.testing.expectEqual(@as(f64, -12.0), editor.load("gain"));
     try std.testing.expectEqual(@as(i64, 4), editor.load("voices"));
     try std.testing.expectEqual(true, editor.load("bypass"));
@@ -3862,7 +3878,9 @@ test "parameter values apply reflected parameter changes by id" {
     };
     const changes = try process.ParameterChanges.init(&items, 8);
 
+    try std.testing.expectEqual(@as(usize, 2), values.applyChangesChangedCount(&set, changes));
     try std.testing.expectEqual(@as(usize, 2), values.applyChangesCount(&set, changes));
+    try std.testing.expectEqual(@as(usize, 0), values.applyChangesChangedCount(&set, changes));
 
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
     try std.testing.expectEqual(@as(?f64, 1.0), values.loadById(&set, 1));
