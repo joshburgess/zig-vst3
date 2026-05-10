@@ -28,6 +28,10 @@ pub const ReadParameterStateReport = struct {
         return self.ignored_count;
     }
 
+    pub fn hasDecodedEntries(self: ReadParameterStateReport) bool {
+        return self.entry_count != 0;
+    }
+
     pub fn hasRestoredEntries(self: ReadParameterStateReport) bool {
         return self.restored_count != 0;
     }
@@ -38,6 +42,10 @@ pub const ReadParameterStateReport = struct {
 
     pub fn restoredAllEntries(self: ReadParameterStateReport) bool {
         return self.restored_count == self.entry_count and self.ignored_count == 0;
+    }
+
+    pub fn ignoredAllEntries(self: ReadParameterStateReport) bool {
+        return self.entry_count != 0 and self.ignored_count == self.entry_count and self.restored_count == 0;
     }
 };
 
@@ -247,9 +255,11 @@ test "parameter state round-trips normalized values" {
     try std.testing.expectEqual(@as(usize, 2), report.decodedCount());
     try std.testing.expectEqual(@as(usize, 2), report.restoredCount());
     try std.testing.expectEqual(@as(usize, 0), report.ignoredCount());
+    try std.testing.expect(report.hasDecodedEntries());
     try std.testing.expect(report.hasRestoredEntries());
     try std.testing.expect(!report.hasIgnoredEntries());
     try std.testing.expect(report.restoredAllEntries());
+    try std.testing.expect(!report.ignoredAllEntries());
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadField(&set, "gain"));
     try std.testing.expectEqual(@as(f64, 0.75), restored.loadField(&set, "mix"));
 }
@@ -325,10 +335,29 @@ test "parameter state ignores unknown parameter ids" {
     try std.testing.expectEqual(@as(usize, 2), report.decodedCount());
     try std.testing.expectEqual(@as(usize, 1), report.restoredCount());
     try std.testing.expectEqual(@as(usize, 1), report.ignoredCount());
+    try std.testing.expect(report.hasDecodedEntries());
     try std.testing.expect(report.hasRestoredEntries());
     try std.testing.expect(report.hasIgnoredEntries());
     try std.testing.expect(!report.restoredAllEntries());
+    try std.testing.expect(!report.ignoredAllEntries());
     try std.testing.expectEqual(@as(f64, 0.75), values.loadField(&set, "gain"));
+}
+
+test "parameter state report classifies empty and ignored loads" {
+    const empty = ReadParameterStateReport{ .entry_count = 0, .restored_count = 0, .ignored_count = 0 };
+    const ignored = ReadParameterStateReport{ .entry_count = 2, .restored_count = 0, .ignored_count = 2 };
+
+    try std.testing.expect(!empty.hasDecodedEntries());
+    try std.testing.expect(!empty.hasRestoredEntries());
+    try std.testing.expect(!empty.hasIgnoredEntries());
+    try std.testing.expect(empty.restoredAllEntries());
+    try std.testing.expect(!empty.ignoredAllEntries());
+
+    try std.testing.expect(ignored.hasDecodedEntries());
+    try std.testing.expect(!ignored.hasRestoredEntries());
+    try std.testing.expect(ignored.hasIgnoredEntries());
+    try std.testing.expect(!ignored.restoredAllEntries());
+    try std.testing.expect(ignored.ignoredAllEntries());
 }
 
 test "parameter state rejects duplicate restored parameter ids without partial updates" {
