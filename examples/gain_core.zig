@@ -169,3 +169,35 @@ test "gain core example can smooth normalized gain changes" {
     try std.testing.expectApproxEqAbs(0.75, smoother.targetValue(), 0.000001);
     try std.testing.expect(!smoother.active());
 }
+
+test "gain core example round-trips parameter state" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+    var restored = try Instance.init(std.testing.allocator, .{});
+    var bytes: [plug.state.encodedSize(Gain.Params)]u8 = undefined;
+
+    try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
+
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    try instance.writeParameterState(out_stream.writer());
+
+    var in_stream = std.io.fixedBufferStream(&bytes);
+    const report = try restored.readParameterStateReport(in_stream.reader());
+
+    try std.testing.expectEqual(@as(usize, 1), report.decodedCount());
+    try std.testing.expectEqual(@as(usize, 1), report.restoredCount());
+    try std.testing.expectEqual(@as(usize, 0), report.ignoredCount());
+    try std.testing.expect(report.hasDecodedEntries());
+    try std.testing.expect(report.hasRestoredEntries());
+    try std.testing.expect(!report.hasIgnoredEntries());
+    try std.testing.expect(report.restoredAllEntries());
+    try std.testing.expect(!report.ignoredAllEntries());
+    try std.testing.expectEqual(@as(f64, 0.25), restored.loadParameterNormalized("gain"));
+
+    var json_bytes: [128]u8 = undefined;
+    var json_stream = std.io.fixedBufferStream(&json_bytes);
+    try restored.writeParameterStateJson(json_stream.writer());
+    try std.testing.expectEqualStrings(
+        "{\"version\":1,\"parameters\":[{\"id\":0,\"name\":\"Gain\",\"normalized\":0.25}]}",
+        json_stream.getWritten(),
+    );
+}

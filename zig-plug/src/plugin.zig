@@ -1849,6 +1849,14 @@ test "plugin instance round-trips owned parameter state" {
     const report = try restored.readParameterStateReport(in_stream.reader());
 
     try std.testing.expectEqual(state.ReadParameterStateReport{ .entry_count = 2, .restored_count = 2, .ignored_count = 0 }, report);
+    try std.testing.expectEqual(@as(usize, 2), report.decodedCount());
+    try std.testing.expectEqual(@as(usize, 2), report.restoredCount());
+    try std.testing.expectEqual(@as(usize, 0), report.ignoredCount());
+    try std.testing.expect(report.hasDecodedEntries());
+    try std.testing.expect(report.hasRestoredEntries());
+    try std.testing.expect(!report.hasIgnoredEntries());
+    try std.testing.expect(report.restoredAllEntries());
+    try std.testing.expect(!report.ignoredAllEntries());
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(f64, 0.75), restored.loadParameterNormalized("mix"));
 }
