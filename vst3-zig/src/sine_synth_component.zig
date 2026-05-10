@@ -60,6 +60,10 @@ const SineSynthState = struct {
 
 var synth = SineSynthState{};
 
+fn resetSineSynthState() void {
+    synth = .{};
+}
+
 const SineSynthProcessor = struct {
     pub fn process(_: SineSynthProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
         synth.process(Sample, context);
@@ -70,6 +74,10 @@ const Effect = zig_plug_effect.SimpleStereoEffect(struct {
     pub const component_name = "SineSynthComponent";
     pub const controller_cid = sine_synth_controller.cid;
     pub const Processor = SineSynthProcessor;
+
+    pub fn resetProcessState() void {
+        resetSineSynthState();
+    }
 
     pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
         sine_synth_controller.applyParameterChanges(changes);
@@ -148,4 +156,32 @@ test "sine synth processor treats zero-velocity note-on as note-off" {
 
 test "sine synth component uses spec default level" {
     try std.testing.expectEqual(@as(f64, 0.1), sine_synth_spec.default_level);
+}
+
+test "sine synth component resets process state when deactivated" {
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+
+    resetSineSynthState();
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{};
+    const output_channels = [_][]f32{&output};
+    const events = [_]plug_process.Event{
+        plug_process.Event.noteOn(0, 0, 69, 1.0),
+    };
+    var context = try plug_process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+    });
+    (SineSynthProcessor{}).process(f32, &context);
+    try std.testing.expect(synth.active);
+
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setActive(component_iface, 0));
+    try std.testing.expect(!synth.active);
+    try std.testing.expectEqual(@as(i16, 69), synth.note);
+    try std.testing.expectEqual(@as(f64, 0.0), synth.phase);
 }
