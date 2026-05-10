@@ -75,6 +75,16 @@ test "plugin compatibility rejects missing stream" {
     try std.testing.expectEqual(types.kInvalidArgument, compatibility.asInterface().vtable.getCompatibilityJSON(compatibility.asInterface(), null));
 }
 
+test "plugin compatibility reports short stream writes as failure" {
+    const Compatibility = PluginCompatibility("{\"vendor\":\"zig-vst3\"}");
+    const Stream = vst_stream.FixedBufferStream(8);
+    var compatibility = Compatibility{};
+    var stream = Stream{};
+
+    try std.testing.expectEqual(types.kResultFalse, compatibility.asInterface().vtable.getCompatibilityJSON(compatibility.asInterface(), stream.asStream()));
+    try std.testing.expectEqualStrings("", stream.data());
+}
+
 test "plugin compatibility supports query interface" {
     const Compatibility = PluginCompatibility("{}");
     var compatibility = Compatibility{};

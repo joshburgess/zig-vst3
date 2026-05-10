@@ -10,6 +10,8 @@ The current tree contains:
 - `zig-plug/`: higher-level plugin framework layer
 - `PROJECT_BUILD_PLAN.md`: staged implementation plan
 - `CHANGELOG.md`: release notes
+- `docs/layer1-api.md`: raw `vst3-zig` API guide
+- `docs/layer1-coverage.md`: Layer 1 protocol coverage map
 - `docs/layer1-release.md`: `vst3-zig` release checklist
 
 ## Current Status

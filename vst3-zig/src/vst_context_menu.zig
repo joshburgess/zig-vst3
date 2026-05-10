@@ -215,6 +215,30 @@ test "context menu stores items and retains targets" {
     try std.testing.expectEqual(@as(types.uint32, 1), target.ref_count.load(.monotonic));
 }
 
+test "context menu clears failed item lookups and rejects full storage" {
+    const Menu = ContextMenu(1);
+    const Target = ContextMenuTarget(struct {});
+    var menu = Menu{};
+    var first = Target{};
+    var second = Target{};
+    const iface = menu.asInterface();
+    var item = ivstcontextmenu.IContextMenuItem{ .tag = 7 };
+    var extra = ivstcontextmenu.IContextMenuItem{ .tag = 8 };
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &item, first.asInterface()));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addItem(iface, &extra, second.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), second.ref_count.load(.monotonic));
+
+    var out_item = ivstcontextmenu.IContextMenuItem{ .tag = 99 };
+    var out_target: ?*ivstcontextmenu.IContextMenuTarget = second.asInterface();
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getItem(iface, 1, &out_item, &out_target));
+    try std.testing.expectEqual(@as(types.int32, 0), out_item.tag);
+    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenuTarget, null), out_target);
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.removeItem(iface, &extra, first.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.removeItem(iface, &item, first.asInterface()));
+}
+
 test "context menu records popup coordinates and supports query interface" {
     const Menu = ContextMenu(1);
     var menu = Menu{};

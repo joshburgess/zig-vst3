@@ -77,6 +77,16 @@ test "parameter finder maps coordinates to parameter ids" {
     try std.testing.expectEqual(vsttypes.kNoParamId, found);
 }
 
+test "parameter finder returns no-param without a config hook" {
+    const Finder = ParameterFinder(struct {});
+    var finder = Finder{};
+    const iface = finder.asInterface();
+    var found: vsttypes.ParamID = 123;
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.findParameter(iface, 0, 0, &found));
+    try std.testing.expectEqual(vsttypes.kNoParamId, found);
+}
+
 test "parameter finder supports query interface" {
     const Finder = ParameterFinder(struct {});
     var finder = Finder{};

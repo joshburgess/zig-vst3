@@ -490,6 +490,61 @@ test "data exchange host exposes handler and records queue callbacks" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.release_count);
 }
 
+test "data exchange host delegates successful block lifecycle" {
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrFromInt(0x1000);
+    const block_data: *anyopaque = @ptrFromInt(0x2000);
+    const Host = DataExchangeHost("Test Host", struct {
+        pub fn openQueue(_: anytype, received_processor: ?*ivstaudioprocessor.IAudioProcessor, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
+            if (received_processor != processor or block_size != 256 or num_blocks != 3 or alignment != 16 or user_context_id != 99) {
+                out.* = ivstdataexchange.InvalidDataExchangeQueueID;
+                return types.kInvalidArgument;
+            }
+            out.* = 44;
+            return types.kResultOk;
+        }
+
+        pub fn lockBlock(_: anytype, queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
+            if (queue_id != 44) return types.kInvalidArgument;
+            block.* = .{
+                .blockID = 12,
+                .size = 256,
+                .data = block_data,
+            };
+            return types.kResultOk;
+        }
+
+        pub fn freeBlock(_: anytype, queue_id: ivstdataexchange.DataExchangeQueueID, block_id: ivstdataexchange.DataExchangeBlockID, flags: types.TBool) types.tresult {
+            return if (queue_id == 44 and block_id == 12 and flags == 1) types.kResultOk else types.kInvalidArgument;
+        }
+
+        pub fn closeQueue(_: anytype, queue_id: ivstdataexchange.DataExchangeQueueID) types.tresult {
+            return if (queue_id == 44) types.kResultOk else types.kInvalidArgument;
+        }
+    });
+    var host = Host{};
+    var queried: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.queryInterface(host.asHostApplication(), &ivstdataexchange.idata_exchange_handler_iid, &queried));
+    const handler: *ivstdataexchange.IDataExchangeHandler = @ptrCast(@alignCast(queried.?));
+
+    var queue_id: ivstdataexchange.DataExchangeQueueID = ivstdataexchange.InvalidDataExchangeQueueID;
+    try std.testing.expectEqual(types.kResultOk, handler.vtable.openQueue(handler, processor, 256, 3, 16, 99, &queue_id));
+    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeQueueID, 44), queue_id);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.open_count);
+    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeUserContextID, 99), host.last_user_context_id);
+
+    var block = ivstdataexchange.DataExchangeBlock{};
+    try std.testing.expectEqual(types.kResultOk, handler.vtable.lockBlock(handler, queue_id, &block));
+    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeBlockID, 12), block.blockID);
+    try std.testing.expectEqual(@as(types.uint32, 256), block.size);
+    try std.testing.expectEqual(block_data, block.data.?);
+    try std.testing.expectEqual(types.kResultOk, handler.vtable.freeBlock(handler, queue_id, block.blockID, 1));
+    try std.testing.expectEqual(types.kResultOk, handler.vtable.closeQueue(handler, queue_id));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.close_count);
+    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeQueueID, 44), host.last_queue_id);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
+}
+
 test "data exchange host clears failed delegated outputs" {
     const Host = DataExchangeHost("Test Host", struct {
         pub fn createInstance(_: anytype, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) types.tresult {

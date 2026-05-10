@@ -270,6 +270,23 @@ test "linux run loop registers and triggers event handlers" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.ref_count.load(.monotonic));
 }
 
+test "linux run loop updates duplicate event registrations without extra retain" {
+    const Loop = RunLoop(1, 1);
+    const Handler = EventHandler(struct {});
+    var loop = Loop{};
+    var handler = Handler{};
+    const iface = loop.asInterface();
+    const event_handler = handler.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.registerEventHandler(iface, event_handler, 7));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.registerEventHandler(iface, event_handler, 9));
+    try std.testing.expectEqual(@as(types.uint32, 2), handler.ref_count.load(.monotonic));
+    try std.testing.expectEqual(types.kResultFalse, loop.triggerEvent(7));
+    try std.testing.expectEqual(types.kResultOk, loop.triggerEvent(9));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.unregisterEventHandler(iface, event_handler));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.ref_count.load(.monotonic));
+}
+
 test "linux run loop rejects invalid event handler registrations" {
     const Loop = RunLoop(1, 1);
     const Handler = EventHandler(struct {});
@@ -281,6 +298,22 @@ test "linux run loop rejects invalid event handler registrations" {
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.registerEventHandler(iface, null, 7));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.registerEventHandler(iface, event_handler, -1));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.ref_count.load(.monotonic));
+}
+
+test "linux run loop rejects full event handler storage and missing unregisters" {
+    const Loop = RunLoop(1, 1);
+    const Handler = EventHandler(struct {});
+    var loop = Loop{};
+    var first = Handler{};
+    var second = Handler{};
+    const iface = loop.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.registerEventHandler(iface, first.asInterface(), 1));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.registerEventHandler(iface, second.asInterface(), 2));
+    try std.testing.expectEqual(@as(types.uint32, 1), second.ref_count.load(.monotonic));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.unregisterEventHandler(iface, second.asInterface()));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.unregisterEventHandler(iface, null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.unregisterEventHandler(iface, first.asInterface()));
 }
 
 test "linux run loop registers and triggers timer handlers" {
@@ -297,6 +330,26 @@ test "linux run loop registers and triggers timer handlers" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.timer_count);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.unregisterTimer(iface, timer_handler));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.ref_count.load(.monotonic));
+}
+
+test "linux run loop updates duplicate timers and rejects full storage" {
+    const Loop = RunLoop(1, 1);
+    const Handler = TimerHandler(struct {});
+    var loop = Loop{};
+    var first = Handler{};
+    var second = Handler{};
+    const iface = loop.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.registerTimer(iface, first.asInterface(), 16));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.registerTimer(iface, first.asInterface(), 32));
+    try std.testing.expectEqual(@as(types.uint32, 2), first.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(Linux.TimerInterval, 32), loop.timer_handlers[0].interval);
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.registerTimer(iface, second.asInterface(), 64));
+    try std.testing.expectEqual(@as(types.uint32, 1), second.ref_count.load(.monotonic));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.unregisterTimer(iface, second.asInterface()));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.unregisterTimer(iface, null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.unregisterTimer(iface, first.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), first.ref_count.load(.monotonic));
 }
 
 test "linux run loop supports query interface" {
