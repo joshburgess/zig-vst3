@@ -62,11 +62,6 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
-      - name: Install Linux validator dependencies
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libx11-dev
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
       - name: Run Layer 1 ABI checks
@@ -87,6 +82,11 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
+      - name: Install Linux validator dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
       - name: Build Steinberg validator
