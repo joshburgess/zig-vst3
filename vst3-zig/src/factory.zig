@@ -18,6 +18,11 @@ pub const ClassInfo = struct {
     cardinality: types.int32 = ipluginbase.PClassInfo.kManyInstances,
     category: []const u8,
     name: []const u8,
+    class_flags: types.uint32 = 0,
+    sub_categories: []const u8 = "",
+    vendor: []const u8 = "",
+    version: []const u8 = "",
+    sdk_version: []const u8 = "",
     create: ?CreateFn = null,
 };
 
@@ -130,11 +135,184 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
     };
 }
 
+pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const ClassInfo) type {
+    return struct {
+        const Self = @This();
+
+        pub const Instance = extern struct {
+            iface: ipluginbase.IPluginFactory3 = .{ .vtable = &vtable },
+            ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+            host_context: ?*funknown.Header = null,
+        };
+
+        pub var instance = Instance{};
+
+        pub fn getPluginFactory() ?*ipluginbase.IPluginFactory {
+            return @ptrCast(&instance.iface);
+        }
+
+        pub fn getPluginFactory3() *ipluginbase.IPluginFactory3 {
+            return &instance.iface;
+        }
+
+        const vtable = ipluginbase.IPluginFactory3VTable{
+            .queryInterface = queryInterface,
+            .addRef = addRef,
+            .release = release,
+            .getFactoryInfo = getFactoryInfo,
+            .countClasses = countClasses,
+            .getClassInfo = getClassInfo,
+            .createInstance = createInstance,
+            .getClassInfo2 = getClassInfo2,
+            .getClassInfoUnicode = getClassInfoUnicode,
+            .setHostContext = setHostContext,
+        };
+
+        fn owner(ptr: *anyopaque) *Instance {
+            const iface: *ipluginbase.IPluginFactory3 = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            if (std.mem.eql(u8, requested_iid, &funknown.iid) or
+                std.mem.eql(u8, requested_iid, &ipluginbase.iplugin_factory_iid) or
+                std.mem.eql(u8, requested_iid, &ipluginbase.iplugin_factory2_iid) or
+                std.mem.eql(u8, requested_iid, &ipluginbase.iplugin_factory3_iid))
+            {
+                _ = addRef(ptr);
+                out.* = ptr;
+                return types.kResultOk;
+            }
+
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&owner(ptr).ref_count, "IPluginFactory3");
+        }
+
+        fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.C) types.tresult {
+            out.* = .{ .flags = info.flags };
+            copyZ(&out.vendor, info.vendor);
+            copyZ(&out.url, info.url);
+            copyZ(&out.email, info.email);
+            return types.kResultOk;
+        }
+
+        fn countClasses(_: *anyopaque) callconv(.C) types.int32 {
+            return @intCast(classes.len);
+        }
+
+        fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.C) types.tresult {
+            const class = classAt(index) orelse {
+                out.* = .{};
+                return types.kInvalidArgument;
+            };
+            out.* = .{
+                .cid = class.cid,
+                .cardinality = class.cardinality,
+            };
+            copyZ(&out.category, class.category);
+            copyZ(&out.name, class.name);
+            return types.kResultOk;
+        }
+
+        fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
+            for (classes) |class| {
+                if (std.mem.eql(u8, cid[0..16], &class.cid)) {
+                    if (class.create) |create| {
+                        const result = create(requested_iid, out);
+                        if (result != types.kResultOk) out.* = null;
+                        return result;
+                    }
+                    break;
+                }
+            }
+
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn getClassInfo2(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo2) callconv(.C) types.tresult {
+            const class = classAt(index) orelse {
+                out.* = .{};
+                return types.kInvalidArgument;
+            };
+            out.* = .{
+                .cid = class.cid,
+                .cardinality = class.cardinality,
+                .classFlags = class.class_flags,
+            };
+            copyZ(&out.category, class.category);
+            copyZ(&out.name, class.name);
+            copyZ(&out.subCategories, class.sub_categories);
+            copyZ(&out.vendor, if (class.vendor.len == 0) info.vendor else class.vendor);
+            copyZ(&out.version, class.version);
+            copyZ(&out.sdkVersion, class.sdk_version);
+            return types.kResultOk;
+        }
+
+        fn getClassInfoUnicode(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfoW) callconv(.C) types.tresult {
+            const class = classAt(index) orelse {
+                out.* = .{};
+                return types.kInvalidArgument;
+            };
+            out.* = .{
+                .cid = class.cid,
+                .cardinality = class.cardinality,
+                .classFlags = class.class_flags,
+            };
+            copyZ(&out.category, class.category);
+            copyZ16(&out.name, class.name);
+            copyZ(&out.subCategories, class.sub_categories);
+            copyZ16(&out.vendor, if (class.vendor.len == 0) info.vendor else class.vendor);
+            copyZ16(&out.version, class.version);
+            copyZ16(&out.sdkVersion, class.sdk_version);
+            return types.kResultOk;
+        }
+
+        fn setHostContext(ptr: *anyopaque, context: ?*funknown.Header) callconv(.C) types.tresult {
+            owner(ptr).host_context = context;
+            return types.kResultOk;
+        }
+
+        fn classAt(index: types.int32) ?ClassInfo {
+            if (comptime classes.len == 0) {
+                return null;
+            } else {
+                if (index < 0 or index >= classes.len) return null;
+                return classes[@intCast(index)];
+            }
+        }
+
+        comptime {
+            _ = Self;
+            if (classes.len > std.math.maxInt(types.int32)) {
+                @compileError("VST3 factory class count exceeds int32 range");
+            }
+        }
+    };
+}
+
 fn copyZ(dest: anytype, source: []const u8) void {
     const N = @typeInfo(@TypeOf(dest.*)).array.len;
     @memset(dest, 0);
     const len = @min(source.len, N - 1);
     @memcpy(dest[0..len], source[0..len]);
+}
+
+fn copyZ16(dest: anytype, source: []const u8) void {
+    const N = @typeInfo(@TypeOf(dest.*)).array.len;
+    @memset(dest, 0);
+    const len = @min(source.len, N - 1);
+    for (source[0..len], 0..) |char, index| {
+        dest[index] = char;
+    }
 }
 
 test "static factory exposes metadata and class count" {
@@ -291,4 +469,66 @@ test "static factory implements queryInterface for FUnknown and IPluginFactory" 
     out = @ptrFromInt(0x1);
     try std.testing.expectEqual(types.kNoInterface, factory.vtable.queryInterface(factory, &ipluginbase.iplugin_factory2_iid, &out));
     try std.testing.expectEqual(@as(?*anyopaque, null), out);
+}
+
+test "static factory 3 exposes factory2 and factory3 metadata" {
+    const cid = comptime tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
+    const TestFactory = StaticFactory3(.{
+        .vendor = "Test Vendor",
+        .url = "https://example.test",
+        .email = "dev@example.test",
+        .flags = 3,
+    }, &.{
+        .{
+            .cid = cid,
+            .category = "Audio Module Class",
+            .name = "Test Plug-in",
+            .class_flags = 9,
+            .sub_categories = "Fx|Dynamics",
+            .version = "1.2.3",
+            .sdk_version = "VST 3.8.0",
+        },
+    });
+
+    const factory = TestFactory.getPluginFactory3();
+    var factory2_out: ?*anyopaque = null;
+    var factory3_out: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, factory.vtable.queryInterface(factory, &ipluginbase.iplugin_factory2_iid, &factory2_out));
+    try std.testing.expectEqual(@as(?*anyopaque, @ptrCast(factory)), factory2_out);
+    try std.testing.expectEqual(@as(types.uint32, 1), factory.vtable.release(factory));
+
+    try std.testing.expectEqual(types.kResultOk, factory.vtable.queryInterface(factory, &ipluginbase.iplugin_factory3_iid, &factory3_out));
+    try std.testing.expectEqual(@as(?*anyopaque, @ptrCast(factory)), factory3_out);
+    try std.testing.expectEqual(@as(types.uint32, 1), factory.vtable.release(factory));
+
+    var info2 = ipluginbase.PClassInfo2{};
+    try std.testing.expectEqual(types.kResultOk, factory.vtable.getClassInfo2(factory, 0, &info2));
+    try std.testing.expectEqualSlices(u8, &cid, &info2.cid);
+    try std.testing.expectEqual(@as(types.uint32, 9), info2.classFlags);
+    try std.testing.expectEqualStrings("Fx|Dynamics", std.mem.sliceTo(&info2.subCategories, 0));
+    try std.testing.expectEqualStrings("Test Vendor", std.mem.sliceTo(&info2.vendor, 0));
+    try std.testing.expectEqualStrings("1.2.3", std.mem.sliceTo(&info2.version, 0));
+    try std.testing.expectEqualStrings("VST 3.8.0", std.mem.sliceTo(&info2.sdkVersion, 0));
+
+    var info_w = ipluginbase.PClassInfoW{};
+    try std.testing.expectEqual(types.kResultOk, factory.vtable.getClassInfoUnicode(factory, 0, &info_w));
+    try std.testing.expectEqualSlices(types.char16, std.unicode.utf8ToUtf16LeStringLiteral("Test Plug-in"), std.mem.sliceTo(&info_w.name, 0));
+    try std.testing.expectEqualSlices(types.char16, std.unicode.utf8ToUtf16LeStringLiteral("Test Vendor"), std.mem.sliceTo(&info_w.vendor, 0));
+}
+
+test "static factory 3 clears invalid metadata and stores host context" {
+    const TestFactory = StaticFactory3(.{ .vendor = "Test Vendor" }, &.{});
+    const factory = TestFactory.getPluginFactory3();
+    var info2 = ipluginbase.PClassInfo2{ .classFlags = 77 };
+    var info_w = ipluginbase.PClassInfoW{ .classFlags = 77 };
+
+    try std.testing.expectEqual(types.kInvalidArgument, factory.vtable.getClassInfo2(factory, 0, &info2));
+    try std.testing.expectEqual(@as(types.uint32, 0), info2.classFlags);
+    try std.testing.expectEqual(types.kInvalidArgument, factory.vtable.getClassInfoUnicode(factory, -1, &info_w));
+    try std.testing.expectEqual(@as(types.uint32, 0), info_w.classFlags);
+
+    var host = funknown.TestObject{};
+    try std.testing.expectEqual(types.kResultOk, factory.vtable.setHostContext(factory, host.asUnknown()));
+    try std.testing.expectEqual(host.asUnknown(), TestFactory.instance.host_context.?);
 }
