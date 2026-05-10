@@ -21,7 +21,7 @@ Malformed state headers, unsupported format versions, truncated entries, duplica
 - `state.encodedSizeForCountChecked(count)`: checked byte count for a binary state with `count` entries.
 - `state.encodedSize(Params)`: byte count for a full parameter snapshot.
 - `state.format_version`: current binary and debug JSON state format version.
-- `state.ReadParameterStateReport`: counts decoded, restored, and ignored entries from a state load, with helpers for checking whether all decoded entries were restored.
+- `state.ReadParameterStateReport`: counts decoded, restored, and ignored entries from a state load, with helpers for classifying empty, partial, fully restored, and fully ignored loads.
 - `state.writeParameterState(Params, set, values, writer)`: writes all reflected parameter values.
 - `state.writeParameterStateJson(Params, set, values, writer)`: writes the same reflected parameter values as compact debug JSON.
 - `state.readParameterState(Params, set, values, reader)`: reads entries and updates matching reflected values.
