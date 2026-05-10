@@ -46,7 +46,8 @@ The raw layer includes fixed-capacity helper objects for tests and shell integra
 - `vst_host_application` and `vst_host_context` host-side callback helpers
 - `vst_capability_support` helpers for interface support, prefetch state, MIDI learn, and physical UI mapping
 - `vst_plug_frame`, `vst_content_scale_support`, `vst_linux_run_loop`, and `vst_wayland_frame` GUI helper objects
-- `vst_unit_data`, `vst_context_menu`, `vst_test_plug_provider`, and `vst_test_interfaces`
+- `vst_unit_data` for fixed-capacity unit, program-list, and unit-data helpers
+- `vst_context_menu`, `vst_test_plug_provider`, and `vst_test_interfaces`
 
 These helpers favor deterministic failure behavior. Failed reads, writes, lookups, queue opens, event reads, and string writes clear their output values where that prevents stale host-visible data.
 
@@ -54,5 +55,5 @@ These helpers favor deterministic failure behavior. Failed reads, writes, lookup
 
 - The binding surface is broad, but not every rare interface has a production-oriented convenience wrapper.
 - GUI/editor coverage is unit-test and ABI-test based. Real embedded editor behavior still needs host-specific smoke tests.
-- Linux and Windows validator execution is not yet part of CI.
+- Windows validator execution is not yet part of CI.
 - Manual host coverage is currently macOS REAPER-heavy.

@@ -44,6 +44,31 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             copyString128(&self.units[0].name, name);
         }
 
+        pub fn addUnit(self: *Self, id: vsttypes.UnitID, parent_id: vsttypes.UnitID, name: []const u8, program_list_id: vsttypes.ProgramListID) types.tresult {
+            if (self.safeUnitCount() >= max_units) return types.kResultFalse;
+            const index = self.safeUnitCount();
+            self.units[index] = .{
+                .id = id,
+                .parentUnitId = parent_id,
+                .programListId = program_list_id,
+            };
+            copyString128(&self.units[index].name, name);
+            self.unit_count = @intCast(index + 1);
+            return types.kResultOk;
+        }
+
+        pub fn addProgramList(self: *Self, id: vsttypes.ProgramListID, name: []const u8, program_count: types.int32) types.tresult {
+            if (self.safeProgramListCount() >= max_program_lists) return types.kResultFalse;
+            const index = self.safeProgramListCount();
+            self.program_lists[index] = .{
+                .id = id,
+                .programCount = program_count,
+            };
+            copyString128(&self.program_lists[index].name, name);
+            self.program_list_count = @intCast(index + 1);
+            return types.kResultOk;
+        }
+
         fn safeUnitCount(self: *const Self) usize {
             if (self.unit_count <= 0) return 0;
             return @min(@as(usize, @intCast(self.unit_count)), max_units);
@@ -383,13 +408,9 @@ test "unit info exposes root unit defaults" {
 test "unit info stores program list entries and selected unit" {
     const Info = UnitInfo(2, 1, struct {});
     var info = Info{};
-    info.unit_count = 2;
-    info.units[1] = .{ .id = 7, .parentUnitId = ivstunits.kRootUnitId, .programListId = 4 };
     info.setRootName("Main");
-    info.program_list_count = 1;
-    info.program_lists[0] = .{ .id = 4, .programCount = 3 };
-    copyString128(&info.units[1].name, "Layer");
-    copyString128(&info.program_lists[0].name, "Programs");
+    try std.testing.expectEqual(types.kResultOk, info.addProgramList(4, "Programs", 3));
+    try std.testing.expectEqual(types.kResultOk, info.addUnit(7, ivstunits.kRootUnitId, "Layer", 4));
     const iface = info.asInterface();
 
     var unit = ivstunits.UnitInfo{};
@@ -401,6 +422,27 @@ test "unit info stores program list entries and selected unit" {
     try std.testing.expectEqual(@as(types.int32, 3), list.programCount);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.selectUnit(iface, 7));
     try std.testing.expectEqual(@as(vsttypes.UnitID, 7), iface.vtable.getSelectedUnit(iface));
+}
+
+test "unit info rejects extra unit and program-list entries" {
+    const Info = UnitInfo(2, 1, struct {});
+    var info = Info{};
+    try std.testing.expectEqual(types.kResultOk, info.addUnit(2, ivstunits.kRootUnitId, "Child", ivstunits.kNoProgramListId));
+    try std.testing.expectEqual(types.kResultFalse, info.addUnit(3, ivstunits.kRootUnitId, "Overflow", ivstunits.kNoProgramListId));
+    try std.testing.expectEqual(types.kResultOk, info.addProgramList(1, "Programs", 2));
+    try std.testing.expectEqual(types.kResultFalse, info.addProgramList(2, "More", 1));
+
+    const iface = info.asInterface();
+    try std.testing.expectEqual(@as(types.int32, 2), iface.vtable.getUnitCount(iface));
+    try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getProgramListCount(iface));
+
+    var unit = ivstunits.UnitInfo{};
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getUnitInfo(iface, 1, &unit));
+    try std.testing.expectEqual(@as(vsttypes.UnitID, 2), unit.id);
+
+    var list = ivstunits.ProgramListInfo{};
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramListInfo(iface, 0, &list));
+    try std.testing.expectEqual(@as(vsttypes.ProgramListID, 1), list.id);
 }
 
 test "unit info clamps corrupted counts" {
