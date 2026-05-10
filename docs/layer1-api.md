@@ -44,6 +44,7 @@ The raw layer includes fixed-capacity helper objects for tests and shell integra
 - `vst_message.Message`, `AttributeList`, and `StreamAttributes`
 - `vst_component_handler` host callback helpers
 - `vst_host_application` and `vst_host_context` host-side callback helpers
+- `vst_plugin_compatibility` for fixed compatibility JSON providers and basic metadata fixtures
 - `vst_capability_support` helpers for interface support, prefetch state, MIDI learn, MIDI 2 mapping, and physical UI mapping
 - `vst_note_expression` for fixed-capacity note-expression and keyswitch metadata helpers
 - `vst_representation` for fixed XML representation streams
