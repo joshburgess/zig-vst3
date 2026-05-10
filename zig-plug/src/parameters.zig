@@ -2287,6 +2287,31 @@ test "parameter values expose plain value access by id" {
     try std.testing.expectEqual(@as(?f64, null), values.loadPlainById(&set, 99));
 }
 
+test "parameter values expose plain value access by name" {
+    const Params = struct {
+        gain: FloatParam = FloatParam.init(0, "Gain", -12.0, 6.0, 0.0),
+        voices: IntParam = IntParam.init(1, "Voices", 1, 16, 4),
+        bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
+    };
+    const Set = ParameterSet(Params);
+    const Values = ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+
+    try std.testing.expectEqual(@as(?f64, 0.0), values.loadPlainByName(&set, "Gain"));
+    try std.testing.expect(values.storePlainByName(&set, "Gain", 6.0));
+    try std.testing.expectEqual(@as(?f64, 6.0), values.loadPlainByName(&set, "Gain"));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.loadByName(&set, "Gain"));
+
+    try std.testing.expect(values.storePlainByName(&set, "Voices", 8.8));
+    try std.testing.expectEqual(@as(?f64, 9.0), values.loadPlainByName(&set, "Voices"));
+
+    try std.testing.expect(values.storePlainByName(&set, "Bypass", 1.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.loadPlainByName(&set, "Bypass"));
+    try std.testing.expect(!values.storePlainByName(&set, "Missing", 1.0));
+    try std.testing.expectEqual(@as(?f64, null), values.loadPlainByName(&set, "Missing"));
+}
+
 test "parameter values expose typed field access" {
     const Mode = enum { clean, boost, mute };
     const Params = struct {
