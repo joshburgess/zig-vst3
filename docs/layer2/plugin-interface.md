@@ -41,7 +41,7 @@ A plugin type declares:
 - `process64WithParameters(self: *Plugin, context: *process.ProcessContext(f64), set: *const ParameterSet, values: *const ParameterValues) void`
 - `deinit(self: *Plugin) void`
 
-`process.ProcessContext(Sample)` carries typed input/output channel views, parameter changes, input events, optional output events, and the current sample rate. `ProcessContext(Sample).init(sample_rate, input_channels, output_channels)` builds the audio views, rejects non-positive or non-finite sample rates, and validates matching frame counts within each side. `ProcessContext(Sample).initWith(sample_rate, input_channels, output_channels, .{ ... })` also attaches parameter changes, input events, and output-event storage while validating them against the context frame count.
+`process.ProcessContext(Sample)` carries typed input/output channel views, parameter changes, input events, optional output events, and the current sample rate. `ProcessContext(Sample).init(sample_rate, input_channels, output_channels)` builds the audio views, rejects non-positive or non-finite sample rates, validates matching frame counts within each side, and rejects side-to-side frame-count mismatches for processors with both audio inputs and outputs. `ProcessContext(Sample).initWith(sample_rate, input_channels, output_channels, .{ ... })` also attaches parameter changes, input events, and output-event storage while validating them against the context frame count.
 
 Unit and program helpers:
 
