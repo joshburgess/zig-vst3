@@ -23,6 +23,7 @@
 - Preset key and chunk helper coverage for taxonomy strings and every preset chunk type.
 - Plug-view and content-scale rejection coverage for preserved attachment state and invalid scale factors.
 - Linux run-loop coverage for handler query/delegation and invalid timer registration.
+- Inter-app audio helper coverage for scheduled UI events, remote control callbacks, preset-manager creation overrides, and connection notifications.
 
 ### Changed
 

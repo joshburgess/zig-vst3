@@ -360,6 +360,55 @@ test "inter-app audio host resets delegated failure outputs" {
     try std.testing.expectEqual(icon, out_icon.?);
 }
 
+test "inter-app audio host delegates scheduled UI events" {
+    const Host = InterAppAudioHost(struct {
+        pub fn scheduleEventFromUI(self: anytype, event: *events.Event) types.tresult {
+            try std.testing.expectEqual(@as(types.uint32, 1), self.scheduled_event_count);
+            try std.testing.expectEqual(@as(types.int32, 128), event.sampleOffset);
+            try std.testing.expectEqual(@intFromEnum(events.Event.EventTypes.kNoteOnEvent), event.type);
+            return types.kResultFalse;
+        }
+    });
+    var host = Host{};
+    const iface = host.asInterface();
+    var event = events.Event{
+        .sampleOffset = 128,
+        .type = @intFromEnum(events.Event.EventTypes.kNoteOnEvent),
+        .data = .{ .noteOn = .{ .pitch = 64, .velocity = 0.75 } },
+    };
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.scheduleEventFromUI(iface, &event));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.scheduled_event_count);
+}
+
+test "inter-app audio host delegates remote control and preset manager creation" {
+    const Presets = InterAppAudioPresetManager(struct {});
+    const Host = InterAppAudioHost(struct {
+        var returned_presets: ?*ivstinterappaudio.IInterAppAudioPresetManager = null;
+
+        pub fn sendRemoteControlEvent(self: anytype, event_id: types.uint32) types.tresult {
+            try std.testing.expectEqual(@as(types.uint32, 1), self.remote_control_count);
+            try std.testing.expectEqual(@as(types.uint32, 0x1234), event_id);
+            return types.kInvalidArgument;
+        }
+
+        pub fn createPresetManager(self: anytype, uid: *const tuid.TUID) ?*ivstinterappaudio.IInterAppAudioPresetManager {
+            try std.testing.expectEqualSlices(u8, uid, &self.last_preset_uid.?);
+            return returned_presets;
+        }
+    });
+    var presets = Presets{};
+    Host.returned_presets = presets.asInterface();
+    var host = Host{};
+    const iface = host.asInterface();
+    const preset_uid = tuid.inlineUid(0x12345678, 0x90abcdef, 0x11223344, 0x55667788);
+
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.sendRemoteControlEvent(iface, 0x1234));
+    try std.testing.expectEqual(@as(types.uint32, 0x1234), host.last_remote_control_event);
+    try std.testing.expectEqual(presets.asInterface(), iface.vtable.createPresetManager(iface, &preset_uid).?);
+    try std.testing.expectEqualSlices(u8, &preset_uid, &host.last_preset_uid.?);
+}
+
 test "inter-app audio connection notification stores state" {
     const Notification = InterAppAudioConnectionNotification(struct {});
     var notification = Notification{};
@@ -372,6 +421,29 @@ test "inter-app audio connection notification stores state" {
     iface.vtable.onInterAppAudioConnectionStateChange(iface, 0);
     try std.testing.expect(!notification.connected);
     try std.testing.expectEqual(@as(types.uint32, 2), notification.change_count);
+}
+
+test "inter-app audio connection notification delegates state changes" {
+    const Notification = InterAppAudioConnectionNotification(struct {
+        var callback_count: types.uint32 = 0;
+        var last_connected = false;
+
+        pub fn onInterAppAudioConnectionStateChange(self: anytype, connected: bool) void {
+            callback_count += 1;
+            last_connected = connected;
+            std.testing.expectEqual(callback_count, self.change_count) catch @panic("change count mismatch");
+        }
+    });
+    var notification = Notification{};
+    const iface = notification.asInterface();
+
+    iface.vtable.onInterAppAudioConnectionStateChange(iface, 1);
+    try std.testing.expectEqual(@as(types.uint32, 1), Notification.callback_count);
+    try std.testing.expect(Notification.last_connected);
+
+    iface.vtable.onInterAppAudioConnectionStateChange(iface, 0);
+    try std.testing.expectEqual(@as(types.uint32, 2), Notification.callback_count);
+    try std.testing.expect(!Notification.last_connected);
 }
 
 test "inter-app audio connection notification supports query interface" {
