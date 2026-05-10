@@ -72,6 +72,11 @@ pub fn WaylandFrame(comptime Config: type) type {
 
         iface: iwaylandframe.IWaylandFrame = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        surface_count: types.uint32 = 0,
+        parent_surface_count: types.uint32 = 0,
+        parent_toplevel_count: types.uint32 = 0,
+        last_display: ?*iwaylandframe.wl_display = null,
+        last_parent_rect: iplugview.ViewRect = .{},
 
         pub fn asInterface(self: *Self) *iwaylandframe.IWaylandFrame {
             return &self.iface;
@@ -98,21 +103,35 @@ pub fn WaylandFrame(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IWaylandFrame");
         }
 
-        fn getWaylandSurface(_: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.C) ?*iwaylandframe.wl_surface {
+        fn getWaylandSurface(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.C) ?*iwaylandframe.wl_surface {
+            const self = owner(ptr);
+            self.surface_count += 1;
+            self.last_display = display;
             if (@hasDecl(Config, "getWaylandSurface")) {
                 return Config.getWaylandSurface(display);
             }
             return null;
         }
 
-        fn getParentSurface(_: *anyopaque, rect: *iplugview.ViewRect, display: ?*iwaylandframe.wl_display) callconv(.C) ?*iwaylandframe.xdg_surface {
+        fn getParentSurface(ptr: *anyopaque, rect: *iplugview.ViewRect, display: ?*iwaylandframe.wl_display) callconv(.C) ?*iwaylandframe.xdg_surface {
+            const self = owner(ptr);
+            self.parent_surface_count += 1;
+            self.last_display = display;
             if (@hasDecl(Config, "getParentSurface")) {
-                return Config.getParentSurface(rect, display);
+                const surface = Config.getParentSurface(rect, display);
+                if (surface == null) rect.* = .{};
+                self.last_parent_rect = rect.*;
+                return surface;
             }
+            rect.* = .{};
+            self.last_parent_rect = rect.*;
             return null;
         }
 
-        fn getParentToplevel(_: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.C) ?*iwaylandframe.xdg_toplevel {
+        fn getParentToplevel(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.C) ?*iwaylandframe.xdg_toplevel {
+            const self = owner(ptr);
+            self.parent_toplevel_count += 1;
+            self.last_display = display;
             if (@hasDecl(Config, "getParentToplevel")) {
                 return Config.getParentToplevel(display);
             }
@@ -186,6 +205,10 @@ test "wayland frame returns null by default" {
     try std.testing.expectEqual(@as(?*iwaylandframe.wl_surface, null), iface.vtable.getWaylandSurface(iface, null));
     try std.testing.expectEqual(@as(?*iwaylandframe.xdg_surface, null), iface.vtable.getParentSurface(iface, &rect, null));
     try std.testing.expectEqual(@as(?*iwaylandframe.xdg_toplevel, null), iface.vtable.getParentToplevel(iface, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), frame.surface_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), frame.parent_surface_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), frame.parent_toplevel_count);
+    try std.testing.expectEqual(@as(iplugview.ViewRect, .{}), frame.last_parent_rect);
 }
 
 test "wayland frame delegates surface hooks" {
@@ -221,7 +244,16 @@ test "wayland frame delegates surface hooks" {
     try std.testing.expectEqual(@as(types.int32, 22), rect.top);
     try std.testing.expectEqual(@as(types.int32, 33), rect.right);
     try std.testing.expectEqual(@as(types.int32, 44), rect.bottom);
+    try std.testing.expectEqual(rect, frame.last_parent_rect);
+    rect = .{ .left = 1, .top = 2, .right = 3, .bottom = 4 };
+    try std.testing.expectEqual(@as(?*iwaylandframe.xdg_surface, null), iface.vtable.getParentSurface(iface, &rect, null));
+    try std.testing.expectEqual(@as(iplugview.ViewRect, .{}), rect);
+    try std.testing.expectEqual(@as(iplugview.ViewRect, .{}), frame.last_parent_rect);
     try std.testing.expectEqual(toplevel, iface.vtable.getParentToplevel(iface, display).?);
+    try std.testing.expectEqual(@as(types.uint32, 2), frame.surface_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), frame.parent_surface_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), frame.parent_toplevel_count);
+    try std.testing.expectEqual(display, frame.last_display.?);
 }
 
 test "wayland frame supports query interface" {
