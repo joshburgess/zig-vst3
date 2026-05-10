@@ -929,14 +929,28 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.optionCount(index) != null;
         }
 
+        pub fn optionsEmpty(self: *const Self, index: usize) bool {
+            return !self.hasOptions(index);
+        }
+
         pub fn hasOptionsById(self: *const Self, wanted_id: u32) bool {
             const index = self.indexOfId(wanted_id) orelse return false;
             return self.hasOptions(index);
         }
 
+        pub fn optionsEmptyById(self: *const Self, wanted_id: u32) bool {
+            const index = self.indexOfId(wanted_id) orelse return true;
+            return self.optionsEmpty(index);
+        }
+
         pub fn hasOptionsByName(self: *const Self, wanted_name: []const u8) bool {
             const index = self.indexOfName(wanted_name) orelse return false;
             return self.hasOptions(index);
+        }
+
+        pub fn optionsEmptyByName(self: *const Self, wanted_name: []const u8) bool {
+            const index = self.indexOfName(wanted_name) orelse return true;
+            return self.optionsEmpty(index);
         }
 
         pub fn indexOfId(self: *const Self, wanted_id: u32) ?usize {
@@ -1047,6 +1061,10 @@ pub fn ParameterSet(comptime Params: type) type {
 
         pub fn fieldHasOptions(self: *const Self, comptime field_name: []const u8) bool {
             return self.fieldOptionCount(field_name) != null;
+        }
+
+        pub fn fieldOptionsEmpty(self: *const Self, comptime field_name: []const u8) bool {
+            return !self.fieldHasOptions(field_name);
         }
 
         pub fn parameterChangeNormalized(
@@ -1660,12 +1678,24 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.hasOptions(index);
         }
 
+        pub fn optionsEmpty(self: Self, index: usize) bool {
+            return self.set.optionsEmpty(index);
+        }
+
         pub fn hasOptionsById(self: Self, wanted_id: u32) bool {
             return self.set.hasOptionsById(wanted_id);
         }
 
+        pub fn optionsEmptyById(self: Self, wanted_id: u32) bool {
+            return self.set.optionsEmptyById(wanted_id);
+        }
+
         pub fn hasOptionsByName(self: Self, wanted_name: []const u8) bool {
             return self.set.hasOptionsByName(wanted_name);
+        }
+
+        pub fn optionsEmptyByName(self: Self, wanted_name: []const u8) bool {
+            return self.set.optionsEmptyByName(wanted_name);
         }
 
         pub fn indexOfId(self: Self, wanted_id: u32) ?usize {
@@ -2113,12 +2143,24 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.hasOptions(index);
         }
 
+        pub fn optionsEmpty(self: Self, index: usize) bool {
+            return self.set.optionsEmpty(index);
+        }
+
         pub fn hasOptionsById(self: Self, wanted_id: u32) bool {
             return self.set.hasOptionsById(wanted_id);
         }
 
+        pub fn optionsEmptyById(self: Self, wanted_id: u32) bool {
+            return self.set.optionsEmptyById(wanted_id);
+        }
+
         pub fn hasOptionsByName(self: Self, wanted_name: []const u8) bool {
             return self.set.hasOptionsByName(wanted_name);
+        }
+
+        pub fn optionsEmptyByName(self: Self, wanted_name: []const u8) bool {
+            return self.set.optionsEmptyByName(wanted_name);
         }
 
         pub fn indexOfId(self: Self, wanted_id: u32) ?usize {
@@ -2784,13 +2826,21 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqual(@as(?f64, 1.0), set.fieldOptionNormalized("mode", 1));
     try std.testing.expectEqual(@as(?usize, null), set.fieldOptionCount("bypass"));
     try std.testing.expect(set.fieldHasOptions("mode"));
+    try std.testing.expect(!set.fieldOptionsEmpty("mode"));
     try std.testing.expect(!set.fieldHasOptions("bypass"));
+    try std.testing.expect(set.fieldOptionsEmpty("bypass"));
     try std.testing.expect(set.hasOptions(3));
+    try std.testing.expect(!set.optionsEmpty(3));
     try std.testing.expect(set.hasOptionsById(3));
+    try std.testing.expect(!set.optionsEmptyById(3));
     try std.testing.expect(set.hasOptionsByName("Mode"));
+    try std.testing.expect(!set.optionsEmptyByName("Mode"));
     try std.testing.expect(!set.hasOptions(0));
+    try std.testing.expect(set.optionsEmpty(0));
     try std.testing.expect(!set.hasOptionsById(99));
+    try std.testing.expect(set.optionsEmptyById(99));
     try std.testing.expect(!set.hasOptionsByName("Missing"));
+    try std.testing.expect(set.optionsEmptyByName("Missing"));
     try std.testing.expectEqual(process.ParameterChange{
         .id = 0,
         .sample_offset = 2,
@@ -3180,9 +3230,13 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?f64, 0.5), view.optionNormalizedById(3, 1));
     try std.testing.expectEqual(@as(?f64, 0.0), view.optionNormalizedByName("Mode", 0));
     try std.testing.expect(view.hasOptions(3));
+    try std.testing.expect(!view.optionsEmpty(3));
     try std.testing.expect(view.hasOptionsById(3));
+    try std.testing.expect(!view.optionsEmptyById(3));
     try std.testing.expect(view.hasOptionsByName("Mode"));
+    try std.testing.expect(!view.optionsEmptyByName("Mode"));
     try std.testing.expect(!view.hasOptions(0));
+    try std.testing.expect(view.optionsEmpty(0));
     try std.testing.expectEqual(@as(?usize, 2), view.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, 1), view.indexOfName("Voices"));
     try std.testing.expect(view.hasId(2));
@@ -3215,7 +3269,9 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?[]const u8, null), view.optionLabelByName("Missing", 0));
     try std.testing.expectEqual(@as(?f64, null), view.optionNormalized(3, 3));
     try std.testing.expect(!view.hasOptionsById(99));
+    try std.testing.expect(view.optionsEmptyById(99));
     try std.testing.expect(!view.hasOptionsByName("Missing"));
+    try std.testing.expect(view.optionsEmptyByName("Missing"));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfName("Missing"));
     try std.testing.expect(!view.hasId(99));
@@ -3364,9 +3420,13 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?f64, 0.5), editor.optionNormalizedById(3, 1));
     try std.testing.expectEqual(@as(?f64, 0.0), editor.optionNormalizedByName("Mode", 0));
     try std.testing.expect(editor.hasOptions(3));
+    try std.testing.expect(!editor.optionsEmpty(3));
     try std.testing.expect(editor.hasOptionsById(3));
+    try std.testing.expect(!editor.optionsEmptyById(3));
     try std.testing.expect(editor.hasOptionsByName("Mode"));
+    try std.testing.expect(!editor.optionsEmptyByName("Mode"));
     try std.testing.expect(!editor.hasOptions(0));
+    try std.testing.expect(editor.optionsEmpty(0));
     try std.testing.expectEqual(@as(?usize, 2), editor.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, 1), editor.indexOfName("Voices"));
     try std.testing.expect(editor.hasId(2));
@@ -3390,7 +3450,9 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?[]const u8, null), editor.optionLabelByName("Missing", 0));
     try std.testing.expectEqual(@as(?f64, null), editor.optionNormalized(3, 3));
     try std.testing.expect(!editor.hasOptionsById(99));
+    try std.testing.expect(editor.optionsEmptyById(99));
     try std.testing.expect(!editor.hasOptionsByName("Missing"));
+    try std.testing.expect(editor.optionsEmptyByName("Missing"));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfName("Missing"));
     try std.testing.expect(!editor.hasId(99));
