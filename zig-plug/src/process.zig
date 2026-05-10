@@ -374,7 +374,7 @@ pub const EventKindIterator = struct {
         var result: ?Event = null;
         var result_index: usize = 0;
         for (self.events.items, 0..) |item, index| {
-            if (item.kind != self.kind) continue;
+            if (!item.isKind(self.kind)) continue;
             if (self.last_offset) |offset| {
                 if (item.sample_offset < offset) continue;
                 if (item.sample_offset == offset and index <= self.last_index) continue;
@@ -402,7 +402,7 @@ pub const EventOffsetIterator = struct {
     pub fn next(self: *EventOffsetIterator) ?Event {
         while (self.next_index < self.events.items.len) : (self.next_index += 1) {
             const item = self.events.items[self.next_index];
-            if (item.sample_offset == self.sample_offset) {
+            if (item.isAtOffset(self.sample_offset)) {
                 self.next_index += 1;
                 return item;
             }
@@ -450,6 +450,18 @@ pub const Event = struct {
         var event = self;
         event.control_number = control_number;
         return event;
+    }
+
+    pub fn isKind(self: Event, kind: EventKind) bool {
+        return self.kind == kind;
+    }
+
+    pub fn isAtOffset(self: Event, sample_offset: usize) bool {
+        return self.sample_offset == sample_offset;
+    }
+
+    pub fn isKindAtOffset(self: Event, kind: EventKind, sample_offset: usize) bool {
+        return self.isKind(kind) and self.isAtOffset(sample_offset);
     }
 
     pub fn noteOn(sample_offset: usize, channel: i16, pitch: i16, velocity: f32) Event {
@@ -557,33 +569,33 @@ pub const Event = struct {
     }
 
     pub fn isNoteAttack(self: Event) bool {
-        return self.kind == .note_on and self.velocity > 0.0;
+        return self.isKind(.note_on) and self.velocity > 0.0;
     }
 
     pub fn isNoteRelease(self: Event) bool {
-        return self.kind == .note_off or (self.kind == .note_on and self.velocity == 0.0);
+        return self.isKind(.note_off) or (self.isKind(.note_on) and self.velocity == 0.0);
     }
 
     pub fn isNote(self: Event) bool {
-        return self.kind == .note_on or self.kind == .note_off;
+        return self.isKind(.note_on) or self.isKind(.note_off);
     }
 
     pub fn isMidi(self: Event) bool {
-        return self.kind == .midi_cc or self.kind == .pitch_bend or self.kind == .aftertouch;
+        return self.isKind(.midi_cc) or self.isKind(.pitch_bend) or self.isKind(.aftertouch);
     }
 
     pub fn isNoteExpression(self: Event) bool {
-        return self.kind == .note_expression_value or
-            self.kind == .note_expression_int or
-            self.kind == .note_expression_text;
+        return self.isKind(.note_expression_value) or
+            self.isKind(.note_expression_int) or
+            self.isKind(.note_expression_text);
     }
 
     pub fn isData(self: Event) bool {
-        return self.kind == .data;
+        return self.isKind(.data);
     }
 
     pub fn isOther(self: Event) bool {
-        return self.kind == .other;
+        return self.isKind(.other);
     }
 
     pub fn hasChannel(self: Event) bool {
@@ -599,11 +611,11 @@ pub const Event = struct {
     }
 
     pub fn isNoteForPitch(self: Event, pitch: i16) bool {
-        return (self.kind == .note_on or self.kind == .note_off) and self.pitch == pitch;
+        return self.isNote() and self.pitch == pitch;
     }
 
     pub fn asNoteOn(self: Event) ?NoteOn {
-        if (self.kind != .note_on) return null;
+        if (!self.isKind(.note_on)) return null;
         return .{
             .bus_index = self.bus_index,
             .sample_offset = self.sample_offset,
@@ -620,7 +632,7 @@ pub const Event = struct {
     }
 
     pub fn asNoteOff(self: Event) ?NoteOff {
-        if (self.kind != .note_off) return null;
+        if (!self.isKind(.note_off)) return null;
         return .{
             .bus_index = self.bus_index,
             .sample_offset = self.sample_offset,
@@ -644,7 +656,7 @@ pub const Event = struct {
     }
 
     pub fn asMidiCC(self: Event) ?MidiCC {
-        if (self.kind != .midi_cc) return null;
+        if (!self.isKind(.midi_cc)) return null;
         return .{
             .bus_index = self.bus_index,
             .sample_offset = self.sample_offset,
@@ -655,7 +667,7 @@ pub const Event = struct {
     }
 
     pub fn asPitchBend(self: Event) ?PitchBend {
-        if (self.kind != .pitch_bend) return null;
+        if (!self.isKind(.pitch_bend)) return null;
         return .{
             .bus_index = self.bus_index,
             .sample_offset = self.sample_offset,
@@ -665,7 +677,7 @@ pub const Event = struct {
     }
 
     pub fn asAftertouch(self: Event) ?Aftertouch {
-        if (self.kind != .aftertouch) return null;
+        if (!self.isKind(.aftertouch)) return null;
         return .{
             .bus_index = self.bus_index,
             .sample_offset = self.sample_offset,
@@ -676,7 +688,7 @@ pub const Event = struct {
     }
 
     pub fn asNoteExpressionValue(self: Event) ?NoteExpressionValue {
-        if (self.kind != .note_expression_value) return null;
+        if (!self.isKind(.note_expression_value)) return null;
         return .{
             .bus_index = self.bus_index,
             .sample_offset = self.sample_offset,
@@ -687,7 +699,7 @@ pub const Event = struct {
     }
 
     pub fn asNoteExpressionInt(self: Event) ?NoteExpressionInt {
-        if (self.kind != .note_expression_int) return null;
+        if (!self.isKind(.note_expression_int)) return null;
         return .{
             .bus_index = self.bus_index,
             .sample_offset = self.sample_offset,
@@ -698,7 +710,7 @@ pub const Event = struct {
     }
 
     pub fn asNoteExpressionText(self: Event) ?NoteExpressionText {
-        if (self.kind != .note_expression_text) return null;
+        if (!self.isKind(.note_expression_text)) return null;
         return .{
             .bus_index = self.bus_index,
             .sample_offset = self.sample_offset,
@@ -708,7 +720,7 @@ pub const Event = struct {
     }
 
     pub fn asData(self: Event) ?DataEvent {
-        if (self.kind != .data) return null;
+        if (!self.isKind(.data)) return null;
         return .{
             .bus_index = self.bus_index,
             .sample_offset = self.sample_offset,
@@ -817,7 +829,7 @@ pub const Events = struct {
     pub fn countKind(self: Events, kind: EventKind) usize {
         var count: usize = 0;
         for (self.items) |item| {
-            if (item.kind == kind) count += 1;
+            if (item.isKind(kind)) count += 1;
         }
         return count;
     }
@@ -863,7 +875,7 @@ pub const Events = struct {
     pub fn firstKind(self: Events, kind: EventKind) ?Event {
         var result: ?Event = null;
         for (self.items) |item| {
-            if (item.kind != kind) continue;
+            if (!item.isKind(kind)) continue;
             if (result == null or item.sample_offset < result.?.sample_offset) result = item;
         }
         return result;
@@ -872,7 +884,7 @@ pub const Events = struct {
     pub fn latestKind(self: Events, kind: EventKind) ?Event {
         var result: ?Event = null;
         for (self.items) |item| {
-            if (item.kind != kind) continue;
+            if (!item.isKind(kind)) continue;
             if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
         }
         return result;
@@ -910,7 +922,7 @@ pub const Events = struct {
     pub fn nextSampleOffsetForKind(self: Events, kind: EventKind, after_sample_offset: usize) ?usize {
         var result: ?usize = null;
         for (self.items) |item| {
-            if (item.kind != kind or item.sample_offset <= after_sample_offset) continue;
+            if (!item.isKind(kind) or item.sample_offset <= after_sample_offset) continue;
             if (result == null or item.sample_offset < result.?) result = item.sample_offset;
         }
         return result;
@@ -2331,6 +2343,13 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(usize, 10), view.eventCount());
     try std.testing.expect(!view.isEmpty());
     try std.testing.expect(view.hasEvents());
+    try std.testing.expect(items[0].isKind(.note_on));
+    try std.testing.expect(!items[0].isKind(.note_off));
+    try std.testing.expect(items[0].isAtOffset(0));
+    try std.testing.expect(!items[0].isAtOffset(1));
+    try std.testing.expect(items[0].isKindAtOffset(.note_on, 0));
+    try std.testing.expect(!items[0].isKindAtOffset(.note_on, 1));
+    try std.testing.expect(!items[0].isKindAtOffset(.note_off, 0));
     try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 3), view.latestSampleOffset());
     try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffsetForKind(.note_on));
