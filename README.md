@@ -9,6 +9,7 @@ The current tree contains:
 - `vst3-zig/`: raw VST3 binding layer
 - `zig-plug/`: higher-level plugin framework layer
 - `PROJECT_BUILD_PLAN.md`: staged implementation plan
+- `docs/layer1-release.md`: `vst3-zig` release checklist
 
 ## Current Status
 
@@ -48,6 +49,8 @@ zig build phase1
 ```
 
 The public CI workflow runs build and test jobs on Linux, macOS, and Windows, Layer 1 ABI checks on Linux and macOS, macOS validator checks for the example bundles, and Linux, macOS, and Windows cross-bundle smoke checks.
+
+Before tagging `vst3-zig-0.1.0`, follow the Layer 1 release checklist in `docs/layer1-release.md`.
 
 Build and validate the example plugins on macOS:
 

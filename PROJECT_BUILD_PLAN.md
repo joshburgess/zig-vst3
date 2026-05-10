@@ -186,6 +186,7 @@ Each phase is broken into **work units**. A work unit is sized so that one agent
 - Keep CI validator and cross-target bundle checks green as the reusable shells expand.
 - Replace remaining one-off plugin object wiring with reusable raw-layer helpers where it still reduces boilerplate without hiding ABI details.
 - Record real DAW smoke test results under `docs/host-matrix.md`.
+- Track the release gate checklist in `docs/layer1-release.md`.
 - Keep build steps aligned with the bundled example set as new shell coverage is added.
 
 ### Work Unit 1.1: TUID/FUID handling
