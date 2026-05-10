@@ -631,7 +631,7 @@ fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.Para
     if (sample_offset < 0) return;
     const offset: usize = @intCast(sample_offset);
     if (offset >= collector.frame_count) return;
-    if (value < 0.0 or value > 1.0 or std.math.isNan(value)) return;
+    if (!isUnitRangeValue(value)) return;
     collector.storage[collector.count] = .{
         .id = id,
         .sample_offset = offset,
@@ -688,11 +688,15 @@ fn collectLegacyMidiCcEvent(event: *const ivstevents.Event, offset: usize) plug.
 }
 
 fn isUnitValue(value: f32) bool {
-    return !std.math.isNan(value) and value >= 0.0 and value <= 1.0;
+    return isUnitRangeValue(value);
+}
+
+fn isUnitRangeValue(value: anytype) bool {
+    return std.math.isFinite(value) and value >= 0.0 and value <= 1.0;
 }
 
 fn isFiniteValue(value: anytype) bool {
-    return !std.math.isNan(value) and !std.math.isInf(value);
+    return std.math.isFinite(value);
 }
 
 fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
@@ -964,13 +968,14 @@ test "zig-plug bridge collects VST3 parameter changes" {
 }
 
 test "zig-plug bridge drops invalid and overflowing VST3 parameter changes" {
-    const Changes = vst_parameter_changes.ParameterChanges(2, 5);
+    const Changes = vst_parameter_changes.ParameterChanges(2, 6);
     var changes = Changes{};
     const gain_queue = changes.addQueue(7).?;
     try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(0, 0.25));
     try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(-1, 0.5));
     try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(4, 0.75));
     try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(2, 1.5));
+    try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(2, std.math.inf(vsttypes.ParamValue)));
     try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(3, 0.5));
     const mix_queue = changes.addQueue(8).?;
     try std.testing.expectEqual(types.kResultOk, mix_queue.appendPoint(1, 0.0));
@@ -1058,6 +1063,12 @@ test "zig-plug bridge drops invalid and overflowing VST3 input events" {
         .{
             .busIndex = 0,
             .sampleOffset = 1,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .data = .{ .noteOn = .{ .channel = 0, .pitch = 61, .velocity = std.math.inf(f32) } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 1,
             .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
             .data = .{ .noteOff = .{ .channel = 0, .pitch = 61, .velocity = -0.1 } },
         },
@@ -1081,6 +1092,16 @@ test "zig-plug bridge drops invalid and overflowing VST3 input events" {
                 .typeId = 5,
                 .noteId = 42,
                 .value = std.math.nan(vsttypes.ParamValue),
+            } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 2,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionValueEvent),
+            .data = .{ .noteExpressionValue = .{
+                .typeId = 5,
+                .noteId = 42,
+                .value = std.math.inf(vsttypes.ParamValue),
             } },
         },
         .{
