@@ -428,6 +428,28 @@ test "channel context host clears failed delegated create-instance output" {
     try std.testing.expectEqual(@as(?*anyopaque, null), created);
 }
 
+test "channel context host truncates names and delegates create-instance success" {
+    const created_ptr: *anyopaque = @ptrFromInt(0x3000);
+    const long_name = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz";
+    const Host = ChannelContextHost(long_name, struct {
+        pub fn createInstance(_: anytype, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            if (!std.mem.eql(u8, cid, &funknown.iid) or !std.mem.eql(u8, iid, &ivstchannelcontextinfo.iinfo_listener_iid)) return types.kNoInterface;
+            out.* = created_ptr;
+            return types.kResultOk;
+        }
+    });
+    var host = Host{};
+    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var created: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.getName(host.asHostApplication(), &name));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'a'), name[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'w'), name[126]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[127]);
+    try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.createInstance(host.asHostApplication(), &funknown.iid, &ivstchannelcontextinfo.iinfo_listener_iid, &created));
+    try std.testing.expectEqual(created_ptr, created.?);
+}
+
 test "automation state host exposes automation state and records callbacks" {
     const Host = AutomationStateHost("Test Host", struct {});
     var host = Host{};
@@ -455,6 +477,19 @@ test "automation state host clears failed delegated create-instance output" {
     var created: ?*anyopaque = @ptrFromInt(0x20);
     try std.testing.expectEqual(types.kNoInterface, host.asHostApplication().vtable.createInstance(host.asHostApplication(), &funknown.iid, &funknown.iid, &created));
     try std.testing.expectEqual(@as(?*anyopaque, null), created);
+}
+
+test "automation state host preserves delegated failure state" {
+    const Host = AutomationStateHost("Test Host", struct {
+        pub fn setAutomationState(_: anytype, state: types.int32) types.tresult {
+            return if (state == ivstautomationstate.AutomationStates.kReadState) types.kResultFalse else types.kInvalidArgument;
+        }
+    });
+    var host = Host{};
+    const automation = host.asAutomationState();
+
+    try std.testing.expectEqual(types.kResultFalse, automation.vtable.setAutomationState(automation, ivstautomationstate.AutomationStates.kReadState));
+    try std.testing.expectEqual(ivstautomationstate.AutomationStates.kReadState, host.last_state);
 }
 
 test "data exchange host exposes handler and records queue callbacks" {
@@ -590,5 +625,29 @@ test "data exchange host clears failed delegated outputs" {
     try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeBlockID, 0), block.blockID);
     try std.testing.expectEqual(@as(types.uint32, 0), block.size);
     try std.testing.expectEqual(@as(?*anyopaque, null), block.data);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
+}
+
+test "data exchange host default lifecycle is deterministic" {
+    const Host = DataExchangeHost("Test Host", struct {});
+    var host = Host{};
+    var queried: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.queryInterface(host.asHostApplication(), &ivstdataexchange.idata_exchange_handler_iid, &queried));
+    const handler: *ivstdataexchange.IDataExchangeHandler = @ptrCast(@alignCast(queried.?));
+
+    var queue_id: ivstdataexchange.DataExchangeQueueID = 44;
+    try std.testing.expectEqual(types.kResultFalse, handler.vtable.openQueue(handler, null, 64, 1, 4, 12, &queue_id));
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
+
+    var block = ivstdataexchange.DataExchangeBlock{ .blockID = 7, .size = 8, .data = @ptrFromInt(0x1000) };
+    try std.testing.expectEqual(types.kResultOk, handler.vtable.lockBlock(handler, 9, &block));
+    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeBlockID, 0), block.blockID);
+    try std.testing.expectEqual(@as(types.uint32, 0), block.size);
+    try std.testing.expectEqual(@as(?*anyopaque, null), block.data);
+    try std.testing.expectEqual(types.kResultOk, handler.vtable.freeBlock(handler, 9, 10, 1));
+    try std.testing.expectEqual(types.kResultOk, handler.vtable.closeQueue(handler, 9));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.close_count);
+    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeQueueID, 9), host.last_queue_id);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
 }
