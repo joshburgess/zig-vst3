@@ -1139,6 +1139,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.values.applyChangesCount(&self.spec.parameter_set, changes);
         }
 
+        pub fn applyParameterChangesChangedCount(self: *Self, changes: process_api.ParameterChanges) usize {
+            return self.spec.values.applyChangesChangedCount(&self.spec.parameter_set, changes);
+        }
+
         pub fn encodedParameterStateSize(self: *const Self) usize {
             _ = self;
             return Spec.encoded_parameter_state_size;
@@ -2103,7 +2107,9 @@ test "plugin instance applies parameter changes to owned values" {
     };
     const view = try process_api.ParameterChanges.init(&changes, 1);
 
+    try std.testing.expectEqual(@as(usize, 1), instance.applyParameterChangesChangedCount(view));
     try std.testing.expectEqual(@as(usize, 1), instance.applyParameterChangesCount(view));
+    try std.testing.expectEqual(@as(usize, 0), instance.applyParameterChangesChangedCount(view));
 
     try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterView().loadById(99));
@@ -2133,7 +2139,9 @@ test "plugin instance counts only applied automatable parameter changes" {
     };
     const view = try process_api.ParameterChanges.init(&changes, 1);
 
+    try std.testing.expectEqual(@as(usize, 1), instance.applyParameterChangesChangedCount(view));
     try std.testing.expectEqual(@as(usize, 1), instance.applyParameterChangesCount(view));
+    try std.testing.expectEqual(@as(usize, 0), instance.applyParameterChangesChangedCount(view));
     try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(f64, 0.0), instance.loadParameterNormalized("bypass"));
     try std.testing.expectEqual(@as(f64, 0.0), instance.loadParameterNormalized("meter"));
