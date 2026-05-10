@@ -4,6 +4,7 @@ const EventEchoPlugin = struct {
     pub const name = "zig-vst3 Event Echo";
     pub const vendor = "zig-vst3";
     pub const url = "https://github.com/joshburgess/zig-vst3";
+    pub const event_output = true;
     pub const Params = struct {};
 };
 

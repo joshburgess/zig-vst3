@@ -1341,11 +1341,13 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
     return struct {
         const Self = @This();
         const event_output = @hasDecl(Config, "event_output") and Config.event_output;
+        const event_input = !@hasDecl(Config, "event_input") or Config.event_input;
         const audio_input = !@hasDecl(Config, "audio_input") or Config.audio_input;
         const audio_output = !@hasDecl(Config, "audio_output") or Config.audio_output;
         const bus_config = zig_plug_bridge.StereoAudioBuses.Config{
             .audio_input = audio_input,
             .audio_output = audio_output,
+            .event_input = event_input,
             .event_output = event_output,
         };
         const process_context_requirements: types.uint32 = if (@hasDecl(Config, "process_context_requirements"))

@@ -54,6 +54,7 @@ const EventMonitorProcessor = struct {
 const Effect = zig_plug_effect.SimpleStereoEffect(struct {
     pub const component_name = "EventMonitorComponent";
     pub const controller_cid = event_monitor_controller.cid;
+    pub const event_input = event_monitor_spec.Spec.event_input;
     pub const audio_output = event_monitor_spec.Spec.audio_output;
     pub const Processor = EventMonitorProcessor;
 

@@ -1,4 +1,5 @@
 const event_echo_controller = @import("event_echo_controller.zig");
+const event_echo_spec = @import("event_echo_spec.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const plug_process = @import("zig-plug-core").process;
 const tuid = @import("tuid.zig");
@@ -24,7 +25,7 @@ const EventEchoProcessor = struct {
 const Effect = zig_plug_effect.SimpleStereoEffect(struct {
     pub const component_name = "EventEchoComponent";
     pub const controller_cid = event_echo_controller.cid;
-    pub const event_output = true;
+    pub const event_output = event_echo_spec.Spec.event_output;
     pub const Processor = EventEchoProcessor;
 
     pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
