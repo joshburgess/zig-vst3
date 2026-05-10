@@ -46,13 +46,6 @@ jobs:
         run: zig build
       - name: Test
         run: zig build test
-      - name: Upload build outputs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: zig-out-${{ matrix.os }}
-          path: zig-out/
-          if-no-files-found: ignore
 
   layer1-abi:
     name: Layer 1 ABI (${{ matrix.os }})
@@ -93,11 +86,6 @@ jobs:
         with:
           path: .vst3-sdk/vst3sdk
           key: vst3-sdk-v3.8.0-build-66-${{ runner.os }}
-      - name: Restore validator build cache
-        uses: actions/cache@v4
-        with:
-          path: .vst3-sdk/vst3sdk/build
-          key: vst3-validator-v3.8.0-build-66-${{ runner.os }}
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
       - name: Build Steinberg validator
@@ -123,6 +111,10 @@ jobs:
             bundle_step: bundle-examples-linux
           - target: aarch64-linux-gnu
             bundle_step: bundle-examples-linux
+          - target: x86_64-macos
+            bundle_step: bundle-examples
+          - target: aarch64-macos
+            bundle_step: bundle-examples
           - target: x86_64-windows-gnu
             bundle_step: bundle-examples-windows
           - target: aarch64-windows-gnu
