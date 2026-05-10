@@ -16,6 +16,7 @@
 - Test-interface helper coverage for null result messages and suite environment replacement.
 - Parameter function-name and compatible-ID remapping helpers.
 - Context-menu target delegation and query coverage.
+- Base string/error helper coverage for null strings and missing error-message outputs.
 
 ### Changed
 

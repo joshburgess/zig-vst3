@@ -114,6 +114,14 @@ test "error context truncates messages to fixed capacity" {
     try std.testing.expectEqualStrings("abcd", context.messageSpan());
 }
 
+test "error context rejects missing output string" {
+    const Context = ErrorContext(8);
+    var context = Context{};
+    const iface = context.asInterface();
+
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getErrorMessage(iface, null));
+}
+
 test "error context supports query interface" {
     const Context = ErrorContext(8);
     var context = Context{};

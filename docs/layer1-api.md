@@ -42,6 +42,7 @@ The raw layer includes fixed-capacity helper objects for tests and shell integra
 - `vst_parameter_changes.ParameterChanges` and `ParamValueQueue`
 - `vst_event_list.EventList`
 - `vst_message.Message`, `AttributeList`, and `StreamAttributes`
+- `vst_string_result` and `vst_error_context` for bounded strings and error-message callbacks
 - `vst_component_handler` host callback helpers
 - `vst_host_application` and `vst_host_context` host-side callback helpers
 - `vst_plugin_compatibility` for fixed compatibility JSON providers and basic metadata fixtures
