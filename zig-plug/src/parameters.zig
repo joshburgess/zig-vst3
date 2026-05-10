@@ -247,13 +247,21 @@ pub const FloatParam = struct {
             .name = name,
             .min = min,
             .max = max,
-            .default = if (std.math.isNan(default)) min else std.math.clamp(default, min, max),
+            .default = (FloatParam{ .id = id, .name = name, .min = min, .max = max, .default = min }).clampPlain(default),
         };
     }
 
+    pub fn containsPlain(self: FloatParam, plain: f64) bool {
+        return std.math.isFinite(plain) and plain >= self.min and plain <= self.max;
+    }
+
+    pub fn clampPlain(self: FloatParam, plain: f64) f64 {
+        if (std.math.isNan(plain)) return self.min;
+        return std.math.clamp(plain, self.min, self.max);
+    }
+
     pub fn normalize(self: FloatParam, plain: f64) f64 {
-        if (std.math.isNan(plain)) return 0.0;
-        const clamped = std.math.clamp(plain, self.min, self.max);
+        const clamped = self.clampPlain(plain);
         return (clamped - self.min) / (self.max - self.min);
     }
 
@@ -309,12 +317,20 @@ pub const IntParam = struct {
             .name = name,
             .min = min,
             .max = max,
-            .default = std.math.clamp(default, min, max),
+            .default = (IntParam{ .id = id, .name = name, .min = min, .max = max, .default = min }).clampPlain(default),
         };
     }
 
+    pub fn containsPlain(self: IntParam, plain: i64) bool {
+        return plain >= self.min and plain <= self.max;
+    }
+
+    pub fn clampPlain(self: IntParam, plain: i64) i64 {
+        return std.math.clamp(plain, self.min, self.max);
+    }
+
     pub fn normalize(self: IntParam, plain: i64) f64 {
-        const clamped = std.math.clamp(plain, self.min, self.max);
+        const clamped = self.clampPlain(plain);
         const range = @as(f64, @floatFromInt(self.max)) - @as(f64, @floatFromInt(self.min));
         const offset = @as(f64, @floatFromInt(clamped)) - @as(f64, @floatFromInt(self.min));
         return offset / range;
@@ -1967,6 +1983,11 @@ test "float parameter clamps defaults and values" {
     try std.testing.expectEqual(@as(f64, 0.0), param.normalize(-24.0));
     try std.testing.expectEqual(@as(f64, 1.0), param.normalize(12.0));
     try std.testing.expectEqual(@as(f64, 0.0), param.normalize(std.math.nan(f64)));
+    try std.testing.expect(param.containsPlain(0.0));
+    try std.testing.expect(!param.containsPlain(-24.0));
+    try std.testing.expect(!param.containsPlain(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, -12.0), param.clampPlain(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 6.0), param.clampPlain(12.0));
     try std.testing.expectEqual(@as(f64, -12.0), param.denormalize(-1.0));
     try std.testing.expectEqual(@as(f64, 6.0), param.denormalize(2.0));
     try std.testing.expectEqual(@as(f64, -12.0), param.denormalize(std.math.nan(f64)));
@@ -2106,6 +2127,10 @@ test "int parameter clamps and rounds normalized values" {
     try std.testing.expectEqual(@as(i64, 16), param.default);
     try std.testing.expectEqual(@as(f64, 0.0), param.normalize(-2));
     try std.testing.expectEqual(@as(f64, 1.0), param.normalize(20));
+    try std.testing.expect(param.containsPlain(8));
+    try std.testing.expect(!param.containsPlain(0));
+    try std.testing.expectEqual(@as(i64, 1), param.clampPlain(-2));
+    try std.testing.expectEqual(@as(i64, 16), param.clampPlain(20));
     try std.testing.expectEqual(@as(i64, 1), param.denormalize(-1.0));
     try std.testing.expectEqual(@as(i64, 16), param.denormalize(2.0));
     try std.testing.expectEqual(@as(i64, 9), param.denormalize(0.5));
