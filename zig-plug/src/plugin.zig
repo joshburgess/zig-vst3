@@ -426,6 +426,54 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().defaultNormalizedByName(wanted_name);
         }
 
+        pub fn parameterDefaultPlain(self: *const Self, index: usize) ?f64 {
+            return self.parameterView().defaultPlain(index);
+        }
+
+        pub fn parameterDefaultPlainById(self: *const Self, wanted_id: u32) ?f64 {
+            return self.parameterView().defaultPlainById(wanted_id);
+        }
+
+        pub fn parameterDefaultPlainByName(self: *const Self, wanted_name: []const u8) ?f64 {
+            return self.parameterView().defaultPlainByName(wanted_name);
+        }
+
+        pub fn parameterPlainMinimum(self: *const Self, index: usize) ?f64 {
+            return self.parameterView().plainMinimum(index);
+        }
+
+        pub fn parameterPlainMinimumById(self: *const Self, wanted_id: u32) ?f64 {
+            return self.parameterView().plainMinimumById(wanted_id);
+        }
+
+        pub fn parameterPlainMinimumByName(self: *const Self, wanted_name: []const u8) ?f64 {
+            return self.parameterView().plainMinimumByName(wanted_name);
+        }
+
+        pub fn parameterPlainMaximum(self: *const Self, index: usize) ?f64 {
+            return self.parameterView().plainMaximum(index);
+        }
+
+        pub fn parameterPlainMaximumById(self: *const Self, wanted_id: u32) ?f64 {
+            return self.parameterView().plainMaximumById(wanted_id);
+        }
+
+        pub fn parameterPlainMaximumByName(self: *const Self, wanted_name: []const u8) ?f64 {
+            return self.parameterView().plainMaximumByName(wanted_name);
+        }
+
+        pub fn parameterHasPlainRange(self: *const Self, index: usize) bool {
+            return self.parameterView().hasPlainRange(index);
+        }
+
+        pub fn parameterHasPlainRangeById(self: *const Self, wanted_id: u32) bool {
+            return self.parameterView().hasPlainRangeById(wanted_id);
+        }
+
+        pub fn parameterHasPlainRangeByName(self: *const Self, wanted_name: []const u8) bool {
+            return self.parameterView().hasPlainRangeByName(wanted_name);
+        }
+
         pub fn parameterIsBypass(self: *const Self, index: usize) ?bool {
             return self.parameterView().isBypass(index);
         }
@@ -496,6 +544,54 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn parameterIsListByName(self: *const Self, wanted_name: []const u8) ?bool {
             return self.parameterView().isListByName(wanted_name);
+        }
+
+        pub fn parameterOptionCount(self: *const Self, index: usize) ?usize {
+            return self.parameterView().optionCount(index);
+        }
+
+        pub fn parameterOptionCountById(self: *const Self, wanted_id: u32) ?usize {
+            return self.parameterView().optionCountById(wanted_id);
+        }
+
+        pub fn parameterOptionCountByName(self: *const Self, wanted_name: []const u8) ?usize {
+            return self.parameterView().optionCountByName(wanted_name);
+        }
+
+        pub fn parameterOptionLabel(self: *const Self, index: usize, option_index: usize) ?[]const u8 {
+            return self.parameterView().optionLabel(index, option_index);
+        }
+
+        pub fn parameterOptionLabelById(self: *const Self, wanted_id: u32, option_index: usize) ?[]const u8 {
+            return self.parameterView().optionLabelById(wanted_id, option_index);
+        }
+
+        pub fn parameterOptionLabelByName(self: *const Self, wanted_name: []const u8, option_index: usize) ?[]const u8 {
+            return self.parameterView().optionLabelByName(wanted_name, option_index);
+        }
+
+        pub fn parameterOptionNormalized(self: *const Self, index: usize, option_index: usize) ?f64 {
+            return self.parameterView().optionNormalized(index, option_index);
+        }
+
+        pub fn parameterOptionNormalizedById(self: *const Self, wanted_id: u32, option_index: usize) ?f64 {
+            return self.parameterView().optionNormalizedById(wanted_id, option_index);
+        }
+
+        pub fn parameterOptionNormalizedByName(self: *const Self, wanted_name: []const u8, option_index: usize) ?f64 {
+            return self.parameterView().optionNormalizedByName(wanted_name, option_index);
+        }
+
+        pub fn parameterHasOptions(self: *const Self, index: usize) bool {
+            return self.parameterView().hasOptions(index);
+        }
+
+        pub fn parameterHasOptionsById(self: *const Self, wanted_id: u32) bool {
+            return self.parameterView().hasOptionsById(wanted_id);
+        }
+
+        pub fn parameterHasOptionsByName(self: *const Self, wanted_name: []const u8) bool {
+            return self.parameterView().hasOptionsByName(wanted_name);
         }
 
         pub fn formatParameterPlainIndex(self: *const Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
@@ -586,6 +682,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.parameter_set.fieldDefaultNormalized(field_name);
         }
 
+        pub fn parameterFieldDefaultPlain(self: *const Self, comptime field_name: []const u8) parameters.FieldPlainType(Plugin.Params, field_name) {
+            return self.spec.parameter_set.fieldDefaultPlain(field_name);
+        }
+
+        pub fn parameterFieldPlainMinimum(self: *const Self, comptime field_name: []const u8) ?f64 {
+            return self.spec.parameter_set.fieldPlainMinimum(field_name);
+        }
+
+        pub fn parameterFieldPlainMaximum(self: *const Self, comptime field_name: []const u8) ?f64 {
+            return self.spec.parameter_set.fieldPlainMaximum(field_name);
+        }
+
+        pub fn parameterFieldHasPlainRange(self: *const Self, comptime field_name: []const u8) bool {
+            return self.spec.parameter_set.fieldHasPlainRange(field_name);
+        }
+
         pub fn parameterFieldIsBypass(self: *const Self, comptime field_name: []const u8) bool {
             return self.spec.parameter_set.fieldIsBypass(field_name);
         }
@@ -608,6 +720,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn parameterFieldIsList(self: *const Self, comptime field_name: []const u8) bool {
             return self.spec.parameter_set.fieldIsList(field_name);
+        }
+
+        pub fn parameterFieldOptionCount(self: *const Self, comptime field_name: []const u8) ?usize {
+            return self.spec.parameter_set.fieldOptionCount(field_name);
+        }
+
+        pub fn parameterFieldOptionLabel(self: *const Self, comptime field_name: []const u8, option_index: usize) ?[]const u8 {
+            return self.spec.parameter_set.fieldOptionLabel(field_name, option_index);
+        }
+
+        pub fn parameterFieldOptionNormalized(self: *const Self, comptime field_name: []const u8, option_index: usize) ?f64 {
+            return self.spec.parameter_set.fieldOptionNormalized(field_name, option_index);
+        }
+
+        pub fn parameterFieldHasOptions(self: *const Self, comptime field_name: []const u8) bool {
+            return self.spec.parameter_set.fieldHasOptions(field_name);
         }
 
         pub fn formatParameterFieldPlain(self: *const Self, comptime field_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
@@ -1684,6 +1812,16 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalized(2));
     try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalizedById(2));
     try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalizedByName("Mode"));
+    try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultPlain(0));
+    try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultPlainById(1));
+    try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultPlainByName("Mode"));
+    try std.testing.expectEqual(@as(?f64, -12.0), instance.parameterPlainMinimum(0));
+    try std.testing.expectEqual(@as(?f64, 6.0), instance.parameterPlainMaximumById(0));
+    try std.testing.expectEqual(@as(?f64, -12.0), instance.parameterPlainMinimumByName("Gain"));
+    try std.testing.expect(instance.parameterHasPlainRange(0));
+    try std.testing.expect(instance.parameterHasPlainRangeById(0));
+    try std.testing.expect(instance.parameterHasPlainRangeByName("Gain"));
+    try std.testing.expect(!instance.parameterHasPlainRange(1));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsBypass(0));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsBypassById(0));
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsBypassByName("Bypass"));
@@ -1702,6 +1840,19 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsList(2));
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsListById(2));
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsListByName("Mode"));
+    try std.testing.expectEqual(@as(?usize, 3), instance.parameterOptionCount(2));
+    try std.testing.expectEqual(@as(?usize, 3), instance.parameterOptionCountById(2));
+    try std.testing.expectEqual(@as(?usize, 3), instance.parameterOptionCountByName("Mode"));
+    try std.testing.expectEqualStrings("mute", instance.parameterOptionLabel(2, 2).?);
+    try std.testing.expectEqualStrings("boost", instance.parameterOptionLabelById(2, 1).?);
+    try std.testing.expectEqualStrings("clean", instance.parameterOptionLabelByName("Mode", 0).?);
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterOptionNormalized(2, 2));
+    try std.testing.expectEqual(@as(?f64, 0.5), instance.parameterOptionNormalizedById(2, 1));
+    try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterOptionNormalizedByName("Mode", 0));
+    try std.testing.expect(instance.parameterHasOptions(2));
+    try std.testing.expect(instance.parameterHasOptionsById(2));
+    try std.testing.expect(instance.parameterHasOptionsByName("Mode"));
+    try std.testing.expect(!instance.parameterHasOptions(0));
     try std.testing.expectEqual(@as(?u32, null), instance.parameterId(99));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterName(99));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterNameById(99));
@@ -1710,6 +1861,12 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterUnitsByName("Missing"));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterDefaultNormalizedById(99));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterDefaultNormalizedByName("Missing"));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterDefaultPlainById(99));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterDefaultPlainByName("Missing"));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterPlainMinimumById(99));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterPlainMaximumByName("Missing"));
+    try std.testing.expect(!instance.parameterHasPlainRangeById(99));
+    try std.testing.expect(!instance.parameterHasPlainRangeByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsBypassById(99));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsBypassByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterCanAutomateById(99));
@@ -1721,6 +1878,13 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?i32, null), instance.parameterStepCountByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsListById(99));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsListByName("Missing"));
+    try std.testing.expectEqual(@as(?usize, null), instance.parameterOptionCountById(99));
+    try std.testing.expectEqual(@as(?usize, null), instance.parameterOptionCountByName("Missing"));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterOptionLabel(2, 3));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterOptionLabelByName("Missing", 0));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterOptionNormalized(2, 3));
+    try std.testing.expect(!instance.parameterHasOptionsById(99));
+    try std.testing.expect(!instance.parameterHasOptionsByName("Missing"));
     var buffer: [16]u8 = undefined;
     try std.testing.expectEqualStrings("lead", try instance.formatParameterPlainIndex(2, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainIndex(2, "mute"));
@@ -1752,6 +1916,12 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqualStrings("G", instance.parameterFieldShortName("gain"));
     try std.testing.expectEqualStrings("dB", instance.parameterFieldUnits("gain"));
     try std.testing.expectEqual(@as(f64, 0.0), instance.parameterFieldDefaultNormalized("mode"));
+    try std.testing.expectEqual(@as(f64, 0.0), instance.parameterFieldDefaultPlain("gain"));
+    try std.testing.expectEqual(Mode.clean, instance.parameterFieldDefaultPlain("mode"));
+    try std.testing.expectEqual(@as(?f64, -12.0), instance.parameterFieldPlainMinimum("gain"));
+    try std.testing.expectEqual(@as(?f64, 6.0), instance.parameterFieldPlainMaximum("gain"));
+    try std.testing.expect(instance.parameterFieldHasPlainRange("gain"));
+    try std.testing.expect(!instance.parameterFieldHasPlainRange("mode"));
     try std.testing.expect(instance.parameterFieldIsBypass("bypass"));
     try std.testing.expect(instance.parameterFieldCanAutomate("gain"));
     try std.testing.expect(!instance.parameterFieldCanAutomate("bypass"));
@@ -1759,6 +1929,11 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(i32, 0), instance.parameterFieldUnitId("gain"));
     try std.testing.expectEqual(@as(i32, 2), instance.parameterFieldStepCount("mode"));
     try std.testing.expect(instance.parameterFieldIsList("mode"));
+    try std.testing.expectEqual(@as(?usize, 3), instance.parameterFieldOptionCount("mode"));
+    try std.testing.expectEqualStrings("mute", instance.parameterFieldOptionLabel("mode", 2).?);
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterFieldOptionNormalized("mode", 2));
+    try std.testing.expect(instance.parameterFieldHasOptions("mode"));
+    try std.testing.expect(!instance.parameterFieldHasOptions("gain"));
     try std.testing.expectEqualStrings("mute", try instance.formatParameterFieldPlain("mode", 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterFieldPlain("mode", "mute"));
     try std.testing.expectEqual(Mode.mute, instance.parameterFieldPlainFromNormalized("mode", 1.0));
