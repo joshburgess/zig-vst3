@@ -62,6 +62,23 @@ test "bypass core example applies reflected parameter changes" {
     try std.testing.expectEqual(true, instance.loadParameter("bypass"));
 }
 
+test "bypass core example formats and parses bool parameters" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+    var buffer: [16]u8 = undefined;
+
+    try std.testing.expectEqual(@as(?u32, 0), instance.parameterIdByName("Bypass"));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsBypassByName("Bypass"));
+    try std.testing.expectEqual(@as(?i32, 1), instance.parameterStepCountByName("Bypass"));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsListByName("Bypass"));
+
+    try std.testing.expectEqualStrings("On", try instance.formatParameterPlainByName("Bypass", 1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 0.0), try instance.parseParameterPlainByName("Bypass", "off"));
+    try std.testing.expect(instance.storeParameterPlainByName("Bypass", 1.0));
+    try std.testing.expectEqual(true, instance.loadParameter("bypass"));
+    try std.testing.expect(instance.resetParameterToDefaultByName("Bypass"));
+    try std.testing.expectEqual(false, instance.loadParameter("bypass"));
+}
+
 test "bypass core example can run through plugin instance" {
     var instance = try Instance.init(std.testing.allocator, .{});
     const input = [_]f32{ 0.25, 0.5 };
