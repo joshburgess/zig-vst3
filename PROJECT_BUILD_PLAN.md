@@ -523,6 +523,8 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 The gain, bypass, mode-gain, voice-mix, note-gate, event-echo, event-monitor, and sine-synth pure examples cover float, bool, enum, and int parameters, counted automation application, unit-based program snapshots, state-aware process hooks, save/reload behavior, input events, output events, combined event and automation segmentation, and output-only event-offset synthesis. The bundled gain, bypass, mode-gain, voice-mix, note-gate, and event-echo VST3 examples use the reusable shells and validate locally on macOS with `zig build validate-examples`. The build also has direct `zig-plug-core` tests plus native, Linux, and Windows aggregate bundle steps. The remaining Phase 5 work is host smoke testing, API polish, documentation, and hardening around the framework surface that already exists.
 
+The parameter layer now includes reflected float, int, bool, and enum descriptors, normalized/plain conversion, text formatting/parsing, atomic value storage, modulation offsets, linear/exponential/logarithmic smoothing helpers, parameter views/editors, and instance-level wrappers with coverage for missing metadata and reset paths.
+
 ### Work Unit 5.1: Plugin trait equivalent
 
 **Inputs.** Phases 1–4. NIH-plug's `Plugin` trait source.

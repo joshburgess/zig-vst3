@@ -155,3 +155,17 @@ test "gain core example applies sample-offset parameter changes" {
     try std.testing.expectEqual(@as(f32, 0.25), output[1]);
     try std.testing.expectEqual(@as(f32, 0.5), output[2]);
 }
+
+test "gain core example can smooth normalized gain changes" {
+    var smoother = plug.parameters.LinearSmoother.init(0.0);
+
+    smoother.setTarget(1.0, 4);
+    try std.testing.expect(smoother.active());
+    try std.testing.expectEqual(@as(usize, 4), smoother.remainingSamples());
+    try std.testing.expectApproxEqAbs(0.25, smoother.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(0.5, smoother.next(), 0.000001);
+    smoother.reset(0.75);
+    try std.testing.expectApproxEqAbs(0.75, smoother.currentValue(), 0.000001);
+    try std.testing.expectApproxEqAbs(0.75, smoother.targetValue(), 0.000001);
+    try std.testing.expect(!smoother.active());
+}
