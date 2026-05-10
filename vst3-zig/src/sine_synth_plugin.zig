@@ -7,7 +7,7 @@ const sine_synth_spec = @import("sine_synth_spec.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
 
-const SineSynthFactory = factory.StaticFactory(.{
+const SineSynthFactory = factory.StaticFactory3(.{
     .vendor = sine_synth_spec.Spec.vendor,
     .url = sine_synth_spec.Spec.url,
     .email = sine_synth_spec.Spec.email,

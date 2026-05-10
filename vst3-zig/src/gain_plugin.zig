@@ -7,7 +7,7 @@ const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
 
-const GainFactory = factory.StaticFactory(.{
+const GainFactory = factory.StaticFactory3(.{
     .vendor = gain_spec.Spec.vendor,
     .url = gain_spec.Spec.url,
     .email = gain_spec.Spec.email,
@@ -35,6 +35,17 @@ test "gain export returns enumerable factory" {
     try std.testing.expectEqual(@as(i32, 2), plugin_factory.vtable.countClasses(plugin_factory));
     try std.testing.expectEqual(types.kResultOk, plugin_factory.vtable.getClassInfo(plugin_factory, 0, &class_info));
     try std.testing.expectEqualStrings("zig-vst3 Gain", std.mem.sliceTo(&class_info.name, 0));
+
+    var factory3_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, plugin_factory.vtable.queryInterface(plugin_factory, &ipluginbase.iplugin_factory3_iid, &factory3_out));
+    try std.testing.expect(factory3_out != null);
+    const factory3: *ipluginbase.IPluginFactory3 = @ptrCast(@alignCast(factory3_out.?));
+    defer _ = factory3.vtable.release(factory3);
+
+    var class_info2: ipluginbase.PClassInfo2 = .{};
+    try std.testing.expectEqual(types.kResultOk, factory3.vtable.getClassInfo2(factory3, 0, &class_info2));
+    try std.testing.expectEqualStrings("zig-vst3 Gain", std.mem.sliceTo(&class_info2.name, 0));
+    try std.testing.expectEqualStrings(gain_spec.Spec.vendor, std.mem.sliceTo(&class_info2.vendor, 0));
 }
 
 test "gain plugin root exposes zig-plug metadata" {

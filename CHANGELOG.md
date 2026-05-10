@@ -30,6 +30,7 @@
 - Static factory coverage for fixed string truncation, invalid class lookup clearing, requested IID forwarding, and failed create output clearing.
 - Component shell coverage for `IPluginBase` queries, controller class IDs, invalid bus-info clearing, routing defaults, bus activation, IO mode, and deactivation.
 - `StaticFactory3` helper for `IPluginFactory2`/`IPluginFactory3` class metadata, Unicode class metadata, and host-context storage.
+- Bundled example plugin factories now expose `IPluginFactory3` metadata through their exported factory objects.
 
 ### Changed
 

@@ -7,7 +7,7 @@ const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
 
-const BypassFactory = factory.StaticFactory(.{
+const BypassFactory = factory.StaticFactory3(.{
     .vendor = bypass_spec.Spec.vendor,
     .url = bypass_spec.Spec.url,
     .email = bypass_spec.Spec.email,
