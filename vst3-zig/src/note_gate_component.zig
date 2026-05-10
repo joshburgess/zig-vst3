@@ -62,6 +62,10 @@ const NoteGateState = struct {
 
 var gate = NoteGateState{};
 
+fn resetNoteGateState() void {
+    gate = .{};
+}
+
 const NoteGateProcessor = struct {
     pub fn process(_: NoteGateProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
         gate.process(Sample, context);
@@ -72,6 +76,10 @@ const Effect = zig_plug_effect.SimpleStereoEffect(struct {
     pub const component_name = "NoteGateComponent";
     pub const controller_cid = note_gate_controller.cid;
     pub const Processor = NoteGateProcessor;
+
+    pub fn resetProcessState() void {
+        resetNoteGateState();
+    }
 
     pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
         note_gate_controller.applyParameterChanges(changes);
@@ -182,4 +190,33 @@ test "note gate processor treats zero-velocity note-on as note-off" {
     try std.testing.expectEqual(@as(f32, 0.0), output[3]);
     try std.testing.expect(!local_gate.open);
     try std.testing.expectEqual(@as(usize, 0), local_gate.held_note_count);
+}
+
+test "note gate component resets process state when deactivated" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+
+    resetNoteGateState();
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    const input = [_]f32{ 0.25, -0.5 };
+    var output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const events = [_]plug_process.Event{
+        plug_process.Event.noteOn(0, 0, 60, 0.75),
+    };
+    var context = try plug_process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+    });
+    (NoteGateProcessor{}).process(f32, &context);
+    try std.testing.expect(gate.open);
+
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setActive(component_iface, 0));
+    try std.testing.expect(!gate.open);
+    try std.testing.expectEqual(@as(usize, 0), gate.held_note_count);
 }

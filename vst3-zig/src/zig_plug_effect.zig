@@ -1563,7 +1563,14 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn setActive(_: *anyopaque, _: types.TBool) callconv(.C) types.tresult {
+        fn resetProcessState() void {
+            if (@hasDecl(Config, "resetProcessState")) {
+                Config.resetProcessState();
+            }
+        }
+
+        fn setActive(_: *anyopaque, state: types.TBool) callconv(.C) types.tresult {
+            if (state == 0) resetProcessState();
             return types.kResultOk;
         }
 
@@ -1781,10 +1788,12 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         fn setupProcessing(_: *anyopaque, _: *ivstaudioprocessor.ProcessSetup) callconv(.C) types.tresult {
+            resetProcessState();
             return types.kResultOk;
         }
 
-        fn setProcessing(_: *anyopaque, _: types.TBool) callconv(.C) types.tresult {
+        fn setProcessing(_: *anyopaque, state: types.TBool) callconv(.C) types.tresult {
+            if (state == 0) resetProcessState();
             return types.kResultOk;
         }
 
