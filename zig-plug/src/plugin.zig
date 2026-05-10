@@ -1349,7 +1349,11 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqualStrings("Bypass", instance.parameterName(1).?);
     try std.testing.expectEqualStrings("Mode", instance.parameterNameById(2).?);
     try std.testing.expectEqual(@as(?u32, 2), instance.parameterIdByName("Mode"));
+    try std.testing.expectEqualStrings("G", instance.parameterShortName(0).?);
+    try std.testing.expectEqualStrings("G", instance.parameterShortNameById(0).?);
     try std.testing.expectEqualStrings("G", instance.parameterShortNameByName("Gain").?);
+    try std.testing.expectEqualStrings("dB", instance.parameterUnits(0).?);
+    try std.testing.expectEqualStrings("dB", instance.parameterUnitsById(0).?);
     try std.testing.expectEqualStrings("dB", instance.parameterUnitsByName("Gain").?);
     try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalized(2));
     try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalizedById(2));
@@ -1363,6 +1367,8 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsReadOnly(1));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsReadOnlyById(0));
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsReadOnlyByName("Bypass"));
+    try std.testing.expectEqual(@as(?i32, 0), instance.parameterUnitId(0));
+    try std.testing.expectEqual(@as(?i32, 0), instance.parameterUnitIdById(0));
     try std.testing.expectEqual(@as(?i32, 0), instance.parameterUnitIdByName("Gain"));
     try std.testing.expectEqual(@as(?i32, 2), instance.parameterStepCount(2));
     try std.testing.expectEqual(@as(?i32, 2), instance.parameterStepCountById(2));
