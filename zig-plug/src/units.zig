@@ -46,6 +46,10 @@ pub const Config = struct {
     program_lists: []const ProgramList = &.{},
 };
 
+fn containsNul(value: []const u8) bool {
+    return std.mem.indexOfScalar(u8, value, 0) != null;
+}
+
 pub fn UnitSet(comptime config: Config) type {
     return struct {
         const Self = @This();
@@ -283,10 +287,12 @@ pub fn UnitSet(comptime config: Config) type {
             if (self.duplicateUnitName() != null) return error.DuplicateUnitName;
             const root = self.unitById(root_unit_id) orelse return error.MissingRootUnit;
             if (root.name.len == 0) return error.EmptyUnitName;
+            if (containsNul(root.name)) return error.InvalidUnitMetadata;
             if (root.parent_id != no_parent_unit_id) return error.InvalidUnitParent;
             for (config.units) |item| {
                 if (item.id == no_parent_unit_id) return error.ReservedUnitId;
                 if (item.name.len == 0) return error.EmptyUnitName;
+                if (containsNul(item.name)) return error.InvalidUnitMetadata;
                 if (item.id != root_unit_id and self.unitById(item.parent_id) == null) return error.InvalidUnitParent;
                 if (item.program_list_id != no_program_list_id and self.programListById(item.program_list_id) == null) {
                     return error.InvalidUnitProgramList;
@@ -311,8 +317,10 @@ pub fn UnitSet(comptime config: Config) type {
             for (config.program_lists) |list| {
                 if (list.id == no_program_list_id) return error.ReservedProgramListId;
                 if (list.name.len == 0) return error.EmptyProgramListName;
+                if (containsNul(list.name)) return error.InvalidProgramListMetadata;
                 for (list.programs, 0..) |item, item_index| {
                     if (item.name.len == 0) return error.EmptyProgramName;
+                    if (containsNul(item.name)) return error.InvalidProgramMetadata;
                     for (list.programs, 0..) |other, other_index| {
                         if (other_index > item_index and std.mem.eql(u8, other.name, item.name)) {
                             return error.DuplicateProgramName;
@@ -330,6 +338,7 @@ pub fn UnitSet(comptime config: Config) type {
                     }
                     for (item.info, 0..) |info, info_index| {
                         if (info.key.len == 0) return error.EmptyProgramInfoKey;
+                        if (containsNul(info.key) or containsNul(info.value)) return error.InvalidProgramInfoMetadata;
                         for (item.info, 0..) |other, other_index| {
                             if (other_index > info_index and std.mem.eql(u8, other.key, info.key)) {
                                 return error.DuplicateProgramInfoKey;
@@ -488,6 +497,9 @@ test "unit set validates ids names and links" {
     const EmptyUnitName = UnitSet(.{
         .units = &.{Unit.root("")},
     });
+    const InvalidUnitName = UnitSet(.{
+        .units = &.{Unit.root("Ro\x00ot")},
+    });
     const InvalidParent = UnitSet(.{
         .units = &.{ Unit.root("Root"), .{ .id = 1, .name = "Oscillator", .parent_id = 99 } },
     });
@@ -516,8 +528,14 @@ test "unit set validates ids names and links" {
     const EmptyProgramListName = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "" }},
     });
+    const InvalidProgramListName = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "Pro\x00grams" }},
+    });
     const EmptyProgramName = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "" }} }},
+    });
+    const InvalidProgramName = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Cle\x00an" }} }},
     });
     const DuplicateProgramNames = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{ .{ .name = "Clean" }, .{ .name = "Clean" } } }},
@@ -534,6 +552,12 @@ test "unit set validates ids names and links" {
     const EmptyProgramInfoKey = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .info = &.{.{ .key = "", .value = "x" }} }} }},
     });
+    const InvalidProgramInfoKey = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .info = &.{.{ .key = "cat\x00egory", .value = "x" }} }} }},
+    });
+    const InvalidProgramInfoValue = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .info = &.{.{ .key = "category", .value = "cle\x00an" }} }} }},
+    });
     const DuplicateProgramInfoKeys = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .info = &.{ .{ .key = "category", .value = "clean" }, .{ .key = "category", .value = "lead" } } }} }},
     });
@@ -542,6 +566,7 @@ test "unit set validates ids names and links" {
     try std.testing.expectError(error.DuplicateUnitName, (DuplicateUnitNames{}).validate());
     try std.testing.expectError(error.MissingRootUnit, (MissingRoot{}).validate());
     try std.testing.expectError(error.EmptyUnitName, (EmptyUnitName{}).validate());
+    try std.testing.expectError(error.InvalidUnitMetadata, (InvalidUnitName{}).validate());
     try std.testing.expectError(error.InvalidUnitParent, (InvalidParent{}).validate());
     try std.testing.expectError(error.ReservedUnitId, (ReservedUnitId{}).validate());
     try std.testing.expectError(error.CyclicUnitParent, (CyclicParent{}).validate());
@@ -550,11 +575,15 @@ test "unit set validates ids names and links" {
     try std.testing.expectError(error.DuplicateProgramListName, (DuplicateProgramListNames{}).validate());
     try std.testing.expectError(error.ReservedProgramListId, (ReservedProgramListId{}).validate());
     try std.testing.expectError(error.EmptyProgramListName, (EmptyProgramListName{}).validate());
+    try std.testing.expectError(error.InvalidProgramListMetadata, (InvalidProgramListName{}).validate());
     try std.testing.expectError(error.EmptyProgramName, (EmptyProgramName{}).validate());
+    try std.testing.expectError(error.InvalidProgramMetadata, (InvalidProgramName{}).validate());
     try std.testing.expectError(error.DuplicateProgramName, (DuplicateProgramNames{}).validate());
     try std.testing.expectError(error.DuplicateProgramParameter, (DuplicateProgramParameters{}).validate());
     try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, (InvalidProgramParameter{}).validate());
     try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, (NanProgramParameter{}).validate());
     try std.testing.expectError(error.EmptyProgramInfoKey, (EmptyProgramInfoKey{}).validate());
+    try std.testing.expectError(error.InvalidProgramInfoMetadata, (InvalidProgramInfoKey{}).validate());
+    try std.testing.expectError(error.InvalidProgramInfoMetadata, (InvalidProgramInfoValue{}).validate());
     try std.testing.expectError(error.DuplicateProgramInfoKey, (DuplicateProgramInfoKeys{}).validate());
 }
