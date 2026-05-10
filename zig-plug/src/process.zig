@@ -650,6 +650,10 @@ pub const EventWriter = struct {
         return self.storage.len - self.count;
     }
 
+    pub fn frameCount(self: *const EventWriter) usize {
+        return self.frame_count;
+    }
+
     pub fn firstSampleOffset(self: *const EventWriter) ?usize {
         return self.events().firstSampleOffset();
     }
@@ -1113,6 +1117,11 @@ pub fn ProcessContext(comptime Sample: type) type {
         pub fn outputEventRemainingCapacity(self: @This()) usize {
             const writer = self.output_events orelse return 0;
             return writer.remainingCapacity();
+        }
+
+        pub fn outputEventFrameCount(self: @This()) usize {
+            const writer = self.output_events orelse return 0;
+            return writer.frameCount();
         }
 
         pub fn outputEventsEmpty(self: @This()) bool {
@@ -1889,6 +1898,7 @@ test "event writer validates offsets and capacity" {
     try std.testing.expect(writer.isEmpty());
     try std.testing.expect(!writer.isFull());
     try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
+    try std.testing.expectEqual(@as(usize, 4), writer.frameCount());
     try writer.append(Event.noteOn(0, 0, 60, 1.0));
     try std.testing.expect(!writer.isEmpty());
     try std.testing.expect(writer.isFull());
@@ -1910,6 +1920,7 @@ test "event writer validates offsets and capacity" {
     try std.testing.expectEqual(@as(?Event, null), written_notes.next());
     try std.testing.expectEqual(@as(usize, 1), writer.capacity());
     try std.testing.expectEqual(@as(usize, 0), writer.remainingCapacity());
+    try std.testing.expectEqual(@as(usize, 4), writer.frameCount());
     try std.testing.expectError(error.EventStorageFull, writer.append(Event.noteOff(1, 0, 60, 0.0)));
     writer.clear();
     try std.testing.expect(writer.isEmpty());
@@ -2030,6 +2041,7 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(usize, 0), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCapacity());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventRemainingCapacity());
+    try std.testing.expectEqual(@as(usize, input.len), context.outputEventFrameCount());
     try std.testing.expect(context.canAppendOutputEvent());
     try std.testing.expect(context.canAppendOutputEvents(2));
     try std.testing.expect(!context.canAppendOutputEvents(3));
@@ -2101,6 +2113,7 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventCount());
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventCapacity());
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventRemainingCapacity());
+    try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventFrameCount());
     try std.testing.expect(!no_writer.canAppendOutputEvent());
     try std.testing.expect(!no_writer.canAppendOutputEvents(0));
     try std.testing.expect(no_writer.outputEventsEmpty());
