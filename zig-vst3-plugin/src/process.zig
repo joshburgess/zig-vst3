@@ -904,6 +904,22 @@ pub const Events = struct {
         return event.sample_offset;
     }
 
+    pub fn first(self: Events) ?Event {
+        var result: ?Event = null;
+        for (self.items) |item| {
+            if (result == null or item.sample_offset < result.?.sample_offset) result = item;
+        }
+        return result;
+    }
+
+    pub fn latest(self: Events) ?Event {
+        var result: ?Event = null;
+        for (self.items) |item| {
+            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
+        }
+        return result;
+    }
+
     pub fn countKind(self: Events, kind: EventKind) usize {
         var count: usize = 0;
         for (self.items) |item| {
@@ -1149,6 +1165,14 @@ pub const EventWriter = struct {
 
     pub fn latestSampleOffset(self: *const EventWriter) ?usize {
         return self.events().latestSampleOffset();
+    }
+
+    pub fn first(self: *const EventWriter) ?Event {
+        return self.events().first();
+    }
+
+    pub fn latest(self: *const EventWriter) ?Event {
+        return self.events().latest();
     }
 
     pub fn firstSampleOffsetForKind(self: *const EventWriter, kind: EventKind) ?usize {
@@ -1635,6 +1659,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.latestSampleOffset();
         }
 
+        pub fn firstInputEvent(self: @This()) ?Event {
+            return self.events.first();
+        }
+
+        pub fn latestInputEvent(self: @This()) ?Event {
+            return self.events.latest();
+        }
+
         pub fn firstEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
             return self.events.firstSampleOffsetForKind(kind);
         }
@@ -1793,6 +1825,14 @@ pub fn ProcessContext(comptime Sample: type) type {
         pub fn latestOutputEventOffset(self: @This()) ?usize {
             const writer = self.output_events orelse return null;
             return writer.latestSampleOffset();
+        }
+
+        pub fn firstWrittenOutputEvent(self: @This()) ?Event {
+            return self.writtenOutputEvents().first();
+        }
+
+        pub fn latestWrittenOutputEvent(self: @This()) ?Event {
+            return self.writtenOutputEvents().latest();
         }
 
         pub fn firstOutputEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
@@ -2850,6 +2890,12 @@ test "events query by sample offset without requiring sorted input" {
     };
     const view = try Events.init(&items, 8);
 
+    try std.testing.expectEqual(@as(usize, 1), view.first().?.sample_offset);
+    try std.testing.expectEqual(EventKind.note_on, view.first().?.kind);
+    try std.testing.expectEqual(@as(i16, 60), view.first().?.pitch);
+    try std.testing.expectEqual(@as(usize, 5), view.latest().?.sample_offset);
+    try std.testing.expectEqual(EventKind.note_on, view.latest().?.kind);
+    try std.testing.expectEqual(@as(i16, 72), view.latest().?.pitch);
     try std.testing.expectEqual(@as(usize, 1), view.firstKind(.note_on).?.sample_offset);
     try std.testing.expectEqual(@as(i16, 60), view.firstKind(.note_on).?.pitch);
     try std.testing.expectEqual(@as(usize, 5), view.latestKind(.note_on).?.sample_offset);
@@ -3279,6 +3325,10 @@ test "event writer queries written events by offset" {
 
     try std.testing.expectEqual(@as(?usize, 1), writer.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 5), writer.latestSampleOffset());
+    try std.testing.expectEqual(EventKind.note_on, writer.first().?.kind);
+    try std.testing.expectEqual(@as(i16, 60), writer.first().?.pitch);
+    try std.testing.expectEqual(EventKind.note_on, writer.latest().?.kind);
+    try std.testing.expectEqual(@as(i16, 67), writer.latest().?.pitch);
     try std.testing.expectEqual(@as(?usize, 3), writer.nextSampleOffset(1));
     try std.testing.expectEqual(@as(?usize, 5), writer.nextSampleOffset(3));
     try std.testing.expectEqual(@as(?usize, 5), writer.nextSampleOffsetForKind(.note_on, 1));
@@ -3303,6 +3353,8 @@ test "event writer appends event views atomically" {
     try std.testing.expect(!writer.canAppend(1));
     try std.testing.expectEqual(@as(?usize, 0), writer.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 1), writer.latestSampleOffset());
+    try std.testing.expectEqual(EventKind.note_on, writer.first().?.kind);
+    try std.testing.expectEqual(EventKind.note_off, writer.latest().?.kind);
     try std.testing.expectEqual(@as(?usize, 0), writer.firstSampleOffsetForKind(.note_on));
     try std.testing.expectEqual(@as(?usize, 1), writer.latestSampleOffsetForKind(.note_off));
     try std.testing.expectEqual(@as(?usize, null), writer.firstSampleOffsetForKind(.midi_cc));

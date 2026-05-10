@@ -50,6 +50,8 @@ test "event echo core example writes input events to output events" {
     try std.testing.expectEqual(@as(usize, input.len), context.outputEventFrameCount());
     try std.testing.expect(context.hasOutputEvent(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.countOutputEvents(.note_on));
+    try std.testing.expectEqual(plug.process.EventKind.note_on, context.firstWrittenOutputEvent().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, context.latestWrittenOutputEvent().?.kind);
     try std.testing.expectEqual(@as(usize, 1), context.firstOutputEvent(.note_on).?.sample_offset);
     try std.testing.expectEqual(@as(usize, 1), context.latestOutputEvent(.note_on).?.sample_offset);
     try std.testing.expectEqual(@as(usize, 1), context.firstOutputEventOffset().?);
