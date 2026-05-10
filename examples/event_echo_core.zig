@@ -41,12 +41,41 @@ test "event echo core example writes input events to output events" {
 
     plugin.process(&context);
 
+    try std.testing.expect(context.hasOutputEventWriter());
+    try std.testing.expect(!context.outputEventsEmpty());
+    try std.testing.expect(context.outputEventsFull());
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventCapacity());
     try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 0), context.outputEventRemainingCapacity());
+    try std.testing.expectEqual(@as(usize, input.len), context.outputEventFrameCount());
     try std.testing.expect(context.hasOutputEvent(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.countOutputEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.firstOutputEvent(.note_on).?.sample_offset);
+    try std.testing.expectEqual(@as(usize, 1), context.latestOutputEvent(.note_on).?.sample_offset);
     try std.testing.expectEqual(@as(usize, 1), context.firstOutputEventOffset().?);
+    try std.testing.expectEqual(@as(usize, 1), context.latestOutputEventOffset().?);
+    try std.testing.expectEqual(@as(usize, 1), context.firstOutputEventOffsetForKind(.note_on).?);
+    try std.testing.expectEqual(@as(usize, 1), context.latestOutputEventOffsetForKind(.note_on).?);
+    try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffset(1));
+
+    var output_events_at_offset = context.outputEventsAtOffset(1);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, output_events_at_offset.next().?.kind);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), output_events_at_offset.next());
+
+    var output_note_events = context.outputEventsOfKind(.note_on);
+    try std.testing.expectEqual(@as(usize, 1), output_note_events.next().?.sample_offset);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), output_note_events.next());
+
+    var segments = context.outputEventBlockSegments();
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = 1 }, segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 1, .end_offset = 2 }, segments.next().?);
+    try std.testing.expectEqual(@as(?plug.process.BlockSegment, null), segments.next());
+
+    context.clearOutputEvents();
+    try std.testing.expect(context.outputEventsEmpty());
+    try std.testing.expect(!context.outputEventsFull());
+    try std.testing.expectEqual(@as(usize, 0), context.outputEventCount());
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventRemainingCapacity());
 }
 
 test "event echo core example leaves output unchanged when capacity is too small" {
