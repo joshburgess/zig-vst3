@@ -189,12 +189,44 @@ pub const ParameterChanges = struct {
         return result;
     }
 
+    pub fn countAtOffset(self: ParameterChanges, sample_offset: usize) usize {
+        var result: usize = 0;
+        for (self.items) |item| {
+            if (item.isAtOffset(sample_offset)) result += 1;
+        }
+        return result;
+    }
+
+    pub fn countForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) usize {
+        var result: usize = 0;
+        for (self.items) |item| {
+            if (item.isForIdAtOffset(id, sample_offset)) result += 1;
+        }
+        return result;
+    }
+
     pub fn has(self: ParameterChanges, id: u32) bool {
         return self.first(id) != null;
     }
 
+    pub fn hasAtOffset(self: ParameterChanges, sample_offset: usize) bool {
+        return self.countAtOffset(sample_offset) != 0;
+    }
+
+    pub fn hasForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) bool {
+        return self.countForIdAtOffset(id, sample_offset) != 0;
+    }
+
     pub fn empty(self: ParameterChanges, id: u32) bool {
         return !self.has(id);
+    }
+
+    pub fn offsetEmpty(self: ParameterChanges, sample_offset: usize) bool {
+        return !self.hasAtOffset(sample_offset);
+    }
+
+    pub fn idAtOffsetEmpty(self: ParameterChanges, id: u32, sample_offset: usize) bool {
+        return !self.hasForIdAtOffset(id, sample_offset);
     }
 
     pub fn only(self: ParameterChanges, id: u32) bool {
@@ -834,6 +866,22 @@ pub const Events = struct {
         return count;
     }
 
+    pub fn countAtOffset(self: Events, sample_offset: usize) usize {
+        var count: usize = 0;
+        for (self.items) |item| {
+            if (item.isAtOffset(sample_offset)) count += 1;
+        }
+        return count;
+    }
+
+    pub fn countKindAtOffset(self: Events, kind: EventKind, sample_offset: usize) usize {
+        var count: usize = 0;
+        for (self.items) |item| {
+            if (item.isKindAtOffset(kind, sample_offset)) count += 1;
+        }
+        return count;
+    }
+
     pub fn countBus(self: Events, bus_index: i32) usize {
         var count: usize = 0;
         for (self.items) |item| {
@@ -894,8 +942,24 @@ pub const Events = struct {
         return self.firstKind(kind) != null;
     }
 
+    pub fn hasAtOffset(self: Events, sample_offset: usize) bool {
+        return self.countAtOffset(sample_offset) != 0;
+    }
+
+    pub fn hasKindAtOffset(self: Events, kind: EventKind, sample_offset: usize) bool {
+        return self.countKindAtOffset(kind, sample_offset) != 0;
+    }
+
     pub fn kindEmpty(self: Events, kind: EventKind) bool {
         return !self.hasKind(kind);
+    }
+
+    pub fn offsetEmpty(self: Events, sample_offset: usize) bool {
+        return !self.hasAtOffset(sample_offset);
+    }
+
+    pub fn kindAtOffsetEmpty(self: Events, kind: EventKind, sample_offset: usize) bool {
+        return !self.hasKindAtOffset(kind, sample_offset);
     }
 
     pub fn onlyKind(self: Events, kind: EventKind) bool {
@@ -1030,6 +1094,14 @@ pub const EventWriter = struct {
         return self.events().countKind(kind);
     }
 
+    pub fn countAtOffset(self: *const EventWriter, sample_offset: usize) usize {
+        return self.events().countAtOffset(sample_offset);
+    }
+
+    pub fn countKindAtOffset(self: *const EventWriter, kind: EventKind, sample_offset: usize) usize {
+        return self.events().countKindAtOffset(kind, sample_offset);
+    }
+
     pub fn countBus(self: *const EventWriter, bus_index: i32) usize {
         return self.events().countBus(bus_index);
     }
@@ -1066,8 +1138,24 @@ pub const EventWriter = struct {
         return self.events().hasKind(kind);
     }
 
+    pub fn hasAtOffset(self: *const EventWriter, sample_offset: usize) bool {
+        return self.events().hasAtOffset(sample_offset);
+    }
+
+    pub fn hasKindAtOffset(self: *const EventWriter, kind: EventKind, sample_offset: usize) bool {
+        return self.events().hasKindAtOffset(kind, sample_offset);
+    }
+
     pub fn kindEmpty(self: *const EventWriter, kind: EventKind) bool {
         return self.events().kindEmpty(kind);
+    }
+
+    pub fn offsetEmpty(self: *const EventWriter, sample_offset: usize) bool {
+        return self.events().offsetEmpty(sample_offset);
+    }
+
+    pub fn kindAtOffsetEmpty(self: *const EventWriter, kind: EventKind, sample_offset: usize) bool {
+        return self.events().kindAtOffsetEmpty(kind, sample_offset);
     }
 
     pub fn onlyKind(self: *const EventWriter, kind: EventKind) bool {
@@ -1334,12 +1422,36 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.count(id);
         }
 
+        pub fn countParameterChangesAtOffset(self: @This(), sample_offset: usize) usize {
+            return self.parameter_changes.countAtOffset(sample_offset);
+        }
+
+        pub fn countParameterChangesForIdAtOffset(self: @This(), id: u32, sample_offset: usize) usize {
+            return self.parameter_changes.countForIdAtOffset(id, sample_offset);
+        }
+
         pub fn hasParameterChange(self: @This(), id: u32) bool {
             return self.parameter_changes.has(id);
         }
 
+        pub fn hasParameterChangeAtOffset(self: @This(), sample_offset: usize) bool {
+            return self.parameter_changes.hasAtOffset(sample_offset);
+        }
+
+        pub fn hasParameterChangeForIdAtOffset(self: @This(), id: u32, sample_offset: usize) bool {
+            return self.parameter_changes.hasForIdAtOffset(id, sample_offset);
+        }
+
         pub fn parameterChangesForIdEmpty(self: @This(), id: u32) bool {
             return self.parameter_changes.empty(id);
+        }
+
+        pub fn parameterChangesAtOffsetEmpty(self: @This(), sample_offset: usize) bool {
+            return self.parameter_changes.offsetEmpty(sample_offset);
+        }
+
+        pub fn parameterChangesForIdAtOffsetEmpty(self: @This(), id: u32, sample_offset: usize) bool {
+            return self.parameter_changes.idAtOffsetEmpty(id, sample_offset);
         }
 
         pub fn onlyParameterChangesForId(self: @This(), id: u32) bool {
@@ -1466,6 +1578,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.countKind(kind);
         }
 
+        pub fn countEventsAtOffset(self: @This(), sample_offset: usize) usize {
+            return self.events.countAtOffset(sample_offset);
+        }
+
+        pub fn countEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) usize {
+            return self.events.countKindAtOffset(kind, sample_offset);
+        }
+
         pub fn countEventsForBus(self: @This(), bus_index: i32) usize {
             return self.events.countBus(bus_index);
         }
@@ -1486,8 +1606,24 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.hasChannel(channel);
         }
 
+        pub fn hasEventAtOffset(self: @This(), sample_offset: usize) bool {
+            return self.events.hasAtOffset(sample_offset);
+        }
+
+        pub fn hasEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+            return self.events.hasKindAtOffset(kind, sample_offset);
+        }
+
         pub fn eventsForChannelEmpty(self: @This(), channel: i16) bool {
             return self.events.channelEmpty(channel);
+        }
+
+        pub fn eventsAtOffsetEmpty(self: @This(), sample_offset: usize) bool {
+            return self.events.offsetEmpty(sample_offset);
+        }
+
+        pub fn eventsOfKindAtOffsetEmpty(self: @This(), kind: EventKind, sample_offset: usize) bool {
+            return self.events.kindAtOffsetEmpty(kind, sample_offset);
         }
 
         pub fn onlyInputEventsOfKind(self: @This(), kind: EventKind) bool {
@@ -1588,6 +1724,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.writtenOutputEvents().countKind(kind);
         }
 
+        pub fn countOutputEventsAtOffset(self: @This(), sample_offset: usize) usize {
+            return self.writtenOutputEvents().countAtOffset(sample_offset);
+        }
+
+        pub fn countOutputEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) usize {
+            return self.writtenOutputEvents().countKindAtOffset(kind, sample_offset);
+        }
+
         pub fn countOutputEventsForBus(self: @This(), bus_index: i32) usize {
             return self.writtenOutputEvents().countBus(bus_index);
         }
@@ -1608,8 +1752,24 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.writtenOutputEvents().hasChannel(channel);
         }
 
+        pub fn hasOutputEventAtOffset(self: @This(), sample_offset: usize) bool {
+            return self.writtenOutputEvents().hasAtOffset(sample_offset);
+        }
+
+        pub fn hasOutputEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+            return self.writtenOutputEvents().hasKindAtOffset(kind, sample_offset);
+        }
+
         pub fn outputEventsForChannelEmpty(self: @This(), channel: i16) bool {
             return self.writtenOutputEvents().channelEmpty(channel);
+        }
+
+        pub fn outputEventsAtOffsetEmpty(self: @This(), sample_offset: usize) bool {
+            return self.writtenOutputEvents().offsetEmpty(sample_offset);
+        }
+
+        pub fn outputEventsOfKindAtOffsetEmpty(self: @This(), kind: EventKind, sample_offset: usize) bool {
+            return self.writtenOutputEvents().kindAtOffsetEmpty(kind, sample_offset);
         }
 
         pub fn onlyOutputEventsOfKind(self: @This(), kind: EventKind) bool {
@@ -1984,10 +2144,22 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(usize, 1), context.countParameterChanges(1));
+    try std.testing.expectEqual(@as(usize, 1), context.countParameterChangesAtOffset(1));
+    try std.testing.expectEqual(@as(usize, 0), context.countParameterChangesAtOffset(0));
+    try std.testing.expectEqual(@as(usize, 1), context.countParameterChangesForIdAtOffset(1, 1));
+    try std.testing.expectEqual(@as(usize, 0), context.countParameterChangesForIdAtOffset(1, 0));
     try std.testing.expect(context.hasParameterChange(1));
     try std.testing.expect(!context.hasParameterChange(2));
+    try std.testing.expect(context.hasParameterChangeAtOffset(1));
+    try std.testing.expect(!context.hasParameterChangeAtOffset(0));
+    try std.testing.expect(context.hasParameterChangeForIdAtOffset(1, 1));
+    try std.testing.expect(!context.hasParameterChangeForIdAtOffset(2, 1));
     try std.testing.expect(!context.parameterChangesForIdEmpty(1));
     try std.testing.expect(context.parameterChangesForIdEmpty(2));
+    try std.testing.expect(!context.parameterChangesAtOffsetEmpty(1));
+    try std.testing.expect(context.parameterChangesAtOffsetEmpty(0));
+    try std.testing.expect(!context.parameterChangesForIdAtOffsetEmpty(1, 1));
+    try std.testing.expect(context.parameterChangesForIdAtOffsetEmpty(2, 1));
     try std.testing.expect(context.onlyParameterChangesForId(1));
     try std.testing.expect(!context.onlyParameterChangesForId(2));
     try std.testing.expectEqual(@as(?f64, 0.5), context.latestParameterNormalized(1));
@@ -2030,6 +2202,10 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(!context.eventsOfKindEmpty(.note_on));
     try std.testing.expect(context.eventsOfKindEmpty(.note_off));
     try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
+    try std.testing.expectEqual(@as(usize, 1), context.countEventsAtOffset(1));
+    try std.testing.expectEqual(@as(usize, 0), context.countEventsAtOffset(0));
+    try std.testing.expectEqual(@as(usize, 1), context.countEventsOfKindAtOffset(.note_on, 1));
+    try std.testing.expectEqual(@as(usize, 0), context.countEventsOfKindAtOffset(.note_off, 1));
     try std.testing.expectEqual(@as(usize, 1), context.countEventsForBus(0));
     try std.testing.expectEqual(@as(usize, 0), context.countEventsForBus(1));
     try std.testing.expectEqual(@as(usize, 1), context.countEventsForChannel(0));
@@ -2040,8 +2216,16 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(context.eventsForBusEmpty(1));
     try std.testing.expect(context.hasEventsForChannel(0));
     try std.testing.expect(!context.hasEventsForChannel(1));
+    try std.testing.expect(context.hasEventAtOffset(1));
+    try std.testing.expect(!context.hasEventAtOffset(0));
+    try std.testing.expect(context.hasEventOfKindAtOffset(.note_on, 1));
+    try std.testing.expect(!context.hasEventOfKindAtOffset(.note_off, 1));
     try std.testing.expect(!context.eventsForChannelEmpty(0));
     try std.testing.expect(context.eventsForChannelEmpty(1));
+    try std.testing.expect(!context.eventsAtOffsetEmpty(1));
+    try std.testing.expect(context.eventsAtOffsetEmpty(0));
+    try std.testing.expect(!context.eventsOfKindAtOffsetEmpty(.note_on, 1));
+    try std.testing.expect(context.eventsOfKindAtOffsetEmpty(.note_off, 1));
     try std.testing.expect(context.onlyInputEventsOfKind(.note_on));
     try std.testing.expect(context.onlyInputEventsForBus(0));
     try std.testing.expect(context.onlyInputEventsForChannel(0));
@@ -2142,6 +2326,19 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(usize, 2), view.count(7));
     try std.testing.expectEqual(@as(usize, 1), view.count(8));
     try std.testing.expectEqual(@as(usize, 0), view.count(9));
+    try std.testing.expectEqual(@as(usize, 1), view.countAtOffset(0));
+    try std.testing.expectEqual(@as(usize, 1), view.countAtOffset(2));
+    try std.testing.expectEqual(@as(usize, 0), view.countAtOffset(1));
+    try std.testing.expectEqual(@as(usize, 1), view.countForIdAtOffset(7, 0));
+    try std.testing.expectEqual(@as(usize, 0), view.countForIdAtOffset(7, 2));
+    try std.testing.expect(view.hasAtOffset(0));
+    try std.testing.expect(!view.hasAtOffset(1));
+    try std.testing.expect(view.hasForIdAtOffset(7, 0));
+    try std.testing.expect(!view.hasForIdAtOffset(8, 0));
+    try std.testing.expect(!view.offsetEmpty(0));
+    try std.testing.expect(view.offsetEmpty(1));
+    try std.testing.expect(!view.idAtOffsetEmpty(7, 0));
+    try std.testing.expect(view.idAtOffsetEmpty(8, 0));
     try std.testing.expect(!view.only(7));
     const gain_only_changes = [_]ParameterChange{
         .{ .id = 7, .sample_offset = 0, .normalized = 0.25 },
@@ -2361,8 +2558,21 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.note_off));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.data));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.other));
+    try std.testing.expectEqual(@as(usize, 1), view.countAtOffset(0));
+    try std.testing.expectEqual(@as(usize, 8), view.countAtOffset(3));
+    try std.testing.expectEqual(@as(usize, 0), view.countAtOffset(2));
+    try std.testing.expectEqual(@as(usize, 1), view.countKindAtOffset(.note_on, 0));
+    try std.testing.expectEqual(@as(usize, 0), view.countKindAtOffset(.note_on, 3));
     try std.testing.expect(view.hasKind(.note_on));
+    try std.testing.expect(view.hasAtOffset(3));
+    try std.testing.expect(!view.hasAtOffset(2));
+    try std.testing.expect(view.hasKindAtOffset(.note_on, 0));
+    try std.testing.expect(!view.hasKindAtOffset(.note_on, 3));
     try std.testing.expect(!view.kindEmpty(.note_on));
+    try std.testing.expect(!view.offsetEmpty(3));
+    try std.testing.expect(view.offsetEmpty(2));
+    try std.testing.expect(!view.kindAtOffsetEmpty(.note_on, 0));
+    try std.testing.expect(view.kindAtOffsetEmpty(.note_on, 3));
     try std.testing.expect(!view.busEmpty(0));
     try std.testing.expect(view.busEmpty(1));
     try std.testing.expect(!view.channelEmpty(0));
@@ -2816,6 +3026,14 @@ test "event writer validates offsets and capacity" {
     try std.testing.expect(!writer.hasKind(.note_off));
     try std.testing.expect(!writer.kindEmpty(.note_on));
     try std.testing.expect(writer.kindEmpty(.note_off));
+    try std.testing.expect(writer.hasAtOffset(0));
+    try std.testing.expect(!writer.hasAtOffset(1));
+    try std.testing.expect(writer.hasKindAtOffset(.note_on, 0));
+    try std.testing.expect(!writer.hasKindAtOffset(.note_off, 0));
+    try std.testing.expect(!writer.offsetEmpty(0));
+    try std.testing.expect(writer.offsetEmpty(1));
+    try std.testing.expect(!writer.kindAtOffsetEmpty(.note_on, 0));
+    try std.testing.expect(writer.kindAtOffsetEmpty(.note_off, 0));
     try std.testing.expect(!writer.busEmpty(0));
     try std.testing.expect(writer.busEmpty(1));
     try std.testing.expect(!writer.channelEmpty(0));
@@ -2825,6 +3043,10 @@ test "event writer validates offsets and capacity" {
     try std.testing.expect(writer.onlyChannel(0));
     try std.testing.expect(!writer.onlyChannel(1));
     try std.testing.expectEqual(@as(usize, 1), writer.countKind(.note_on));
+    try std.testing.expectEqual(@as(usize, 1), writer.countAtOffset(0));
+    try std.testing.expectEqual(@as(usize, 0), writer.countAtOffset(1));
+    try std.testing.expectEqual(@as(usize, 1), writer.countKindAtOffset(.note_on, 0));
+    try std.testing.expectEqual(@as(usize, 0), writer.countKindAtOffset(.note_off, 0));
     try std.testing.expectEqual(EventKind.note_on, writer.firstKind(.note_on).?.kind);
     try std.testing.expectEqual(EventKind.note_on, writer.latestKind(.note_on).?.kind);
     try std.testing.expectEqual(@as(?usize, null), writer.nextSampleOffset(1));
@@ -2856,12 +3078,18 @@ test "event writer validates offsets and capacity" {
     try std.testing.expectEqual(@as(?usize, null), writer.latestSampleOffsetForKind(.note_on));
     try std.testing.expect(!writer.hasKind(.note_on));
     try std.testing.expect(writer.kindEmpty(.note_on));
+    try std.testing.expect(!writer.hasAtOffset(0));
+    try std.testing.expect(writer.offsetEmpty(0));
+    try std.testing.expect(!writer.hasKindAtOffset(.note_on, 0));
+    try std.testing.expect(writer.kindAtOffsetEmpty(.note_on, 0));
     try std.testing.expect(writer.busEmpty(0));
     try std.testing.expect(writer.channelEmpty(0));
     try std.testing.expect(!writer.onlyKind(.note_on));
     try std.testing.expect(!writer.onlyBus(0));
     try std.testing.expect(!writer.onlyChannel(0));
     try std.testing.expectEqual(@as(usize, 0), writer.countKind(.note_on));
+    try std.testing.expectEqual(@as(usize, 0), writer.countAtOffset(0));
+    try std.testing.expectEqual(@as(usize, 0), writer.countKindAtOffset(.note_on, 0));
     try std.testing.expectEqual(@as(?Event, null), writer.firstKind(.note_on));
     try std.testing.expectEqual(@as(?Event, null), writer.latestKind(.note_on));
     try std.testing.expectEqual(@as(?usize, null), writer.nextSampleOffset(0));
