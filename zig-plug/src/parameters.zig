@@ -424,6 +424,10 @@ pub fn ParameterSet(comptime Params: type) type {
             return .{ .params = params };
         }
 
+        pub fn parameterCount(_: *const Self) usize {
+            return count;
+        }
+
         pub fn duplicateId(self: *const Self) ?u32 {
             inline for (fields, 0..) |left_field, left_index| {
                 const left_id = @field(self.params, left_field.name).id;
@@ -1983,6 +1987,7 @@ test "parameter set reflects descriptor fields" {
     const set = Set.init(.{});
 
     try std.testing.expectEqual(@as(usize, 4), Set.count);
+    try std.testing.expectEqual(@as(usize, 4), set.parameterCount());
     try std.testing.expectEqual(@as(?u32, 0), set.id(0));
     try std.testing.expectEqualStrings("Voices", set.name(1).?);
     try std.testing.expectEqualStrings("Bypass", set.nameById(2).?);
