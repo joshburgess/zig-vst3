@@ -17,6 +17,7 @@ const vst_parameter_changes = @import("vst_parameter_changes.zig");
 const vst_stream = @import("vst_stream.zig");
 
 const max_audio_channels = 64;
+const max_data_event_bytes = 4096;
 const empty_arrangement: vsttypes.SpeakerArrangement = 0;
 const stereo_arrangement: vsttypes.SpeakerArrangement = 3;
 const test_sample_rate: f64 = 48_000.0;
@@ -654,7 +655,10 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
             plug.process.Event.noteOff(offset, event.data.noteOff.channel, event.data.noteOff.pitch, event.data.noteOff.velocity).withBusIndex(event.busIndex)
         else
             null,
-        @intFromEnum(ivstevents.Event.EventTypes.kDataEvent) => plug.process.Event.dataEvent(offset, event.data.data.type, dataEventBytes(event.data.data)).withBusIndex(event.busIndex),
+        @intFromEnum(ivstevents.Event.EventTypes.kDataEvent) => if (dataEventBytes(event.data.data)) |bytes|
+            plug.process.Event.dataEvent(offset, event.data.data.type, bytes).withBusIndex(event.busIndex)
+        else
+            null,
         @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent) => collectLegacyMidiCcEvent(event, offset),
         @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent) => if (isUnitValue(event.data.polyPressure.pressure))
             plug.process.Event.aftertouch(offset, event.data.polyPressure.channel, event.data.polyPressure.pitch, event.data.polyPressure.pressure).withBusIndex(event.busIndex)
@@ -784,6 +788,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
             } };
         },
         .data => {
+            if (event.data.len > max_data_event_bytes) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent);
             result.data = .{ .data = .{
                 .size = @intCast(@min(event.data.len, std.math.maxInt(types.uint32))),
@@ -796,8 +801,10 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
     return result;
 }
 
-fn dataEventBytes(data: ivstevents.DataEvent) []const u8 {
-    const bytes = data.bytes orelse return &.{};
+fn dataEventBytes(data: ivstevents.DataEvent) ?[]const u8 {
+    if (data.size == 0) return &.{};
+    if (data.size > max_data_event_bytes) return null;
+    const bytes = data.bytes orelse return null;
     return bytes[0..data.size];
 }
 
@@ -1312,6 +1319,44 @@ test "zig-plug bridge preserves VST3 data event payloads" {
     try std.testing.expectEqualSlices(u8, &payload, collected.items[0].data);
 }
 
+test "zig-plug bridge drops malformed VST3 data event payloads" {
+    const payload = [_]u8{0xF0} ** (max_data_event_bytes + 1);
+    const items = [_]ivstevents.Event{
+        .{
+            .busIndex = 0,
+            .sampleOffset = 0,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent),
+            .data = .{ .data = .{
+                .size = 1,
+                .type = @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx),
+                .bytes = null,
+            } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 0,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent),
+            .data = .{ .data = .{
+                .size = payload.len,
+                .type = @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx),
+                .bytes = &payload,
+            } },
+        },
+    };
+    const List = vst_event_list.EventList(items.len);
+    var list = List{};
+    for (&items) |event| try std.testing.expectEqual(types.kResultOk, list.append(event));
+    var storage: [2]plug.process.Event = undefined;
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 1,
+        .inputEvents = list.asInterface(),
+    };
+
+    const collected = collectInputEvents(&data, &storage);
+
+    try std.testing.expectEqual(@as(usize, 0), collected.eventCount());
+}
+
 test "zig-plug bridge writes output events to VST3 event lists" {
     const payload = [_]u8{ 0xF0, 0x7D, 0x02, 0xF7 };
     const items = [_]plug.process.Event{
@@ -1355,7 +1400,9 @@ test "zig-plug bridge writes output events to VST3 event lists" {
 }
 
 test "zig-plug bridge drops output MIDI events with invalid legacy fields" {
+    const large_payload = [_]u8{0xF0} ** (max_data_event_bytes + 1);
     const items = [_]plug.process.Event{
+        plug.process.Event.dataEvent(0, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx), &large_payload),
         .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = -1, .value = 0.5 },
         .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = 256, .value = 0.5 },
         .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 128, .control_number = ivstmidicontrollers.kCtrlModWheel, .value = 0.5 },
