@@ -73,7 +73,7 @@ const SineSynthProcessor = struct {
 const Effect = zig_plug_effect.SimpleStereoEffect(struct {
     pub const component_name = "SineSynthComponent";
     pub const controller_cid = sine_synth_controller.cid;
-    pub const audio_input = false;
+    pub const audio_input = sine_synth_spec.Spec.audio_input;
     pub const Processor = SineSynthProcessor;
 
     pub fn resetProcessState() void {

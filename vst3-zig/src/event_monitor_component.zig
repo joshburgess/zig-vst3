@@ -1,4 +1,5 @@
 const event_monitor_controller = @import("event_monitor_controller.zig");
+const event_monitor_spec = @import("event_monitor_spec.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const plug_process = @import("zig-plug-core").process;
 const std = @import("std");
@@ -53,7 +54,7 @@ const EventMonitorProcessor = struct {
 const Effect = zig_plug_effect.SimpleStereoEffect(struct {
     pub const component_name = "EventMonitorComponent";
     pub const controller_cid = event_monitor_controller.cid;
-    pub const audio_output = false;
+    pub const audio_output = event_monitor_spec.Spec.audio_output;
     pub const Processor = EventMonitorProcessor;
 
     pub fn resetProcessState() void {

@@ -4,6 +4,7 @@ const EventMonitorPlugin = struct {
     pub const name = "zig-vst3 Event Monitor";
     pub const vendor = "zig-vst3";
     pub const url = "https://github.com/joshburgess/zig-vst3";
+    pub const audio_output = false;
     pub const Params = struct {};
 };
 
