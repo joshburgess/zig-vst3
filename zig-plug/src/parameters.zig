@@ -840,6 +840,57 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.isList(index);
         }
 
+        pub fn optionCount(self: *const Self, index: usize) ?usize {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return parameterOptionCount(@field(self.params, field.name));
+            }
+            return null;
+        }
+
+        pub fn optionCountById(self: *const Self, wanted_id: u32) ?usize {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.optionCount(index);
+        }
+
+        pub fn optionCountByName(self: *const Self, wanted_name: []const u8) ?usize {
+            const index = self.indexOfName(wanted_name) orelse return null;
+            return self.optionCount(index);
+        }
+
+        pub fn optionLabel(self: *const Self, index: usize, option_index: usize) ?[]const u8 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return parameterOptionLabel(@field(self.params, field.name), option_index);
+            }
+            return null;
+        }
+
+        pub fn optionLabelById(self: *const Self, wanted_id: u32, option_index: usize) ?[]const u8 {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.optionLabel(index, option_index);
+        }
+
+        pub fn optionLabelByName(self: *const Self, wanted_name: []const u8, option_index: usize) ?[]const u8 {
+            const index = self.indexOfName(wanted_name) orelse return null;
+            return self.optionLabel(index, option_index);
+        }
+
+        pub fn optionNormalized(self: *const Self, index: usize, option_index: usize) ?f64 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return parameterOptionNormalized(@field(self.params, field.name), option_index);
+            }
+            return null;
+        }
+
+        pub fn optionNormalizedById(self: *const Self, wanted_id: u32, option_index: usize) ?f64 {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.optionNormalized(index, option_index);
+        }
+
+        pub fn optionNormalizedByName(self: *const Self, wanted_name: []const u8, option_index: usize) ?f64 {
+            const index = self.indexOfName(wanted_name) orelse return null;
+            return self.optionNormalized(index, option_index);
+        }
+
         pub fn indexOfId(self: *const Self, wanted_id: u32) ?usize {
             inline for (fields, 0..) |field, index| {
                 if (@field(self.params, field.name).id == wanted_id) return index;
@@ -923,6 +974,18 @@ pub fn ParameterSet(comptime Params: type) type {
 
         pub fn fieldIsList(self: *const Self, comptime field_name: []const u8) bool {
             return parameterIsList(self.descriptor(field_name));
+        }
+
+        pub fn fieldOptionCount(self: *const Self, comptime field_name: []const u8) ?usize {
+            return parameterOptionCount(self.descriptor(field_name));
+        }
+
+        pub fn fieldOptionLabel(self: *const Self, comptime field_name: []const u8, option_index: usize) ?[]const u8 {
+            return parameterOptionLabel(self.descriptor(field_name), option_index);
+        }
+
+        pub fn fieldOptionNormalized(self: *const Self, comptime field_name: []const u8, option_index: usize) ?f64 {
+            return parameterOptionNormalized(self.descriptor(field_name), option_index);
         }
 
         pub fn parameterChangeNormalized(
@@ -1075,6 +1138,30 @@ fn parameterIsList(param: anytype) bool {
         return @typeInfo(@TypeOf(param.default)) == .@"enum";
     }
     return false;
+}
+
+fn parameterOptionCount(param: anytype) ?usize {
+    const Param = @TypeOf(param);
+    if (parameterIsList(param) and @hasDecl(Param, "optionCount")) {
+        return param.optionCount();
+    }
+    return null;
+}
+
+fn parameterOptionLabel(param: anytype, option_index: usize) ?[]const u8 {
+    const Param = @TypeOf(param);
+    if (parameterIsList(param) and @hasDecl(Param, "labelAtOptionIndex")) {
+        return param.labelAtOptionIndex(option_index);
+    }
+    return null;
+}
+
+fn parameterOptionNormalized(param: anytype, option_index: usize) ?f64 {
+    const Param = @TypeOf(param);
+    if (parameterIsList(param) and @hasDecl(Param, "normalizedFromOptionIndex")) {
+        return param.normalizedFromOptionIndex(option_index);
+    }
+    return null;
 }
 
 fn parameterDescriptorError(param: anytype) ?anyerror {
@@ -1446,6 +1533,42 @@ pub fn ParameterView(comptime Params: type) type {
 
         pub fn isListByName(self: Self, wanted_name: []const u8) ?bool {
             return self.set.isListByName(wanted_name);
+        }
+
+        pub fn optionCount(self: Self, index: usize) ?usize {
+            return self.set.optionCount(index);
+        }
+
+        pub fn optionCountById(self: Self, wanted_id: u32) ?usize {
+            return self.set.optionCountById(wanted_id);
+        }
+
+        pub fn optionCountByName(self: Self, wanted_name: []const u8) ?usize {
+            return self.set.optionCountByName(wanted_name);
+        }
+
+        pub fn optionLabel(self: Self, index: usize, option_index: usize) ?[]const u8 {
+            return self.set.optionLabel(index, option_index);
+        }
+
+        pub fn optionLabelById(self: Self, wanted_id: u32, option_index: usize) ?[]const u8 {
+            return self.set.optionLabelById(wanted_id, option_index);
+        }
+
+        pub fn optionLabelByName(self: Self, wanted_name: []const u8, option_index: usize) ?[]const u8 {
+            return self.set.optionLabelByName(wanted_name, option_index);
+        }
+
+        pub fn optionNormalized(self: Self, index: usize, option_index: usize) ?f64 {
+            return self.set.optionNormalized(index, option_index);
+        }
+
+        pub fn optionNormalizedById(self: Self, wanted_id: u32, option_index: usize) ?f64 {
+            return self.set.optionNormalizedById(wanted_id, option_index);
+        }
+
+        pub fn optionNormalizedByName(self: Self, wanted_name: []const u8, option_index: usize) ?f64 {
+            return self.set.optionNormalizedByName(wanted_name, option_index);
         }
 
         pub fn indexOfId(self: Self, wanted_id: u32) ?usize {
@@ -1827,6 +1950,42 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn isListByName(self: Self, wanted_name: []const u8) ?bool {
             return self.set.isListByName(wanted_name);
+        }
+
+        pub fn optionCount(self: Self, index: usize) ?usize {
+            return self.set.optionCount(index);
+        }
+
+        pub fn optionCountById(self: Self, wanted_id: u32) ?usize {
+            return self.set.optionCountById(wanted_id);
+        }
+
+        pub fn optionCountByName(self: Self, wanted_name: []const u8) ?usize {
+            return self.set.optionCountByName(wanted_name);
+        }
+
+        pub fn optionLabel(self: Self, index: usize, option_index: usize) ?[]const u8 {
+            return self.set.optionLabel(index, option_index);
+        }
+
+        pub fn optionLabelById(self: Self, wanted_id: u32, option_index: usize) ?[]const u8 {
+            return self.set.optionLabelById(wanted_id, option_index);
+        }
+
+        pub fn optionLabelByName(self: Self, wanted_name: []const u8, option_index: usize) ?[]const u8 {
+            return self.set.optionLabelByName(wanted_name, option_index);
+        }
+
+        pub fn optionNormalized(self: Self, index: usize, option_index: usize) ?f64 {
+            return self.set.optionNormalized(index, option_index);
+        }
+
+        pub fn optionNormalizedById(self: Self, wanted_id: u32, option_index: usize) ?f64 {
+            return self.set.optionNormalizedById(wanted_id, option_index);
+        }
+
+        pub fn optionNormalizedByName(self: Self, wanted_name: []const u8, option_index: usize) ?f64 {
+            return self.set.optionNormalizedByName(wanted_name, option_index);
         }
 
         pub fn indexOfId(self: Self, wanted_id: u32) ?usize {
@@ -2453,6 +2612,24 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqual(@as(?bool, true), set.isListByName("Mode"));
     try std.testing.expectEqual(@as(?bool, null), set.isListById(99));
     try std.testing.expectEqual(@as(?bool, null), set.isListByName("Missing"));
+    try std.testing.expectEqual(@as(?usize, 2), set.optionCount(3));
+    try std.testing.expectEqual(@as(?usize, 2), set.optionCountById(3));
+    try std.testing.expectEqual(@as(?usize, 2), set.optionCountByName("Mode"));
+    try std.testing.expectEqual(@as(?usize, null), set.optionCount(2));
+    try std.testing.expectEqual(@as(?usize, null), set.optionCountById(99));
+    try std.testing.expectEqualStrings("lead", set.optionLabel(3, 1).?);
+    try std.testing.expectEqualStrings("clean", set.optionLabelById(3, 0).?);
+    try std.testing.expectEqualStrings("lead", set.optionLabelByName("Mode", 1).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), set.optionLabel(3, 2));
+    try std.testing.expectEqual(@as(?[]const u8, null), set.optionLabelByName("Missing", 0));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.optionNormalized(3, 1));
+    try std.testing.expectEqual(@as(?f64, 0.0), set.optionNormalizedById(3, 0));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.optionNormalizedByName("Mode", 1));
+    try std.testing.expectEqual(@as(?f64, null), set.optionNormalized(3, 2));
+    try std.testing.expectEqual(@as(?usize, 2), set.fieldOptionCount("mode"));
+    try std.testing.expectEqualStrings("lead", set.fieldOptionLabel("mode", 1).?);
+    try std.testing.expectEqual(@as(?f64, 1.0), set.fieldOptionNormalized("mode", 1));
+    try std.testing.expectEqual(@as(?usize, null), set.fieldOptionCount("bypass"));
     try std.testing.expectEqual(process.ParameterChange{
         .id = 0,
         .sample_offset = 2,
@@ -2820,6 +2997,15 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?bool, true), view.isList(3));
     try std.testing.expectEqual(@as(?bool, true), view.isListById(3));
     try std.testing.expectEqual(@as(?bool, true), view.isListByName("Mode"));
+    try std.testing.expectEqual(@as(?usize, 3), view.optionCount(3));
+    try std.testing.expectEqual(@as(?usize, 3), view.optionCountById(3));
+    try std.testing.expectEqual(@as(?usize, 3), view.optionCountByName("Mode"));
+    try std.testing.expectEqualStrings("mute", view.optionLabel(3, 2).?);
+    try std.testing.expectEqualStrings("boost", view.optionLabelById(3, 1).?);
+    try std.testing.expectEqualStrings("clean", view.optionLabelByName("Mode", 0).?);
+    try std.testing.expectEqual(@as(?f64, 1.0), view.optionNormalized(3, 2));
+    try std.testing.expectEqual(@as(?f64, 0.5), view.optionNormalizedById(3, 1));
+    try std.testing.expectEqual(@as(?f64, 0.0), view.optionNormalizedByName("Mode", 0));
     try std.testing.expectEqual(@as(?usize, 2), view.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, 1), view.indexOfName("Voices"));
     try std.testing.expect(view.hasId(2));
@@ -2846,6 +3032,11 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?i32, null), view.stepCountByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), view.isListById(99));
     try std.testing.expectEqual(@as(?bool, null), view.isListByName("Missing"));
+    try std.testing.expectEqual(@as(?usize, null), view.optionCount(2));
+    try std.testing.expectEqual(@as(?usize, null), view.optionCountById(99));
+    try std.testing.expectEqual(@as(?[]const u8, null), view.optionLabel(3, 3));
+    try std.testing.expectEqual(@as(?[]const u8, null), view.optionLabelByName("Missing", 0));
+    try std.testing.expectEqual(@as(?f64, null), view.optionNormalized(3, 3));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfName("Missing"));
     try std.testing.expect(!view.hasId(99));
@@ -2972,6 +3163,15 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?bool, true), editor.isList(3));
     try std.testing.expectEqual(@as(?bool, true), editor.isListById(3));
     try std.testing.expectEqual(@as(?bool, true), editor.isListByName("Mode"));
+    try std.testing.expectEqual(@as(?usize, 3), editor.optionCount(3));
+    try std.testing.expectEqual(@as(?usize, 3), editor.optionCountById(3));
+    try std.testing.expectEqual(@as(?usize, 3), editor.optionCountByName("Mode"));
+    try std.testing.expectEqualStrings("mute", editor.optionLabel(3, 2).?);
+    try std.testing.expectEqualStrings("boost", editor.optionLabelById(3, 1).?);
+    try std.testing.expectEqualStrings("clean", editor.optionLabelByName("Mode", 0).?);
+    try std.testing.expectEqual(@as(?f64, 1.0), editor.optionNormalized(3, 2));
+    try std.testing.expectEqual(@as(?f64, 0.5), editor.optionNormalizedById(3, 1));
+    try std.testing.expectEqual(@as(?f64, 0.0), editor.optionNormalizedByName("Mode", 0));
     try std.testing.expectEqual(@as(?usize, 2), editor.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, 1), editor.indexOfName("Voices"));
     try std.testing.expect(editor.hasId(2));
@@ -2989,6 +3189,11 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?i32, null), editor.stepCountByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), editor.isListById(99));
     try std.testing.expectEqual(@as(?bool, null), editor.isListByName("Missing"));
+    try std.testing.expectEqual(@as(?usize, null), editor.optionCount(2));
+    try std.testing.expectEqual(@as(?usize, null), editor.optionCountById(99));
+    try std.testing.expectEqual(@as(?[]const u8, null), editor.optionLabel(3, 3));
+    try std.testing.expectEqual(@as(?[]const u8, null), editor.optionLabelByName("Missing", 0));
+    try std.testing.expectEqual(@as(?f64, null), editor.optionNormalized(3, 3));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfName("Missing"));
     try std.testing.expect(!editor.hasId(99));
