@@ -25,3 +25,7 @@ test "zig-plug re-exports core modules" {
     try std.testing.expect(@hasDecl(state, "format_version"));
     try std.testing.expect(@hasDecl(units, "UnitSet"));
 }
+
+test "zig-plug runs core module tests" {
+    std.testing.refAllDeclsRecursive(core);
+}

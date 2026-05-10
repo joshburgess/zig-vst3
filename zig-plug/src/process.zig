@@ -1733,8 +1733,8 @@ test "event writer validates offsets and capacity" {
     try std.testing.expect(writer.isFull());
     try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
     try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
-    try std.testing.expectEqual(@as(?usize, 1), writer.firstSampleOffset());
-    try std.testing.expectEqual(@as(?usize, 1), writer.latestSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 0), writer.firstSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 0), writer.latestSampleOffset());
     try std.testing.expect(writer.hasKind(.note_on));
     try std.testing.expect(!writer.hasKind(.note_off));
     try std.testing.expectEqual(@as(usize, 1), writer.countKind(.note_on));
@@ -1766,6 +1766,26 @@ test "event writer validates offsets and capacity" {
     var empty_writer = EventWriter.init(&empty_storage, 4);
     try std.testing.expectError(error.EventOutsideBlock, empty_writer.append(Event.noteOn(4, 0, 60, 1.0)));
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, empty_writer.append(Event.noteOn(0, 0, 60, -0.25)));
+}
+
+test "event writer queries written events by offset" {
+    var storage: [3]Event = undefined;
+    var writer = EventWriter.init(&storage, 8);
+
+    try writer.append(Event.noteOn(5, 0, 67, 0.5));
+    try writer.append(Event.noteOff(3, 0, 60, 0.0));
+    try writer.append(Event.noteOn(1, 0, 60, 1.0));
+
+    try std.testing.expectEqual(@as(?usize, 1), writer.firstSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 5), writer.latestSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 3), writer.nextSampleOffset(1));
+    try std.testing.expectEqual(@as(?usize, 5), writer.nextSampleOffset(3));
+    try std.testing.expectEqual(@as(?usize, 5), writer.nextSampleOffsetForKind(.note_on, 1));
+    try std.testing.expectEqual(@as(?usize, null), writer.nextSampleOffsetForKind(.note_off, 3));
+
+    var offset_events = writer.atOffset(5);
+    try std.testing.expectEqual(@as(i16, 67), offset_events.next().?.pitch);
+    try std.testing.expectEqual(@as(?Event, null), offset_events.next());
 }
 
 test "event writer appends event views atomically" {
