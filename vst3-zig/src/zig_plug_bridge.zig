@@ -1497,6 +1497,26 @@ test "zig-plug bridge stereo buses can be output only" {
     try std.testing.expectEqual(stereo_arrangement, arrangement_out);
 }
 
+test "zig-plug bridge stereo buses can be input only" {
+    var info = ivstcomponent.BusInfo{};
+    var inputs = [_]vsttypes.SpeakerArrangement{stereo_arrangement};
+    var arrangement_out: vsttypes.SpeakerArrangement = empty_arrangement;
+    const input_only = StereoAudioBuses.Config{ .audio_output = false };
+
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), input_only));
+    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput), input_only));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info, input_only));
+    try expectString128("Stereo In", &info.name);
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &info, input_only));
+
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.setArrangementsConfigured(&inputs, 1, null, 0, input_only));
+    try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangementsConfigured(&inputs, 1, &inputs, 1, input_only));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kInput), 0, &arrangement_out, input_only));
+    try std.testing.expectEqual(stereo_arrangement, arrangement_out);
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out, input_only));
+    try std.testing.expectEqual(empty_arrangement, arrangement_out);
+}
+
 test "zig-plug bridge realtime processor defaults accept 32 and 64 bit samples" {
     try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.canProcessSampleSize(@intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)));
     try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.canProcessSampleSize(@intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64)));
@@ -1703,6 +1723,31 @@ test "zig-plug bridge builds output-only main process context" {
     try std.testing.expectEqual(@as(f32, 0.75), out_right[0]);
 }
 
+test "zig-plug bridge builds input-only main process context" {
+    var in_left = [_]f32{ 0.25, 0.5 };
+    var in_right = [_]f32{ 0.75, 1.0 };
+    var input_channel_ptrs = [_][*]f32{ &in_left, &in_right };
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    const data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 0,
+        .inputs = &inputs,
+        .numSamples = 2,
+        .processContext = &process_context,
+    };
+
+    const context = try makeMainAudioProcessContextConfigured(f32, &data, .{}, .{}, null, .{ .audio_output = false });
+
+    try std.testing.expectEqual(@as(usize, 2), context.inputChannelCount());
+    try std.testing.expectEqual(@as(usize, 0), context.outputChannelCount());
+    try std.testing.expectEqual(@as(usize, 2), context.frameCount());
+    try std.testing.expectEqual(@as(f32, 1.0), context.inputChannel(1).?[1]);
+}
+
 test "zig-plug bridge dispatches main audio processing by sample size" {
     const Doubler = struct {
         pub fn process(_: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
@@ -1776,6 +1821,42 @@ test "zig-plug bridge processes output-only main audio" {
     try std.testing.expectEqual(types.kResultOk, processMainAudioConfigured(&data, .{}, .{}, null, Generator{}, .{ .audio_input = false }));
     try std.testing.expectEqualSlices(f32, &.{ 0.0, 1.0 }, &left);
     try std.testing.expectEqualSlices(f32, &.{ 1.0, 2.0 }, &right);
+}
+
+test "zig-plug bridge processes input-only main audio" {
+    const Analyzer = struct {
+        total: *f32,
+
+        pub fn process(self: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
+            for (0..context.inputChannelCount()) |channel| {
+                const input = context.inputChannel(channel) orelse continue;
+                for (0..context.frameCount()) |sample| {
+                    self.total.* += @floatCast(input[sample]);
+                }
+            }
+        }
+    };
+
+    var left = [_]f32{ 0.25, 0.5 };
+    var right = [_]f32{ 0.75, 1.0 };
+    var input_channel_ptrs = [_][*]f32{ &left, &right };
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    const data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 0,
+        .inputs = &inputs,
+        .numSamples = 2,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .processContext = &process_context,
+    };
+    var total: f32 = 0.0;
+
+    try std.testing.expectEqual(types.kResultOk, processMainAudioConfigured(&data, .{}, .{}, null, Analyzer{ .total = &total }, .{ .audio_output = false }));
+    try std.testing.expectEqual(@as(f32, 2.5), total);
 }
 
 test "zig-plug bridge exposes output event writer to processors" {
