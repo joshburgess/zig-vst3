@@ -1903,7 +1903,6 @@ test "event writer validates offsets and capacity" {
     try std.testing.expect(!writer.isEmpty());
     try std.testing.expect(writer.isFull());
     try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
-    try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
     try std.testing.expect(writer.canAppend(0));
     try std.testing.expect(!writer.canAppend(1));
     try std.testing.expectEqual(@as(?usize, 0), writer.firstSampleOffset());
@@ -1926,9 +1925,11 @@ test "event writer validates offsets and capacity" {
     try std.testing.expect(writer.isEmpty());
     try std.testing.expect(!writer.isFull());
     try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
-    try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
+    try std.testing.expect(writer.canAppend(1));
     try std.testing.expectEqual(@as(?usize, null), writer.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, null), writer.latestSampleOffset());
+    try std.testing.expectEqual(@as(?usize, null), writer.firstSampleOffsetForKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, null), writer.latestSampleOffsetForKind(.note_on));
     try std.testing.expect(!writer.hasKind(.note_on));
     try std.testing.expectEqual(@as(usize, 0), writer.countKind(.note_on));
     try std.testing.expectEqual(@as(?Event, null), writer.firstKind(.note_on));
