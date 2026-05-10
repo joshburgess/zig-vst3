@@ -188,12 +188,24 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programParameterCount(list_id, program_index);
         }
 
+        pub fn programParameterCountByName(self: *const Self, list_id: i32, program_name: []const u8) ?usize {
+            return self.spec.units.programParameterCountByName(list_id, program_name);
+        }
+
         pub fn programParameter(self: *const Self, list_id: i32, program_index: usize, parameter_index: usize) ?units_api.ProgramParameter {
             return self.spec.units.programParameter(list_id, program_index, parameter_index);
         }
 
+        pub fn programParameterByName(self: *const Self, list_id: i32, program_name: []const u8, parameter_index: usize) ?units_api.ProgramParameter {
+            return self.spec.units.programParameterByName(list_id, program_name, parameter_index);
+        }
+
         pub fn programParameterById(self: *const Self, list_id: i32, program_index: usize, parameter_id: u32) ?units_api.ProgramParameter {
             return self.spec.units.programParameterById(list_id, program_index, parameter_id);
+        }
+
+        pub fn programParameterByNameAndId(self: *const Self, list_id: i32, program_name: []const u8, parameter_id: u32) ?units_api.ProgramParameter {
+            return self.spec.units.programParameterByNameAndId(list_id, program_name, parameter_id);
         }
 
         pub fn programInfo(self: *const Self, list_id: i32, program_index: usize, key: []const u8) ?[]const u8 {
@@ -898,7 +910,12 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqual(@as(?units_api.Program, null), instance.programByName(7, "Missing"));
     try std.testing.expectEqual(@as(?usize, 1), instance.programIndexOfName(7, "Lead"));
     try std.testing.expectEqual(@as(?usize, 1), instance.programParameterCount(7, 1));
+    try std.testing.expectEqual(@as(?usize, 1), instance.programParameterCountByName(7, "Lead"));
     try std.testing.expectEqual(@as(f64, 0.75), instance.programParameterById(7, 1, 1).?.normalized);
+    try std.testing.expectEqual(@as(f64, 0.75), instance.programParameterByName(7, "Lead", 0).?.normalized);
+    try std.testing.expectEqual(@as(f64, 0.75), instance.programParameterByNameAndId(7, "Lead", 1).?.normalized);
+    try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByName(7, "Missing", 0));
+    try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByNameAndId(7, "Lead", 99));
     try std.testing.expectEqualStrings("Clean", instance.programInfo(7, 0, "category").?);
     try std.testing.expectEqualStrings("Clean", instance.programInfoByName(7, "Clean", "category").?);
 }
