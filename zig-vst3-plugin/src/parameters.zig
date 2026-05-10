@@ -1310,9 +1310,17 @@ pub fn ParameterValues(comptime Params: type) type {
         }
 
         pub fn resetToDefaults(self: *Self, set: *const Set) void {
+            _ = self.resetToDefaultsCount(set);
+        }
+
+        pub fn resetToDefaultsCount(self: *Self, set: *const Set) usize {
+            var changed: usize = 0;
             inline for (0..Set.count) |index| {
-                self.values[index].store(set.defaultNormalized(index).?);
+                const default = set.defaultNormalized(index).?;
+                if (self.values[index].load() != default) changed += 1;
+                self.values[index].store(default);
             }
+            return changed;
         }
 
         pub fn resetToDefault(self: *Self, set: *const Set, index: usize) bool {
@@ -2345,6 +2353,10 @@ pub fn ParameterEditor(comptime Params: type) type {
             self.values.resetToDefaults(self.set);
         }
 
+        pub fn resetToDefaultsCount(self: Self) usize {
+            return self.values.resetToDefaultsCount(self.set);
+        }
+
         pub fn resetToDefaultIndex(self: Self, index: usize) bool {
             return self.values.resetToDefault(self.set, index);
         }
@@ -3081,6 +3093,9 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expectEqual(@as(?f64, 0.75), copied.load(0));
     try std.testing.expectEqual(@as(?f64, 1.0), copied.load(1));
 
+    try std.testing.expectEqual(@as(usize, 1), values.resetToDefaultsCount(&set));
+    try std.testing.expectEqual(@as(usize, 0), values.resetToDefaultsCount(&set));
+    try std.testing.expect(values.store(0, 0.5));
     values.resetToDefaults(&set);
     try std.testing.expectEqual(@as(?f64, 0.25), values.load(0));
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(1));
@@ -3633,12 +3648,13 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(true, editor.load("bypass"));
     try std.testing.expectEqual(Mode.boost, editor.load("mode"));
 
-    editor.resetToDefaults();
+    try std.testing.expectEqual(@as(usize, 4), editor.resetToDefaultsCount());
     editor.applyChanges(parameter_changes);
     try std.testing.expectEqual(@as(f64, -12.0), editor.load("gain"));
     try std.testing.expectEqual(true, editor.load("bypass"));
 
-    editor.resetToDefaults();
+    try std.testing.expectEqual(@as(usize, 3), editor.resetToDefaultsCount());
+    try std.testing.expectEqual(@as(usize, 0), editor.resetToDefaultsCount());
     try std.testing.expectEqual(@as(f64, 0.0), view.load("gain"));
     try std.testing.expectEqual(@as(i64, 1), view.load("voices"));
     try std.testing.expectEqual(false, view.load("bypass"));

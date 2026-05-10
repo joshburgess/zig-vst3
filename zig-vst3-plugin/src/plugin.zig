@@ -1010,7 +1010,11 @@ pub fn PluginInstance(comptime Plugin: type) type {
         }
 
         pub fn resetParametersToDefaults(self: *Self) void {
-            self.spec.values.resetToDefaults(&self.spec.parameter_set);
+            _ = self.resetParametersToDefaultsCount();
+        }
+
+        pub fn resetParametersToDefaultsCount(self: *Self) usize {
+            return self.spec.values.resetToDefaultsCount(&self.spec.parameter_set);
         }
 
         pub fn resetParameterIndexToDefault(self: *Self, index: usize) bool {
@@ -2269,6 +2273,9 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsDefaultById(99));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsDefaultByName("Missing"));
 
+    try std.testing.expectEqual(@as(usize, 2), instance.resetParametersToDefaultsCount());
+    try std.testing.expectEqual(@as(usize, 0), instance.resetParametersToDefaultsCount());
+    try std.testing.expect(instance.storeParameter("gain", 3.0));
     instance.resetParametersToDefaults();
     try std.testing.expectEqual(@as(f64, 0.0), instance.loadParameter("gain"));
     try std.testing.expectEqual(false, instance.loadParameter("bypass"));
