@@ -9,10 +9,10 @@
 - `BoolParam`: midpoint-based boolean conversion with `On`/`Off` display and permissive parsing for `on`, `off`, `true`, `false`, `1`, and `0`.
 - `EnumParam(Enum)`: comptime enum descriptor with tag-name labels and normalized declaration-order positions, including enums with sparse explicit tag values.
 - `NormalizedValue`: lock-free atomic storage for normalized `f64` values, stored as raw bits.
-- `ModulatedValue`: lock-free base value plus bipolar modulation offset, clamped to the normalized range.
-- `LinearSmoother`: sample-counted ramp between normalized values.
-- `ExponentialSmoother`: coefficient-based smoothing toward a normalized target.
-- `LogSmoother`: sample-counted multiplicative ramp for normalized values that must stay above zero.
+- `ModulatedValue`: lock-free base value plus bipolar modulation offset, clamped to the normalized range, with base/modulation accessors.
+- `LinearSmoother`: sample-counted ramp between normalized values, with reset, current/target, active, and remaining-sample helpers.
+- `ExponentialSmoother`: coefficient-based smoothing toward a normalized target, with reset, current/target, and coefficient update helpers.
+- `LogSmoother`: sample-counted multiplicative ramp for normalized values that must stay above zero, with reset, current/target, active, and remaining-sample helpers.
 - `ParameterSet(Params)`: comptime reflection over a struct of descriptors, including parameter count, host-facing id/name/short-name/units/default lookup by reflected index, id, or display name, id/name/field index and existence lookup, duplicate id/name and descriptor validation checks, field metadata helpers, reflected `ParameterChange` construction, string conversion, and normalized/plain conversion by reflected index, id, display name, or field.
 - `ParameterValues(Params)`: atomic normalized value storage initialized from reflected descriptor defaults, with index-based, id-based, and name-based normalized/plain load/store helpers, typed field-name load/store helpers for plugin code, bulk and single-parameter default reset, counted process-change application, a `view(set)` helper for bound typed reads, and an `editor(set)` helper for bound typed writes.
 - `ParameterView(Params)`: a descriptor/value pair for parameter metadata, id/name/field index lookup, index-based, id-based, and name-based metadata helpers, field metadata helpers, reflected `ParameterChange` construction, plain/normalized conversion, id-based, name-based, and field-based plain conversion, plain text formatting/parsing, typed `load`, normalized `loadNormalized`, index-based reads, and id-based/name-based reads without passing the set into each call.
