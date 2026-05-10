@@ -37,20 +37,12 @@ pub const SineSynth = struct {
     fn applyEventsAt(self: *SineSynth, context: *plug.process.ProcessContext(f32), sample_offset: usize) void {
         var events = context.inputEventsAtOffset(sample_offset);
         while (events.next()) |event| {
-            switch (event.kind) {
-                .note_on => {
-                    if (event.velocity > 0.0) {
-                        self.active = true;
-                        self.note = event.pitch;
-                        self.phase = 0.0;
-                    } else if (event.pitch == self.note) {
-                        self.active = false;
-                    }
-                },
-                .note_off => {
-                    if (event.pitch == self.note) self.active = false;
-                },
-                else => {},
+            if (event.isNoteAttack()) {
+                self.active = true;
+                self.note = event.pitch;
+                self.phase = 0.0;
+            } else if (event.isNoteRelease() and event.isNoteForPitch(self.note)) {
+                self.active = false;
             }
         }
     }
