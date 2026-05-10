@@ -478,9 +478,51 @@ pub const Event = struct {
         return event;
     }
 
+    pub fn withSampleOffset(self: Event, sample_offset: usize) Event {
+        var event = self;
+        event.sample_offset = sample_offset;
+        return event;
+    }
+
+    pub fn withChannel(self: Event, channel: i16) Event {
+        var event = self;
+        event.channel = channel;
+        return event;
+    }
+
+    pub fn withPitch(self: Event, pitch: i16) Event {
+        var event = self;
+        event.pitch = pitch;
+        return event;
+    }
+
     pub fn withControlNumber(self: Event, control_number: i16) Event {
         var event = self;
         event.control_number = control_number;
+        return event;
+    }
+
+    pub fn withValue(self: Event, value: f32) Event {
+        var event = self;
+        event.value = value;
+        return event;
+    }
+
+    pub fn withVelocity(self: Event, velocity: f32) Event {
+        var event = self;
+        event.velocity = velocity;
+        return event;
+    }
+
+    pub fn withNoteId(self: Event, note_id: i32) Event {
+        var event = self;
+        event.note_id = note_id;
+        return event;
+    }
+
+    pub fn withExpressionTypeId(self: Event, expression_type_id: u32) Event {
+        var event = self;
+        event.expression_type_id = expression_type_id;
         return event;
     }
 
@@ -3037,6 +3079,35 @@ test "event constructors can keep legacy MIDI controller numbers" {
     try std.testing.expectEqual(@as(usize, 3), event.sample_offset);
     try std.testing.expectEqual(@as(i16, 1), event.channel);
     try std.testing.expectEqual(@as(f32, 0.25), event.value);
+}
+
+test "event constructors can retarget common payload fields" {
+    const note = Event.noteOn(1, 0, 60, 0.25)
+        .withSampleOffset(3)
+        .withChannel(4)
+        .withPitch(67)
+        .withVelocity(0.75)
+        .withBusIndex(2);
+    const expression = Event.noteExpressionValue(1, 10, 20, 0.25)
+        .withNoteId(11)
+        .withExpressionTypeId(21)
+        .withValue(0.5)
+        .withBusIndex(3);
+
+    try std.testing.expectEqual(NoteOn{
+        .bus_index = 2,
+        .sample_offset = 3,
+        .channel = 4,
+        .pitch = 67,
+        .velocity = 0.75,
+    }, note.asNoteOn().?);
+    try std.testing.expectEqual(NoteExpressionValue{
+        .bus_index = 3,
+        .sample_offset = 1,
+        .note_id = 11,
+        .expression_type_id = 21,
+        .value = 0.5,
+    }, expression.asNoteExpressionValue().?);
 }
 
 test "events reject values outside the process block" {
