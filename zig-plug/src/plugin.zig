@@ -94,6 +94,11 @@ fn validateOptionalMetadataString(value: []const u8) !void {
 pub const PrepareConfig = struct {
     sample_rate: f64,
     max_block_size: u32,
+
+    pub fn validate(self: PrepareConfig) !void {
+        if (self.sample_rate <= 0.0 or !std.math.isFinite(self.sample_rate)) return error.InvalidSampleRate;
+        if (self.max_block_size == 0) return error.InvalidMaxBlockSize;
+    }
 };
 
 pub fn PluginInstance(comptime Plugin: type) type {
@@ -119,10 +124,15 @@ pub fn PluginInstance(comptime Plugin: type) type {
             };
         }
 
-        pub fn prepare(self: *Self, config: PrepareConfig) void {
+        pub fn prepareChecked(self: *Self, config: PrepareConfig) !void {
+            try config.validate();
             if (Spec.has_prepare) {
                 self.plugin.prepare(config);
             }
+        }
+
+        pub fn prepare(self: *Self, config: PrepareConfig) void {
+            self.prepareChecked(config) catch @panic("invalid prepare config");
         }
 
         pub fn parameterSet(self: *const Self) *const Spec.ParameterSet {
@@ -1462,6 +1472,33 @@ test "plugin instance drives declared lifecycle hooks" {
     try std.testing.expectEqual(@as(f32, 0.125), output[0]);
     try std.testing.expectEqual(@as(f32, 0.25), output[1]);
     try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("gain"));
+}
+
+test "plugin instance validates prepare configuration" {
+    const Gain = struct {
+        prepared: bool = false,
+
+        pub const name = "Prepare Validation Gain";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+
+        pub fn prepare(self: *@This(), _: PrepareConfig) void {
+            self.prepared = true;
+        }
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+
+    try std.testing.expectError(error.InvalidSampleRate, (PrepareConfig{ .sample_rate = 0.0, .max_block_size = 64 }).validate());
+    try std.testing.expectError(error.InvalidSampleRate, (PrepareConfig{ .sample_rate = std.math.inf(f64), .max_block_size = 64 }).validate());
+    try std.testing.expectError(error.InvalidMaxBlockSize, (PrepareConfig{ .sample_rate = 48_000.0, .max_block_size = 0 }).validate());
+    try std.testing.expectError(error.InvalidSampleRate, instance.prepareChecked(.{ .sample_rate = std.math.nan(f64), .max_block_size = 64 }));
+    try std.testing.expect(!instance.plugin.prepared);
+
+    try instance.prepareChecked(.{ .sample_rate = 48_000.0, .max_block_size = 64 });
+    try std.testing.expect(instance.plugin.prepared);
 }
 
 test "plugin instance applies parameter changes to owned values" {
