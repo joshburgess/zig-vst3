@@ -22,18 +22,31 @@ const stereo_arrangement: vsttypes.SpeakerArrangement = 3;
 const test_sample_rate: f64 = 48_000.0;
 
 pub const StereoAudioBuses = struct {
+    pub const Config = struct {
+        audio_input: bool = true,
+        audio_output: bool = true,
+        event_output: bool = false,
+    };
+
     pub fn busCount(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection) types.int32 {
         return busCountWithEventOutput(media_type, direction, false);
     }
 
     pub fn busCountWithEventOutput(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, event_output: bool) types.int32 {
-        if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and isInputOrOutput(direction)) {
+        return busCountConfigured(media_type, direction, .{ .event_output = event_output });
+    }
+
+    pub fn busCountConfigured(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, config: Config) types.int32 {
+        if (config.audio_input and media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) {
+            return 1;
+        }
+        if (config.audio_output and media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput)) {
             return 1;
         }
         if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) {
             return 1;
         }
-        if (event_output and media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput)) {
+        if (config.event_output and media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput)) {
             return 1;
         }
         return 0;
@@ -44,12 +57,19 @@ pub const StereoAudioBuses = struct {
     }
 
     pub fn busInfoWithEventOutput(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo, event_output: bool) types.tresult {
+        return busInfoConfigured(media_type, direction, index, out, .{ .event_output = event_output });
+    }
+
+    pub fn busInfoConfigured(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo, config: Config) types.tresult {
         if (index != 0) {
             out.* = .{};
             return types.kInvalidArgument;
         }
 
-        if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and isInputOrOutput(direction)) {
+        const has_audio_bus =
+            (config.audio_input and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) or
+            (config.audio_output and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput));
+        if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and has_audio_bus) {
             out.* = .{
                 .mediaType = media_type,
                 .direction = direction,
@@ -63,7 +83,7 @@ pub const StereoAudioBuses = struct {
 
         if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and
             (direction == @intFromEnum(ivstcomponent.BusDirections.kInput) or
-                (event_output and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput))))
+                (config.event_output and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput))))
         {
             out.* = .{
                 .mediaType = media_type,
@@ -81,27 +101,38 @@ pub const StereoAudioBuses = struct {
     }
 
     pub fn setArrangements(inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32) types.tresult {
-        if (num_inputs != 1 or num_outputs != 1 or inputs == null or outputs == null) {
+        return setArrangementsConfigured(inputs, num_inputs, outputs, num_outputs, .{});
+    }
+
+    pub fn setArrangementsConfigured(inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32, config: Config) types.tresult {
+        const expected_inputs: types.int32 = if (config.audio_input) 1 else 0;
+        const expected_outputs: types.int32 = if (config.audio_output) 1 else 0;
+        if (num_inputs != expected_inputs or num_outputs != expected_outputs) {
             return types.kResultFalse;
         }
-        if (inputs.?[0] != stereo_arrangement or outputs.?[0] != stereo_arrangement) {
+        if (config.audio_input and (inputs == null or inputs.?[0] != stereo_arrangement)) {
+            return types.kResultFalse;
+        }
+        if (config.audio_output and (outputs == null or outputs.?[0] != stereo_arrangement)) {
             return types.kResultFalse;
         }
         return types.kResultOk;
     }
 
     pub fn arrangement(direction: vsttypes.BusDirection, index: types.int32, out: *vsttypes.SpeakerArrangement) types.tresult {
-        if (index != 0 or !isInputOrOutput(direction)) {
+        return arrangementConfigured(direction, index, out, .{});
+    }
+
+    pub fn arrangementConfigured(direction: vsttypes.BusDirection, index: types.int32, out: *vsttypes.SpeakerArrangement, config: Config) types.tresult {
+        const has_audio_bus =
+            (config.audio_input and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) or
+            (config.audio_output and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput));
+        if (index != 0 or !has_audio_bus) {
             out.* = empty_arrangement;
             return types.kInvalidArgument;
         }
         out.* = stereo_arrangement;
         return types.kResultOk;
-    }
-
-    fn isInputOrOutput(direction: vsttypes.BusDirection) bool {
-        return direction == @intFromEnum(ivstcomponent.BusDirections.kInput) or
-            direction == @intFromEnum(ivstcomponent.BusDirections.kOutput);
     }
 };
 
@@ -387,6 +418,28 @@ pub fn makeProcessContext(
     );
 }
 
+fn fillInputChannels(comptime Sample: type, bus: ivstaudioprocessor.AudioBusBuffers, frame_count: usize, out: *[max_audio_channels][]const Sample) !usize {
+    if (bus.numChannels < 0) return error.InvalidChannelCount;
+    const channel_count: usize = @intCast(@min(bus.numChannels, max_audio_channels));
+    if (channel_count == 0) return 0;
+    const buffers = vstAudioBuffers(Sample, bus) orelse return error.MissingInputBuffers;
+    for (0..channel_count) |channel| {
+        out[channel] = buffers[channel][0..frame_count];
+    }
+    return channel_count;
+}
+
+fn fillOutputChannels(comptime Sample: type, bus: ivstaudioprocessor.AudioBusBuffers, frame_count: usize, out: *[max_audio_channels][]Sample) !usize {
+    if (bus.numChannels < 0) return error.InvalidChannelCount;
+    const channel_count: usize = @intCast(@min(bus.numChannels, max_audio_channels));
+    if (channel_count == 0) return 0;
+    const buffers = vstAudioBuffers(Sample, bus) orelse return error.MissingOutputBuffers;
+    for (0..channel_count) |channel| {
+        out[channel] = buffers[channel][0..frame_count];
+    }
+    return channel_count;
+}
+
 pub fn makeMainAudioProcessContext(
     comptime Sample: type,
     data: *const ivstaudioprocessor.ProcessData,
@@ -394,15 +447,42 @@ pub fn makeMainAudioProcessContext(
     events: plug.process.Events,
     output_events: ?*plug.process.EventWriter,
 ) !plug.process.ProcessContext(Sample) {
-    if (data.numInputs <= 0 or data.numOutputs <= 0 or data.inputs == null or data.outputs == null) {
+    return makeMainAudioProcessContextConfigured(Sample, data, parameter_changes, events, output_events, .{});
+}
+
+pub fn makeMainAudioProcessContextConfigured(
+    comptime Sample: type,
+    data: *const ivstaudioprocessor.ProcessData,
+    parameter_changes: plug.process.ParameterChanges,
+    events: plug.process.Events,
+    output_events: ?*plug.process.EventWriter,
+    bus_config: StereoAudioBuses.Config,
+) !plug.process.ProcessContext(Sample) {
+    if (data.numSamples < 0) return error.InvalidFrameCount;
+    if (bus_config.audio_input and (data.numInputs <= 0 or data.inputs == null)) {
         return error.MissingMainAudioBus;
     }
-    const input = data.inputs.?[0];
-    const output = data.outputs.?[0];
-    if (input.numChannels <= 0 or output.numChannels <= 0) {
+    if (bus_config.audio_output and (data.numOutputs <= 0 or data.outputs == null)) {
+        return error.MissingMainAudioBus;
+    }
+    const frame_count: usize = @intCast(data.numSamples);
+    var input_channels: [max_audio_channels][]const Sample = undefined;
+    var output_channels: [max_audio_channels][]Sample = undefined;
+    const input_count = if (bus_config.audio_input) try fillInputChannels(Sample, data.inputs.?[0], frame_count, &input_channels) else 0;
+    const output_count = if (bus_config.audio_output) try fillOutputChannels(Sample, data.outputs.?[0], frame_count, &output_channels) else 0;
+    if ((bus_config.audio_input and input_count == 0) or (bus_config.audio_output and output_count == 0)) {
         return error.MissingMainAudioChannels;
     }
-    return makeProcessContext(Sample, input, output, data, parameter_changes, events, output_events);
+    return try plug.process.ProcessContext(Sample).initWith(
+        if (data.processContext) |process_context| process_context.sampleRate else 0,
+        input_channels[0..input_count],
+        output_channels[0..output_count],
+        .{
+            .parameter_changes = parameter_changes.items,
+            .events = events.items,
+            .output_events = output_events,
+        },
+    );
 }
 
 pub fn processMainAudio(
@@ -412,11 +492,22 @@ pub fn processMainAudio(
     output_events: ?*plug.process.EventWriter,
     processor: anytype,
 ) types.tresult {
+    return processMainAudioConfigured(data, parameter_changes, events, output_events, processor, .{});
+}
+
+pub fn processMainAudioConfigured(
+    data: *const ivstaudioprocessor.ProcessData,
+    parameter_changes: plug.process.ParameterChanges,
+    events: plug.process.Events,
+    output_events: ?*plug.process.EventWriter,
+    processor: anytype,
+    bus_config: StereoAudioBuses.Config,
+) types.tresult {
     if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
-        var context = makeMainAudioProcessContext(f32, data, parameter_changes, events, output_events) catch return types.kResultOk;
+        var context = makeMainAudioProcessContextConfigured(f32, data, parameter_changes, events, output_events, bus_config) catch return types.kResultOk;
         processor.process(f32, &context);
     } else {
-        var context = makeMainAudioProcessContext(f64, data, parameter_changes, events, output_events) catch return types.kResultOk;
+        var context = makeMainAudioProcessContextConfigured(f64, data, parameter_changes, events, output_events, bus_config) catch return types.kResultOk;
         processor.process(f64, &context);
     }
     return types.kResultOk;
@@ -1386,6 +1477,26 @@ test "zig-plug bridge stereo audio buses validate arrangements" {
     try std.testing.expectEqual(empty_arrangement, arrangement_out);
 }
 
+test "zig-plug bridge stereo buses can be output only" {
+    var info = ivstcomponent.BusInfo{};
+    var outputs = [_]vsttypes.SpeakerArrangement{stereo_arrangement};
+    var arrangement_out: vsttypes.SpeakerArrangement = empty_arrangement;
+    const output_only = StereoAudioBuses.Config{ .audio_input = false };
+
+    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), output_only));
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput), output_only));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info, output_only));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &info, output_only));
+    try expectString128("Stereo Out", &info.name);
+
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.setArrangementsConfigured(null, 0, &outputs, 1, output_only));
+    try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangementsConfigured(&outputs, 1, &outputs, 1, output_only));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kInput), 0, &arrangement_out, output_only));
+    try std.testing.expectEqual(empty_arrangement, arrangement_out);
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out, output_only));
+    try std.testing.expectEqual(stereo_arrangement, arrangement_out);
+}
+
 test "zig-plug bridge realtime processor defaults accept 32 and 64 bit samples" {
     try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.canProcessSampleSize(@intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)));
     try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.canProcessSampleSize(@intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64)));
@@ -1566,6 +1677,32 @@ test "zig-plug bridge rejects missing main process buses" {
     try std.testing.expectError(error.MissingMainAudioBus, makeMainAudioProcessContext(f32, &data, .{}, .{}, null));
 }
 
+test "zig-plug bridge builds output-only main process context" {
+    var out_left = [_]f32{ 0.0, 0.0 };
+    var out_right = [_]f32{ 0.0, 0.0 };
+    var output_channel_ptrs = [_][*]f32{ &out_left, &out_right };
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    const data = ivstaudioprocessor.ProcessData{
+        .numInputs = 0,
+        .numOutputs = 1,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .processContext = &process_context,
+    };
+
+    const context = try makeMainAudioProcessContextConfigured(f32, &data, .{}, .{}, null, .{ .audio_input = false });
+
+    try std.testing.expectEqual(@as(usize, 0), context.inputChannelCount());
+    try std.testing.expectEqual(@as(usize, 2), context.outputChannelCount());
+    try std.testing.expectEqual(@as(usize, 2), context.frameCount());
+    context.outputChannel(1).?[0] = 0.75;
+    try std.testing.expectEqual(@as(f32, 0.75), out_right[0]);
+}
+
 test "zig-plug bridge dispatches main audio processing by sample size" {
     const Doubler = struct {
         pub fn process(_: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
@@ -1605,6 +1742,40 @@ test "zig-plug bridge dispatches main audio processing by sample size" {
     try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, null, Doubler{}));
     try std.testing.expectEqual(@as(f32, 2.0), output_samples[0]);
     try std.testing.expectEqual(@as(f32, 4.0), output_samples[1]);
+}
+
+test "zig-plug bridge processes output-only main audio" {
+    const Generator = struct {
+        pub fn process(_: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
+            for (0..context.outputChannelCount()) |channel| {
+                const output = context.outputChannel(channel) orelse continue;
+                for (0..context.frameCount()) |sample| {
+                    output[sample] = @floatFromInt(sample + channel);
+                }
+            }
+        }
+    };
+
+    var left = [_]f32{ 0.0, 0.0 };
+    var right = [_]f32{ 0.0, 0.0 };
+    var output_channel_ptrs = [_][*]f32{ &left, &right };
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    const data = ivstaudioprocessor.ProcessData{
+        .numInputs = 0,
+        .numOutputs = 1,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .processContext = &process_context,
+    };
+
+    try std.testing.expectEqual(types.kResultOk, processMainAudioConfigured(&data, .{}, .{}, null, Generator{}, .{ .audio_input = false }));
+    try std.testing.expectEqualSlices(f32, &.{ 0.0, 1.0 }, &left);
+    try std.testing.expectEqualSlices(f32, &.{ 1.0, 2.0 }, &right);
 }
 
 test "zig-plug bridge exposes output event writer to processors" {
