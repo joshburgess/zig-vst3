@@ -84,6 +84,10 @@ test "sine synth core example responds to note events inside a block" {
         .events = &events,
     });
 
+    try std.testing.expectEqual(@as(usize, 0), context.inputFrameCount());
+    try std.testing.expectEqual(@as(usize, output.len), context.outputFrameCount());
+    try std.testing.expectEqual(@as(usize, output.len), context.frameCount());
+
     plugin.process(&context);
 
     try std.testing.expectEqual(@as(f32, 0.0), output[0]);
