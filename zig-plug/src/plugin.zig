@@ -1056,23 +1056,42 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqual(@as(?units_api.ProgramList, null), instance.programListForUnitName("Main"));
     try std.testing.expectEqual(@as(?units_api.ProgramList, null), instance.programListForUnitName("Missing"));
     try std.testing.expectEqual(@as(?usize, 2), instance.programCount(7));
+    try std.testing.expectEqual(@as(?usize, null), instance.programCount(99));
     try std.testing.expectEqualStrings("Lead", instance.programName(7, 1).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.programName(7, 99));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.programName(99, 0));
     try std.testing.expectEqualStrings("Lead", instance.program(7, 1).?.name);
+    try std.testing.expectEqual(@as(?units_api.Program, null), instance.program(7, 99));
+    try std.testing.expectEqual(@as(?units_api.Program, null), instance.program(99, 0));
     try std.testing.expectEqualStrings("Lead", instance.programByName(7, "Lead").?.name);
     try std.testing.expectEqual(@as(?units_api.Program, null), instance.programByName(7, "Missing"));
+    try std.testing.expectEqual(@as(?units_api.Program, null), instance.programByName(99, "Lead"));
     try std.testing.expectEqual(@as(?usize, 1), instance.programIndexOfName(7, "Lead"));
+    try std.testing.expectEqual(@as(?usize, null), instance.programIndexOfName(99, "Lead"));
     try std.testing.expect(instance.hasProgramName(7, "Lead"));
     try std.testing.expect(!instance.hasProgramName(7, "Missing"));
     try std.testing.expect(!instance.hasProgramName(99, "Lead"));
     try std.testing.expectEqual(@as(?usize, 1), instance.programParameterCount(7, 1));
+    try std.testing.expectEqual(@as(?usize, null), instance.programParameterCount(7, 99));
+    try std.testing.expectEqual(@as(?usize, null), instance.programParameterCount(99, 0));
     try std.testing.expectEqual(@as(?usize, 1), instance.programParameterCountByName(7, "Lead"));
+    try std.testing.expectEqual(@as(?usize, null), instance.programParameterCountByName(99, "Lead"));
+    try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameter(7, 1, 99));
+    try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameter(99, 0, 0));
     try std.testing.expectEqual(@as(f64, 0.75), instance.programParameterById(7, 1, 1).?.normalized);
+    try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterById(99, 0, 1));
     try std.testing.expectEqual(@as(f64, 0.75), instance.programParameterByName(7, "Lead", 0).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.75), instance.programParameterByNameAndId(7, "Lead", 1).?.normalized);
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByName(7, "Missing", 0));
+    try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByName(99, "Lead", 0));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByNameAndId(7, "Lead", 99));
+    try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByNameAndId(99, "Lead", 1));
     try std.testing.expectEqualStrings("Clean", instance.programInfo(7, 0, "category").?);
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfo(7, 99, "category"));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfo(99, 0, "category"));
     try std.testing.expectEqualStrings("Clean", instance.programInfoByName(7, "Clean", "category").?);
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfoByName(7, "Missing", "category"));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfoByName(99, "Clean", "category"));
 }
 
 test "plugin instance applies program parameter snapshots" {
