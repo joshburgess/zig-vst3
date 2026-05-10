@@ -926,6 +926,42 @@ test "component handler records automation callbacks" {
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), handler.last_value);
 }
 
+test "component handler records delegated automation failures" {
+    const Handler = ComponentHandler(struct {
+        pub fn beginEdit(self: anytype, id: vsttypes.ParamID) types.tresult {
+            _ = self;
+            return if (id == 9) types.kResultFalse else types.kResultOk;
+        }
+
+        pub fn performEdit(self: anytype, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+            _ = self;
+            return if (id == 9 and value == 0.5) types.kResultFalse else types.kResultOk;
+        }
+
+        pub fn endEdit(self: anytype, id: vsttypes.ParamID) types.tresult {
+            _ = self;
+            return if (id == 9) types.kResultFalse else types.kResultOk;
+        }
+
+        pub fn restartComponent(self: anytype, flags: types.int32) types.tresult {
+            _ = self;
+            return if (flags == 3) types.kResultFalse else types.kResultOk;
+        }
+    });
+    var handler = Handler{};
+
+    try std.testing.expectEqual(types.kResultFalse, handler.asHandler().vtable.beginEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultFalse, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, 0.5));
+    try std.testing.expectEqual(types.kResultFalse, handler.asHandler().vtable.endEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultFalse, handler.asHandler().vtable.restartComponent(handler.asHandler(), 3));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.begin_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.perform_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.end_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.restart_count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 9), handler.last_param_id);
+    try std.testing.expectEqual(@as(types.int32, 3), handler.last_restart_flags);
+}
+
 test "component handler 2 exposes extension and records callbacks" {
     const Handler = ComponentHandler2(struct {});
     var handler = Handler{};
