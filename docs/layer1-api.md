@@ -45,6 +45,7 @@ The raw layer includes fixed-capacity helper objects for tests and shell integra
 - `vst_component_handler` host callback helpers
 - `vst_host_application` and `vst_host_context` host-side callback helpers
 - `vst_capability_support` helpers for interface support, prefetch state, MIDI learn, MIDI 2 mapping, and physical UI mapping
+- `vst_note_expression` for fixed-capacity note-expression and keyswitch metadata helpers
 - `vst_representation` for fixed XML representation streams
 - `vst_plug_view`, `vst_plug_frame`, `vst_content_scale_support`, `vst_linux_run_loop`, and `vst_wayland_frame` GUI helper objects
 - `vst_unit_data` for fixed-capacity unit, program-list, and unit-data helpers
