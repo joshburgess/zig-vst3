@@ -414,6 +414,7 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?Unit, null), set.unitByName("Missing"));
     try std.testing.expectEqual(@as(i32, 10), set.unitById(1).?.program_list_id);
     try std.testing.expectEqual(@as(?usize, 0), set.programListIndexOfId(10));
+    try std.testing.expectEqual(@as(?usize, null), set.programListIndexOfId(99));
     try std.testing.expectEqual(@as(?usize, 0), set.programListIndexOfName("Oscillator Presets"));
     try std.testing.expectEqual(@as(?usize, null), set.programListIndexOfName("Missing"));
     try std.testing.expect(set.hasProgramList(10));
@@ -429,19 +430,28 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnitName("Main"));
     try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnitName("Missing"));
     try std.testing.expectEqual(@as(?usize, 2), set.programCount(10));
+    try std.testing.expectEqual(@as(?usize, null), set.programCount(99));
     try std.testing.expectEqualStrings("Drive", set.programName(10, 1).?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programName(10, 2));
+    try std.testing.expectEqual(@as(?[]const u8, null), set.programName(99, 0));
     try std.testing.expectEqualStrings("Drive", set.program(10, 1).?.name);
+    try std.testing.expectEqual(@as(?Program, null), set.program(10, 2));
+    try std.testing.expectEqual(@as(?Program, null), set.program(99, 0));
     try std.testing.expectEqualStrings("Drive", set.programByName(10, "Drive").?.name);
     try std.testing.expectEqual(@as(?Program, null), set.programByName(10, "Missing"));
+    try std.testing.expectEqual(@as(?Program, null), set.programByName(99, "Drive"));
     try std.testing.expectEqual(@as(?usize, 1), set.programIndexOfName(10, "Drive"));
     try std.testing.expectEqual(@as(?usize, null), set.programIndexOfName(10, "Missing"));
+    try std.testing.expectEqual(@as(?usize, null), set.programIndexOfName(99, "Drive"));
     try std.testing.expect(set.hasProgramName(10, "Drive"));
     try std.testing.expect(!set.hasProgramName(10, "Missing"));
     try std.testing.expect(!set.hasProgramName(99, "Drive"));
     try std.testing.expectEqual(@as(?usize, 1), set.programParameterCount(10, 1));
+    try std.testing.expectEqual(@as(?usize, null), set.programParameterCount(10, 2));
+    try std.testing.expectEqual(@as(?usize, null), set.programParameterCount(99, 0));
     try std.testing.expectEqual(@as(?usize, 1), set.programParameterCountByName(10, "Drive"));
     try std.testing.expectEqual(@as(?usize, null), set.programParameterCountByName(10, "Missing"));
+    try std.testing.expectEqual(@as(?usize, null), set.programParameterCountByName(99, "Drive"));
     try std.testing.expectEqual(@as(u32, 3), set.programParameter(10, 1, 0).?.parameter_id);
     try std.testing.expectEqual(@as(f64, 0.75), set.programParameter(10, 1, 0).?.normalized);
     try std.testing.expectEqual(@as(u32, 3), set.programParameterByName(10, "Drive", 0).?.parameter_id);
@@ -454,10 +464,14 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterById(10, 1, 99));
     try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterByNameAndId(10, "Drive", 99));
     try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterByNameAndId(10, "Missing", 3));
+    try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterByNameAndId(99, "Drive", 3));
     try std.testing.expectEqualStrings("Clean", set.programInfo(10, 0, "category").?);
     try std.testing.expectEqualStrings("Clean", set.programInfoByName(10, "Clean", "category").?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programInfo(10, 0, "missing"));
+    try std.testing.expectEqual(@as(?[]const u8, null), set.programInfo(10, 2, "category"));
+    try std.testing.expectEqual(@as(?[]const u8, null), set.programInfo(99, 0, "category"));
     try std.testing.expectEqual(@as(?[]const u8, null), set.programInfoByName(10, "Missing", "category"));
+    try std.testing.expectEqual(@as(?[]const u8, null), set.programInfoByName(99, "Clean", "category"));
     try set.validate();
 }
 
