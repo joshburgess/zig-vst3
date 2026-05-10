@@ -18,6 +18,7 @@
 - Context-menu target delegation and query coverage.
 - Base string/error helper coverage for null strings and missing error-message outputs.
 - Component-handler delegated automation failure coverage.
+- Update-handler coverage for invalid, duplicate, and full dependent registration.
 
 ### Changed
 
