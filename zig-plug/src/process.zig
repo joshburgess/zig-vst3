@@ -435,6 +435,18 @@ pub const Event = struct {
         };
     }
 
+    pub fn isNoteAttack(self: Event) bool {
+        return self.kind == .note_on and self.velocity > 0.0;
+    }
+
+    pub fn isNoteRelease(self: Event) bool {
+        return self.kind == .note_off or (self.kind == .note_on and self.velocity == 0.0);
+    }
+
+    pub fn isNoteForPitch(self: Event, pitch: i16) bool {
+        return (self.kind == .note_on or self.kind == .note_off) and self.pitch == pitch;
+    }
+
     pub fn validate(self: Event, frame_count: usize) !void {
         if (self.sample_offset >= frame_count) return error.EventOutsideBlock;
         if (self.bus_index < 0) return error.InvalidEventBusIndex;
@@ -1835,6 +1847,30 @@ test "event constructors can target non-main buses" {
     try std.testing.expectEqual(@as(i32, 2), event.bus_index);
     try std.testing.expectEqual(@as(usize, 1), event.sample_offset);
     try std.testing.expectEqual(@as(i16, 60), event.pitch);
+}
+
+test "event note helpers classify attacks and releases" {
+    const attack = Event.noteOn(0, 1, 60, 0.75);
+    const zero_velocity_release = Event.noteOn(1, 1, 60, 0.0);
+    const release = Event.noteOff(2, 1, 60, 0.0);
+    const cc = Event.midiCc(3, 1, 64, 1.0);
+
+    try std.testing.expect(attack.isNoteAttack());
+    try std.testing.expect(!attack.isNoteRelease());
+    try std.testing.expect(attack.isNoteForPitch(60));
+    try std.testing.expect(!attack.isNoteForPitch(61));
+
+    try std.testing.expect(!zero_velocity_release.isNoteAttack());
+    try std.testing.expect(zero_velocity_release.isNoteRelease());
+    try std.testing.expect(zero_velocity_release.isNoteForPitch(60));
+
+    try std.testing.expect(!release.isNoteAttack());
+    try std.testing.expect(release.isNoteRelease());
+    try std.testing.expect(release.isNoteForPitch(60));
+
+    try std.testing.expect(!cc.isNoteAttack());
+    try std.testing.expect(!cc.isNoteRelease());
+    try std.testing.expect(!cc.isNoteForPitch(60));
 }
 
 test "event constructors can keep legacy MIDI controller numbers" {

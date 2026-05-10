@@ -31,16 +31,10 @@ pub const NoteGate = struct {
     fn applyEventsAt(self: *NoteGate, context: *plug.process.ProcessContext(f32), sample_offset: usize) void {
         var events = context.inputEventsAtOffset(sample_offset);
         while (events.next()) |event| {
-            switch (event.kind) {
-                .note_on => {
-                    if (event.velocity > 0.0) {
-                        self.holdNote(event.pitch);
-                    } else {
-                        self.releaseNote(event.pitch);
-                    }
-                },
-                .note_off => self.releaseNote(event.pitch),
-                else => {},
+            if (event.isNoteAttack()) {
+                self.holdNote(event.pitch);
+            } else if (event.isNoteRelease()) {
+                self.releaseNote(event.pitch);
             }
         }
     }
