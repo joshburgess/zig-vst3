@@ -7,16 +7,64 @@ const zig_plug_effect = @import("zig_plug_effect.zig");
 
 pub const cid = tuid.inlineUid(0x70E3A630, 0x5EE54F09, 0x94C968A8, 0x22947A9F);
 
-const NoteGateProcessor = struct {
-    pub fn process(_: NoteGateProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-        const gate_open = context.hasEvent(.note_on);
-        for (0..context.outputChannelCount()) |channel| {
-            const input = context.inputChannel(channel) orelse continue;
-            const output = context.outputChannel(channel) orelse continue;
-            for (0..context.frameCount()) |sample| {
-                output[sample] = if (gate_open) input[sample] else 0;
+const NoteGateState = struct {
+    open: bool = false,
+    held_notes: [128]bool = [_]bool{false} ** 128,
+    held_note_count: usize = 0,
+
+    fn process(self: *NoteGateState, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+        var segments = context.inputEventBlockSegments();
+        while (segments.next()) |segment| {
+            self.applyEventsAt(Sample, context, segment.start_offset);
+            for (0..context.outputChannelCount()) |channel| {
+                const input = context.inputChannel(channel) orelse continue;
+                const output = context.outputChannel(channel) orelse continue;
+                if (self.open) {
+                    for (segment.start_offset..segment.end_offset) |sample| {
+                        output[sample] = input[sample];
+                    }
+                } else {
+                    @memset(output[segment.start_offset..segment.end_offset], 0);
+                }
             }
         }
+    }
+
+    fn applyEventsAt(self: *NoteGateState, comptime Sample: type, context: *plug_process.ProcessContext(Sample), sample_offset: usize) void {
+        var events = context.inputEventsAtOffset(sample_offset);
+        while (events.next()) |event| {
+            if (event.isNoteAttack()) {
+                self.holdNote(event.pitch);
+            } else if (event.isNoteRelease()) {
+                self.releaseNote(event.pitch);
+            }
+        }
+    }
+
+    fn holdNote(self: *NoteGateState, pitch: i16) void {
+        const index = @as(usize, @intCast(pitch));
+        if (!self.held_notes[index]) {
+            self.held_notes[index] = true;
+            self.held_note_count += 1;
+        }
+        self.open = true;
+    }
+
+    fn releaseNote(self: *NoteGateState, pitch: i16) void {
+        const index = @as(usize, @intCast(pitch));
+        if (self.held_notes[index]) {
+            self.held_notes[index] = false;
+            self.held_note_count -= 1;
+        }
+        self.open = self.held_note_count > 0;
+    }
+};
+
+var gate = NoteGateState{};
+
+const NoteGateProcessor = struct {
+    pub fn process(_: NoteGateProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+        gate.process(Sample, context);
     }
 };
 
@@ -51,4 +99,87 @@ test "note gate component can be created as IComponent" {
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput)));
     try std.testing.expect(component_iface.vtable.release(component_iface) >= 1);
+}
+
+test "note gate processor follows event offsets inside a block" {
+    const std = @import("std");
+
+    var local_gate = NoteGateState{};
+    const input = [_]f32{ 0.25, -0.5, 1.0, -1.0 };
+    var output = [_]f32{ 1.0, 1.0, 1.0, 1.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const events = [_]plug_process.Event{
+        plug_process.Event.noteOn(1, 0, 60, 0.75),
+        plug_process.Event.noteOff(3, 0, 60, 0.0),
+    };
+    var context = try plug_process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+    });
+
+    local_gate.process(f32, &context);
+
+    try std.testing.expectEqual(@as(f32, 0.0), output[0]);
+    try std.testing.expectEqual(@as(f32, -0.5), output[1]);
+    try std.testing.expectEqual(@as(f32, 1.0), output[2]);
+    try std.testing.expectEqual(@as(f32, 0.0), output[3]);
+    try std.testing.expect(!local_gate.open);
+    try std.testing.expectEqual(@as(usize, 0), local_gate.held_note_count);
+}
+
+test "note gate processor stays open while overlapping notes are held" {
+    const std = @import("std");
+
+    var local_gate = NoteGateState{};
+    const input = [_]f32{ 0.25, -0.5, 1.0, -1.0, 0.125 };
+    var output = [_]f32{ 0.0, 0.0, 0.0, 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const events = [_]plug_process.Event{
+        plug_process.Event.noteOn(0, 0, 60, 0.75),
+        plug_process.Event.noteOn(1, 0, 64, 0.75),
+        plug_process.Event.noteOff(2, 0, 60, 0.0),
+        plug_process.Event.noteOff(4, 0, 64, 0.0),
+    };
+    var context = try plug_process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+    });
+
+    local_gate.process(f32, &context);
+
+    try std.testing.expectEqual(@as(f32, 0.25), output[0]);
+    try std.testing.expectEqual(@as(f32, -0.5), output[1]);
+    try std.testing.expectEqual(@as(f32, 1.0), output[2]);
+    try std.testing.expectEqual(@as(f32, -1.0), output[3]);
+    try std.testing.expectEqual(@as(f32, 0.0), output[4]);
+    try std.testing.expect(!local_gate.open);
+    try std.testing.expectEqual(@as(usize, 0), local_gate.held_note_count);
+}
+
+test "note gate processor treats zero-velocity note-on as note-off" {
+    const std = @import("std");
+
+    var local_gate = NoteGateState{};
+    const input = [_]f32{ 0.25, -0.5, 1.0, -1.0 };
+    var output = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const events = [_]plug_process.Event{
+        plug_process.Event.noteOn(0, 0, 60, 0.75),
+        plug_process.Event.noteOn(1, 0, 64, 0.75),
+        plug_process.Event.noteOn(2, 0, 60, 0.0),
+        plug_process.Event.noteOn(3, 0, 64, 0.0),
+    };
+    var context = try plug_process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+    });
+
+    local_gate.process(f32, &context);
+
+    try std.testing.expectEqual(@as(f32, 0.25), output[0]);
+    try std.testing.expectEqual(@as(f32, -0.5), output[1]);
+    try std.testing.expectEqual(@as(f32, 1.0), output[2]);
+    try std.testing.expectEqual(@as(f32, 0.0), output[3]);
+    try std.testing.expect(!local_gate.open);
+    try std.testing.expectEqual(@as(usize, 0), local_gate.held_note_count);
 }
