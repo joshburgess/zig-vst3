@@ -44,6 +44,7 @@ The raw layer includes fixed-capacity helper objects for tests and shell integra
 - `vst_message.Message`, `AttributeList`, and `StreamAttributes`
 - `vst_component_handler` host callback helpers
 - `vst_host_application` and `vst_host_context` host-side callback helpers
+- `vst_capability_support` helpers for interface support, prefetch state, MIDI learn, and physical UI mapping
 - `vst_plug_frame`, `vst_content_scale_support`, `vst_linux_run_loop`, and `vst_wayland_frame` GUI helper objects
 - `vst_unit_data`, `vst_context_menu`, `vst_test_plug_provider`, and `vst_test_interfaces`
 
