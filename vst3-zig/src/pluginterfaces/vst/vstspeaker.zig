@@ -878,3 +878,36 @@ test "speaker helpers match expected core behavior" {
     try @import("std").testing.expectEqual(@as(base.uint64, 0), corrupted.at(SpeakerArray.kMaxSpeakers));
     try @import("std").testing.expectEqual(SpeakerArr.kStereo, corrupted.getArrangement());
 }
+
+test "speaker arrangement strings cover named and unknown arrangements" {
+    try std.testing.expectEqualStrings("Stereo", std.mem.span(getSpeakerArrangementString(SpeakerArr.kStereo, false)));
+    try std.testing.expectEqualStrings("Stereo (L R)", std.mem.span(getSpeakerArrangementString(SpeakerArr.kStereo, true)));
+    try std.testing.expectEqualStrings("5.1.4", std.mem.span(getSpeakerArrangementString(SpeakerArr.k51_4, false)));
+    try std.testing.expectEqualStrings("Ambi 4th order", std.mem.span(getSpeakerArrangementString(SpeakerArr.kAmbi4thOrderACN, false)));
+    try std.testing.expectEqualStrings("", std.mem.span(getSpeakerArrangementString(kSpeakerL | kSpeakerTfl, false)));
+}
+
+test "speaker helper classification handles top bottom middle and ambisonic edges" {
+    try std.testing.expect(hasBottomSpeakers(kSpeakerBfl | kSpeakerBfr));
+    try std.testing.expect(!hasBottomSpeakers(SpeakerArr.kStereo));
+    try std.testing.expect(hasMiddleSpeakers(SpeakerArr.kStereoWide));
+    try std.testing.expect(!hasMiddleSpeakers(kSpeakerTfl | kSpeakerTfr));
+    try std.testing.expect(!is3D(kSpeakerTfl | kSpeakerTfr));
+    try std.testing.expect(is3D(kSpeakerTfl | kSpeakerBfl));
+    try std.testing.expect(!isAmbisonics(SpeakerArr.kStereo));
+    try std.testing.expectEqual(@as(vsttypes.Speaker, 0), convertSpeakerAmbi1234OrderToAmbi567Order(kSpeakerL));
+    try std.testing.expectEqual(@as(vsttypes.Speaker, 0), convertSpeakerAmbi567OrderToAmbi1234Order(kSpeakerPl));
+}
+
+test "speaker array resets stale speakers when arrangement changes" {
+    var speakers = SpeakerArray.init(SpeakerArr.k51);
+    try std.testing.expectEqual(@as(base.int32, 6), speakers.total());
+    speakers.setArrangement(SpeakerArr.kStereo);
+
+    try std.testing.expectEqual(@as(base.int32, 2), speakers.total());
+    try std.testing.expectEqual(kSpeakerL, speakers.at(0));
+    try std.testing.expectEqual(kSpeakerR, speakers.at(1));
+    try std.testing.expectEqual(@as(base.uint64, 0), speakers.at(2));
+    try std.testing.expectEqual(SpeakerArr.kStereo, speakers.getArrangement());
+    try std.testing.expectEqual(@as(base.int32, -1), speakers.getSpeakerIndex(kSpeakerLfe));
+}
