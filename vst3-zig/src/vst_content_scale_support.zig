@@ -43,7 +43,7 @@ pub fn ContentScaleSupport(comptime Config: type) type {
         }
 
         fn setContentScaleFactor(ptr: *anyopaque, factor: scale_support.ScaleFactor) callconv(.C) types.tresult {
-            if (factor <= 0 or std.math.isNan(factor)) return types.kInvalidArgument;
+            if (factor <= 0 or !std.math.isFinite(factor)) return types.kInvalidArgument;
             if (@hasDecl(Config, "setContentScaleFactor")) {
                 const result = Config.setContentScaleFactor(factor);
                 if (result != types.kResultOk) return result;
@@ -70,6 +70,7 @@ test "content scale support stores positive scale factors" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.setContentScaleFactor(iface, 2.0));
     try std.testing.expectEqual(@as(scale_support.ScaleFactor, 2.0), support.currentScaleFactor());
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setContentScaleFactor(iface, 0.0));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setContentScaleFactor(iface, std.math.inf(scale_support.ScaleFactor)));
     try std.testing.expectEqual(@as(scale_support.ScaleFactor, 2.0), support.currentScaleFactor());
 }
 
