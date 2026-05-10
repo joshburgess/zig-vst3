@@ -70,6 +70,8 @@ test "content scale support stores positive scale factors" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.setContentScaleFactor(iface, 2.0));
     try std.testing.expectEqual(@as(scale_support.ScaleFactor, 2.0), support.currentScaleFactor());
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setContentScaleFactor(iface, 0.0));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setContentScaleFactor(iface, -1.0));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setContentScaleFactor(iface, std.math.nan(scale_support.ScaleFactor)));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setContentScaleFactor(iface, std.math.inf(scale_support.ScaleFactor)));
     try std.testing.expectEqual(@as(scale_support.ScaleFactor, 2.0), support.currentScaleFactor());
 }
