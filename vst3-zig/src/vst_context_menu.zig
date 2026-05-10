@@ -190,6 +190,26 @@ test "context menu target stores executed tags" {
     try std.testing.expectEqual(@as(types.uint32, 1), target.execute_count);
 }
 
+test "context menu target delegates execution and supports query interface" {
+    const Target = ContextMenuTarget(struct {
+        pub fn executeMenuItem(tag: types.int32) types.tresult {
+            return if (tag == 7) types.kResultOk else types.kResultFalse;
+        }
+    });
+    var target = Target{};
+    const iface = target.asInterface();
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.executeMenuItem(iface, 3));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.executeMenuItem(iface, 7));
+    try std.testing.expectEqual(@as(types.uint32, 2), target.execute_count);
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstcontextmenu.icontext_menu_target_iid, &queried));
+    try std.testing.expect(queried != null);
+    const queried_target: *ivstcontextmenu.IContextMenuTarget = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_target.vtable.release(queried_target));
+}
+
 test "context menu stores items and retains targets" {
     const Menu = ContextMenu(2);
     const Target = ContextMenuTarget(struct {});

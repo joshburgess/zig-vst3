@@ -15,6 +15,7 @@
 - Basic compatibility metadata JSON fixture helper.
 - Test-interface helper coverage for null result messages and suite environment replacement.
 - Parameter function-name and compatible-ID remapping helpers.
+- Context-menu target delegation and query coverage.
 
 ### Changed
 
