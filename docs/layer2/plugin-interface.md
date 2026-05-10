@@ -56,8 +56,9 @@ Unit and program helpers:
 - `PluginInstance.unitCount`, `unit`, `unitById`, `unitByName`, `rootUnit`, unit index and existence checks by id or name, `programListCount`, `programList`, `programListById`, `programListByName`, program-list index and existence checks by id or name, `programListForUnit`, `programListForUnitName`, `programCount`, `program`, `programByName`, `programName`, program index and existence checks by name, `programParameterCount`, `programParameterCountByName`, `programParameter`, `programParameterByName`, `programParameterById`, `programParameterByNameAndId`, `programInfo`, and `programInfoByName` expose the reflected metadata.
 - `PluginInstance.applyProgram`, `applyProgramByName`, `applyProgramForUnit`, `applyProgramByNameForUnit`, `applyProgramForUnitName`, and `applyProgramByNameForUnitName` apply a program's finite normalized parameter snapshot to reflected parameter ids after validating the whole snapshot.
 
-Audio helpers:
+Timing and audio helpers:
 
+- `sampleRate`, `sampleDurationSeconds`, `blockDurationSeconds`, and `sampleOffsetSeconds`
 - `inputChannel`, `outputChannel`, `inputChannelCount`, `outputChannelCount`, input/output channel emptiness checks, `inputFrameCount`, `outputFrameCount`, and `frameCount`
 - `fillOutputs` and `clearOutputs`
 - `frameCount` uses the shared input/output frame count for effects, the output frame count for generators with no audio inputs, and the input frame count for analyzers with no audio outputs.
