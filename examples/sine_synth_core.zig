@@ -73,9 +73,8 @@ test "sine synth core example declares reflected metadata" {
 
 test "sine synth core example responds to note events inside a block" {
     var plugin = SineSynth{};
-    const input = [_]f32{ 0.0, 0.0, 0.0, 0.0, 0.0 };
     var output = [_]f32{ 1.0, 1.0, 1.0, 1.0, 1.0 };
-    const input_channels = [_][]const f32{&input};
+    const input_channels = [_][]const f32{};
     const output_channels = [_][]f32{&output};
     const events = [_]plug.process.Event{
         plug.process.Event.noteOn(1, 0, 69, 1.0),
@@ -97,9 +96,8 @@ test "sine synth core example responds to note events inside a block" {
 
 test "sine synth core example applies level automation at segment boundaries" {
     var plugin = SineSynth{};
-    const input = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
     var output = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
-    const input_channels = [_][]const f32{&input};
+    const input_channels = [_][]const f32{};
     const output_channels = [_][]f32{&output};
     const events = [_]plug.process.Event{
         plug.process.Event.noteOn(0, 0, 69, 1.0),
