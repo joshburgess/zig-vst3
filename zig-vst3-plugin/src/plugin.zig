@@ -1047,28 +1047,56 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterEditor().resetToDefaultIndex(index);
         }
 
+        pub fn resetParameterIndexToDefaultCount(self: *Self, index: usize) ?usize {
+            return self.parameterEditor().resetToDefaultIndexCount(index);
+        }
+
         pub fn resetParameterToDefaultIndex(self: *Self, index: usize) bool {
             return self.resetParameterIndexToDefault(index);
+        }
+
+        pub fn resetParameterToDefaultIndexCount(self: *Self, index: usize) ?usize {
+            return self.resetParameterIndexToDefaultCount(index);
         }
 
         pub fn resetParameterByIdToDefault(self: *Self, id: u32) bool {
             return self.parameterEditor().resetToDefaultById(id);
         }
 
+        pub fn resetParameterByIdToDefaultCount(self: *Self, id: u32) ?usize {
+            return self.parameterEditor().resetToDefaultByIdCount(id);
+        }
+
         pub fn resetParameterToDefaultById(self: *Self, id: u32) bool {
             return self.resetParameterByIdToDefault(id);
+        }
+
+        pub fn resetParameterToDefaultByIdCount(self: *Self, id: u32) ?usize {
+            return self.resetParameterByIdToDefaultCount(id);
         }
 
         pub fn resetParameterByNameToDefault(self: *Self, name: []const u8) bool {
             return self.parameterEditor().resetToDefaultByName(name);
         }
 
+        pub fn resetParameterByNameToDefaultCount(self: *Self, name: []const u8) ?usize {
+            return self.parameterEditor().resetToDefaultByNameCount(name);
+        }
+
         pub fn resetParameterToDefaultByName(self: *Self, name: []const u8) bool {
             return self.resetParameterByNameToDefault(name);
         }
 
+        pub fn resetParameterToDefaultByNameCount(self: *Self, name: []const u8) ?usize {
+            return self.resetParameterByNameToDefaultCount(name);
+        }
+
         pub fn resetParameterToDefault(self: *Self, comptime field_name: []const u8) bool {
             return self.parameterEditor().resetToDefault(field_name);
+        }
+
+        pub fn resetParameterToDefaultCount(self: *Self, comptime field_name: []const u8) ?usize {
+            return self.parameterEditor().resetToDefaultCount(field_name);
         }
 
         pub fn applyParameterChanges(self: *Self, changes: process_api.ParameterChanges) void {
@@ -2336,25 +2364,53 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expect(instance.storeParameter("gain", 6.0));
     try std.testing.expect(instance.storeParameter("bypass", true));
     try std.testing.expect(instance.storeParameter("mode", .mute));
+    try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterToDefaultCount("gain"));
+    try std.testing.expectEqual(@as(?usize, 0), instance.resetParameterToDefaultCount("gain"));
+    try std.testing.expect(instance.storeParameter("gain", 6.0));
     try std.testing.expect(instance.resetParameterToDefault("gain"));
     try std.testing.expectEqual(@as(f64, 0.0), instance.loadParameter("gain"));
     try std.testing.expectEqual(true, instance.loadParameter("bypass"));
+    try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterIndexToDefaultCount(1));
+    try std.testing.expectEqual(@as(?usize, 0), instance.resetParameterIndexToDefaultCount(1));
+    try std.testing.expect(instance.storeParameter("bypass", true));
     try std.testing.expect(instance.resetParameterIndexToDefault(1));
     try std.testing.expectEqual(false, instance.loadParameter("bypass"));
     try std.testing.expect(instance.storeParameter("bypass", true));
+    try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterToDefaultIndexCount(1));
+    try std.testing.expectEqual(@as(?usize, 0), instance.resetParameterToDefaultIndexCount(1));
+    try std.testing.expect(instance.storeParameter("bypass", true));
     try std.testing.expect(instance.resetParameterToDefaultIndex(1));
     try std.testing.expectEqual(false, instance.loadParameter("bypass"));
+    try std.testing.expect(instance.storeParameter("mode", .mute));
+    try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterByIdToDefaultCount(2));
+    try std.testing.expectEqual(@as(?usize, 0), instance.resetParameterByIdToDefaultCount(2));
+    try std.testing.expect(instance.storeParameter("mode", .mute));
     try std.testing.expect(instance.resetParameterByIdToDefault(2));
     try std.testing.expectEqual(Mode.clean, instance.loadParameter("mode"));
+    try std.testing.expect(instance.storeParameter("mode", .mute));
+    try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterToDefaultByIdCount(2));
+    try std.testing.expectEqual(@as(?usize, 0), instance.resetParameterToDefaultByIdCount(2));
     try std.testing.expect(instance.storeParameter("mode", .mute));
     try std.testing.expect(instance.resetParameterToDefaultById(2));
     try std.testing.expectEqual(Mode.clean, instance.loadParameter("mode"));
     try std.testing.expect(instance.storeParameter("mode", .mute));
+    try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterByNameToDefaultCount("Mode"));
+    try std.testing.expectEqual(@as(?usize, 0), instance.resetParameterByNameToDefaultCount("Mode"));
+    try std.testing.expect(instance.storeParameter("mode", .mute));
     try std.testing.expect(instance.resetParameterByNameToDefault("Mode"));
     try std.testing.expectEqual(Mode.clean, instance.loadParameter("mode"));
     try std.testing.expect(instance.storeParameter("mode", .mute));
+    try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterToDefaultByNameCount("Mode"));
+    try std.testing.expectEqual(@as(?usize, 0), instance.resetParameterToDefaultByNameCount("Mode"));
+    try std.testing.expect(instance.storeParameter("mode", .mute));
     try std.testing.expect(instance.resetParameterToDefaultByName("Mode"));
     try std.testing.expectEqual(Mode.clean, instance.loadParameter("mode"));
+    try std.testing.expectEqual(@as(?usize, null), instance.resetParameterIndexToDefaultCount(99));
+    try std.testing.expectEqual(@as(?usize, null), instance.resetParameterToDefaultIndexCount(99));
+    try std.testing.expectEqual(@as(?usize, null), instance.resetParameterByIdToDefaultCount(99));
+    try std.testing.expectEqual(@as(?usize, null), instance.resetParameterToDefaultByIdCount(99));
+    try std.testing.expectEqual(@as(?usize, null), instance.resetParameterByNameToDefaultCount("Missing"));
+    try std.testing.expectEqual(@as(?usize, null), instance.resetParameterToDefaultByNameCount("Missing"));
     try std.testing.expect(!instance.resetParameterIndexToDefault(99));
     try std.testing.expect(!instance.resetParameterToDefaultIndex(99));
     try std.testing.expect(!instance.resetParameterByIdToDefault(99));
