@@ -48,8 +48,16 @@ pub const Program = struct {
         return self.parameters.len != 0;
     }
 
+    pub fn parametersEmpty(self: Program) bool {
+        return self.parameters.len == 0;
+    }
+
     pub fn hasInfo(self: Program) bool {
         return self.info.len != 0;
+    }
+
+    pub fn infoEmpty(self: Program) bool {
+        return self.info.len == 0;
     }
 };
 
@@ -221,6 +229,26 @@ pub fn UnitSet(comptime config: Config) type {
             return self.programListByName(name) != null;
         }
 
+        pub fn programListHasPrograms(self: Self, id: i32) bool {
+            const list = self.programListById(id) orelse return false;
+            return list.hasPrograms();
+        }
+
+        pub fn programListHasProgramsByName(self: Self, name: []const u8) bool {
+            const list = self.programListByName(name) orelse return false;
+            return list.hasPrograms();
+        }
+
+        pub fn programListEmpty(self: Self, id: i32) bool {
+            const list = self.programListById(id) orelse return true;
+            return list.isEmpty();
+        }
+
+        pub fn programListEmptyByName(self: Self, name: []const u8) bool {
+            const list = self.programListByName(name) orelse return true;
+            return list.isEmpty();
+        }
+
         pub fn programListForUnit(self: Self, unit_id: i32) ?ProgramList {
             const item = self.unitById(unit_id) orelse return null;
             if (item.program_list_id == no_program_list_id) return null;
@@ -291,6 +319,26 @@ pub fn UnitSet(comptime config: Config) type {
             return item.parameters.len;
         }
 
+        pub fn programHasParameters(self: Self, list_id: i32, program_index: usize) bool {
+            const item = self.program(list_id, program_index) orelse return false;
+            return item.hasParameters();
+        }
+
+        pub fn programHasParametersByName(self: Self, list_id: i32, program_name: []const u8) bool {
+            const item = self.programByName(list_id, program_name) orelse return false;
+            return item.hasParameters();
+        }
+
+        pub fn programParametersEmpty(self: Self, list_id: i32, program_index: usize) bool {
+            const item = self.program(list_id, program_index) orelse return true;
+            return item.parametersEmpty();
+        }
+
+        pub fn programParametersEmptyByName(self: Self, list_id: i32, program_name: []const u8) bool {
+            const item = self.programByName(list_id, program_name) orelse return true;
+            return item.parametersEmpty();
+        }
+
         pub fn programParameter(self: Self, list_id: i32, program_index: usize, parameter_index: usize) ?ProgramParameter {
             const item = self.program(list_id, program_index) orelse return null;
             if (parameter_index >= item.parameters.len) return null;
@@ -347,6 +395,36 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn hasProgramInfoByName(self: Self, list_id: i32, program_name: []const u8, key: []const u8) bool {
             return self.programInfoByName(list_id, program_name, key) != null;
+        }
+
+        pub fn programInfoCount(self: Self, list_id: i32, program_index: usize) ?usize {
+            const item = self.program(list_id, program_index) orelse return null;
+            return item.info.len;
+        }
+
+        pub fn programInfoCountByName(self: Self, list_id: i32, program_name: []const u8) ?usize {
+            const item = self.programByName(list_id, program_name) orelse return null;
+            return item.info.len;
+        }
+
+        pub fn programHasInfoEntries(self: Self, list_id: i32, program_index: usize) bool {
+            const item = self.program(list_id, program_index) orelse return false;
+            return item.hasInfo();
+        }
+
+        pub fn programHasInfoEntriesByName(self: Self, list_id: i32, program_name: []const u8) bool {
+            const item = self.programByName(list_id, program_name) orelse return false;
+            return item.hasInfo();
+        }
+
+        pub fn programInfoEmpty(self: Self, list_id: i32, program_index: usize) bool {
+            const item = self.program(list_id, program_index) orelse return true;
+            return item.infoEmpty();
+        }
+
+        pub fn programInfoEmptyByName(self: Self, list_id: i32, program_name: []const u8) bool {
+            const item = self.programByName(list_id, program_name) orelse return true;
+            return item.infoEmpty();
         }
 
         pub fn rootUnit(self: Self) Unit {
@@ -522,6 +600,14 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(usize, 2), set.programListById(10).?.programCount());
     try std.testing.expect(!set.programListById(10).?.isEmpty());
     try std.testing.expect(set.programListById(10).?.hasPrograms());
+    try std.testing.expect(set.programListHasPrograms(10));
+    try std.testing.expect(set.programListHasProgramsByName("Oscillator Presets"));
+    try std.testing.expect(!set.programListHasPrograms(99));
+    try std.testing.expect(!set.programListHasProgramsByName("Missing"));
+    try std.testing.expect(!set.programListEmpty(10));
+    try std.testing.expect(!set.programListEmptyByName("Oscillator Presets"));
+    try std.testing.expect(set.programListEmpty(99));
+    try std.testing.expect(set.programListEmptyByName("Missing"));
     try std.testing.expectEqualStrings("Oscillator Presets", set.programListForUnit(1).?.name);
     try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnit(root_unit_id));
     try std.testing.expectEqualStrings("Oscillator Presets", set.programListForUnitName("Oscillator").?.name);
@@ -538,8 +624,11 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(usize, 1), set.program(10, 0).?.parameterCount());
     try std.testing.expectEqual(@as(usize, 1), set.program(10, 0).?.infoCount());
     try std.testing.expect(set.program(10, 0).?.hasParameters());
+    try std.testing.expect(!set.program(10, 0).?.parametersEmpty());
     try std.testing.expect(set.program(10, 0).?.hasInfo());
+    try std.testing.expect(!set.program(10, 0).?.infoEmpty());
     try std.testing.expect(!set.program(10, 1).?.hasInfo());
+    try std.testing.expect(set.program(10, 1).?.infoEmpty());
     try std.testing.expectEqualStrings("Drive", set.programByName(10, "Drive").?.name);
     try std.testing.expectEqual(@as(?Program, null), set.programByName(10, "Missing"));
     try std.testing.expectEqual(@as(?Program, null), set.programByName(99, "Drive"));
@@ -555,6 +644,14 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?usize, 1), set.programParameterCountByName(10, "Drive"));
     try std.testing.expectEqual(@as(?usize, null), set.programParameterCountByName(10, "Missing"));
     try std.testing.expectEqual(@as(?usize, null), set.programParameterCountByName(99, "Drive"));
+    try std.testing.expect(set.programHasParameters(10, 0));
+    try std.testing.expect(set.programHasParametersByName(10, "Drive"));
+    try std.testing.expect(!set.programHasParameters(10, 2));
+    try std.testing.expect(!set.programHasParametersByName(10, "Missing"));
+    try std.testing.expect(!set.programParametersEmpty(10, 0));
+    try std.testing.expect(!set.programParametersEmptyByName(10, "Drive"));
+    try std.testing.expect(set.programParametersEmpty(10, 2));
+    try std.testing.expect(set.programParametersEmptyByName(10, "Missing"));
     try std.testing.expectEqual(@as(u32, 3), set.programParameter(10, 1, 0).?.parameter_id);
     try std.testing.expectEqual(@as(f64, 0.75), set.programParameter(10, 1, 0).?.normalized);
     try std.testing.expectEqual(@as(u32, 3), set.programParameterByName(10, "Drive", 0).?.parameter_id);
@@ -576,6 +673,18 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterByNameAndId(99, "Drive", 3));
     try std.testing.expectEqualStrings("Clean", set.programInfo(10, 0, "category").?);
     try std.testing.expectEqualStrings("Clean", set.programInfoByName(10, "Clean", "category").?);
+    try std.testing.expectEqual(@as(?usize, 1), set.programInfoCount(10, 0));
+    try std.testing.expectEqual(@as(?usize, 0), set.programInfoCountByName(10, "Drive"));
+    try std.testing.expectEqual(@as(?usize, null), set.programInfoCount(10, 2));
+    try std.testing.expectEqual(@as(?usize, null), set.programInfoCountByName(10, "Missing"));
+    try std.testing.expect(set.programHasInfoEntries(10, 0));
+    try std.testing.expect(set.programHasInfoEntriesByName(10, "Clean"));
+    try std.testing.expect(!set.programHasInfoEntries(10, 1));
+    try std.testing.expect(!set.programHasInfoEntriesByName(10, "Drive"));
+    try std.testing.expect(!set.programInfoEmpty(10, 0));
+    try std.testing.expect(set.programInfoEmpty(10, 1));
+    try std.testing.expect(set.programInfoEmpty(10, 2));
+    try std.testing.expect(set.programInfoEmptyByName(10, "Missing"));
     try std.testing.expect(set.hasProgramInfo(10, 0, "category"));
     try std.testing.expect(!set.hasProgramInfo(10, 0, "missing"));
     try std.testing.expect(!set.hasProgramInfo(10, 2, "category"));

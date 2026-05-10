@@ -235,6 +235,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.hasProgramListName(name);
         }
 
+        pub fn programListHasPrograms(self: *const Self, id: i32) bool {
+            return self.spec.units.programListHasPrograms(id);
+        }
+
+        pub fn programListHasProgramsByName(self: *const Self, name: []const u8) bool {
+            return self.spec.units.programListHasProgramsByName(name);
+        }
+
+        pub fn programListEmpty(self: *const Self, id: i32) bool {
+            return self.spec.units.programListEmpty(id);
+        }
+
+        pub fn programListEmptyByName(self: *const Self, name: []const u8) bool {
+            return self.spec.units.programListEmptyByName(name);
+        }
+
         pub fn programListForUnit(self: *const Self, unit_id: i32) ?units_api.ProgramList {
             return self.spec.units.programListForUnit(unit_id);
         }
@@ -275,6 +291,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programParameterCountByName(list_id, program_name);
         }
 
+        pub fn programHasParameters(self: *const Self, list_id: i32, program_index: usize) bool {
+            return self.spec.units.programHasParameters(list_id, program_index);
+        }
+
+        pub fn programHasParametersByName(self: *const Self, list_id: i32, program_name: []const u8) bool {
+            return self.spec.units.programHasParametersByName(list_id, program_name);
+        }
+
+        pub fn programParametersEmpty(self: *const Self, list_id: i32, program_index: usize) bool {
+            return self.spec.units.programParametersEmpty(list_id, program_index);
+        }
+
+        pub fn programParametersEmptyByName(self: *const Self, list_id: i32, program_name: []const u8) bool {
+            return self.spec.units.programParametersEmptyByName(list_id, program_name);
+        }
+
         pub fn programParameter(self: *const Self, list_id: i32, program_index: usize, parameter_index: usize) ?units_api.ProgramParameter {
             return self.spec.units.programParameter(list_id, program_index, parameter_index);
         }
@@ -313,6 +345,30 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn hasProgramInfoByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) bool {
             return self.spec.units.hasProgramInfoByName(list_id, program_name, key);
+        }
+
+        pub fn programInfoCount(self: *const Self, list_id: i32, program_index: usize) ?usize {
+            return self.spec.units.programInfoCount(list_id, program_index);
+        }
+
+        pub fn programInfoCountByName(self: *const Self, list_id: i32, program_name: []const u8) ?usize {
+            return self.spec.units.programInfoCountByName(list_id, program_name);
+        }
+
+        pub fn programHasInfoEntries(self: *const Self, list_id: i32, program_index: usize) bool {
+            return self.spec.units.programHasInfoEntries(list_id, program_index);
+        }
+
+        pub fn programHasInfoEntriesByName(self: *const Self, list_id: i32, program_name: []const u8) bool {
+            return self.spec.units.programHasInfoEntriesByName(list_id, program_name);
+        }
+
+        pub fn programInfoEmpty(self: *const Self, list_id: i32, program_index: usize) bool {
+            return self.spec.units.programInfoEmpty(list_id, program_index);
+        }
+
+        pub fn programInfoEmptyByName(self: *const Self, list_id: i32, program_name: []const u8) bool {
+            return self.spec.units.programInfoEmptyByName(list_id, program_name);
         }
 
         pub fn applyProgram(self: *Self, list_id: i32, program_index: usize) !bool {
@@ -1406,6 +1462,14 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expect(!instance.hasProgramList(99));
     try std.testing.expect(instance.hasProgramListName("Voice Programs"));
     try std.testing.expect(!instance.hasProgramListName("Missing"));
+    try std.testing.expect(instance.programListHasPrograms(7));
+    try std.testing.expect(instance.programListHasProgramsByName("Voice Programs"));
+    try std.testing.expect(!instance.programListHasPrograms(99));
+    try std.testing.expect(!instance.programListHasProgramsByName("Missing"));
+    try std.testing.expect(!instance.programListEmpty(7));
+    try std.testing.expect(!instance.programListEmptyByName("Voice Programs"));
+    try std.testing.expect(instance.programListEmpty(99));
+    try std.testing.expect(instance.programListEmptyByName("Missing"));
     try std.testing.expectEqualStrings("Voice Programs", instance.programListForUnit(1).?.name);
     try std.testing.expectEqualStrings("Voice Programs", instance.programListForUnitName("Voice").?.name);
     try std.testing.expectEqual(@as(?units_api.ProgramList, null), instance.programListForUnitName("Main"));
@@ -1431,6 +1495,14 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqual(@as(?usize, null), instance.programParameterCount(99, 0));
     try std.testing.expectEqual(@as(?usize, 1), instance.programParameterCountByName(7, "Lead"));
     try std.testing.expectEqual(@as(?usize, null), instance.programParameterCountByName(99, "Lead"));
+    try std.testing.expect(instance.programHasParameters(7, 0));
+    try std.testing.expect(instance.programHasParametersByName(7, "Lead"));
+    try std.testing.expect(!instance.programHasParameters(7, 99));
+    try std.testing.expect(!instance.programHasParametersByName(7, "Missing"));
+    try std.testing.expect(!instance.programParametersEmpty(7, 0));
+    try std.testing.expect(!instance.programParametersEmptyByName(7, "Lead"));
+    try std.testing.expect(instance.programParametersEmpty(7, 99));
+    try std.testing.expect(instance.programParametersEmptyByName(7, "Missing"));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameter(7, 1, 99));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameter(99, 0, 0));
     try std.testing.expectEqual(@as(f64, 0.75), instance.programParameterById(7, 1, 1).?.normalized);
@@ -1448,6 +1520,18 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByNameAndId(7, "Lead", 99));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByNameAndId(99, "Lead", 1));
     try std.testing.expectEqualStrings("Clean", instance.programInfo(7, 0, "category").?);
+    try std.testing.expectEqual(@as(?usize, 1), instance.programInfoCount(7, 0));
+    try std.testing.expectEqual(@as(?usize, 0), instance.programInfoCountByName(7, "Lead"));
+    try std.testing.expectEqual(@as(?usize, null), instance.programInfoCount(7, 99));
+    try std.testing.expectEqual(@as(?usize, null), instance.programInfoCountByName(7, "Missing"));
+    try std.testing.expect(instance.programHasInfoEntries(7, 0));
+    try std.testing.expect(instance.programHasInfoEntriesByName(7, "Clean"));
+    try std.testing.expect(!instance.programHasInfoEntries(7, 1));
+    try std.testing.expect(!instance.programHasInfoEntriesByName(7, "Lead"));
+    try std.testing.expect(!instance.programInfoEmpty(7, 0));
+    try std.testing.expect(instance.programInfoEmpty(7, 1));
+    try std.testing.expect(instance.programInfoEmpty(7, 99));
+    try std.testing.expect(instance.programInfoEmptyByName(7, "Missing"));
     try std.testing.expect(instance.hasProgramInfo(7, 0, "category"));
     try std.testing.expect(!instance.hasProgramInfo(7, 0, "missing"));
     try std.testing.expect(!instance.hasProgramInfo(7, 99, "category"));
