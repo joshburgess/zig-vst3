@@ -1042,6 +1042,15 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return Spec.encoded_parameter_state_size;
         }
 
+        pub fn parameterStateEntryCount(self: *const Self) usize {
+            return self.spec.parameter_set.count;
+        }
+
+        pub fn readParameterStateHeader(self: *const Self, reader: anytype) !state.ParameterStateHeader {
+            _ = self;
+            return state.readParameterStateHeader(reader);
+        }
+
         pub fn writeParameterState(self: *const Self, writer: anytype) !void {
             try state.writeParameterState(Plugin.Params, &self.spec.parameter_set, &self.spec.values, writer);
         }
@@ -2633,11 +2642,19 @@ test "plugin instance round-trips owned parameter state" {
 
     try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), Instance.Spec.encoded_parameter_state_size);
     try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), instance.encodedParameterStateSize());
+    try std.testing.expectEqual(@as(usize, 2), instance.parameterStateEntryCount());
     try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
     try std.testing.expect(instance.storeParameterNormalized("mix", 0.75));
 
     var out_stream = std.io.fixedBufferStream(&bytes);
     try instance.writeParameterState(out_stream.writer());
+
+    var header_stream = std.io.fixedBufferStream(&bytes);
+    const header = try instance.readParameterStateHeader(header_stream.reader());
+    try std.testing.expect(header.isCurrentVersion());
+    try std.testing.expect(header.matchesEntryCount(instance.parameterStateEntryCount()));
+    try std.testing.expect(!header.hasFewerEntriesThan(instance.parameterStateEntryCount()));
+    try std.testing.expect(!header.hasMoreEntriesThan(instance.parameterStateEntryCount()));
 
     var in_stream = std.io.fixedBufferStream(&bytes);
     const report = try restored.readParameterStateReport(in_stream.reader());

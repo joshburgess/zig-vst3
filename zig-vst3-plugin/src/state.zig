@@ -26,6 +26,26 @@ pub const ParameterStateHeader = struct {
         return self.version == format_version;
     }
 
+    pub fn matchesEntryCount(self: ParameterStateHeader, expected_count: usize) bool {
+        return self.entry_count == expected_count;
+    }
+
+    pub fn hasFewerEntriesThan(self: ParameterStateHeader, expected_count: usize) bool {
+        return self.entry_count < expected_count;
+    }
+
+    pub fn hasMoreEntriesThan(self: ParameterStateHeader, expected_count: usize) bool {
+        return self.entry_count > expected_count;
+    }
+
+    pub fn missingEntryCount(self: ParameterStateHeader, expected_count: usize) usize {
+        return expected_count -| self.entry_count;
+    }
+
+    pub fn extraEntryCount(self: ParameterStateHeader, expected_count: usize) usize {
+        return self.entry_count -| expected_count;
+    }
+
     pub fn encodedSize(self: ParameterStateHeader) usize {
         return encodedSizeForCount(self.entry_count);
     }
@@ -347,6 +367,16 @@ test "parameter state round-trips normalized values" {
     try std.testing.expect(header.hasEntries());
     try std.testing.expect(!header.entriesEmpty());
     try std.testing.expect(header.isCurrentVersion());
+    try std.testing.expect(header.matchesEntryCount(2));
+    try std.testing.expect(!header.matchesEntryCount(3));
+    try std.testing.expect(header.hasFewerEntriesThan(3));
+    try std.testing.expect(!header.hasFewerEntriesThan(2));
+    try std.testing.expect(header.hasMoreEntriesThan(1));
+    try std.testing.expect(!header.hasMoreEntriesThan(2));
+    try std.testing.expectEqual(@as(usize, 1), header.missingEntryCount(3));
+    try std.testing.expectEqual(@as(usize, 0), header.missingEntryCount(1));
+    try std.testing.expectEqual(@as(usize, 1), header.extraEntryCount(1));
+    try std.testing.expectEqual(@as(usize, 0), header.extraEntryCount(3));
     try std.testing.expectEqual(@as(usize, 36), header.encodedSize());
     try std.testing.expectEqual(@as(usize, 36), try header.encodedSizeChecked());
 
