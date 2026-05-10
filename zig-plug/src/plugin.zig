@@ -51,6 +51,7 @@ pub fn PluginSpec(comptime Plugin: type) type {
         units: Units = .{},
 
         pub fn initChecked(params: Params) !Self {
+            try validateMetadata();
             const set = ParameterSet.init(params);
             try set.validate();
             const units = Units{};
@@ -65,9 +66,29 @@ pub fn PluginSpec(comptime Plugin: type) type {
         }
 
         pub fn init(params: Params) Self {
-            return initChecked(params) catch @panic("invalid parameter metadata");
+            return initChecked(params) catch @panic("invalid plugin metadata");
+        }
+
+        fn validateMetadata() !void {
+            try validateRequiredMetadataString(name);
+            try validateRequiredMetadataString(vendor);
+            try validateOptionalMetadataString(url);
+            try validateOptionalMetadataString(email);
+            try validateRequiredMetadataString(component_class_name);
+            try validateRequiredMetadataString(controller_class_name);
+            try validateRequiredMetadataString(component_category);
+            try validateRequiredMetadataString(controller_category);
         }
     };
+}
+
+fn validateRequiredMetadataString(value: []const u8) !void {
+    if (value.len == 0) return error.EmptyPluginMetadata;
+    try validateOptionalMetadataString(value);
+}
+
+fn validateOptionalMetadataString(value: []const u8) !void {
+    if (std.mem.indexOfScalar(u8, value, 0) != null) return error.InvalidPluginMetadata;
 }
 
 pub const PrepareConfig = struct {
@@ -893,15 +914,52 @@ test "plugin spec and instance surface invalid parameter metadata" {
     try std.testing.expectError(error.InvalidParameterDefault, PluginInstance(InvalidDefault).init(std.testing.allocator, .{}));
 }
 
+test "plugin spec rejects invalid plugin metadata" {
+    const EmptyName = struct {
+        pub const name = "";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+    };
+    const EmptyVendor = struct {
+        pub const name = "Empty Vendor";
+        pub const vendor = "";
+        pub const Params = struct {};
+    };
+    const EmptyComponentName = struct {
+        pub const name = "Empty Component";
+        pub const vendor = "zig-vst3";
+        pub const component_class_name = "";
+        pub const Params = struct {};
+    };
+    const EmptyControllerCategory = struct {
+        pub const name = "Empty Controller Category";
+        pub const vendor = "zig-vst3";
+        pub const controller_category = "";
+        pub const Params = struct {};
+    };
+    const InteriorNull = struct {
+        pub const name = "Interior Null";
+        pub const vendor = "zig-vst3";
+        pub const email = "plugins\x00example.test";
+        pub const Params = struct {};
+    };
+
+    try std.testing.expectError(error.EmptyPluginMetadata, PluginSpec(EmptyName).initChecked(.{}));
+    try std.testing.expectError(error.EmptyPluginMetadata, PluginSpec(EmptyVendor).initChecked(.{}));
+    try std.testing.expectError(error.EmptyPluginMetadata, PluginSpec(EmptyComponentName).initChecked(.{}));
+    try std.testing.expectError(error.EmptyPluginMetadata, PluginSpec(EmptyControllerCategory).initChecked(.{}));
+    try std.testing.expectError(error.InvalidPluginMetadata, PluginSpec(InteriorNull).initChecked(.{}));
+}
+
 var invalid_metadata_init_called = false;
 
 test "plugin instance validates metadata before plugin init hook" {
     invalid_metadata_init_called = false;
     const Invalid = struct {
-        pub const name = "Invalid Init Ordering";
+        pub const name = "";
         pub const vendor = "zig-vst3";
         pub const Params = struct {
-            gain: parameters.FloatParam = .{ .id = 0, .name = "Gain", .min = 1.0, .max = 1.0, .default = 1.0 },
+            gain: parameters.FloatParam = .{ .id = 0, .name = "Gain", .min = 0.0, .max = 1.0, .default = 0.5 },
         };
 
         pub fn init(_: std.mem.Allocator) !@This() {
@@ -910,7 +968,7 @@ test "plugin instance validates metadata before plugin init hook" {
         }
     };
 
-    try std.testing.expectError(error.InvalidParameterRange, PluginInstance(Invalid).init(std.testing.allocator, .{}));
+    try std.testing.expectError(error.EmptyPluginMetadata, PluginInstance(Invalid).init(std.testing.allocator, .{}));
     try std.testing.expect(!invalid_metadata_init_called);
 }
 

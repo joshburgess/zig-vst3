@@ -15,7 +15,7 @@ A plugin type declares:
 - `Params`: struct of `zig-plug` parameter descriptors
 - optional lifecycle methods
 
-`PluginSpec(Plugin)` validates those declarations at compile time, including reserved unit/program-list sentinel ids, program snapshot parameter ids, and normalized values, and exposes:
+`PluginSpec(Plugin)` validates those declarations at compile time, including non-empty plugin/class/category metadata, NUL-free contact strings, reserved unit/program-list sentinel ids, program snapshot parameter ids, and normalized values, and exposes:
 
 - `ParameterSet`: reflected descriptor metadata
 - `ParameterValues`: atomic normalized values initialized from descriptor defaults
@@ -24,7 +24,7 @@ A plugin type declares:
 - bus topology metadata with stereo audio input, stereo audio output, event input, and no event output as defaults
 - `encoded_parameter_state_size`: byte count for a full reflected parameter snapshot
 - lifecycle flags for optional `init`, `prepare`, `process`, `process64`, and `deinit` declarations
-- `initChecked(params)`: validates parameter metadata, then builds the reflected set and value storage
+- `initChecked(params)`: validates plugin, parameter, unit, and program metadata, then builds the reflected set and value storage
 - `init(params)`: builds the reflected set and value storage, panicking if metadata is invalid
 
 `PluginInstance(Plugin)` owns a plugin value plus its reflected spec, exposes the instance parameter set and mutable or const value storage, exposes bound parameter view/editor handles, provides reflected parameter metadata by index or id, index and existence lookup, plain/normalized conversion by index, id, display name, or field, and plain text formatting/parsing helpers, provides typed, normalized, index-based, id-based, name-based, and plain parameter load/store helpers by id or display name, exposes reflected unit and program-list metadata, applies reflected parameter changes to instance-owned values before process dispatch, can return the count of actually applied automatable writable parameter changes, exposes bulk and single-parameter default reset helpers, exposes the encoded reflected parameter-state size, reads and writes reflected parameter state for the instance, can report decoded, restored, and ignored state entries, writes debug JSON for reflected parameter state, and drives only the lifecycle hooks the plugin declares. It creates the plugin through `init(allocator)` when present, otherwise it uses a default struct value for declaration-only plugin types.
