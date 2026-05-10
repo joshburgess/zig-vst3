@@ -1131,6 +1131,10 @@ pub const EventWriter = struct {
     }
 
     pub fn appendAll(self: *EventWriter, source: Events) !void {
+        _ = try self.appendAllCount(source);
+    }
+
+    pub fn appendAllCount(self: *EventWriter, source: Events) !usize {
         for (source.items) |event| {
             try event.validate(self.frame_count);
         }
@@ -1139,6 +1143,7 @@ pub const EventWriter = struct {
             self.storage[self.count] = event;
             self.count += 1;
         }
+        return source.items.len;
     }
 
     pub fn canAppend(self: *const EventWriter, event_count: usize) bool {
@@ -1803,8 +1808,12 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn appendOutputEvents(self: *@This(), events: Events) !void {
+            _ = try self.appendOutputEventsCount(events);
+        }
+
+        pub fn appendOutputEventsCount(self: *@This(), events: Events) !usize {
             const writer = self.output_events orelse return error.OutputEventsUnavailable;
-            try writer.appendAll(events);
+            return writer.appendAllCount(events);
         }
 
         pub fn canAppendOutputEvent(self: @This()) bool {
@@ -3385,7 +3394,7 @@ test "event writer appends event views atomically" {
     var storage: [2]Event = undefined;
     var writer = EventWriter.init(&storage, 4);
 
-    try writer.appendAll(try Events.init(&items, 4));
+    try std.testing.expectEqual(@as(usize, 2), try writer.appendAllCount(try Events.init(&items, 4)));
     try std.testing.expectEqual(@as(usize, 2), writer.eventCount());
     try std.testing.expect(writer.canAppend(0));
     try std.testing.expect(!writer.canAppend(1));
@@ -3421,24 +3430,24 @@ test "event writer appends event views atomically" {
     var full_storage: [1]Event = undefined;
     var full_writer = EventWriter.init(&full_storage, 4);
     try std.testing.expect(!full_writer.canAppend(items.len));
-    try std.testing.expectError(error.EventStorageFull, full_writer.appendAll(try Events.init(&items, 4)));
+    try std.testing.expectError(error.EventStorageFull, full_writer.appendAllCount(try Events.init(&items, 4)));
     try std.testing.expectEqual(@as(usize, 0), full_writer.eventCount());
 
     const invalid_and_too_large = [_]Event{
         Event.noteOn(0, 0, 60, 1.0),
         Event.noteOn(0, 0, 128, 1.0),
     };
-    try std.testing.expectError(error.InvalidEventPitch, full_writer.appendAll(.{ .items = &invalid_and_too_large }));
+    try std.testing.expectError(error.InvalidEventPitch, full_writer.appendAllCount(.{ .items = &invalid_and_too_large }));
     try std.testing.expectEqual(@as(usize, 0), full_writer.eventCount());
 
     const outside = [_]Event{Event.noteOn(4, 0, 60, 1.0)};
     var outside_storage: [1]Event = undefined;
     var outside_writer = EventWriter.init(&outside_storage, 4);
-    try std.testing.expectError(error.EventOutsideBlock, outside_writer.appendAll(.{ .items = &outside }));
+    try std.testing.expectError(error.EventOutsideBlock, outside_writer.appendAllCount(.{ .items = &outside }));
     try std.testing.expectEqual(@as(usize, 0), outside_writer.eventCount());
 
     const invalid = [_]Event{Event.midiCc(0, 0, 1, 2.0)};
-    try std.testing.expectError(error.EventValueOutsideNormalizedRange, outside_writer.appendAll(.{ .items = &invalid }));
+    try std.testing.expectError(error.EventValueOutsideNormalizedRange, outside_writer.appendAllCount(.{ .items = &invalid }));
     try std.testing.expectEqual(@as(usize, 0), outside_writer.eventCount());
 }
 
@@ -3478,7 +3487,7 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?usize, 0), context.latestOutputEventOffset());
     try std.testing.expect(!context.outputEventsEmpty());
     try std.testing.expect(context.hasOutputEvents());
-    try context.appendOutputEvents(try Events.init(events[1..], input.len));
+    try std.testing.expectEqual(@as(usize, 1), try context.appendOutputEventsCount(try Events.init(events[1..], input.len)));
 
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 0), context.outputEventRemainingCapacity());
