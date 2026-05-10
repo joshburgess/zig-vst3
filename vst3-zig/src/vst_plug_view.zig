@@ -143,14 +143,20 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         fn onFocus(ptr: *anyopaque, state: types.TBool) callconv(.C) types.tresult {
             const self = owner(ptr);
             self.focus_count += 1;
+            if (@hasDecl(Config, "onFocus")) {
+                const result = Config.onFocus(self, state);
+                if (result != types.kResultOk) return result;
+            }
             self.has_focus = state != 0;
-            if (@hasDecl(Config, "onFocus")) return Config.onFocus(self, state);
             return types.kResultOk;
         }
 
         fn setFrame(ptr: *anyopaque, frame: ?*iplugview.IPlugFrame) callconv(.C) types.tresult {
+            if (@hasDecl(Config, "setFrame")) {
+                const result = Config.setFrame(owner(ptr), frame);
+                if (result != types.kResultOk) return result;
+            }
             owner(ptr).frame = frame;
-            if (@hasDecl(Config, "setFrame")) return Config.setFrame(owner(ptr), frame);
             return types.kResultOk;
         }
 
@@ -224,6 +230,27 @@ test "plug view tracks input size focus and frame state" {
     try std.testing.expectEqual(@as(types.uint32, 1), view.key_up_count);
     try std.testing.expect(view.has_focus);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.setFrame(iface, null));
+    try std.testing.expectEqual(@as(?*iplugview.IPlugFrame, null), view.frame);
+}
+
+test "plug view preserves accepted state when delegated hooks reject changes" {
+    const View = PlugView(1, struct {
+        pub fn onFocus(_: anytype, _: types.TBool) types.tresult {
+            return types.kResultFalse;
+        }
+
+        pub fn setFrame(_: anytype, _: ?*iplugview.IPlugFrame) types.tresult {
+            return types.kResultFalse;
+        }
+    });
+    var view = View{};
+    const iface = view.asInterface();
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.onFocus(iface, 1));
+    try std.testing.expect(!view.has_focus);
+    try std.testing.expectEqual(@as(types.uint32, 1), view.focus_count);
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.setFrame(iface, @ptrFromInt(0x1234)));
     try std.testing.expectEqual(@as(?*iplugview.IPlugFrame, null), view.frame);
 }
 
