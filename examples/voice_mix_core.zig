@@ -122,7 +122,7 @@ test "voice mix core example formats and parses int parameters" {
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainByName("Voices", "4"));
     try std.testing.expect(instance.storeParameterPlainByName("Voices", 4.0));
     try std.testing.expectEqual(@as(i64, 4), instance.loadParameter("voices"));
-    try std.testing.expect(instance.resetParameterByNameToDefault("Voices"));
+    try std.testing.expect(instance.resetParameterToDefaultByName("Voices"));
     try std.testing.expectEqual(@as(i64, 1), instance.loadParameter("voices"));
 }
 
