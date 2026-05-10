@@ -6,6 +6,13 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ZIG_VERSION: 0.14.0
+
 jobs:
   hygiene:
     name: Repository hygiene
@@ -21,7 +28,7 @@ jobs:
           fi
 
   test:
-    name: Test (${{ matrix.os }})
+    name: Build and test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -34,175 +41,104 @@ jobs:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.14.0
-      - name: Verify pinned VST3 SDK checkout
-        if: runner.os != 'Windows'
-        run: scripts/fetch_sdk.sh
-      - name: Verify pinned VST3 SDK checkout
-        if: runner.os == 'Windows'
-        run: .\scripts\fetch_sdk.ps1
-      - name: Check TUID ABI
-        if: runner.os != 'Windows'
-        run: zig build tuid-abi
-      - name: Check pluginbase ABI
-        if: runner.os != 'Windows'
-        run: zig build pluginbase-abi
-      - name: Check IBStream ABI
-        if: runner.os != 'Windows'
-        run: zig build ibstream-abi
-      - name: Check base string/error ABI
-        if: runner.os != 'Windows'
-        run: zig build base-strings-error-abi
-      - name: Check base persistence ABI
-        if: runner.os != 'Windows'
-        run: zig build base-persistence-abi
-      - name: Check base update/compatibility ABI
-        if: runner.os != 'Windows'
-        run: zig build base-update-compatibility-abi
-      - name: Check IComponent ABI
-        if: runner.os != 'Windows'
-        run: zig build component-abi
-      - name: Check IAudioProcessor ABI
-        if: runner.os != 'Windows'
-        run: zig build audio-processor-abi
-      - name: Check bypass processor helper ABI
-        if: runner.os != 'Windows'
-        run: zig build bypass-processor-abi
-      - name: Check process context ABI
-        if: runner.os != 'Windows'
-        run: zig build process-context-abi
-      - name: Check IEditController ABI
-        if: runner.os != 'Windows'
-        run: zig build edit-controller-abi
-      - name: Check parameter changes ABI
-        if: runner.os != 'Windows'
-        run: zig build parameter-changes-abi
-      - name: Check events ABI
-        if: runner.os != 'Windows'
-        run: zig build events-abi
-      - name: Check host/message ABI
-        if: runner.os != 'Windows'
-        run: zig build host-message-abi
-      - name: Check plug view ABI
-        if: runner.os != 'Windows'
-        run: zig build plugview-abi
-      - name: Check units ABI
-        if: runner.os != 'Windows'
-        run: zig build units-abi
-      - name: Check MIDI mapping ABI
-        if: runner.os != 'Windows'
-        run: zig build midi-mapping-abi
-      - name: Check MIDI controller constants ABI
-        if: runner.os != 'Windows'
-        run: zig build midi-controllers-abi
-      - name: Check speaker core ABI
-        if: runner.os != 'Windows'
-        run: zig build speaker-core-abi
-      - name: Check preset keys ABI
-        if: runner.os != 'Windows'
-        run: zig build preset-keys-abi
-      - name: Check preset file ABI
-        if: runner.os != 'Windows'
-        run: zig build preset-file-abi
-      - name: Check note expression ABI
-        if: runner.os != 'Windows'
-        run: zig build note-expression-abi
-      - name: Check capability/state ABI
-        if: runner.os != 'Windows'
-        run: zig build capability-state-abi
-      - name: Check parameter helpers ABI
-        if: runner.os != 'Windows'
-        run: zig build parameter-helpers-abi
-      - name: Check context menu ABI
-        if: runner.os != 'Windows'
-        run: zig build context-menu-abi
-      - name: Check physical UI/channel context ABI
-        if: runner.os != 'Windows'
-        run: zig build physical-channel-abi
-      - name: Check data exchange ABI
-        if: runner.os != 'Windows'
-        run: zig build data-exchange-abi
-      - name: Check XML representation ABI
-        if: runner.os != 'Windows'
-        run: zig build representation-abi
-      - name: Check Wayland frame ABI
-        if: runner.os != 'Windows'
-        run: zig build wayland-frame-abi
-      - name: Check Inter-App Audio ABI
-        if: runner.os != 'Windows'
-        run: zig build inter-app-audio-abi
-      - name: Check test plug provider ABI
-        if: runner.os != 'Windows'
-        run: zig build test-plug-provider-abi
-      - name: Check test interfaces ABI
-        if: runner.os != 'Windows'
-        run: zig build test-interfaces-abi
-      - name: Check FUnknown C ABI
-        if: runner.os != 'Windows'
-        run: zig build funknown-abi
-      - name: Check multi-interface C ABI
-        if: runner.os != 'Windows'
-        run: zig build multi-interface-abi
-      - name: Build VST3 validator
-        if: runner.os == 'macOS'
-        run: zig build validator
-      - name: Phase 1 integration
-        if: runner.os != 'Windows'
-        run: zig build phase1
+          version: ${{ env.ZIG_VERSION }}
       - name: Build
         run: zig build
       - name: Test
         run: zig build test
-      - name: Upload artifacts
+      - name: Upload build outputs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zig-vst3-examples-${{ matrix.os }}
+          name: zig-out-${{ matrix.os }}
           path: zig-out/
+          if-no-files-found: ignore
 
-  cross-compile:
-    name: Cross compile
-    runs-on: ubuntu-latest
+  layer1-abi:
+    name: Layer 1 ABI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: test
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - x86_64-linux
-          - aarch64-linux
-          - x86_64-macos
-          - aarch64-macos
-          - x86_64-windows
-          - aarch64-windows
+        os:
+          - ubuntu-latest
+          - macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.14.0
-      - name: Build target
-        run: zig build -Dtarget=${{ matrix.target }}
-      - name: Build VST3 bundle
-        shell: bash
-        run: |
-          case "${{ matrix.target }}" in
-            *linux*)
-              zig build -Dtarget=${{ matrix.target }} bundle-examples-linux
-              ;;
-            *macos*)
-              zig build -Dtarget=${{ matrix.target }} bundle-examples
-              ;;
-            *windows*)
-              zig build -Dtarget=${{ matrix.target }} bundle-examples-windows
-              ;;
-          esac
-
-  validator:
-    name: Build VST3 validator
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v2
+          version: ${{ env.ZIG_VERSION }}
+      - name: Restore VST3 SDK cache
+        uses: actions/cache@v4
         with:
-          version: 0.14.0
+          path: .vst3-sdk/vst3sdk
+          key: vst3-sdk-v3.8.0-build-66-${{ runner.os }}
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
-      - name: Build validator
+      - name: Run Layer 1 ABI checks
+        run: zig build layer1-abi
+
+  validator:
+    name: macOS validator
+    runs-on: macos-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Restore VST3 SDK cache
+        uses: actions/cache@v4
+        with:
+          path: .vst3-sdk/vst3sdk
+          key: vst3-sdk-v3.8.0-build-66-${{ runner.os }}
+      - name: Restore validator build cache
+        uses: actions/cache@v4
+        with:
+          path: .vst3-sdk/vst3sdk/build
+          key: vst3-validator-v3.8.0-build-66-${{ runner.os }}
+      - name: Fetch pinned VST3 SDK
+        run: scripts/fetch_sdk.sh
+      - name: Build Steinberg validator
         run: zig build validator
+      - name: Validate example bundles
+        run: zig build validate-examples
+      - name: Upload validated bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: validated-macos-vst3-bundles
+          path: zig-out/bundle/
+          if-no-files-found: error
+
+  cross-compile:
+    name: Cross compile (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-linux-gnu
+            bundle_step: bundle-examples-linux
+          - target: aarch64-linux-gnu
+            bundle_step: bundle-examples-linux
+          - target: x86_64-windows-gnu
+            bundle_step: bundle-examples-windows
+          - target: aarch64-windows-gnu
+            bundle_step: bundle-examples-windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Build target
+        run: zig build -Dtarget=${{ matrix.target }}
+      - name: Build target bundles
+        run: zig build -Dtarget=${{ matrix.target }} ${{ matrix.bundle_step }}
+      - name: Upload target bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: vst3-bundles-${{ matrix.target }}
+          path: zig-out/bundle/
+          if-no-files-found: error
