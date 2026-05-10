@@ -6,6 +6,31 @@ pub const format_version: u16 = 1;
 pub const encoded_header_size: usize = magic.len + @sizeOf(u16) + @sizeOf(u16);
 pub const encoded_entry_size: usize = @sizeOf(u32) + @sizeOf(u64);
 
+pub const ParameterStateHeader = struct {
+    version: u16,
+    entry_count: usize,
+
+    pub fn entryCount(self: ParameterStateHeader) usize {
+        return self.entry_count;
+    }
+
+    pub fn hasEntries(self: ParameterStateHeader) bool {
+        return self.entry_count != 0;
+    }
+
+    pub fn isCurrentVersion(self: ParameterStateHeader) bool {
+        return self.version == format_version;
+    }
+
+    pub fn encodedSize(self: ParameterStateHeader) usize {
+        return encodedSizeForCount(self.entry_count);
+    }
+
+    pub fn encodedSizeChecked(self: ParameterStateHeader) !usize {
+        return encodedSizeForCountChecked(self.entry_count);
+    }
+};
+
 pub const ParameterIdMigration = struct {
     old_id: u32,
     new_id: u32,
@@ -84,13 +109,28 @@ pub fn writeParameterState(
     writer: anytype,
 ) !void {
     comptime assertEncodableParameterCount(Params);
-    try writer.writeAll(magic);
-    try writer.writeInt(u16, format_version, .little);
-    try writer.writeInt(u16, @intCast(parameters.ParameterSet(Params).count), .little);
+    try writeParameterStateHeaderForCount(parameters.ParameterSet(Params).count, writer);
     inline for (0..parameters.ParameterSet(Params).count) |index| {
         try writer.writeInt(u32, set.id(index).?, .little);
         try writer.writeInt(u64, @bitCast(values.load(index).?), .little);
     }
+}
+
+pub fn writeParameterStateHeaderForCount(count: usize, writer: anytype) !void {
+    const encodable_count = std.math.cast(u16, count) orelse return error.ParameterStateTooLarge;
+    try writer.writeAll(magic);
+    try writer.writeInt(u16, format_version, .little);
+    try writer.writeInt(u16, encodable_count, .little);
+}
+
+pub fn readParameterStateHeader(reader: anytype) !ParameterStateHeader {
+    var header: [magic.len]u8 = undefined;
+    try reader.readNoEof(&header);
+    if (!std.mem.eql(u8, &header, magic)) return error.InvalidStateMagic;
+    return .{
+        .version = try reader.readInt(u16, .little),
+        .entry_count = try reader.readInt(u16, .little),
+    };
 }
 
 pub fn writeParameterStateJson(
@@ -151,21 +191,17 @@ pub fn readParameterStateWithMigrationsReport(
     migrations: []const ParameterIdMigration,
 ) !ReadParameterStateReport {
     try validateParameterIdMigrations(migrations);
-    var header: [magic.len]u8 = undefined;
-    try reader.readNoEof(&header);
-    if (!std.mem.eql(u8, &header, magic)) return error.InvalidStateMagic;
-    const state_version = try reader.readInt(u16, .little);
-    if (state_version != format_version) return error.UnsupportedStateVersion;
-    const count = try reader.readInt(u16, .little);
+    const header = try readParameterStateHeader(reader);
+    if (!header.isCurrentVersion()) return error.UnsupportedStateVersion;
     var restored = parameters.ParameterValues(Params).init(set);
     restored.copyFrom(values);
     var report = ReadParameterStateReport{
-        .entry_count = count,
+        .entry_count = header.entry_count,
         .restored_count = 0,
         .ignored_count = 0,
     };
     var seen_restored = [_]bool{false} ** parameters.ParameterSet(Params).count;
-    for (0..count) |_| {
+    for (0..header.entry_count) |_| {
         const id = try reader.readInt(u32, .little);
         const normalized: f64 = @bitCast(try reader.readInt(u64, .little));
         if (!std.math.isFinite(normalized) or normalized < 0.0 or normalized > 1.0) return error.ParameterStateOutsideNormalizedRange;
@@ -257,6 +293,15 @@ test "parameter state round-trips normalized values" {
     try writeParameterState(Params, &set, &values, out_stream.writer());
 
     var in_stream = std.io.fixedBufferStream(&bytes);
+    const header = try readParameterStateHeader(in_stream.reader());
+    try std.testing.expectEqual(ParameterStateHeader{ .version = format_version, .entry_count = 2 }, header);
+    try std.testing.expectEqual(@as(usize, 2), header.entryCount());
+    try std.testing.expect(header.hasEntries());
+    try std.testing.expect(header.isCurrentVersion());
+    try std.testing.expectEqual(@as(usize, 36), header.encodedSize());
+    try std.testing.expectEqual(@as(usize, 36), try header.encodedSizeChecked());
+
+    in_stream = std.io.fixedBufferStream(&bytes);
     const report = try readParameterStateReport(Params, &set, &restored, in_stream.reader());
 
     try std.testing.expectEqual(ReadParameterStateReport{ .entry_count = 2, .restored_count = 2, .ignored_count = 0 }, report);
@@ -271,6 +316,30 @@ test "parameter state round-trips normalized values" {
     try std.testing.expect(!report.ignoredAllEntries());
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadField(&set, "gain"));
     try std.testing.expectEqual(@as(f64, 0.75), restored.loadField(&set, "mix"));
+}
+
+test "parameter state header helpers validate magic and count range" {
+    var bytes: [encoded_header_size]u8 = undefined;
+    var out_stream = std.io.fixedBufferStream(&bytes);
+
+    try writeParameterStateHeaderForCount(0, out_stream.writer());
+
+    var in_stream = std.io.fixedBufferStream(&bytes);
+    const header = try readParameterStateHeader(in_stream.reader());
+    try std.testing.expectEqual(ParameterStateHeader{ .version = format_version, .entry_count = 0 }, header);
+    try std.testing.expect(!header.hasEntries());
+    try std.testing.expect(header.isCurrentVersion());
+    try std.testing.expectEqual(encoded_header_size, header.encodedSize());
+
+    try std.testing.expectError(
+        error.ParameterStateTooLarge,
+        writeParameterStateHeaderForCount(@as(usize, std.math.maxInt(u16)) + 1, out_stream.writer()),
+    );
+
+    var bad_magic = bytes;
+    bad_magic[0] = 'X';
+    var bad_magic_stream = std.io.fixedBufferStream(&bad_magic);
+    try std.testing.expectError(error.InvalidStateMagic, readParameterStateHeader(bad_magic_stream.reader()));
 }
 
 test "parameter state writes debug json" {
