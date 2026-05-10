@@ -74,7 +74,7 @@ Parameter helpers:
 Event helpers:
 
 - `Event.noteOn`, `Event.noteOff`, `Event.midiCc`, `Event.pitchBend`, `Event.aftertouch`, `Event.noteExpressionValue`, `Event.noteExpressionInt`, `Event.noteExpressionText`, `Event.dataEvent`, and `Event.other` construct common input and output events.
-- `Event.asNoteOn`, `asNoteOff`, `asMidiCC`, `asPitchBend`, `asAftertouch`, `asNoteExpressionValue`, `asNoteExpressionInt`, `asNoteExpressionText`, and `asData` expose typed payload views for processors that do not want to switch on the broad event struct directly.
+- `Event.asNoteOn`, `asNoteAttack`, `asNoteOff`, `asNoteRelease`, `asMidiCC`, `asPitchBend`, `asAftertouch`, `asNoteExpressionValue`, `asNoteExpressionInt`, `asNoteExpressionText`, and `asData` expose typed payload views for processors that do not want to switch on the broad event struct directly. `asNoteRelease` handles both note-off and zero-velocity note-on releases.
 - `Event.withBusIndex` retargets a constructed event to another event bus.
 - `Event.withControlNumber` preserves legacy MIDI controller numbers when a host bridge needs to keep them attached to converted events.
 - `Event.isNoteAttack`, `Event.isNoteRelease`, and `Event.isNoteForPitch` cover common MIDI note checks, including the zero-velocity note-on release convention.

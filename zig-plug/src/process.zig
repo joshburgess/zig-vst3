@@ -527,6 +527,12 @@ pub const Event = struct {
         };
     }
 
+    pub fn asNoteAttack(self: Event) ?NoteOn {
+        const note = self.asNoteOn() orelse return null;
+        if (note.velocity <= 0.0) return null;
+        return note;
+    }
+
     pub fn asNoteOff(self: Event) ?NoteOff {
         if (self.kind != .note_off) return null;
         return .{
@@ -535,6 +541,19 @@ pub const Event = struct {
             .channel = self.channel,
             .pitch = self.pitch,
             .velocity = self.velocity,
+        };
+    }
+
+    pub fn asNoteRelease(self: Event) ?NoteOff {
+        if (self.asNoteOff()) |note| return note;
+        const note = self.asNoteOn() orelse return null;
+        if (note.velocity != 0.0) return null;
+        return .{
+            .bus_index = note.bus_index,
+            .sample_offset = note.sample_offset,
+            .channel = note.channel,
+            .pitch = note.pitch,
+            .velocity = 0.0,
         };
     }
 
@@ -2024,18 +2043,44 @@ test "event note helpers classify attacks and releases" {
     try std.testing.expect(!attack.isNoteRelease());
     try std.testing.expect(attack.isNoteForPitch(60));
     try std.testing.expect(!attack.isNoteForPitch(61));
+    try std.testing.expectEqual(NoteOn{
+        .bus_index = 0,
+        .sample_offset = 0,
+        .channel = 1,
+        .pitch = 60,
+        .velocity = 0.75,
+    }, attack.asNoteAttack().?);
+    try std.testing.expectEqual(@as(?NoteOff, null), attack.asNoteRelease());
 
     try std.testing.expect(!zero_velocity_release.isNoteAttack());
     try std.testing.expect(zero_velocity_release.isNoteRelease());
     try std.testing.expect(zero_velocity_release.isNoteForPitch(60));
+    try std.testing.expectEqual(@as(?NoteOn, null), zero_velocity_release.asNoteAttack());
+    try std.testing.expectEqual(NoteOff{
+        .bus_index = 0,
+        .sample_offset = 1,
+        .channel = 1,
+        .pitch = 60,
+        .velocity = 0.0,
+    }, zero_velocity_release.asNoteRelease().?);
 
     try std.testing.expect(!release.isNoteAttack());
     try std.testing.expect(release.isNoteRelease());
     try std.testing.expect(release.isNoteForPitch(60));
+    try std.testing.expectEqual(@as(?NoteOn, null), release.asNoteAttack());
+    try std.testing.expectEqual(NoteOff{
+        .bus_index = 0,
+        .sample_offset = 2,
+        .channel = 1,
+        .pitch = 60,
+        .velocity = 0.0,
+    }, release.asNoteRelease().?);
 
     try std.testing.expect(!cc.isNoteAttack());
     try std.testing.expect(!cc.isNoteRelease());
     try std.testing.expect(!cc.isNoteForPitch(60));
+    try std.testing.expectEqual(@as(?NoteOn, null), cc.asNoteAttack());
+    try std.testing.expectEqual(@as(?NoteOff, null), cc.asNoteRelease());
 }
 
 test "events expose typed payload views" {
@@ -2058,6 +2103,13 @@ test "events expose typed payload views" {
         .pitch = 60,
         .velocity = 0.75,
     }, note_on.asNoteOn().?);
+    try std.testing.expectEqual(NoteOn{
+        .bus_index = 3,
+        .sample_offset = 1,
+        .channel = 2,
+        .pitch = 60,
+        .velocity = 0.75,
+    }, note_on.asNoteAttack().?);
     try std.testing.expectEqual(NoteOff{
         .bus_index = 0,
         .sample_offset = 2,
@@ -2065,6 +2117,13 @@ test "events expose typed payload views" {
         .pitch = 60,
         .velocity = 0.25,
     }, note_off.asNoteOff().?);
+    try std.testing.expectEqual(NoteOff{
+        .bus_index = 0,
+        .sample_offset = 2,
+        .channel = 2,
+        .pitch = 60,
+        .velocity = 0.25,
+    }, note_off.asNoteRelease().?);
     try std.testing.expectEqual(MidiCC{
         .bus_index = 0,
         .sample_offset = 3,
@@ -2113,6 +2172,8 @@ test "events expose typed payload views" {
     }, data.asData().?);
 
     try std.testing.expectEqual(@as(?NoteOn, null), cc.asNoteOn());
+    try std.testing.expectEqual(@as(?NoteOn, null), cc.asNoteAttack());
+    try std.testing.expectEqual(@as(?NoteOff, null), cc.asNoteRelease());
     try std.testing.expectEqual(@as(?MidiCC, null), note_on.asMidiCC());
     try std.testing.expectEqual(@as(?DataEvent, null), other.asData());
 }
