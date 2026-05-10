@@ -10,6 +10,18 @@ pub const ParameterSegment = struct {
     start_offset: usize,
     end_offset: usize,
     normalized: f64,
+
+    pub fn frameCount(self: ParameterSegment) usize {
+        return self.end_offset - self.start_offset;
+    }
+
+    pub fn isEmpty(self: ParameterSegment) bool {
+        return self.frameCount() == 0;
+    }
+
+    pub fn contains(self: ParameterSegment, sample_offset: usize) bool {
+        return sample_offset >= self.start_offset and sample_offset < self.end_offset;
+    }
 };
 
 fn clampNormalized(value: f64) f64 {
@@ -24,6 +36,18 @@ fn isFiniteInRange(comptime T: type, value: T, min: T, max: T) bool {
 pub const BlockSegment = struct {
     start_offset: usize,
     end_offset: usize,
+
+    pub fn frameCount(self: BlockSegment) usize {
+        return self.end_offset - self.start_offset;
+    }
+
+    pub fn isEmpty(self: BlockSegment) bool {
+        return self.frameCount() == 0;
+    }
+
+    pub fn contains(self: BlockSegment, sample_offset: usize) bool {
+        return sample_offset >= self.start_offset and sample_offset < self.end_offset;
+    }
 };
 
 pub const BlockSegmentIterator = struct {
@@ -1880,10 +1904,16 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffsetForId(7, 0));
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForId(7, 3));
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForId(9, 0));
-    try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 3, .normalized = 0.25 }, view.segmentAt(7, 0, 4, 1.0).?);
+    const first_segment = view.segmentAt(7, 0, 4, 1.0).?;
+    try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 3, .normalized = 0.25 }, first_segment);
+    try std.testing.expectEqual(@as(usize, 3), first_segment.frameCount());
+    try std.testing.expect(!first_segment.isEmpty());
+    try std.testing.expect(first_segment.contains(2));
+    try std.testing.expect(!first_segment.contains(3));
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 3, .end_offset = 4, .normalized = 0.75 }, view.segmentAt(7, 3, 4, 1.0).?);
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 2, .normalized = 0.5 }, view.segmentAt(8, 0, 4, 0.5).?);
     try std.testing.expectEqual(@as(?ParameterSegment, null), view.segmentAt(7, 4, 4, 1.0));
+    try std.testing.expect((ParameterSegment{ .start_offset = 2, .end_offset = 2, .normalized = 0.0 }).isEmpty());
     try std.testing.expectEqual(@as(usize, 0), (ParameterChanges{}).changeCount());
     try std.testing.expect((ParameterChanges{}).isEmpty());
     try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).firstSampleOffset());
@@ -1949,11 +1979,17 @@ test "parameter changes iterate block segments split at change offsets" {
     const view = try ParameterChanges.init(&changes, 8);
     var iterator = view.blockSegments(8);
 
-    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, iterator.next().?);
+    const first_segment = iterator.next().?;
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, first_segment);
+    try std.testing.expectEqual(@as(usize, 1), first_segment.frameCount());
+    try std.testing.expect(!first_segment.isEmpty());
+    try std.testing.expect(first_segment.contains(0));
+    try std.testing.expect(!first_segment.contains(1));
     try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 3 }, iterator.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 3, .end_offset = 5 }, iterator.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 5, .end_offset = 8 }, iterator.next().?);
     try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+    try std.testing.expect((BlockSegment{ .start_offset = 2, .end_offset = 2 }).isEmpty());
 
     var empty = (ParameterChanges{}).blockSegments(4);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 4 }, empty.next().?);
