@@ -235,6 +235,14 @@ test "plug view tracks input size focus and frame state" {
 
 test "plug view preserves accepted state when delegated hooks reject changes" {
     const View = PlugView(1, struct {
+        pub fn attached(_: anytype, _: ?*anyopaque, _: types.FIDString) types.tresult {
+            return types.kResultFalse;
+        }
+
+        pub fn removed(_: anytype) types.tresult {
+            return types.kResultFalse;
+        }
+
         pub fn onFocus(_: anytype, _: types.TBool) types.tresult {
             return types.kResultFalse;
         }
@@ -244,7 +252,17 @@ test "plug view preserves accepted state when delegated hooks reject changes" {
         }
     });
     var view = View{};
+    try std.testing.expectEqual(types.kResultOk, view.addPlatform(iplugview.PlatformType.kPlatformTypeNSView));
     const iface = view.asInterface();
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.attached(iface, @ptrFromInt(0x1234), iplugview.PlatformType.kPlatformTypeNSView));
+    try std.testing.expectEqual(@as(types.uint32, 0), view.attached_count);
+    try std.testing.expectEqual(@as(?*anyopaque, null), view.attached_parent);
+    view.attached_parent = @ptrFromInt(0x1234);
+    view.attached_platform = iplugview.PlatformType.kPlatformTypeNSView;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.removed(iface));
+    try std.testing.expectEqual(@as(types.uint32, 0), view.removed_count);
+    try std.testing.expectEqual(@as(?*anyopaque, @ptrFromInt(0x1234)), view.attached_parent);
 
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.onFocus(iface, 1));
     try std.testing.expect(!view.has_focus);
