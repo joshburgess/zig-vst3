@@ -91,13 +91,29 @@ pub fn UnitSet(comptime config: Config) type {
             return null;
         }
 
+        pub fn unitByName(self: Self, name: []const u8) ?Unit {
+            const index = self.unitIndexOfName(name) orelse return null;
+            return self.unit(index);
+        }
+
         pub fn hasUnit(self: Self, id: i32) bool {
             return self.unitById(id) != null;
+        }
+
+        pub fn hasUnitName(self: Self, name: []const u8) bool {
+            return self.unitByName(name) != null;
         }
 
         pub fn unitIndexOfId(_: Self, id: i32) ?usize {
             for (config.units, 0..) |item, index| {
                 if (item.id == id) return index;
+            }
+            return null;
+        }
+
+        pub fn unitIndexOfName(_: Self, name: []const u8) ?usize {
+            for (config.units, 0..) |item, index| {
+                if (std.mem.eql(u8, item.name, name)) return index;
             }
             return null;
         }
@@ -114,8 +130,17 @@ pub fn UnitSet(comptime config: Config) type {
             return null;
         }
 
+        pub fn programListByName(self: Self, name: []const u8) ?ProgramList {
+            const index = self.programListIndexOfName(name) orelse return null;
+            return self.programList(index);
+        }
+
         pub fn hasProgramList(self: Self, id: i32) bool {
             return self.programListById(id) != null;
+        }
+
+        pub fn hasProgramListName(self: Self, name: []const u8) bool {
+            return self.programListByName(name) != null;
         }
 
         pub fn programListForUnit(self: Self, unit_id: i32) ?ProgramList {
@@ -127,6 +152,13 @@ pub fn UnitSet(comptime config: Config) type {
         pub fn programListIndexOfId(_: Self, id: i32) ?usize {
             for (config.program_lists, 0..) |item, index| {
                 if (item.id == id) return index;
+            }
+            return null;
+        }
+
+        pub fn programListIndexOfName(_: Self, name: []const u8) ?usize {
+            for (config.program_lists, 0..) |item, index| {
+                if (std.mem.eql(u8, item.name, name)) return index;
             }
             return null;
         }
@@ -340,14 +372,26 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(usize, 1), set.programListCount());
     try std.testing.expectEqual(@as(?usize, 1), set.unitIndexOfId(1));
     try std.testing.expectEqual(@as(?usize, null), set.unitIndexOfId(99));
+    try std.testing.expectEqual(@as(?usize, 1), set.unitIndexOfName("Oscillator"));
+    try std.testing.expectEqual(@as(?usize, null), set.unitIndexOfName("Missing"));
     try std.testing.expect(set.hasUnit(1));
     try std.testing.expect(!set.hasUnit(99));
+    try std.testing.expect(set.hasUnitName("Oscillator"));
+    try std.testing.expect(!set.hasUnitName("Missing"));
     try std.testing.expectEqualStrings("Oscillator", set.unitById(1).?.name);
+    try std.testing.expectEqual(@as(i32, 1), set.unitByName("Oscillator").?.id);
+    try std.testing.expectEqual(@as(?Unit, null), set.unitByName("Missing"));
     try std.testing.expectEqual(@as(i32, 10), set.unitById(1).?.program_list_id);
     try std.testing.expectEqual(@as(?usize, 0), set.programListIndexOfId(10));
+    try std.testing.expectEqual(@as(?usize, 0), set.programListIndexOfName("Oscillator Presets"));
+    try std.testing.expectEqual(@as(?usize, null), set.programListIndexOfName("Missing"));
     try std.testing.expect(set.hasProgramList(10));
     try std.testing.expect(!set.hasProgramList(99));
+    try std.testing.expect(set.hasProgramListName("Oscillator Presets"));
+    try std.testing.expect(!set.hasProgramListName("Missing"));
     try std.testing.expectEqualStrings("Oscillator Presets", set.programListById(10).?.name);
+    try std.testing.expectEqual(@as(i32, 10), set.programListByName("Oscillator Presets").?.id);
+    try std.testing.expectEqual(@as(?ProgramList, null), set.programListByName("Missing"));
     try std.testing.expectEqualStrings("Oscillator Presets", set.programListForUnit(1).?.name);
     try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnit(root_unit_id));
     try std.testing.expectEqual(@as(?usize, 2), set.programCount(10));
