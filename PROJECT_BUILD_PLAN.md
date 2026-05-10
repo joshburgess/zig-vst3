@@ -515,11 +515,13 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ## Phase 5: Layer 2 Framework Design
 
-**Duration.** 2–3 weeks of design, then ongoing implementation.
+**Duration.** Initial design is complete enough for the bundled examples. The phase is now in implementation hardening.
 
-**Goal.** Design and prototype the user-facing framework. This is where Zig idioms matter most. Exit this phase with a `Plugin` interface that's pleasant to implement and a parameter system that scales.
+**Goal.** Finish the user-facing framework around the APIs already proven by the bundled examples. This is where Zig idioms matter most. Exit this phase with a `Plugin` interface that's pleasant to implement, a parameter and state system that scales, and enough host-smoke coverage to trust the framework outside the validator.
 
-**Current status.** The first prototype exists under `zig-plug/src/` and is also exposed as the pure `zig-plug-core` module for Layer 1 integration. The reusable VST3 bridge now covers reflected controller metadata, string conversion with deterministic failed conversion outputs, normalized/plain conversion, parameter controller/state helpers, host automation collection and application, state serialization with id migrations, parameter-count bounds, restore reports with helper predicates, stereo audio and event bus metadata, VST3 stream state compatibility, process context construction for effects, generators, and analyzers, input event collection, output event writing, data-event payloads, invalid event-value filtering, process-count validation, stream adapter size guards, and main audio sample-size dispatch. The reusable shells now expose default implementations for root unit info, program/unit data, MIDI mapping and learn, MIDI 2 mapping and learn, note expression, keyswitch, physical UI mapping, parameter helper interfaces, edit-controller extensions, process-context requirements, processor capability reporting, prefetch support, audio presentation latency, and host progress callbacks. They also retain and release host callback interfaces, connection-point peers, and host context extensions across replacement, disconnect, terminate, and repeated initialize paths. The parameter core clamps NaN and out-of-range host values before integer conversions, treats NaN modulation offsets as neutral, uses the minimum value for NaN float defaults, validates duplicate ids and names, validates descriptor metadata before plugin spec construction, saturates oversized step counts to VST limits, exposes parameter metadata by index, id, display name, and comptime field name, and can report how many process parameter changes were actually applied after ignoring unknown, non-automatable, and read-only parameters. `zig-plug` also has reflected plugin/factory/class metadata, unit and program-list metadata, named unit, program-list, program, and program-parameter lookup, optional program parameter snapshots, no-allocation automation segment helpers, program application helpers for host-facing plugin organization, explicit migration validation for reflected parameter state, duplicate restored state-entry rejection, and event validation for non-finite or out-of-range process values. The reusable edit-controller shell exposes unit and program-list metadata through VST3 `IUnitInfo`. The gain, bypass, mode-gain, voice-mix, note-gate, and event-echo plugins now use reusable simple stereo effect and reflected edit-controller shells, and all bundled examples validate locally on macOS via `zig build validate-examples`. The build has factored helpers for adding bundled VST3 examples, direct `zig-plug-core` tests, and native, Linux, and Windows aggregate bundle steps. `zig build phase1` now includes all bundled example validator paths on macOS. CI cross-target bundle checks now build all bundled examples. `examples/gain_core.zig`, `examples/bypass_core.zig`, `examples/mode_gain_core.zig`, `examples/voice_mix_core.zig`, `examples/note_gate_core.zig`, `examples/event_echo_core.zig`, `examples/event_monitor_core.zig`, and `examples/sine_synth_core.zig` are checked pure-API examples covering float, bool, enum, int, sample-offset parameter changes, counted reflected automation application, program snapshots, input events, output events, event-kind summaries, combined event and automation segment processing, and output-only event-offset synthesis. The remaining Phase 5 work is host smoke testing and broader framework hardening.
+**Current status.** `zig-plug` is no longer just a sketch. The framework lives under `zig-plug/src/` and is also exposed as the pure `zig-plug-core` module for Layer 1 integration. It has reflected plugin and class metadata, lifecycle validation, typed parameter views and editors, normalized/plain conversion, state serialization with id migrations and restore reports, unit and program-list metadata, optional program snapshots, no-allocation automation segments, input events, output events, process contexts for effects, generators, and analyzers, and f32/f64 process dispatch. The reusable VST3 bridge maps those APIs onto reflected edit controllers and simple stereo processors, including host automation collection, stream state compatibility, input event collection, bounded output event writing, unit info, conservative optional-interface defaults, retained host callback interfaces, and main audio sample-size dispatch.
+
+The gain, bypass, mode-gain, voice-mix, note-gate, event-echo, event-monitor, and sine-synth pure examples cover float, bool, enum, and int parameters, counted automation application, program snapshots, state-aware process hooks, save/reload behavior, input events, output events, combined event and automation segmentation, and output-only event-offset synthesis. The bundled gain, bypass, mode-gain, voice-mix, note-gate, and event-echo VST3 examples use the reusable shells and validate locally on macOS with `zig build validate-examples`. The build also has direct `zig-plug-core` tests plus native, Linux, and Windows aggregate bundle steps. The remaining Phase 5 work is host smoke testing, API polish, documentation, and hardening around the framework surface that already exists.
 
 ### Work Unit 5.1: Plugin trait equivalent
 
@@ -532,11 +534,11 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
   - Allocator passing convention
   - Real-time safety: how the API keeps allocation, locks, logging, and unbounded work out of `process`
   - Debug instrumentation for detecting allocator use and lock acquisition on the audio thread
-- Prototype in `zig-plug/src/plugin.zig` sufficient to express a gain plugin in 30 lines or fewer
+- `zig-plug/src/plugin.zig` implementation sufficient to express gain, bypass, enum mode gain, int voice mix, note gate, event echo, and sine synth examples through the public API
 
 **Exit criteria.**
 - Three external Zig developers review the design and at least two find the API natural
-- Prototype gain plugin compiles, runs, and passes Steinberg's validator using Layer 1 underneath
+- The bundled Layer 2 examples compile, run, and pass Steinberg's validator using Layer 1 underneath
 
 ### Work Unit 5.2: Parameter system
 
@@ -547,6 +549,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 - Implementation supporting: float, int, bool, enum parameters; min/max/default; value-to-string and string-to-value; smoothing (linear, logarithmic, exponential); modulation
 - Comptime-reflected parameter struct (analogous to NIH-plug's `Params` derive) so users declare parameters as struct fields
 - Tests covering parameter range edge cases, string round-trips, and atomic update from the audio thread
+- Public metadata helpers for index, id, display-name, and comptime field-name lookup
 
 **Exit criteria.**
 - Gain plugin's parameter declaration is one struct definition, no boilerplate beyond field annotations
@@ -563,7 +566,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 - Backward-compatibility story: how do users migrate state when they add/remove parameters?
 
 **Exit criteria.**
-- Save and reload of plugin state in a host preserves all parameter values exactly
+- Save and reload of plugin state in a host preserves all parameter values exactly. REAPER has been smoke-tested for the available examples; broader host results still need to be recorded in `docs/host-matrix.md`.
 - Adding a new parameter to a plugin does not break loading of older states
 
 ### Work Unit 5.4: Sample-accurate automation
@@ -591,23 +594,22 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 - Rich high-level event types in the framework: `NoteOn`, `NoteOff`, `MidiCC`, `PitchBend`, `Aftertouch`, `NoteExpression`
 - Event iterator API for plugins to consume
 - SysEx send/receive
-- A simple MIDI-effect example plugin (`examples/midi-monitor/`) that prints incoming events
+- Checked MIDI-style examples that exercise input events, output events, and event-kind summaries without relying on stdout from the audio thread
 
 **Exit criteria.**
-- A synth example plugin (added in this work unit) responds correctly to keyboard input across all three platforms
+- A synth or note-driven effect responds correctly to keyboard input across all three platforms. `note_gate` remains the manual host test still deferred because MIDI routing was not available during the first REAPER pass.
 
 ### Work Unit 5.6: Reference plugins on Layer 2
 
 **Inputs.** Work Units 5.1–5.5.
 
 **Deliverables.**
-- `examples/gain/` rewritten on Layer 2 (10–30 lines)
-- `examples/synth/`: simple monophonic synthesizer
-- `examples/midi-arp/`: MIDI arpeggiator (effect that consumes and produces MIDI)
-- Each example has its own README
+- Checked core examples for gain, bypass, enum mode gain, int voice mix, note gate, event echo, event monitor, and sine synth
+- Bundled VST3 examples for gain, bypass, mode gain, voice mix, note gate, and event echo
+- Host-matrix entries for every bundled example
 
 **Exit criteria.**
-- All three examples pass the validator and load in target hosts
+- Bundled examples pass the validator and load in target hosts
 - Each example demonstrates a distinct framework feature
 
 ---
