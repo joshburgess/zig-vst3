@@ -40,6 +40,7 @@ pub const pluginterfaces = struct {
 };
 pub const tuid = @import("tuid.zig");
 pub const version = "0.1.0-dev";
+pub const vst_capability_support = @import("vst_capability_support.zig");
 pub const vst_cloneable = @import("vst_cloneable.zig");
 pub const vst_component_handler = @import("vst_component_handler.zig");
 pub const vst_content_scale_support = @import("vst_content_scale_support.zig");
