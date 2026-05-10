@@ -963,6 +963,12 @@ fn parameterIsList(param: anytype) bool {
 fn parameterDescriptorError(param: anytype) ?anyerror {
     const Param = @TypeOf(param);
     if (param.name.len == 0) return error.EmptyParameterName;
+    if (std.mem.indexOfScalar(u8, param.name, 0) != null or
+        std.mem.indexOfScalar(u8, param.short_name, 0) != null or
+        std.mem.indexOfScalar(u8, param.units, 0) != null)
+    {
+        return error.InvalidParameterMetadata;
+    }
     if (Param == FloatParam) {
         if (!std.math.isFinite(param.min) or !std.math.isFinite(param.max) or param.max <= param.min) {
             return error.InvalidParameterRange;
@@ -2242,6 +2248,15 @@ test "parameter set validates descriptor names and ranges" {
     const EmptyNameParams = struct {
         gain: FloatParam = .{ .id = 0, .name = "", .min = 0.0, .max = 1.0, .default = 0.5 },
     };
+    const InvalidNameParams = struct {
+        gain: FloatParam = .{ .id = 0, .name = "Ga\x00in", .min = 0.0, .max = 1.0, .default = 0.5 },
+    };
+    const InvalidShortNameParams = struct {
+        gain: FloatParam = .{ .id = 0, .name = "Gain", .short_name = "G\x00n", .min = 0.0, .max = 1.0, .default = 0.5 },
+    };
+    const InvalidUnitsParams = struct {
+        gain: FloatParam = .{ .id = 0, .name = "Gain", .units = "d\x00B", .min = 0.0, .max = 1.0, .default = 0.5 },
+    };
     const InvalidFloatParams = struct {
         gain: FloatParam = .{ .id = 0, .name = "Gain", .min = 1.0, .max = 1.0, .default = 1.0 },
     };
@@ -2259,6 +2274,9 @@ test "parameter set validates descriptor names and ranges" {
     };
 
     const empty_name_set = ParameterSet(EmptyNameParams).init(.{});
+    const invalid_name_set = ParameterSet(InvalidNameParams).init(.{});
+    const invalid_short_name_set = ParameterSet(InvalidShortNameParams).init(.{});
+    const invalid_units_set = ParameterSet(InvalidUnitsParams).init(.{});
     const invalid_float_set = ParameterSet(InvalidFloatParams).init(.{});
     const invalid_float_default_set = ParameterSet(InvalidFloatDefaultParams).init(.{});
     const out_of_range_float_default_set = ParameterSet(OutOfRangeFloatDefaultParams).init(.{});
@@ -2267,6 +2285,9 @@ test "parameter set validates descriptor names and ranges" {
 
     try std.testing.expectEqual(error.EmptyParameterName, empty_name_set.firstDescriptorError().?);
     try std.testing.expectError(error.EmptyParameterName, empty_name_set.validateDescriptors());
+    try std.testing.expectError(error.InvalidParameterMetadata, invalid_name_set.validateDescriptors());
+    try std.testing.expectError(error.InvalidParameterMetadata, invalid_short_name_set.validateDescriptors());
+    try std.testing.expectError(error.InvalidParameterMetadata, invalid_units_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterRange, invalid_float_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterDefault, invalid_float_default_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterDefault, out_of_range_float_default_set.validateDescriptors());
