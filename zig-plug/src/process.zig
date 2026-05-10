@@ -181,6 +181,10 @@ pub const ParameterChanges = struct {
         return self.first(id) != null;
     }
 
+    pub fn only(self: ParameterChanges, id: u32) bool {
+        return self.hasChanges() and self.count(id) == self.items.len;
+    }
+
     pub fn latestNormalized(self: ParameterChanges, id: u32) ?f64 {
         const change = self.latest(id) orelse return null;
         return change.normalized;
@@ -1266,6 +1270,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.has(id);
         }
 
+        pub fn onlyParameterChangesForId(self: @This(), id: u32) bool {
+            return self.parameter_changes.only(id);
+        }
+
         pub fn latestParameterNormalized(self: @This(), id: u32) ?f64 {
             return self.parameter_changes.latestNormalized(id);
         }
@@ -1848,6 +1856,8 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(usize, 1), context.countParameterChanges(1));
     try std.testing.expect(context.hasParameterChange(1));
     try std.testing.expect(!context.hasParameterChange(2));
+    try std.testing.expect(context.onlyParameterChangesForId(1));
+    try std.testing.expect(!context.onlyParameterChangesForId(2));
     try std.testing.expectEqual(@as(?f64, 0.5), context.latestParameterNormalized(1));
     try std.testing.expectEqual(@as(?f64, 0.5), context.firstParameterNormalized(1));
     try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterNormalizedOr(1, 0.0));
@@ -1985,6 +1995,14 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(usize, 2), view.count(7));
     try std.testing.expectEqual(@as(usize, 1), view.count(8));
     try std.testing.expectEqual(@as(usize, 0), view.count(9));
+    try std.testing.expect(!view.only(7));
+    const gain_only_changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 0, .normalized = 0.25 },
+        .{ .id = 7, .sample_offset = 3, .normalized = 0.75 },
+    };
+    const gain_only = try ParameterChanges.init(&gain_only_changes, 4);
+    try std.testing.expect(gain_only.only(7));
+    try std.testing.expect(!gain_only.only(8));
     try std.testing.expectEqual(@as(f64, 0.25), view.first(7).?.normalized);
     try std.testing.expectEqual(@as(?f64, 0.25), view.firstNormalized(7));
     try std.testing.expectEqual(@as(f64, 0.25), view.firstNormalizedOr(7, 0.0));
@@ -2024,6 +2042,7 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(usize, 0), (ParameterChanges{}).changeCount());
     try std.testing.expect((ParameterChanges{}).isEmpty());
     try std.testing.expect(!(ParameterChanges{}).hasChanges());
+    try std.testing.expect(!(ParameterChanges{}).only(7));
     try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).firstSampleOffsetForId(7));
     try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).latestSampleOffsetForId(7));
