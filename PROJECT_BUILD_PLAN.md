@@ -581,7 +581,7 @@ The parameter layer now includes reflected float, int, bool, and enum descriptor
 - Tests with synthetic automation curves verifying sample-accurate behavior
 - Tests that verify no allocation occurs while processing automation in the audio callback
 
-**Current status.** `process.ParameterChanges` exposes first/latest/next change offsets, per-parameter stable segments, id presence and emptiness predicates, and block-wide segments split at every parameter-change offset without allocation. `ProcessContext.parameterBlockSegments` gives processors the same block-split view, `ProcessContext.processBlockSegments` merges parameter and input-event boundaries, and `examples/gain_core.zig` now uses block segmentation for sample-accurate f32 and f64 gain processing.
+**Current status.** `process.ParameterChanges` exposes first/latest/next change offsets, per-change id/offset predicates, per-parameter stable segments, id presence and emptiness predicates, and block-wide segments split at every parameter-change offset without allocation. `ProcessContext.parameterBlockSegments` gives processors the same block-split view, `ProcessContext.processBlockSegments` merges parameter and input-event boundaries, and `examples/gain_core.zig` now uses block segmentation for sample-accurate f32 and f64 gain processing.
 
 **Exit criteria.**
 - An automated parameter sweep in Bitwig produces a correctly sample-accurate output (verified by recording the plugin's output and comparing to the automation curve)

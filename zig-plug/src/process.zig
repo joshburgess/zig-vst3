@@ -4,6 +4,18 @@ pub const ParameterChange = struct {
     id: u32,
     sample_offset: usize,
     normalized: f64,
+
+    pub fn isForId(self: ParameterChange, wanted_id: u32) bool {
+        return self.id == wanted_id;
+    }
+
+    pub fn isAtOffset(self: ParameterChange, wanted_offset: usize) bool {
+        return self.sample_offset == wanted_offset;
+    }
+
+    pub fn isForIdAtOffset(self: ParameterChange, wanted_id: u32, wanted_offset: usize) bool {
+        return self.isForId(wanted_id) and self.isAtOffset(wanted_offset);
+    }
 };
 
 pub const ParameterSegment = struct {
@@ -154,7 +166,7 @@ pub const ParameterChanges = struct {
     pub fn latest(self: ParameterChanges, id: u32) ?ParameterChange {
         var result: ?ParameterChange = null;
         for (self.items) |item| {
-            if (item.id != id) continue;
+            if (!item.isForId(id)) continue;
             if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
         }
         return result;
@@ -163,7 +175,7 @@ pub const ParameterChanges = struct {
     pub fn first(self: ParameterChanges, id: u32) ?ParameterChange {
         var result: ?ParameterChange = null;
         for (self.items) |item| {
-            if (item.id != id) continue;
+            if (!item.isForId(id)) continue;
             if (result == null or item.sample_offset < result.?.sample_offset) result = item;
         }
         return result;
@@ -172,7 +184,7 @@ pub const ParameterChanges = struct {
     pub fn count(self: ParameterChanges, id: u32) usize {
         var result: usize = 0;
         for (self.items) |item| {
-            if (item.id == id) result += 1;
+            if (item.isForId(id)) result += 1;
         }
         return result;
     }
@@ -210,7 +222,7 @@ pub const ParameterChanges = struct {
     pub fn latestAtOrBefore(self: ParameterChanges, id: u32, sample_offset: usize) ?ParameterChange {
         var result: ?ParameterChange = null;
         for (self.items) |item| {
-            if (item.id != id or item.sample_offset > sample_offset) continue;
+            if (!item.isForId(id) or item.sample_offset > sample_offset) continue;
             if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
         }
         return result;
@@ -237,7 +249,7 @@ pub const ParameterChanges = struct {
     pub fn nextSampleOffsetForId(self: ParameterChanges, id: u32, after_sample_offset: usize) ?usize {
         var result: ?usize = null;
         for (self.items) |item| {
-            if (item.id != id or item.sample_offset <= after_sample_offset) continue;
+            if (!item.isForId(id) or item.sample_offset <= after_sample_offset) continue;
             if (result == null or item.sample_offset < result.?) result = item.sample_offset;
         }
         return result;
@@ -2096,6 +2108,13 @@ test "parameter changes validate block offsets and normalized values" {
 
     try std.testing.expectEqual(@as(usize, 3), view.changeCount());
     try std.testing.expect(!view.isEmpty());
+    try std.testing.expect(changes[0].isForId(7));
+    try std.testing.expect(!changes[0].isForId(8));
+    try std.testing.expect(changes[0].isAtOffset(0));
+    try std.testing.expect(!changes[0].isAtOffset(1));
+    try std.testing.expect(changes[0].isForIdAtOffset(7, 0));
+    try std.testing.expect(!changes[0].isForIdAtOffset(7, 1));
+    try std.testing.expect(!changes[0].isForIdAtOffset(8, 0));
     try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 3), view.latestSampleOffset());
     try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffsetForId(7));
