@@ -56,6 +56,7 @@ Audio helpers:
 
 - `inputChannel`, `outputChannel`, `inputChannelCount`, `outputChannelCount`, and `frameCount`
 - `fillOutputs` and `clearOutputs`
+- `frameCount` uses the shared input/output frame count for effects, the output frame count for generators with no audio inputs, and the input frame count for analyzers with no audio outputs.
 
 Parameter helpers:
 

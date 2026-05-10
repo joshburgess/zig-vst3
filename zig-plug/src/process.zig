@@ -1116,6 +1116,8 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn frameCount(self: @This()) usize {
+            if (self.inputs.channelCount() == 0) return self.outputs.frame_count;
+            if (self.outputs.channelCount() == 0) return self.inputs.frame_count;
             return @min(self.inputs.frame_count, self.outputs.frame_count);
         }
     };
@@ -1185,6 +1187,25 @@ test "process context reports usable frame count" {
     context.clearOutputs();
     try std.testing.expectEqual(@as(f64, 0.0), out_left[0]);
     try std.testing.expectEqual(@as(f64, 0.0), out_right[2]);
+}
+
+test "process context reports frame count for input-only and output-only processors" {
+    const input = [_]f32{ 0.1, 0.2, 0.3 };
+    var output = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const no_input_channels = [_][]const f32{};
+    const no_output_channels = [_][]f32{};
+
+    const output_only = try ProcessContext(f32).init(48_000.0, &no_input_channels, &output_channels);
+    try std.testing.expectEqual(@as(usize, 4), output_only.frameCount());
+    try std.testing.expectEqual(@as(usize, 0), output_only.inputChannelCount());
+    try std.testing.expectEqual(@as(usize, 1), output_only.outputChannelCount());
+
+    const input_only = try ProcessContext(f32).init(48_000.0, &input_channels, &no_output_channels);
+    try std.testing.expectEqual(@as(usize, 3), input_only.frameCount());
+    try std.testing.expectEqual(@as(usize, 1), input_only.inputChannelCount());
+    try std.testing.expectEqual(@as(usize, 0), input_only.outputChannelCount());
 }
 
 test "process context rejects invalid sample rates" {
