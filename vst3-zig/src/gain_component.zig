@@ -117,6 +117,49 @@ test "gain component exposes process context requirements" {
     try std.testing.expectEqual(@as(types.uint32, 0), processor_requirements.vtable.getProcessContextRequirements(processor_requirements));
 }
 
+test "gain component validates host process setup" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &processor_out),
+    );
+    try std.testing.expect(processor_out != null);
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
+    defer _ = processor.vtable.release(processor);
+
+    var setup = ivstaudioprocessor.ProcessSetup{
+        .processMode = @intFromEnum(ivstaudioprocessor.ProcessModes.kRealtime),
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .maxSamplesPerBlock = 64,
+        .sampleRate = 48_000.0,
+    };
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.setupProcessing(processor, &setup));
+
+    setup.sampleRate = 0.0;
+    try std.testing.expectEqual(types.kInvalidArgument, processor.vtable.setupProcessing(processor, &setup));
+
+    setup.sampleRate = std.math.inf(f64);
+    try std.testing.expectEqual(types.kInvalidArgument, processor.vtable.setupProcessing(processor, &setup));
+
+    setup.sampleRate = 48_000.0;
+    setup.maxSamplesPerBlock = 0;
+    try std.testing.expectEqual(types.kInvalidArgument, processor.vtable.setupProcessing(processor, &setup));
+
+    setup.maxSamplesPerBlock = 64;
+    setup.symbolicSampleSize = 99;
+    try std.testing.expectEqual(types.kResultFalse, processor.vtable.setupProcessing(processor, &setup));
+}
+
 test "gain component queries host application during initialize" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
