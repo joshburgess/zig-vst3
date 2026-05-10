@@ -15,6 +15,30 @@ pub const ReadParameterStateReport = struct {
     entry_count: usize,
     restored_count: usize,
     ignored_count: usize,
+
+    pub fn decodedCount(self: ReadParameterStateReport) usize {
+        return self.entry_count;
+    }
+
+    pub fn restoredCount(self: ReadParameterStateReport) usize {
+        return self.restored_count;
+    }
+
+    pub fn ignoredCount(self: ReadParameterStateReport) usize {
+        return self.ignored_count;
+    }
+
+    pub fn hasRestoredEntries(self: ReadParameterStateReport) bool {
+        return self.restored_count != 0;
+    }
+
+    pub fn hasIgnoredEntries(self: ReadParameterStateReport) bool {
+        return self.ignored_count != 0;
+    }
+
+    pub fn restoredAllEntries(self: ReadParameterStateReport) bool {
+        return self.restored_count == self.entry_count and self.ignored_count == 0;
+    }
 };
 
 pub fn encodedSize(comptime Params: type) usize {
@@ -220,6 +244,12 @@ test "parameter state round-trips normalized values" {
     const report = try readParameterStateReport(Params, &set, &restored, in_stream.reader());
 
     try std.testing.expectEqual(ReadParameterStateReport{ .entry_count = 2, .restored_count = 2, .ignored_count = 0 }, report);
+    try std.testing.expectEqual(@as(usize, 2), report.decodedCount());
+    try std.testing.expectEqual(@as(usize, 2), report.restoredCount());
+    try std.testing.expectEqual(@as(usize, 0), report.ignoredCount());
+    try std.testing.expect(report.hasRestoredEntries());
+    try std.testing.expect(!report.hasIgnoredEntries());
+    try std.testing.expect(report.restoredAllEntries());
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadField(&set, "gain"));
     try std.testing.expectEqual(@as(f64, 0.75), restored.loadField(&set, "mix"));
 }
@@ -292,6 +322,12 @@ test "parameter state ignores unknown parameter ids" {
     const report = try readParameterStateReport(Params, &set, &values, in_stream.reader());
 
     try std.testing.expectEqual(ReadParameterStateReport{ .entry_count = 2, .restored_count = 1, .ignored_count = 1 }, report);
+    try std.testing.expectEqual(@as(usize, 2), report.decodedCount());
+    try std.testing.expectEqual(@as(usize, 1), report.restoredCount());
+    try std.testing.expectEqual(@as(usize, 1), report.ignoredCount());
+    try std.testing.expect(report.hasRestoredEntries());
+    try std.testing.expect(report.hasIgnoredEntries());
+    try std.testing.expect(!report.restoredAllEntries());
     try std.testing.expectEqual(@as(f64, 0.75), values.loadField(&set, "gain"));
 }
 
