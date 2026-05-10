@@ -59,7 +59,7 @@ Cons:
 
 - More boilerplate per interface
 - Manual method order must be reviewed carefully
-- Multi-interface pointer adjustment still needs dedicated helpers
+- Multi-interface pointer adjustment relies on the shared interface-map helpers and must stay covered by ABI fixtures
 
 ABI risks:
 
@@ -78,7 +78,7 @@ The initial implementation should:
 - Store the reference count in the ABI header as `std.atomic.Value(u32)`
 - Call an optional destroy callback when `release` reaches zero
 
-This is intentionally narrower than the final multi-interface design. Phase 1.4 will add pointer fixup and query dispatch for objects exposing more than one interface.
+The implementation now uses shared interface-map helpers for pointer fixup and query dispatch across both synthetic ABI fixtures and production component/controller shells.
 
 ## Refcount Policy
 
