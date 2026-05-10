@@ -47,6 +47,7 @@ test "gain core example declares reflected metadata" {
     try std.testing.expectEqualStrings("zig-plug Core Gain", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
+    try std.testing.expectEqual(@as(usize, 1), parameter_set.parameterCount());
     try std.testing.expectEqualStrings("Gain", parameter_set.shortName(0).?);
     try std.testing.expectEqualStrings("x", parameter_set.units(0).?);
     try std.testing.expectEqual(@as(f64, 1.0), spec.values.view(&parameter_set).loadNormalized("gain"));
