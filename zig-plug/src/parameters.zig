@@ -704,6 +704,40 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.defaultNormalized(index);
         }
 
+        pub fn plainMinimum(self: *const Self, index: usize) ?f64 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return parameterPlainMinimum(@field(self.params, field.name));
+            }
+            return null;
+        }
+
+        pub fn plainMinimumById(self: *const Self, wanted_id: u32) ?f64 {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.plainMinimum(index);
+        }
+
+        pub fn plainMinimumByName(self: *const Self, wanted_name: []const u8) ?f64 {
+            const index = self.indexOfName(wanted_name) orelse return null;
+            return self.plainMinimum(index);
+        }
+
+        pub fn plainMaximum(self: *const Self, index: usize) ?f64 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) return parameterPlainMaximum(@field(self.params, field.name));
+            }
+            return null;
+        }
+
+        pub fn plainMaximumById(self: *const Self, wanted_id: u32) ?f64 {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.plainMaximum(index);
+        }
+
+        pub fn plainMaximumByName(self: *const Self, wanted_name: []const u8) ?f64 {
+            const index = self.indexOfName(wanted_name) orelse return null;
+            return self.plainMaximum(index);
+        }
+
         pub fn isBypass(self: *const Self, index: usize) ?bool {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).is_bypass;
@@ -859,6 +893,14 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.descriptor(field_name).defaultNormalized();
         }
 
+        pub fn fieldPlainMinimum(self: *const Self, comptime field_name: []const u8) ?f64 {
+            return parameterPlainMinimum(self.descriptor(field_name));
+        }
+
+        pub fn fieldPlainMaximum(self: *const Self, comptime field_name: []const u8) ?f64 {
+            return parameterPlainMaximum(self.descriptor(field_name));
+        }
+
         pub fn fieldIsBypass(self: *const Self, comptime field_name: []const u8) bool {
             return self.descriptor(field_name).is_bypass;
         }
@@ -1009,6 +1051,20 @@ fn parameterStepCount(param: anytype) i32 {
         }
     }
     return 0;
+}
+
+fn parameterPlainMinimum(param: anytype) ?f64 {
+    const Param = @TypeOf(param);
+    if (Param == FloatParam) return param.min;
+    if (Param == IntParam) return @floatFromInt(param.min);
+    return null;
+}
+
+fn parameterPlainMaximum(param: anytype) ?f64 {
+    const Param = @TypeOf(param);
+    if (Param == FloatParam) return param.max;
+    if (Param == IntParam) return @floatFromInt(param.max);
+    return null;
 }
 
 fn parameterIsList(param: anytype) bool {
@@ -1294,6 +1350,30 @@ pub fn ParameterView(comptime Params: type) type {
 
         pub fn defaultNormalizedByName(self: Self, wanted_name: []const u8) ?f64 {
             return self.set.defaultNormalizedByName(wanted_name);
+        }
+
+        pub fn plainMinimum(self: Self, index: usize) ?f64 {
+            return self.set.plainMinimum(index);
+        }
+
+        pub fn plainMinimumById(self: Self, wanted_id: u32) ?f64 {
+            return self.set.plainMinimumById(wanted_id);
+        }
+
+        pub fn plainMinimumByName(self: Self, wanted_name: []const u8) ?f64 {
+            return self.set.plainMinimumByName(wanted_name);
+        }
+
+        pub fn plainMaximum(self: Self, index: usize) ?f64 {
+            return self.set.plainMaximum(index);
+        }
+
+        pub fn plainMaximumById(self: Self, wanted_id: u32) ?f64 {
+            return self.set.plainMaximumById(wanted_id);
+        }
+
+        pub fn plainMaximumByName(self: Self, wanted_name: []const u8) ?f64 {
+            return self.set.plainMaximumByName(wanted_name);
         }
 
         pub fn isBypass(self: Self, index: usize) ?bool {
@@ -1651,6 +1731,30 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn defaultNormalizedByName(self: Self, wanted_name: []const u8) ?f64 {
             return self.set.defaultNormalizedByName(wanted_name);
+        }
+
+        pub fn plainMinimum(self: Self, index: usize) ?f64 {
+            return self.set.plainMinimum(index);
+        }
+
+        pub fn plainMinimumById(self: Self, wanted_id: u32) ?f64 {
+            return self.set.plainMinimumById(wanted_id);
+        }
+
+        pub fn plainMinimumByName(self: Self, wanted_name: []const u8) ?f64 {
+            return self.set.plainMinimumByName(wanted_name);
+        }
+
+        pub fn plainMaximum(self: Self, index: usize) ?f64 {
+            return self.set.plainMaximum(index);
+        }
+
+        pub fn plainMaximumById(self: Self, wanted_id: u32) ?f64 {
+            return self.set.plainMaximumById(wanted_id);
+        }
+
+        pub fn plainMaximumByName(self: Self, wanted_name: []const u8) ?f64 {
+            return self.set.plainMaximumByName(wanted_name);
         }
 
         pub fn isBypass(self: Self, index: usize) ?bool {
@@ -2281,6 +2385,15 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqualStrings("dB", set.unitsByName("Gain").?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.unitsById(99));
     try std.testing.expectEqual(@as(?[]const u8, null), set.unitsByName("Missing"));
+    try std.testing.expectEqual(@as(?f64, 0.0), set.plainMinimum(0));
+    try std.testing.expectEqual(@as(?f64, 16.0), set.plainMaximumById(1));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.plainMinimumByName("Voices"));
+    try std.testing.expectEqual(@as(?f64, null), set.plainMinimum(2));
+    try std.testing.expectEqual(@as(?f64, null), set.plainMaximumById(99));
+    try std.testing.expectEqual(@as(?f64, null), set.plainMinimumByName("Missing"));
+    try std.testing.expectEqual(@as(?f64, 0.0), set.fieldPlainMinimum("gain"));
+    try std.testing.expectEqual(@as(?f64, 16.0), set.fieldPlainMaximum("voices"));
+    try std.testing.expectEqual(@as(?f64, null), set.fieldPlainMinimum("bypass"));
     try std.testing.expectEqual(@as(?usize, 2), set.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, null), set.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, 1), set.indexOfName("Voices"));
@@ -2683,6 +2796,12 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalized(3));
     try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalizedById(3));
     try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalizedByName("Mode"));
+    try std.testing.expectEqual(@as(?f64, -12.0), view.plainMinimum(0));
+    try std.testing.expectEqual(@as(?f64, 4.0), view.plainMaximumById(1));
+    try std.testing.expectEqual(@as(?f64, 1.0), view.plainMinimumByName("Voices"));
+    try std.testing.expectEqual(@as(?f64, null), view.plainMaximum(2));
+    try std.testing.expectEqual(@as(?f64, null), view.plainMinimumById(99));
+    try std.testing.expectEqual(@as(?f64, null), view.plainMaximumByName("Missing"));
     try std.testing.expectEqual(@as(?bool, false), view.isBypass(0));
     try std.testing.expectEqual(@as(?bool, false), view.isBypassById(0));
     try std.testing.expectEqual(@as(?bool, false), view.isBypassByName("Gain"));
@@ -2831,6 +2950,12 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalized(3));
     try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalizedById(3));
     try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalizedByName("Mode"));
+    try std.testing.expectEqual(@as(?f64, -12.0), editor.plainMinimum(0));
+    try std.testing.expectEqual(@as(?f64, 4.0), editor.plainMaximumById(1));
+    try std.testing.expectEqual(@as(?f64, 1.0), editor.plainMinimumByName("Voices"));
+    try std.testing.expectEqual(@as(?f64, null), editor.plainMaximum(2));
+    try std.testing.expectEqual(@as(?f64, null), editor.plainMinimumById(99));
+    try std.testing.expectEqual(@as(?f64, null), editor.plainMaximumByName("Missing"));
     try std.testing.expectEqual(@as(?bool, false), editor.isBypass(0));
     try std.testing.expectEqual(@as(?bool, false), editor.isBypassById(0));
     try std.testing.expectEqual(@as(?bool, false), editor.isBypassByName("Gain"));
