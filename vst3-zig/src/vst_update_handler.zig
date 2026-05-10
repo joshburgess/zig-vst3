@@ -215,6 +215,26 @@ test "update handler records deferred updates" {
     try std.testing.expectEqual(@as(types.int32, 123), handler.entries[0].deferred_message);
 }
 
+test "update handler rejects invalid dependents and full storage without retaining" {
+    const Handler = UpdateHandler(1);
+    const Dep = Dependent(struct {});
+    var handler = Handler{};
+    var first = Dep{};
+    var rejected = Dep{};
+    const iface = handler.asInterface();
+
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.addDependent(iface, null, null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addDependent(iface, null, first.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addDependent(iface, null, first.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 2), first.ref_count.load(.monotonic));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addDependent(iface, null, rejected.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), rejected.ref_count.load(.monotonic));
+
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.removeDependent(iface, null, null));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.removeDependent(iface, null, rejected.asInterface()));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.deferUpdates(iface, @ptrFromInt(0x1000), 1));
+}
+
 test "update handler supports query interface" {
     const Handler = UpdateHandler(1);
     var handler = Handler{};
