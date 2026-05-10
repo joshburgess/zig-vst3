@@ -86,7 +86,7 @@ Each phase is broken into **work units**. A work unit is sized so that one agent
 **Inputs.** None.
 
 **Deliverables.**
-- Monorepo with two top-level crates/packages: `vst3-zig/` and `zig-plug/` (the latter empty for now)
+- Monorepo with two top-level crates/packages: `vst3-zig/` and `zig-plug/`
 - `build.zig` at root that builds a stub shared library on each target
 - `.gitignore`, `LICENSE` (MIT), `README.md` with project status badge
 - `CONTRIBUTING.md` describing the work-unit model and PR conventions
