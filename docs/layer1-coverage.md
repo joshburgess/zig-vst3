@@ -9,7 +9,7 @@ This map separates what is already gated from what remains future hardening. `do
 | Base interfaces | ABI fixtures and helper tests for streams, persistence, strings, errors, update, compatibility | Expand convenience wrappers only when raw users need them |
 | Component/controller/processor | ABI fixtures, reusable shells, Steinberg validator, example plugins | More real host lifecycle traces across plugin types |
 | Parameters and automation | ABI fixtures, fixed queue helpers, shell bridge tests, validator automation tests, interface-support and prefetch helpers | More host automation smoke tests outside REAPER |
-| Events and MIDI | ABI fixtures, input/output event helpers, MIDI learn helper, note-gate/event-echo/event-monitor/sine-synth examples | Manual MIDI host tests for note-gate and sine-synth |
+| Events and MIDI | ABI fixtures, input/output event helpers, MIDI learn and MIDI 2 mapping helpers, note-gate/event-echo/event-monitor/sine-synth examples | Manual MIDI host tests for note-gate and sine-synth |
 | Units and programs | ABI fixtures, unit/program-list helper tests, shell exposure | More host behavior checks for program-list selection |
 | GUI/editor protocols | ABI fixtures and helper tests for `IPlugView`, `IPlugFrame`, content scale, Linux run-loop, Wayland, parameter finder, context menus | Real embedded editor tests on macOS, Windows, X11, and Wayland |
 | Data exchange and host context | ABI fixtures and host helper tests for data exchange, channel context, automation state, and physical UI mapping | Real host coverage is still absent for data exchange and physical UI mapping |

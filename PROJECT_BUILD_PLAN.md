@@ -336,7 +336,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 ### Work Unit 2.7a: MIDI 2.0 mapping interfaces
 
-`IMidiLearn2`, `IMidiMapping2`, and related ControllerNumbers additions from SDK 3.8.0. These can be P1 or P2 depending on the inventory, but they must be explicitly categorized so the project does not silently ship stale 3.7-era bindings. `vst_capability_support.zig` provides a reusable MIDI learn helper for the original `IMidiLearn`; MIDI 2 mapping remains raw ABI plus fixture coverage.
+`IMidiLearn2`, `IMidiMapping2`, and related ControllerNumbers additions from SDK 3.8.0. These can be P1 or P2 depending on the inventory, but they must be explicitly categorized so the project does not silently ship stale 3.7-era bindings. `vst_capability_support.zig` provides reusable MIDI learn helpers for the original `IMidiLearn` and MIDI 2 assignment/live-input helpers for `IMidiMapping2` and `IMidiLearn2`.
 
 ### Work Unit 2.8: Component handler and host application
 

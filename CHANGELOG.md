@@ -10,7 +10,7 @@
 - Cross-target bundle smoke checks for Linux, macOS, and Windows.
 - Layer 1 release checklist and local release gate script.
 - Layer 1 raw API guide and protocol coverage map.
-- Advanced helpers for interface support, prefetch state, MIDI learn, and physical UI mapping.
+- Advanced helpers for interface support, prefetch state, MIDI learn, MIDI 2 mapping, and physical UI mapping.
 
 ### Changed
 

@@ -1,7 +1,9 @@
 const std = @import("std");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
+const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivstmidilearn = @import("pluginterfaces/vst/ivstmidilearn.zig");
+const ivstmidimapping2 = @import("pluginterfaces/vst/ivstmidimapping2.zig");
 const ivstphysicalui = @import("pluginterfaces/vst/ivstphysicalui.zig");
 const ivstpluginterfacesupport = @import("pluginterfaces/vst/ivstpluginterfacesupport.zig");
 const ivstprefetchablesupport = @import("pluginterfaces/vst/ivstprefetchablesupport.zig");
@@ -182,6 +184,169 @@ pub fn MidiLearn(comptime Config: type) type {
     };
 }
 
+pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, comptime Config: type) type {
+    if (max_midi2 == 0 and max_midi1 == 0) @compileError("Midi2Mapping requires at least one assignment slot");
+
+    return extern struct {
+        const Self = @This();
+
+        iface: ivstmidimapping2.IMidiMapping2 = .{ .vtable = &mapping_vtable },
+        learn_iface: ivstmidimapping2.IMidiLearn2 = .{ .vtable = &learn_vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        midi2_count: types.uint32 = 0,
+        midi1_count: types.uint32 = 0,
+        midi2: [max_midi2]ivstmidimapping2.Midi2ControllerParamIDAssignment = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{}} ** max_midi2,
+        midi1: [max_midi1]ivstmidimapping2.Midi1ControllerParamIDAssignment = [_]ivstmidimapping2.Midi1ControllerParamIDAssignment{.{}} ** max_midi1,
+        midi2_input_count: types.uint32 = 0,
+        midi1_input_count: types.uint32 = 0,
+        last_bus: ivstmidimapping2.BusIndex = 0,
+        last_channel: ivstmidimapping2.MidiChannel = 0,
+        last_midi2_controller: ivstmidimapping2.Midi2Controller = .{},
+        last_midi1_controller: vsttypes.CtrlNumber = 0,
+
+        pub fn asMapping(self: *Self) *ivstmidimapping2.IMidiMapping2 {
+            return &self.iface;
+        }
+
+        pub fn asLearn(self: *Self) *ivstmidimapping2.IMidiLearn2 {
+            return &self.learn_iface;
+        }
+
+        pub fn addMidi2(self: *Self, assignment: ivstmidimapping2.Midi2ControllerParamIDAssignment) types.tresult {
+            if (self.midi2_count >= max_midi2) return types.kResultFalse;
+            self.midi2[self.midi2_count] = assignment;
+            self.midi2_count += 1;
+            return types.kResultOk;
+        }
+
+        pub fn addMidi1(self: *Self, assignment: ivstmidimapping2.Midi1ControllerParamIDAssignment) types.tresult {
+            if (self.midi1_count >= max_midi1) return types.kResultFalse;
+            self.midi1[self.midi1_count] = assignment;
+            self.midi1_count += 1;
+            return types.kResultOk;
+        }
+
+        fn ownerFromMapping(ptr: *anyopaque) *Self {
+            const iface: *ivstmidimapping2.IMidiMapping2 = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn ownerFromLearn(ptr: *anyopaque) *Self {
+            const iface: *ivstmidimapping2.IMidiLearn2 = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("learn_iface", iface);
+        }
+
+        fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = &self.iface },
+                .{ .iid = &ivstmidimapping2.imidi_mapping2_iid, .ptr = &self.iface },
+                .{ .iid = &ivstmidimapping2.imidi_learn2_iid, .ptr = &self.learn_iface },
+            };
+            return interface_map.queryWithAddRef(add_ref_ptr, mappingAddRef, &entries, requested_iid, out);
+        }
+
+        fn mappingQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return ownerFromMapping(ptr).queryCanonical(ptr, requested_iid, out);
+        }
+
+        fn learnQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromLearn(ptr);
+            return self.queryCanonical(&self.iface, requested_iid, out);
+        }
+
+        fn mappingAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return ownerFromMapping(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn learnAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return ownerFromLearn(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn mappingRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&ownerFromMapping(ptr).ref_count, "IMidiMapping2");
+        }
+
+        fn learnRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&ownerFromLearn(ptr).ref_count, "IMidiLearn2");
+        }
+
+        fn acceptsDirection(direction: vsttypes.BusDirection) bool {
+            if (@hasDecl(Config, "direction")) return direction == Config.direction;
+            return direction == @intFromEnum(ivstcomponent.BusDirections.kInput);
+        }
+
+        fn getNumMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection) callconv(.C) types.uint32 {
+            const self = ownerFromMapping(ptr);
+            return if (acceptsDirection(direction)) @min(self.midi2_count, max_midi2) else 0;
+        }
+
+        fn getMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi2ControllerParamIDAssignmentList) callconv(.C) types.tresult {
+            const self = ownerFromMapping(ptr);
+            if (!acceptsDirection(direction)) return types.kResultFalse;
+            const count = @min(self.midi2_count, max_midi2);
+            if (count == 0) return types.kResultFalse;
+            if (list.map == null) return types.kInvalidArgument;
+            if (list.count < count) return types.kResultFalse;
+            @memcpy(list.map.?[0..count], self.midi2[0..count]);
+            return types.kResultOk;
+        }
+
+        fn getNumMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection) callconv(.C) types.uint32 {
+            const self = ownerFromMapping(ptr);
+            return if (acceptsDirection(direction)) @min(self.midi1_count, max_midi1) else 0;
+        }
+
+        fn getMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi1ControllerParamIDAssignmentList) callconv(.C) types.tresult {
+            const self = ownerFromMapping(ptr);
+            if (!acceptsDirection(direction)) return types.kResultFalse;
+            const count = @min(self.midi1_count, max_midi1);
+            if (count == 0) return types.kResultFalse;
+            if (list.map == null) return types.kInvalidArgument;
+            if (list.count < count) return types.kResultFalse;
+            @memcpy(list.map.?[0..count], self.midi1[0..count]);
+            return types.kResultOk;
+        }
+
+        fn onLiveMidi2ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) callconv(.C) types.tresult {
+            const self = ownerFromLearn(ptr);
+            self.midi2_input_count += 1;
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            self.last_midi2_controller = controller;
+            if (@hasDecl(Config, "onLiveMidi2ControllerInput")) return Config.onLiveMidi2ControllerInput(self, bus_index, channel, controller);
+            return types.kResultOk;
+        }
+
+        fn onLiveMidi1ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: vsttypes.CtrlNumber) callconv(.C) types.tresult {
+            const self = ownerFromLearn(ptr);
+            self.midi1_input_count += 1;
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            self.last_midi1_controller = controller;
+            if (@hasDecl(Config, "onLiveMidi1ControllerInput")) return Config.onLiveMidi1ControllerInput(self, bus_index, channel, controller);
+            return types.kResultOk;
+        }
+
+        const mapping_vtable = ivstmidimapping2.IMidiMapping2VTable{
+            .queryInterface = mappingQuery,
+            .addRef = mappingAddRef,
+            .release = mappingRelease,
+            .getNumMidi2ControllerAssignments = getNumMidi2ControllerAssignments,
+            .getMidi2ControllerAssignments = getMidi2ControllerAssignments,
+            .getNumMidi1ControllerAssignments = getNumMidi1ControllerAssignments,
+            .getMidi1ControllerAssignments = getMidi1ControllerAssignments,
+        };
+
+        const learn_vtable = ivstmidimapping2.IMidiLearn2VTable{
+            .queryInterface = learnQuery,
+            .addRef = learnAddRef,
+            .release = learnRelease,
+            .onLiveMidi2ControllerInput = onLiveMidi2ControllerInput,
+            .onLiveMidi1ControllerInput = onLiveMidi1ControllerInput,
+        };
+    };
+}
+
 pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
     if (max_maps == 0) @compileError("PhysicalUIMapping requires at least one map slot");
 
@@ -303,6 +468,93 @@ test "midi learn tracks live controller input and delegates result" {
     try std.testing.expectEqual(@as(types.int32, 1), learn.last_bus);
     try std.testing.expectEqual(@as(types.int16, 2), learn.last_channel);
     try std.testing.expectEqual(@as(vsttypes.CtrlNumber, 64), learn.last_controller);
+}
+
+test "midi 2 mapping copies midi 1 and midi 2 assignment lists" {
+    const Mapping = Midi2Mapping(1, 1, struct {});
+    var mapping = Mapping{};
+    const iface = mapping.asMapping();
+
+    try std.testing.expectEqual(types.kResultOk, mapping.addMidi2(.{
+        .pId = 100,
+        .busIndex = 1,
+        .channel = 2,
+        .controller = .{ .bank_registered = 3, .index_reserved = 4 },
+    }));
+    try std.testing.expectEqual(types.kResultOk, mapping.addMidi1(.{
+        .pId = 200,
+        .busIndex = 1,
+        .channel = 2,
+        .controller = 64,
+    }));
+    try std.testing.expectEqual(types.kResultFalse, mapping.addMidi2(.{ .pId = 101 }));
+    try std.testing.expectEqual(types.kResultFalse, mapping.addMidi1(.{ .pId = 201 }));
+
+    try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.uint32, 0), iface.vtable.getNumMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kOutput)));
+
+    var midi2_out = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{}} ** 1;
+    const midi2_list = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = midi2_out.len, .map = &midi2_out };
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &midi2_list));
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 100), midi2_out[0].pId);
+    try std.testing.expectEqual(@as(ivstmidimapping2.MidiChannel, 2), midi2_out[0].channel);
+    try std.testing.expectEqual(@as(types.uint8, 3), midi2_out[0].controller.bank_registered);
+
+    var midi1_out = [_]ivstmidimapping2.Midi1ControllerParamIDAssignment{.{}} ** 1;
+    const midi1_list = ivstmidimapping2.Midi1ControllerParamIDAssignmentList{ .count = midi1_out.len, .map = &midi1_out };
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &midi1_list));
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 200), midi1_out[0].pId);
+    try std.testing.expectEqual(@as(vsttypes.CtrlNumber, 64), midi1_out[0].controller);
+}
+
+test "midi 2 mapping reports invalid assignment outputs deterministically" {
+    const Mapping = Midi2Mapping(1, 1, struct {});
+    var mapping = Mapping{};
+    const iface = mapping.asMapping();
+    try std.testing.expectEqual(types.kResultOk, mapping.addMidi2(.{ .pId = 100 }));
+    try std.testing.expectEqual(types.kResultOk, mapping.addMidi1(.{ .pId = 200 }));
+
+    var empty_midi2 = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{}} ** 0;
+    const short_midi2 = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = 0, .map = &empty_midi2 };
+    const null_midi2 = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = 1, .map = null };
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &short_midi2));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &null_midi2));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kOutput), &null_midi2));
+
+    var empty_midi1 = [_]ivstmidimapping2.Midi1ControllerParamIDAssignment{.{}} ** 0;
+    const short_midi1 = ivstmidimapping2.Midi1ControllerParamIDAssignmentList{ .count = 0, .map = &empty_midi1 };
+    const null_midi1 = ivstmidimapping2.Midi1ControllerParamIDAssignmentList{ .count = 1, .map = null };
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &short_midi1));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &null_midi1));
+}
+
+test "midi learn 2 tracks midi 1 and midi 2 controller input" {
+    const Mapping = Midi2Mapping(1, 1, struct {
+        pub fn onLiveMidi2ControllerInput(_: anytype, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) types.tresult {
+            return if (bus_index == 1 and channel == 2 and controller.bank_registered == 3) types.kResultOk else types.kInvalidArgument;
+        }
+
+        pub fn onLiveMidi1ControllerInput(_: anytype, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: vsttypes.CtrlNumber) types.tresult {
+            return if (bus_index == 4 and channel == 5 and controller == 6) types.kResultOk else types.kInvalidArgument;
+        }
+    });
+    var mapping = Mapping{};
+    const learn = mapping.asLearn();
+
+    try std.testing.expectEqual(types.kInvalidArgument, learn.vtable.onLiveMidi2ControllerInput(learn, 0, 2, .{ .bank_registered = 3 }));
+    try std.testing.expectEqual(types.kResultOk, learn.vtable.onLiveMidi2ControllerInput(learn, 1, 2, .{ .bank_registered = 3, .index_reserved = 7 }));
+    try std.testing.expectEqual(types.kResultOk, learn.vtable.onLiveMidi1ControllerInput(learn, 4, 5, 6));
+    try std.testing.expectEqual(@as(types.uint32, 2), mapping.midi2_input_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), mapping.midi1_input_count);
+    try std.testing.expectEqual(@as(ivstmidimapping2.BusIndex, 4), mapping.last_bus);
+    try std.testing.expectEqual(@as(ivstmidimapping2.MidiChannel, 5), mapping.last_channel);
+    try std.testing.expectEqual(@as(vsttypes.CtrlNumber, 6), mapping.last_midi1_controller);
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, mapping.asMapping().vtable.queryInterface(mapping.asMapping(), &ivstmidimapping2.imidi_learn2_iid, &queried));
+    try std.testing.expect(queried != null);
+    const queried_learn: *ivstmidimapping2.IMidiLearn2 = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_learn.vtable.release(queried_learn));
 }
 
 test "physical UI mapping exposes fixed map list and clears delegated failures" {
