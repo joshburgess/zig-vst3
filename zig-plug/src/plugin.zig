@@ -899,6 +899,34 @@ test "plugin spec rejects invalid unit metadata" {
     try std.testing.expectError(error.InvalidUnitParent, PluginSpec(InvalidUnits).initChecked(.{}));
 }
 
+test "plugin spec rejects ambiguous unit metadata names" {
+    const DuplicateUnitNames = struct {
+        pub const name = "Duplicate Unit Names";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const units = units_api.Config{
+            .units = &.{
+                units_api.Unit.root("Root"),
+                .{ .id = 1, .name = "Root", .parent_id = units_api.root_unit_id },
+            },
+        };
+    };
+    const DuplicateProgramListNames = struct {
+        pub const name = "Duplicate Program List Names";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+        pub const units = units_api.Config{
+            .program_lists = &.{
+                .{ .id = 1, .name = "Programs" },
+                .{ .id = 2, .name = "Programs" },
+            },
+        };
+    };
+
+    try std.testing.expectError(error.DuplicateUnitName, PluginSpec(DuplicateUnitNames).initChecked(.{}));
+    try std.testing.expectError(error.DuplicateProgramListName, PluginSpec(DuplicateProgramListNames).initChecked(.{}));
+}
+
 test "plugin spec rejects reserved unit metadata ids" {
     const ReservedUnit = struct {
         pub const name = "Reserved Unit";
