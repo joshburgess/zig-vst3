@@ -330,6 +330,20 @@ test "test result counts messages past fixed storage" {
     try std.testing.expectEqualSlices(types.char16, text[0..3], result.message(0));
 }
 
+test "test result records null messages as empty entries" {
+    const Result = TestResult(1, 4);
+    var result = Result{};
+    const iface = result.asInterface();
+
+    iface.vtable.addErrorMessage(iface, null);
+    iface.vtable.addMessage(iface, null);
+
+    try std.testing.expectEqual(@as(types.uint32, 1), result.error_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), result.message_count);
+    try std.testing.expectEqualSlices(types.char16, &[_]types.char16{}, result.errorMessage(0));
+    try std.testing.expectEqualSlices(types.char16, &[_]types.char16{}, result.message(0));
+}
+
 test "test object tracks default lifecycle calls" {
     const TestObject = Test(struct {});
     const Result = TestResult(1, 1);
@@ -423,6 +437,28 @@ test "test suite rejects overflow without retaining rejected entries" {
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.addTestSuite(iface, "rejected", nested.asInterface()));
     try std.testing.expectEqual(@as(types.uint32, 2), nested.ref_count.load(.monotonic));
     try std.testing.expectEqual(nested.asInterface(), suite.suites[0].suite.?);
+}
+
+test "test suite retains and releases replacement environments" {
+    const Suite = TestSuite(1, 1);
+    const TestObject = Test(struct {});
+    var suite = Suite{};
+    var first = TestObject{};
+    var second = TestObject{};
+    const iface = suite.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setEnvironment(iface, first.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 2), first.ref_count.load(.monotonic));
+    try std.testing.expectEqual(first.asInterface(), suite.environment.?);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setEnvironment(iface, second.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), first.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(types.uint32, 2), second.ref_count.load(.monotonic));
+    try std.testing.expectEqual(second.asInterface(), suite.environment.?);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setEnvironment(iface, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), second.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(?*itest.ITest, null), suite.environment);
 }
 
 test "test factory tracks create calls and delegates hook" {

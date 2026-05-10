@@ -130,7 +130,7 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `IWaylandHost`, `IWaylandFrame` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build wayland-frame-abi`; reusable Wayland host/frame helpers track surface requests and clear failed parent-surface geometry |
 | `IInterAppAudioHost`, `IInterAppAudioConnectionNotification`, `IInterAppAudioPresetManager` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build inter-app-audio-abi`; reusable inter-app helpers added in `vst_inter_app_audio.zig` with deterministic failed screen-size and host-icon outputs |
 | `ITestPlugProvider`, `ITestPlugProvider2` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build test-plug-provider-abi`; reusable test provider helper covers provider2 factory, component/controller delegation, release tracking, and missing UID behavior |
-| `ITest`, `ITestResult`, `ITestSuite`, `ITestFactory` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build test-interfaces-abi` |
+| `ITest`, `ITestResult`, `ITestSuite`, `ITestFactory` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build test-interfaces-abi`; reusable test interface helpers cover result storage, null messages, lifecycle delegation, suite registration, environment replacement, and factory delegation |
 
 ## Phase 2 P0 Seed List
 
