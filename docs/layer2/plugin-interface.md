@@ -1,6 +1,6 @@
 # Layer 2 Plugin Interface
 
-The current `zig-plug` layer is a compile-time plugin interface with a reusable Layer 1 bridge for reflected parameter metadata, string conversion, normalized/plain conversion, state, host automation and event collection, configurable stereo audio bus metadata for effects and output-only generators, VST3 audio buffer views, optional process-state reset hooks, optional plug-view and XML representation creation, reusable error-context, string-result, cloneable, update-handler, persistent, persistent-attribute, unit-info, unit-data, inter-app-audio, test-interface, test-plug-provider, plugin-compatibility, plug-frame, context-menu, parameter-finder, content-scale, Linux run-loop, and Wayland host/frame helpers for custom editors and SDK callbacks, and main audio sample-size dispatch. The bundled examples use reusable simple stereo effect and reflected edit-controller shells.
+The current `zig-plug` layer is a compile-time plugin interface with a reusable Layer 1 bridge for reflected parameter metadata, string conversion, normalized/plain conversion, state, host automation and event collection, configurable stereo audio bus metadata for effects, input-only analyzers, and output-only generators, VST3 audio buffer views, optional process-state reset hooks, optional plug-view and XML representation creation, reusable error-context, string-result, cloneable, update-handler, persistent, persistent-attribute, unit-info, unit-data, inter-app-audio, test-interface, test-plug-provider, plugin-compatibility, plug-frame, context-menu, parameter-finder, content-scale, Linux run-loop, and Wayland host/frame helpers for custom editors and SDK callbacks, and main audio sample-size dispatch. The bundled examples use reusable simple stereo effect and reflected edit-controller shells.
 
 ## Current API
 
@@ -11,6 +11,7 @@ A plugin type declares:
 - optional `url` and `email`: factory contact metadata
 - optional `component_class_name` and `controller_class_name`: host-facing VST3 class names
 - optional `component_category` and `controller_category`: host-facing VST3 class categories
+- optional `audio_input`, `audio_output`, `event_input`, and `event_output`: public bus topology metadata
 - `Params`: struct of `zig-plug` parameter descriptors
 - optional lifecycle methods
 
@@ -20,6 +21,7 @@ A plugin type declares:
 - `ParameterValues`: atomic normalized values initialized from descriptor defaults
 - `Units`: reflected unit and program-list metadata
 - normalized plugin, factory, component, and controller metadata with conservative defaults
+- bus topology metadata with stereo audio input, stereo audio output, event input, and no event output as defaults
 - `encoded_parameter_state_size`: byte count for a full reflected parameter snapshot
 - lifecycle flags for optional `init`, `prepare`, `process`, `process64`, and `deinit` declarations
 - `initChecked(params)`: validates parameter metadata, then builds the reflected set and value storage

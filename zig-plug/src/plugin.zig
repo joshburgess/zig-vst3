@@ -31,6 +31,10 @@ pub fn PluginSpec(comptime Plugin: type) type {
         pub const controller_class_name = if (@hasDecl(Plugin, "controller_class_name")) Plugin.controller_class_name else Plugin.name ++ " Controller";
         pub const component_category = if (@hasDecl(Plugin, "component_category")) Plugin.component_category else "Audio Module Class";
         pub const controller_category = if (@hasDecl(Plugin, "controller_category")) Plugin.controller_category else "Component Controller Class";
+        pub const audio_input = !@hasDecl(Plugin, "audio_input") or Plugin.audio_input;
+        pub const audio_output = !@hasDecl(Plugin, "audio_output") or Plugin.audio_output;
+        pub const event_input = !@hasDecl(Plugin, "event_input") or Plugin.event_input;
+        pub const event_output = @hasDecl(Plugin, "event_output") and Plugin.event_output;
         pub const unit_config = if (@hasDecl(Plugin, "units")) Plugin.units else units_api.Config{};
         pub const has_init = @hasDecl(Plugin, "init");
         pub const has_prepare = @hasDecl(Plugin, "prepare");
@@ -930,6 +934,48 @@ test "plugin spec exposes optional plugin metadata overrides" {
     try std.testing.expectEqualStrings("Custom Editor", Spec.controller_class_name);
     try std.testing.expectEqualStrings("Custom Processor Category", Spec.component_category);
     try std.testing.expectEqualStrings("Custom Controller Category", Spec.controller_category);
+}
+
+test "plugin spec exposes optional bus topology metadata" {
+    const DefaultEffect = struct {
+        pub const name = "Default Effect";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+    };
+    const Analyzer = struct {
+        pub const name = "Analyzer";
+        pub const vendor = "zig-vst3";
+        pub const audio_output = false;
+        pub const Params = struct {};
+    };
+    const Generator = struct {
+        pub const name = "Generator";
+        pub const vendor = "zig-vst3";
+        pub const audio_input = false;
+        pub const event_output = true;
+        pub const Params = struct {};
+    };
+    const ControlOnly = struct {
+        pub const name = "Control Only";
+        pub const vendor = "zig-vst3";
+        pub const audio_input = false;
+        pub const audio_output = false;
+        pub const event_input = false;
+        pub const Params = struct {};
+    };
+
+    try std.testing.expect(PluginSpec(DefaultEffect).audio_input);
+    try std.testing.expect(PluginSpec(DefaultEffect).audio_output);
+    try std.testing.expect(PluginSpec(DefaultEffect).event_input);
+    try std.testing.expect(!PluginSpec(DefaultEffect).event_output);
+    try std.testing.expect(PluginSpec(Analyzer).audio_input);
+    try std.testing.expect(!PluginSpec(Analyzer).audio_output);
+    try std.testing.expect(!PluginSpec(Generator).audio_input);
+    try std.testing.expect(PluginSpec(Generator).audio_output);
+    try std.testing.expect(PluginSpec(Generator).event_output);
+    try std.testing.expect(!PluginSpec(ControlOnly).audio_input);
+    try std.testing.expect(!PluginSpec(ControlOnly).audio_output);
+    try std.testing.expect(!PluginSpec(ControlOnly).event_input);
 }
 
 test "plugin spec exposes default root unit metadata" {
