@@ -404,6 +404,27 @@ test "test suite stores tests suites and environment" {
     try std.testing.expectEqual(@as(?*itest.ITest, null), suite.environment);
 }
 
+test "test suite rejects overflow without retaining rejected entries" {
+    const Suite = TestSuite(1, 1);
+    const TestObject = Test(struct {});
+    var suite = Suite{};
+    var nested = Suite{};
+    var first = TestObject{};
+    var rejected = TestObject{};
+    const iface = suite.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addTest(iface, "first", first.asInterface()));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addTest(iface, "rejected", rejected.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 2), first.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(types.uint32, 1), rejected.ref_count.load(.monotonic));
+    try std.testing.expectEqual(first.asInterface(), suite.tests[0].test_iface.?);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addTestSuite(iface, "nested", nested.asInterface()));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addTestSuite(iface, "rejected", nested.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 2), nested.ref_count.load(.monotonic));
+    try std.testing.expectEqual(nested.asInterface(), suite.suites[0].suite.?);
+}
+
 test "test factory tracks create calls and delegates hook" {
     const Factory = TestFactory(struct {
         pub fn createTests(self: anytype, context: ?*anyopaque, suite: ?*itest.ITestSuite) types.tresult {

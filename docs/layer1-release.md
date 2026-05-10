@@ -21,6 +21,7 @@ Also verify:
 
 - GitHub Actions `CI` passes on `main`
 - `CHANGELOG.md` contains the release notes for the tag
+- `docs/layer1-coverage.md` matches the release scope
 
 Public CI currently covers:
 

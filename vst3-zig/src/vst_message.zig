@@ -470,6 +470,32 @@ test "attribute list stores scalar string and binary values" {
     try std.testing.expectEqual(@as(u8, 0), shorter_binary_bytes[2]);
 }
 
+test "attribute list rejects full storage and clears failed outputs" {
+    const List = AttributeList(1, 4, 2);
+    var list = List{};
+    const iface = list.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setInt(iface, "one", 1));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.setFloat(iface, "two", 2.0));
+
+    var int_value: types.int64 = 77;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getInt(iface, "missing", &int_value));
+    try std.testing.expectEqual(@as(types.int64, 0), int_value);
+
+    var float_value: f64 = 3.0;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getFloat(iface, "one", &float_value));
+    try std.testing.expectEqual(@as(f64, 0), float_value);
+
+    const bytes = [_]u8{ 1, 2, 3 };
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.setBinary(iface, "one", &bytes, bytes.len));
+
+    var binary_out: ?*const anyopaque = @ptrFromInt(0x1000);
+    var binary_size: types.uint32 = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getBinary(iface, "one", &binary_out, &binary_size));
+    try std.testing.expectEqual(@as(?*const anyopaque, null), binary_out);
+    try std.testing.expectEqual(@as(types.uint32, 0), binary_size);
+}
+
 test "message stores id and exposes attributes" {
     const TestMessage = Message(32, 4, 16, 8);
     var message = TestMessage{};

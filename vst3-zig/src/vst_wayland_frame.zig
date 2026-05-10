@@ -188,6 +188,42 @@ test "wayland frame returns null by default" {
     try std.testing.expectEqual(@as(?*iwaylandframe.xdg_toplevel, null), iface.vtable.getParentToplevel(iface, null));
 }
 
+test "wayland frame delegates surface hooks" {
+    const display: *iwaylandframe.wl_display = @ptrFromInt(0x1000);
+    const surface: *iwaylandframe.wl_surface = @ptrFromInt(0x2000);
+    const parent: *iwaylandframe.xdg_surface = @ptrFromInt(0x3000);
+    const toplevel: *iwaylandframe.xdg_toplevel = @ptrFromInt(0x4000);
+    const Frame = WaylandFrame(struct {
+        pub fn getWaylandSurface(value: ?*iwaylandframe.wl_display) ?*iwaylandframe.wl_surface {
+            return if (value == display) surface else null;
+        }
+
+        pub fn getParentSurface(rect: *iplugview.ViewRect, value: ?*iwaylandframe.wl_display) ?*iwaylandframe.xdg_surface {
+            rect.left = 11;
+            rect.top = 22;
+            rect.right = 33;
+            rect.bottom = 44;
+            return if (value == display) parent else null;
+        }
+
+        pub fn getParentToplevel(value: ?*iwaylandframe.wl_display) ?*iwaylandframe.xdg_toplevel {
+            return if (value == display) toplevel else null;
+        }
+    });
+    var frame = Frame{};
+    const iface = frame.asInterface();
+    var rect = iplugview.ViewRect{};
+
+    try std.testing.expectEqual(surface, iface.vtable.getWaylandSurface(iface, display).?);
+    try std.testing.expectEqual(@as(?*iwaylandframe.wl_surface, null), iface.vtable.getWaylandSurface(iface, null));
+    try std.testing.expectEqual(parent, iface.vtable.getParentSurface(iface, &rect, display).?);
+    try std.testing.expectEqual(@as(types.int32, 11), rect.left);
+    try std.testing.expectEqual(@as(types.int32, 22), rect.top);
+    try std.testing.expectEqual(@as(types.int32, 33), rect.right);
+    try std.testing.expectEqual(@as(types.int32, 44), rect.bottom);
+    try std.testing.expectEqual(toplevel, iface.vtable.getParentToplevel(iface, display).?);
+}
+
 test "wayland frame supports query interface" {
     const Frame = WaylandFrame(struct {});
     var frame = Frame{};
