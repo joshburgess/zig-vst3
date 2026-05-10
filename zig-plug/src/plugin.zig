@@ -455,6 +455,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.parameter_set.indexOfName(name);
         }
 
+        pub fn hasParameterId(self: *const Self, id: u32) bool {
+            return self.spec.parameter_set.hasId(id);
+        }
+
+        pub fn hasParameterName(self: *const Self, name: []const u8) bool {
+            return self.spec.parameter_set.hasName(name);
+        }
+
         pub fn parameterFieldIndex(self: *const Self, comptime field_name: []const u8) usize {
             return self.spec.parameter_set.indexOfField(field_name);
         }
@@ -1325,6 +1333,10 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?usize, null), instance.parameterIndexOfId(99));
     try std.testing.expectEqual(@as(?usize, 2), instance.parameterIndexOfName("Mode"));
     try std.testing.expectEqual(@as(?usize, null), instance.parameterIndexOfName("Missing"));
+    try std.testing.expect(instance.hasParameterId(0));
+    try std.testing.expect(!instance.hasParameterId(99));
+    try std.testing.expect(instance.hasParameterName("Mode"));
+    try std.testing.expect(!instance.hasParameterName("Missing"));
     try std.testing.expectEqual(@as(usize, 3), instance.parameterCount());
     try std.testing.expectEqual(@as(?u32, 0), instance.parameterId(0));
     try std.testing.expectEqualStrings("Bypass", instance.parameterName(1).?);

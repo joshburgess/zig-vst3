@@ -682,6 +682,14 @@ pub fn ParameterSet(comptime Params: type) type {
             return null;
         }
 
+        pub fn hasId(self: *const Self, wanted_id: u32) bool {
+            return self.indexOfId(wanted_id) != null;
+        }
+
+        pub fn hasName(self: *const Self, wanted_name: []const u8) bool {
+            return self.indexOfName(wanted_name) != null;
+        }
+
         pub fn indexOfField(_: *const Self, comptime field_name: []const u8) usize {
             inline for (fields, 0..) |field, index| {
                 if (comptime std.mem.eql(u8, field.name, field_name)) return index;
@@ -1192,6 +1200,14 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.indexOfName(wanted_name);
         }
 
+        pub fn hasId(self: Self, wanted_id: u32) bool {
+            return self.set.hasId(wanted_id);
+        }
+
+        pub fn hasName(self: Self, wanted_name: []const u8) bool {
+            return self.set.hasName(wanted_name);
+        }
+
         pub fn indexOfField(self: Self, comptime field_name: []const u8) usize {
             return self.set.indexOfField(field_name);
         }
@@ -1515,6 +1531,14 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn indexOfName(self: Self, wanted_name: []const u8) ?usize {
             return self.set.indexOfName(wanted_name);
+        }
+
+        pub fn hasId(self: Self, wanted_id: u32) bool {
+            return self.set.hasId(wanted_id);
+        }
+
+        pub fn hasName(self: Self, wanted_name: []const u8) bool {
+            return self.set.hasName(wanted_name);
         }
 
         pub fn indexOfField(self: Self, comptime field_name: []const u8) usize {
@@ -1979,6 +2003,10 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqual(@as(?usize, null), set.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, 1), set.indexOfName("Voices"));
     try std.testing.expectEqual(@as(?usize, null), set.indexOfName("Missing"));
+    try std.testing.expect(set.hasId(2));
+    try std.testing.expect(!set.hasId(99));
+    try std.testing.expect(set.hasName("Voices"));
+    try std.testing.expect(!set.hasName("Missing"));
     try std.testing.expectEqual(@as(usize, 0), set.indexOfField("gain"));
     try std.testing.expectEqual(@as(u32, 3), set.descriptor("mode").id);
     try std.testing.expectEqual(@as(u32, 0), set.fieldId("gain"));
@@ -2337,6 +2365,8 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?bool, true), view.isListByName("Mode"));
     try std.testing.expectEqual(@as(?usize, 2), view.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, 1), view.indexOfName("Voices"));
+    try std.testing.expect(view.hasId(2));
+    try std.testing.expect(view.hasName("Voices"));
     try std.testing.expectEqual(@as(?u32, null), view.id(99));
     try std.testing.expectEqual(@as(?[]const u8, null), view.name(99));
     try std.testing.expectEqual(@as(?[]const u8, null), view.nameById(99));
@@ -2361,6 +2391,8 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?bool, null), view.isListByName("Missing"));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfName("Missing"));
+    try std.testing.expect(!view.hasId(99));
+    try std.testing.expect(!view.hasName("Missing"));
     try std.testing.expectEqual(@as(usize, 3), view.indexOfField("mode"));
     try std.testing.expectEqual(@as(u32, 0), view.descriptor("gain").id);
     try std.testing.expectEqual(@as(u32, 3), view.fieldId("mode"));
@@ -2477,6 +2509,8 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?bool, true), editor.isListByName("Mode"));
     try std.testing.expectEqual(@as(?usize, 2), editor.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, 1), editor.indexOfName("Voices"));
+    try std.testing.expect(editor.hasId(2));
+    try std.testing.expect(editor.hasName("Voices"));
     try std.testing.expectEqual(@as(?u32, null), editor.id(99));
     try std.testing.expectEqual(@as(?[]const u8, null), editor.name(99));
     try std.testing.expectEqual(@as(?[]const u8, null), editor.nameById(99));
@@ -2492,6 +2526,8 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?bool, null), editor.isListByName("Missing"));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfName("Missing"));
+    try std.testing.expect(!editor.hasId(99));
+    try std.testing.expect(!editor.hasName("Missing"));
     try std.testing.expectEqual(@as(usize, 3), editor.indexOfField("mode"));
     try std.testing.expectEqual(@as(u32, 0), editor.descriptor("gain").id);
     try std.testing.expectEqual(@as(u32, 3), editor.fieldId("mode"));
