@@ -14,6 +14,7 @@
 - Fixed-capacity note-expression and keyswitch metadata helper for raw-layer tests.
 - Basic compatibility metadata JSON fixture helper.
 - Test-interface helper coverage for null result messages and suite environment replacement.
+- Parameter function-name and compatible-ID remapping helpers.
 
 ### Changed
 
