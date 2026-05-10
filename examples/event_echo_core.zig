@@ -7,7 +7,9 @@ pub const EventEcho = struct {
     pub const Params = struct {};
 
     pub fn process(_: *EventEcho, context: *plug.process.ProcessContext(f32)) void {
-        context.appendOutputEvents(context.inputEvents()) catch {};
+        const events = context.inputEvents();
+        if (!context.canAppendOutputEvents(events.eventCount())) return;
+        context.appendOutputEvents(events) catch unreachable;
     }
 };
 
@@ -45,6 +47,29 @@ test "event echo core example writes input events to output events" {
     try std.testing.expectEqual(@as(usize, 1), context.countOutputEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.firstOutputEvent(.note_on).?.sample_offset);
     try std.testing.expectEqual(@as(usize, 1), context.firstOutputEventOffset().?);
+}
+
+test "event echo core example leaves output unchanged when capacity is too small" {
+    var plugin = EventEcho{};
+    const input = [_]f32{ 0.0, 0.0 };
+    var output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const events = [_]plug.process.Event{
+        plug.process.Event.noteOn(0, 0, 60, 0.75),
+        plug.process.Event.noteOff(1, 0, 60, 0.0),
+    };
+    var output_event_storage: [1]plug.process.Event = undefined;
+    var output_events = plug.process.EventWriter.init(&output_event_storage, input.len);
+    var context = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+        .output_events = &output_events,
+    });
+
+    plugin.process(&context);
+
+    try std.testing.expectEqual(@as(usize, 0), context.outputEventCount());
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventRemainingCapacity());
 }
 
 test "event echo core example can run through plugin instance" {
