@@ -14,7 +14,7 @@ This map separates what is already gated from what remains future hardening. `do
 | GUI/editor protocols | ABI fixtures and helper tests for `IPlugView`, `IPlugFrame`, content scale, Linux run-loop, Wayland, parameter finder, context menus | Real embedded editor tests on macOS, Windows, X11, and Wayland |
 | Data exchange and host context | ABI fixtures and host helper tests for data exchange, channel context, automation state, and physical UI mapping | Real host coverage is still absent for data exchange and physical UI mapping |
 | Compatibility and wrapper metadata | ABI fixtures and compatibility JSON helper tests | More complete compatibility metadata examples |
-| Validator | macOS validator in public CI; Linux validator enabled for native CI runs | Windows validator when runners can build and execute Steinberg validator reliably |
+| Validator | macOS and Linux validator runs in public CI against native VST3 bundles | Windows validator when runners can build and execute Steinberg validator reliably |
 | Host smoke | REAPER macOS rows for core audio examples | Deferred note-gate, event-monitor, sine-synth rows plus Linux/Windows hosts |
 
 ## Release Interpretation
