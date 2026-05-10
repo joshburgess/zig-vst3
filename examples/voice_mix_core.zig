@@ -108,6 +108,24 @@ test "voice mix core example applies reflected program snapshots" {
     try std.testing.expect(!try instance.applyProgramByNameForUnitName("Missing", "Quad"));
 }
 
+test "voice mix core example formats and parses int parameters" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+    var buffer: [16]u8 = undefined;
+
+    try std.testing.expectEqual(@as(?u32, 0), instance.parameterIdByName("Voices"));
+    try std.testing.expectEqual(@as(?usize, 0), instance.parameterIndexOfName("Voices"));
+    try std.testing.expectEqual(@as(?i32, voice_unit_id), instance.parameterUnitIdByName("Voices"));
+    try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalizedByName("Voices"));
+    try std.testing.expectEqual(@as(?i32, 3), instance.parameterStepCountByName("Voices"));
+
+    try std.testing.expectEqualStrings("3", try instance.formatParameterPlainByName("Voices", 2.0 / 3.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainByName("Voices", "4"));
+    try std.testing.expect(instance.storeParameterPlainByName("Voices", 4.0));
+    try std.testing.expectEqual(@as(i64, 4), instance.loadParameter("voices"));
+    try std.testing.expect(instance.resetParameterByNameToDefault("Voices"));
+    try std.testing.expectEqual(@as(i64, 1), instance.loadParameter("voices"));
+}
+
 test "voice mix core example applies int parameter changes" {
     var instance = try Instance.init(std.testing.allocator, .{});
     const input = [_]f32{ 0.25, 0.5, 1.0 };
