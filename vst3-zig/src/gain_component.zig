@@ -64,6 +64,7 @@ pub fn closeDataExchangeQueue(queue_id: ivstdataexchange.DataExchangeQueueID) ty
 test "gain component can be created as IComponent" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 
     var out: ?*anyopaque = null;
 
@@ -71,7 +72,48 @@ test "gain component can be created as IComponent" {
     try std.testing.expect(out != null);
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput)));
-    try std.testing.expect(component_iface.vtable.release(component_iface) >= 1);
+
+    var plugin_base_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.queryInterface(component_iface, &ipluginbase.iplugin_base_iid, &plugin_base_out));
+    try std.testing.expect(plugin_base_out != null);
+    try std.testing.expectEqual(@as(?*anyopaque, @ptrCast(component_iface)), plugin_base_out);
+    _ = component_iface.vtable.release(component_iface);
+
+    const missing_iid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
+    var missing_out: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, component_iface.vtable.queryInterface(component_iface, &missing_iid, &missing_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), missing_out);
+
+    var controller_cid = [_]u8{0} ** 16;
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getControllerClassId(component_iface, &controller_cid));
+    try std.testing.expectEqualSlices(u8, &gain_controller.cid, &controller_cid);
+    _ = component_iface.vtable.release(component_iface);
+}
+
+test "gain component reports deterministic component bus defaults" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var input_info = ivstcomponent.BusInfo{};
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getBusInfo(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &input_info));
+    try std.testing.expectEqual(@as(types.int32, 2), input_info.channelCount);
+
+    input_info.channelCount = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, component_iface.vtable.getBusInfo(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 1, &input_info));
+    try std.testing.expectEqual(@as(types.int32, 0), input_info.channelCount);
+
+    var source = ivstcomponent.RoutingInfo{};
+    var destination = ivstcomponent.RoutingInfo{};
+    try std.testing.expectEqual(types.kNoInterface, component_iface.vtable.getRoutingInfo(component_iface, &source, &destination));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.activateBus(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setIoMode(component_iface, @intFromEnum(ivstcomponent.IoModes.kSimple)));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setActive(component_iface, 0));
 }
 
 test "gain component exposes process context requirements" {
