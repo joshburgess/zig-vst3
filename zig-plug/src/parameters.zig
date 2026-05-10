@@ -1005,6 +1005,10 @@ pub fn ParameterSet(comptime Params: type) type {
             return parameterPlainMaximum(self.descriptor(field_name));
         }
 
+        pub fn fieldHasPlainRange(self: *const Self, comptime field_name: []const u8) bool {
+            return self.fieldPlainMinimum(field_name) != null and self.fieldPlainMaximum(field_name) != null;
+        }
+
         pub fn fieldIsBypass(self: *const Self, comptime field_name: []const u8) bool {
             return self.descriptor(field_name).is_bypass;
         }
@@ -1039,6 +1043,10 @@ pub fn ParameterSet(comptime Params: type) type {
 
         pub fn fieldOptionNormalized(self: *const Self, comptime field_name: []const u8, option_index: usize) ?f64 {
             return parameterOptionNormalized(self.descriptor(field_name), option_index);
+        }
+
+        pub fn fieldHasOptions(self: *const Self, comptime field_name: []const u8) bool {
+            return self.fieldOptionCount(field_name) != null;
         }
 
         pub fn parameterChangeNormalized(
@@ -2678,6 +2686,9 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqual(@as(?f64, 0.0), set.fieldPlainMinimum("gain"));
     try std.testing.expectEqual(@as(?f64, 16.0), set.fieldPlainMaximum("voices"));
     try std.testing.expectEqual(@as(?f64, null), set.fieldPlainMinimum("bypass"));
+    try std.testing.expect(set.fieldHasPlainRange("gain"));
+    try std.testing.expect(set.fieldHasPlainRange("voices"));
+    try std.testing.expect(!set.fieldHasPlainRange("bypass"));
     try std.testing.expect(set.hasPlainRange(0));
     try std.testing.expect(set.hasPlainRangeById(1));
     try std.testing.expect(set.hasPlainRangeByName("Voices"));
@@ -2772,6 +2783,8 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqualStrings("lead", set.fieldOptionLabel("mode", 1).?);
     try std.testing.expectEqual(@as(?f64, 1.0), set.fieldOptionNormalized("mode", 1));
     try std.testing.expectEqual(@as(?usize, null), set.fieldOptionCount("bypass"));
+    try std.testing.expect(set.fieldHasOptions("mode"));
+    try std.testing.expect(!set.fieldHasOptions("bypass"));
     try std.testing.expect(set.hasOptions(3));
     try std.testing.expect(set.hasOptionsById(3));
     try std.testing.expect(set.hasOptionsByName("Mode"));
