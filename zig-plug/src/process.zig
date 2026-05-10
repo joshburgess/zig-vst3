@@ -1012,10 +1012,15 @@ pub fn ProcessContext(comptime Sample: type) type {
 
         pub fn init(sample_rate: f64, input_channels: []const []const Sample, output_channels: []const []Sample) !@This() {
             if (sample_rate <= 0.0 or !std.math.isFinite(sample_rate)) return error.InvalidSampleRate;
+            const inputs = try AudioInputs(Sample).init(input_channels);
+            const outputs = try AudioOutputs(Sample).init(output_channels);
+            if (!inputs.isEmpty() and !outputs.isEmpty() and inputs.frameCount() != outputs.frameCount()) {
+                return error.MismatchedFrameCount;
+            }
             return .{
                 .sample_rate = sample_rate,
-                .inputs = try AudioInputs(Sample).init(input_channels),
-                .outputs = try AudioOutputs(Sample).init(output_channels),
+                .inputs = inputs,
+                .outputs = outputs,
             };
         }
 
@@ -1373,7 +1378,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         pub fn frameCount(self: @This()) usize {
             if (self.inputs.channelCount() == 0) return self.outputs.frame_count;
             if (self.outputs.channelCount() == 0) return self.inputs.frame_count;
-            return @min(self.inputs.frame_count, self.outputs.frame_count);
+            return self.inputs.frame_count;
         }
     };
 }
@@ -1453,6 +1458,15 @@ test "process context reports usable frame count" {
     context.clearOutputs();
     try std.testing.expectEqual(@as(f64, 0.0), out_left[0]);
     try std.testing.expectEqual(@as(f64, 0.0), out_right[2]);
+}
+
+test "process context rejects side-to-side frame count mismatch" {
+    const input = [_]f32{ 0.1, 0.2 };
+    var output = [_]f32{ 0.0, 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+
+    try std.testing.expectError(error.MismatchedFrameCount, ProcessContext(f32).init(48_000.0, &input_channels, &output_channels));
 }
 
 test "process context reports frame count for input-only and output-only processors" {
