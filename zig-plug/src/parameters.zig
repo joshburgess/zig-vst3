@@ -461,6 +461,31 @@ pub fn EnumParam(comptime Enum: type) type {
             return @tagName(value);
         }
 
+        pub fn optionCount(_: Self) usize {
+            return info.fields.len;
+        }
+
+        pub fn indexOfValue(_: Self, value: Enum) usize {
+            return indexOf(value);
+        }
+
+        pub fn valueAtOptionIndex(_: Self, wanted_index: usize) ?Enum {
+            if (wanted_index >= info.fields.len) return null;
+            return valueAtIndex(wanted_index);
+        }
+
+        pub fn labelAtOptionIndex(_: Self, wanted_index: usize) ?[]const u8 {
+            inline for (info.fields, 0..) |field, index| {
+                if (index == wanted_index) return field.name;
+            }
+            return null;
+        }
+
+        pub fn normalizedFromOptionIndex(_: Self, wanted_index: usize) ?f64 {
+            if (wanted_index >= info.fields.len) return null;
+            return normalizedFromIndex(wanted_index);
+        }
+
         pub fn formatPlain(self: Self, normalized: f64, _: []u8) ![]const u8 {
             return self.label(self.denormalize(normalized));
         }
@@ -2182,6 +2207,14 @@ test "enum parameter maps tags to normalized positions" {
     try std.testing.expectEqual(@as(f64, 0.0), mode.normalizedFromPlain(-100.0));
     try std.testing.expectEqual(@as(f64, 1.0), mode.normalizedFromPlain(100.0));
     try std.testing.expectEqualStrings("lead", mode.label(.lead));
+    try std.testing.expectEqual(@as(usize, 3), mode.optionCount());
+    try std.testing.expectEqual(@as(usize, 1), mode.indexOfValue(.crunch));
+    try std.testing.expectEqual(Mode.lead, mode.valueAtOptionIndex(2).?);
+    try std.testing.expectEqual(@as(?Mode, null), mode.valueAtOptionIndex(3));
+    try std.testing.expectEqualStrings("clean", mode.labelAtOptionIndex(0).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), mode.labelAtOptionIndex(3));
+    try std.testing.expectEqual(@as(?f64, 0.5), mode.normalizedFromOptionIndex(1));
+    try std.testing.expectEqual(@as(?f64, null), mode.normalizedFromOptionIndex(3));
 }
 
 test "enum parameter supports sparse tag values" {
@@ -2199,6 +2232,10 @@ test "enum parameter supports sparse tag values" {
     try std.testing.expectEqual(@as(f64, 1.0), mode.plainFromNormalized(0.5));
     try std.testing.expectEqual(@as(f64, 1.0), mode.normalizedFromPlain(2.0));
     try std.testing.expectEqual(@as(f64, 1.0), try mode.parsePlain("lead"));
+    try std.testing.expectEqual(@as(usize, 2), mode.indexOfValue(.lead));
+    try std.testing.expectEqual(Mode.crunch, mode.valueAtOptionIndex(1).?);
+    try std.testing.expectEqualStrings("lead", mode.labelAtOptionIndex(2).?);
+    try std.testing.expectEqual(@as(?f64, 1.0), mode.normalizedFromOptionIndex(2));
 }
 
 test "single-value enum parameter stays at zero" {
@@ -2209,6 +2246,8 @@ test "single-value enum parameter stays at zero" {
     try std.testing.expectEqual(@as(f64, 0.0), only.defaultNormalized());
     try std.testing.expectEqual(@as(f64, 0.0), only.normalize(.value));
     try std.testing.expectEqual(Only.value, only.denormalize(1.0));
+    try std.testing.expectEqual(@as(usize, 1), only.optionCount());
+    try std.testing.expectEqual(@as(?f64, 0.0), only.normalizedFromOptionIndex(0));
 }
 
 test "parameter set reflects descriptor fields" {
