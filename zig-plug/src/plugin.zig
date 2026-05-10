@@ -2006,6 +2006,7 @@ test "plugin instance round-trips owned parameter state" {
     try std.testing.expect(report.hasRestoredEntries());
     try std.testing.expect(!report.hasIgnoredEntries());
     try std.testing.expect(report.restoredAllEntries());
+    try std.testing.expect(!report.restoredPartialEntries());
     try std.testing.expect(!report.ignoredAllEntries());
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(f64, 0.75), restored.loadParameterNormalized("mix"));
