@@ -270,6 +270,44 @@ test "linux run loop registers and triggers event handlers" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.ref_count.load(.monotonic));
 }
 
+test "linux event and timer handlers delegate callbacks and support query interface" {
+    const Event = EventHandler(struct {
+        var last_fd: Linux.FileDescriptor = -1;
+
+        pub fn onFDIsSet(fd: Linux.FileDescriptor) void {
+            last_fd = fd;
+        }
+    });
+    const Timer = TimerHandler(struct {
+        var count: types.uint32 = 0;
+
+        pub fn onTimer() void {
+            count += 1;
+        }
+    });
+    var event = Event{};
+    var timer = Timer{};
+
+    event.asInterface().vtable.onFDIsSet(event.asInterface(), 12);
+    timer.asInterface().vtable.onTimer(timer.asInterface());
+    try std.testing.expectEqual(@as(Linux.FileDescriptor, 12), event.last_fd);
+    try std.testing.expectEqual(@as(Linux.FileDescriptor, 12), Event.last_fd);
+    try std.testing.expectEqual(@as(types.uint32, 1), timer.timer_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), Timer.count);
+
+    var event_query: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, event.asInterface().vtable.queryInterface(event.asInterface(), &iplugview.ievent_handler_iid, &event_query));
+    try std.testing.expect(event_query != null);
+    const queried_event: *Linux.IEventHandler = @ptrCast(@alignCast(event_query.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_event.vtable.release(queried_event));
+
+    var timer_query: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, timer.asInterface().vtable.queryInterface(timer.asInterface(), &iplugview.itimer_handler_iid, &timer_query));
+    try std.testing.expect(timer_query != null);
+    const queried_timer: *Linux.ITimerHandler = @ptrCast(@alignCast(timer_query.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_timer.vtable.release(queried_timer));
+}
+
 test "linux run loop updates duplicate event registrations without extra retain" {
     const Loop = RunLoop(1, 1);
     const Handler = EventHandler(struct {});
@@ -344,8 +382,10 @@ test "linux run loop updates duplicate timers and rejects full storage" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.registerTimer(iface, first.asInterface(), 32));
     try std.testing.expectEqual(@as(types.uint32, 2), first.ref_count.load(.monotonic));
     try std.testing.expectEqual(@as(Linux.TimerInterval, 32), loop.timer_handlers[0].interval);
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.registerTimer(iface, null, 16));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.registerTimer(iface, second.asInterface(), 64));
     try std.testing.expectEqual(@as(types.uint32, 1), second.ref_count.load(.monotonic));
+    try std.testing.expectEqual(types.kResultFalse, loop.triggerTimer(second.asInterface()));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.unregisterTimer(iface, second.asInterface()));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.unregisterTimer(iface, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.unregisterTimer(iface, first.asInterface()));
