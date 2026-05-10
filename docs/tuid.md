@@ -7,6 +7,6 @@ The byte order is platform-dependent:
 - Windows sets `COM_COMPATIBLE` and stores the first GUID fields in COM layout.
 - Linux and macOS store all four 32-bit words in big-endian byte order.
 
-`vst3-zig/src/tuid.zig` mirrors those two paths. The tests cover the P0 identifiers needed by the COM layer: `FUnknown`, `IPluginBase`, `IComponent`, `IAudioProcessor`, and `IEditController`.
+`zig-vst3/src/tuid.zig` mirrors those two paths. The tests cover the P0 identifiers needed by the COM layer: `FUnknown`, `IPluginBase`, `IComponent`, `IAudioProcessor`, and `IEditController`.
 
 The ABI fixtures build small SDK-backed C++ programs and compare their printed bytes against the Zig implementation. `zig build layer1-abi` runs those checks with the rest of the Layer 1 ABI harness, and public CI runs that step on Linux and macOS.

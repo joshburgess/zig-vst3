@@ -8,8 +8,8 @@ A staged plan for building a VST3 plugin framework in Zig, structured for delega
 
 **Goal.** Build a reusable VST3 plugin framework in Zig that lets developers ship audio plugins on Linux, macOS, and Windows. Two layers, mirroring the Rust ecosystem split:
 
-- **Layer 1: `vst3-zig`**: Raw bindings to the VST3 COM API. Hand-translated interface definitions, comptime vtable scaffolding, GUID/TUID handling, factory entry points. Useful on its own.
-- **Layer 2: `zig-plug`**: A higher-level framework with a clean `Plugin` interface, parameter system, state save/load, bundler tooling, sample-accurate automation. Builds on Layer 1.
+- **Layer 1: `zig-vst3`**: Raw bindings to the VST3 COM API. Hand-translated interface definitions, comptime vtable scaffolding, GUID/TUID handling, factory entry points. Useful on its own.
+- **Layer 2: `zig-vst3-plugin`**: A higher-level framework with a clean `Plugin` interface, parameter system, state save/load, bundler tooling, sample-accurate automation. Builds on Layer 1.
 
 **Targets from day one.** Linux, macOS, Windows on x86_64 and aarch64. The repository should compile on all three platforms from the first CI pipeline. Validator and host-load checks become required only after their harnesses exist.
 
@@ -86,7 +86,7 @@ Each phase is broken into **work units**. A work unit is sized so that one agent
 **Inputs.** None.
 
 **Deliverables.**
-- Monorepo with two top-level crates/packages: `vst3-zig/` and `zig-plug/`
+- Monorepo with two top-level crates/packages: `zig-vst3/` and `zig-vst3-plugin/`
 - `build.zig` at root that builds a stub shared library on each target
 - `.gitignore`, `LICENSE` (MIT), `README.md` with project status badge
 - `CONTRIBUTING.md` describing the work-unit model and PR conventions
@@ -194,7 +194,7 @@ Each phase is broken into **work units**. A work unit is sized so that one agent
 **Inputs.** Phase 0 deliverables. `pluginterfaces/base/funknown.h`, `falignpush.h`, `falignpop.h`, `fstrdefs.h`, `ftypes.h` from the SDK.
 
 **Deliverables.**
-- `vst3-zig/src/tuid.zig` with:
+- `zig-vst3/src/tuid.zig` with:
   - `TUID` type (16-byte array)
   - `FUID` type with `equals`, `from_tuid`, `to_tuid`, `from_string`, `to_string` methods
   - `inline_uid` comptime function matching the C++ `INLINE_UID` macro semantics, with correct platform-conditional byte ordering (Windows COM-style vs. Itanium)
@@ -285,7 +285,7 @@ Each interface or small group of related interfaces becomes its own work unit, f
 **Inputs.** Phase 1 deliverables. The relevant SDK header(s). The interface inventory entry.
 
 **Deliverables.**
-- Zig translation in `vst3-zig/src/pluginterfaces/<group>/<interface>.zig`
+- Zig translation in `zig-vst3/src/pluginterfaces/<group>/<interface>.zig`
 - TUID constant matching the SDK byte-for-byte
 - Vtable struct with all methods in declaration order
 - Any associated structs, enums, and constants from the same header
@@ -389,7 +389,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 **Inputs.** Phase 2 deliverables.
 
 **Deliverables.**
-- `vst3-zig/src/entry.zig` with platform-conditional exports:
+- `zig-vst3/src/entry.zig` with platform-conditional exports:
   - Linux: `ModuleEntry`, `ModuleExit`, `GetPluginFactory`
   - macOS: `bundleEntry`, `bundleExit`, `GetPluginFactory`
   - Windows: `InitDll`, `ExitDll`, `GetPluginFactory`
@@ -504,7 +504,7 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 **Inputs.** Work Units 4.1, 4.2.
 
 **Deliverables.**
-- Tag `vst3-zig-0.1.0` on the repo
+- Tag `zig-vst3-0.1.0` on the repo
 - Release notes covering scope, known limitations, and roadmap
 - Announcement post draft for r/audioprogramming, KVR, and the Zig community Discord
 
@@ -520,9 +520,9 @@ Includes `ParameterInfo`, `ParameterFlags`, `KnobMode`.
 
 **Goal.** Finish the user-facing framework around the APIs already proven by the bundled examples. This is where Zig idioms matter most. Exit this phase with a `Plugin` interface that's pleasant to implement, a parameter and state system that scales, and enough host-smoke coverage to trust the framework outside the validator.
 
-**Current status.** `zig-plug` is no longer just a sketch. The framework lives under `zig-plug/src/` and is also exposed as the pure `zig-plug-core` module for Layer 1 integration. It has reflected plugin and class metadata with validation for empty or NUL-containing host-facing strings, lifecycle validation, instance-level bus and lifecycle predicates, checked prepare configuration, typed parameter views and editors with count and emptiness helpers, instance-level reflected parameter metadata wrappers, descriptor validation for empty, duplicate, non-finite, out-of-range, and NUL-containing parameter metadata, normalized/plain conversion, state serialization with id migrations, restore reports with completeness and emptiness helpers, and header inspection with presence and absence helpers, unit and program-list metadata with NUL-free host-facing string validation plus value-level unit/program predicates, direct root unit metadata helpers, unit-to-program-list lookup helpers, and program snapshot/info presence checks, optional finite program snapshots with list-based and unit-based application helpers, no-allocation automation segments with segment range helpers, input events, output events, process contexts for effects, generators, and analyzers, and f32/f64 process dispatch. The reusable VST3 bridge maps those APIs onto reflected edit controllers and simple stereo processors, including finite host automation collection, stream state compatibility, input event collection, bounded input/output data-event payloads, bounded output event writing, unit info, conservative optional-interface defaults, retained host callback interfaces, process setup validation, host-compatible process error mapping, and main audio sample-size dispatch.
+**Current status.** `zig-vst3-plugin` is no longer just a sketch. The framework lives under `zig-vst3-plugin/src/` and is also exposed as the pure `zig-vst3-plugin-core` module for Layer 1 integration. It has reflected plugin and class metadata with validation for empty or NUL-containing host-facing strings, lifecycle validation, instance-level bus and lifecycle predicates, checked prepare configuration, typed parameter views and editors with count and emptiness helpers, instance-level reflected parameter metadata wrappers, descriptor validation for empty, duplicate, non-finite, out-of-range, and NUL-containing parameter metadata, normalized/plain conversion, state serialization with id migrations, restore reports with completeness and emptiness helpers, and header inspection with presence and absence helpers, unit and program-list metadata with NUL-free host-facing string validation plus value-level unit/program predicates, direct root unit metadata helpers, unit-to-program-list lookup helpers, and program snapshot/info presence checks, optional finite program snapshots with list-based and unit-based application helpers, no-allocation automation segments with segment range helpers, input events, output events, process contexts for effects, generators, and analyzers, and f32/f64 process dispatch. The reusable VST3 bridge maps those APIs onto reflected edit controllers and simple stereo processors, including finite host automation collection, stream state compatibility, input event collection, bounded input/output data-event payloads, bounded output event writing, unit info, conservative optional-interface defaults, retained host callback interfaces, process setup validation, host-compatible process error mapping, and main audio sample-size dispatch.
 
-The gain, bypass, mode-gain, voice-mix, note-gate, event-echo, event-monitor, and sine-synth pure examples cover float, bool, enum, and int parameters, plain formatting/parsing/conversion helpers, counted automation application, unit-based program snapshots, state-aware process hooks, save/reload behavior, state restore reports, state debug JSON, input events including note, MIDI CC, pitch bend, aftertouch, note-expression, data, and other events, typed event payload views including note attack/release views, output events, combined event and automation segmentation, channel-aware polyphonic held-note gate state, zero-velocity note-on release behavior, and output-only event-offset synthesis. The bundled gain, bypass, mode-gain, voice-mix, note-gate, event-echo, event-monitor, and sine-synth VST3 examples use the reusable shells and validate locally on macOS with `zig build validate-examples`; event monitor advertises an input-only audio topology and sine synth advertises an output-only audio topology. The exported example factories now expose `IPluginFactory3` metadata, and the build has direct `zig-plug-core` tests plus native, Linux, and Windows aggregate bundle steps. The remaining Phase 5 work is mostly API polish, framework-facing documentation, and host smoke testing for the deferred MIDI/analyzer/instrument examples.
+The gain, bypass, mode-gain, voice-mix, note-gate, event-echo, event-monitor, and sine-synth pure examples cover float, bool, enum, and int parameters, plain formatting/parsing/conversion helpers, counted automation application, unit-based program snapshots, state-aware process hooks, save/reload behavior, state restore reports, state debug JSON, input events including note, MIDI CC, pitch bend, aftertouch, note-expression, data, and other events, typed event payload views including note attack/release views, output events, combined event and automation segmentation, channel-aware polyphonic held-note gate state, zero-velocity note-on release behavior, and output-only event-offset synthesis. The bundled gain, bypass, mode-gain, voice-mix, note-gate, event-echo, event-monitor, and sine-synth VST3 examples use the reusable shells and validate locally on macOS with `zig build validate-examples`; event monitor advertises an input-only audio topology and sine synth advertises an output-only audio topology. The exported example factories now expose `IPluginFactory3` metadata, and the build has direct `zig-vst3-plugin-core` tests plus native, Linux, and Windows aggregate bundle steps. The remaining Phase 5 work is mostly API polish, framework-facing documentation, and host smoke testing for the deferred MIDI/analyzer/instrument examples.
 
 The parameter layer now includes reflected float, int, bool, and enum descriptors, numeric plain-range helpers, reflected default plain values, optional numeric-range metadata and predicates, enum option introspection plus presence and emptiness predicates, normalized/plain conversion, text formatting/parsing, atomic value storage, modulation offsets, linear/exponential/logarithmic smoothing helpers with completion and coefficient reads, parameter views/editors, count and emptiness predicates, and instance-level wrappers with coverage for invalid metadata, missing metadata, and reset paths.
 
@@ -537,7 +537,7 @@ The parameter layer now includes reflected float, int, bool, and enum descriptor
   - Allocator passing convention
   - Real-time safety: how the API keeps allocation, locks, logging, and unbounded work out of `process`
   - Debug instrumentation for detecting allocator use and lock acquisition on the audio thread
-- `zig-plug/src/plugin.zig` implementation sufficient to express gain, bypass, enum mode gain, int voice mix, note gate, event echo, and sine synth examples through the public API
+- `zig-vst3-plugin/src/plugin.zig` implementation sufficient to express gain, bypass, enum mode gain, int voice mix, note gate, event echo, and sine synth examples through the public API
 
 **Exit criteria.**
 - Three external Zig developers review the design and at least two find the API natural

@@ -1,5 +1,5 @@
 const std = @import("std");
-const preset_file = @import("vst3-zig").pluginterfaces.vst.vstpresetfile;
+const preset_file = @import("zig-vst3").pluginterfaces.vst.vstpresetfile;
 
 fn printChunkID(writer: anytype, label: []const u8, id: preset_file.ChunkID) !void {
     try writer.print("{s} {s}\n", .{ label, id });

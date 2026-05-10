@@ -1,7 +1,7 @@
 const std = @import("std");
-const automation = @import("vst3-zig").pluginterfaces.vst.ivstautomationstate;
-const interface_support = @import("vst3-zig").pluginterfaces.vst.ivstpluginterfacesupport;
-const prefetch = @import("vst3-zig").pluginterfaces.vst.ivstprefetchablesupport;
+const automation = @import("zig-vst3").pluginterfaces.vst.ivstautomationstate;
+const interface_support = @import("zig-vst3").pluginterfaces.vst.ivstpluginterfacesupport;
+const prefetch = @import("zig-vst3").pluginterfaces.vst.ivstprefetchablesupport;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

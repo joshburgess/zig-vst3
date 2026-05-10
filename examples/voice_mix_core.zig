@@ -1,11 +1,11 @@
 const std = @import("std");
-const plug = @import("zig-plug");
+const plug = @import("zig-vst3-plugin");
 
 const voice_unit_id: i32 = 1;
 const voice_program_list_id: i32 = 7;
 
 pub const VoiceMix = struct {
-    pub const name = "zig-plug Core Voice Mix";
+    pub const name = "zig-vst3-plugin Core Voice Mix";
     pub const vendor = "zig-vst3";
     pub const units = plug.units.Config{
         .units = &.{
@@ -63,7 +63,7 @@ pub const parameter_set = Spec.ParameterSet.init(.{});
 test "voice mix core example declares reflected int parameter" {
     const spec = Spec.init(.{});
 
-    try std.testing.expectEqualStrings("zig-plug Core Voice Mix", Spec.name);
+    try std.testing.expectEqualStrings("zig-vst3-plugin Core Voice Mix", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 1), parameter_set.parameterCount());
     try std.testing.expectEqual(@as(?i32, voice_unit_id), parameter_set.unitId(0));

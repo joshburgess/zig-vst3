@@ -1,6 +1,6 @@
 const std = @import("std");
-const plugview = @import("vst3-zig").pluginterfaces.gui.iplugview;
-const scale = @import("vst3-zig").pluginterfaces.gui.iplugviewcontentscalesupport;
+const plugview = @import("zig-vst3").pluginterfaces.gui.iplugview;
+const scale = @import("zig-vst3").pluginterfaces.gui.iplugviewcontentscalesupport;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

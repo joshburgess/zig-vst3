@@ -1,4 +1,4 @@
-const funknown = @import("vst3-zig").funknown;
+const funknown = @import("zig-vst3").funknown;
 
 export fn make_test_object(out: *funknown.TestObject) *funknown.Header {
     out.* = .{};

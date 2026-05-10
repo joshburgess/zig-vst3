@@ -1,7 +1,7 @@
 const std = @import("std");
-const events = @import("vst3-zig").pluginterfaces.vst.ivstevents;
-const helpers = @import("vst3-zig").pluginterfaces.vst.vsteventshelper;
-const noteexpression = @import("vst3-zig").pluginterfaces.vst.ivstnoteexpression;
+const events = @import("zig-vst3").pluginterfaces.vst.ivstevents;
+const helpers = @import("zig-vst3").pluginterfaces.vst.vsteventshelper;
+const noteexpression = @import("zig-vst3").pluginterfaces.vst.ivstnoteexpression;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

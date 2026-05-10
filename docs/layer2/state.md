@@ -1,6 +1,6 @@
 # Layer 2 State
 
-`zig-plug` state serialization stores reflected parameter values as normalized scalars. The current binary format is intentionally small:
+`zig-vst3-plugin` state serialization stores reflected parameter values as normalized scalars. The current binary format is intentionally small:
 
 - 8-byte magic header
 - 16-bit format version

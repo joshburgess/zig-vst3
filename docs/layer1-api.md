@@ -1,6 +1,6 @@
 # Layer 1 Raw API
 
-`vst3-zig` is the raw VST3 binding layer. It exposes Zig translations of Steinberg's COM-style interfaces, helper objects for host-side tests, and reusable component/controller/processor shells used by the bundled examples.
+`zig-vst3` is the raw VST3 binding layer. It exposes Zig translations of Steinberg's COM-style interfaces, helper objects for host-side tests, and reusable component/controller/processor shells used by the bundled examples.
 
 The raw layer deliberately keeps ABI details visible:
 
@@ -9,17 +9,17 @@ The raw layer deliberately keeps ABI details visible:
 - `queryInterface`, `addRef`, and `release` behavior is implemented by small reusable helpers.
 - SDK layout assumptions are checked by `zig build layer1-abi`.
 
-Use `zig-plug` when you want a higher-level plugin framework. Use `vst3-zig` directly when you need access to VST3 interfaces, host callback objects, custom shell behavior, or ABI tests.
+Use `zig-vst3-plugin` when you want a higher-level plugin framework. Use `zig-vst3` directly when you need access to VST3 interfaces, host callback objects, custom shell behavior, or ABI tests.
 
 ## Modules
 
-- `vst3-zig/src/pluginterfaces/base`: raw base interfaces, base types, stream, persistence, update, compatibility, and factory declarations.
-- `vst3-zig/src/pluginterfaces/gui`: raw plug-view, plug-frame, content-scale, Linux run-loop, and Wayland declarations.
-- `vst3-zig/src/pluginterfaces/vst`: raw VST component, processor, controller, parameter, event, unit, MIDI, note-expression, context-menu, data-exchange, representation, and helper declarations.
-- `vst3-zig/src/funknown.zig`: reference-count and `FUnknown` helper behavior.
-- `vst3-zig/src/interface_map.zig`: `queryInterface` dispatch helpers.
-- `vst3-zig/src/factory.zig` and `vst3-zig/src/entry.zig`: factory metadata, `IPluginFactory3` support, and platform entry exports.
-- `vst3-zig/src/zig_plug_effect.zig`: reusable VST3 shell used by the checked examples.
+- `zig-vst3/src/pluginterfaces/base`: raw base interfaces, base types, stream, persistence, update, compatibility, and factory declarations.
+- `zig-vst3/src/pluginterfaces/gui`: raw plug-view, plug-frame, content-scale, Linux run-loop, and Wayland declarations.
+- `zig-vst3/src/pluginterfaces/vst`: raw VST component, processor, controller, parameter, event, unit, MIDI, note-expression, context-menu, data-exchange, representation, and helper declarations.
+- `zig-vst3/src/funknown.zig`: reference-count and `FUnknown` helper behavior.
+- `zig-vst3/src/interface_map.zig`: `queryInterface` dispatch helpers.
+- `zig-vst3/src/factory.zig` and `zig-vst3/src/entry.zig`: factory metadata, `IPluginFactory3` support, and platform entry exports.
+- `zig-vst3/src/zig_vst3_plugin_effect.zig`: reusable VST3 shell used by the checked examples.
 
 ## Local Checks
 

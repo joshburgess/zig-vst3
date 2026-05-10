@@ -1,7 +1,7 @@
 const std = @import("std");
-const function_name = @import("vst3-zig").pluginterfaces.vst.ivstparameterfunctionname;
-const parameter_finder = @import("vst3-zig").pluginterfaces.vst.ivstplugview;
-const remap = @import("vst3-zig").pluginterfaces.vst.ivstremapparamid;
+const function_name = @import("zig-vst3").pluginterfaces.vst.ivstparameterfunctionname;
+const parameter_finder = @import("zig-vst3").pluginterfaces.vst.ivstplugview;
+const remap = @import("zig-vst3").pluginterfaces.vst.ivstremapparamid;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

@@ -1,5 +1,5 @@
 const std = @import("std");
-const preset_keys = @import("vst3-zig").pluginterfaces.vst.vstpresetkeys;
+const preset_keys = @import("zig-vst3").pluginterfaces.vst.vstpresetkeys;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

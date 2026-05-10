@@ -1,5 +1,5 @@
 const std = @import("std");
-const edit_controller = @import("vst3-zig").pluginterfaces.vst.ivsteditcontroller;
+const edit_controller = @import("zig-vst3").pluginterfaces.vst.ivsteditcontroller;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

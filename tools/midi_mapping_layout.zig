@@ -1,6 +1,6 @@
 const std = @import("std");
-const learn = @import("vst3-zig").pluginterfaces.vst.ivstmidilearn;
-const mapping2 = @import("vst3-zig").pluginterfaces.vst.ivstmidimapping2;
+const learn = @import("zig-vst3").pluginterfaces.vst.ivstmidilearn;
+const mapping2 = @import("zig-vst3").pluginterfaces.vst.ivstmidimapping2;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

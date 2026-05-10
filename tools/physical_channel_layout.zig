@@ -1,6 +1,6 @@
 const std = @import("std");
-const channel = @import("vst3-zig").pluginterfaces.vst.ivstchannelcontextinfo;
-const physical = @import("vst3-zig").pluginterfaces.vst.ivstphysicalui;
+const channel = @import("zig-vst3").pluginterfaces.vst.ivstchannelcontextinfo;
+const physical = @import("zig-vst3").pluginterfaces.vst.ivstphysicalui;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

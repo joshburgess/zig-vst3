@@ -1,8 +1,8 @@
 const std = @import("std");
-const plug = @import("zig-plug");
+const plug = @import("zig-vst3-plugin");
 
 pub const Gain = struct {
-    pub const name = "zig-plug Core Gain";
+    pub const name = "zig-vst3-plugin Core Gain";
     pub const vendor = "zig-vst3";
     pub const Params = struct {
         gain: plug.parameters.FloatParam = .{ .id = 0, .name = "Gain", .short_name = "Gain", .units = "x", .min = 0.0, .max = 1.0, .default = 1.0 },
@@ -44,7 +44,7 @@ pub const parameter_set = Spec.ParameterSet.init(.{});
 test "gain core example declares reflected metadata" {
     const spec = Spec.init(.{});
 
-    try std.testing.expectEqualStrings("zig-plug Core Gain", Spec.name);
+    try std.testing.expectEqualStrings("zig-vst3-plugin Core Gain", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 1), parameter_set.parameterCount());
@@ -54,7 +54,7 @@ test "gain core example declares reflected metadata" {
     plug.plugin.validateLifecycle(Gain);
 }
 
-test "gain core example processes through zig-plug context" {
+test "gain core example processes through zig-vst3-plugin context" {
     var plugin = Gain{};
     const input = [_]f32{ 0.25, 0.5, 1.0 };
     var output = [_]f32{ 0.0, 0.0, 0.0 };
