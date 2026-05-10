@@ -1292,15 +1292,25 @@ pub fn ParameterValues(comptime Params: type) type {
         }
 
         pub fn store(self: *Self, index: usize, value: f64) bool {
-            if (index >= Set.count) return false;
-            if (!std.math.isFinite(value)) return false;
-            self.values[index].store(value);
-            return true;
+            return self.storeCount(index, value) != null;
+        }
+
+        pub fn storeCount(self: *Self, index: usize, value: f64) ?usize {
+            if (index >= Set.count) return null;
+            if (!std.math.isFinite(value)) return null;
+            const normalized = clampNormalized(value);
+            const changed: usize = if (self.values[index].load() != normalized) 1 else 0;
+            self.values[index].store(normalized);
+            return changed;
         }
 
         pub fn storePlain(self: *Self, set: *const Set, index: usize, plain: f64) bool {
-            const normalized = set.normalizedFromPlain(index, plain) orelse return false;
-            return self.store(index, normalized);
+            return self.storePlainCount(set, index, plain) != null;
+        }
+
+        pub fn storePlainCount(self: *Self, set: *const Set, index: usize, plain: f64) ?usize {
+            const normalized = set.normalizedFromPlain(index, plain) orelse return null;
+            return self.storeCount(index, normalized);
         }
 
         pub fn copyFrom(self: *Self, source: *const Self) void {
@@ -1400,32 +1410,56 @@ pub fn ParameterValues(comptime Params: type) type {
         }
 
         pub fn storeById(self: *Self, set: *const Set, id: u32, value: f64) bool {
-            const index = set.indexOfId(id) orelse return false;
-            return self.store(index, value);
+            return self.storeByIdCount(set, id, value) != null;
+        }
+
+        pub fn storeByIdCount(self: *Self, set: *const Set, id: u32, value: f64) ?usize {
+            const index = set.indexOfId(id) orelse return null;
+            return self.storeCount(index, value);
         }
 
         pub fn storePlainById(self: *Self, set: *const Set, id: u32, plain: f64) bool {
-            const index = set.indexOfId(id) orelse return false;
-            return self.storePlain(set, index, plain);
+            return self.storePlainByIdCount(set, id, plain) != null;
+        }
+
+        pub fn storePlainByIdCount(self: *Self, set: *const Set, id: u32, plain: f64) ?usize {
+            const index = set.indexOfId(id) orelse return null;
+            return self.storePlainCount(set, index, plain);
         }
 
         pub fn storeByName(self: *Self, set: *const Set, name: []const u8, normalized: f64) bool {
-            const index = set.indexOfName(name) orelse return false;
-            return self.store(index, normalized);
+            return self.storeByNameCount(set, name, normalized) != null;
+        }
+
+        pub fn storeByNameCount(self: *Self, set: *const Set, name: []const u8, normalized: f64) ?usize {
+            const index = set.indexOfName(name) orelse return null;
+            return self.storeCount(index, normalized);
         }
 
         pub fn storePlainByName(self: *Self, set: *const Set, name: []const u8, plain: f64) bool {
-            const index = set.indexOfName(name) orelse return false;
-            return self.storePlain(set, index, plain);
+            return self.storePlainByNameCount(set, name, plain) != null;
+        }
+
+        pub fn storePlainByNameCount(self: *Self, set: *const Set, name: []const u8, plain: f64) ?usize {
+            const index = set.indexOfName(name) orelse return null;
+            return self.storePlainCount(set, index, plain);
         }
 
         pub fn storeField(self: *Self, set: *const Set, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) bool {
+            return self.storeFieldCount(set, field_name, plain) != null;
+        }
+
+        pub fn storeFieldCount(self: *Self, set: *const Set, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) ?usize {
             const param = set.descriptor(field_name);
-            return self.store(set.indexOfField(field_name), param.normalize(plain));
+            return self.storeCount(set.indexOfField(field_name), param.normalize(plain));
         }
 
         pub fn storeFieldNormalized(self: *Self, set: *const Set, comptime field_name: []const u8, normalized: f64) bool {
-            return self.store(set.indexOfField(field_name), normalized);
+            return self.storeFieldNormalizedCount(set, field_name, normalized) != null;
+        }
+
+        pub fn storeFieldNormalizedCount(self: *Self, set: *const Set, comptime field_name: []const u8, normalized: f64) ?usize {
+            return self.storeCount(set.indexOfField(field_name), normalized);
         }
 
         pub fn resetToDefaultById(self: *Self, set: *const Set, id: u32) bool {
@@ -2478,32 +2512,64 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.values.storeFieldNormalized(self.set, field_name, normalized);
         }
 
+        pub fn storeNormalizedCount(self: Self, comptime field_name: []const u8, normalized: f64) ?usize {
+            return self.values.storeFieldNormalizedCount(self.set, field_name, normalized);
+        }
+
         pub fn store(self: Self, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) bool {
             return self.values.storeField(self.set, field_name, plain);
+        }
+
+        pub fn storeCount(self: Self, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) ?usize {
+            return self.values.storeFieldCount(self.set, field_name, plain);
         }
 
         pub fn storeIndex(self: Self, index: usize, normalized: f64) bool {
             return self.values.store(index, normalized);
         }
 
+        pub fn storeIndexCount(self: Self, index: usize, normalized: f64) ?usize {
+            return self.values.storeCount(index, normalized);
+        }
+
         pub fn storePlainIndex(self: Self, index: usize, plain: f64) bool {
             return self.values.storePlain(self.set, index, plain);
+        }
+
+        pub fn storePlainIndexCount(self: Self, index: usize, plain: f64) ?usize {
+            return self.values.storePlainCount(self.set, index, plain);
         }
 
         pub fn storeById(self: Self, wanted_id: u32, normalized: f64) bool {
             return self.values.storeById(self.set, wanted_id, normalized);
         }
 
+        pub fn storeByIdCount(self: Self, wanted_id: u32, normalized: f64) ?usize {
+            return self.values.storeByIdCount(self.set, wanted_id, normalized);
+        }
+
         pub fn storePlainById(self: Self, wanted_id: u32, plain: f64) bool {
             return self.values.storePlainById(self.set, wanted_id, plain);
+        }
+
+        pub fn storePlainByIdCount(self: Self, wanted_id: u32, plain: f64) ?usize {
+            return self.values.storePlainByIdCount(self.set, wanted_id, plain);
         }
 
         pub fn storeByName(self: Self, wanted_name: []const u8, normalized: f64) bool {
             return self.values.storeByName(self.set, wanted_name, normalized);
         }
 
+        pub fn storeByNameCount(self: Self, wanted_name: []const u8, normalized: f64) ?usize {
+            return self.values.storeByNameCount(self.set, wanted_name, normalized);
+        }
+
         pub fn storePlainByName(self: Self, wanted_name: []const u8, plain: f64) bool {
             return self.values.storePlainByName(self.set, wanted_name, plain);
+        }
+
+        pub fn storePlainByNameCount(self: Self, wanted_name: []const u8, plain: f64) ?usize {
+            return self.values.storePlainByNameCount(self.set, wanted_name, plain);
         }
     };
 }
@@ -3106,24 +3172,34 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expectEqual(@as(?f64, null), values.load(2));
     try std.testing.expect(values.store(0, 2.0));
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
+    try std.testing.expectEqual(@as(?usize, 0), values.storeCount(0, 2.0));
+    try std.testing.expectEqual(@as(?usize, 1), values.storeCount(0, 0.75));
+    try std.testing.expectEqual(@as(?usize, null), values.storeCount(2, 0.5));
+    try std.testing.expectEqual(@as(?usize, null), values.storeCount(0, std.math.nan(f64)));
+    try std.testing.expectEqual(@as(?f64, 0.75), values.load(0));
     try std.testing.expect(!values.store(0, std.math.nan(f64)));
-    try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
+    try std.testing.expectEqual(@as(?f64, 0.75), values.load(0));
     try std.testing.expect(!values.storeById(&set, 0, std.math.inf(f64)));
-    try std.testing.expectEqual(@as(?f64, 1.0), values.loadById(&set, 0));
+    try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
     try std.testing.expect(!values.store(2, 0.5));
+    try std.testing.expectEqual(@as(?usize, 0), values.storeByIdCount(&set, 0, 0.75));
     try std.testing.expect(values.storeById(&set, 0, 0.75));
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
+    try std.testing.expectEqual(@as(?usize, null), values.storeByIdCount(&set, 99, 0.5));
     try std.testing.expect(!values.storeById(&set, 99, 0.5));
     try std.testing.expectEqual(@as(?f64, null), values.loadById(&set, 99));
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadPlain(&set, 0));
+    try std.testing.expectEqual(@as(?usize, 1), values.storePlainCount(&set, 0, 0.5));
+    try std.testing.expectEqual(@as(?usize, 0), values.storePlainCount(&set, 0, 0.5));
     try std.testing.expect(values.storePlain(&set, 0, 0.5));
     try std.testing.expectEqual(@as(?f64, 0.5), values.loadPlain(&set, 0));
     try std.testing.expectEqual(@as(?f64, null), values.loadPlain(&set, 99));
+    try std.testing.expectEqual(@as(?usize, null), values.storePlainCount(&set, 99, 0.5));
     try std.testing.expect(!values.storePlain(&set, 99, 0.5));
 
     var copied = Values.init(&set);
     copied.copyFrom(&values);
-    try std.testing.expectEqual(@as(?f64, 0.75), copied.load(0));
+    try std.testing.expectEqual(@as(?f64, 0.5), copied.load(0));
     try std.testing.expectEqual(@as(?f64, 1.0), copied.load(1));
 
     try std.testing.expectEqual(@as(usize, 1), values.resetToDefaultsCount(&set));
@@ -3166,6 +3242,14 @@ test "parameter values expose plain value access by id" {
     try std.testing.expect(values.storePlainById(&set, 0, 6.0));
     try std.testing.expectEqual(@as(?f64, 6.0), values.loadPlainById(&set, 0));
     try std.testing.expectEqual(@as(?f64, 1.0), values.loadById(&set, 0));
+    try std.testing.expectEqual(@as(?usize, 0), values.storePlainByIdCount(&set, 0, 6.0));
+    try std.testing.expectEqual(@as(?usize, 1), values.storeByNameCount(&set, "Gain", 0.5));
+    try std.testing.expectEqual(@as(?usize, 0), values.storeByNameCount(&set, "Gain", 0.5));
+    try std.testing.expectEqual(@as(?usize, 1), values.storePlainByNameCount(&set, "Gain", 6.0));
+    try std.testing.expectEqual(@as(?usize, 0), values.storePlainByNameCount(&set, "Gain", 6.0));
+    try std.testing.expectEqual(@as(?usize, null), values.storePlainByIdCount(&set, 99, 6.0));
+    try std.testing.expectEqual(@as(?usize, null), values.storeByNameCount(&set, "Missing", 0.5));
+    try std.testing.expectEqual(@as(?usize, null), values.storePlainByNameCount(&set, "Missing", 6.0));
 
     try std.testing.expect(values.storePlainById(&set, 1, 8.8));
     try std.testing.expectEqual(@as(?f64, 9.0), values.loadPlainById(&set, 1));
@@ -3641,6 +3725,26 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expect(!editor.storePlainById(99, 1.0));
     try std.testing.expect(!editor.storeByName("Missing", 1.0));
     try std.testing.expect(!editor.storePlainByName("Missing", 1.0));
+    try std.testing.expectEqual(@as(?usize, null), editor.storeNormalizedCount("gain", std.math.nan(f64)));
+    try std.testing.expectEqual(@as(?usize, null), editor.storeIndexCount(0, std.math.inf(f64)));
+    try std.testing.expectEqual(@as(?usize, null), editor.storeByIdCount(0, -std.math.inf(f64)));
+    try std.testing.expectEqual(@as(?usize, null), editor.storeByNameCount("Gain", std.math.nan(f64)));
+    try std.testing.expectEqual(@as(?usize, 0), editor.storeNormalizedCount("gain", 0.75));
+    try std.testing.expectEqual(@as(?usize, 1), editor.storeNormalizedCount("gain", 0.5));
+    try std.testing.expectEqual(@as(?usize, 0), editor.storeCount("gain", 0.0));
+    try std.testing.expectEqual(@as(?usize, 1), editor.storeCount("gain", 3.0));
+    try std.testing.expectEqual(@as(?usize, 0), editor.storeIndexCount(0, 0.8333333333333334));
+    try std.testing.expectEqual(@as(?usize, 1), editor.storePlainIndexCount(0, 6.0));
+    try std.testing.expectEqual(@as(?usize, 0), editor.storeByIdCount(0, 1.0));
+    try std.testing.expectEqual(@as(?usize, 1), editor.storePlainByIdCount(0, 3.0));
+    try std.testing.expectEqual(@as(?usize, 0), editor.storeByNameCount("Gain", 0.8333333333333334));
+    try std.testing.expectEqual(@as(?usize, 1), editor.storePlainByNameCount("Gain", 1.5));
+    try std.testing.expectEqual(@as(?usize, null), editor.storeIndexCount(99, 1.0));
+    try std.testing.expectEqual(@as(?usize, null), editor.storePlainIndexCount(99, 1.0));
+    try std.testing.expectEqual(@as(?usize, null), editor.storeByIdCount(99, 1.0));
+    try std.testing.expectEqual(@as(?usize, null), editor.storePlainByIdCount(99, 1.0));
+    try std.testing.expectEqual(@as(?usize, null), editor.storeByNameCount("Missing", 1.0));
+    try std.testing.expectEqual(@as(?usize, null), editor.storePlainByNameCount("Missing", 1.0));
     try std.testing.expectEqual(@as(?bool, null), editor.isDefaultIndex(99));
     try std.testing.expectEqual(@as(?bool, null), editor.isDefaultById(99));
     try std.testing.expectEqual(@as(?bool, null), editor.isDefaultByName("Missing"));

@@ -1007,32 +1007,64 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterEditor().store(field_name, plain);
         }
 
+        pub fn storeParameterCount(self: *Self, comptime field_name: []const u8, plain: parameters.FieldPlainType(Plugin.Params, field_name)) ?usize {
+            return self.parameterEditor().storeCount(field_name, plain);
+        }
+
         pub fn storeParameterNormalized(self: *Self, comptime field_name: []const u8, normalized: f64) bool {
             return self.parameterEditor().storeNormalized(field_name, normalized);
+        }
+
+        pub fn storeParameterNormalizedCount(self: *Self, comptime field_name: []const u8, normalized: f64) ?usize {
+            return self.parameterEditor().storeNormalizedCount(field_name, normalized);
         }
 
         pub fn storeParameterIndex(self: *Self, index: usize, normalized: f64) bool {
             return self.parameterEditor().storeIndex(index, normalized);
         }
 
+        pub fn storeParameterIndexCount(self: *Self, index: usize, normalized: f64) ?usize {
+            return self.parameterEditor().storeIndexCount(index, normalized);
+        }
+
         pub fn storeParameterPlainIndex(self: *Self, index: usize, plain: f64) bool {
             return self.parameterEditor().storePlainIndex(index, plain);
+        }
+
+        pub fn storeParameterPlainIndexCount(self: *Self, index: usize, plain: f64) ?usize {
+            return self.parameterEditor().storePlainIndexCount(index, plain);
         }
 
         pub fn storeParameterById(self: *Self, id: u32, normalized: f64) bool {
             return self.parameterEditor().storeById(id, normalized);
         }
 
+        pub fn storeParameterByIdCount(self: *Self, id: u32, normalized: f64) ?usize {
+            return self.parameterEditor().storeByIdCount(id, normalized);
+        }
+
         pub fn storeParameterPlainById(self: *Self, id: u32, plain: f64) bool {
             return self.parameterEditor().storePlainById(id, plain);
+        }
+
+        pub fn storeParameterPlainByIdCount(self: *Self, id: u32, plain: f64) ?usize {
+            return self.parameterEditor().storePlainByIdCount(id, plain);
         }
 
         pub fn storeParameterByName(self: *Self, name: []const u8, normalized: f64) bool {
             return self.parameterEditor().storeByName(name, normalized);
         }
 
+        pub fn storeParameterByNameCount(self: *Self, name: []const u8, normalized: f64) ?usize {
+            return self.parameterEditor().storeByNameCount(name, normalized);
+        }
+
         pub fn storeParameterPlainByName(self: *Self, name: []const u8, plain: f64) bool {
             return self.parameterEditor().storePlainByName(name, plain);
+        }
+
+        pub fn storeParameterPlainByNameCount(self: *Self, name: []const u8, plain: f64) ?usize {
+            return self.parameterEditor().storePlainByNameCount(name, plain);
         }
 
         pub fn resetParametersToDefaults(self: *Self) void {
@@ -2364,6 +2396,22 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expect(instance.storeParameter("gain", 6.0));
     try std.testing.expect(instance.storeParameter("bypass", true));
     try std.testing.expect(instance.storeParameter("mode", .mute));
+    try std.testing.expectEqual(@as(?usize, 0), instance.storeParameterCount("gain", 6.0));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterCount("gain", 3.0));
+    try std.testing.expectEqual(@as(?usize, 0), instance.storeParameterNormalizedCount("gain", 0.8333333333333334));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterNormalizedCount("gain", 0.5));
+    try std.testing.expectEqual(@as(?usize, 0), instance.storeParameterIndexCount(0, 0.5));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterPlainIndexCount(0, 3.0));
+    try std.testing.expectEqual(@as(?usize, 0), instance.storeParameterByIdCount(0, 0.8333333333333334));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterPlainByIdCount(0, 6.0));
+    try std.testing.expectEqual(@as(?usize, 0), instance.storeParameterByNameCount("Gain", 1.0));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterPlainByNameCount("Gain", 3.0));
+    try std.testing.expectEqual(@as(?usize, null), instance.storeParameterIndexCount(99, 1.0));
+    try std.testing.expectEqual(@as(?usize, null), instance.storeParameterPlainIndexCount(99, 1.0));
+    try std.testing.expectEqual(@as(?usize, null), instance.storeParameterByIdCount(99, 1.0));
+    try std.testing.expectEqual(@as(?usize, null), instance.storeParameterPlainByIdCount(99, 1.0));
+    try std.testing.expectEqual(@as(?usize, null), instance.storeParameterByNameCount("Missing", 1.0));
+    try std.testing.expectEqual(@as(?usize, null), instance.storeParameterPlainByNameCount("Missing", 1.0));
     try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterToDefaultCount("gain"));
     try std.testing.expectEqual(@as(?usize, 0), instance.resetParameterToDefaultCount("gain"));
     try std.testing.expect(instance.storeParameter("gain", 6.0));
