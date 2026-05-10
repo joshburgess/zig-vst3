@@ -1,5 +1,5 @@
 const std = @import("std");
-const bypass = @import("vst3-zig").pluginterfaces.vst.vstbypassprocessor;
+const bypass = @import("zig-vst3").pluginterfaces.vst.vstbypassprocessor;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

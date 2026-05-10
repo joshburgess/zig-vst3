@@ -1,5 +1,5 @@
 const std = @import("std");
-const tuid = @import("vst3-zig").tuid;
+const tuid = @import("zig-vst3").tuid;
 
 const Entry = struct {
     name: []const u8,

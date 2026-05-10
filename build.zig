@@ -4,89 +4,89 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const vst3_zig = b.addModule("vst3-zig", .{
-        .root_source_file = b.path("vst3-zig/src/root.zig"),
+    const zig_vst3 = b.addModule("zig-vst3", .{
+        .root_source_file = b.path("zig-vst3/src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const zig_plug_core = b.addModule("zig-plug-core", .{
-        .root_source_file = b.path("zig-plug/src/core.zig"),
+    const zig_vst3_plugin_core = b.addModule("zig-vst3-plugin-core", .{
+        .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
         .target = target,
         .optimize = optimize,
     });
-    vst3_zig.addImport("zig-plug-core", zig_plug_core);
+    zig_vst3.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
 
-    const zig_plug = b.addModule("zig-plug", .{
-        .root_source_file = b.path("zig-plug/src/root.zig"),
+    const zig_vst3_plugin = b.addModule("zig-vst3-plugin", .{
+        .root_source_file = b.path("zig-vst3-plugin/src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
-    zig_plug.addImport("zig-plug-core", zig_plug_core);
-    zig_plug.addImport("vst3-zig", vst3_zig);
+    zig_vst3_plugin.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
+    zig_vst3_plugin.addImport("zig-vst3", zig_vst3);
 
     const entry_symbols_step = b.step("entry-symbols", "Verify native VST3 module entry exports");
 
-    const gain = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
+    const gain = addExamplePlugin(b, target, optimize, zig_vst3_plugin_core, zig_vst3_plugin, entry_symbols_step, .{
         .short_name = "gain",
         .display_name = "gain",
         .artifact_name = "zig_vst3_gain",
-        .root_source_file = "vst3-zig/src/gain_plugin.zig",
+        .root_source_file = "zig-vst3/src/gain_plugin.zig",
         .core_example_source_file = "examples/gain_core.zig",
         .bundle_id = "dev.zig-vst3.gain",
     });
-    const bypass = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
+    const bypass = addExamplePlugin(b, target, optimize, zig_vst3_plugin_core, zig_vst3_plugin, entry_symbols_step, .{
         .short_name = "bypass",
         .display_name = "bypass",
         .artifact_name = "zig_vst3_bypass",
-        .root_source_file = "vst3-zig/src/bypass_plugin.zig",
+        .root_source_file = "zig-vst3/src/bypass_plugin.zig",
         .core_example_source_file = "examples/bypass_core.zig",
         .bundle_id = "dev.zig-vst3.bypass",
     });
-    const mode_gain = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
+    const mode_gain = addExamplePlugin(b, target, optimize, zig_vst3_plugin_core, zig_vst3_plugin, entry_symbols_step, .{
         .short_name = "mode-gain",
         .display_name = "mode gain",
         .artifact_name = "zig_vst3_mode_gain",
-        .root_source_file = "vst3-zig/src/mode_gain_plugin.zig",
+        .root_source_file = "zig-vst3/src/mode_gain_plugin.zig",
         .core_example_source_file = "examples/mode_gain_core.zig",
         .bundle_id = "dev.zig-vst3.mode-gain",
     });
-    const voice_mix = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
+    const voice_mix = addExamplePlugin(b, target, optimize, zig_vst3_plugin_core, zig_vst3_plugin, entry_symbols_step, .{
         .short_name = "voice-mix",
         .display_name = "voice mix",
         .artifact_name = "zig_vst3_voice_mix",
-        .root_source_file = "vst3-zig/src/voice_mix_plugin.zig",
+        .root_source_file = "zig-vst3/src/voice_mix_plugin.zig",
         .core_example_source_file = "examples/voice_mix_core.zig",
         .bundle_id = "dev.zig-vst3.voice-mix",
     });
-    const note_gate = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
+    const note_gate = addExamplePlugin(b, target, optimize, zig_vst3_plugin_core, zig_vst3_plugin, entry_symbols_step, .{
         .short_name = "note-gate",
         .display_name = "note gate",
         .artifact_name = "zig_vst3_note_gate",
-        .root_source_file = "vst3-zig/src/note_gate_plugin.zig",
+        .root_source_file = "zig-vst3/src/note_gate_plugin.zig",
         .core_example_source_file = "examples/note_gate_core.zig",
         .bundle_id = "dev.zig-vst3.note-gate",
     });
-    const event_echo = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
+    const event_echo = addExamplePlugin(b, target, optimize, zig_vst3_plugin_core, zig_vst3_plugin, entry_symbols_step, .{
         .short_name = "event-echo",
         .display_name = "event echo",
         .artifact_name = "zig_vst3_event_echo",
-        .root_source_file = "vst3-zig/src/event_echo_plugin.zig",
+        .root_source_file = "zig-vst3/src/event_echo_plugin.zig",
         .core_example_source_file = "examples/event_echo_core.zig",
         .bundle_id = "dev.zig-vst3.event-echo",
     });
-    const event_monitor = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
+    const event_monitor = addExamplePlugin(b, target, optimize, zig_vst3_plugin_core, zig_vst3_plugin, entry_symbols_step, .{
         .short_name = "event-monitor",
         .display_name = "event monitor",
         .artifact_name = "zig_vst3_event_monitor",
-        .root_source_file = "vst3-zig/src/event_monitor_plugin.zig",
+        .root_source_file = "zig-vst3/src/event_monitor_plugin.zig",
         .core_example_source_file = "examples/event_monitor_core.zig",
         .bundle_id = "dev.zig-vst3.event-monitor",
     });
-    const sine_synth = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
+    const sine_synth = addExamplePlugin(b, target, optimize, zig_vst3_plugin_core, zig_vst3_plugin, entry_symbols_step, .{
         .short_name = "sine-synth",
         .display_name = "sine synth",
         .artifact_name = "zig_vst3_sine_synth",
-        .root_source_file = "vst3-zig/src/sine_synth_plugin.zig",
+        .root_source_file = "zig-vst3/src/sine_synth_plugin.zig",
         .core_example_source_file = "examples/sine_synth_core.zig",
         .bundle_id = "dev.zig-vst3.sine-synth",
     });
@@ -101,38 +101,38 @@ pub fn build(b: *std.Build) void {
         sine_synth.bundles,
     };
     const vst3_test_module = b.createModule(.{
-        .root_source_file = b.path("vst3-zig/src/root.zig"),
+        .root_source_file = b.path("zig-vst3/src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
-    vst3_test_module.addImport("zig-plug-core", zig_plug_core);
+    vst3_test_module.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
     const vst3_tests = b.addTest(.{
         .root_module = vst3_test_module,
     });
 
-    const zig_plug_core_tests = b.addTest(.{
+    const zig_vst3_plugin_core_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("zig-plug/src/core.zig"),
+            .root_source_file = b.path("zig-vst3-plugin/src/core.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
 
-    const zig_plug_tests = b.addTest(.{
+    const zig_vst3_plugin_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("zig-plug/src/root.zig"),
+            .root_source_file = b.path("zig-vst3-plugin/src/root.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
-    zig_plug_tests.root_module.addImport("vst3-zig", vst3_zig);
-    zig_plug_tests.root_module.addImport("zig-plug-core", zig_plug_core);
+    zig_vst3_plugin_tests.root_module.addImport("zig-vst3", zig_vst3);
+    zig_vst3_plugin_tests.root_module.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
 
     const test_step = b.step("test", "Run unit tests");
     addRunArtifactDependencies(b, test_step, &.{
         vst3_tests,
-        zig_plug_core_tests,
-        zig_plug_tests,
+        zig_vst3_plugin_core_tests,
+        zig_vst3_plugin_tests,
         gain.plugin_tests,
         bypass.plugin_tests,
         mode_gain.plugin_tests,
@@ -363,7 +363,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    funknown_harness_zig.root_module.addImport("vst3-zig", vst3_zig);
+    funknown_harness_zig.root_module.addImport("zig-vst3", zig_vst3);
 
     const funknown_harness = b.addExecutable(.{
         .name = "funknown_harness",
@@ -390,7 +390,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    multi_interface_harness_zig.root_module.addImport("vst3-zig", vst3_zig);
+    multi_interface_harness_zig.root_module.addImport("zig-vst3", zig_vst3);
 
     const multi_interface_harness = b.addExecutable(.{
         .name = "multi_interface_harness",
@@ -518,7 +518,7 @@ fn addVst3PluginLibrary(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    zig_plug_core: *std.Build.Module,
+    zig_vst3_plugin_core: *std.Build.Module,
     options: Vst3PluginLibraryOptions,
 ) *std.Build.Step.Compile {
     const module = b.createModule(.{
@@ -526,7 +526,7 @@ fn addVst3PluginLibrary(
         .target = target,
         .optimize = optimize,
     });
-    module.addImport("zig-plug-core", zig_plug_core);
+    module.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
 
     const library = b.addLibrary(.{
         .linkage = .dynamic,
@@ -537,11 +537,11 @@ fn addVst3PluginLibrary(
     return library;
 }
 
-fn addZigPlugCoreTest(
+fn addZigVst3PluginCoreTest(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    zig_plug_core: *std.Build.Module,
+    zig_vst3_plugin_core: *std.Build.Module,
     root_source_file: []const u8,
 ) *std.Build.Step.Compile {
     const module = b.createModule(.{
@@ -549,17 +549,17 @@ fn addZigPlugCoreTest(
         .target = target,
         .optimize = optimize,
     });
-    module.addImport("zig-plug-core", zig_plug_core);
+    module.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
     return b.addTest(.{
         .root_module = module,
     });
 }
 
-fn addZigPlugTest(
+fn addZigVst3PluginTest(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    zig_plug: *std.Build.Module,
+    zig_vst3_plugin: *std.Build.Module,
     root_source_file: []const u8,
 ) *std.Build.Step.Compile {
     const module = b.createModule(.{
@@ -567,7 +567,7 @@ fn addZigPlugTest(
         .target = target,
         .optimize = optimize,
     });
-    module.addImport("zig-plug", zig_plug);
+    module.addImport("zig-vst3-plugin", zig_vst3_plugin);
     return b.addTest(.{
         .root_module = module,
     });
@@ -666,12 +666,12 @@ fn addExamplePlugin(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    zig_plug_core: *std.Build.Module,
-    zig_plug: *std.Build.Module,
+    zig_vst3_plugin_core: *std.Build.Module,
+    zig_vst3_plugin: *std.Build.Module,
     entry_symbols_step: *std.Build.Step,
     options: ExamplePluginOptions,
 ) ExamplePluginSteps {
-    const library = addVst3PluginLibrary(b, target, optimize, zig_plug_core, .{
+    const library = addVst3PluginLibrary(b, target, optimize, zig_vst3_plugin_core, .{
         .artifact_name = options.artifact_name,
         .root_source_file = options.root_source_file,
     });
@@ -685,8 +685,8 @@ fn addExamplePlugin(
             .artifact_name = options.artifact_name,
             .bundle_id = options.bundle_id,
         }),
-        .plugin_tests = addZigPlugCoreTest(b, target, optimize, zig_plug_core, options.root_source_file),
-        .core_example_tests = addZigPlugTest(b, target, optimize, zig_plug, options.core_example_source_file),
+        .plugin_tests = addZigVst3PluginCoreTest(b, target, optimize, zig_vst3_plugin_core, options.root_source_file),
+        .core_example_tests = addZigVst3PluginTest(b, target, optimize, zig_vst3_plugin, options.core_example_source_file),
     };
 }
 

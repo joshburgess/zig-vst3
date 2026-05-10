@@ -1,5 +1,5 @@
 const std = @import("std");
-const midi = @import("vst3-zig").pluginterfaces.vst.ivstmidicontrollers;
+const midi = @import("zig-vst3").pluginterfaces.vst.ivstmidicontrollers;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

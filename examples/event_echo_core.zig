@@ -1,8 +1,8 @@
 const std = @import("std");
-const plug = @import("zig-plug");
+const plug = @import("zig-vst3-plugin");
 
 pub const EventEcho = struct {
-    pub const name = "zig-plug Core Event Echo";
+    pub const name = "zig-vst3-plugin Core Event Echo";
     pub const vendor = "zig-vst3";
     pub const Params = struct {};
 
@@ -17,7 +17,7 @@ pub const Spec = plug.plugin.PluginSpec(EventEcho);
 pub const Instance = plug.plugin.PluginInstance(EventEcho);
 
 test "event echo core example declares reflected metadata" {
-    try std.testing.expectEqualStrings("zig-plug Core Event Echo", Spec.name);
+    try std.testing.expectEqualStrings("zig-vst3-plugin Core Event Echo", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
     try std.testing.expectEqual(@as(usize, 0), Spec.ParameterSet.count);
     plug.plugin.validateLifecycle(EventEcho);

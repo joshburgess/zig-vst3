@@ -1,5 +1,5 @@
 const std = @import("std");
-const base = @import("vst3-zig").pluginterfaces.base;
+const base = @import("zig-vst3").pluginterfaces.base;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

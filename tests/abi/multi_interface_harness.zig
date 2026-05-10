@@ -1,5 +1,5 @@
-const multi = @import("vst3-zig").multi_interface;
-const funknown = @import("vst3-zig").funknown;
+const multi = @import("zig-vst3").multi_interface;
+const funknown = @import("zig-vst3").funknown;
 
 export fn make_multi_test_object(out: *multi.TestObject) *funknown.Header {
     out.* = .{};

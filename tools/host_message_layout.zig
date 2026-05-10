@@ -1,7 +1,7 @@
 const std = @import("std");
-const attributes = @import("vst3-zig").pluginterfaces.vst.ivstattributes;
-const host = @import("vst3-zig").pluginterfaces.vst.ivsthostapplication;
-const message = @import("vst3-zig").pluginterfaces.vst.ivstmessage;
+const attributes = @import("zig-vst3").pluginterfaces.vst.ivstattributes;
+const host = @import("zig-vst3").pluginterfaces.vst.ivsthostapplication;
+const message = @import("zig-vst3").pluginterfaces.vst.ivstmessage;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

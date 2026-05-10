@@ -1,5 +1,5 @@
 const std = @import("std");
-const ibstream = @import("vst3-zig").pluginterfaces.base.ibstream;
+const ibstream = @import("zig-vst3").pluginterfaces.base.ibstream;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

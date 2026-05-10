@@ -13,6 +13,6 @@ mkdir -p "$out_dir"
 
 c++ -std=c++17 -I"$sdk_dir" tests/abi/tuid_bytes.cpp -o "$out_dir/tuid_bytes_cpp"
 "$out_dir/tuid_bytes_cpp" > "$out_dir/cpp.txt"
-zig run --dep vst3-zig -Mroot=tools/tuid_bytes.zig -Mvst3-zig=vst3-zig/src/root.zig > "$out_dir/zig.txt"
+zig run --dep zig-vst3 -Mroot=tools/tuid_bytes.zig -Mzig-vst3=zig-vst3/src/root.zig > "$out_dir/zig.txt"
 
 diff -u "$out_dir/cpp.txt" "$out_dir/zig.txt"

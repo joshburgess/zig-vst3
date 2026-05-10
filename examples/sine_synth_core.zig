@@ -1,8 +1,8 @@
 const std = @import("std");
-const plug = @import("zig-plug");
+const plug = @import("zig-vst3-plugin");
 
 pub const SineSynth = struct {
-    pub const name = "zig-plug Core Sine Synth";
+    pub const name = "zig-vst3-plugin Core Sine Synth";
     pub const vendor = "zig-vst3";
     pub const Params = struct {
         level: plug.parameters.FloatParam = .{ .id = 0, .name = "Level", .short_name = "Level", .min = 0.0, .max = 1.0, .default = 0.1 },
@@ -59,7 +59,7 @@ pub const parameter_set = Spec.ParameterSet.init(.{});
 test "sine synth core example declares reflected metadata" {
     const spec = Spec.init(.{});
 
-    try std.testing.expectEqualStrings("zig-plug Core Sine Synth", Spec.name);
+    try std.testing.expectEqualStrings("zig-vst3-plugin Core Sine Synth", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 1), parameter_set.parameterCount());

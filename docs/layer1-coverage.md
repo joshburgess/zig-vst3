@@ -20,7 +20,7 @@ This map separates what is already gated from what remains future hardening. `do
 
 ## Release Interpretation
 
-`vst3-zig-0.1.0` can be a useful raw-layer release once the deferred MIDI-heavy host rows are either filled in or explicitly moved to follow-up release notes. It should not be described as full VST3 protocol completion. The release claim should be narrower:
+`zig-vst3-0.1.0` can be a useful raw-layer release once the deferred MIDI-heavy host rows are either filled in or explicitly moved to follow-up release notes. It should not be described as full VST3 protocol completion. The release claim should be narrower:
 
 - Raw bindings and helpers for the SDK 3.8.0 plugin-facing interface surface tracked in `docs/interface-inventory.md`
 - ABI fixtures for the translated interface groups used by the raw layer

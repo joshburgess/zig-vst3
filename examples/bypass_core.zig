@@ -1,8 +1,8 @@
 const std = @import("std");
-const plug = @import("zig-plug");
+const plug = @import("zig-vst3-plugin");
 
 pub const Bypass = struct {
-    pub const name = "zig-plug Core Bypass";
+    pub const name = "zig-vst3-plugin Core Bypass";
     pub const vendor = "zig-vst3";
     pub const Params = struct {
         bypass: plug.parameters.BoolParam = .{ .id = 0, .name = "Bypass", .default = false },
@@ -34,7 +34,7 @@ pub const parameter_set = Spec.ParameterSet.init(.{});
 test "bypass core example declares reflected bool parameter" {
     const spec = Spec.init(.{});
 
-    try std.testing.expectEqualStrings("zig-plug Core Bypass", Spec.name);
+    try std.testing.expectEqualStrings("zig-vst3-plugin Core Bypass", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 1), parameter_set.parameterCount());
     try std.testing.expectEqual(false, spec.values.view(&parameter_set).load("bypass"));

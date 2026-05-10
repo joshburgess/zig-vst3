@@ -1,5 +1,5 @@
 const std = @import("std");
-const process_context = @import("vst3-zig").pluginterfaces.vst.ivstprocesscontext;
+const process_context = @import("zig-vst3").pluginterfaces.vst.ivstprocesscontext;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

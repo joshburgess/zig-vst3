@@ -1,5 +1,5 @@
 const std = @import("std");
-const parameter_changes = @import("vst3-zig").pluginterfaces.vst.ivstparameterchanges;
+const parameter_changes = @import("zig-vst3").pluginterfaces.vst.ivstparameterchanges;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

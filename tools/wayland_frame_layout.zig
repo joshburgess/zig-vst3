@@ -1,5 +1,5 @@
 const std = @import("std");
-const wayland = @import("vst3-zig").pluginterfaces.gui.iwaylandframe;
+const wayland = @import("zig-vst3").pluginterfaces.gui.iwaylandframe;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();

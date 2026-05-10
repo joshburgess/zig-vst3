@@ -1,6 +1,6 @@
 # Layer 1 Release Checklist
 
-This checklist is for tagging `vst3-zig-0.1.0`. It tracks release gates for the raw VST3 layer only. `zig-plug` can keep evolving after this tag.
+This checklist is for tagging `zig-vst3-0.1.0`. It tracks release gates for the raw VST3 layer only. `zig-vst3-plugin` can keep evolving after this tag.
 
 ## Required Checks
 
@@ -46,6 +46,6 @@ Linux and Windows host rows can remain follow-up work for `0.1.x` if CI bundles 
 After the required checks and host matrix rows are in place:
 
 ```sh
-git tag vst3-zig-0.1.0
-git push origin vst3-zig-0.1.0
+git tag zig-vst3-0.1.0
+git push origin zig-vst3-0.1.0
 ```

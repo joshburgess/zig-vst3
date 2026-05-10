@@ -1,10 +1,10 @@
 const std = @import("std");
-const base = @import("vst3-zig").pluginterfaces.base.types;
-const audio_processor = @import("vst3-zig").pluginterfaces.vst.ivstaudioprocessor;
-const audio_processor_algo = @import("vst3-zig").pluginterfaces.vst.vstaudioprocessoralgo;
-const events = @import("vst3-zig").pluginterfaces.vst.ivstevents;
-const parameter_changes = @import("vst3-zig").pluginterfaces.vst.ivstparameterchanges;
-const vsttypes = @import("vst3-zig").pluginterfaces.vst.vsttypes;
+const base = @import("zig-vst3").pluginterfaces.base.types;
+const audio_processor = @import("zig-vst3").pluginterfaces.vst.ivstaudioprocessor;
+const audio_processor_algo = @import("zig-vst3").pluginterfaces.vst.vstaudioprocessoralgo;
+const events = @import("zig-vst3").pluginterfaces.vst.ivstevents;
+const parameter_changes = @import("zig-vst3").pluginterfaces.vst.ivstparameterchanges;
+const vsttypes = @import("zig-vst3").pluginterfaces.vst.vsttypes;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
@@ -215,7 +215,7 @@ fn eventListSelf(self: *anyopaque) *MockEventList {
     return @ptrCast(@alignCast(self));
 }
 
-fn eventListQueryInterface(_: *anyopaque, _: *const @import("vst3-zig").tuid.TUID, obj: *?*anyopaque) callconv(.C) base.tresult {
+fn eventListQueryInterface(_: *anyopaque, _: *const @import("zig-vst3").tuid.TUID, obj: *?*anyopaque) callconv(.C) base.tresult {
     obj.* = null;
     return base.kNoInterface;
 }
@@ -270,7 +270,7 @@ fn paramQueueSelf(self: *anyopaque) *MockParamValueQueue {
     return @ptrCast(@alignCast(self));
 }
 
-fn paramQueueQueryInterface(_: *anyopaque, _: *const @import("vst3-zig").tuid.TUID, obj: *?*anyopaque) callconv(.C) base.tresult {
+fn paramQueueQueryInterface(_: *anyopaque, _: *const @import("zig-vst3").tuid.TUID, obj: *?*anyopaque) callconv(.C) base.tresult {
     obj.* = null;
     return base.kNoInterface;
 }
@@ -331,7 +331,7 @@ fn parameterChangesSelf(self: *anyopaque) *MockParameterChanges {
     return @ptrCast(@alignCast(self));
 }
 
-fn parameterChangesQueryInterface(_: *anyopaque, _: *const @import("vst3-zig").tuid.TUID, obj: *?*anyopaque) callconv(.C) base.tresult {
+fn parameterChangesQueryInterface(_: *anyopaque, _: *const @import("zig-vst3").tuid.TUID, obj: *?*anyopaque) callconv(.C) base.tresult {
     obj.* = null;
     return base.kNoInterface;
 }

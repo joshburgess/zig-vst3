@@ -1,6 +1,6 @@
 # Layer 2 Parameters
 
-`zig-plug` parameters expose host-normalized values at the boundary and plain typed values inside plugin code.
+`zig-vst3-plugin` parameters expose host-normalized values at the boundary and plain typed values inside plugin code.
 
 ## Current API
 

@@ -1,11 +1,11 @@
 const std = @import("std");
-const plug = @import("zig-plug");
+const plug = @import("zig-vst3-plugin");
 
 const Mode = enum { clean, boost, mute };
 const ModeParam = plug.parameters.EnumParam(Mode);
 
 pub const ModeGain = struct {
-    pub const name = "zig-plug Core Mode Gain";
+    pub const name = "zig-vst3-plugin Core Mode Gain";
     pub const vendor = "zig-vst3";
     pub const Params = struct {
         mode: ModeParam = .{ .id = 0, .name = "Mode", .default = .clean },
@@ -38,7 +38,7 @@ pub const parameter_set = Spec.ParameterSet.init(.{});
 test "mode gain core example declares reflected enum parameter" {
     const spec = Spec.init(.{});
 
-    try std.testing.expectEqualStrings("zig-plug Core Mode Gain", Spec.name);
+    try std.testing.expectEqualStrings("zig-vst3-plugin Core Mode Gain", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 1), parameter_set.parameterCount());
     try std.testing.expectEqual(Mode.clean, spec.values.view(&parameter_set).load("mode"));

@@ -1,5 +1,5 @@
 const std = @import("std");
-const data_exchange = @import("vst3-zig").pluginterfaces.vst.ivstdataexchange;
+const data_exchange = @import("zig-vst3").pluginterfaces.vst.ivstdataexchange;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
