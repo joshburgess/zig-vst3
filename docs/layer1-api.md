@@ -32,7 +32,7 @@ zig build validate-examples
 
 `zig build layer1-abi` compares Zig declarations against SDK-backed C++ fixture programs and entry-symbol checks. Public CI runs that gate on Linux and macOS.
 
-`zig build validate-examples` currently runs the Steinberg validator on macOS. Linux and Windows bundle generation is covered in CI, but real validator and host coverage on those platforms still need dedicated runners or manual hosts.
+`zig build validate-examples` runs the Steinberg validator for native macOS and Linux builds. Windows bundle generation is covered in CI, but Windows validator and real host coverage still need dedicated runners or manual hosts.
 
 ## Helper Objects
 

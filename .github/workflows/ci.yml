@@ -68,9 +68,15 @@ jobs:
         run: zig build layer1-abi
 
   validator:
-    name: macOS validator
-    runs-on: macos-latest
+    name: Validator (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@v2
@@ -85,7 +91,7 @@ jobs:
       - name: Upload validated bundles
         uses: actions/upload-artifact@v4
         with:
-          name: validated-macos-vst3-bundles
+          name: validated-vst3-bundles-${{ matrix.os }}
           path: zig-out/bundle/
           if-no-files-found: error
 
