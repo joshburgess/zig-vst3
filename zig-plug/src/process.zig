@@ -1108,6 +1108,14 @@ pub fn AudioInputs(comptime Sample: type) type {
             return self.channels[index];
         }
 
+        pub fn hasChannel(self: Self, index: usize) bool {
+            return self.channel(index) != null;
+        }
+
+        pub fn channelEmpty(self: Self, index: usize) bool {
+            return !self.hasChannel(index);
+        }
+
         pub fn channelCount(self: Self) usize {
             return self.channels.len;
         }
@@ -1149,6 +1157,14 @@ pub fn AudioOutputs(comptime Sample: type) type {
         pub fn channel(self: Self, index: usize) ?[]Sample {
             if (index >= self.channels.len) return null;
             return self.channels[index];
+        }
+
+        pub fn hasChannel(self: Self, index: usize) bool {
+            return self.channel(index) != null;
+        }
+
+        pub fn channelEmpty(self: Self, index: usize) bool {
+            return !self.hasChannel(index);
         }
 
         pub fn channelCount(self: Self) usize {
@@ -1652,6 +1668,22 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.outputs.channel(index);
         }
 
+        pub fn hasInputChannel(self: @This(), index: usize) bool {
+            return self.inputs.hasChannel(index);
+        }
+
+        pub fn inputChannelEmpty(self: @This(), index: usize) bool {
+            return self.inputs.channelEmpty(index);
+        }
+
+        pub fn hasOutputChannel(self: @This(), index: usize) bool {
+            return self.outputs.hasChannel(index);
+        }
+
+        pub fn outputChannelEmpty(self: @This(), index: usize) bool {
+            return self.outputs.channelEmpty(index);
+        }
+
         pub fn inputChannelCount(self: @This()) usize {
             return self.inputs.channelCount();
         }
@@ -1705,10 +1737,15 @@ test "audio input view validates channel frame counts" {
     try std.testing.expectEqual(@as(usize, 2), inputs.frame_count);
     try std.testing.expectEqual(@as(usize, 2), inputs.frameCount());
     try std.testing.expectEqual(@as(f32, 0.3), inputs.channel(1).?[0]);
+    try std.testing.expect(inputs.hasChannel(1));
+    try std.testing.expect(!inputs.channelEmpty(1));
     try std.testing.expectEqual(@as(?[]const f32, null), inputs.channel(2));
+    try std.testing.expect(!inputs.hasChannel(2));
+    try std.testing.expect(inputs.channelEmpty(2));
     const empty_inputs = try AudioInputs(f32).init(&[_][]const f32{});
     try std.testing.expect(empty_inputs.isEmpty());
     try std.testing.expect(!empty_inputs.hasChannels());
+    try std.testing.expect(empty_inputs.channelEmpty(0));
 }
 
 test "audio output view rejects mismatched channel frame counts" {
@@ -1728,9 +1765,14 @@ test "audio output view fills and clears channels" {
     try std.testing.expect(!outputs.isEmpty());
     try std.testing.expect(outputs.hasChannels());
     try std.testing.expectEqual(@as(usize, 2), outputs.frameCount());
+    try std.testing.expect(outputs.hasChannel(1));
+    try std.testing.expect(!outputs.channelEmpty(1));
+    try std.testing.expect(!outputs.hasChannel(2));
+    try std.testing.expect(outputs.channelEmpty(2));
     const empty_outputs = try AudioOutputs(f32).init(&[_][]f32{});
     try std.testing.expect(empty_outputs.isEmpty());
     try std.testing.expect(!empty_outputs.hasChannels());
+    try std.testing.expect(empty_outputs.channelEmpty(0));
 
     outputs.fill(0.5);
     try std.testing.expectEqual(@as(f32, 0.5), left[0]);
@@ -1768,9 +1810,17 @@ test "process context reports usable frame count" {
     try std.testing.expect(context.hasInputChannels());
     try std.testing.expect(context.hasOutputChannels());
     try std.testing.expectEqual(@as(f64, 0.4), context.inputChannel(1).?[0]);
+    try std.testing.expect(context.hasInputChannel(1));
+    try std.testing.expect(!context.inputChannelEmpty(1));
     try std.testing.expectEqual(@as(?[]const f64, null), context.inputChannel(2));
+    try std.testing.expect(!context.hasInputChannel(2));
+    try std.testing.expect(context.inputChannelEmpty(2));
     try std.testing.expectEqual(@as(f64, 0.0), context.outputChannel(1).?[0]);
+    try std.testing.expect(context.hasOutputChannel(1));
+    try std.testing.expect(!context.outputChannelEmpty(1));
     try std.testing.expectEqual(@as(?[]f64, null), context.outputChannel(2));
+    try std.testing.expect(!context.hasOutputChannel(2));
+    try std.testing.expect(context.outputChannelEmpty(2));
 
     context.fillOutputs(0.5);
     try std.testing.expectEqual(@as(f64, 0.5), out_left[0]);
