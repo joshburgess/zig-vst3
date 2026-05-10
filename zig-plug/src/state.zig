@@ -32,6 +32,10 @@ pub const ReadParameterStateReport = struct {
         return self.entry_count != 0;
     }
 
+    pub fn hasNoDecodedEntries(self: ReadParameterStateReport) bool {
+        return self.entry_count == 0;
+    }
+
     pub fn hasRestoredEntries(self: ReadParameterStateReport) bool {
         return self.restored_count != 0;
     }
@@ -42,6 +46,10 @@ pub const ReadParameterStateReport = struct {
 
     pub fn restoredAllEntries(self: ReadParameterStateReport) bool {
         return self.restored_count == self.entry_count and self.ignored_count == 0;
+    }
+
+    pub fn restoredPartialEntries(self: ReadParameterStateReport) bool {
+        return self.restored_count != 0 and self.restored_count < self.entry_count;
     }
 
     pub fn ignoredAllEntries(self: ReadParameterStateReport) bool {
@@ -259,6 +267,7 @@ test "parameter state round-trips normalized values" {
     try std.testing.expect(report.hasRestoredEntries());
     try std.testing.expect(!report.hasIgnoredEntries());
     try std.testing.expect(report.restoredAllEntries());
+    try std.testing.expect(!report.restoredPartialEntries());
     try std.testing.expect(!report.ignoredAllEntries());
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadField(&set, "gain"));
     try std.testing.expectEqual(@as(f64, 0.75), restored.loadField(&set, "mix"));
@@ -339,6 +348,7 @@ test "parameter state ignores unknown parameter ids" {
     try std.testing.expect(report.hasRestoredEntries());
     try std.testing.expect(report.hasIgnoredEntries());
     try std.testing.expect(!report.restoredAllEntries());
+    try std.testing.expect(report.restoredPartialEntries());
     try std.testing.expect(!report.ignoredAllEntries());
     try std.testing.expectEqual(@as(f64, 0.75), values.loadField(&set, "gain"));
 }
@@ -348,15 +358,19 @@ test "parameter state report classifies empty and ignored loads" {
     const ignored = ReadParameterStateReport{ .entry_count = 2, .restored_count = 0, .ignored_count = 2 };
 
     try std.testing.expect(!empty.hasDecodedEntries());
+    try std.testing.expect(empty.hasNoDecodedEntries());
     try std.testing.expect(!empty.hasRestoredEntries());
     try std.testing.expect(!empty.hasIgnoredEntries());
     try std.testing.expect(empty.restoredAllEntries());
+    try std.testing.expect(!empty.restoredPartialEntries());
     try std.testing.expect(!empty.ignoredAllEntries());
 
     try std.testing.expect(ignored.hasDecodedEntries());
+    try std.testing.expect(!ignored.hasNoDecodedEntries());
     try std.testing.expect(!ignored.hasRestoredEntries());
     try std.testing.expect(ignored.hasIgnoredEntries());
     try std.testing.expect(!ignored.restoredAllEntries());
+    try std.testing.expect(!ignored.restoredPartialEntries());
     try std.testing.expect(ignored.ignoredAllEntries());
 }
 
