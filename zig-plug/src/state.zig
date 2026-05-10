@@ -11,6 +11,12 @@ pub const ParameterIdMigration = struct {
     new_id: u32,
 };
 
+pub const ReadParameterStateReport = struct {
+    entry_count: usize,
+    restored_count: usize,
+    ignored_count: usize,
+};
+
 pub fn encodedSize(comptime Params: type) usize {
     assertEncodableParameterCount(Params);
     return encodedSizeForCount(parameters.ParameterSet(Params).count);
@@ -75,7 +81,7 @@ pub fn readParameterState(
     values: *parameters.ParameterValues(Params),
     reader: anytype,
 ) !void {
-    try readParameterStateWithMigrations(Params, set, values, reader, &.{});
+    _ = try readParameterStateReport(Params, set, values, reader);
 }
 
 pub fn readParameterStateWithMigrations(
@@ -85,6 +91,25 @@ pub fn readParameterStateWithMigrations(
     reader: anytype,
     migrations: []const ParameterIdMigration,
 ) !void {
+    _ = try readParameterStateWithMigrationsReport(Params, set, values, reader, migrations);
+}
+
+pub fn readParameterStateReport(
+    comptime Params: type,
+    set: *const parameters.ParameterSet(Params),
+    values: *parameters.ParameterValues(Params),
+    reader: anytype,
+) !ReadParameterStateReport {
+    return readParameterStateWithMigrationsReport(Params, set, values, reader, &.{});
+}
+
+pub fn readParameterStateWithMigrationsReport(
+    comptime Params: type,
+    set: *const parameters.ParameterSet(Params),
+    values: *parameters.ParameterValues(Params),
+    reader: anytype,
+    migrations: []const ParameterIdMigration,
+) !ReadParameterStateReport {
     try validateParameterIdMigrations(migrations);
     var header: [magic.len]u8 = undefined;
     try reader.readNoEof(&header);
@@ -94,15 +119,24 @@ pub fn readParameterStateWithMigrations(
     const count = try reader.readInt(u16, .little);
     var restored = parameters.ParameterValues(Params).init(set);
     restored.copyFrom(values);
+    var report = ReadParameterStateReport{
+        .entry_count = count,
+        .restored_count = 0,
+        .ignored_count = 0,
+    };
     for (0..count) |_| {
         const id = try reader.readInt(u32, .little);
         const normalized: f64 = @bitCast(try reader.readInt(u64, .little));
         if (normalized < 0.0 or normalized > 1.0 or std.math.isNan(normalized)) return error.ParameterStateOutsideNormalizedRange;
         if (set.indexOfId(migratedParameterId(id, migrations))) |index| {
             _ = restored.store(index, normalized);
+            report.restored_count += 1;
+        } else {
+            report.ignored_count += 1;
         }
     }
     values.copyFrom(&restored);
+    return report;
 }
 
 pub fn validateParameterIdMigrations(migrations: []const ParameterIdMigration) !void {
@@ -177,8 +211,9 @@ test "parameter state round-trips normalized values" {
     try writeParameterState(Params, &set, &values, out_stream.writer());
 
     var in_stream = std.io.fixedBufferStream(&bytes);
-    try readParameterState(Params, &set, &restored, in_stream.reader());
+    const report = try readParameterStateReport(Params, &set, &restored, in_stream.reader());
 
+    try std.testing.expectEqual(ReadParameterStateReport{ .entry_count = 2, .restored_count = 2, .ignored_count = 0 }, report);
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadField(&set, "gain"));
     try std.testing.expectEqual(@as(f64, 0.75), restored.loadField(&set, "mix"));
 }
@@ -235,20 +270,23 @@ test "parameter state ignores unknown parameter ids" {
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + @sizeOf(u32) + @sizeOf(u64)]u8 = undefined;
+    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + 2 * (@sizeOf(u32) + @sizeOf(u64))]u8 = undefined;
     var out_stream = std.io.fixedBufferStream(&bytes);
     const writer = out_stream.writer();
 
     try writer.writeAll(magic);
     try writer.writeInt(u16, format_version, .little);
-    try writer.writeInt(u16, 1, .little);
+    try writer.writeInt(u16, 2, .little);
     try writer.writeInt(u32, 999, .little);
     try writer.writeInt(u64, @bitCast(@as(f64, 0.25)), .little);
+    try writer.writeInt(u32, 0, .little);
+    try writer.writeInt(u64, @bitCast(@as(f64, 0.75)), .little);
 
     var in_stream = std.io.fixedBufferStream(&bytes);
-    try readParameterState(Params, &set, &values, in_stream.reader());
+    const report = try readParameterStateReport(Params, &set, &values, in_stream.reader());
 
-    try std.testing.expectEqual(@as(f64, 1.0), values.loadField(&set, "gain"));
+    try std.testing.expectEqual(ReadParameterStateReport{ .entry_count = 2, .restored_count = 1, .ignored_count = 1 }, report);
+    try std.testing.expectEqual(@as(f64, 0.75), values.loadField(&set, "gain"));
 }
 
 test "parameter state rejects malformed headers and unsupported versions" {
@@ -400,10 +438,11 @@ test "parameter state migrates renamed parameter ids" {
     try writeParameterState(OldParams, &old_set, &old_values, out_stream.writer());
 
     var in_stream = std.io.fixedBufferStream(&bytes);
-    try readParameterStateWithMigrations(NewParams, &new_set, &new_values, in_stream.reader(), &.{
+    const report = try readParameterStateWithMigrationsReport(NewParams, &new_set, &new_values, in_stream.reader(), &.{
         .{ .old_id = 1, .new_id = 9 },
     });
 
+    try std.testing.expectEqual(ReadParameterStateReport{ .entry_count = 1, .restored_count = 1, .ignored_count = 0 }, report);
     try std.testing.expectEqual(@as(f64, 0.25), new_values.loadField(&new_set, "output"));
 }
 
