@@ -509,13 +509,38 @@ pub fn processMainAudioConfigured(
     if (sample_size_result != types.kResultOk) return sample_size_result;
 
     if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
-        var context = makeMainAudioProcessContextConfigured(f32, data, parameter_changes, events, output_events, bus_config) catch return types.kResultOk;
+        var context = makeMainAudioProcessContextConfigured(f32, data, parameter_changes, events, output_events, bus_config) catch |err| return processContextErrorResult(err);
         processor.process(f32, &context);
     } else {
-        var context = makeMainAudioProcessContextConfigured(f64, data, parameter_changes, events, output_events, bus_config) catch return types.kResultOk;
+        var context = makeMainAudioProcessContextConfigured(f64, data, parameter_changes, events, output_events, bus_config) catch |err| return processContextErrorResult(err);
         processor.process(f64, &context);
     }
     return types.kResultOk;
+}
+
+fn processContextErrorResult(err: anyerror) types.tresult {
+    return switch (err) {
+        error.MissingMainAudioBus,
+        error.MissingMainAudioChannels,
+        error.MissingInputBuffers,
+        error.MissingOutputBuffers,
+        error.InvalidSampleRate,
+        => types.kResultOk,
+        error.InvalidFrameCount,
+        error.InvalidChannelCount,
+        error.MismatchedFrameCount,
+        error.ParameterChangeOutsideBlock,
+        error.ParameterChangeOutsideNormalizedRange,
+        error.EventOutsideBlock,
+        error.InvalidEventBusIndex,
+        error.InvalidEventChannel,
+        error.InvalidEventPitch,
+        error.InvalidEventControlNumber,
+        error.EventValueOutsideNormalizedRange,
+        error.EventStorageFull,
+        => types.kInvalidArgument,
+        else => types.kResultFalse,
+    };
 }
 
 pub fn readParameterState(
@@ -1870,6 +1895,50 @@ test "zig-plug bridge dispatches main audio processing by sample size" {
     try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, null, Doubler{}));
     try std.testing.expectEqual(@as(f32, 2.0), output_samples[0]);
     try std.testing.expectEqual(@as(f32, 4.0), output_samples[1]);
+}
+
+test "zig-plug bridge reports malformed main process data" {
+    const Noop = struct {
+        pub fn process(_: @This(), comptime Sample: type, _: *plug.process.ProcessContext(Sample)) void {}
+    };
+
+    var input_samples = [_]f32{ 1.0, 2.0 };
+    var output_samples = [_]f32{ 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f32{&input_samples};
+    var output_channel_ptrs = [_][*]f32{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .processContext = &process_context,
+    };
+
+    data.numSamples = -1;
+    try std.testing.expectEqual(types.kInvalidArgument, processMainAudio(&data, .{}, .{}, null, Noop{}));
+
+    data.numSamples = 2;
+    process_context.sampleRate = 0.0;
+    try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, null, Noop{}));
+
+    process_context.sampleRate = test_sample_rate;
+    inputs[0].numChannels = -1;
+    try std.testing.expectEqual(types.kInvalidArgument, processMainAudio(&data, .{}, .{}, null, Noop{}));
+
+    inputs[0].numChannels = 1;
+    data.inputs = null;
+    try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, null, Noop{}));
 }
 
 test "zig-plug bridge processes output-only main audio" {
