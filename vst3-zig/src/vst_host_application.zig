@@ -164,19 +164,23 @@ pub fn WrapperMPESupport(comptime Config: type) type {
 
         fn enableMPEInputProcessing(ptr: *anyopaque, state: types.TBool) callconv(.C) types.tresult {
             const self = owner(ptr);
+            if (@hasDecl(Config, "enableMPEInputProcessing")) {
+                const result = Config.enableMPEInputProcessing(self, state);
+                if (result != types.kResultOk) return result;
+            }
             self.mpe_input_enabled = state;
-            if (@hasDecl(Config, "enableMPEInputProcessing")) return Config.enableMPEInputProcessing(self, state);
             return types.kResultOk;
         }
 
         fn setMPEInputDeviceSettings(ptr: *anyopaque, master_channel: types.int32, member_begin_channel: types.int32, member_end_channel: types.int32) callconv(.C) types.tresult {
             const self = owner(ptr);
+            if (@hasDecl(Config, "setMPEInputDeviceSettings")) {
+                const result = Config.setMPEInputDeviceSettings(self, master_channel, member_begin_channel, member_end_channel);
+                if (result != types.kResultOk) return result;
+            }
             self.master_channel = master_channel;
             self.member_begin_channel = member_begin_channel;
             self.member_end_channel = member_end_channel;
-            if (@hasDecl(Config, "setMPEInputDeviceSettings")) {
-                return Config.setMPEInputDeviceSettings(self, master_channel, member_begin_channel, member_end_channel);
-            }
             return types.kResultOk;
         }
 
@@ -237,6 +241,20 @@ test "wrapper marker supports query interface" {
     try std.testing.expect(queried != null);
     const queried_iface: *ivsthostapplication.IVst3ToVst2Wrapper = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_iface.vtable.release(queried_iface));
+
+    var au_wrapper = Vst3ToAUWrapper{};
+    var queried_au: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, au_wrapper.asInterface().vtable.queryInterface(au_wrapper.asInterface(), &ivsthostapplication.ivst3_to_au_wrapper_iid, &queried_au));
+    try std.testing.expect(queried_au != null);
+    const au_iface: *ivsthostapplication.IVst3ToAUWrapper = @ptrCast(@alignCast(queried_au.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), au_iface.vtable.release(au_iface));
+
+    var aax_wrapper = Vst3ToAAXWrapper{};
+    var queried_aax: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, aax_wrapper.asInterface().vtable.queryInterface(aax_wrapper.asInterface(), &ivsthostapplication.ivst3_to_aax_wrapper_iid, &queried_aax));
+    try std.testing.expect(queried_aax != null);
+    const aax_iface: *ivsthostapplication.IVst3ToAAXWrapper = @ptrCast(@alignCast(queried_aax.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), aax_iface.vtable.release(aax_iface));
 }
 
 test "wrapper MPE support stores latest settings" {
@@ -250,4 +268,25 @@ test "wrapper MPE support stores latest settings" {
     try std.testing.expectEqual(@as(types.int32, 1), support.master_channel);
     try std.testing.expectEqual(@as(types.int32, 2), support.member_begin_channel);
     try std.testing.expectEqual(@as(types.int32, 15), support.member_end_channel);
+}
+
+test "wrapper MPE support preserves accepted state when delegated hooks reject changes" {
+    const MPE = WrapperMPESupport(struct {
+        pub fn enableMPEInputProcessing(_: anytype, _: types.TBool) types.tresult {
+            return types.kResultFalse;
+        }
+
+        pub fn setMPEInputDeviceSettings(_: anytype, _: types.int32, _: types.int32, _: types.int32) types.tresult {
+            return types.kResultFalse;
+        }
+    });
+    var support = MPE{};
+    const iface = support.asInterface();
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.enableMPEInputProcessing(iface, 1));
+    try std.testing.expectEqual(@as(types.TBool, 0), support.mpe_input_enabled);
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.setMPEInputDeviceSettings(iface, 1, 2, 15));
+    try std.testing.expectEqual(@as(types.int32, 0), support.master_channel);
+    try std.testing.expectEqual(@as(types.int32, 0), support.member_begin_channel);
+    try std.testing.expectEqual(@as(types.int32, 0), support.member_end_channel);
 }
