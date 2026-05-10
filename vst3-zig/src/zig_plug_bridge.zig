@@ -25,6 +25,7 @@ pub const StereoAudioBuses = struct {
     pub const Config = struct {
         audio_input: bool = true,
         audio_output: bool = true,
+        event_input: bool = true,
         event_output: bool = false,
     };
 
@@ -43,7 +44,7 @@ pub const StereoAudioBuses = struct {
         if (config.audio_output and media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput)) {
             return 1;
         }
-        if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) {
+        if (config.event_input and media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) {
             return 1;
         }
         if (config.event_output and media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput)) {
@@ -82,7 +83,7 @@ pub const StereoAudioBuses = struct {
         }
 
         if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and
-            (direction == @intFromEnum(ivstcomponent.BusDirections.kInput) or
+            ((config.event_input and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) or
                 (config.event_output and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput))))
         {
             out.* = .{
@@ -1515,6 +1516,17 @@ test "zig-plug bridge stereo buses can be input only" {
     try std.testing.expectEqual(stereo_arrangement, arrangement_out);
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out, input_only));
     try std.testing.expectEqual(empty_arrangement, arrangement_out);
+}
+
+test "zig-plug bridge stereo buses can disable event input" {
+    var info = ivstcomponent.BusInfo{};
+    const no_event_input = StereoAudioBuses.Config{ .event_input = false };
+
+    try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput), no_event_input));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info, no_event_input));
+    try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput), .{ .event_input = false, .event_output = true }));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &info, .{ .event_input = false, .event_output = true }));
+    try expectString128("Event Out", &info.name);
 }
 
 test "zig-plug bridge realtime processor defaults accept 32 and 64 bit samples" {
