@@ -28,7 +28,7 @@ Malformed state headers, unsupported format versions, truncated entries, denorma
 - `state.readParameterStateWithMigrations(Params, set, values, reader, migrations)`: validates the migration list, reads entries, and maps renamed parameter ids before lookup.
 - `state.readParameterStateReport(Params, set, values, reader)`: reads entries and returns a report with restored and ignored counts.
 - `state.readParameterStateWithMigrationsReport(Params, set, values, reader, migrations)`: reads migrated entries and returns the same report.
-- `state.validateParameterIdMigrations(migrations)`: rejects duplicate old ids, ambiguous target ids, and cyclic migration chains before state loading mutates parameter values.
+- `state.validateParameterIdMigrations(migrations)`: rejects identity mappings, duplicate old ids, ambiguous target ids, and cyclic migration chains before state loading mutates parameter values.
 - `state.migratedParameterId(id, migrations)`: resolves a saved parameter id through the same old-id to new-id migration list used by state loading.
 
 Program lists can remain metadata-only, or each program can carry a normalized parameter snapshot through `plug.units.ProgramParameter`. `PluginInstance.applyProgram` and `applyProgramByName` validate the complete snapshot and then apply matching parameter ids.
