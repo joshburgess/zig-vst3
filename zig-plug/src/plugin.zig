@@ -1750,6 +1750,46 @@ test "plugin instance passes parameter view to state-aware process hooks" {
     try std.testing.expectEqual(@as(?f64, 0.25), instance.plugin.observed);
 }
 
+test "plugin instance prefers parameter-view process hook over other process hooks" {
+    const Gain = struct {
+        called: enum { none, raw, parameters, view } = .none,
+
+        pub const name = "Instance Process Hook Priority";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+
+        pub fn process(self: *@This(), _: *process_api.ProcessContext(f32)) void {
+            self.called = .raw;
+        }
+
+        pub fn processWithParameters(
+            self: *@This(),
+            _: *process_api.ProcessContext(f32),
+            _: *const parameters.ParameterSet(Params),
+            _: *const parameters.ParameterValues(Params),
+        ) void {
+            self.called = .parameters;
+        }
+
+        pub fn processWithParameterView(
+            self: *@This(),
+            _: *process_api.ProcessContext(f32),
+            _: parameters.ParameterView(Params),
+        ) void {
+            self.called = .view;
+        }
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    var context = process_api.ProcessContext(f32){ .sample_rate = 48_000.0 };
+
+    instance.process(&context);
+
+    try std.testing.expectEqual(.view, instance.plugin.called);
+}
+
 test "plugin instance applies process64 parameter changes before dispatch" {
     const Gain = struct {
         observed: ?f64 = null,
@@ -1845,6 +1885,46 @@ test "plugin instance passes parameter view to state-aware process64 hooks" {
     instance.process64(&context);
 
     try std.testing.expectEqual(@as(?f64, 0.75), instance.plugin.observed);
+}
+
+test "plugin instance prefers parameter-view process64 hook over other process64 hooks" {
+    const Gain = struct {
+        called: enum { none, raw, parameters, view } = .none,
+
+        pub const name = "Instance Process64 Hook Priority";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+
+        pub fn process64(self: *@This(), _: *process_api.ProcessContext(f64)) void {
+            self.called = .raw;
+        }
+
+        pub fn process64WithParameters(
+            self: *@This(),
+            _: *process_api.ProcessContext(f64),
+            _: *const parameters.ParameterSet(Params),
+            _: *const parameters.ParameterValues(Params),
+        ) void {
+            self.called = .parameters;
+        }
+
+        pub fn process64WithParameterView(
+            self: *@This(),
+            _: *process_api.ProcessContext(f64),
+            _: parameters.ParameterView(Params),
+        ) void {
+            self.called = .view;
+        }
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    var context = process_api.ProcessContext(f64){ .sample_rate = 48_000.0 };
+
+    instance.process64(&context);
+
+    try std.testing.expectEqual(.view, instance.plugin.called);
 }
 
 test "plugin instance round-trips owned parameter state" {
