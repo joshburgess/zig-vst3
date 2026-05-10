@@ -1,0 +1,258 @@
+const std = @import("std");
+const funknown = @import("funknown.zig");
+const interface_map = @import("interface_map.zig");
+const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
+const tuid = @import("tuid.zig");
+const types = @import("pluginterfaces/base/types.zig");
+const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+
+pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_keyswitches: usize, comptime Config: type) type {
+    if (max_expressions == 0 and max_keyswitches == 0) @compileError("NoteExpressionController requires at least one expression or keyswitch slot");
+
+    return extern struct {
+        const Self = @This();
+
+        note_expression: ivstnoteexpression.INoteExpressionController = .{ .vtable = &note_expression_vtable },
+        keyswitch: ivstnoteexpression.IKeyswitchController = .{ .vtable = &keyswitch_vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        expression_count: types.uint32 = 0,
+        keyswitch_count: types.uint32 = 0,
+        expressions: [max_expressions]ivstnoteexpression.NoteExpressionTypeInfo = [_]ivstnoteexpression.NoteExpressionTypeInfo{.{}} ** max_expressions,
+        keyswitches: [max_keyswitches]ivstnoteexpression.KeyswitchInfo = [_]ivstnoteexpression.KeyswitchInfo{.{}} ** max_keyswitches,
+        last_bus: types.int32 = 0,
+        last_channel: types.int16 = 0,
+
+        pub fn asNoteExpression(self: *Self) *ivstnoteexpression.INoteExpressionController {
+            return &self.note_expression;
+        }
+
+        pub fn asKeyswitch(self: *Self) *ivstnoteexpression.IKeyswitchController {
+            return &self.keyswitch;
+        }
+
+        pub fn addExpression(self: *Self, info: ivstnoteexpression.NoteExpressionTypeInfo) types.tresult {
+            if (self.expression_count >= max_expressions) return types.kResultFalse;
+            self.expressions[self.expression_count] = info;
+            self.expression_count += 1;
+            return types.kResultOk;
+        }
+
+        pub fn addKeyswitch(self: *Self, info: ivstnoteexpression.KeyswitchInfo) types.tresult {
+            if (self.keyswitch_count >= max_keyswitches) return types.kResultFalse;
+            self.keyswitches[self.keyswitch_count] = info;
+            self.keyswitch_count += 1;
+            return types.kResultOk;
+        }
+
+        fn ownerFromNoteExpression(ptr: *anyopaque) *Self {
+            const iface: *ivstnoteexpression.INoteExpressionController = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("note_expression", iface);
+        }
+
+        fn ownerFromKeyswitch(ptr: *anyopaque) *Self {
+            const iface: *ivstnoteexpression.IKeyswitchController = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("keyswitch", iface);
+        }
+
+        fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = &self.note_expression },
+                .{ .iid = &ivstnoteexpression.inote_expression_controller_iid, .ptr = &self.note_expression },
+                .{ .iid = &ivstnoteexpression.ikeyswitch_controller_iid, .ptr = &self.keyswitch },
+            };
+            return interface_map.queryWithAddRef(add_ref_ptr, noteExpressionAddRef, &entries, requested_iid, out);
+        }
+
+        fn noteExpressionQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            return ownerFromNoteExpression(ptr).queryCanonical(ptr, requested_iid, out);
+        }
+
+        fn keyswitchQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+            const self = ownerFromKeyswitch(ptr);
+            return self.queryCanonical(&self.note_expression, requested_iid, out);
+        }
+
+        fn noteExpressionAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return ownerFromNoteExpression(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn keyswitchAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return ownerFromKeyswitch(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+        }
+
+        fn noteExpressionRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&ownerFromNoteExpression(ptr).ref_count, "INoteExpressionController");
+        }
+
+        fn keyswitchRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+            return funknown.decrementRefCount(&ownerFromKeyswitch(ptr).ref_count, "IKeyswitchController");
+        }
+
+        fn getNoteExpressionCount(ptr: *anyopaque, bus_index: types.int32, channel: types.int16) callconv(.C) types.int32 {
+            const self = ownerFromNoteExpression(ptr);
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            return @intCast(@min(self.expression_count, max_expressions));
+        }
+
+        fn getNoteExpressionInfo(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, index: types.int32, out: *ivstnoteexpression.NoteExpressionTypeInfo) callconv(.C) types.tresult {
+            const self = ownerFromNoteExpression(ptr);
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            if (index < 0 or index >= @as(types.int32, @intCast(@min(self.expression_count, max_expressions)))) {
+                out.* = .{};
+                return types.kInvalidArgument;
+            }
+            out.* = self.expressions[@intCast(index)];
+            return types.kResultOk;
+        }
+
+        fn getNoteExpressionStringByValue(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, type_id: ivstnoteexpression.NoteExpressionTypeID, value: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+            const self = ownerFromNoteExpression(ptr);
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            @memset(out[0..128], 0);
+            if (@hasDecl(Config, "getNoteExpressionStringByValue")) return Config.getNoteExpressionStringByValue(self, bus_index, channel, type_id, value, out);
+            return types.kResultFalse;
+        }
+
+        fn getNoteExpressionValueByString(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, type_id: ivstnoteexpression.NoteExpressionTypeID, text: [*:0]const vsttypes.TChar, out: *ivstnoteexpression.NoteExpressionValue) callconv(.C) types.tresult {
+            const self = ownerFromNoteExpression(ptr);
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            out.* = 0;
+            if (@hasDecl(Config, "getNoteExpressionValueByString")) return Config.getNoteExpressionValueByString(self, bus_index, channel, type_id, text, out);
+            return types.kResultFalse;
+        }
+
+        fn getKeyswitchCount(ptr: *anyopaque, bus_index: types.int32, channel: types.int16) callconv(.C) types.int32 {
+            const self = ownerFromKeyswitch(ptr);
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            return @intCast(@min(self.keyswitch_count, max_keyswitches));
+        }
+
+        fn getKeyswitchInfo(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, index: types.int32, out: *ivstnoteexpression.KeyswitchInfo) callconv(.C) types.tresult {
+            const self = ownerFromKeyswitch(ptr);
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            if (index < 0 or index >= @as(types.int32, @intCast(@min(self.keyswitch_count, max_keyswitches)))) {
+                out.* = .{};
+                return types.kInvalidArgument;
+            }
+            out.* = self.keyswitches[@intCast(index)];
+            return types.kResultOk;
+        }
+
+        const note_expression_vtable = ivstnoteexpression.INoteExpressionControllerVTable{
+            .queryInterface = noteExpressionQuery,
+            .addRef = noteExpressionAddRef,
+            .release = noteExpressionRelease,
+            .getNoteExpressionCount = getNoteExpressionCount,
+            .getNoteExpressionInfo = getNoteExpressionInfo,
+            .getNoteExpressionStringByValue = getNoteExpressionStringByValue,
+            .getNoteExpressionValueByString = getNoteExpressionValueByString,
+        };
+
+        const keyswitch_vtable = ivstnoteexpression.IKeyswitchControllerVTable{
+            .queryInterface = keyswitchQuery,
+            .addRef = keyswitchAddRef,
+            .release = keyswitchRelease,
+            .getKeyswitchCount = getKeyswitchCount,
+            .getKeyswitchInfo = getKeyswitchInfo,
+        };
+    };
+}
+
+test "note expression helper stores expression and keyswitch info" {
+    const Helper = NoteExpressionController(1, 1, struct {});
+    var helper = Helper{};
+    const expression = helper.asNoteExpression();
+    const keyswitch = helper.asKeyswitch();
+
+    try std.testing.expectEqual(types.kResultOk, helper.addExpression(.{
+        .typeId = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kBrightnessTypeID),
+        .valueDesc = .{ .defaultValue = 0.5, .minimum = 0, .maximum = 1, .stepCount = 0 },
+        .associatedParameterId = 42,
+    }));
+    try std.testing.expectEqual(types.kResultFalse, helper.addExpression(.{ .typeId = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kVibratoTypeID) }));
+    try std.testing.expectEqual(@as(types.int32, 1), expression.vtable.getNoteExpressionCount(expression, 2, 3));
+
+    var expression_info = ivstnoteexpression.NoteExpressionTypeInfo{};
+    try std.testing.expectEqual(types.kResultOk, expression.vtable.getNoteExpressionInfo(expression, 2, 3, 0, &expression_info));
+    try std.testing.expectEqual(@intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kBrightnessTypeID), expression_info.typeId);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 42), expression_info.associatedParameterId);
+
+    try std.testing.expectEqual(types.kResultOk, helper.addKeyswitch(.{
+        .typeId = @intFromEnum(ivstnoteexpression.KeyswitchTypeIDs.kNoteOnKeyswitchTypeID),
+        .keyswitchMin = 24,
+        .keyswitchMax = 36,
+        .unitId = 7,
+    }));
+    try std.testing.expectEqual(types.kResultFalse, helper.addKeyswitch(.{ .typeId = @intFromEnum(ivstnoteexpression.KeyswitchTypeIDs.kOnReleaseKeyswitchTypeID) }));
+    try std.testing.expectEqual(@as(types.int32, 1), keyswitch.vtable.getKeyswitchCount(keyswitch, 4, 5));
+
+    var keyswitch_info = ivstnoteexpression.KeyswitchInfo{};
+    try std.testing.expectEqual(types.kResultOk, keyswitch.vtable.getKeyswitchInfo(keyswitch, 4, 5, 0, &keyswitch_info));
+    try std.testing.expectEqual(@as(types.int32, 24), keyswitch_info.keyswitchMin);
+    try std.testing.expectEqual(@as(types.int32, 36), keyswitch_info.keyswitchMax);
+    try std.testing.expectEqual(@as(types.int32, 7), keyswitch_info.unitId);
+}
+
+test "note expression helper clears failed outputs" {
+    const Helper = NoteExpressionController(1, 1, struct {});
+    var helper = Helper{};
+    const expression = helper.asNoteExpression();
+    const keyswitch = helper.asKeyswitch();
+
+    var expression_info = ivstnoteexpression.NoteExpressionTypeInfo{ .typeId = 99 };
+    try std.testing.expectEqual(types.kInvalidArgument, expression.vtable.getNoteExpressionInfo(expression, 0, 1, 0, &expression_info));
+    try std.testing.expectEqual(@as(ivstnoteexpression.NoteExpressionTypeID, 0), expression_info.typeId);
+
+    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kResultFalse, expression.vtable.getNoteExpressionStringByValue(expression, 0, 1, 0, 0.25, &text));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[0]);
+
+    const empty_text: [1:0]vsttypes.TChar = .{0};
+    var value: ivstnoteexpression.NoteExpressionValue = 0.5;
+    try std.testing.expectEqual(types.kResultFalse, expression.vtable.getNoteExpressionValueByString(expression, 0, 1, 0, &empty_text, &value));
+    try std.testing.expectEqual(@as(ivstnoteexpression.NoteExpressionValue, 0), value);
+
+    var keyswitch_info = ivstnoteexpression.KeyswitchInfo{ .typeId = 99 };
+    try std.testing.expectEqual(types.kInvalidArgument, keyswitch.vtable.getKeyswitchInfo(keyswitch, 0, 1, -1, &keyswitch_info));
+    try std.testing.expectEqual(@as(ivstnoteexpression.KeyswitchTypeID, 0), keyswitch_info.typeId);
+}
+
+test "note expression helper delegates string conversions and query interface" {
+    const Helper = NoteExpressionController(1, 1, struct {
+        pub fn getNoteExpressionStringByValue(_: anytype, _: types.int32, _: types.int16, type_id: ivstnoteexpression.NoteExpressionTypeID, value: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) types.tresult {
+            if (type_id != 12 or value != 0.75) return types.kInvalidArgument;
+            out[0] = 'O';
+            out[1] = 'K';
+            out[2] = 0;
+            return types.kResultOk;
+        }
+
+        pub fn getNoteExpressionValueByString(_: anytype, _: types.int32, _: types.int16, type_id: ivstnoteexpression.NoteExpressionTypeID, text: [*:0]const vsttypes.TChar, out: *ivstnoteexpression.NoteExpressionValue) types.tresult {
+            if (type_id != 12 or text[0] != 'O' or text[1] != 'K') return types.kInvalidArgument;
+            out.* = 0.75;
+            return types.kResultOk;
+        }
+    });
+    var helper = Helper{};
+    const expression = helper.asNoteExpression();
+
+    var text: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128;
+    try std.testing.expectEqual(types.kResultOk, expression.vtable.getNoteExpressionStringByValue(expression, 0, 1, 12, 0.75, &text));
+    try std.testing.expectEqualSlices(vsttypes.TChar, &.{ 'O', 'K' }, std.mem.sliceTo(&text, 0));
+
+    var value: ivstnoteexpression.NoteExpressionValue = 0;
+    try std.testing.expectEqual(types.kResultOk, expression.vtable.getNoteExpressionValueByString(expression, 0, 1, 12, @ptrCast(&text), &value));
+    try std.testing.expectEqual(@as(ivstnoteexpression.NoteExpressionValue, 0.75), value);
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, expression.vtable.queryInterface(expression, &ivstnoteexpression.ikeyswitch_controller_iid, &queried));
+    try std.testing.expect(queried != null);
+    const queried_keyswitch: *ivstnoteexpression.IKeyswitchController = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_keyswitch.vtable.release(queried_keyswitch));
+}
