@@ -168,7 +168,7 @@ pub fn readParameterStateWithMigrationsReport(
     for (0..count) |_| {
         const id = try reader.readInt(u32, .little);
         const normalized: f64 = @bitCast(try reader.readInt(u64, .little));
-        if (normalized < 0.0 or normalized > 1.0 or std.math.isNan(normalized)) return error.ParameterStateOutsideNormalizedRange;
+        if (!std.math.isFinite(normalized) or normalized < 0.0 or normalized > 1.0) return error.ParameterStateOutsideNormalizedRange;
         if (set.indexOfId(migratedParameterId(id, migrations))) |index| {
             if (comptime parameters.ParameterSet(Params).count > 0) {
                 if (seen_restored[index]) return error.DuplicateParameterStateEntry;
@@ -506,7 +506,7 @@ test "parameter state rejects normalized values outside range without partial up
     try std.testing.expectEqual(@as(f64, 0.6), values.loadField(&set, "mix"));
 }
 
-test "parameter state rejects NaN normalized values without partial updates" {
+test "parameter state rejects non-finite normalized values without partial updates" {
     const Params = struct {
         gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
     };
@@ -527,6 +527,18 @@ test "parameter state rejects NaN normalized values without partial updates" {
     try writer.writeInt(u64, @bitCast(std.math.nan(f64)), .little);
 
     var in_stream = std.io.fixedBufferStream(&bytes);
+    try std.testing.expectError(error.ParameterStateOutsideNormalizedRange, readParameterState(Params, &set, &values, in_stream.reader()));
+    try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
+
+    try std.testing.expect(values.storeField(&set, "gain", 0.8));
+    out_stream = std.io.fixedBufferStream(&bytes);
+    try writer.writeAll(magic);
+    try writer.writeInt(u16, format_version, .little);
+    try writer.writeInt(u16, 1, .little);
+    try writer.writeInt(u32, 0, .little);
+    try writer.writeInt(u64, @bitCast(std.math.inf(f64)), .little);
+
+    in_stream = std.io.fixedBufferStream(&bytes);
     try std.testing.expectError(error.ParameterStateOutsideNormalizedRange, readParameterState(Params, &set, &values, in_stream.reader()));
     try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
 }
