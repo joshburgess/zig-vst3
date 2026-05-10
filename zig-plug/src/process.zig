@@ -736,6 +736,10 @@ pub fn AudioInputs(comptime Sample: type) type {
             return self.channels.len;
         }
 
+        pub fn isEmpty(self: Self) bool {
+            return self.channels.len == 0;
+        }
+
         pub fn frameCount(self: Self) usize {
             return self.frame_count;
         }
@@ -769,6 +773,10 @@ pub fn AudioOutputs(comptime Sample: type) type {
 
         pub fn channelCount(self: Self) usize {
             return self.channels.len;
+        }
+
+        pub fn isEmpty(self: Self) bool {
+            return self.channels.len == 0;
         }
 
         pub fn frameCount(self: Self) usize {
@@ -1141,6 +1149,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.outputs.channelCount();
         }
 
+        pub fn inputChannelsEmpty(self: @This()) bool {
+            return self.inputs.isEmpty();
+        }
+
+        pub fn outputChannelsEmpty(self: @This()) bool {
+            return self.outputs.isEmpty();
+        }
+
         pub fn inputFrameCount(self: @This()) usize {
             return self.inputs.frameCount();
         }
@@ -1165,10 +1181,12 @@ test "audio input view validates channel frame counts" {
 
     try std.testing.expectEqual(@as(usize, 2), inputs.channels.len);
     try std.testing.expectEqual(@as(usize, 2), inputs.channelCount());
+    try std.testing.expect(!inputs.isEmpty());
     try std.testing.expectEqual(@as(usize, 2), inputs.frame_count);
     try std.testing.expectEqual(@as(usize, 2), inputs.frameCount());
     try std.testing.expectEqual(@as(f32, 0.3), inputs.channel(1).?[0]);
     try std.testing.expectEqual(@as(?[]const f32, null), inputs.channel(2));
+    try std.testing.expect((try AudioInputs(f32).init(&[_][]const f32{})).isEmpty());
 }
 
 test "audio output view rejects mismatched channel frame counts" {
@@ -1185,7 +1203,9 @@ test "audio output view fills and clears channels" {
     const channels = [_][]f32{ &left, &right };
     const outputs = try AudioOutputs(f32).init(&channels);
 
+    try std.testing.expect(!outputs.isEmpty());
     try std.testing.expectEqual(@as(usize, 2), outputs.frameCount());
+    try std.testing.expect((try AudioOutputs(f32).init(&[_][]f32{})).isEmpty());
 
     outputs.fill(0.5);
     try std.testing.expectEqual(@as(f32, 0.5), left[0]);
@@ -1214,6 +1234,8 @@ test "process context reports usable frame count" {
     try std.testing.expectEqual(@as(usize, 3), context.outputFrameCount());
     try std.testing.expectEqual(@as(usize, 2), context.inputChannelCount());
     try std.testing.expectEqual(@as(usize, 2), context.outputChannelCount());
+    try std.testing.expect(!context.inputChannelsEmpty());
+    try std.testing.expect(!context.outputChannelsEmpty());
     try std.testing.expectEqual(@as(f64, 0.4), context.inputChannel(1).?[0]);
     try std.testing.expectEqual(@as(?[]const f64, null), context.inputChannel(2));
     try std.testing.expectEqual(@as(f64, 0.0), context.outputChannel(1).?[0]);
@@ -1242,6 +1264,8 @@ test "process context reports frame count for input-only and output-only process
     try std.testing.expectEqual(@as(usize, 4), output_only.outputFrameCount());
     try std.testing.expectEqual(@as(usize, 0), output_only.inputChannelCount());
     try std.testing.expectEqual(@as(usize, 1), output_only.outputChannelCount());
+    try std.testing.expect(output_only.inputChannelsEmpty());
+    try std.testing.expect(!output_only.outputChannelsEmpty());
 
     const input_only = try ProcessContext(f32).init(48_000.0, &input_channels, &no_output_channels);
     try std.testing.expectEqual(@as(usize, 3), input_only.frameCount());
@@ -1249,6 +1273,8 @@ test "process context reports frame count for input-only and output-only process
     try std.testing.expectEqual(@as(usize, 0), input_only.outputFrameCount());
     try std.testing.expectEqual(@as(usize, 1), input_only.inputChannelCount());
     try std.testing.expectEqual(@as(usize, 0), input_only.outputChannelCount());
+    try std.testing.expect(!input_only.inputChannelsEmpty());
+    try std.testing.expect(input_only.outputChannelsEmpty());
 }
 
 test "process context validates attachments for input-only and output-only processors" {
