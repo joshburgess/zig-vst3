@@ -377,8 +377,9 @@ pub fn collectInputEvents(data: *ivstaudioprocessor.ProcessData, storage: []plug
 
 pub fn writeOutputEvents(data: *ivstaudioprocessor.ProcessData, events: plug.process.Events) types.tresult {
     const output_events = data.outputEvents orelse return types.kResultOk;
+    if (data.numSamples < 0) return types.kInvalidArgument;
     for (events.items) |event| {
-        if (data.numSamples >= 0 and event.sample_offset >= @as(usize, @intCast(data.numSamples))) return types.kInvalidArgument;
+        if (event.sample_offset >= @as(usize, @intCast(data.numSamples))) return types.kInvalidArgument;
         var vst_event = toVstEvent(event) orelse continue;
         if (output_events.vtable.addEvent(output_events, &vst_event) != types.kResultOk) return types.kResultFalse;
     }
@@ -1473,6 +1474,21 @@ test "zig-plug bridge reports output event write failures" {
     };
 
     try std.testing.expectEqual(types.kResultFalse, writeOutputEvents(&data, .{ .items = &items }));
+}
+
+test "zig-plug bridge rejects output events for negative process frame counts" {
+    const items = [_]plug.process.Event{
+        plug.process.Event.noteOn(0, 0, 60, 0.75),
+    };
+    const List = vst_event_list.EventList(1);
+    var list = List{};
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = -1,
+        .outputEvents = list.asInterface(),
+    };
+
+    try std.testing.expectEqual(types.kInvalidArgument, writeOutputEvents(&data, .{ .items = &items }));
+    try std.testing.expectEqual(@as(usize, 0), list.items().len);
 }
 
 test "zig-plug bridge parameter controller exposes reflected edit operations" {
