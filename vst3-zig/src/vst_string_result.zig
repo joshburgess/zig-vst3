@@ -170,6 +170,23 @@ test "string result stores narrow and wide string values" {
     try std.testing.expect(iface.vtable.isWideString(iface));
 }
 
+test "string result clears null narrow and wide inputs" {
+    const Result = StringResult(8, 8);
+    var result = Result{};
+    const iface = result.asString();
+
+    iface.vtable.setText8(iface, "gain");
+    iface.vtable.setText8(iface, null);
+    try std.testing.expectEqualStrings("", result.text8Span());
+    try std.testing.expect(!iface.vtable.isWideString(iface));
+
+    const wide_value = [_:0]types.char16{ 'O', 'K' };
+    iface.vtable.setText16(iface, &wide_value);
+    iface.vtable.setText16(iface, null);
+    try std.testing.expectEqualSlices(types.char16, &.{}, result.text16Span());
+    try std.testing.expect(iface.vtable.isWideString(iface));
+}
+
 test "string result supports both string interfaces" {
     const Result = StringResult(8, 8);
     var result = Result{};
