@@ -2790,3 +2790,29 @@ test "parameter sets convert normalized and plain values by reflected id" {
     try std.testing.expectEqual(@as(?f64, null), set.plainFromNormalizedById(99, 0.0));
     try std.testing.expectEqual(@as(?f64, null), set.normalizedFromPlainById(99, 0.0));
 }
+
+test "parameter sets convert normalized and plain values by reflected name" {
+    const Mode = enum { clean, crunch, lead };
+    const Params = struct {
+        gain: FloatParam = FloatParam.init(0, "Gain", 0.0, 2.0, 1.0),
+        voices: IntParam = IntParam.init(1, "Voices", 1, 16, 4),
+        bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
+        mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
+    };
+    const Set = ParameterSet(Params);
+    const set = Set.init(.{});
+
+    var buffer: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("1.000", try set.formatPlainByName("Gain", 0.5, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try set.parsePlainByName("Voices", "16"));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.plainFromNormalizedByName("Gain", 0.5));
+    try std.testing.expectEqual(@as(?f64, 0.5), set.normalizedFromPlainByName("Gain", 1.0));
+    try std.testing.expectEqual(@as(?f64, 9.0), set.plainFromNormalizedByName("Voices", 0.5));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.normalizedFromPlainByName("Bypass", 1.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.plainFromNormalizedByName("Mode", 0.5));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.normalizedFromPlainByName("Mode", 2.0));
+    try std.testing.expectError(error.InvalidParameterName, set.formatPlainByName("Missing", 0.0, &buffer));
+    try std.testing.expectError(error.InvalidParameterName, set.parsePlainByName("Missing", "1"));
+    try std.testing.expectEqual(@as(?f64, null), set.plainFromNormalizedByName("Missing", 0.0));
+    try std.testing.expectEqual(@as(?f64, null), set.normalizedFromPlainByName("Missing", 0.0));
+}
