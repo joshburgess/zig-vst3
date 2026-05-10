@@ -658,12 +658,24 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().hasOptions(index);
         }
 
+        pub fn parameterOptionsEmpty(self: *const Self, index: usize) bool {
+            return self.parameterView().optionsEmpty(index);
+        }
+
         pub fn parameterHasOptionsById(self: *const Self, wanted_id: u32) bool {
             return self.parameterView().hasOptionsById(wanted_id);
         }
 
+        pub fn parameterOptionsEmptyById(self: *const Self, wanted_id: u32) bool {
+            return self.parameterView().optionsEmptyById(wanted_id);
+        }
+
         pub fn parameterHasOptionsByName(self: *const Self, wanted_name: []const u8) bool {
             return self.parameterView().hasOptionsByName(wanted_name);
+        }
+
+        pub fn parameterOptionsEmptyByName(self: *const Self, wanted_name: []const u8) bool {
+            return self.parameterView().optionsEmptyByName(wanted_name);
         }
 
         pub fn formatParameterPlainIndex(self: *const Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
@@ -808,6 +820,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn parameterFieldHasOptions(self: *const Self, comptime field_name: []const u8) bool {
             return self.spec.parameter_set.fieldHasOptions(field_name);
+        }
+
+        pub fn parameterFieldOptionsEmpty(self: *const Self, comptime field_name: []const u8) bool {
+            return self.spec.parameter_set.fieldOptionsEmpty(field_name);
         }
 
         pub fn formatParameterFieldPlain(self: *const Self, comptime field_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
@@ -1958,9 +1974,13 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?f64, 0.5), instance.parameterOptionNormalizedById(2, 1));
     try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterOptionNormalizedByName("Mode", 0));
     try std.testing.expect(instance.parameterHasOptions(2));
+    try std.testing.expect(!instance.parameterOptionsEmpty(2));
     try std.testing.expect(instance.parameterHasOptionsById(2));
+    try std.testing.expect(!instance.parameterOptionsEmptyById(2));
     try std.testing.expect(instance.parameterHasOptionsByName("Mode"));
+    try std.testing.expect(!instance.parameterOptionsEmptyByName("Mode"));
     try std.testing.expect(!instance.parameterHasOptions(0));
+    try std.testing.expect(instance.parameterOptionsEmpty(0));
     try std.testing.expectEqual(@as(?u32, null), instance.parameterId(99));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterName(99));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterNameById(99));
@@ -1992,7 +2012,9 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterOptionLabelByName("Missing", 0));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterOptionNormalized(2, 3));
     try std.testing.expect(!instance.parameterHasOptionsById(99));
+    try std.testing.expect(instance.parameterOptionsEmptyById(99));
     try std.testing.expect(!instance.parameterHasOptionsByName("Missing"));
+    try std.testing.expect(instance.parameterOptionsEmptyByName("Missing"));
     var buffer: [16]u8 = undefined;
     try std.testing.expectEqualStrings("lead", try instance.formatParameterPlainIndex(2, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainIndex(2, "mute"));
@@ -2041,7 +2063,9 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqualStrings("mute", instance.parameterFieldOptionLabel("mode", 2).?);
     try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterFieldOptionNormalized("mode", 2));
     try std.testing.expect(instance.parameterFieldHasOptions("mode"));
+    try std.testing.expect(!instance.parameterFieldOptionsEmpty("mode"));
     try std.testing.expect(!instance.parameterFieldHasOptions("gain"));
+    try std.testing.expect(instance.parameterFieldOptionsEmpty("gain"));
     try std.testing.expectEqualStrings("mute", try instance.formatParameterFieldPlain("mode", 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterFieldPlain("mode", "mute"));
     try std.testing.expectEqual(Mode.mute, instance.parameterFieldPlainFromNormalized("mode", 1.0));
