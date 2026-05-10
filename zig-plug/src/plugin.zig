@@ -2230,7 +2230,9 @@ test "plugin instance round-trips owned parameter state" {
     try std.testing.expectEqual(@as(usize, 0), report.ignoredCount());
     try std.testing.expect(report.hasDecodedEntries());
     try std.testing.expect(report.hasRestoredEntries());
+    try std.testing.expect(!report.hasNoRestoredEntries());
     try std.testing.expect(!report.hasIgnoredEntries());
+    try std.testing.expect(report.hasNoIgnoredEntries());
     try std.testing.expect(report.restoredAllEntries());
     try std.testing.expect(!report.restoredPartialEntries());
     try std.testing.expect(!report.ignoredAllEntries());

@@ -18,6 +18,10 @@ pub const ParameterStateHeader = struct {
         return self.entry_count != 0;
     }
 
+    pub fn entriesEmpty(self: ParameterStateHeader) bool {
+        return self.entry_count == 0;
+    }
+
     pub fn isCurrentVersion(self: ParameterStateHeader) bool {
         return self.version == format_version;
     }
@@ -65,8 +69,16 @@ pub const ReadParameterStateReport = struct {
         return self.restored_count != 0;
     }
 
+    pub fn hasNoRestoredEntries(self: ReadParameterStateReport) bool {
+        return self.restored_count == 0;
+    }
+
     pub fn hasIgnoredEntries(self: ReadParameterStateReport) bool {
         return self.ignored_count != 0;
+    }
+
+    pub fn hasNoIgnoredEntries(self: ReadParameterStateReport) bool {
+        return self.ignored_count == 0;
     }
 
     pub fn restoredAllEntries(self: ReadParameterStateReport) bool {
@@ -297,6 +309,7 @@ test "parameter state round-trips normalized values" {
     try std.testing.expectEqual(ParameterStateHeader{ .version = format_version, .entry_count = 2 }, header);
     try std.testing.expectEqual(@as(usize, 2), header.entryCount());
     try std.testing.expect(header.hasEntries());
+    try std.testing.expect(!header.entriesEmpty());
     try std.testing.expect(header.isCurrentVersion());
     try std.testing.expectEqual(@as(usize, 36), header.encodedSize());
     try std.testing.expectEqual(@as(usize, 36), try header.encodedSizeChecked());
@@ -328,6 +341,7 @@ test "parameter state header helpers validate magic and count range" {
     const header = try readParameterStateHeader(in_stream.reader());
     try std.testing.expectEqual(ParameterStateHeader{ .version = format_version, .entry_count = 0 }, header);
     try std.testing.expect(!header.hasEntries());
+    try std.testing.expect(header.entriesEmpty());
     try std.testing.expect(header.isCurrentVersion());
     try std.testing.expectEqual(encoded_header_size, header.encodedSize());
 
@@ -415,7 +429,9 @@ test "parameter state ignores unknown parameter ids" {
     try std.testing.expectEqual(@as(usize, 1), report.ignoredCount());
     try std.testing.expect(report.hasDecodedEntries());
     try std.testing.expect(report.hasRestoredEntries());
+    try std.testing.expect(!report.hasNoRestoredEntries());
     try std.testing.expect(report.hasIgnoredEntries());
+    try std.testing.expect(!report.hasNoIgnoredEntries());
     try std.testing.expect(!report.restoredAllEntries());
     try std.testing.expect(report.restoredPartialEntries());
     try std.testing.expect(!report.ignoredAllEntries());
@@ -429,7 +445,9 @@ test "parameter state report classifies empty and ignored loads" {
     try std.testing.expect(!empty.hasDecodedEntries());
     try std.testing.expect(empty.hasNoDecodedEntries());
     try std.testing.expect(!empty.hasRestoredEntries());
+    try std.testing.expect(empty.hasNoRestoredEntries());
     try std.testing.expect(!empty.hasIgnoredEntries());
+    try std.testing.expect(empty.hasNoIgnoredEntries());
     try std.testing.expect(empty.restoredAllEntries());
     try std.testing.expect(!empty.restoredPartialEntries());
     try std.testing.expect(!empty.ignoredAllEntries());
@@ -437,7 +455,9 @@ test "parameter state report classifies empty and ignored loads" {
     try std.testing.expect(ignored.hasDecodedEntries());
     try std.testing.expect(!ignored.hasNoDecodedEntries());
     try std.testing.expect(!ignored.hasRestoredEntries());
+    try std.testing.expect(ignored.hasNoRestoredEntries());
     try std.testing.expect(ignored.hasIgnoredEntries());
+    try std.testing.expect(!ignored.hasNoIgnoredEntries());
     try std.testing.expect(!ignored.restoredAllEntries());
     try std.testing.expect(!ignored.restoredPartialEntries());
     try std.testing.expect(ignored.ignoredAllEntries());
