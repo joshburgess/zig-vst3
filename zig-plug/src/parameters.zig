@@ -82,6 +82,10 @@ pub const LinearSmoother = struct {
         return self.remaining != 0;
     }
 
+    pub fn finished(self: LinearSmoother) bool {
+        return self.remaining == 0;
+    }
+
     pub fn setTarget(self: *LinearSmoother, target: f64, samples: usize) void {
         self.target = clampNormalized(target);
         self.remaining = samples;
@@ -133,6 +137,10 @@ pub const ExponentialSmoother = struct {
         return self.target;
     }
 
+    pub fn coefficientValue(self: ExponentialSmoother) f64 {
+        return self.coefficient;
+    }
+
     pub fn setCoefficient(self: *ExponentialSmoother, coefficient: f64) void {
         self.coefficient = clampNormalized(coefficient);
     }
@@ -180,6 +188,10 @@ pub const LogSmoother = struct {
 
     pub fn active(self: LogSmoother) bool {
         return self.remaining != 0;
+    }
+
+    pub fn finished(self: LogSmoother) bool {
+        return self.remaining == 0;
     }
 
     pub fn setTarget(self: *LogSmoother, target: f64, samples: usize) void {
@@ -1999,6 +2011,7 @@ test "linear smoother reaches target after requested samples" {
 
     smoother.setTarget(1.0, 4);
     try std.testing.expect(smoother.active());
+    try std.testing.expect(!smoother.finished());
     try std.testing.expectEqual(@as(usize, 4), smoother.remainingSamples());
     try std.testing.expectApproxEqAbs(0.0, smoother.currentValue(), 0.000001);
     try std.testing.expectApproxEqAbs(1.0, smoother.targetValue(), 0.000001);
@@ -2007,6 +2020,7 @@ test "linear smoother reaches target after requested samples" {
     try std.testing.expectApproxEqAbs(0.75, smoother.next(), 0.000001);
     try std.testing.expectApproxEqAbs(1.0, smoother.next(), 0.000001);
     try std.testing.expect(!smoother.active());
+    try std.testing.expect(smoother.finished());
     try std.testing.expectEqual(@as(usize, 0), smoother.remainingSamples());
     try std.testing.expectApproxEqAbs(1.0, smoother.next(), 0.000001);
 }
@@ -2023,6 +2037,7 @@ test "linear smoother handles immediate and clamped targets" {
     try std.testing.expectApproxEqAbs(0.75, smoother.currentValue(), 0.000001);
     try std.testing.expectApproxEqAbs(0.75, smoother.targetValue(), 0.000001);
     try std.testing.expect(!smoother.active());
+    try std.testing.expect(smoother.finished());
 }
 
 test "exponential smoother approaches target by coefficient" {
@@ -2035,7 +2050,7 @@ test "exponential smoother approaches target by coefficient" {
     try std.testing.expectApproxEqAbs(0.4375, smoother.next(), 0.000001);
     smoother.setCoefficient(0.5);
     try std.testing.expectApproxEqAbs(0.578125, smoother.next(), 0.000001);
-    try std.testing.expectApproxEqAbs(0.5, smoother.coefficient, 0.000001);
+    try std.testing.expectApproxEqAbs(0.5, smoother.coefficientValue(), 0.000001);
 }
 
 test "exponential smoother clamps initial value target and coefficient" {
@@ -2049,7 +2064,7 @@ test "exponential smoother clamps initial value target and coefficient" {
     try std.testing.expectApproxEqAbs(0.5, smoother.currentValue(), 0.000001);
     try std.testing.expectApproxEqAbs(0.5, smoother.targetValue(), 0.000001);
     smoother.setCoefficient(std.math.nan(f64));
-    try std.testing.expectApproxEqAbs(0.0, smoother.coefficient, 0.000001);
+    try std.testing.expectApproxEqAbs(0.0, smoother.coefficientValue(), 0.000001);
 }
 
 test "log smoother reaches multiplicative target after requested samples" {
@@ -2057,12 +2072,14 @@ test "log smoother reaches multiplicative target after requested samples" {
 
     smoother.setTarget(1.0, 2);
     try std.testing.expect(smoother.active());
+    try std.testing.expect(!smoother.finished());
     try std.testing.expectEqual(@as(usize, 2), smoother.remainingSamples());
     try std.testing.expectApproxEqAbs(0.25, smoother.currentValue(), 0.000001);
     try std.testing.expectApproxEqAbs(1.0, smoother.targetValue(), 0.000001);
     try std.testing.expectApproxEqAbs(0.5, smoother.next(), 0.000001);
     try std.testing.expectApproxEqAbs(1.0, smoother.next(), 0.000001);
     try std.testing.expect(!smoother.active());
+    try std.testing.expect(smoother.finished());
     try std.testing.expectApproxEqAbs(1.0, smoother.next(), 0.000001);
 }
 
@@ -2078,6 +2095,7 @@ test "log smoother clamps zero and handles immediate target" {
     try std.testing.expectApproxEqAbs(0.5, smoother.currentValue(), 0.000001);
     try std.testing.expectApproxEqAbs(0.5, smoother.targetValue(), 0.000001);
     try std.testing.expect(!smoother.active());
+    try std.testing.expect(smoother.finished());
 }
 
 test "int parameter clamps and rounds normalized values" {
