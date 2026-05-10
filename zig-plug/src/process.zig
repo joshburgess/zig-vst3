@@ -1054,6 +1054,22 @@ pub fn ProcessContext(comptime Sample: type) type {
             self.output_events = writer;
         }
 
+        pub fn sampleRate(self: @This()) f64 {
+            return self.sample_rate;
+        }
+
+        pub fn sampleDurationSeconds(self: @This()) f64 {
+            return 1.0 / self.sample_rate;
+        }
+
+        pub fn blockDurationSeconds(self: @This()) f64 {
+            return @as(f64, @floatFromInt(self.frameCount())) / self.sample_rate;
+        }
+
+        pub fn sampleOffsetSeconds(self: @This(), sample_offset: usize) f64 {
+            return @as(f64, @floatFromInt(sample_offset)) / self.sample_rate;
+        }
+
         pub fn parameterChanges(self: @This()) ParameterChanges {
             return self.parameter_changes;
         }
@@ -1446,6 +1462,10 @@ test "process context reports usable frame count" {
     try std.testing.expectEqual(@as(usize, 3), context.frameCount());
     try std.testing.expectEqual(@as(usize, 3), context.inputFrameCount());
     try std.testing.expectEqual(@as(usize, 3), context.outputFrameCount());
+    try std.testing.expectEqual(@as(f64, 48_000.0), context.sampleRate());
+    try std.testing.expectEqual(@as(f64, 1.0 / 48_000.0), context.sampleDurationSeconds());
+    try std.testing.expectEqual(@as(f64, 3.0 / 48_000.0), context.blockDurationSeconds());
+    try std.testing.expectEqual(@as(f64, 2.0 / 48_000.0), context.sampleOffsetSeconds(2));
     try std.testing.expectEqual(@as(usize, 2), context.inputChannelCount());
     try std.testing.expectEqual(@as(usize, 2), context.outputChannelCount());
     try std.testing.expect(!context.inputChannelsEmpty());
