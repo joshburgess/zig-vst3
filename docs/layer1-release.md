@@ -20,6 +20,7 @@ That script runs:
 Also verify:
 
 - GitHub Actions `CI` passes on `main`
+- `CHANGELOG.md` contains the release notes for the tag
 
 Public CI currently covers:
 
