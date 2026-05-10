@@ -505,6 +505,9 @@ pub fn processMainAudioConfigured(
     processor: anytype,
     bus_config: StereoAudioBuses.Config,
 ) types.tresult {
+    const sample_size_result = RealtimeProcessorDefaults.canProcessSampleSize(data.symbolicSampleSize);
+    if (sample_size_result != types.kResultOk) return sample_size_result;
+
     if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
         var context = makeMainAudioProcessContextConfigured(f32, data, parameter_changes, events, output_events, bus_config) catch return types.kResultOk;
         processor.process(f32, &context);
