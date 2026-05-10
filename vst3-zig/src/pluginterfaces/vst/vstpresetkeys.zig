@@ -313,3 +313,14 @@ test "preset attributes expose SDK strings" {
     try @import("std").testing.expectEqualStrings("World/Ethnic|Australia", MusicalStyle.kWorldEthnicAustralia);
     try @import("std").testing.expectEqualStrings("One Shot", MusicalCharacter.kOneShot);
 }
+
+test "preset taxonomy strings preserve hierarchy and special characters" {
+    try @import("std").testing.expectEqualStrings("FilePathString", PresetAttributes.kFilePathStringType);
+    try @import("std").testing.expectEqualStrings("Default", StateType.kDefault);
+    try @import("std").testing.expectEqualStrings("Drum&Perc|Drum Menues", MusicalInstrument.kDrumPercDrumMenues);
+    try @import("std").testing.expectEqualStrings("Guitar/Plucked|A. Guitar", MusicalInstrument.kGuitarAGuitar);
+    try @import("std").testing.expectEqualStrings("Electronica/Dance|Drum'n'Bass/Jungle", MusicalStyle.kElectronicaDanceDrumNBassJungle);
+    try @import("std").testing.expectEqualStrings("Rock/Metal|Rock &amp; Roll", MusicalStyle.kRockMetalRockRoll);
+    try @import("std").testing.expectEqualStrings("Fast Attack", MusicalCharacter.kFastAttack);
+    try @import("std").testing.expectEqualStrings("Long Release", MusicalCharacter.kLongRelease);
+}

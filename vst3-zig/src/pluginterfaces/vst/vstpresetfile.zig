@@ -61,3 +61,23 @@ test "preset chunk helpers match expected IDs" {
     try std.testing.expectEqual(@as(base.int32, 48), kHeaderSize);
     try std.testing.expectEqual(@as(base.int32, 40), kListOffsetPos);
 }
+
+test "preset chunk helper maps every chunk type deterministically" {
+    const expected = [_]struct {
+        chunk_type: ChunkType,
+        id: ChunkID,
+    }{
+        .{ .chunk_type = .kHeader, .id = "VST3".* },
+        .{ .chunk_type = .kComponentState, .id = "Comp".* },
+        .{ .chunk_type = .kControllerState, .id = "Cont".* },
+        .{ .chunk_type = .kProgramData, .id = "Prog".* },
+        .{ .chunk_type = .kMetaInfo, .id = "Info".* },
+        .{ .chunk_type = .kChunkList, .id = "List".* },
+        .{ .chunk_type = .kNumPresetChunks, .id = [_]base.char8{ 0, 0, 0, 0 } },
+    };
+
+    for (expected) |entry| {
+        try std.testing.expect(isEqualID(entry.id, getChunkID(entry.chunk_type)));
+    }
+    try std.testing.expect(!isEqualID(chunk_ids.kHeader, [_]base.char8{ 'v', 's', 't', '3' }));
+}
