@@ -1,5 +1,7 @@
 # zig-vst3
 
+[![CI](https://github.com/joshburgess/zig-vst3/actions/workflows/ci.yml/badge.svg)](https://github.com/joshburgess/zig-vst3/actions/workflows/ci.yml)
+
 Zig bindings and framework experiments for building VST3 audio plugins.
 
 The current tree contains:
@@ -10,7 +12,7 @@ The current tree contains:
 
 ## Current Status
 
-Layer 1 now builds VST3 example plugins that pass Steinberg's official validator locally on macOS.
+Layer 1 now builds VST3 example plugins that pass Steinberg's official validator on macOS in CI.
 
 Implemented pieces include:
 
@@ -44,6 +46,8 @@ zig build
 zig build test
 zig build phase1
 ```
+
+The public CI workflow runs build and test jobs on Linux, macOS, and Windows, Layer 1 ABI checks on Linux and macOS, macOS validator checks for the example bundles, and Linux, macOS, and Windows cross-bundle smoke checks.
 
 Build and validate the example plugins on macOS:
 
