@@ -597,7 +597,7 @@ fn addVst3ValidationStep(
 ) *std.Build.Step {
     const step_name = b.fmt("validate-{s}", .{options.short_name});
     const validate_step = b.step(step_name, b.fmt("Build and validate the native {s} VST3 bundle", .{options.display_name}));
-    if (target.result.os.tag == .macos) {
+    if (target.result.os.tag == .macos or target.result.os.tag == .linux) {
         validate_step.dependOn(bundle_step);
         const validate = b.addSystemCommand(&.{
             "scripts/validate.sh",
@@ -606,7 +606,7 @@ fn addVst3ValidationStep(
         validate.step.dependOn(bundle_step);
         validate_step.dependOn(&validate.step);
     } else {
-        validate_step.dependOn(&b.addFail(b.fmt("{s} currently supports macOS targets", .{step_name})).step);
+        validate_step.dependOn(&b.addFail(b.fmt("{s} currently supports macOS and Linux targets", .{step_name})).step);
     }
     return validate_step;
 }
