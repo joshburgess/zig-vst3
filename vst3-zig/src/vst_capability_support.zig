@@ -437,6 +437,33 @@ test "plug interface support stores supported IIDs" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_iface.vtable.release(queried_iface));
 }
 
+test "plug interface support clamps inflated counts" {
+    const Support = PlugInterfaceSupport(1);
+    var support = Support{};
+    const iface = support.asInterface();
+    support.supported[0] = ivstprefetchablesupport.iprefetchable_support_iid;
+    support.count = 99;
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.isPlugInterfaceSupported(iface, &ivstprefetchablesupport.iprefetchable_support_iid));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.isPlugInterfaceSupported(iface, &ivstpluginterfacesupport.iplug_interface_support_iid));
+}
+
+test "prefetchable support reports default state and supports query interface" {
+    const Support = PrefetchableSupport(struct {});
+    var support = Support{ .state = @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsYetPrefetchable) };
+    const iface = support.asInterface();
+    var state: ivstprefetchablesupport.PrefetchableSupport = 0;
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getPrefetchableSupport(iface, &state));
+    try std.testing.expectEqual(@intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsYetPrefetchable), state);
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstprefetchablesupport.iprefetchable_support_iid, &queried));
+    try std.testing.expect(queried != null);
+    const queried_iface: *ivstprefetchablesupport.IPrefetchableSupport = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_iface.vtable.release(queried_iface));
+}
+
 test "prefetchable support reports state and clears delegated failure" {
     const Support = PrefetchableSupport(struct {
         pub fn getPrefetchableSupport(_: anytype, out: *ivstprefetchablesupport.PrefetchableSupport) types.tresult {
@@ -528,6 +555,24 @@ test "midi 2 mapping reports invalid assignment outputs deterministically" {
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &null_midi1));
 }
 
+test "midi 2 mapping honors configured assignment direction" {
+    const Mapping = Midi2Mapping(1, 1, struct {
+        pub const direction = @intFromEnum(ivstcomponent.BusDirections.kOutput);
+    });
+    var mapping = Mapping{};
+    const iface = mapping.asMapping();
+    try std.testing.expectEqual(types.kResultOk, mapping.addMidi2(.{ .pId = 100 }));
+    try std.testing.expectEqual(types.kResultOk, mapping.addMidi1(.{ .pId = 200 }));
+
+    try std.testing.expectEqual(@as(types.uint32, 0), iface.vtable.getNumMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput)));
+    try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kOutput)));
+
+    var midi2_out = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{}} ** 1;
+    const midi2_list = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = midi2_out.len, .map = &midi2_out };
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kOutput), &midi2_list));
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 100), midi2_out[0].pId);
+}
+
 test "midi learn 2 tracks midi 1 and midi 2 controller input" {
     const Mapping = Midi2Mapping(1, 1, struct {
         pub fn onLiveMidi2ControllerInput(_: anytype, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) types.tresult {
@@ -583,4 +628,24 @@ test "physical UI mapping exposes fixed map list and clears delegated failures" 
     try std.testing.expectEqual(@as(types.uint32, 1), list.count);
     try std.testing.expectEqual(@intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), list.map.?[0].physicalUITypeID);
     try std.testing.expectEqual(@as(types.uint32, 12), list.map.?[0].noteExpressionTypeID);
+}
+
+test "physical UI mapping reports empty lists and supports query interface" {
+    const Mapping = PhysicalUIMapping(1, struct {});
+    var mapping = Mapping{};
+    const iface = mapping.asInterface();
+    var list = ivstphysicalui.PhysicalUIMapList{ .count = 99, .map = @ptrFromInt(0x1000) };
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getPhysicalUIMapping(iface, 8, 9, &list));
+    try std.testing.expectEqual(@as(types.uint32, 0), list.count);
+    try std.testing.expect(list.map != null);
+    try std.testing.expectEqual(@as(types.uint32, 1), mapping.request_count);
+    try std.testing.expectEqual(@as(types.int32, 8), mapping.last_bus);
+    try std.testing.expectEqual(@as(types.int16, 9), mapping.last_channel);
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstphysicalui.inote_expression_physical_ui_mapping_iid, &queried));
+    try std.testing.expect(queried != null);
+    const queried_iface: *ivstphysicalui.INoteExpressionPhysicalUIMapping = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_iface.vtable.release(queried_iface));
 }
