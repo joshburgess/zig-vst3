@@ -28,7 +28,7 @@ Implemented pieces include:
 - `zig-plug` float, int, bool, and enum parameter descriptors with normalized/plain conversion, display formatting, parsing, unit assignment, atomic value storage, smoothing helpers, and reflected parameter-change construction
 - `zig-plug` plugin specs and instances with reflected defaults, plugin/factory/class metadata, lifecycle validation, typed parameter access, bound parameter views, parameter state read/write with restore reports, and process dispatch for 32-bit and 64-bit audio
 - `zig-plug` unit and program-list metadata for host-facing organization
-- `zig-plug` process context helpers for typed audio buffers, sample-accurate parameter changes, input events, output events, output-event capacity checks, and attachment-based context construction
+- `zig-plug` process context helpers for typed effect, generator, and analyzer buffers, sample-accurate parameter changes, input events, output events, output-event capacity checks, and attachment-based context construction
 - Checked `zig-plug` examples covering gain, bypass, enum mode gain, int voice mix, note gate, and event echo behavior through the public framework API
 
 ## Development
