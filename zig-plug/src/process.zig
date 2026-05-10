@@ -516,6 +516,36 @@ pub const Event = struct {
         return self.kind == .note_off or (self.kind == .note_on and self.velocity == 0.0);
     }
 
+    pub fn isNote(self: Event) bool {
+        return self.kind == .note_on or self.kind == .note_off;
+    }
+
+    pub fn isMidi(self: Event) bool {
+        return self.kind == .midi_cc or self.kind == .pitch_bend or self.kind == .aftertouch;
+    }
+
+    pub fn isNoteExpression(self: Event) bool {
+        return self.kind == .note_expression_value or
+            self.kind == .note_expression_int or
+            self.kind == .note_expression_text;
+    }
+
+    pub fn isData(self: Event) bool {
+        return self.kind == .data;
+    }
+
+    pub fn isOther(self: Event) bool {
+        return self.kind == .other;
+    }
+
+    pub fn hasChannel(self: Event) bool {
+        return self.isNote() or self.isMidi();
+    }
+
+    pub fn isForChannel(self: Event, channel: i16) bool {
+        return self.hasChannel() and self.channel == channel;
+    }
+
     pub fn isNoteForPitch(self: Event, pitch: i16) bool {
         return (self.kind == .note_on or self.kind == .note_off) and self.pitch == pitch;
     }
@@ -2123,6 +2153,43 @@ test "event note helpers classify attacks and releases" {
     try std.testing.expect(!cc.isNoteForPitch(60));
     try std.testing.expectEqual(@as(?NoteOn, null), cc.asNoteAttack());
     try std.testing.expectEqual(@as(?NoteOff, null), cc.asNoteRelease());
+}
+
+test "event category helpers classify routable event groups" {
+    const note = Event.noteOn(0, 2, 60, 0.75);
+    const cc = Event.midiCc(1, 3, 74, 0.5);
+    const bend = Event.pitchBend(2, 4, -0.25);
+    const pressure = Event.aftertouch(3, 5, 64, 0.4);
+    const expression_value = Event.noteExpressionValue(4, 42, 7, 0.8);
+    const expression_int = Event.noteExpressionInt(5, 42, 8, 99);
+    const expression_text = Event.noteExpressionText(6, 42, 9);
+    const data = Event.dataEvent(7, 1, "abc");
+    const other = Event.other(8);
+
+    try std.testing.expect(note.isNote());
+    try std.testing.expect(!note.isMidi());
+    try std.testing.expect(note.hasChannel());
+    try std.testing.expect(note.isForChannel(2));
+    try std.testing.expect(!note.isForChannel(3));
+
+    try std.testing.expect(!cc.isNote());
+    try std.testing.expect(cc.isMidi());
+    try std.testing.expect(cc.hasChannel());
+    try std.testing.expect(cc.isForChannel(3));
+    try std.testing.expect(bend.isMidi());
+    try std.testing.expect(pressure.isMidi());
+
+    try std.testing.expect(expression_value.isNoteExpression());
+    try std.testing.expect(expression_int.isNoteExpression());
+    try std.testing.expect(expression_text.isNoteExpression());
+    try std.testing.expect(!expression_value.hasChannel());
+    try std.testing.expect(!expression_value.isForChannel(0));
+
+    try std.testing.expect(data.isData());
+    try std.testing.expect(!data.isNoteExpression());
+    try std.testing.expect(!data.hasChannel());
+    try std.testing.expect(other.isOther());
+    try std.testing.expect(!other.isData());
 }
 
 test "events expose typed payload views" {
