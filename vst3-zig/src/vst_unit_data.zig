@@ -445,6 +445,34 @@ test "unit info rejects extra unit and program-list entries" {
     try std.testing.expectEqual(@as(vsttypes.ProgramListID, 1), list.id);
 }
 
+test "unit info truncates long unit and program-list names" {
+    const Info = UnitInfo(2, 1, struct {});
+    var info = Info{};
+    const long_name = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz";
+    info.setRootName(long_name);
+    try std.testing.expectEqual(types.kResultOk, info.addProgramList(1, long_name, 1));
+    try std.testing.expectEqual(types.kResultOk, info.addUnit(2, ivstunits.kRootUnitId, long_name, 1));
+    const iface = info.asInterface();
+
+    var root = ivstunits.UnitInfo{};
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getUnitInfo(iface, 0, &root));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'a'), root.name[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'w'), root.name[126]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), root.name[127]);
+
+    var unit = ivstunits.UnitInfo{};
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getUnitInfo(iface, 1, &unit));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'a'), unit.name[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'w'), unit.name[126]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), unit.name[127]);
+
+    var list = ivstunits.ProgramListInfo{};
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramListInfo(iface, 0, &list));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'a'), list.name[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'w'), list.name[126]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), list.name[127]);
+}
+
 test "unit info clamps corrupted counts" {
     const Info = UnitInfo(2, 1, struct {});
     var info = Info{};
@@ -482,6 +510,29 @@ test "unit info delegates optional callbacks and supports query interface" {
             out[name.len] = 0;
             return types.kResultOk;
         }
+
+        pub fn getProgramInfo(self: anytype, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) types.tresult {
+            _ = self;
+            if (list_id != 1 or program_index != 2 or !std.mem.eql(u8, std.mem.span(attribute_id), "category")) return types.kInvalidArgument;
+            const value = std.unicode.utf8ToUtf16LeStringLiteral("Lead");
+            @memcpy(out[0..value.len], value);
+            out[value.len] = 0;
+            return types.kResultOk;
+        }
+
+        pub fn hasProgramPitchNames(self: anytype, list_id: vsttypes.ProgramListID, program_index: types.int32) types.tresult {
+            _ = self;
+            return if (list_id == 1 and program_index == 2) types.kResultOk else types.kResultFalse;
+        }
+
+        pub fn getProgramPitchName(self: anytype, list_id: vsttypes.ProgramListID, program_index: types.int32, pitch: types.int16, out: [*]vsttypes.TChar) types.tresult {
+            _ = self;
+            if (list_id != 1 or program_index != 2 or pitch != 60) return types.kInvalidArgument;
+            const value = std.unicode.utf8ToUtf16LeStringLiteral("C3");
+            @memcpy(out[0..value.len], value);
+            out[value.len] = 0;
+            return types.kResultOk;
+        }
     });
     var info = Info{};
     const iface = info.asInterface();
@@ -489,6 +540,16 @@ test "unit info delegates optional callbacks and supports query interface" {
     var name: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramName(iface, 1, 2, &name));
     try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Init")[0..4], std.mem.sliceTo(&name, 0));
+
+    var program_info: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramInfo(iface, 1, 2, "category", &program_info));
+    try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Lead")[0..4], std.mem.sliceTo(&program_info, 0));
+
+    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.hasProgramPitchNames(iface, 1, 2));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.hasProgramPitchNames(iface, 1, 3));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramPitchName(iface, 1, 2, 60, &pitch_name));
+    try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("C3")[0..2], std.mem.sliceTo(&pitch_name, 0));
 
     var queried: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstunits.iunit_info_iid, &queried));
@@ -590,16 +651,45 @@ test "unit program data delegates hooks and supports query interface" {
             _ = self;
             return if (unit_id == 2) types.kResultOk else types.kResultFalse;
         }
+
+        pub fn getProgramData(self: anytype, list_id: vsttypes.ProgramListID, program_index: types.int32, stream: ?*ibstream.IBStream) types.tresult {
+            _ = stream;
+            return if (self.program_get_count == 1 and list_id == 1 and program_index == 4) types.kResultOk else types.kInvalidArgument;
+        }
+
+        pub fn setProgramData(self: anytype, list_id: vsttypes.ProgramListID, program_index: types.int32, stream: ?*ibstream.IBStream) types.tresult {
+            _ = stream;
+            return if (self.program_set_count == 1 and list_id == 1 and program_index == 5) types.kResultOk else types.kInvalidArgument;
+        }
+
+        pub fn getUnitData(self: anytype, unit_id: vsttypes.UnitID, stream: ?*ibstream.IBStream) types.tresult {
+            _ = stream;
+            return if (self.unit_get_count == 1 and unit_id == 2) types.kResultOk else types.kInvalidArgument;
+        }
+
+        pub fn setUnitData(self: anytype, unit_id: vsttypes.UnitID, stream: ?*ibstream.IBStream) types.tresult {
+            _ = stream;
+            return if (self.unit_set_count == 1 and unit_id == 3) types.kResultOk else types.kInvalidArgument;
+        }
     });
     var data = Data{};
     const programs = data.asProgramListData();
+    const units = data.asUnitData();
 
     try std.testing.expectEqual(types.kResultOk, programs.vtable.programDataSupported(programs, 1));
-    try std.testing.expectEqual(types.kResultFalse, data.asUnitData().vtable.unitDataSupported(data.asUnitData(), 3));
+    try std.testing.expectEqual(types.kResultFalse, units.vtable.unitDataSupported(units, 3));
+    try std.testing.expectEqual(types.kResultOk, programs.vtable.getProgramData(programs, 1, 4, null));
+    try std.testing.expectEqual(types.kResultOk, programs.vtable.setProgramData(programs, 1, 5, null));
+    try std.testing.expectEqual(types.kResultOk, units.vtable.getUnitData(units, 2, null));
+    try std.testing.expectEqual(types.kResultOk, units.vtable.setUnitData(units, 3, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), data.program_get_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), data.program_set_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), data.unit_get_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), data.unit_set_count);
 
     var queried: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, programs.vtable.queryInterface(programs, &ivstunits.iunit_data_iid, &queried));
     try std.testing.expect(queried != null);
-    const units: *ivstunits.IUnitData = @ptrCast(@alignCast(queried.?));
-    try std.testing.expectEqual(@as(types.uint32, 1), units.vtable.release(units));
+    const queried_units: *ivstunits.IUnitData = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_units.vtable.release(queried_units));
 }
