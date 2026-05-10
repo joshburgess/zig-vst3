@@ -57,15 +57,16 @@ pub const EventMonitor = struct {
 
         var cc_events = context.inputEventsOfKind(.midi_cc);
         while (cc_events.next()) |event| {
+            const cc = event.asMidiCC().?;
             self.midi_cc_count += 1;
-            self.latest_midi_cc_value = event.value;
+            self.latest_midi_cc_value = cc.value;
         }
 
         if (context.latestEvent(.aftertouch)) |event| {
-            self.latest_aftertouch_bus = event.bus_index;
+            self.latest_aftertouch_bus = event.asAftertouch().?.bus_index;
         }
         if (context.latestEvent(.note_expression_int)) |event| {
-            self.latest_note_expression_int_value = event.int_value;
+            self.latest_note_expression_int_value = event.asNoteExpressionInt().?.value;
         }
     }
 };
