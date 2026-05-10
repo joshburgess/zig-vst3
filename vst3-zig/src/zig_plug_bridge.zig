@@ -1913,6 +1913,47 @@ test "zig-plug bridge dispatches main audio processing by sample size" {
     try std.testing.expectEqual(@as(f32, 4.0), output_samples[1]);
 }
 
+test "zig-plug bridge dispatches double precision main audio" {
+    const Doubler = struct {
+        pub fn process(_: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
+            for (0..context.outputChannelCount()) |channel| {
+                const input = context.inputChannel(channel) orelse continue;
+                const output = context.outputChannel(channel) orelse continue;
+                for (0..context.frameCount()) |sample| {
+                    output[sample] = input[sample] * 2;
+                }
+            }
+        }
+    };
+
+    var input_samples = [_]f64{ 1.5, 2.5 };
+    var output_samples = [_]f64{ 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f64{&input_samples};
+    var output_channel_ptrs = [_][*]f64{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers64 = &input_channel_ptrs },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers64 = &output_channel_ptrs },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    const data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64),
+        .processContext = &process_context,
+    };
+
+    try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, null, Doubler{}));
+    try std.testing.expectEqual(@as(f64, 3.0), output_samples[0]);
+    try std.testing.expectEqual(@as(f64, 5.0), output_samples[1]);
+}
+
 test "zig-plug bridge reports malformed main process data" {
     const Noop = struct {
         pub fn process(_: @This(), comptime Sample: type, _: *plug.process.ProcessContext(Sample)) void {}
