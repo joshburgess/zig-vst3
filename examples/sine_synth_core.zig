@@ -39,9 +39,13 @@ pub const SineSynth = struct {
         while (events.next()) |event| {
             switch (event.kind) {
                 .note_on => {
-                    self.active = event.velocity > 0.0;
-                    self.note = event.pitch;
-                    self.phase = 0.0;
+                    if (event.velocity > 0.0) {
+                        self.active = true;
+                        self.note = event.pitch;
+                        self.phase = 0.0;
+                    } else if (event.pitch == self.note) {
+                        self.active = false;
+                    }
                 },
                 .note_off => {
                     if (event.pitch == self.note) self.active = false;
@@ -122,6 +126,29 @@ test "sine synth core example applies level automation at segment boundaries" {
     try std.testing.expectEqual(@as(f32, 0.0), output[2]);
     try std.testing.expectEqual(@as(f32, 0.0), output[3]);
     try std.testing.expect(plugin.active);
+}
+
+test "sine synth core example treats zero-velocity note-on as note-off" {
+    var plugin = SineSynth{};
+    var output = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
+    const input_channels = [_][]const f32{};
+    const output_channels = [_][]f32{&output};
+    const events = [_]plug.process.Event{
+        plug.process.Event.noteOn(0, 0, 69, 1.0),
+        plug.process.Event.noteOn(2, 0, 69, 0.0),
+    };
+    var context = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+    });
+
+    plugin.process(&context);
+
+    try std.testing.expectEqual(@as(f32, 0.0), output[0]);
+    try std.testing.expect(output[1] > 0.0);
+    try std.testing.expectEqual(@as(f32, 0.0), output[2]);
+    try std.testing.expectEqual(@as(f32, 0.0), output[3]);
+    try std.testing.expect(!plugin.active);
+    try std.testing.expectEqual(@as(i16, 69), plugin.note);
 }
 
 test "sine synth core example can run through plugin instance" {
