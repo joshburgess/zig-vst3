@@ -445,42 +445,68 @@ pub fn PluginInstance(comptime Plugin: type) type {
         }
 
         pub fn applyProgram(self: *Self, list_id: i32, program_index: usize) !bool {
-            const item = self.program(list_id, program_index) orelse return false;
+            return (try self.applyProgramCount(list_id, program_index)) != null;
+        }
+
+        pub fn applyProgramCount(self: *Self, list_id: i32, program_index: usize) !?usize {
+            const item = self.program(list_id, program_index) orelse return null;
             for (item.parameters) |parameter| {
                 if (!std.math.isFinite(parameter.normalized) or parameter.normalized < 0.0 or parameter.normalized > 1.0) {
                     return error.ProgramParameterOutsideNormalizedRange;
                 }
                 if (self.parameterIndexOfId(parameter.parameter_id) == null) return error.UnknownProgramParameter;
             }
+            var changed_count: usize = 0;
             for (item.parameters) |parameter| {
+                if (self.loadParameterById(parameter.parameter_id).? != parameter.normalized) changed_count += 1;
                 _ = self.storeParameterById(parameter.parameter_id, parameter.normalized);
             }
-            return true;
+            return changed_count;
         }
 
         pub fn applyProgramByName(self: *Self, list_id: i32, program_name: []const u8) !bool {
-            const index = self.programIndexOfName(list_id, program_name) orelse return false;
-            return self.applyProgram(list_id, index);
+            return (try self.applyProgramByNameCount(list_id, program_name)) != null;
+        }
+
+        pub fn applyProgramByNameCount(self: *Self, list_id: i32, program_name: []const u8) !?usize {
+            const index = self.programIndexOfName(list_id, program_name) orelse return null;
+            return self.applyProgramCount(list_id, index);
         }
 
         pub fn applyProgramForUnit(self: *Self, unit_id: i32, program_index: usize) !bool {
-            const list = self.programListForUnit(unit_id) orelse return false;
-            return self.applyProgram(list.id, program_index);
+            return (try self.applyProgramForUnitCount(unit_id, program_index)) != null;
+        }
+
+        pub fn applyProgramForUnitCount(self: *Self, unit_id: i32, program_index: usize) !?usize {
+            const list = self.programListForUnit(unit_id) orelse return null;
+            return self.applyProgramCount(list.id, program_index);
         }
 
         pub fn applyProgramByNameForUnit(self: *Self, unit_id: i32, program_name: []const u8) !bool {
-            const list = self.programListForUnit(unit_id) orelse return false;
-            return self.applyProgramByName(list.id, program_name);
+            return (try self.applyProgramByNameForUnitCount(unit_id, program_name)) != null;
+        }
+
+        pub fn applyProgramByNameForUnitCount(self: *Self, unit_id: i32, program_name: []const u8) !?usize {
+            const list = self.programListForUnit(unit_id) orelse return null;
+            return self.applyProgramByNameCount(list.id, program_name);
         }
 
         pub fn applyProgramForUnitName(self: *Self, unit_name: []const u8, program_index: usize) !bool {
-            const list = self.programListForUnitName(unit_name) orelse return false;
-            return self.applyProgram(list.id, program_index);
+            return (try self.applyProgramForUnitNameCount(unit_name, program_index)) != null;
+        }
+
+        pub fn applyProgramForUnitNameCount(self: *Self, unit_name: []const u8, program_index: usize) !?usize {
+            const list = self.programListForUnitName(unit_name) orelse return null;
+            return self.applyProgramCount(list.id, program_index);
         }
 
         pub fn applyProgramByNameForUnitName(self: *Self, unit_name: []const u8, program_name: []const u8) !bool {
-            const list = self.programListForUnitName(unit_name) orelse return false;
-            return self.applyProgramByName(list.id, program_name);
+            return (try self.applyProgramByNameForUnitNameCount(unit_name, program_name)) != null;
+        }
+
+        pub fn applyProgramByNameForUnitNameCount(self: *Self, unit_name: []const u8, program_name: []const u8) !?usize {
+            const list = self.programListForUnitName(unit_name) orelse return null;
+            return self.applyProgramByNameCount(list.id, program_name);
         }
 
         pub fn parameterView(self: *const Self) parameters.ParameterView(Plugin.Params) {
@@ -1696,20 +1722,39 @@ test "plugin instance applies program parameter snapshots" {
     };
     var instance = try PluginInstance(Gain).init(std.testing.allocator, .{});
 
+    try std.testing.expectEqual(@as(?usize, 1), try instance.applyProgramCount(7, 0));
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(?usize, 0), try instance.applyProgramCount(7, 0));
     try std.testing.expect(try instance.applyProgram(7, 0));
     try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(?usize, 1), try instance.applyProgramByNameCount(7, "High"));
+    try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
     try std.testing.expect(try instance.applyProgramByName(7, "High"));
     try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(?usize, null), try instance.applyProgramCount(7, 99));
+    try std.testing.expectEqual(@as(?usize, null), try instance.applyProgramByNameCount(7, "Missing"));
     try std.testing.expect(!try instance.applyProgram(7, 99));
     try std.testing.expect(!try instance.applyProgramByName(7, "Missing"));
+    try std.testing.expectEqual(@as(?usize, 1), try instance.applyProgramForUnitCount(1, 0));
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
     try std.testing.expect(try instance.applyProgramForUnit(1, 0));
     try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(?usize, 1), try instance.applyProgramByNameForUnitCount(1, "High"));
+    try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
     try std.testing.expect(try instance.applyProgramByNameForUnit(1, "High"));
     try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(?usize, 1), try instance.applyProgramForUnitNameCount("Amp", 0));
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
     try std.testing.expect(try instance.applyProgramForUnitName("Amp", 0));
     try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(?usize, 1), try instance.applyProgramByNameForUnitNameCount("Amp", "High"));
+    try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
     try std.testing.expect(try instance.applyProgramByNameForUnitName("Amp", "High"));
     try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(?usize, null), try instance.applyProgramForUnitCount(99, 0));
+    try std.testing.expectEqual(@as(?usize, null), try instance.applyProgramByNameForUnitCount(1, "Missing"));
+    try std.testing.expectEqual(@as(?usize, null), try instance.applyProgramForUnitNameCount("Root", 0));
+    try std.testing.expectEqual(@as(?usize, null), try instance.applyProgramByNameForUnitNameCount("Missing", "High"));
     try std.testing.expect(!try instance.applyProgramForUnit(99, 0));
     try std.testing.expect(!try instance.applyProgramByNameForUnit(1, "Missing"));
     try std.testing.expect(!try instance.applyProgramForUnitName("Root", 0));
