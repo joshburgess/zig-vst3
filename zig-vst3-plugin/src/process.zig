@@ -508,6 +508,12 @@ pub const Event = struct {
         return event;
     }
 
+    pub fn withIntValue(self: Event, int_value: u64) Event {
+        var event = self;
+        event.int_value = int_value;
+        return event;
+    }
+
     pub fn withVelocity(self: Event, velocity: f32) Event {
         var event = self;
         event.velocity = velocity;
@@ -523,6 +529,18 @@ pub const Event = struct {
     pub fn withExpressionTypeId(self: Event, expression_type_id: u32) Event {
         var event = self;
         event.expression_type_id = expression_type_id;
+        return event;
+    }
+
+    pub fn withDataType(self: Event, data_type: u32) Event {
+        var event = self;
+        event.data_type = data_type;
+        return event;
+    }
+
+    pub fn withData(self: Event, data: []const u8) Event {
+        var event = self;
+        event.data = data;
         return event;
     }
 
@@ -3139,6 +3157,13 @@ test "event constructors can retarget common payload fields" {
         .withExpressionTypeId(21)
         .withValue(0.5)
         .withBusIndex(3);
+    const int_expression = Event.noteExpressionInt(2, 12, 22, 99)
+        .withNoteId(13)
+        .withExpressionTypeId(23)
+        .withIntValue(100);
+    const data = Event.dataEvent(4, 1, "abc")
+        .withDataType(2)
+        .withData("def");
 
     try std.testing.expectEqual(NoteOn{
         .bus_index = 2,
@@ -3154,6 +3179,19 @@ test "event constructors can retarget common payload fields" {
         .expression_type_id = 21,
         .value = 0.5,
     }, expression.asNoteExpressionValue().?);
+    try std.testing.expectEqual(NoteExpressionInt{
+        .bus_index = 0,
+        .sample_offset = 2,
+        .note_id = 13,
+        .expression_type_id = 23,
+        .value = 100,
+    }, int_expression.asNoteExpressionInt().?);
+    try std.testing.expectEqual(DataEvent{
+        .bus_index = 0,
+        .sample_offset = 4,
+        .data_type = 2,
+        .data = "def",
+    }, data.asData().?);
 }
 
 test "events reject values outside the process block" {
