@@ -34,4 +34,4 @@ Malformed state headers, unsupported format versions, truncated entries, duplica
 - `state.validateParameterIdMigrations(migrations)`: rejects identity mappings, duplicate old ids, ambiguous target ids, and cyclic migration chains before state loading mutates parameter values.
 - `state.migratedParameterId(id, migrations)`: resolves a saved parameter id through the same old-id to new-id migration list used by state loading.
 
-Program lists can remain metadata-only, or each program can carry a finite normalized parameter snapshot through `plug.units.ProgramParameter`. `PluginInstance.applyProgram`, `applyProgramByName`, and the unit-based program application helpers validate the complete snapshot and then apply matching parameter ids.
+Program lists can remain metadata-only, or each program can carry a finite normalized parameter snapshot through `plug.units.ProgramParameter`. `PluginInstance.applyProgram`, `applyProgramByName`, and the unit-based program application helpers validate the complete snapshot and then apply matching parameter ids. The `*Count` variants report `null` for missing targets or the number of parameter values that changed.
