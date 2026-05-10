@@ -562,12 +562,24 @@ pub fn PluginInstance(comptime Plugin: type) type {
             try state.readParameterState(Plugin.Params, &self.spec.parameter_set, &self.spec.values, reader);
         }
 
+        pub fn readParameterStateReport(self: *Self, reader: anytype) !state.ReadParameterStateReport {
+            return state.readParameterStateReport(Plugin.Params, &self.spec.parameter_set, &self.spec.values, reader);
+        }
+
         pub fn readParameterStateWithMigrations(
             self: *Self,
             reader: anytype,
             migrations: []const state.ParameterIdMigration,
         ) !void {
             try state.readParameterStateWithMigrations(Plugin.Params, &self.spec.parameter_set, &self.spec.values, reader, migrations);
+        }
+
+        pub fn readParameterStateWithMigrationsReport(
+            self: *Self,
+            reader: anytype,
+            migrations: []const state.ParameterIdMigration,
+        ) !state.ReadParameterStateReport {
+            return state.readParameterStateWithMigrationsReport(Plugin.Params, &self.spec.parameter_set, &self.spec.values, reader, migrations);
         }
 
         pub fn process(self: *Self, context: *process_api.ProcessContext(f32)) void {
@@ -1550,8 +1562,9 @@ test "plugin instance round-trips owned parameter state" {
     try instance.writeParameterState(out_stream.writer());
 
     var in_stream = std.io.fixedBufferStream(&bytes);
-    try restored.readParameterState(in_stream.reader());
+    const report = try restored.readParameterStateReport(in_stream.reader());
 
+    try std.testing.expectEqual(state.ReadParameterStateReport{ .entry_count = 2, .restored_count = 2, .ignored_count = 0 }, report);
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(f64, 0.75), restored.loadParameterNormalized("mix"));
 }
@@ -1607,11 +1620,12 @@ test "plugin instance reads parameter state with migrations" {
     try old_instance.writeParameterState(out_stream.writer());
 
     var in_stream = std.io.fixedBufferStream(&bytes);
-    try new_instance.readParameterStateWithMigrations(in_stream.reader(), &.{
+    const report = try new_instance.readParameterStateWithMigrationsReport(in_stream.reader(), &.{
         .{ .old_id = 7, .new_id = 9 },
         .{ .old_id = 9, .new_id = 11 },
     });
 
+    try std.testing.expectEqual(state.ReadParameterStateReport{ .entry_count = 1, .restored_count = 1, .ignored_count = 0 }, report);
     try std.testing.expectEqual(@as(f64, 0.25), new_instance.loadParameterNormalized("output"));
 }
 

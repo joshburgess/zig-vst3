@@ -21,10 +21,13 @@ Malformed state headers, unsupported format versions, truncated entries, denorma
 - `state.encodedSizeForCountChecked(count)`: checked byte count for a binary state with `count` entries.
 - `state.encodedSize(Params)`: byte count for a full parameter snapshot.
 - `state.format_version`: current binary and debug JSON state format version.
+- `state.ReadParameterStateReport`: counts decoded, restored, and ignored entries from a state load.
 - `state.writeParameterState(Params, set, values, writer)`: writes all reflected parameter values.
 - `state.writeParameterStateJson(Params, set, values, writer)`: writes the same reflected parameter values as compact debug JSON.
 - `state.readParameterState(Params, set, values, reader)`: reads entries and updates matching reflected values.
 - `state.readParameterStateWithMigrations(Params, set, values, reader, migrations)`: validates the migration list, reads entries, and maps renamed parameter ids before lookup.
+- `state.readParameterStateReport(Params, set, values, reader)`: reads entries and returns a report with restored and ignored counts.
+- `state.readParameterStateWithMigrationsReport(Params, set, values, reader, migrations)`: reads migrated entries and returns the same report.
 - `state.validateParameterIdMigrations(migrations)`: rejects duplicate old ids, ambiguous target ids, and cyclic migration chains before state loading mutates parameter values.
 - `state.migratedParameterId(id, migrations)`: resolves a saved parameter id through the same old-id to new-id migration list used by state loading.
 
