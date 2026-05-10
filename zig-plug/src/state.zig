@@ -124,11 +124,16 @@ pub fn readParameterStateWithMigrationsReport(
         .restored_count = 0,
         .ignored_count = 0,
     };
+    var seen_restored = [_]bool{false} ** parameters.ParameterSet(Params).count;
     for (0..count) |_| {
         const id = try reader.readInt(u32, .little);
         const normalized: f64 = @bitCast(try reader.readInt(u64, .little));
         if (normalized < 0.0 or normalized > 1.0 or std.math.isNan(normalized)) return error.ParameterStateOutsideNormalizedRange;
         if (set.indexOfId(migratedParameterId(id, migrations))) |index| {
+            if (comptime parameters.ParameterSet(Params).count > 0) {
+                if (seen_restored[index]) return error.DuplicateParameterStateEntry;
+                seen_restored[index] = true;
+            }
             _ = restored.store(index, normalized);
             report.restored_count += 1;
         } else {
@@ -288,6 +293,36 @@ test "parameter state ignores unknown parameter ids" {
 
     try std.testing.expectEqual(ReadParameterStateReport{ .entry_count = 2, .restored_count = 1, .ignored_count = 1 }, report);
     try std.testing.expectEqual(@as(f64, 0.75), values.loadField(&set, "gain"));
+}
+
+test "parameter state rejects duplicate restored parameter ids without partial updates" {
+    const Params = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+        mix: parameters.FloatParam = parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
+    };
+    const Set = parameters.ParameterSet(Params);
+    const Values = parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + 2 * (@sizeOf(u32) + @sizeOf(u64))]u8 = undefined;
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    const writer = out_stream.writer();
+
+    try std.testing.expect(values.storeField(&set, "gain", 0.8));
+    try std.testing.expect(values.storeField(&set, "mix", 0.6));
+
+    try writer.writeAll(magic);
+    try writer.writeInt(u16, format_version, .little);
+    try writer.writeInt(u16, 2, .little);
+    try writer.writeInt(u32, 0, .little);
+    try writer.writeInt(u64, @bitCast(@as(f64, 0.25)), .little);
+    try writer.writeInt(u32, 0, .little);
+    try writer.writeInt(u64, @bitCast(@as(f64, 0.75)), .little);
+
+    var in_stream = std.io.fixedBufferStream(&bytes);
+    try std.testing.expectError(error.DuplicateParameterStateEntry, readParameterState(Params, &set, &values, in_stream.reader()));
+    try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
+    try std.testing.expectEqual(@as(f64, 0.6), values.loadField(&set, "mix"));
 }
 
 test "parameter state rejects malformed headers and unsupported versions" {
