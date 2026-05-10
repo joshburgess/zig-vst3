@@ -65,6 +65,24 @@ test "mode gain core example applies enum parameter changes" {
     try std.testing.expectEqual(@as(f32, 2.0), output[2]);
 }
 
+test "mode gain core example formats and parses enum parameters" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+    var buffer: [16]u8 = undefined;
+
+    try std.testing.expectEqual(@as(?u32, 0), instance.parameterIdByName("Mode"));
+    try std.testing.expectEqual(@as(?usize, 0), instance.parameterIndexOfId(0));
+    try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalizedByName("Mode"));
+    try std.testing.expect(instance.parameterIsListByName("Mode").?);
+    try std.testing.expectEqual(@as(?i32, 2), instance.parameterStepCountByName("Mode"));
+
+    try std.testing.expectEqualStrings("boost", try instance.formatParameterPlainByName("Mode", 0.5, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainByName("Mode", "mute"));
+    try std.testing.expect(instance.storeParameterPlainByName("Mode", 2.0));
+    try std.testing.expectEqual(Mode.mute, instance.loadParameter("mode"));
+    try std.testing.expect(instance.resetParameterByNameToDefault("Mode"));
+    try std.testing.expectEqual(Mode.clean, instance.loadParameter("mode"));
+}
+
 test "mode gain core example can run through plugin instance" {
     var instance = try Instance.init(std.testing.allocator, .{});
     const input = [_]f32{ 0.25, 0.5 };
