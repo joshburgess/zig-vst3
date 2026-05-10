@@ -829,11 +829,19 @@ pub const Events = struct {
         return false;
     }
 
+    pub fn busEmpty(self: Events, bus_index: i32) bool {
+        return !self.hasBus(bus_index);
+    }
+
     pub fn hasChannel(self: Events, channel: i16) bool {
         for (self.items) |item| {
             if (item.isForChannel(channel)) return true;
         }
         return false;
+    }
+
+    pub fn channelEmpty(self: Events, channel: i16) bool {
+        return !self.hasChannel(channel);
     }
 
     pub fn firstKind(self: Events, kind: EventKind) ?Event {
@@ -856,6 +864,10 @@ pub const Events = struct {
 
     pub fn hasKind(self: Events, kind: EventKind) bool {
         return self.firstKind(kind) != null;
+    }
+
+    pub fn kindEmpty(self: Events, kind: EventKind) bool {
+        return !self.hasKind(kind);
     }
 
     pub fn onlyKind(self: Events, kind: EventKind) bool {
@@ -1002,8 +1014,16 @@ pub const EventWriter = struct {
         return self.events().hasBus(bus_index);
     }
 
+    pub fn busEmpty(self: *const EventWriter, bus_index: i32) bool {
+        return self.events().busEmpty(bus_index);
+    }
+
     pub fn hasChannel(self: *const EventWriter, channel: i16) bool {
         return self.events().hasChannel(channel);
+    }
+
+    pub fn channelEmpty(self: *const EventWriter, channel: i16) bool {
+        return self.events().channelEmpty(channel);
     }
 
     pub fn firstKind(self: *const EventWriter, kind: EventKind) ?Event {
@@ -1016,6 +1036,10 @@ pub const EventWriter = struct {
 
     pub fn hasKind(self: *const EventWriter, kind: EventKind) bool {
         return self.events().hasKind(kind);
+    }
+
+    pub fn kindEmpty(self: *const EventWriter, kind: EventKind) bool {
+        return self.events().kindEmpty(kind);
     }
 
     pub fn onlyKind(self: *const EventWriter, kind: EventKind) bool {
@@ -1386,6 +1410,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.hasKind(kind);
         }
 
+        pub fn eventsOfKindEmpty(self: @This(), kind: EventKind) bool {
+            return self.events.kindEmpty(kind);
+        }
+
         pub fn countEvents(self: @This(), kind: EventKind) usize {
             return self.events.countKind(kind);
         }
@@ -1402,8 +1430,16 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.hasBus(bus_index);
         }
 
+        pub fn eventsForBusEmpty(self: @This(), bus_index: i32) bool {
+            return self.events.busEmpty(bus_index);
+        }
+
         pub fn hasEventsForChannel(self: @This(), channel: i16) bool {
             return self.events.hasChannel(channel);
+        }
+
+        pub fn eventsForChannelEmpty(self: @This(), channel: i16) bool {
+            return self.events.channelEmpty(channel);
         }
 
         pub fn onlyInputEventsOfKind(self: @This(), kind: EventKind) bool {
@@ -1496,6 +1532,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.writtenOutputEvents().hasKind(kind);
         }
 
+        pub fn outputEventsOfKindEmpty(self: @This(), kind: EventKind) bool {
+            return self.writtenOutputEvents().kindEmpty(kind);
+        }
+
         pub fn countOutputEvents(self: @This(), kind: EventKind) usize {
             return self.writtenOutputEvents().countKind(kind);
         }
@@ -1512,8 +1552,16 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.writtenOutputEvents().hasBus(bus_index);
         }
 
+        pub fn outputEventsForBusEmpty(self: @This(), bus_index: i32) bool {
+            return self.writtenOutputEvents().busEmpty(bus_index);
+        }
+
         pub fn hasOutputEventsForChannel(self: @This(), channel: i16) bool {
             return self.writtenOutputEvents().hasChannel(channel);
+        }
+
+        pub fn outputEventsForChannelEmpty(self: @This(), channel: i16) bool {
+            return self.writtenOutputEvents().channelEmpty(channel);
         }
 
         pub fn onlyOutputEventsOfKind(self: @This(), kind: EventKind) bool {
@@ -1895,6 +1943,8 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?usize, null), context.latestEventOffsetForKind(.note_off));
     try std.testing.expect(context.hasEvent(.note_on));
     try std.testing.expect(!context.hasEvent(.note_off));
+    try std.testing.expect(!context.eventsOfKindEmpty(.note_on));
+    try std.testing.expect(context.eventsOfKindEmpty(.note_off));
     try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.countEventsForBus(0));
     try std.testing.expectEqual(@as(usize, 0), context.countEventsForBus(1));
@@ -1902,8 +1952,12 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(usize, 0), context.countEventsForChannel(1));
     try std.testing.expect(context.hasEventsForBus(0));
     try std.testing.expect(!context.hasEventsForBus(1));
+    try std.testing.expect(!context.eventsForBusEmpty(0));
+    try std.testing.expect(context.eventsForBusEmpty(1));
     try std.testing.expect(context.hasEventsForChannel(0));
     try std.testing.expect(!context.hasEventsForChannel(1));
+    try std.testing.expect(!context.eventsForChannelEmpty(0));
+    try std.testing.expect(context.eventsForChannelEmpty(1));
     try std.testing.expect(context.onlyInputEventsOfKind(.note_on));
     try std.testing.expect(context.onlyInputEventsForBus(0));
     try std.testing.expect(context.onlyInputEventsForChannel(0));
@@ -2207,6 +2261,11 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.data));
     try std.testing.expectEqual(@as(usize, 1), view.countKind(.other));
     try std.testing.expect(view.hasKind(.note_on));
+    try std.testing.expect(!view.kindEmpty(.note_on));
+    try std.testing.expect(!view.busEmpty(0));
+    try std.testing.expect(view.busEmpty(1));
+    try std.testing.expect(!view.channelEmpty(0));
+    try std.testing.expect(view.channelEmpty(1));
     try std.testing.expectEqual(@as(i16, 60), view.firstKind(.note_on).?.pitch);
     try std.testing.expectEqual(@as(usize, 0), view.latestKind(.note_on).?.sample_offset);
     try std.testing.expect(view.hasKind(.data));
@@ -2219,12 +2278,16 @@ test "events validate block offsets and count kinds" {
     };
     const note_only = try Events.init(&note_only_items, 4);
     try std.testing.expect(note_only.onlyKind(.note_on));
+    try std.testing.expect(note_only.kindEmpty(.note_off));
     try std.testing.expect(note_only.onlyBus(0));
     try std.testing.expect(note_only.onlyChannel(0));
     try std.testing.expect(!note_only.onlyChannel(1));
     try std.testing.expectEqual(@as(usize, 0), (Events{}).eventCount());
     try std.testing.expect((Events{}).isEmpty());
     try std.testing.expect(!(Events{}).hasEvents());
+    try std.testing.expect((Events{}).kindEmpty(.note_on));
+    try std.testing.expect((Events{}).busEmpty(0));
+    try std.testing.expect((Events{}).channelEmpty(0));
     try std.testing.expect(!(Events{}).onlyKind(.note_on));
     try std.testing.expect(!(Events{}).onlyBus(0));
     try std.testing.expect(!(Events{}).onlyChannel(0));
@@ -2650,6 +2713,12 @@ test "event writer validates offsets and capacity" {
     try std.testing.expectEqual(@as(?usize, 0), writer.latestSampleOffset());
     try std.testing.expect(writer.hasKind(.note_on));
     try std.testing.expect(!writer.hasKind(.note_off));
+    try std.testing.expect(!writer.kindEmpty(.note_on));
+    try std.testing.expect(writer.kindEmpty(.note_off));
+    try std.testing.expect(!writer.busEmpty(0));
+    try std.testing.expect(writer.busEmpty(1));
+    try std.testing.expect(!writer.channelEmpty(0));
+    try std.testing.expect(writer.channelEmpty(1));
     try std.testing.expect(writer.onlyKind(.note_on));
     try std.testing.expect(writer.onlyBus(0));
     try std.testing.expect(writer.onlyChannel(0));
@@ -2685,6 +2754,9 @@ test "event writer validates offsets and capacity" {
     try std.testing.expectEqual(@as(?usize, null), writer.firstSampleOffsetForKind(.note_on));
     try std.testing.expectEqual(@as(?usize, null), writer.latestSampleOffsetForKind(.note_on));
     try std.testing.expect(!writer.hasKind(.note_on));
+    try std.testing.expect(writer.kindEmpty(.note_on));
+    try std.testing.expect(writer.busEmpty(0));
+    try std.testing.expect(writer.channelEmpty(0));
     try std.testing.expect(!writer.onlyKind(.note_on));
     try std.testing.expect(!writer.onlyBus(0));
     try std.testing.expect(!writer.onlyChannel(0));
@@ -2846,6 +2918,8 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(EventKind.note_off, context.firstOutputEvent(.note_off).?.kind);
     try std.testing.expect(context.hasOutputEvent(.note_on));
     try std.testing.expect(!context.hasOutputEvent(.midi_cc));
+    try std.testing.expect(!context.outputEventsOfKindEmpty(.note_on));
+    try std.testing.expect(context.outputEventsOfKindEmpty(.midi_cc));
     try std.testing.expectEqual(@as(usize, 1), context.countOutputEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 2), context.countOutputEventsForBus(0));
     try std.testing.expectEqual(@as(usize, 0), context.countOutputEventsForBus(1));
@@ -2853,8 +2927,12 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(usize, 0), context.countOutputEventsForChannel(1));
     try std.testing.expect(context.hasOutputEventsForBus(0));
     try std.testing.expect(!context.hasOutputEventsForBus(1));
+    try std.testing.expect(!context.outputEventsForBusEmpty(0));
+    try std.testing.expect(context.outputEventsForBusEmpty(1));
     try std.testing.expect(context.hasOutputEventsForChannel(0));
     try std.testing.expect(!context.hasOutputEventsForChannel(1));
+    try std.testing.expect(!context.outputEventsForChannelEmpty(0));
+    try std.testing.expect(context.outputEventsForChannelEmpty(1));
     try std.testing.expect(!context.onlyOutputEventsOfKind(.note_on));
     try std.testing.expect(context.onlyOutputEventsForBus(0));
     try std.testing.expect(context.onlyOutputEventsForChannel(0));
@@ -2871,11 +2949,14 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?usize, null), context.firstOutputEventOffset());
     try std.testing.expectEqual(@as(?usize, null), context.latestOutputEventOffset());
     try std.testing.expect(!context.hasOutputEvent(.note_on));
+    try std.testing.expect(context.outputEventsOfKindEmpty(.note_on));
     try std.testing.expectEqual(@as(usize, 0), context.countOutputEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 0), context.countOutputEventsForBus(0));
     try std.testing.expectEqual(@as(usize, 0), context.countOutputEventsForChannel(0));
     try std.testing.expect(!context.hasOutputEventsForBus(0));
     try std.testing.expect(!context.hasOutputEventsForChannel(0));
+    try std.testing.expect(context.outputEventsForBusEmpty(0));
+    try std.testing.expect(context.outputEventsForChannelEmpty(0));
     try std.testing.expect(!context.onlyOutputEventsOfKind(.note_on));
     try std.testing.expect(!context.onlyOutputEventsForBus(0));
     try std.testing.expect(!context.onlyOutputEventsForChannel(0));
@@ -2905,11 +2986,14 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?usize, null), no_writer.firstOutputEventOffset());
     try std.testing.expectEqual(@as(?usize, null), no_writer.latestOutputEventOffset());
     try std.testing.expect(!no_writer.hasOutputEvent(.note_on));
+    try std.testing.expect(no_writer.outputEventsOfKindEmpty(.note_on));
     try std.testing.expectEqual(@as(usize, 0), no_writer.countOutputEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 0), no_writer.countOutputEventsForBus(0));
     try std.testing.expectEqual(@as(usize, 0), no_writer.countOutputEventsForChannel(0));
     try std.testing.expect(!no_writer.hasOutputEventsForBus(0));
     try std.testing.expect(!no_writer.hasOutputEventsForChannel(0));
+    try std.testing.expect(no_writer.outputEventsForBusEmpty(0));
+    try std.testing.expect(no_writer.outputEventsForChannelEmpty(0));
     try std.testing.expect(!no_writer.onlyOutputEventsOfKind(.note_on));
     try std.testing.expect(!no_writer.onlyOutputEventsForBus(0));
     try std.testing.expect(!no_writer.onlyOutputEventsForChannel(0));
