@@ -167,6 +167,12 @@ pub fn UnitSet(comptime config: Config) type {
             return self.programListById(item.program_list_id);
         }
 
+        pub fn programListForUnitName(self: Self, unit_name: []const u8) ?ProgramList {
+            const item = self.unitByName(unit_name) orelse return null;
+            if (item.program_list_id == no_program_list_id) return null;
+            return self.programListById(item.program_list_id);
+        }
+
         pub fn programListIndexOfId(_: Self, id: i32) ?usize {
             for (config.program_lists, 0..) |item, index| {
                 if (item.id == id) return index;
@@ -361,6 +367,7 @@ test "default unit set exposes root unit only" {
     try std.testing.expect(!set.hasUnit(99));
     try std.testing.expect(!set.hasProgramList(10));
     try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnit(root_unit_id));
+    try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnitName("Root"));
     try std.testing.expectEqual(@as(?Unit, null), set.unit(1));
     try std.testing.expectEqual(@as(?ProgramList, null), set.programList(0));
 }
@@ -414,6 +421,9 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?ProgramList, null), set.programListByName("Missing"));
     try std.testing.expectEqualStrings("Oscillator Presets", set.programListForUnit(1).?.name);
     try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnit(root_unit_id));
+    try std.testing.expectEqualStrings("Oscillator Presets", set.programListForUnitName("Oscillator").?.name);
+    try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnitName("Main"));
+    try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnitName("Missing"));
     try std.testing.expectEqual(@as(?usize, 2), set.programCount(10));
     try std.testing.expectEqualStrings("Drive", set.programName(10, 1).?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programName(10, 2));

@@ -188,6 +188,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programListForUnit(unit_id);
         }
 
+        pub fn programListForUnitName(self: *const Self, unit_name: []const u8) ?units_api.ProgramList {
+            return self.spec.units.programListForUnitName(unit_name);
+        }
+
         pub fn programCount(self: *const Self, list_id: i32) ?usize {
             return self.spec.units.programCount(list_id);
         }
@@ -1020,6 +1024,9 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expect(instance.hasProgramListName("Voice Programs"));
     try std.testing.expect(!instance.hasProgramListName("Missing"));
     try std.testing.expectEqualStrings("Voice Programs", instance.programListForUnit(1).?.name);
+    try std.testing.expectEqualStrings("Voice Programs", instance.programListForUnitName("Voice").?.name);
+    try std.testing.expectEqual(@as(?units_api.ProgramList, null), instance.programListForUnitName("Main"));
+    try std.testing.expectEqual(@as(?units_api.ProgramList, null), instance.programListForUnitName("Missing"));
     try std.testing.expectEqual(@as(?usize, 2), instance.programCount(7));
     try std.testing.expectEqualStrings("Lead", instance.programName(7, 1).?);
     try std.testing.expectEqualStrings("Lead", instance.program(7, 1).?.name);
