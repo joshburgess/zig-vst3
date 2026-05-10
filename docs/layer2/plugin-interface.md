@@ -74,6 +74,7 @@ Event helpers:
 - `Event.noteOn`, `Event.noteOff`, `Event.midiCc`, `Event.pitchBend`, `Event.aftertouch`, `Event.noteExpressionValue`, `Event.noteExpressionInt`, `Event.noteExpressionText`, `Event.dataEvent`, and `Event.other` construct common input and output events.
 - `Event.withBusIndex` retargets a constructed event to another event bus.
 - `Event.withControlNumber` preserves legacy MIDI controller numbers when a host bridge needs to keep them attached to converted events.
+- `Event.isNoteAttack`, `Event.isNoteRelease`, and `Event.isNoteForPitch` cover common MIDI note checks, including the zero-velocity note-on release convention.
 - `Event.validate`, `Events.init`, and `EventWriter` reject events outside the current process block, negative bus indexes, invalid MIDI channel/pitch/controller metadata, and non-finite or out-of-range normalized event values.
 - `ProcessContext.inputEvents`, `inputEventsOfKind`, `inputEventsAtOffset`, `inputEventBlockSegments`, `inputEventCount`, `inputEventsEmpty`, first/latest/next event offsets, per-kind first/latest/next offsets, `firstEvent`, `latestEvent`, `hasEvent`, and `countEvents` expose input-event reads without reaching into the event view field.
 - `EventWriter.appendAll` copies validated event views into bounded output storage. Its count, empty/full, capacity, remaining-capacity, frame-count, `canAppend`, written-event view, block segment, offset, and kind-query helpers support direct tests and non-context adapters.
