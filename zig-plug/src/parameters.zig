@@ -501,6 +501,14 @@ pub fn ParameterSet(comptime Params: type) type {
             return count;
         }
 
+        pub fn parametersEmpty(_: *const Self) bool {
+            return count == 0;
+        }
+
+        pub fn hasParameters(_: *const Self) bool {
+            return count != 0;
+        }
+
         pub fn duplicateId(self: *const Self) ?u32 {
             inline for (fields, 0..) |left_field, left_index| {
                 const left_id = @field(self.params, left_field.name).id;
@@ -1175,6 +1183,14 @@ pub fn ParameterView(comptime Params: type) type {
             return Set.count;
         }
 
+        pub fn parametersEmpty(_: Self) bool {
+            return Set.count == 0;
+        }
+
+        pub fn hasParameters(_: Self) bool {
+            return Set.count != 0;
+        }
+
         pub fn id(self: Self, index: usize) ?u32 {
             return self.set.id(index);
         }
@@ -1522,6 +1538,14 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn parameterCount(_: Self) usize {
             return Set.count;
+        }
+
+        pub fn parametersEmpty(_: Self) bool {
+            return Set.count == 0;
+        }
+
+        pub fn hasParameters(_: Self) bool {
+            return Set.count != 0;
         }
 
         pub fn id(self: Self, index: usize) ?u32 {
@@ -2157,6 +2181,8 @@ test "parameter set reflects descriptor fields" {
 
     try std.testing.expectEqual(@as(usize, 4), Set.count);
     try std.testing.expectEqual(@as(usize, 4), set.parameterCount());
+    try std.testing.expect(!set.parametersEmpty());
+    try std.testing.expect(set.hasParameters());
     try std.testing.expectEqual(@as(?u32, 0), set.id(0));
     try std.testing.expectEqualStrings("Voices", set.name(1).?);
     try std.testing.expectEqualStrings("Bypass", set.nameById(2).?);
@@ -2560,6 +2586,8 @@ test "parameter view binds reflected set and values" {
 
     const view = values.view(&set);
     try std.testing.expectEqual(@as(usize, 4), view.parameterCount());
+    try std.testing.expect(!view.parametersEmpty());
+    try std.testing.expect(view.hasParameters());
     try std.testing.expectEqual(@as(?u32, 0), view.id(0));
     try std.testing.expectEqualStrings("Voices", view.name(1).?);
     try std.testing.expectEqualStrings("Bypass", view.nameById(2).?);
@@ -2706,6 +2734,8 @@ test "parameter editor binds reflected set and mutable values" {
     const editor = values.editor(&set);
 
     try std.testing.expectEqual(@as(usize, 4), editor.parameterCount());
+    try std.testing.expect(!editor.parametersEmpty());
+    try std.testing.expect(editor.hasParameters());
     try std.testing.expectEqual(@as(?u32, 0), editor.id(0));
     try std.testing.expectEqualStrings("Voices", editor.name(1).?);
     try std.testing.expectEqualStrings("Bypass", editor.nameById(2).?);

@@ -350,6 +350,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().parameterCount();
         }
 
+        pub fn parametersEmpty(self: *const Self) bool {
+            return self.parameterView().parametersEmpty();
+        }
+
+        pub fn hasParameters(self: *const Self) bool {
+            return self.parameterView().hasParameters();
+        }
+
         pub fn parameterId(self: *const Self, index: usize) ?u32 {
             return self.parameterView().id(index);
         }
@@ -993,6 +1001,27 @@ test "plugin spec rejects invalid plugin metadata" {
     try std.testing.expectError(error.InvalidPluginMetadata, PluginSpec(InteriorNull).initChecked(.{}));
 }
 
+test "plugin instance reports empty parameter metadata" {
+    const Empty = struct {
+        pub const name = "No Parameters";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+    };
+    var instance = try PluginInstance(Empty).init(std.testing.allocator, .{});
+    const view = instance.parameterView();
+    const editor = instance.parameterEditor();
+
+    try std.testing.expectEqual(@as(usize, 0), instance.parameterCount());
+    try std.testing.expect(instance.parametersEmpty());
+    try std.testing.expect(!instance.hasParameters());
+    try std.testing.expectEqual(@as(usize, 0), view.parameterCount());
+    try std.testing.expect(view.parametersEmpty());
+    try std.testing.expect(!view.hasParameters());
+    try std.testing.expectEqual(@as(usize, 0), editor.parameterCount());
+    try std.testing.expect(editor.parametersEmpty());
+    try std.testing.expect(!editor.hasParameters());
+}
+
 var invalid_metadata_init_called = false;
 
 test "plugin instance validates metadata before plugin init hook" {
@@ -1620,6 +1649,8 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expect(instance.hasParameterName("Mode"));
     try std.testing.expect(!instance.hasParameterName("Missing"));
     try std.testing.expectEqual(@as(usize, 3), instance.parameterCount());
+    try std.testing.expect(!instance.parametersEmpty());
+    try std.testing.expect(instance.hasParameters());
     try std.testing.expectEqual(@as(?u32, 0), instance.parameterId(0));
     try std.testing.expectEqualStrings("Bypass", instance.parameterName(1).?);
     try std.testing.expectEqualStrings("Mode", instance.parameterNameById(2).?);
@@ -1828,6 +1859,8 @@ test "plugin instance exposes parameter editor" {
 
     const editor = instance.parameterEditor();
     try std.testing.expectEqual(@as(usize, 3), editor.parameterCount());
+    try std.testing.expect(!editor.parametersEmpty());
+    try std.testing.expect(editor.hasParameters());
     try std.testing.expectEqual(@as(?u32, 0), editor.id(0));
     try std.testing.expectEqualStrings("Gain", editor.name(0).?);
     try std.testing.expectEqualStrings("G", editor.shortNameById(0).?);
