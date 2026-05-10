@@ -243,6 +243,75 @@ pub const EventKind = enum {
     other,
 };
 
+pub const NoteOn = struct {
+    bus_index: i32,
+    sample_offset: usize,
+    channel: i16,
+    pitch: i16,
+    velocity: f32,
+};
+
+pub const NoteOff = struct {
+    bus_index: i32,
+    sample_offset: usize,
+    channel: i16,
+    pitch: i16,
+    velocity: f32,
+};
+
+pub const MidiCC = struct {
+    bus_index: i32,
+    sample_offset: usize,
+    channel: i16,
+    control_number: i16,
+    value: f32,
+};
+
+pub const PitchBend = struct {
+    bus_index: i32,
+    sample_offset: usize,
+    channel: i16,
+    value: f32,
+};
+
+pub const Aftertouch = struct {
+    bus_index: i32,
+    sample_offset: usize,
+    channel: i16,
+    pitch: i16,
+    value: f32,
+};
+
+pub const NoteExpressionValue = struct {
+    bus_index: i32,
+    sample_offset: usize,
+    note_id: i32,
+    expression_type_id: u32,
+    value: f32,
+};
+
+pub const NoteExpressionInt = struct {
+    bus_index: i32,
+    sample_offset: usize,
+    note_id: i32,
+    expression_type_id: u32,
+    value: u64,
+};
+
+pub const NoteExpressionText = struct {
+    bus_index: i32,
+    sample_offset: usize,
+    note_id: i32,
+    expression_type_id: u32,
+};
+
+pub const DataEvent = struct {
+    bus_index: i32,
+    sample_offset: usize,
+    data_type: u32,
+    data: []const u8,
+};
+
 pub const EventKindIterator = struct {
     events: Events,
     kind: EventKind,
@@ -445,6 +514,102 @@ pub const Event = struct {
 
     pub fn isNoteForPitch(self: Event, pitch: i16) bool {
         return (self.kind == .note_on or self.kind == .note_off) and self.pitch == pitch;
+    }
+
+    pub fn asNoteOn(self: Event) ?NoteOn {
+        if (self.kind != .note_on) return null;
+        return .{
+            .bus_index = self.bus_index,
+            .sample_offset = self.sample_offset,
+            .channel = self.channel,
+            .pitch = self.pitch,
+            .velocity = self.velocity,
+        };
+    }
+
+    pub fn asNoteOff(self: Event) ?NoteOff {
+        if (self.kind != .note_off) return null;
+        return .{
+            .bus_index = self.bus_index,
+            .sample_offset = self.sample_offset,
+            .channel = self.channel,
+            .pitch = self.pitch,
+            .velocity = self.velocity,
+        };
+    }
+
+    pub fn asMidiCC(self: Event) ?MidiCC {
+        if (self.kind != .midi_cc) return null;
+        return .{
+            .bus_index = self.bus_index,
+            .sample_offset = self.sample_offset,
+            .channel = self.channel,
+            .control_number = self.control_number,
+            .value = self.value,
+        };
+    }
+
+    pub fn asPitchBend(self: Event) ?PitchBend {
+        if (self.kind != .pitch_bend) return null;
+        return .{
+            .bus_index = self.bus_index,
+            .sample_offset = self.sample_offset,
+            .channel = self.channel,
+            .value = self.value,
+        };
+    }
+
+    pub fn asAftertouch(self: Event) ?Aftertouch {
+        if (self.kind != .aftertouch) return null;
+        return .{
+            .bus_index = self.bus_index,
+            .sample_offset = self.sample_offset,
+            .channel = self.channel,
+            .pitch = self.pitch,
+            .value = self.value,
+        };
+    }
+
+    pub fn asNoteExpressionValue(self: Event) ?NoteExpressionValue {
+        if (self.kind != .note_expression_value) return null;
+        return .{
+            .bus_index = self.bus_index,
+            .sample_offset = self.sample_offset,
+            .note_id = self.note_id,
+            .expression_type_id = self.expression_type_id,
+            .value = self.value,
+        };
+    }
+
+    pub fn asNoteExpressionInt(self: Event) ?NoteExpressionInt {
+        if (self.kind != .note_expression_int) return null;
+        return .{
+            .bus_index = self.bus_index,
+            .sample_offset = self.sample_offset,
+            .note_id = self.note_id,
+            .expression_type_id = self.expression_type_id,
+            .value = self.int_value,
+        };
+    }
+
+    pub fn asNoteExpressionText(self: Event) ?NoteExpressionText {
+        if (self.kind != .note_expression_text) return null;
+        return .{
+            .bus_index = self.bus_index,
+            .sample_offset = self.sample_offset,
+            .note_id = self.note_id,
+            .expression_type_id = self.expression_type_id,
+        };
+    }
+
+    pub fn asData(self: Event) ?DataEvent {
+        if (self.kind != .data) return null;
+        return .{
+            .bus_index = self.bus_index,
+            .sample_offset = self.sample_offset,
+            .data_type = self.data_type,
+            .data = self.data,
+        };
     }
 
     pub fn validate(self: Event, frame_count: usize) !void {
@@ -1871,6 +2036,85 @@ test "event note helpers classify attacks and releases" {
     try std.testing.expect(!cc.isNoteAttack());
     try std.testing.expect(!cc.isNoteRelease());
     try std.testing.expect(!cc.isNoteForPitch(60));
+}
+
+test "events expose typed payload views" {
+    const sysex = [_]u8{ 0xf0, 0x7d, 0x00, 0xf7 };
+    const note_on = Event.noteOn(1, 2, 60, 0.75).withBusIndex(3);
+    const note_off = Event.noteOff(2, 2, 60, 0.25);
+    const cc = Event.midiCc(3, 4, 74, 0.5);
+    const bend = Event.pitchBend(4, 5, -0.25);
+    const pressure = Event.aftertouch(5, 6, 64, 0.4);
+    const expression_value = Event.noteExpressionValue(6, 42, 7, 0.8).withBusIndex(2);
+    const expression_int = Event.noteExpressionInt(7, 43, 8, 99);
+    const expression_text = Event.noteExpressionText(8, 44, 9);
+    const data = Event.dataEvent(9, 1, &sysex).withBusIndex(4);
+    const other = Event.other(10);
+
+    try std.testing.expectEqual(NoteOn{
+        .bus_index = 3,
+        .sample_offset = 1,
+        .channel = 2,
+        .pitch = 60,
+        .velocity = 0.75,
+    }, note_on.asNoteOn().?);
+    try std.testing.expectEqual(NoteOff{
+        .bus_index = 0,
+        .sample_offset = 2,
+        .channel = 2,
+        .pitch = 60,
+        .velocity = 0.25,
+    }, note_off.asNoteOff().?);
+    try std.testing.expectEqual(MidiCC{
+        .bus_index = 0,
+        .sample_offset = 3,
+        .channel = 4,
+        .control_number = 74,
+        .value = 0.5,
+    }, cc.asMidiCC().?);
+    try std.testing.expectEqual(PitchBend{
+        .bus_index = 0,
+        .sample_offset = 4,
+        .channel = 5,
+        .value = -0.25,
+    }, bend.asPitchBend().?);
+    try std.testing.expectEqual(Aftertouch{
+        .bus_index = 0,
+        .sample_offset = 5,
+        .channel = 6,
+        .pitch = 64,
+        .value = 0.4,
+    }, pressure.asAftertouch().?);
+    try std.testing.expectEqual(NoteExpressionValue{
+        .bus_index = 2,
+        .sample_offset = 6,
+        .note_id = 42,
+        .expression_type_id = 7,
+        .value = 0.8,
+    }, expression_value.asNoteExpressionValue().?);
+    try std.testing.expectEqual(NoteExpressionInt{
+        .bus_index = 0,
+        .sample_offset = 7,
+        .note_id = 43,
+        .expression_type_id = 8,
+        .value = 99,
+    }, expression_int.asNoteExpressionInt().?);
+    try std.testing.expectEqual(NoteExpressionText{
+        .bus_index = 0,
+        .sample_offset = 8,
+        .note_id = 44,
+        .expression_type_id = 9,
+    }, expression_text.asNoteExpressionText().?);
+    try std.testing.expectEqual(DataEvent{
+        .bus_index = 4,
+        .sample_offset = 9,
+        .data_type = 1,
+        .data = &sysex,
+    }, data.asData().?);
+
+    try std.testing.expectEqual(@as(?NoteOn, null), cc.asNoteOn());
+    try std.testing.expectEqual(@as(?MidiCC, null), note_on.asMidiCC());
+    try std.testing.expectEqual(@as(?DataEvent, null), other.asData());
 }
 
 test "event constructors can keep legacy MIDI controller numbers" {
