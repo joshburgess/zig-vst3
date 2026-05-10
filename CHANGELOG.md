@@ -20,6 +20,7 @@
 - Component-handler delegated automation failure coverage.
 - Update-handler coverage for invalid, duplicate, and full dependent registration.
 - Speaker helper coverage for arrangement strings, 3D classification, ambisonic conversion rejection, and stale array reset.
+- Preset key and chunk helper coverage for taxonomy strings and every preset chunk type.
 
 ### Changed
 
