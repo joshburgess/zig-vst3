@@ -50,7 +50,7 @@ Unit and program helpers:
 - Parameter metadata validation rejects descriptors whose `unit_id` does not match a reflected unit.
 - Program snapshot validation rejects parameter ids that do not match reflected parameters.
 - `PluginInstance.unitCount`, `unit`, `unitById`, `unitByName`, `rootUnit`, unit index and existence checks by id or name, `programListCount`, `programList`, `programListById`, `programListByName`, program-list index and existence checks by id or name, `programListForUnit`, `programListForUnitName`, `programCount`, `program`, `programByName`, `programName`, program index and existence checks by name, `programParameterCount`, `programParameterCountByName`, `programParameter`, `programParameterByName`, `programParameterById`, `programParameterByNameAndId`, `programInfo`, and `programInfoByName` expose the reflected metadata.
-- `PluginInstance.applyProgram` and `applyProgramByName` apply a program's normalized parameter snapshot to reflected parameter ids after validating the whole snapshot.
+- `PluginInstance.applyProgram`, `applyProgramByName`, `applyProgramForUnit`, `applyProgramByNameForUnit`, `applyProgramForUnitName`, and `applyProgramByNameForUnitName` apply a program's normalized parameter snapshot to reflected parameter ids after validating the whole snapshot.
 
 Audio helpers:
 

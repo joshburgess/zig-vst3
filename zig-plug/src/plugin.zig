@@ -267,6 +267,26 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.applyProgram(list_id, index);
         }
 
+        pub fn applyProgramForUnit(self: *Self, unit_id: i32, program_index: usize) !bool {
+            const list = self.programListForUnit(unit_id) orelse return false;
+            return self.applyProgram(list.id, program_index);
+        }
+
+        pub fn applyProgramByNameForUnit(self: *Self, unit_id: i32, program_name: []const u8) !bool {
+            const list = self.programListForUnit(unit_id) orelse return false;
+            return self.applyProgramByName(list.id, program_name);
+        }
+
+        pub fn applyProgramForUnitName(self: *Self, unit_name: []const u8, program_index: usize) !bool {
+            const list = self.programListForUnitName(unit_name) orelse return false;
+            return self.applyProgram(list.id, program_index);
+        }
+
+        pub fn applyProgramByNameForUnitName(self: *Self, unit_name: []const u8, program_name: []const u8) !bool {
+            const list = self.programListForUnitName(unit_name) orelse return false;
+            return self.applyProgramByName(list.id, program_name);
+        }
+
         pub fn parameterView(self: *const Self) parameters.ParameterView(Plugin.Params) {
             return self.spec.values.view(&self.spec.parameter_set);
         }
@@ -1109,6 +1129,10 @@ test "plugin instance applies program parameter snapshots" {
         pub const name = "Program Gain";
         pub const vendor = "zig-vst3";
         pub const units = units_api.Config{
+            .units = &.{
+                units_api.Unit.root("Root"),
+                .{ .id = 1, .name = "Amp", .parent_id = units_api.root_unit_id, .program_list_id = 7 },
+            },
             .program_lists = &.{.{ .id = 7, .name = "Programs", .programs = &programs }},
         };
         pub const Params = struct {
@@ -1123,6 +1147,18 @@ test "plugin instance applies program parameter snapshots" {
     try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
     try std.testing.expect(!try instance.applyProgram(7, 99));
     try std.testing.expect(!try instance.applyProgramByName(7, "Missing"));
+    try std.testing.expect(try instance.applyProgramForUnit(1, 0));
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
+    try std.testing.expect(try instance.applyProgramByNameForUnit(1, "High"));
+    try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
+    try std.testing.expect(try instance.applyProgramForUnitName("Amp", 0));
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
+    try std.testing.expect(try instance.applyProgramByNameForUnitName("Amp", "High"));
+    try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
+    try std.testing.expect(!try instance.applyProgramForUnit(99, 0));
+    try std.testing.expect(!try instance.applyProgramByNameForUnit(1, "Missing"));
+    try std.testing.expect(!try instance.applyProgramForUnitName("Root", 0));
+    try std.testing.expect(!try instance.applyProgramByNameForUnitName("Missing", "High"));
 }
 
 test "plugin spec rejects invalid program parameter snapshots" {
