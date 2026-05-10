@@ -1240,7 +1240,13 @@ pub const EventWriter = struct {
     }
 
     pub fn clear(self: *EventWriter) void {
+        _ = self.clearCount();
+    }
+
+    pub fn clearCount(self: *EventWriter) usize {
+        const cleared = self.count;
         self.count = 0;
+        return cleared;
     }
 
     pub fn eventCount(self: *const EventWriter) usize {
@@ -2220,8 +2226,12 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn clearOutputEvents(self: @This()) void {
-            const writer = self.output_events orelse return;
-            writer.clear();
+            _ = self.clearOutputEventsCount();
+        }
+
+        pub fn clearOutputEventsCount(self: @This()) usize {
+            const writer = self.output_events orelse return 0;
+            return writer.clearCount();
         }
 
         pub fn hasOutputEventWriter(self: @This()) bool {
@@ -3601,6 +3611,9 @@ test "event writer validates offsets and capacity" {
     try std.testing.expectEqual(@as(usize, 0), writer.remainingCapacity());
     try std.testing.expectEqual(@as(usize, 4), writer.frameCount());
     try std.testing.expectError(error.EventStorageFull, writer.append(Event.noteOff(1, 0, 60, 0.0)));
+    try std.testing.expectEqual(@as(usize, 1), writer.clearCount());
+    try std.testing.expectEqual(@as(usize, 0), writer.clearCount());
+    try writer.append(Event.noteOn(0, 0, 60, 1.0));
     writer.clear();
     try std.testing.expect(writer.isEmpty());
     try std.testing.expect(!writer.hasEvents());
@@ -3873,6 +3886,9 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffset(1));
     try std.testing.expectEqual(@as(?usize, 1), context.nextOutputEventOffsetForKind(.note_off, 0));
     try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForKind(.note_on, 0));
+    try std.testing.expectEqual(@as(usize, 2), context.clearOutputEventsCount());
+    try std.testing.expectEqual(@as(usize, 0), context.clearOutputEventsCount());
+    try context.appendOutputEvent(events[0]);
     context.clearOutputEvents();
     try std.testing.expectEqual(@as(usize, 0), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventRemainingCapacity());
