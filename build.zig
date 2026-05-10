@@ -722,8 +722,17 @@ fn addVst3BundleSteps(
             options.artifact_name,
         });
         native_step.dependOn(&bundle.step);
+    } else if (target.result.os.tag == .linux) {
+        const bundle = b.addSystemCommand(&.{"scripts/bundle_linux_vst3.sh"});
+        bundle.addFileArg(library.getEmittedBin());
+        bundle.addArgs(&.{
+            b.getInstallPath(.prefix, b.fmt("bundle/{s}.vst3", .{options.artifact_name})),
+            linuxPlatformDir(target.result.cpu.arch),
+            options.artifact_name,
+        });
+        native_step.dependOn(&bundle.step);
     } else {
-        native_step.dependOn(&b.addFail(b.fmt("{s} currently supports macOS targets", .{native_step_name})).step);
+        native_step.dependOn(&b.addFail(b.fmt("{s} currently supports macOS and Linux targets", .{native_step_name})).step);
     }
 
     const linux_step_name = b.fmt("bundle-{s}-linux", .{options.short_name});
