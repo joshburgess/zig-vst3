@@ -135,6 +135,55 @@ pub fn PluginInstance(comptime Plugin: type) type {
             self.prepareChecked(config) catch @panic("invalid prepare config");
         }
 
+        pub fn hasAudioInput(self: *const Self) bool {
+            _ = self;
+            return Spec.audio_input;
+        }
+
+        pub fn hasAudioOutput(self: *const Self) bool {
+            _ = self;
+            return Spec.audio_output;
+        }
+
+        pub fn hasEventInput(self: *const Self) bool {
+            _ = self;
+            return Spec.event_input;
+        }
+
+        pub fn hasEventOutput(self: *const Self) bool {
+            _ = self;
+            return Spec.event_output;
+        }
+
+        pub fn hasInitHook(self: *const Self) bool {
+            _ = self;
+            return Spec.has_init;
+        }
+
+        pub fn hasPrepareHook(self: *const Self) bool {
+            _ = self;
+            return Spec.has_prepare;
+        }
+
+        pub fn hasProcessHook(self: *const Self) bool {
+            _ = self;
+            return Spec.has_process or Spec.has_process_with_parameter_view or Spec.has_process_with_parameters;
+        }
+
+        pub fn hasProcess64Hook(self: *const Self) bool {
+            _ = self;
+            return Spec.has_process64 or Spec.has_process64_with_parameter_view or Spec.has_process64_with_parameters;
+        }
+
+        pub fn hasAnyProcessHook(self: *const Self) bool {
+            return self.hasProcessHook() or self.hasProcess64Hook();
+        }
+
+        pub fn hasDeinitHook(self: *const Self) bool {
+            _ = self;
+            return Spec.has_deinit;
+        }
+
         pub fn parameterSet(self: *const Self) *const Spec.ParameterSet {
             return &self.spec.parameter_set;
         }
@@ -1742,6 +1791,47 @@ test "plugin spec detects lifecycle declarations" {
     try std.testing.expect(Spec.has_deinit);
 }
 
+test "plugin instance exposes bus and lifecycle predicates" {
+    const Meter = struct {
+        pub const name = "Predicate Meter";
+        pub const vendor = "zig-vst3";
+        pub const audio_output = false;
+        pub const event_output = true;
+        pub const Params = struct {};
+
+        pub fn init(_: std.mem.Allocator) !@This() {
+            return .{};
+        }
+
+        pub fn prepare(_: *@This(), _: PrepareConfig) void {}
+        pub fn processWithParameterView(
+            _: *@This(),
+            _: *process_api.ProcessContext(f32),
+            _: parameters.ParameterView(Params),
+        ) void {}
+        pub fn process64WithParameterView(
+            _: *@This(),
+            _: *process_api.ProcessContext(f64),
+            _: parameters.ParameterView(Params),
+        ) void {}
+        pub fn deinit(_: *@This()) void {}
+    };
+
+    var instance = try PluginInstance(Meter).init(std.testing.allocator, .{});
+    defer instance.deinit();
+
+    try std.testing.expect(instance.hasAudioInput());
+    try std.testing.expect(!instance.hasAudioOutput());
+    try std.testing.expect(instance.hasEventInput());
+    try std.testing.expect(instance.hasEventOutput());
+    try std.testing.expect(instance.hasInitHook());
+    try std.testing.expect(instance.hasPrepareHook());
+    try std.testing.expect(instance.hasProcessHook());
+    try std.testing.expect(instance.hasProcess64Hook());
+    try std.testing.expect(instance.hasAnyProcessHook());
+    try std.testing.expect(instance.hasDeinitHook());
+}
+
 test "plugin spec allows declaration-only plugin types" {
     const Minimal = struct {
         pub const name = "Minimal";
@@ -1749,6 +1839,7 @@ test "plugin spec allows declaration-only plugin types" {
         pub const Params = struct {};
     };
     const Spec = PluginSpec(Minimal);
+    var instance = try PluginInstance(Minimal).init(std.testing.allocator, .{});
 
     try std.testing.expect(!Spec.has_init);
     try std.testing.expect(!Spec.has_prepare);
@@ -1757,6 +1848,16 @@ test "plugin spec allows declaration-only plugin types" {
     try std.testing.expect(!Spec.has_process64);
     try std.testing.expect(!Spec.has_process64_with_parameters);
     try std.testing.expect(!Spec.has_deinit);
+    try std.testing.expect(instance.hasAudioInput());
+    try std.testing.expect(instance.hasAudioOutput());
+    try std.testing.expect(instance.hasEventInput());
+    try std.testing.expect(!instance.hasEventOutput());
+    try std.testing.expect(!instance.hasInitHook());
+    try std.testing.expect(!instance.hasPrepareHook());
+    try std.testing.expect(!instance.hasProcessHook());
+    try std.testing.expect(!instance.hasProcess64Hook());
+    try std.testing.expect(!instance.hasAnyProcessHook());
+    try std.testing.expect(!instance.hasDeinitHook());
 }
 
 test "plugin instance drives declared lifecycle hooks" {
