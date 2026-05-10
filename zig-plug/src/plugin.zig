@@ -155,6 +155,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.unitCount();
         }
 
+        pub fn unitsEmpty(self: *const Self) bool {
+            return self.spec.units.unitsEmpty();
+        }
+
+        pub fn hasUnits(self: *const Self) bool {
+            return self.spec.units.hasUnits();
+        }
+
         pub fn unit(self: *const Self, index: usize) ?units_api.Unit {
             return self.spec.units.unit(index);
         }
@@ -189,6 +197,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn programListCount(self: *const Self) usize {
             return self.spec.units.programListCount();
+        }
+
+        pub fn programListsEmpty(self: *const Self) bool {
+            return self.spec.units.programListsEmpty();
+        }
+
+        pub fn hasProgramLists(self: *const Self) bool {
+            return self.spec.units.hasProgramLists();
         }
 
         pub fn programList(self: *const Self, index: usize) ?units_api.ProgramList {
@@ -1234,6 +1250,8 @@ test "plugin instance exposes custom unit and program metadata" {
     var instance = try Instance.init(std.testing.allocator, .{});
 
     try std.testing.expectEqual(@as(usize, 2), instance.unitCount());
+    try std.testing.expect(!instance.unitsEmpty());
+    try std.testing.expect(instance.hasUnits());
     try std.testing.expectEqualStrings("Main", instance.rootUnit().name);
     try std.testing.expectEqual(@as(?usize, 1), instance.unitIndexOfId(1));
     try std.testing.expectEqual(@as(?usize, null), instance.unitIndexOfId(99));
@@ -1247,6 +1265,8 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expect(instance.hasUnitName("Voice"));
     try std.testing.expect(!instance.hasUnitName("Missing"));
     try std.testing.expectEqual(@as(usize, 1), instance.programListCount());
+    try std.testing.expect(!instance.programListsEmpty());
+    try std.testing.expect(instance.hasProgramLists());
     try std.testing.expectEqual(@as(?usize, 0), instance.programListIndexOfId(7));
     try std.testing.expectEqual(@as(?usize, null), instance.programListIndexOfId(99));
     try std.testing.expectEqual(@as(?usize, 0), instance.programListIndexOfName("Voice Programs"));

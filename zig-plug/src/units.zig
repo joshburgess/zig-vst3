@@ -75,6 +75,10 @@ pub const ProgramList = struct {
     pub fn isEmpty(self: ProgramList) bool {
         return self.programs.len == 0;
     }
+
+    pub fn hasPrograms(self: ProgramList) bool {
+        return self.programs.len != 0;
+    }
 };
 
 pub const Config = struct {
@@ -97,8 +101,24 @@ pub fn UnitSet(comptime config: Config) type {
             return unit_count;
         }
 
+        pub fn unitsEmpty(_: Self) bool {
+            return unit_count == 0;
+        }
+
+        pub fn hasUnits(_: Self) bool {
+            return unit_count != 0;
+        }
+
         pub fn programListCount(_: Self) usize {
             return program_list_count;
+        }
+
+        pub fn programListsEmpty(_: Self) bool {
+            return program_list_count == 0;
+        }
+
+        pub fn hasProgramLists(_: Self) bool {
+            return program_list_count != 0;
         }
 
         pub fn duplicateUnitId(_: Self) ?i32 {
@@ -423,7 +443,11 @@ test "default unit set exposes root unit only" {
     const set = Set{};
 
     try std.testing.expectEqual(@as(usize, 1), set.unitCount());
+    try std.testing.expect(!set.unitsEmpty());
+    try std.testing.expect(set.hasUnits());
     try std.testing.expectEqual(@as(usize, 0), set.programListCount());
+    try std.testing.expect(set.programListsEmpty());
+    try std.testing.expect(!set.hasProgramLists());
     try std.testing.expectEqual(root_unit_id, set.rootUnit().id);
     try std.testing.expectEqual(no_parent_unit_id, set.rootUnit().parent_id);
     try std.testing.expectEqual(no_program_list_id, set.rootUnit().program_list_id);
@@ -464,7 +488,11 @@ test "unit set exposes custom units and programs" {
     const set = Set{};
 
     try std.testing.expectEqual(@as(usize, 2), set.unitCount());
+    try std.testing.expect(!set.unitsEmpty());
+    try std.testing.expect(set.hasUnits());
     try std.testing.expectEqual(@as(usize, 1), set.programListCount());
+    try std.testing.expect(!set.programListsEmpty());
+    try std.testing.expect(set.hasProgramLists());
     try std.testing.expectEqual(@as(?usize, 1), set.unitIndexOfId(1));
     try std.testing.expectEqual(@as(?usize, null), set.unitIndexOfId(99));
     try std.testing.expectEqual(@as(?usize, 1), set.unitIndexOfName("Oscillator"));
@@ -493,6 +521,7 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?ProgramList, null), set.programListByName("Missing"));
     try std.testing.expectEqual(@as(usize, 2), set.programListById(10).?.programCount());
     try std.testing.expect(!set.programListById(10).?.isEmpty());
+    try std.testing.expect(set.programListById(10).?.hasPrograms());
     try std.testing.expectEqualStrings("Oscillator Presets", set.programListForUnit(1).?.name);
     try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnit(root_unit_id));
     try std.testing.expectEqualStrings("Oscillator Presets", set.programListForUnitName("Oscillator").?.name);
