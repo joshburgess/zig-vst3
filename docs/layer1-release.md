@@ -14,8 +14,8 @@ That script runs:
 
 - `zig build test`
 - `zig build layer1-abi`
-- `zig build validator` on macOS
-- `zig build validate-examples` on macOS
+- `zig build validator` on macOS or Linux
+- `zig build validate-examples` on macOS or Linux
 
 Also verify:
 
@@ -27,7 +27,7 @@ Public CI currently covers:
 
 - Linux, macOS, and Windows build and test jobs
 - Linux and macOS Layer 1 ABI checks
-- macOS Steinberg validator checks for bundled examples
+- Linux and macOS Steinberg validator checks for bundled examples
 - Linux, macOS, and Windows cross-bundle smoke checks
 
 ## Host Matrix
