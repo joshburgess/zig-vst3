@@ -259,12 +259,20 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().nameById(wanted_id);
         }
 
+        pub fn parameterIdByName(self: *const Self, wanted_name: []const u8) ?u32 {
+            return self.parameterView().idByName(wanted_name);
+        }
+
         pub fn parameterShortName(self: *const Self, index: usize) ?[]const u8 {
             return self.parameterView().shortName(index);
         }
 
         pub fn parameterShortNameById(self: *const Self, wanted_id: u32) ?[]const u8 {
             return self.parameterView().shortNameById(wanted_id);
+        }
+
+        pub fn parameterShortNameByName(self: *const Self, wanted_name: []const u8) ?[]const u8 {
+            return self.parameterView().shortNameByName(wanted_name);
         }
 
         pub fn parameterUnits(self: *const Self, index: usize) ?[]const u8 {
@@ -275,12 +283,20 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().unitsById(wanted_id);
         }
 
+        pub fn parameterUnitsByName(self: *const Self, wanted_name: []const u8) ?[]const u8 {
+            return self.parameterView().unitsByName(wanted_name);
+        }
+
         pub fn parameterDefaultNormalized(self: *const Self, index: usize) ?f64 {
             return self.parameterView().defaultNormalized(index);
         }
 
         pub fn parameterDefaultNormalizedById(self: *const Self, wanted_id: u32) ?f64 {
             return self.parameterView().defaultNormalizedById(wanted_id);
+        }
+
+        pub fn parameterDefaultNormalizedByName(self: *const Self, wanted_name: []const u8) ?f64 {
+            return self.parameterView().defaultNormalizedByName(wanted_name);
         }
 
         pub fn parameterIsBypass(self: *const Self, index: usize) ?bool {
@@ -291,12 +307,20 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().isBypassById(wanted_id);
         }
 
+        pub fn parameterIsBypassByName(self: *const Self, wanted_name: []const u8) ?bool {
+            return self.parameterView().isBypassByName(wanted_name);
+        }
+
         pub fn parameterCanAutomate(self: *const Self, index: usize) ?bool {
             return self.parameterView().canAutomate(index);
         }
 
         pub fn parameterCanAutomateById(self: *const Self, wanted_id: u32) ?bool {
             return self.parameterView().canAutomateById(wanted_id);
+        }
+
+        pub fn parameterCanAutomateByName(self: *const Self, wanted_name: []const u8) ?bool {
+            return self.parameterView().canAutomateByName(wanted_name);
         }
 
         pub fn parameterIsReadOnly(self: *const Self, index: usize) ?bool {
@@ -307,12 +331,20 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().isReadOnlyById(wanted_id);
         }
 
+        pub fn parameterIsReadOnlyByName(self: *const Self, wanted_name: []const u8) ?bool {
+            return self.parameterView().isReadOnlyByName(wanted_name);
+        }
+
         pub fn parameterUnitId(self: *const Self, index: usize) ?i32 {
             return self.parameterView().unitId(index);
         }
 
         pub fn parameterUnitIdById(self: *const Self, wanted_id: u32) ?i32 {
             return self.parameterView().unitIdById(wanted_id);
+        }
+
+        pub fn parameterUnitIdByName(self: *const Self, wanted_name: []const u8) ?i32 {
+            return self.parameterView().unitIdByName(wanted_name);
         }
 
         pub fn parameterStepCount(self: *const Self, index: usize) ?i32 {
@@ -323,12 +355,20 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().stepCountById(wanted_id);
         }
 
+        pub fn parameterStepCountByName(self: *const Self, wanted_name: []const u8) ?i32 {
+            return self.parameterView().stepCountByName(wanted_name);
+        }
+
         pub fn parameterIsList(self: *const Self, index: usize) ?bool {
             return self.parameterView().isList(index);
         }
 
         pub fn parameterIsListById(self: *const Self, wanted_id: u32) ?bool {
             return self.parameterView().isListById(wanted_id);
+        }
+
+        pub fn parameterIsListByName(self: *const Self, wanted_name: []const u8) ?bool {
+            return self.parameterView().isListByName(wanted_name);
         }
 
         pub fn formatParameterPlainIndex(self: *const Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
@@ -717,6 +757,7 @@ test "plugin spec exposes metadata and parameter defaults" {
     try std.testing.expectEqualStrings("Component Controller Class", Spec.controller_category);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
     try std.testing.expectEqualStrings("Gain", spec.parameter_set.name(0).?);
+    try std.testing.expectEqual(@as(?u32, 0), spec.parameter_set.idByName("Gain"));
     try std.testing.expectEqual(@as(f64, 1.0), spec.values.view(&spec.parameter_set).loadNormalized("gain"));
     try std.testing.expect(spec.values.editor(&spec.parameter_set).storeNormalized("gain", 0.5));
     try std.testing.expectEqual(@as(f64, 0.5), spec.values.view(&spec.parameter_set).loadNormalized("gain"));
@@ -1201,27 +1242,47 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?u32, 0), instance.parameterId(0));
     try std.testing.expectEqualStrings("Bypass", instance.parameterName(1).?);
     try std.testing.expectEqualStrings("Mode", instance.parameterNameById(2).?);
+    try std.testing.expectEqual(@as(?u32, 2), instance.parameterIdByName("Mode"));
+    try std.testing.expectEqualStrings("G", instance.parameterShortNameByName("Gain").?);
+    try std.testing.expectEqualStrings("dB", instance.parameterUnitsByName("Gain").?);
     try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalized(2));
     try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalizedById(2));
+    try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalizedByName("Mode"));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsBypass(0));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsBypassById(0));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterIsBypassByName("Bypass"));
     try std.testing.expectEqual(@as(?bool, true), instance.parameterCanAutomate(0));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterCanAutomateById(1));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterCanAutomateByName("Bypass"));
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsReadOnly(1));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsReadOnlyById(0));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterIsReadOnlyByName("Bypass"));
+    try std.testing.expectEqual(@as(?i32, 0), instance.parameterUnitIdByName("Gain"));
     try std.testing.expectEqual(@as(?i32, 2), instance.parameterStepCount(2));
     try std.testing.expectEqual(@as(?i32, 2), instance.parameterStepCountById(2));
+    try std.testing.expectEqual(@as(?i32, 2), instance.parameterStepCountByName("Mode"));
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsList(2));
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsListById(2));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterIsListByName("Mode"));
     try std.testing.expectEqual(@as(?u32, null), instance.parameterId(99));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterName(99));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterNameById(99));
+    try std.testing.expectEqual(@as(?u32, null), instance.parameterIdByName("Missing"));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterShortNameByName("Missing"));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.parameterUnitsByName("Missing"));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterDefaultNormalizedById(99));
+    try std.testing.expectEqual(@as(?f64, null), instance.parameterDefaultNormalizedByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsBypassById(99));
+    try std.testing.expectEqual(@as(?bool, null), instance.parameterIsBypassByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterCanAutomateById(99));
+    try std.testing.expectEqual(@as(?bool, null), instance.parameterCanAutomateByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsReadOnlyById(99));
+    try std.testing.expectEqual(@as(?bool, null), instance.parameterIsReadOnlyByName("Missing"));
+    try std.testing.expectEqual(@as(?i32, null), instance.parameterUnitIdByName("Missing"));
     try std.testing.expectEqual(@as(?i32, null), instance.parameterStepCountById(99));
+    try std.testing.expectEqual(@as(?i32, null), instance.parameterStepCountByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsListById(99));
+    try std.testing.expectEqual(@as(?bool, null), instance.parameterIsListByName("Missing"));
     var buffer: [16]u8 = undefined;
     try std.testing.expectEqualStrings("lead", try instance.formatParameterPlainIndex(2, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainIndex(2, "mute"));
