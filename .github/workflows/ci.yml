@@ -86,7 +86,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libx11-dev
+          sudo apt-get install -y libgtk-3-dev libgtkmm-3.0-dev libx11-dev
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
       - name: Build Steinberg validator
