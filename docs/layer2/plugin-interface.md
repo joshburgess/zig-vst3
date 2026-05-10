@@ -50,9 +50,9 @@ Unit and program helpers:
 - `plug.units.ProgramList`, `plug.units.Program`, `plug.units.ProgramParameter`, and `plug.units.ProgramInfo` describe host-facing program names, optional normalized parameter snapshots, and program metadata.
 - Unit metadata validation rejects missing or duplicate root units, empty unit or program names, embedded NUL bytes in host-facing unit and program strings, duplicate unit names, duplicate program-list ids or names, duplicate program names, duplicate program parameter ids, duplicate program info keys, missing or cyclic unit parents, and unit links to unknown program lists.
 - Parameter metadata validation rejects descriptors whose `unit_id` does not match a reflected unit.
-- Program snapshot validation rejects parameter ids that do not match reflected parameters.
+- Program snapshot validation rejects non-finite or out-of-range normalized values and parameter ids that do not match reflected parameters.
 - `PluginInstance.unitCount`, `unit`, `unitById`, `unitByName`, `rootUnit`, unit index and existence checks by id or name, `programListCount`, `programList`, `programListById`, `programListByName`, program-list index and existence checks by id or name, `programListForUnit`, `programListForUnitName`, `programCount`, `program`, `programByName`, `programName`, program index and existence checks by name, `programParameterCount`, `programParameterCountByName`, `programParameter`, `programParameterByName`, `programParameterById`, `programParameterByNameAndId`, `programInfo`, and `programInfoByName` expose the reflected metadata.
-- `PluginInstance.applyProgram`, `applyProgramByName`, `applyProgramForUnit`, `applyProgramByNameForUnit`, `applyProgramForUnitName`, and `applyProgramByNameForUnitName` apply a program's normalized parameter snapshot to reflected parameter ids after validating the whole snapshot.
+- `PluginInstance.applyProgram`, `applyProgramByName`, `applyProgramForUnit`, `applyProgramByNameForUnit`, `applyProgramForUnitName`, and `applyProgramByNameForUnitName` apply a program's finite normalized parameter snapshot to reflected parameter ids after validating the whole snapshot.
 
 Audio helpers:
 
@@ -62,7 +62,7 @@ Audio helpers:
 
 Parameter helpers:
 
-- `ParameterSet.parameterChange`, `ParameterSet.parameterChangeNormalized`, `PluginInstance.parameterChange`, and `PluginInstance.parameterChangeNormalized` construct changes from reflected field names for tests and non-host callers.
+- `ParameterSet.parameterChange`, `ParameterSet.parameterChangeNormalized`, `PluginInstance.parameterChange`, and `PluginInstance.parameterChangeNormalized` construct finite normalized changes from reflected field names for tests and non-host callers.
 - Parameter descriptors can set `unit_id` to group host-facing parameters under a reflected unit.
 - `ParameterValues.view(set)` and `PluginInstance.parameterView()` bind descriptors and values into a `ParameterView`.
 - `ParameterValues.editor(set)` and `PluginInstance.parameterEditor()` bind descriptors and mutable values into a `ParameterEditor`.

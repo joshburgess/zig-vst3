@@ -11,7 +11,7 @@ Loading ignores unknown parameter ids, which lets newer plugin versions remove p
 
 The VST3 bridge reads and writes this format directly through `IBStream`, so state loading is not tied to the current parameter count. Older shorter states can load into newer plugins, and newer states with extra ids can load into older plugins. `vst_stream.zig` provides a reusable fixed-buffer `IBStream`/`ISizeableStream` object for exercising this path without per-test stream mocks.
 
-Malformed state headers, unsupported format versions, truncated entries, duplicate restored parameter entries, denormalized values, and failed `IBStream` writes are rejected. Failed reads do not apply partial parameter entries.
+Malformed state headers, unsupported format versions, truncated entries, duplicate restored parameter entries, non-finite or out-of-range normalized values, and failed `IBStream` writes are rejected. Failed reads do not apply partial parameter entries.
 
 ## Current API
 
@@ -31,4 +31,4 @@ Malformed state headers, unsupported format versions, truncated entries, duplica
 - `state.validateParameterIdMigrations(migrations)`: rejects identity mappings, duplicate old ids, ambiguous target ids, and cyclic migration chains before state loading mutates parameter values.
 - `state.migratedParameterId(id, migrations)`: resolves a saved parameter id through the same old-id to new-id migration list used by state loading.
 
-Program lists can remain metadata-only, or each program can carry a normalized parameter snapshot through `plug.units.ProgramParameter`. `PluginInstance.applyProgram`, `applyProgramByName`, and the unit-based program application helpers validate the complete snapshot and then apply matching parameter ids.
+Program lists can remain metadata-only, or each program can carry a finite normalized parameter snapshot through `plug.units.ProgramParameter`. `PluginInstance.applyProgram`, `applyProgramByName`, and the unit-based program application helpers validate the complete snapshot and then apply matching parameter ids.
