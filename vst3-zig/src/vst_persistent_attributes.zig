@@ -423,6 +423,24 @@ test "persistent attributes queue and unqueue one value per attribute" {
     try std.testing.expectEqual(@as(types.int32, 0), attrs.vtable.getQueueItemCount(attrs, "answer"));
 }
 
+test "persistent attributes reset one queue or all queues" {
+    const Store = Attributes(2, 8);
+    var store = Store{};
+    const attrs = store.asAttributes();
+    const left = fvariant.FVariant{ .type = fvariant.kInteger, .value = .{ .intValue = 1 } };
+    const right = fvariant.FVariant{ .type = fvariant.kInteger, .value = .{ .intValue = 2 } };
+
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.queue(attrs, "left", &left));
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.queue(attrs, "right", &right));
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.resetQueue(attrs, "left"));
+    try std.testing.expectEqual(@as(types.int32, 0), attrs.vtable.getQueueItemCount(attrs, "left"));
+    try std.testing.expectEqual(@as(types.int32, 1), attrs.vtable.getQueueItemCount(attrs, "right"));
+    try std.testing.expectEqual(types.kResultFalse, attrs.vtable.resetQueue(attrs, "missing"));
+
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.resetAllQueues(attrs));
+    try std.testing.expectEqual(@as(types.int32, 0), attrs.vtable.getQueueItemCount(attrs, "right"));
+}
+
 test "persistent attributes copy binary payloads" {
     const Store = Attributes(2, 8);
     var store = Store{};
@@ -446,6 +464,22 @@ test "persistent attributes copy binary payloads" {
     try std.testing.expectEqualSlices(u8, &.{ 0, 0, 9, 9 }, &out);
 }
 
+test "persistent attributes can reference borrowed binary payloads" {
+    const Store = Attributes(1, 8);
+    var store = Store{};
+    const attrs = store.asAttributes();
+    var payload = [_]u8{ 1, 2, 3, 4 };
+
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.setBinaryData(attrs, "blob", &payload, payload.len, false));
+    payload[0] = 9;
+
+    var out = [_]u8{0} ** 4;
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.getBinaryData(attrs, "blob", &out, out.len));
+    try std.testing.expectEqualSlices(u8, &.{ 9, 2, 3, 4 }, &out);
+
+    try std.testing.expectEqual(types.kInvalidArgument, attrs.vtable.getBinaryData(attrs, "blob", null, out.len));
+}
+
 test "persistent attributes reject oversized copied binary without creating attributes" {
     const Store = Attributes(1, 2);
     var store = Store{};
@@ -456,6 +490,18 @@ test "persistent attributes reject oversized copied binary without creating attr
     try std.testing.expectEqual(types.kResultFalse, attrs.vtable.setBinaryData(attrs, "blob", &payload, payload.len, true));
     try std.testing.expectEqual(@as(types.uint32, 0), attrs.vtable.getBinaryDataSize(attrs, "blob"));
     try std.testing.expectEqual(@as(types.int32, 0), attrs2.vtable.countAttributes(attrs2));
+}
+
+test "persistent attributes enumerate invalid indexes as empty IDs" {
+    const Store = Attributes(1, 8);
+    var store = Store{};
+    const attrs = store.asAttributes();
+    const attrs2 = store.asAttributes2();
+    const value = fvariant.FVariant{ .type = fvariant.kString8, .value = .{ .string8 = "value" } };
+
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.set(attrs, "name", &value));
+    try std.testing.expectEqualStrings("", std.mem.span(attrs2.vtable.getAttributeID(attrs2, -1)));
+    try std.testing.expectEqualStrings("", std.mem.span(attrs2.vtable.getAttributeID(attrs2, 1)));
 }
 
 test "persistent attributes supports attributes2 query interface" {
