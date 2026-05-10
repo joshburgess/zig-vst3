@@ -160,6 +160,34 @@ test "gain component validates host process setup" {
     try std.testing.expectEqual(types.kResultFalse, processor.vtable.setupProcessing(processor, &setup));
 }
 
+test "gain component rejects unsupported process sample size" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &processor_out),
+    );
+    try std.testing.expect(processor_out != null);
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
+    defer _ = processor.vtable.release(processor);
+
+    var data = ivstaudioprocessor.ProcessData{
+        .symbolicSampleSize = 99,
+        .numSamples = 0,
+    };
+
+    try std.testing.expectEqual(types.kResultFalse, processor.vtable.process(processor, &data));
+}
+
 test "gain component queries host application during initialize" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
