@@ -704,6 +704,26 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.defaultNormalized(index);
         }
 
+        pub fn defaultPlain(self: *const Self, index: usize) ?f64 {
+            inline for (fields, 0..) |field, field_index| {
+                if (index == field_index) {
+                    const param = @field(self.params, field.name);
+                    return param.plainFromNormalized(param.defaultNormalized());
+                }
+            }
+            return null;
+        }
+
+        pub fn defaultPlainById(self: *const Self, wanted_id: u32) ?f64 {
+            const index = self.indexOfId(wanted_id) orelse return null;
+            return self.defaultPlain(index);
+        }
+
+        pub fn defaultPlainByName(self: *const Self, wanted_name: []const u8) ?f64 {
+            const index = self.indexOfName(wanted_name) orelse return null;
+            return self.defaultPlain(index);
+        }
+
         pub fn plainMinimum(self: *const Self, index: usize) ?f64 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return parameterPlainMinimum(@field(self.params, field.name));
@@ -970,6 +990,11 @@ pub fn ParameterSet(comptime Params: type) type {
 
         pub fn fieldDefaultNormalized(self: *const Self, comptime field_name: []const u8) f64 {
             return self.descriptor(field_name).defaultNormalized();
+        }
+
+        pub fn fieldDefaultPlain(self: *const Self, comptime field_name: []const u8) FieldPlainType(Params, field_name) {
+            const param = self.descriptor(field_name);
+            return param.denormalize(param.defaultNormalized());
         }
 
         pub fn fieldPlainMinimum(self: *const Self, comptime field_name: []const u8) ?f64 {
@@ -1467,6 +1492,18 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.defaultNormalizedByName(wanted_name);
         }
 
+        pub fn defaultPlain(self: Self, index: usize) ?f64 {
+            return self.set.defaultPlain(index);
+        }
+
+        pub fn defaultPlainById(self: Self, wanted_id: u32) ?f64 {
+            return self.set.defaultPlainById(wanted_id);
+        }
+
+        pub fn defaultPlainByName(self: Self, wanted_name: []const u8) ?f64 {
+            return self.set.defaultPlainByName(wanted_name);
+        }
+
         pub fn plainMinimum(self: Self, index: usize) ?f64 {
             return self.set.plainMinimum(index);
         }
@@ -1906,6 +1943,18 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn defaultNormalizedByName(self: Self, wanted_name: []const u8) ?f64 {
             return self.set.defaultNormalizedByName(wanted_name);
+        }
+
+        pub fn defaultPlain(self: Self, index: usize) ?f64 {
+            return self.set.defaultPlain(index);
+        }
+
+        pub fn defaultPlainById(self: Self, wanted_id: u32) ?f64 {
+            return self.set.defaultPlainById(wanted_id);
+        }
+
+        pub fn defaultPlainByName(self: Self, wanted_name: []const u8) ?f64 {
+            return self.set.defaultPlainByName(wanted_name);
         }
 
         pub fn plainMinimum(self: Self, index: usize) ?f64 {
@@ -2656,6 +2705,17 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectApproxEqAbs(1.0, set.defaultNormalizedByName("Mode").?, 0.000001);
     try std.testing.expectEqual(@as(?f64, null), set.defaultNormalizedById(99));
     try std.testing.expectEqual(@as(?f64, null), set.defaultNormalizedByName("Missing"));
+    try std.testing.expectEqual(@as(?f64, 0.75), set.defaultPlain(0));
+    try std.testing.expectEqual(@as(?f64, 4.0), set.defaultPlainById(1));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.defaultPlainByName("Bypass"));
+    try std.testing.expectEqual(@as(?f64, 1.0), set.defaultPlainByName("Mode"));
+    try std.testing.expectEqual(@as(?f64, null), set.defaultPlain(99));
+    try std.testing.expectEqual(@as(?f64, null), set.defaultPlainById(99));
+    try std.testing.expectEqual(@as(?f64, null), set.defaultPlainByName("Missing"));
+    try std.testing.expectEqual(@as(f64, 0.75), set.fieldDefaultPlain("gain"));
+    try std.testing.expectEqual(@as(i64, 4), set.fieldDefaultPlain("voices"));
+    try std.testing.expectEqual(true, set.fieldDefaultPlain("bypass"));
+    try std.testing.expectEqual(Mode.lead, set.fieldDefaultPlain("mode"));
     try std.testing.expectEqual(@as(?bool, true), set.canAutomate(0));
     try std.testing.expectEqual(@as(?bool, false), set.canAutomateById(1));
     try std.testing.expectEqual(@as(?bool, false), set.canAutomateByName("Voices"));
@@ -3061,6 +3121,12 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalized(3));
     try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalizedById(3));
     try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalizedByName("Mode"));
+    try std.testing.expectEqual(@as(?f64, 0.0), view.defaultPlain(0));
+    try std.testing.expectEqual(@as(?f64, 1.0), view.defaultPlainById(1));
+    try std.testing.expectEqual(@as(?f64, 0.0), view.defaultPlainByName("Mode"));
+    try std.testing.expectEqual(@as(?f64, null), view.defaultPlain(99));
+    try std.testing.expectEqual(@as(?f64, null), view.defaultPlainById(99));
+    try std.testing.expectEqual(@as(?f64, null), view.defaultPlainByName("Missing"));
     try std.testing.expectEqual(@as(?f64, -12.0), view.plainMinimum(0));
     try std.testing.expectEqual(@as(?f64, 4.0), view.plainMaximumById(1));
     try std.testing.expectEqual(@as(?f64, 1.0), view.plainMinimumByName("Voices"));
@@ -3241,6 +3307,12 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalized(3));
     try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalizedById(3));
     try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalizedByName("Mode"));
+    try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultPlain(0));
+    try std.testing.expectEqual(@as(?f64, 1.0), editor.defaultPlainById(1));
+    try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultPlainByName("Mode"));
+    try std.testing.expectEqual(@as(?f64, null), editor.defaultPlain(99));
+    try std.testing.expectEqual(@as(?f64, null), editor.defaultPlainById(99));
+    try std.testing.expectEqual(@as(?f64, null), editor.defaultPlainByName("Missing"));
     try std.testing.expectEqual(@as(?f64, -12.0), editor.plainMinimum(0));
     try std.testing.expectEqual(@as(?f64, 4.0), editor.plainMaximumById(1));
     try std.testing.expectEqual(@as(?f64, 1.0), editor.plainMinimumByName("Voices"));
