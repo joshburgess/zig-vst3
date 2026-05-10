@@ -546,6 +546,10 @@ pub const Event = struct {
         return self.hasChannel() and self.channel == channel;
     }
 
+    pub fn isForBus(self: Event, bus_index: i32) bool {
+        return self.bus_index == bus_index;
+    }
+
     pub fn isNoteForPitch(self: Event, pitch: i16) bool {
         return (self.kind == .note_on or self.kind == .note_off) and self.pitch == pitch;
     }
@@ -2171,6 +2175,8 @@ test "event category helpers classify routable event groups" {
     try std.testing.expect(note.hasChannel());
     try std.testing.expect(note.isForChannel(2));
     try std.testing.expect(!note.isForChannel(3));
+    try std.testing.expect(note.isForBus(0));
+    try std.testing.expect(!note.isForBus(1));
 
     try std.testing.expect(!cc.isNote());
     try std.testing.expect(cc.isMidi());
@@ -2190,6 +2196,7 @@ test "event category helpers classify routable event groups" {
     try std.testing.expect(!data.hasChannel());
     try std.testing.expect(other.isOther());
     try std.testing.expect(!other.isData());
+    try std.testing.expect(Event.other(8).withBusIndex(2).isForBus(2));
 }
 
 test "events expose typed payload views" {
