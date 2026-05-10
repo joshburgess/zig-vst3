@@ -179,6 +179,7 @@ test "gain core example can smooth normalized gain changes" {
 
     smoother.setTarget(1.0, 4);
     try std.testing.expect(smoother.active());
+    try std.testing.expect(!smoother.finished());
     try std.testing.expectEqual(@as(usize, 4), smoother.remainingSamples());
     try std.testing.expectApproxEqAbs(0.25, smoother.next(), 0.000001);
     try std.testing.expectApproxEqAbs(0.5, smoother.next(), 0.000001);
@@ -186,6 +187,7 @@ test "gain core example can smooth normalized gain changes" {
     try std.testing.expectApproxEqAbs(0.75, smoother.currentValue(), 0.000001);
     try std.testing.expectApproxEqAbs(0.75, smoother.targetValue(), 0.000001);
     try std.testing.expect(!smoother.active());
+    try std.testing.expect(smoother.finished());
 }
 
 test "gain core example round-trips parameter state" {
