@@ -261,6 +261,26 @@ pub fn UnitSet(comptime config: Config) type {
             return self.programListById(item.program_list_id);
         }
 
+        pub fn programListIdForUnit(self: Self, unit_id: i32) ?i32 {
+            const list = self.programListForUnit(unit_id) orelse return null;
+            return list.id;
+        }
+
+        pub fn programListIdForUnitName(self: Self, unit_name: []const u8) ?i32 {
+            const list = self.programListForUnitName(unit_name) orelse return null;
+            return list.id;
+        }
+
+        pub fn programListNameForUnit(self: Self, unit_id: i32) ?[]const u8 {
+            const list = self.programListForUnit(unit_id) orelse return null;
+            return list.name;
+        }
+
+        pub fn programListNameForUnitName(self: Self, unit_name: []const u8) ?[]const u8 {
+            const list = self.programListForUnitName(unit_name) orelse return null;
+            return list.name;
+        }
+
         pub fn programListIndexOfId(_: Self, id: i32) ?usize {
             for (config.program_lists, 0..) |item, index| {
                 if (item.id == id) return index;
@@ -613,6 +633,14 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqualStrings("Oscillator Presets", set.programListForUnitName("Oscillator").?.name);
     try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnitName("Main"));
     try std.testing.expectEqual(@as(?ProgramList, null), set.programListForUnitName("Missing"));
+    try std.testing.expectEqual(@as(?i32, 10), set.programListIdForUnit(1));
+    try std.testing.expectEqual(@as(?i32, 10), set.programListIdForUnitName("Oscillator"));
+    try std.testing.expectEqual(@as(?i32, null), set.programListIdForUnit(root_unit_id));
+    try std.testing.expectEqual(@as(?i32, null), set.programListIdForUnitName("Missing"));
+    try std.testing.expectEqualStrings("Oscillator Presets", set.programListNameForUnit(1).?);
+    try std.testing.expectEqualStrings("Oscillator Presets", set.programListNameForUnitName("Oscillator").?);
+    try std.testing.expectEqual(@as(?[]const u8, null), set.programListNameForUnit(root_unit_id));
+    try std.testing.expectEqual(@as(?[]const u8, null), set.programListNameForUnitName("Missing"));
     try std.testing.expectEqual(@as(?usize, 2), set.programCount(10));
     try std.testing.expectEqual(@as(?usize, null), set.programCount(99));
     try std.testing.expectEqualStrings("Drive", set.programName(10, 1).?);

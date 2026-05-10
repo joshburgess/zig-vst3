@@ -259,6 +259,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programListForUnitName(unit_name);
         }
 
+        pub fn programListIdForUnit(self: *const Self, unit_id: i32) ?i32 {
+            return self.spec.units.programListIdForUnit(unit_id);
+        }
+
+        pub fn programListIdForUnitName(self: *const Self, unit_name: []const u8) ?i32 {
+            return self.spec.units.programListIdForUnitName(unit_name);
+        }
+
+        pub fn programListNameForUnit(self: *const Self, unit_id: i32) ?[]const u8 {
+            return self.spec.units.programListNameForUnit(unit_id);
+        }
+
+        pub fn programListNameForUnitName(self: *const Self, unit_name: []const u8) ?[]const u8 {
+            return self.spec.units.programListNameForUnitName(unit_name);
+        }
+
         pub fn programCount(self: *const Self, list_id: i32) ?usize {
             return self.spec.units.programCount(list_id);
         }
@@ -1474,6 +1490,14 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqualStrings("Voice Programs", instance.programListForUnitName("Voice").?.name);
     try std.testing.expectEqual(@as(?units_api.ProgramList, null), instance.programListForUnitName("Main"));
     try std.testing.expectEqual(@as(?units_api.ProgramList, null), instance.programListForUnitName("Missing"));
+    try std.testing.expectEqual(@as(?i32, 7), instance.programListIdForUnit(1));
+    try std.testing.expectEqual(@as(?i32, 7), instance.programListIdForUnitName("Voice"));
+    try std.testing.expectEqual(@as(?i32, null), instance.programListIdForUnit(units_api.root_unit_id));
+    try std.testing.expectEqual(@as(?i32, null), instance.programListIdForUnitName("Missing"));
+    try std.testing.expectEqualStrings("Voice Programs", instance.programListNameForUnit(1).?);
+    try std.testing.expectEqualStrings("Voice Programs", instance.programListNameForUnitName("Voice").?);
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.programListNameForUnit(units_api.root_unit_id));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.programListNameForUnitName("Missing"));
     try std.testing.expectEqual(@as(?usize, 2), instance.programCount(7));
     try std.testing.expectEqual(@as(?usize, null), instance.programCount(99));
     try std.testing.expectEqualStrings("Lead", instance.programName(7, 1).?);
