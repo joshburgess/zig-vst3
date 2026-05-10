@@ -327,7 +327,7 @@ pub fn UnitSet(comptime config: Config) type {
                         }
                     }
                     for (item.parameters, 0..) |parameter, parameter_index| {
-                        if (parameter.normalized < 0.0 or parameter.normalized > 1.0 or std.math.isNan(parameter.normalized)) {
+                        if (!std.math.isFinite(parameter.normalized) or parameter.normalized < 0.0 or parameter.normalized > 1.0) {
                             return error.ProgramParameterOutsideNormalizedRange;
                         }
                         for (item.parameters, 0..) |other, other_index| {
@@ -549,6 +549,9 @@ test "unit set validates ids names and links" {
     const NanProgramParameter = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .parameters = &.{.{ .parameter_id = 1, .normalized = std.math.nan(f64) }} }} }},
     });
+    const InfiniteProgramParameter = UnitSet(.{
+        .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .parameters = &.{.{ .parameter_id = 1, .normalized = std.math.inf(f64) }} }} }},
+    });
     const EmptyProgramInfoKey = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .info = &.{.{ .key = "", .value = "x" }} }} }},
     });
@@ -582,6 +585,7 @@ test "unit set validates ids names and links" {
     try std.testing.expectError(error.DuplicateProgramParameter, (DuplicateProgramParameters{}).validate());
     try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, (InvalidProgramParameter{}).validate());
     try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, (NanProgramParameter{}).validate());
+    try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, (InfiniteProgramParameter{}).validate());
     try std.testing.expectError(error.EmptyProgramInfoKey, (EmptyProgramInfoKey{}).validate());
     try std.testing.expectError(error.InvalidProgramInfoMetadata, (InvalidProgramInfoKey{}).validate());
     try std.testing.expectError(error.InvalidProgramInfoMetadata, (InvalidProgramInfoValue{}).validate());

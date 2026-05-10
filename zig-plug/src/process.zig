@@ -17,6 +17,10 @@ fn clampNormalized(value: f64) f64 {
     return std.math.clamp(value, 0.0, 1.0);
 }
 
+fn isFiniteInRange(comptime T: type, value: T, min: T, max: T) bool {
+    return std.math.isFinite(value) and value >= min and value <= max;
+}
+
 pub const BlockSegment = struct {
     start_offset: usize,
     end_offset: usize,
@@ -78,7 +82,7 @@ pub const ParameterChanges = struct {
             if (item.sample_offset >= frame_count) {
                 return error.ParameterChangeOutsideBlock;
             }
-            if (item.normalized < 0.0 or item.normalized > 1.0 or std.math.isNan(item.normalized)) {
+            if (!isFiniteInRange(f64, item.normalized, 0.0, 1.0)) {
                 return error.ParameterChangeOutsideNormalizedRange;
             }
         }
@@ -673,11 +677,11 @@ fn validateMidiControlNumber(control_number: i16) !void {
 }
 
 fn validateUnitEventValue(value: f32) !void {
-    if (std.math.isNan(value) or value < 0.0 or value > 1.0) return error.EventValueOutsideNormalizedRange;
+    if (!isFiniteInRange(f32, value, 0.0, 1.0)) return error.EventValueOutsideNormalizedRange;
 }
 
 fn validateBipolarEventValue(value: f32) !void {
-    if (std.math.isNan(value) or value < -1.0 or value > 1.0) return error.EventValueOutsideNormalizedRange;
+    if (!isFiniteInRange(f32, value, -1.0, 1.0)) return error.EventValueOutsideNormalizedRange;
 }
 
 pub const Events = struct {
@@ -1846,8 +1850,12 @@ test "parameter changes reject denormalized values" {
     const changes = [_]ParameterChange{
         .{ .id = 7, .sample_offset = 0, .normalized = 1.5 },
     };
+    const infinite = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 0, .normalized = std.math.inf(f64) },
+    };
 
     try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, ParameterChanges.init(&changes, 4));
+    try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, ParameterChanges.init(&infinite, 4));
 }
 
 test "parameter changes clamp defaulted normalized reads" {
@@ -2217,13 +2225,21 @@ test "events reject invalid normalized values" {
     const nan_cc = [_]Event{
         Event.midiCc(0, 0, 1, std.math.nan(f32)),
     };
+    const infinite_aftertouch = [_]Event{
+        Event.aftertouch(0, 0, 60, std.math.inf(f32)),
+    };
     const wide_bend = [_]Event{
         Event.pitchBend(0, 0, 1.5),
+    };
+    const infinite_bend = [_]Event{
+        Event.pitchBend(0, 0, -std.math.inf(f32)),
     };
 
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&too_loud_note, 4));
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&nan_cc, 4));
+    try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&infinite_aftertouch, 4));
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&wide_bend, 4));
+    try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&infinite_bend, 4));
 }
 
 test "events reject invalid MIDI metadata" {

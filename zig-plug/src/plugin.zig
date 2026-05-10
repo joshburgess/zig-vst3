@@ -276,7 +276,7 @@ pub fn PluginInstance(comptime Plugin: type) type {
         pub fn applyProgram(self: *Self, list_id: i32, program_index: usize) !bool {
             const item = self.program(list_id, program_index) orelse return false;
             for (item.parameters) |parameter| {
-                if (parameter.normalized < 0.0 or parameter.normalized > 1.0 or std.math.isNan(parameter.normalized)) {
+                if (!std.math.isFinite(parameter.normalized) or parameter.normalized < 0.0 or parameter.normalized > 1.0) {
                     return error.ProgramParameterOutsideNormalizedRange;
                 }
                 if (self.parameterIndexOfId(parameter.parameter_id) == null) return error.UnknownProgramParameter;
@@ -1296,6 +1296,29 @@ test "plugin spec rejects invalid program parameter snapshots" {
         pub const Params = struct {
             gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
             mix: parameters.FloatParam = parameters.FloatParam.init(2, "Mix", 0.0, 1.0, 0.5),
+        };
+    };
+
+    try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, PluginSpec(Gain).initChecked(.{}));
+}
+
+test "plugin spec rejects non-finite program parameter snapshots" {
+    const programs = [_]units_api.Program{
+        .{
+            .name = "Invalid",
+            .parameters = &.{
+                .{ .parameter_id = 1, .normalized = std.math.inf(f64) },
+            },
+        },
+    };
+    const Gain = struct {
+        pub const name = "Invalid Program Gain";
+        pub const vendor = "zig-vst3";
+        pub const units = units_api.Config{
+            .program_lists = &.{.{ .id = 7, .name = "Programs", .programs = &programs }},
+        };
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
         };
     };
 
