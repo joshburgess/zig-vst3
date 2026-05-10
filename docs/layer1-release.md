@@ -35,11 +35,11 @@ Public CI currently covers:
 Record fresh Tier 3 host smoke tests in `docs/host-matrix.md` before tagging. The minimum release set is:
 
 - Gain, bypass, mode-gain, voice-mix, and event-echo pass in REAPER on macOS arm64
-- Note-gate gets at least one MIDI-plus-audio route test
-- Event-monitor gets at least one scan/load/save/reload test
-- Sine-synth gets at least one MIDI instrument test
+- Note-gate gets at least one MIDI-plus-audio route test, or the release notes explicitly defer MIDI-gated manual host coverage
+- Event-monitor gets at least one scan/load/save/reload test, or the release notes explicitly defer analyzer manual host coverage
+- Sine-synth gets at least one MIDI instrument test, or the release notes explicitly defer instrument manual host coverage
 
-Linux and Windows host rows can remain follow-up work for `0.1.x` if CI bundles keep passing and the release notes call out that the first manual host pass was macOS-only.
+Linux and Windows host rows can remain follow-up work for `0.1.x` if CI bundles keep passing and the release notes call out that the first manual host pass was macOS-only. Do not describe deferred rows as host-proven.
 
 ## Tag
 

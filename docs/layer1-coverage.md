@@ -4,10 +4,10 @@ This map separates what is already gated from what remains future hardening. `do
 
 | Area | Current gate | Remaining work |
 | --- | --- | --- |
-| Core COM and factory ABI | C and C++ harnesses, entry-symbol checks, SDK layout fixtures | More external host traces for factory lifecycle edge cases |
+| Core COM and factory ABI | C and C++ harnesses, entry-symbol checks, SDK layout fixtures, static factory and factory3 helper tests, exported example factory3 metadata | More external host traces for factory lifecycle edge cases |
 | TUID/FUID byte layout | SDK-backed byte fixture checks | Add checked fixture snapshots for additional non-P0 identifiers if new bugs appear |
 | Base interfaces | ABI fixtures and helper tests for streams, persistence, strings, errors, update, compatibility | Expand convenience wrappers only when raw users need them |
-| Component/controller/processor | ABI fixtures, reusable shells, Steinberg validator, example plugins | More real host lifecycle traces across plugin types |
+| Component/controller/processor | ABI fixtures, reusable shells, Steinberg validator, example plugins, component shell edge-case tests | More real host lifecycle traces across plugin types |
 | Parameters and automation | ABI fixtures, fixed queue helpers, shell bridge tests, validator automation tests, interface-support and prefetch helpers | More host automation smoke tests outside REAPER |
 | Events and MIDI | ABI fixtures, input/output event helpers, MIDI learn, MIDI 2 mapping, note-expression, and keyswitch helpers; note-gate/event-echo/event-monitor/sine-synth examples | Manual MIDI host tests for note-gate and sine-synth |
 | Units and programs | ABI fixtures, unit/program-list helper tests, shell exposure | More host behavior checks for program-list selection |
@@ -20,9 +20,9 @@ This map separates what is already gated from what remains future hardening. `do
 
 ## Release Interpretation
 
-`vst3-zig-0.1.0` can be a useful raw-layer release once the deferred host rows are filled in. It should not be described as full VST3 protocol completion. The release claim should be narrower:
+`vst3-zig-0.1.0` can be a useful raw-layer release once the deferred MIDI-heavy host rows are either filled in or explicitly moved to follow-up release notes. It should not be described as full VST3 protocol completion. The release claim should be narrower:
 
-- Raw bindings and helpers for the SDK 3.8.0 plugin-facing interface surface
+- Raw bindings and helpers for the SDK 3.8.0 plugin-facing interface surface tracked in `docs/interface-inventory.md`
 - ABI fixtures for the translated interface groups used by the raw layer
 - Validator-passing example bundles
 - CI-covered cross-target build and bundle generation

@@ -18,7 +18,7 @@ Use `zig-plug` when you want a higher-level plugin framework. Use `vst3-zig` dir
 - `vst3-zig/src/pluginterfaces/vst`: raw VST component, processor, controller, parameter, event, unit, MIDI, note-expression, context-menu, data-exchange, representation, and helper declarations.
 - `vst3-zig/src/funknown.zig`: reference-count and `FUnknown` helper behavior.
 - `vst3-zig/src/interface_map.zig`: `queryInterface` dispatch helpers.
-- `vst3-zig/src/factory.zig` and `vst3-zig/src/entry.zig`: factory metadata and platform entry exports.
+- `vst3-zig/src/factory.zig` and `vst3-zig/src/entry.zig`: factory metadata, `IPluginFactory3` support, and platform entry exports.
 - `vst3-zig/src/zig_plug_effect.zig`: reusable VST3 shell used by the checked examples.
 
 ## Local Checks
@@ -45,7 +45,7 @@ The raw layer includes fixed-capacity helper objects for tests and shell integra
 - `vst_string_result` and `vst_error_context` for bounded strings and error-message callbacks
 - `vst_update_handler` for dependent registration and deferred update tests
 - `vst_component_handler` host callback helpers
-- `vst_host_application` and `vst_host_context` host-side callback helpers
+- `vst_host_application` and `vst_host_context` host-side callback helpers for channel context, automation state, data exchange, wrappers, and host-created objects
 - `vst_plugin_compatibility` for fixed compatibility JSON providers and basic metadata fixtures
 - `vst_capability_support` helpers for interface support, prefetch state, MIDI learn, MIDI 2 mapping, and physical UI mapping
 - `vst_note_expression` for fixed-capacity note-expression and keyswitch metadata helpers
@@ -59,7 +59,7 @@ These helpers favor deterministic failure behavior. Failed reads, writes, lookup
 
 ## Current Limits
 
-- The binding surface is broad, but not every rare interface has a production-oriented convenience wrapper.
+- The binding surface is broad and now includes reusable helpers for the known SDK 3.8.0 interface groups in the inventory. Some rare interfaces still expose raw declarations rather than production-oriented convenience wrappers.
 - GUI/editor coverage is unit-test and ABI-test based. Real embedded editor behavior still needs host-specific smoke tests.
 - Windows validator execution is not yet part of CI.
-- Manual host coverage is currently macOS REAPER-heavy.
+- Manual host coverage is currently macOS REAPER-heavy, with MIDI-heavy and analyzer/instrument examples still deferred.
