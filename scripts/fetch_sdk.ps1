@@ -7,6 +7,7 @@ $SdkDir = if ($env:VST3_SDK_DIR) { $env:VST3_SDK_DIR } else { ".vst3-sdk/vst3sdk
 
 if (Test-Path (Join-Path $SdkDir ".git")) {
     git -C $SdkDir fetch --tags $SdkRepo $SdkTag
+    git -C $SdkDir checkout --force $SdkCommit
 } else {
     $Parent = Split-Path -Parent $SdkDir
     if ($Parent) {
@@ -20,6 +21,7 @@ if ($ActualCommit -ne $SdkCommit) {
     Write-Error "VST3 SDK commit mismatch. Expected $SdkCommit, got $ActualCommit."
 }
 
-git -C $SdkDir submodule update --init --recursive --depth 1
+git -C $SdkDir submodule sync --recursive
+git -C $SdkDir submodule update --init --depth 1
 
 Write-Host "VST3 SDK ready at $SdkDir ($ActualCommit)"
