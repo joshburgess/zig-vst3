@@ -19,6 +19,7 @@
 - Base string/error helper coverage for null strings and missing error-message outputs.
 - Component-handler delegated automation failure coverage.
 - Update-handler coverage for invalid, duplicate, and full dependent registration.
+- Speaker helper coverage for arrangement strings, 3D classification, ambisonic conversion rejection, and stale array reset.
 
 ### Changed
 
