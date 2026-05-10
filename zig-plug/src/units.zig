@@ -166,14 +166,33 @@ pub fn UnitSet(comptime config: Config) type {
             return item.parameters.len;
         }
 
+        pub fn programParameterCountByName(self: Self, list_id: i32, program_name: []const u8) ?usize {
+            const item = self.programByName(list_id, program_name) orelse return null;
+            return item.parameters.len;
+        }
+
         pub fn programParameter(self: Self, list_id: i32, program_index: usize, parameter_index: usize) ?ProgramParameter {
             const item = self.program(list_id, program_index) orelse return null;
             if (parameter_index >= item.parameters.len) return null;
             return item.parameters[parameter_index];
         }
 
+        pub fn programParameterByName(self: Self, list_id: i32, program_name: []const u8, parameter_index: usize) ?ProgramParameter {
+            const item = self.programByName(list_id, program_name) orelse return null;
+            if (parameter_index >= item.parameters.len) return null;
+            return item.parameters[parameter_index];
+        }
+
         pub fn programParameterById(self: Self, list_id: i32, program_index: usize, parameter_id: u32) ?ProgramParameter {
             const item = self.program(list_id, program_index) orelse return null;
+            for (item.parameters) |parameter| {
+                if (parameter.parameter_id == parameter_id) return parameter;
+            }
+            return null;
+        }
+
+        pub fn programParameterByNameAndId(self: Self, list_id: i32, program_name: []const u8, parameter_id: u32) ?ProgramParameter {
+            const item = self.programByName(list_id, program_name) orelse return null;
             for (item.parameters) |parameter| {
                 if (parameter.parameter_id == parameter_id) return parameter;
             }
@@ -340,11 +359,20 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?usize, 1), set.programIndexOfName(10, "Drive"));
     try std.testing.expectEqual(@as(?usize, null), set.programIndexOfName(10, "Missing"));
     try std.testing.expectEqual(@as(?usize, 1), set.programParameterCount(10, 1));
+    try std.testing.expectEqual(@as(?usize, 1), set.programParameterCountByName(10, "Drive"));
+    try std.testing.expectEqual(@as(?usize, null), set.programParameterCountByName(10, "Missing"));
     try std.testing.expectEqual(@as(u32, 3), set.programParameter(10, 1, 0).?.parameter_id);
     try std.testing.expectEqual(@as(f64, 0.75), set.programParameter(10, 1, 0).?.normalized);
+    try std.testing.expectEqual(@as(u32, 3), set.programParameterByName(10, "Drive", 0).?.parameter_id);
+    try std.testing.expectEqual(@as(f64, 0.75), set.programParameterByName(10, "Drive", 0).?.normalized);
+    try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterByName(10, "Drive", 1));
+    try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterByName(10, "Missing", 0));
     try std.testing.expectEqual(@as(f64, 0.25), set.programParameterById(10, 0, 3).?.normalized);
+    try std.testing.expectEqual(@as(f64, 0.75), set.programParameterByNameAndId(10, "Drive", 3).?.normalized);
     try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameter(10, 1, 1));
     try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterById(10, 1, 99));
+    try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterByNameAndId(10, "Drive", 99));
+    try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterByNameAndId(10, "Missing", 3));
     try std.testing.expectEqualStrings("Clean", set.programInfo(10, 0, "category").?);
     try std.testing.expectEqualStrings("Clean", set.programInfoByName(10, "Clean", "category").?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programInfo(10, 0, "missing"));
