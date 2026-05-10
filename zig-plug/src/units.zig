@@ -291,12 +291,20 @@ pub fn UnitSet(comptime config: Config) type {
             return null;
         }
 
+        pub fn hasProgramParameter(self: Self, list_id: i32, program_index: usize, parameter_id: u32) bool {
+            return self.programParameterById(list_id, program_index, parameter_id) != null;
+        }
+
         pub fn programParameterByNameAndId(self: Self, list_id: i32, program_name: []const u8, parameter_id: u32) ?ProgramParameter {
             const item = self.programByName(list_id, program_name) orelse return null;
             for (item.parameters) |parameter| {
                 if (parameter.parameter_id == parameter_id) return parameter;
             }
             return null;
+        }
+
+        pub fn hasProgramParameterByName(self: Self, list_id: i32, program_name: []const u8, parameter_id: u32) bool {
+            return self.programParameterByNameAndId(list_id, program_name, parameter_id) != null;
         }
 
         pub fn programInfo(self: Self, list_id: i32, program_index: usize, key: []const u8) ?[]const u8 {
@@ -308,9 +316,17 @@ pub fn UnitSet(comptime config: Config) type {
             return null;
         }
 
+        pub fn hasProgramInfo(self: Self, list_id: i32, program_index: usize, key: []const u8) bool {
+            return self.programInfo(list_id, program_index, key) != null;
+        }
+
         pub fn programInfoByName(self: Self, list_id: i32, program_name: []const u8, key: []const u8) ?[]const u8 {
             const index = self.programIndexOfName(list_id, program_name) orelse return null;
             return self.programInfo(list_id, index, key);
+        }
+
+        pub fn hasProgramInfoByName(self: Self, list_id: i32, program_name: []const u8, key: []const u8) bool {
+            return self.programInfoByName(list_id, program_name, key) != null;
         }
 
         pub fn rootUnit(self: Self) Unit {
@@ -518,6 +534,12 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterByName(10, "Missing", 0));
     try std.testing.expectEqual(@as(f64, 0.25), set.programParameterById(10, 0, 3).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.75), set.programParameterByNameAndId(10, "Drive", 3).?.normalized);
+    try std.testing.expect(set.hasProgramParameter(10, 0, 3));
+    try std.testing.expect(!set.hasProgramParameter(10, 0, 99));
+    try std.testing.expect(!set.hasProgramParameter(99, 0, 3));
+    try std.testing.expect(set.hasProgramParameterByName(10, "Drive", 3));
+    try std.testing.expect(!set.hasProgramParameterByName(10, "Drive", 99));
+    try std.testing.expect(!set.hasProgramParameterByName(10, "Missing", 3));
     try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameter(10, 1, 1));
     try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterById(10, 1, 99));
     try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterByNameAndId(10, "Drive", 99));
@@ -525,6 +547,12 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?ProgramParameter, null), set.programParameterByNameAndId(99, "Drive", 3));
     try std.testing.expectEqualStrings("Clean", set.programInfo(10, 0, "category").?);
     try std.testing.expectEqualStrings("Clean", set.programInfoByName(10, "Clean", "category").?);
+    try std.testing.expect(set.hasProgramInfo(10, 0, "category"));
+    try std.testing.expect(!set.hasProgramInfo(10, 0, "missing"));
+    try std.testing.expect(!set.hasProgramInfo(10, 2, "category"));
+    try std.testing.expect(set.hasProgramInfoByName(10, "Clean", "category"));
+    try std.testing.expect(!set.hasProgramInfoByName(10, "Clean", "missing"));
+    try std.testing.expect(!set.hasProgramInfoByName(10, "Missing", "category"));
     try std.testing.expectEqual(@as(?[]const u8, null), set.programInfo(10, 0, "missing"));
     try std.testing.expectEqual(@as(?[]const u8, null), set.programInfo(10, 2, "category"));
     try std.testing.expectEqual(@as(?[]const u8, null), set.programInfo(99, 0, "category"));

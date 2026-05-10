@@ -271,16 +271,32 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programParameterById(list_id, program_index, parameter_id);
         }
 
+        pub fn hasProgramParameter(self: *const Self, list_id: i32, program_index: usize, parameter_id: u32) bool {
+            return self.spec.units.hasProgramParameter(list_id, program_index, parameter_id);
+        }
+
         pub fn programParameterByNameAndId(self: *const Self, list_id: i32, program_name: []const u8, parameter_id: u32) ?units_api.ProgramParameter {
             return self.spec.units.programParameterByNameAndId(list_id, program_name, parameter_id);
+        }
+
+        pub fn hasProgramParameterByName(self: *const Self, list_id: i32, program_name: []const u8, parameter_id: u32) bool {
+            return self.spec.units.hasProgramParameterByName(list_id, program_name, parameter_id);
         }
 
         pub fn programInfo(self: *const Self, list_id: i32, program_index: usize, key: []const u8) ?[]const u8 {
             return self.spec.units.programInfo(list_id, program_index, key);
         }
 
+        pub fn hasProgramInfo(self: *const Self, list_id: i32, program_index: usize, key: []const u8) bool {
+            return self.spec.units.hasProgramInfo(list_id, program_index, key);
+        }
+
         pub fn programInfoByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) ?[]const u8 {
             return self.spec.units.programInfoByName(list_id, program_name, key);
+        }
+
+        pub fn hasProgramInfoByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) bool {
+            return self.spec.units.hasProgramInfoByName(list_id, program_name, key);
         }
 
         pub fn applyProgram(self: *Self, list_id: i32, program_index: usize) !bool {
@@ -1244,14 +1260,26 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterById(99, 0, 1));
     try std.testing.expectEqual(@as(f64, 0.75), instance.programParameterByName(7, "Lead", 0).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.75), instance.programParameterByNameAndId(7, "Lead", 1).?.normalized);
+    try std.testing.expect(instance.hasProgramParameter(7, 1, 1));
+    try std.testing.expect(!instance.hasProgramParameter(7, 1, 99));
+    try std.testing.expect(!instance.hasProgramParameter(99, 1, 1));
+    try std.testing.expect(instance.hasProgramParameterByName(7, "Lead", 1));
+    try std.testing.expect(!instance.hasProgramParameterByName(7, "Lead", 99));
+    try std.testing.expect(!instance.hasProgramParameterByName(7, "Missing", 1));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByName(7, "Missing", 0));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByName(99, "Lead", 0));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByNameAndId(7, "Lead", 99));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByNameAndId(99, "Lead", 1));
     try std.testing.expectEqualStrings("Clean", instance.programInfo(7, 0, "category").?);
+    try std.testing.expect(instance.hasProgramInfo(7, 0, "category"));
+    try std.testing.expect(!instance.hasProgramInfo(7, 0, "missing"));
+    try std.testing.expect(!instance.hasProgramInfo(7, 99, "category"));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfo(7, 99, "category"));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfo(99, 0, "category"));
     try std.testing.expectEqualStrings("Clean", instance.programInfoByName(7, "Clean", "category").?);
+    try std.testing.expect(instance.hasProgramInfoByName(7, "Clean", "category"));
+    try std.testing.expect(!instance.hasProgramInfoByName(7, "Clean", "missing"));
+    try std.testing.expect(!instance.hasProgramInfoByName(7, "Missing", "category"));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfoByName(7, "Missing", "category"));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfoByName(99, "Clean", "category"));
 }
