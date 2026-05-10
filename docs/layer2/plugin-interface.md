@@ -50,6 +50,7 @@ Unit and program helpers:
 - Plugins may declare `pub const units = plug.units.Config{ ... }`.
 - `plug.units.Unit.root("Root")` declares the root unit. Additional units can attach to the root or another unit and may point at a program list.
 - `plug.units.ProgramList`, `plug.units.Program`, `plug.units.ProgramParameter`, and `plug.units.ProgramInfo` describe host-facing program names, optional normalized parameter snapshots, and program metadata.
+- `Unit.isRoot`, `Unit.hasParent`, `Unit.hasProgramList`, `Program.parameterCount`, `Program.infoCount`, `Program.hasParameters`, `Program.hasInfo`, `ProgramList.programCount`, and `ProgramList.isEmpty` provide value-level metadata checks for reflected unit and program values.
 - Unit metadata validation rejects missing or duplicate root units, empty unit or program names, embedded NUL bytes in host-facing unit and program strings, duplicate unit names, duplicate program-list ids or names, duplicate program names, duplicate program parameter ids, duplicate program info keys, missing or cyclic unit parents, and unit links to unknown program lists.
 - Parameter metadata validation rejects descriptors whose `unit_id` does not match a reflected unit.
 - Program snapshot validation rejects non-finite or out-of-range normalized values and parameter ids that do not match reflected parameters.
