@@ -7,6 +7,19 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_stream = @import("vst_stream.zig");
 
+fn validateJsonStringLiteral(comptime field: []const u8, comptime value: []const u8) void {
+    for (value) |char| {
+        if (char < 0x20 or char == '"' or char == '\\') @compileError(field ++ " must not contain control characters, quotes, or backslashes");
+    }
+}
+
+pub fn basicMetadataJson(comptime vendor: []const u8, comptime name: []const u8, comptime version: []const u8) []const u8 {
+    validateJsonStringLiteral("vendor", vendor);
+    validateJsonStringLiteral("name", name);
+    validateJsonStringLiteral("version", version);
+    return "{\"vendor\":\"" ++ vendor ++ "\",\"name\":\"" ++ name ++ "\",\"version\":\"" ++ version ++ "\"}";
+}
+
 pub fn PluginCompatibility(comptime json: []const u8) type {
     if (json.len > std.math.maxInt(types.int32)) @compileError("PluginCompatibility JSON must fit in int32 bytes");
 
@@ -66,6 +79,23 @@ test "plugin compatibility writes JSON to stream" {
 
     try std.testing.expectEqual(types.kResultOk, compatibility.asInterface().vtable.getCompatibilityJSON(compatibility.asInterface(), stream.asStream()));
     try std.testing.expectEqualStrings("{\"vendor\":\"zig-vst3\"}", stream.data());
+}
+
+test "plugin compatibility basic metadata JSON is valid and streamable" {
+    const json = basicMetadataJson("zig-vst3", "Mode Gain", "0.1.0");
+    const Compatibility = PluginCompatibility(json);
+    const Stream = vst_stream.FixedBufferStream(256);
+    var compatibility = Compatibility{};
+    var stream = Stream{};
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, json, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqualStrings("zig-vst3", parsed.value.object.get("vendor").?.string);
+    try std.testing.expectEqualStrings("Mode Gain", parsed.value.object.get("name").?.string);
+    try std.testing.expectEqualStrings("0.1.0", parsed.value.object.get("version").?.string);
+
+    try std.testing.expectEqual(types.kResultOk, compatibility.asInterface().vtable.getCompatibilityJSON(compatibility.asInterface(), stream.asStream()));
+    try std.testing.expectEqualStrings(json, stream.data());
 }
 
 test "plugin compatibility rejects missing stream" {

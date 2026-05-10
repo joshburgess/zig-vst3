@@ -12,6 +12,7 @@
 - Layer 1 raw API guide and protocol coverage map.
 - Advanced helpers for interface support, prefetch state, MIDI learn, MIDI 2 mapping, and physical UI mapping.
 - Fixed-capacity note-expression and keyswitch metadata helper for raw-layer tests.
+- Basic compatibility metadata JSON fixture helper.
 
 ### Changed
 
