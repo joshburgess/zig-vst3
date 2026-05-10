@@ -1796,7 +1796,17 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return zig_plug_bridge.RealtimeProcessorDefaults.latencySamples();
         }
 
-        fn setupProcessing(_: *anyopaque, _: *ivstaudioprocessor.ProcessSetup) callconv(.C) types.tresult {
+        fn setupProcessing(_: *anyopaque, setup: *ivstaudioprocessor.ProcessSetup) callconv(.C) types.tresult {
+            const sample_size_result = zig_plug_bridge.RealtimeProcessorDefaults.canProcessSampleSize(setup.symbolicSampleSize);
+            if (sample_size_result != types.kResultOk) return sample_size_result;
+
+            if (setup.maxSamplesPerBlock <= 0) return types.kInvalidArgument;
+            const prepare_config = plug_core.plugin.PrepareConfig{
+                .sample_rate = setup.sampleRate,
+                .max_block_size = @intCast(setup.maxSamplesPerBlock),
+            };
+            prepare_config.validate() catch return types.kInvalidArgument;
+
             resetProcessState();
             return types.kResultOk;
         }
