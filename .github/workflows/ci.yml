@@ -62,11 +62,6 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
-      - name: Restore VST3 SDK cache
-        uses: actions/cache@v4
-        with:
-          path: .vst3-sdk/vst3sdk
-          key: vst3-sdk-v3.8.0-build-66-${{ runner.os }}
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
       - name: Run Layer 1 ABI checks
@@ -81,11 +76,6 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
-      - name: Restore VST3 SDK cache
-        uses: actions/cache@v4
-        with:
-          path: .vst3-sdk/vst3sdk
-          key: vst3-sdk-v3.8.0-build-66-${{ runner.os }}
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
       - name: Build Steinberg validator
