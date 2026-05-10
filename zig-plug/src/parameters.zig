@@ -507,6 +507,11 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.name(index);
         }
 
+        pub fn idByName(self: *const Self, wanted_name: []const u8) ?u32 {
+            const index = self.indexOfName(wanted_name) orelse return null;
+            return self.id(index);
+        }
+
         pub fn shortName(self: *const Self, index: usize) ?[]const u8 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) {
@@ -522,6 +527,11 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.shortName(index);
         }
 
+        pub fn shortNameByName(self: *const Self, wanted_name: []const u8) ?[]const u8 {
+            const index = self.indexOfName(wanted_name) orelse return null;
+            return self.shortName(index);
+        }
+
         pub fn units(self: *const Self, index: usize) ?[]const u8 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).units;
@@ -531,6 +541,11 @@ pub fn ParameterSet(comptime Params: type) type {
 
         pub fn unitsById(self: *const Self, wanted_id: u32) ?[]const u8 {
             const index = self.indexOfId(wanted_id) orelse return null;
+            return self.units(index);
+        }
+
+        pub fn unitsByName(self: *const Self, wanted_name: []const u8) ?[]const u8 {
+            const index = self.indexOfName(wanted_name) orelse return null;
             return self.units(index);
         }
 
@@ -546,6 +561,11 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.defaultNormalized(index);
         }
 
+        pub fn defaultNormalizedByName(self: *const Self, wanted_name: []const u8) ?f64 {
+            const index = self.indexOfName(wanted_name) orelse return null;
+            return self.defaultNormalized(index);
+        }
+
         pub fn isBypass(self: *const Self, index: usize) ?bool {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).is_bypass;
@@ -555,6 +575,11 @@ pub fn ParameterSet(comptime Params: type) type {
 
         pub fn isBypassById(self: *const Self, wanted_id: u32) ?bool {
             const index = self.indexOfId(wanted_id) orelse return null;
+            return self.isBypass(index);
+        }
+
+        pub fn isBypassByName(self: *const Self, wanted_name: []const u8) ?bool {
+            const index = self.indexOfName(wanted_name) orelse return null;
             return self.isBypass(index);
         }
 
@@ -570,6 +595,11 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.canAutomate(index);
         }
 
+        pub fn canAutomateByName(self: *const Self, wanted_name: []const u8) ?bool {
+            const index = self.indexOfName(wanted_name) orelse return null;
+            return self.canAutomate(index);
+        }
+
         pub fn isReadOnly(self: *const Self, index: usize) ?bool {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).is_read_only;
@@ -579,6 +609,11 @@ pub fn ParameterSet(comptime Params: type) type {
 
         pub fn isReadOnlyById(self: *const Self, wanted_id: u32) ?bool {
             const index = self.indexOfId(wanted_id) orelse return null;
+            return self.isReadOnly(index);
+        }
+
+        pub fn isReadOnlyByName(self: *const Self, wanted_name: []const u8) ?bool {
+            const index = self.indexOfName(wanted_name) orelse return null;
             return self.isReadOnly(index);
         }
 
@@ -594,6 +629,11 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.unitId(index);
         }
 
+        pub fn unitIdByName(self: *const Self, wanted_name: []const u8) ?i32 {
+            const index = self.indexOfName(wanted_name) orelse return null;
+            return self.unitId(index);
+        }
+
         pub fn stepCount(self: *const Self, index: usize) ?i32 {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return parameterStepCount(@field(self.params, field.name));
@@ -606,6 +646,11 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.stepCount(index);
         }
 
+        pub fn stepCountByName(self: *const Self, wanted_name: []const u8) ?i32 {
+            const index = self.indexOfName(wanted_name) orelse return null;
+            return self.stepCount(index);
+        }
+
         pub fn isList(self: *const Self, index: usize) ?bool {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return parameterIsList(@field(self.params, field.name));
@@ -615,6 +660,11 @@ pub fn ParameterSet(comptime Params: type) type {
 
         pub fn isListById(self: *const Self, wanted_id: u32) ?bool {
             const index = self.indexOfId(wanted_id) orelse return null;
+            return self.isList(index);
+        }
+
+        pub fn isListByName(self: *const Self, wanted_name: []const u8) ?bool {
+            const index = self.indexOfName(wanted_name) orelse return null;
             return self.isList(index);
         }
 
@@ -1002,12 +1052,20 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.nameById(wanted_id);
         }
 
+        pub fn idByName(self: Self, wanted_name: []const u8) ?u32 {
+            return self.set.idByName(wanted_name);
+        }
+
         pub fn shortName(self: Self, index: usize) ?[]const u8 {
             return self.set.shortName(index);
         }
 
         pub fn shortNameById(self: Self, wanted_id: u32) ?[]const u8 {
             return self.set.shortNameById(wanted_id);
+        }
+
+        pub fn shortNameByName(self: Self, wanted_name: []const u8) ?[]const u8 {
+            return self.set.shortNameByName(wanted_name);
         }
 
         pub fn units(self: Self, index: usize) ?[]const u8 {
@@ -1018,12 +1076,20 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.unitsById(wanted_id);
         }
 
+        pub fn unitsByName(self: Self, wanted_name: []const u8) ?[]const u8 {
+            return self.set.unitsByName(wanted_name);
+        }
+
         pub fn defaultNormalized(self: Self, index: usize) ?f64 {
             return self.set.defaultNormalized(index);
         }
 
         pub fn defaultNormalizedById(self: Self, wanted_id: u32) ?f64 {
             return self.set.defaultNormalizedById(wanted_id);
+        }
+
+        pub fn defaultNormalizedByName(self: Self, wanted_name: []const u8) ?f64 {
+            return self.set.defaultNormalizedByName(wanted_name);
         }
 
         pub fn isBypass(self: Self, index: usize) ?bool {
@@ -1034,12 +1100,20 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.isBypassById(wanted_id);
         }
 
+        pub fn isBypassByName(self: Self, wanted_name: []const u8) ?bool {
+            return self.set.isBypassByName(wanted_name);
+        }
+
         pub fn canAutomate(self: Self, index: usize) ?bool {
             return self.set.canAutomate(index);
         }
 
         pub fn canAutomateById(self: Self, wanted_id: u32) ?bool {
             return self.set.canAutomateById(wanted_id);
+        }
+
+        pub fn canAutomateByName(self: Self, wanted_name: []const u8) ?bool {
+            return self.set.canAutomateByName(wanted_name);
         }
 
         pub fn isReadOnly(self: Self, index: usize) ?bool {
@@ -1050,12 +1124,20 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.isReadOnlyById(wanted_id);
         }
 
+        pub fn isReadOnlyByName(self: Self, wanted_name: []const u8) ?bool {
+            return self.set.isReadOnlyByName(wanted_name);
+        }
+
         pub fn unitId(self: Self, index: usize) ?i32 {
             return self.set.unitId(index);
         }
 
         pub fn unitIdById(self: Self, wanted_id: u32) ?i32 {
             return self.set.unitIdById(wanted_id);
+        }
+
+        pub fn unitIdByName(self: Self, wanted_name: []const u8) ?i32 {
+            return self.set.unitIdByName(wanted_name);
         }
 
         pub fn stepCount(self: Self, index: usize) ?i32 {
@@ -1066,12 +1148,20 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.stepCountById(wanted_id);
         }
 
+        pub fn stepCountByName(self: Self, wanted_name: []const u8) ?i32 {
+            return self.set.stepCountByName(wanted_name);
+        }
+
         pub fn isList(self: Self, index: usize) ?bool {
             return self.set.isList(index);
         }
 
         pub fn isListById(self: Self, wanted_id: u32) ?bool {
             return self.set.isListById(wanted_id);
+        }
+
+        pub fn isListByName(self: Self, wanted_name: []const u8) ?bool {
+            return self.set.isListByName(wanted_name);
         }
 
         pub fn indexOfId(self: Self, wanted_id: u32) ?usize {
@@ -1287,12 +1377,20 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.nameById(wanted_id);
         }
 
+        pub fn idByName(self: Self, wanted_name: []const u8) ?u32 {
+            return self.set.idByName(wanted_name);
+        }
+
         pub fn shortName(self: Self, index: usize) ?[]const u8 {
             return self.set.shortName(index);
         }
 
         pub fn shortNameById(self: Self, wanted_id: u32) ?[]const u8 {
             return self.set.shortNameById(wanted_id);
+        }
+
+        pub fn shortNameByName(self: Self, wanted_name: []const u8) ?[]const u8 {
+            return self.set.shortNameByName(wanted_name);
         }
 
         pub fn units(self: Self, index: usize) ?[]const u8 {
@@ -1303,12 +1401,20 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.unitsById(wanted_id);
         }
 
+        pub fn unitsByName(self: Self, wanted_name: []const u8) ?[]const u8 {
+            return self.set.unitsByName(wanted_name);
+        }
+
         pub fn defaultNormalized(self: Self, index: usize) ?f64 {
             return self.set.defaultNormalized(index);
         }
 
         pub fn defaultNormalizedById(self: Self, wanted_id: u32) ?f64 {
             return self.set.defaultNormalizedById(wanted_id);
+        }
+
+        pub fn defaultNormalizedByName(self: Self, wanted_name: []const u8) ?f64 {
+            return self.set.defaultNormalizedByName(wanted_name);
         }
 
         pub fn isBypass(self: Self, index: usize) ?bool {
@@ -1319,12 +1425,20 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.isBypassById(wanted_id);
         }
 
+        pub fn isBypassByName(self: Self, wanted_name: []const u8) ?bool {
+            return self.set.isBypassByName(wanted_name);
+        }
+
         pub fn canAutomate(self: Self, index: usize) ?bool {
             return self.set.canAutomate(index);
         }
 
         pub fn canAutomateById(self: Self, wanted_id: u32) ?bool {
             return self.set.canAutomateById(wanted_id);
+        }
+
+        pub fn canAutomateByName(self: Self, wanted_name: []const u8) ?bool {
+            return self.set.canAutomateByName(wanted_name);
         }
 
         pub fn isReadOnly(self: Self, index: usize) ?bool {
@@ -1335,12 +1449,20 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.isReadOnlyById(wanted_id);
         }
 
+        pub fn isReadOnlyByName(self: Self, wanted_name: []const u8) ?bool {
+            return self.set.isReadOnlyByName(wanted_name);
+        }
+
         pub fn unitId(self: Self, index: usize) ?i32 {
             return self.set.unitId(index);
         }
 
         pub fn unitIdById(self: Self, wanted_id: u32) ?i32 {
             return self.set.unitIdById(wanted_id);
+        }
+
+        pub fn unitIdByName(self: Self, wanted_name: []const u8) ?i32 {
+            return self.set.unitIdByName(wanted_name);
         }
 
         pub fn stepCount(self: Self, index: usize) ?i32 {
@@ -1351,12 +1473,20 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.stepCountById(wanted_id);
         }
 
+        pub fn stepCountByName(self: Self, wanted_name: []const u8) ?i32 {
+            return self.set.stepCountByName(wanted_name);
+        }
+
         pub fn isList(self: Self, index: usize) ?bool {
             return self.set.isList(index);
         }
 
         pub fn isListById(self: Self, wanted_id: u32) ?bool {
             return self.set.isListById(wanted_id);
+        }
+
+        pub fn isListByName(self: Self, wanted_name: []const u8) ?bool {
+            return self.set.isListByName(wanted_name);
         }
 
         pub fn indexOfId(self: Self, wanted_id: u32) ?usize {
@@ -1797,12 +1927,18 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqualStrings("Voices", set.name(1).?);
     try std.testing.expectEqualStrings("Bypass", set.nameById(2).?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.nameById(99));
+    try std.testing.expectEqual(@as(?u32, 1), set.idByName("Voices"));
+    try std.testing.expectEqual(@as(?u32, null), set.idByName("Missing"));
     try std.testing.expectEqualStrings("Vox", set.shortName(1).?);
     try std.testing.expectEqualStrings("Mode", set.shortNameById(3).?);
+    try std.testing.expectEqualStrings("Vox", set.shortNameByName("Voices").?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.shortNameById(99));
+    try std.testing.expectEqual(@as(?[]const u8, null), set.shortNameByName("Missing"));
     try std.testing.expectEqualStrings("dB", set.units(0).?);
     try std.testing.expectEqualStrings("", set.unitsById(1).?);
+    try std.testing.expectEqualStrings("dB", set.unitsByName("Gain").?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.unitsById(99));
+    try std.testing.expectEqual(@as(?[]const u8, null), set.unitsByName("Missing"));
     try std.testing.expectEqual(@as(?usize, 2), set.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, null), set.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, 1), set.indexOfName("Voices"));
@@ -1817,33 +1953,47 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectApproxEqAbs(0.0, set.defaultNormalized(2).?, 0.000001);
     try std.testing.expectApproxEqAbs(1.0, set.defaultNormalized(3).?, 0.000001);
     try std.testing.expectApproxEqAbs(1.0, set.defaultNormalizedById(3).?, 0.000001);
+    try std.testing.expectApproxEqAbs(1.0, set.defaultNormalizedByName("Mode").?, 0.000001);
     try std.testing.expectEqual(@as(?f64, null), set.defaultNormalizedById(99));
+    try std.testing.expectEqual(@as(?f64, null), set.defaultNormalizedByName("Missing"));
     try std.testing.expectEqual(@as(?bool, true), set.canAutomate(0));
     try std.testing.expectEqual(@as(?bool, false), set.canAutomateById(1));
+    try std.testing.expectEqual(@as(?bool, false), set.canAutomateByName("Voices"));
     try std.testing.expectEqual(@as(?bool, true), set.isReadOnly(1));
     try std.testing.expectEqual(@as(?bool, false), set.isReadOnlyById(0));
+    try std.testing.expectEqual(@as(?bool, true), set.isReadOnlyByName("Voices"));
     try std.testing.expectEqual(@as(?bool, null), set.canAutomateById(99));
+    try std.testing.expectEqual(@as(?bool, null), set.canAutomateByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), set.isReadOnlyById(99));
+    try std.testing.expectEqual(@as(?bool, null), set.isReadOnlyByName("Missing"));
     try std.testing.expectEqual(@as(?bool, false), set.isBypass(0));
     try std.testing.expectEqual(@as(?bool, null), set.isBypass(99));
     try std.testing.expectEqual(@as(?bool, false), set.isBypassById(0));
+    try std.testing.expectEqual(@as(?bool, false), set.isBypassByName("Gain"));
     try std.testing.expectEqual(@as(?bool, null), set.isBypassById(99));
+    try std.testing.expectEqual(@as(?bool, null), set.isBypassByName("Missing"));
     try std.testing.expectEqual(@as(?i32, 0), set.unitId(0));
     try std.testing.expectEqual(@as(?i32, 2), set.unitId(1));
     try std.testing.expectEqual(@as(?i32, 2), set.unitIdById(1));
+    try std.testing.expectEqual(@as(?i32, 2), set.unitIdByName("Voices"));
     try std.testing.expectEqual(@as(?i32, null), set.unitIdById(99));
+    try std.testing.expectEqual(@as(?i32, null), set.unitIdByName("Missing"));
     try std.testing.expectEqual(@as(?i32, 0), set.stepCount(0));
     try std.testing.expectEqual(@as(?i32, 15), set.stepCount(1));
     try std.testing.expectEqual(@as(?i32, 1), set.stepCount(2));
     try std.testing.expectEqual(@as(?i32, 1), set.stepCount(3));
     try std.testing.expectEqual(@as(?i32, null), set.stepCount(99));
     try std.testing.expectEqual(@as(?i32, 1), set.stepCountById(3));
+    try std.testing.expectEqual(@as(?i32, 1), set.stepCountByName("Mode"));
     try std.testing.expectEqual(@as(?i32, null), set.stepCountById(99));
+    try std.testing.expectEqual(@as(?i32, null), set.stepCountByName("Missing"));
     try std.testing.expectEqual(@as(?bool, false), set.isList(1));
     try std.testing.expectEqual(@as(?bool, true), set.isList(3));
     try std.testing.expectEqual(@as(?bool, null), set.isList(99));
     try std.testing.expectEqual(@as(?bool, true), set.isListById(3));
+    try std.testing.expectEqual(@as(?bool, true), set.isListByName("Mode"));
     try std.testing.expectEqual(@as(?bool, null), set.isListById(99));
+    try std.testing.expectEqual(@as(?bool, null), set.isListByName("Missing"));
     try std.testing.expectEqual(process.ParameterChange{
         .id = 0,
         .sample_offset = 2,
@@ -2112,38 +2262,58 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?u32, 0), view.id(0));
     try std.testing.expectEqualStrings("Voices", view.name(1).?);
     try std.testing.expectEqualStrings("Bypass", view.nameById(2).?);
+    try std.testing.expectEqual(@as(?u32, 1), view.idByName("Voices"));
     try std.testing.expectEqualStrings("Vox", view.shortName(1).?);
     try std.testing.expectEqualStrings("Mode", view.shortNameById(3).?);
+    try std.testing.expectEqualStrings("Vox", view.shortNameByName("Voices").?);
     try std.testing.expectEqualStrings("dB", view.units(0).?);
     try std.testing.expectEqualStrings("", view.unitsById(1).?);
+    try std.testing.expectEqualStrings("dB", view.unitsByName("Gain").?);
     try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalized(3));
     try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalizedById(3));
+    try std.testing.expectEqual(@as(?f64, 0.0), view.defaultNormalizedByName("Mode"));
     try std.testing.expectEqual(@as(?bool, false), view.isBypass(0));
     try std.testing.expectEqual(@as(?bool, false), view.isBypassById(0));
+    try std.testing.expectEqual(@as(?bool, false), view.isBypassByName("Gain"));
     try std.testing.expectEqual(@as(?bool, true), view.canAutomate(0));
     try std.testing.expectEqual(@as(?bool, false), view.canAutomateById(1));
+    try std.testing.expectEqual(@as(?bool, false), view.canAutomateByName("Voices"));
     try std.testing.expectEqual(@as(?bool, true), view.isReadOnly(1));
     try std.testing.expectEqual(@as(?bool, false), view.isReadOnlyById(0));
+    try std.testing.expectEqual(@as(?bool, true), view.isReadOnlyByName("Voices"));
     try std.testing.expectEqual(@as(?i32, 2), view.unitId(1));
     try std.testing.expectEqual(@as(?i32, 2), view.unitIdById(1));
+    try std.testing.expectEqual(@as(?i32, 2), view.unitIdByName("Voices"));
     try std.testing.expectEqual(@as(?i32, 3), view.stepCount(1));
     try std.testing.expectEqual(@as(?i32, 2), view.stepCountById(3));
+    try std.testing.expectEqual(@as(?i32, 2), view.stepCountByName("Mode"));
     try std.testing.expectEqual(@as(?bool, true), view.isList(3));
     try std.testing.expectEqual(@as(?bool, true), view.isListById(3));
+    try std.testing.expectEqual(@as(?bool, true), view.isListByName("Mode"));
     try std.testing.expectEqual(@as(?usize, 2), view.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, 1), view.indexOfName("Voices"));
     try std.testing.expectEqual(@as(?u32, null), view.id(99));
     try std.testing.expectEqual(@as(?[]const u8, null), view.name(99));
     try std.testing.expectEqual(@as(?[]const u8, null), view.nameById(99));
+    try std.testing.expectEqual(@as(?u32, null), view.idByName("Missing"));
     try std.testing.expectEqual(@as(?[]const u8, null), view.shortNameById(99));
+    try std.testing.expectEqual(@as(?[]const u8, null), view.shortNameByName("Missing"));
     try std.testing.expectEqual(@as(?[]const u8, null), view.unitsById(99));
+    try std.testing.expectEqual(@as(?[]const u8, null), view.unitsByName("Missing"));
     try std.testing.expectEqual(@as(?f64, null), view.defaultNormalizedById(99));
+    try std.testing.expectEqual(@as(?f64, null), view.defaultNormalizedByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), view.isBypassById(99));
+    try std.testing.expectEqual(@as(?bool, null), view.isBypassByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), view.canAutomateById(99));
+    try std.testing.expectEqual(@as(?bool, null), view.canAutomateByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), view.isReadOnlyById(99));
+    try std.testing.expectEqual(@as(?bool, null), view.isReadOnlyByName("Missing"));
     try std.testing.expectEqual(@as(?i32, null), view.unitIdById(99));
+    try std.testing.expectEqual(@as(?i32, null), view.unitIdByName("Missing"));
     try std.testing.expectEqual(@as(?i32, null), view.stepCountById(99));
+    try std.testing.expectEqual(@as(?i32, null), view.stepCountByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), view.isListById(99));
+    try std.testing.expectEqual(@as(?bool, null), view.isListByName("Missing"));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfName("Missing"));
     try std.testing.expectEqual(@as(usize, 3), view.indexOfField("mode"));
@@ -2234,31 +2404,47 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?u32, 0), editor.id(0));
     try std.testing.expectEqualStrings("Voices", editor.name(1).?);
     try std.testing.expectEqualStrings("Bypass", editor.nameById(2).?);
+    try std.testing.expectEqual(@as(?u32, 1), editor.idByName("Voices"));
     try std.testing.expectEqualStrings("Vox", editor.shortName(1).?);
     try std.testing.expectEqualStrings("Mode", editor.shortNameById(3).?);
+    try std.testing.expectEqualStrings("Vox", editor.shortNameByName("Voices").?);
     try std.testing.expectEqualStrings("dB", editor.units(0).?);
     try std.testing.expectEqualStrings("", editor.unitsById(1).?);
+    try std.testing.expectEqualStrings("dB", editor.unitsByName("Gain").?);
     try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalized(3));
     try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalizedById(3));
+    try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalizedByName("Mode"));
     try std.testing.expectEqual(@as(?bool, false), editor.isBypass(0));
     try std.testing.expectEqual(@as(?bool, false), editor.isBypassById(0));
+    try std.testing.expectEqual(@as(?bool, false), editor.isBypassByName("Gain"));
     try std.testing.expectEqual(@as(?bool, true), editor.canAutomate(0));
     try std.testing.expectEqual(@as(?bool, false), editor.canAutomateById(1));
+    try std.testing.expectEqual(@as(?bool, false), editor.canAutomateByName("Voices"));
     try std.testing.expectEqual(@as(?bool, true), editor.isReadOnly(1));
     try std.testing.expectEqual(@as(?bool, false), editor.isReadOnlyById(0));
+    try std.testing.expectEqual(@as(?bool, true), editor.isReadOnlyByName("Voices"));
+    try std.testing.expectEqual(@as(?i32, 2), editor.unitIdByName("Voices"));
     try std.testing.expectEqual(@as(?i32, 3), editor.stepCount(1));
     try std.testing.expectEqual(@as(?i32, 2), editor.stepCountById(3));
+    try std.testing.expectEqual(@as(?i32, 2), editor.stepCountByName("Mode"));
     try std.testing.expectEqual(@as(?bool, true), editor.isList(3));
     try std.testing.expectEqual(@as(?bool, true), editor.isListById(3));
+    try std.testing.expectEqual(@as(?bool, true), editor.isListByName("Mode"));
     try std.testing.expectEqual(@as(?usize, 2), editor.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, 1), editor.indexOfName("Voices"));
     try std.testing.expectEqual(@as(?u32, null), editor.id(99));
     try std.testing.expectEqual(@as(?[]const u8, null), editor.name(99));
     try std.testing.expectEqual(@as(?[]const u8, null), editor.nameById(99));
+    try std.testing.expectEqual(@as(?u32, null), editor.idByName("Missing"));
     try std.testing.expectEqual(@as(?f64, null), editor.defaultNormalizedById(99));
+    try std.testing.expectEqual(@as(?f64, null), editor.defaultNormalizedByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), editor.isBypassById(99));
+    try std.testing.expectEqual(@as(?bool, null), editor.isBypassByName("Missing"));
+    try std.testing.expectEqual(@as(?i32, null), editor.unitIdByName("Missing"));
     try std.testing.expectEqual(@as(?i32, null), editor.stepCountById(99));
+    try std.testing.expectEqual(@as(?i32, null), editor.stepCountByName("Missing"));
     try std.testing.expectEqual(@as(?bool, null), editor.isListById(99));
+    try std.testing.expectEqual(@as(?bool, null), editor.isListByName("Missing"));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfName("Missing"));
     try std.testing.expectEqual(@as(usize, 3), editor.indexOfField("mode"));
