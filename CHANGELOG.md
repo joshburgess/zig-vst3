@@ -27,6 +27,7 @@
 - Unit and program-list helper coverage for fixed string truncation, program metadata, pitch names, and delegated unit/program data operations.
 - Capability helper coverage for inflated interface counts, prefetch query behavior, configured MIDI mapping directions, and empty physical UI maps.
 - Host-context helper coverage for host-name truncation, delegated instance creation, automation-state failure tracking, and default data-exchange lifecycles.
+- Static factory coverage for fixed string truncation, invalid class lookup clearing, requested IID forwarding, and failed create output clearing.
 
 ### Changed
 

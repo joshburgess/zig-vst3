@@ -109,7 +109,9 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
             for (classes) |class| {
                 if (std.mem.eql(u8, cid[0..16], &class.cid)) {
                     if (class.create) |create| {
-                        return create(requested_iid, out);
+                        const result = create(requested_iid, out);
+                        if (result != types.kResultOk) out.* = null;
+                        return result;
                     }
                     break;
                 }
@@ -156,9 +158,72 @@ test "static factory exposes metadata and class count" {
     try std.testing.expectEqualStrings("Test Plug-in", std.mem.sliceTo(&class_info.name, 0));
 }
 
+test "static factory truncates fixed-size metadata strings" {
+    const long = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz";
+    const TestFactory = StaticFactory(.{
+        .vendor = long,
+        .url = long,
+        .email = long,
+        .flags = 7,
+    }, &.{
+        .{
+            .cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444),
+            .category = long,
+            .name = long,
+        },
+    });
+
+    const factory = TestFactory.getPluginFactory().?;
+    var factory_info: ipluginbase.PFactoryInfo = .{};
+    var class_info: ipluginbase.PClassInfo = .{};
+
+    try std.testing.expectEqual(types.kResultOk, factory.vtable.getFactoryInfo(factory, &factory_info));
+    try std.testing.expectEqual(@as(u8, 'a'), factory_info.vendor[0]);
+    try std.testing.expectEqual(long[62], factory_info.vendor[62]);
+    try std.testing.expectEqual(@as(u8, 0), factory_info.vendor[63]);
+    try std.testing.expectEqual(@as(types.int32, 7), factory_info.flags);
+
+    try std.testing.expectEqual(types.kResultOk, factory.vtable.getClassInfo(factory, 0, &class_info));
+    try std.testing.expectEqual(@as(u8, 'a'), class_info.category[0]);
+    try std.testing.expectEqual(long[30], class_info.category[30]);
+    try std.testing.expectEqual(@as(u8, 0), class_info.category[31]);
+    try std.testing.expectEqual(@as(u8, 'a'), class_info.name[0]);
+    try std.testing.expectEqual(long[62], class_info.name[62]);
+    try std.testing.expectEqual(@as(u8, 0), class_info.name[63]);
+}
+
+test "static factory clears invalid class info outputs" {
+    const TestFactory = StaticFactory(.{ .vendor = "Test Vendor" }, &.{});
+    const factory = TestFactory.getPluginFactory().?;
+    var class_info = ipluginbase.PClassInfo{
+        .cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444),
+        .cardinality = 7,
+    };
+
+    try std.testing.expectEqual(@as(types.int32, 0), factory.vtable.countClasses(factory));
+    try std.testing.expectEqual(types.kInvalidArgument, factory.vtable.getClassInfo(factory, 0, &class_info));
+    try std.testing.expectEqual(@as(types.int32, 0), class_info.cardinality);
+
+    const NonEmptyFactory = StaticFactory(.{ .vendor = "Test Vendor" }, &.{
+        .{
+            .cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444),
+            .category = "Audio Module Class",
+            .name = "Test Plug-in",
+        },
+    });
+    const non_empty = NonEmptyFactory.getPluginFactory().?;
+    class_info.cardinality = 7;
+    try std.testing.expectEqual(types.kInvalidArgument, non_empty.vtable.getClassInfo(non_empty, -1, &class_info));
+    try std.testing.expectEqual(@as(types.int32, 0), class_info.cardinality);
+    class_info.cardinality = 7;
+    try std.testing.expectEqual(types.kInvalidArgument, non_empty.vtable.getClassInfo(non_empty, 1, &class_info));
+    try std.testing.expectEqual(@as(types.int32, 0), class_info.cardinality);
+}
+
 test "static factory dispatches createInstance by class id" {
     const Create = struct {
-        fn create(_: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
+            if (!std.mem.eql(u8, requested_iid[0..16], &funknown.iid)) return types.kNoInterface;
             out.* = @ptrFromInt(0x1);
             return types.kResultOk;
         }
@@ -180,6 +245,35 @@ test "static factory dispatches createInstance by class id" {
     try std.testing.expectEqual(@as(?*anyopaque, @ptrFromInt(0x1)), out);
 }
 
+test "static factory clears failed create outputs" {
+    const Create = struct {
+        fn create(_: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
+            out.* = @ptrFromInt(0x1);
+            return types.kNoInterface;
+        }
+    };
+    const TestFactory = StaticFactory(.{ .vendor = "Test Vendor" }, &.{
+        .{
+            .cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444),
+            .category = "Audio Module Class",
+            .name = "Test Plug-in",
+            .create = Create.create,
+        },
+    });
+
+    const factory = TestFactory.getPluginFactory().?;
+    const cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
+    const missing_cid = tuid.inlineUid(0x55555555, 0x66666666, 0x77777777, 0x88888888);
+    var out: ?*anyopaque = @ptrFromInt(0x2);
+
+    try std.testing.expectEqual(types.kNoInterface, factory.vtable.createInstance(factory, @ptrCast(&cid), @ptrCast(&funknown.iid), &out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), out);
+
+    out = @ptrFromInt(0x2);
+    try std.testing.expectEqual(types.kNoInterface, factory.vtable.createInstance(factory, @ptrCast(&missing_cid), @ptrCast(&funknown.iid), &out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), out);
+}
+
 test "static factory implements queryInterface for FUnknown and IPluginFactory" {
     const TestFactory = StaticFactory(.{ .vendor = "Test Vendor" }, &.{});
     const factory = TestFactory.getPluginFactory().?;
@@ -193,4 +287,8 @@ test "static factory implements queryInterface for FUnknown and IPluginFactory" 
     try std.testing.expectEqual(types.kResultOk, factory.vtable.queryInterface(factory, &ipluginbase.iplugin_factory_iid, &out));
     try std.testing.expectEqual(@as(?*anyopaque, @ptrCast(factory)), out);
     try std.testing.expectEqual(@as(types.uint32, 1), factory.vtable.release(factory));
+
+    out = @ptrFromInt(0x1);
+    try std.testing.expectEqual(types.kNoInterface, factory.vtable.queryInterface(factory, &ipluginbase.iplugin_factory2_iid, &out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), out);
 }
