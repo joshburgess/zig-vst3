@@ -73,6 +73,7 @@ const SineSynthProcessor = struct {
 const Effect = zig_plug_effect.SimpleStereoEffect(struct {
     pub const component_name = "SineSynthComponent";
     pub const controller_cid = sine_synth_controller.cid;
+    pub const audio_input = false;
     pub const Processor = SineSynthProcessor;
 
     pub fn resetProcessState() void {
@@ -102,6 +103,7 @@ test "sine synth component can be created as IComponent" {
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    try std.testing.expectEqual(@as(types.int32, 0), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput)));
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput)));
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput)));
     try std.testing.expect(component_iface.vtable.release(component_iface) >= 1);

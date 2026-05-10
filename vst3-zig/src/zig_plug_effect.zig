@@ -1341,6 +1341,13 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
     return struct {
         const Self = @This();
         const event_output = @hasDecl(Config, "event_output") and Config.event_output;
+        const audio_input = !@hasDecl(Config, "audio_input") or Config.audio_input;
+        const audio_output = !@hasDecl(Config, "audio_output") or Config.audio_output;
+        const bus_config = zig_plug_bridge.StereoAudioBuses.Config{
+            .audio_input = audio_input,
+            .audio_output = audio_output,
+            .event_output = event_output,
+        };
         const process_context_requirements: types.uint32 = if (@hasDecl(Config, "process_context_requirements"))
             Config.process_context_requirements
         else
@@ -1548,11 +1555,11 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         fn getBusCount(_: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection) callconv(.C) types.int32 {
-            return zig_plug_bridge.StereoAudioBuses.busCountWithEventOutput(media_type, direction, event_output);
+            return zig_plug_bridge.StereoAudioBuses.busCountConfigured(media_type, direction, bus_config);
         }
 
         fn getBusInfo(_: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo) callconv(.C) types.tresult {
-            return zig_plug_bridge.StereoAudioBuses.busInfoWithEventOutput(media_type, direction, index, out, event_output);
+            return zig_plug_bridge.StereoAudioBuses.busInfoConfigured(media_type, direction, index, out, bus_config);
         }
 
         fn getRoutingInfo(_: *anyopaque, _: *ivstcomponent.RoutingInfo, _: *ivstcomponent.RoutingInfo) callconv(.C) types.tresult {
@@ -1772,11 +1779,11 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         fn setBusArrangements(_: *anyopaque, inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32) callconv(.C) types.tresult {
-            return zig_plug_bridge.StereoAudioBuses.setArrangements(inputs, num_inputs, outputs, num_outputs);
+            return zig_plug_bridge.StereoAudioBuses.setArrangementsConfigured(inputs, num_inputs, outputs, num_outputs, bus_config);
         }
 
         fn getBusArrangement(_: *anyopaque, direction: vsttypes.BusDirection, index: types.int32, out: *vsttypes.SpeakerArrangement) callconv(.C) types.tresult {
-            return zig_plug_bridge.StereoAudioBuses.arrangement(direction, index, out);
+            return zig_plug_bridge.StereoAudioBuses.arrangementConfigured(direction, index, out, bus_config);
         }
 
         fn canProcessSampleSize(_: *anyopaque, symbolic_sample_size: types.int32) callconv(.C) types.tresult {
@@ -1805,7 +1812,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             const events = zig_plug_bridge.collectInputEvents(data, &event_storage);
             var output_events = plug_process.EventWriter.init(&output_event_storage, if (data.numSamples <= 0) 0 else @intCast(data.numSamples));
             Config.applyParameterChanges(parameter_changes);
-            const result = zig_plug_bridge.processMainAudio(data, parameter_changes, events, &output_events, Config.Processor{});
+            const result = zig_plug_bridge.processMainAudioConfigured(data, parameter_changes, events, &output_events, Config.Processor{}, bus_config);
             if (result != types.kResultOk) return result;
             return zig_plug_bridge.writeOutputEvents(data, output_events.events());
         }
