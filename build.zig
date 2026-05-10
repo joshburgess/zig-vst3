@@ -94,6 +94,14 @@ pub fn build(b: *std.Build) void {
         .root_module = vst3_test_module,
     });
 
+    const zig_plug_core_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig-plug/src/core.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
     const zig_plug_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("zig-plug/src/root.zig"),
@@ -107,6 +115,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     addRunArtifactDependencies(b, test_step, &.{
         vst3_tests,
+        zig_plug_core_tests,
         zig_plug_tests,
         gain.plugin_tests,
         bypass.plugin_tests,
