@@ -79,7 +79,7 @@ test "mode gain core example formats and parses enum parameters" {
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainByName("Mode", "mute"));
     try std.testing.expect(instance.storeParameterPlainByName("Mode", 2.0));
     try std.testing.expectEqual(Mode.mute, instance.loadParameter("mode"));
-    try std.testing.expect(instance.resetParameterByNameToDefault("Mode"));
+    try std.testing.expect(instance.resetParameterToDefaultByName("Mode"));
     try std.testing.expectEqual(Mode.clean, instance.loadParameter("mode"));
 }
 
