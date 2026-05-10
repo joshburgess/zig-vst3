@@ -148,6 +148,11 @@ pub fn UnitSet(comptime config: Config) type {
             return list.programs[program_index];
         }
 
+        pub fn programByName(self: Self, list_id: i32, name: []const u8) ?Program {
+            const index = self.programIndexOfName(list_id, name) orelse return null;
+            return self.program(list_id, index);
+        }
+
         pub fn programIndexOfName(self: Self, list_id: i32, name: []const u8) ?usize {
             const list = self.programListById(list_id) orelse return null;
             for (list.programs, 0..) |item, index| {
@@ -330,6 +335,8 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqualStrings("Drive", set.programName(10, 1).?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programName(10, 2));
     try std.testing.expectEqualStrings("Drive", set.program(10, 1).?.name);
+    try std.testing.expectEqualStrings("Drive", set.programByName(10, "Drive").?.name);
+    try std.testing.expectEqual(@as(?Program, null), set.programByName(10, "Missing"));
     try std.testing.expectEqual(@as(?usize, 1), set.programIndexOfName(10, "Drive"));
     try std.testing.expectEqual(@as(?usize, null), set.programIndexOfName(10, "Missing"));
     try std.testing.expectEqual(@as(?usize, 1), set.programParameterCount(10, 1));
