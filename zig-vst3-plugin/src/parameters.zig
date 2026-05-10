@@ -1324,9 +1324,14 @@ pub fn ParameterValues(comptime Params: type) type {
         }
 
         pub fn resetToDefault(self: *Self, set: *const Set, index: usize) bool {
-            const default = set.defaultNormalized(index) orelse return false;
+            return self.resetToDefaultCount(set, index) != null;
+        }
+
+        pub fn resetToDefaultCount(self: *Self, set: *const Set, index: usize) ?usize {
+            const default = set.defaultNormalized(index) orelse return null;
+            const changed: usize = if (self.values[index].load() != default) 1 else 0;
             self.values[index].store(default);
-            return true;
+            return changed;
         }
 
         pub fn loadById(self: *const Self, set: *const Set, id: u32) ?f64 {
@@ -1424,17 +1429,29 @@ pub fn ParameterValues(comptime Params: type) type {
         }
 
         pub fn resetToDefaultById(self: *Self, set: *const Set, id: u32) bool {
-            const index = set.indexOfId(id) orelse return false;
-            return self.resetToDefault(set, index);
+            return self.resetToDefaultByIdCount(set, id) != null;
+        }
+
+        pub fn resetToDefaultByIdCount(self: *Self, set: *const Set, id: u32) ?usize {
+            const index = set.indexOfId(id) orelse return null;
+            return self.resetToDefaultCount(set, index);
         }
 
         pub fn resetToDefaultByName(self: *Self, set: *const Set, name: []const u8) bool {
-            const index = set.indexOfName(name) orelse return false;
-            return self.resetToDefault(set, index);
+            return self.resetToDefaultByNameCount(set, name) != null;
+        }
+
+        pub fn resetToDefaultByNameCount(self: *Self, set: *const Set, name: []const u8) ?usize {
+            const index = set.indexOfName(name) orelse return null;
+            return self.resetToDefaultCount(set, index);
         }
 
         pub fn resetFieldToDefault(self: *Self, set: *const Set, comptime field_name: []const u8) bool {
-            return self.resetToDefault(set, set.indexOfField(field_name));
+            return self.resetFieldToDefaultCount(set, field_name) != null;
+        }
+
+        pub fn resetFieldToDefaultCount(self: *Self, set: *const Set, comptime field_name: []const u8) ?usize {
+            return self.resetToDefaultCount(set, set.indexOfField(field_name));
         }
 
         pub fn applyChangesCount(self: *Self, set: *const Set, changes: process.ParameterChanges) usize {
@@ -2361,16 +2378,32 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.values.resetToDefault(self.set, index);
         }
 
+        pub fn resetToDefaultIndexCount(self: Self, index: usize) ?usize {
+            return self.values.resetToDefaultCount(self.set, index);
+        }
+
         pub fn resetToDefaultById(self: Self, wanted_id: u32) bool {
             return self.values.resetToDefaultById(self.set, wanted_id);
+        }
+
+        pub fn resetToDefaultByIdCount(self: Self, wanted_id: u32) ?usize {
+            return self.values.resetToDefaultByIdCount(self.set, wanted_id);
         }
 
         pub fn resetToDefaultByName(self: Self, wanted_name: []const u8) bool {
             return self.values.resetToDefaultByName(self.set, wanted_name);
         }
 
+        pub fn resetToDefaultByNameCount(self: Self, wanted_name: []const u8) ?usize {
+            return self.values.resetToDefaultByNameCount(self.set, wanted_name);
+        }
+
         pub fn resetToDefault(self: Self, comptime field_name: []const u8) bool {
             return self.values.resetFieldToDefault(self.set, field_name);
+        }
+
+        pub fn resetToDefaultCount(self: Self, comptime field_name: []const u8) ?usize {
+            return self.values.resetFieldToDefaultCount(self.set, field_name);
         }
 
         pub fn applyChangesCount(self: Self, changes: process.ParameterChanges) usize {
@@ -3101,11 +3134,19 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(1));
     try std.testing.expect(values.store(0, 1.0));
     try std.testing.expect(values.store(1, 0.0));
+    try std.testing.expectEqual(@as(?usize, 1), values.resetToDefaultCount(&set, 0));
+    try std.testing.expectEqual(@as(?usize, 0), values.resetToDefaultCount(&set, 0));
+    try std.testing.expect(values.store(0, 1.0));
     try std.testing.expect(values.resetToDefault(&set, 0));
     try std.testing.expectEqual(@as(?f64, 0.25), values.load(0));
     try std.testing.expectEqual(@as(?f64, 0.0), values.load(1));
+    try std.testing.expectEqual(@as(?usize, 1), values.resetToDefaultByIdCount(&set, 1));
+    try std.testing.expectEqual(@as(?usize, 0), values.resetToDefaultByIdCount(&set, 1));
+    try std.testing.expect(values.store(1, 0.0));
     try std.testing.expect(values.resetToDefaultById(&set, 1));
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(1));
+    try std.testing.expectEqual(@as(?usize, null), values.resetToDefaultCount(&set, 99));
+    try std.testing.expectEqual(@as(?usize, null), values.resetToDefaultByIdCount(&set, 99));
     try std.testing.expect(!values.resetToDefault(&set, 99));
     try std.testing.expect(!values.resetToDefaultById(&set, 99));
 }
@@ -3668,15 +3709,30 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expect(editor.store("voices", 4));
     try std.testing.expect(editor.store("bypass", true));
     try std.testing.expect(editor.store("mode", .mute));
+    try std.testing.expectEqual(@as(?usize, 1), editor.resetToDefaultCount("gain"));
+    try std.testing.expectEqual(@as(?usize, 0), editor.resetToDefaultCount("gain"));
+    try std.testing.expect(editor.store("gain", 6.0));
     try std.testing.expect(editor.resetToDefault("gain"));
     try std.testing.expectEqual(@as(f64, 0.0), view.load("gain"));
     try std.testing.expectEqual(@as(i64, 4), view.load("voices"));
+    try std.testing.expectEqual(@as(?usize, 1), editor.resetToDefaultIndexCount(1));
+    try std.testing.expectEqual(@as(?usize, 0), editor.resetToDefaultIndexCount(1));
+    try std.testing.expect(editor.store("voices", 4));
     try std.testing.expect(editor.resetToDefaultIndex(1));
     try std.testing.expectEqual(@as(i64, 1), view.load("voices"));
+    try std.testing.expectEqual(@as(?usize, 1), editor.resetToDefaultByIdCount(2));
+    try std.testing.expectEqual(@as(?usize, 0), editor.resetToDefaultByIdCount(2));
+    try std.testing.expect(editor.store("bypass", true));
     try std.testing.expect(editor.resetToDefaultById(2));
     try std.testing.expectEqual(false, view.load("bypass"));
+    try std.testing.expectEqual(@as(?usize, 1), editor.resetToDefaultByNameCount("Mode"));
+    try std.testing.expectEqual(@as(?usize, 0), editor.resetToDefaultByNameCount("Mode"));
+    try std.testing.expect(editor.store("mode", .mute));
     try std.testing.expect(editor.resetToDefaultByName("Mode"));
     try std.testing.expectEqual(Mode.clean, view.load("mode"));
+    try std.testing.expectEqual(@as(?usize, null), editor.resetToDefaultIndexCount(99));
+    try std.testing.expectEqual(@as(?usize, null), editor.resetToDefaultByIdCount(99));
+    try std.testing.expectEqual(@as(?usize, null), editor.resetToDefaultByNameCount("Missing"));
     try std.testing.expect(!editor.resetToDefaultIndex(99));
     try std.testing.expect(!editor.resetToDefaultById(99));
     try std.testing.expect(!editor.resetToDefaultByName("Missing"));
