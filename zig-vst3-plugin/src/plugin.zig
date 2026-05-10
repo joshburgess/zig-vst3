@@ -503,6 +503,18 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().hasParameters();
         }
 
+        pub fn parameterNonDefaultCount(self: *const Self) usize {
+            return self.parameterView().nonDefaultCount();
+        }
+
+        pub fn parametersAllDefaults(self: *const Self) bool {
+            return self.parameterView().allDefaults();
+        }
+
+        pub fn hasNonDefaultParameters(self: *const Self) bool {
+            return self.parameterView().hasNonDefaults();
+        }
+
         pub fn parameterId(self: *const Self, index: usize) ?u32 {
             return self.parameterView().id(index);
         }
@@ -2043,6 +2055,9 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(usize, 3), instance.parameterCount());
     try std.testing.expect(!instance.parametersEmpty());
     try std.testing.expect(instance.hasParameters());
+    try std.testing.expect(instance.parametersAllDefaults());
+    try std.testing.expect(!instance.hasNonDefaultParameters());
+    try std.testing.expectEqual(@as(usize, 0), instance.parameterNonDefaultCount());
     try std.testing.expectEqual(@as(?u32, 0), instance.parameterId(0));
     try std.testing.expectEqualStrings("Bypass", instance.parameterName(1).?);
     try std.testing.expectEqualStrings("Mode", instance.parameterNameById(2).?);
@@ -2247,6 +2262,9 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsDefaultById(2));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsDefaultByName("Mode"));
     try std.testing.expect(!instance.parameterIsDefault("mode"));
+    try std.testing.expect(!instance.parametersAllDefaults());
+    try std.testing.expect(instance.hasNonDefaultParameters());
+    try std.testing.expectEqual(@as(usize, 2), instance.parameterNonDefaultCount());
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsDefaultIndex(99));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsDefaultById(99));
     try std.testing.expectEqual(@as(?bool, null), instance.parameterIsDefaultByName("Missing"));
@@ -2259,6 +2277,9 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsDefaultById(2));
     try std.testing.expectEqual(@as(?bool, true), instance.parameterIsDefaultByName("Mode"));
     try std.testing.expect(instance.parameterIsDefault("mode"));
+    try std.testing.expect(instance.parametersAllDefaults());
+    try std.testing.expect(!instance.hasNonDefaultParameters());
+    try std.testing.expectEqual(@as(usize, 0), instance.parameterNonDefaultCount());
 
     try std.testing.expect(instance.storeParameter("gain", 6.0));
     try std.testing.expect(instance.storeParameter("bypass", true));
