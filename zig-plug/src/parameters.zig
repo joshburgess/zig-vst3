@@ -738,6 +738,20 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.plainMaximum(index);
         }
 
+        pub fn hasPlainRange(self: *const Self, index: usize) bool {
+            return self.plainMinimum(index) != null and self.plainMaximum(index) != null;
+        }
+
+        pub fn hasPlainRangeById(self: *const Self, wanted_id: u32) bool {
+            const index = self.indexOfId(wanted_id) orelse return false;
+            return self.hasPlainRange(index);
+        }
+
+        pub fn hasPlainRangeByName(self: *const Self, wanted_name: []const u8) bool {
+            const index = self.indexOfName(wanted_name) orelse return false;
+            return self.hasPlainRange(index);
+        }
+
         pub fn isBypass(self: *const Self, index: usize) ?bool {
             inline for (fields, 0..) |field, field_index| {
                 if (index == field_index) return @field(self.params, field.name).is_bypass;
@@ -889,6 +903,20 @@ pub fn ParameterSet(comptime Params: type) type {
         pub fn optionNormalizedByName(self: *const Self, wanted_name: []const u8, option_index: usize) ?f64 {
             const index = self.indexOfName(wanted_name) orelse return null;
             return self.optionNormalized(index, option_index);
+        }
+
+        pub fn hasOptions(self: *const Self, index: usize) bool {
+            return self.optionCount(index) != null;
+        }
+
+        pub fn hasOptionsById(self: *const Self, wanted_id: u32) bool {
+            const index = self.indexOfId(wanted_id) orelse return false;
+            return self.hasOptions(index);
+        }
+
+        pub fn hasOptionsByName(self: *const Self, wanted_name: []const u8) bool {
+            const index = self.indexOfName(wanted_name) orelse return false;
+            return self.hasOptions(index);
         }
 
         pub fn indexOfId(self: *const Self, wanted_id: u32) ?usize {
@@ -1463,6 +1491,18 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.plainMaximumByName(wanted_name);
         }
 
+        pub fn hasPlainRange(self: Self, index: usize) bool {
+            return self.set.hasPlainRange(index);
+        }
+
+        pub fn hasPlainRangeById(self: Self, wanted_id: u32) bool {
+            return self.set.hasPlainRangeById(wanted_id);
+        }
+
+        pub fn hasPlainRangeByName(self: Self, wanted_name: []const u8) bool {
+            return self.set.hasPlainRangeByName(wanted_name);
+        }
+
         pub fn isBypass(self: Self, index: usize) ?bool {
             return self.set.isBypass(index);
         }
@@ -1569,6 +1609,18 @@ pub fn ParameterView(comptime Params: type) type {
 
         pub fn optionNormalizedByName(self: Self, wanted_name: []const u8, option_index: usize) ?f64 {
             return self.set.optionNormalizedByName(wanted_name, option_index);
+        }
+
+        pub fn hasOptions(self: Self, index: usize) bool {
+            return self.set.hasOptions(index);
+        }
+
+        pub fn hasOptionsById(self: Self, wanted_id: u32) bool {
+            return self.set.hasOptionsById(wanted_id);
+        }
+
+        pub fn hasOptionsByName(self: Self, wanted_name: []const u8) bool {
+            return self.set.hasOptionsByName(wanted_name);
         }
 
         pub fn indexOfId(self: Self, wanted_id: u32) ?usize {
@@ -1880,6 +1932,18 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.plainMaximumByName(wanted_name);
         }
 
+        pub fn hasPlainRange(self: Self, index: usize) bool {
+            return self.set.hasPlainRange(index);
+        }
+
+        pub fn hasPlainRangeById(self: Self, wanted_id: u32) bool {
+            return self.set.hasPlainRangeById(wanted_id);
+        }
+
+        pub fn hasPlainRangeByName(self: Self, wanted_name: []const u8) bool {
+            return self.set.hasPlainRangeByName(wanted_name);
+        }
+
         pub fn isBypass(self: Self, index: usize) ?bool {
             return self.set.isBypass(index);
         }
@@ -1986,6 +2050,18 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn optionNormalizedByName(self: Self, wanted_name: []const u8, option_index: usize) ?f64 {
             return self.set.optionNormalizedByName(wanted_name, option_index);
+        }
+
+        pub fn hasOptions(self: Self, index: usize) bool {
+            return self.set.hasOptions(index);
+        }
+
+        pub fn hasOptionsById(self: Self, wanted_id: u32) bool {
+            return self.set.hasOptionsById(wanted_id);
+        }
+
+        pub fn hasOptionsByName(self: Self, wanted_name: []const u8) bool {
+            return self.set.hasOptionsByName(wanted_name);
         }
 
         pub fn indexOfId(self: Self, wanted_id: u32) ?usize {
@@ -2553,6 +2629,12 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqual(@as(?f64, 0.0), set.fieldPlainMinimum("gain"));
     try std.testing.expectEqual(@as(?f64, 16.0), set.fieldPlainMaximum("voices"));
     try std.testing.expectEqual(@as(?f64, null), set.fieldPlainMinimum("bypass"));
+    try std.testing.expect(set.hasPlainRange(0));
+    try std.testing.expect(set.hasPlainRangeById(1));
+    try std.testing.expect(set.hasPlainRangeByName("Voices"));
+    try std.testing.expect(!set.hasPlainRange(2));
+    try std.testing.expect(!set.hasPlainRangeById(99));
+    try std.testing.expect(!set.hasPlainRangeByName("Missing"));
     try std.testing.expectEqual(@as(?usize, 2), set.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, null), set.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, 1), set.indexOfName("Voices"));
@@ -2630,6 +2712,12 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqualStrings("lead", set.fieldOptionLabel("mode", 1).?);
     try std.testing.expectEqual(@as(?f64, 1.0), set.fieldOptionNormalized("mode", 1));
     try std.testing.expectEqual(@as(?usize, null), set.fieldOptionCount("bypass"));
+    try std.testing.expect(set.hasOptions(3));
+    try std.testing.expect(set.hasOptionsById(3));
+    try std.testing.expect(set.hasOptionsByName("Mode"));
+    try std.testing.expect(!set.hasOptions(0));
+    try std.testing.expect(!set.hasOptionsById(99));
+    try std.testing.expect(!set.hasOptionsByName("Missing"));
     try std.testing.expectEqual(process.ParameterChange{
         .id = 0,
         .sample_offset = 2,
@@ -2979,6 +3067,12 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?f64, null), view.plainMaximum(2));
     try std.testing.expectEqual(@as(?f64, null), view.plainMinimumById(99));
     try std.testing.expectEqual(@as(?f64, null), view.plainMaximumByName("Missing"));
+    try std.testing.expect(view.hasPlainRange(0));
+    try std.testing.expect(view.hasPlainRangeById(1));
+    try std.testing.expect(view.hasPlainRangeByName("Voices"));
+    try std.testing.expect(!view.hasPlainRange(2));
+    try std.testing.expect(!view.hasPlainRangeById(99));
+    try std.testing.expect(!view.hasPlainRangeByName("Missing"));
     try std.testing.expectEqual(@as(?bool, false), view.isBypass(0));
     try std.testing.expectEqual(@as(?bool, false), view.isBypassById(0));
     try std.testing.expectEqual(@as(?bool, false), view.isBypassByName("Gain"));
@@ -3006,6 +3100,10 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?f64, 1.0), view.optionNormalized(3, 2));
     try std.testing.expectEqual(@as(?f64, 0.5), view.optionNormalizedById(3, 1));
     try std.testing.expectEqual(@as(?f64, 0.0), view.optionNormalizedByName("Mode", 0));
+    try std.testing.expect(view.hasOptions(3));
+    try std.testing.expect(view.hasOptionsById(3));
+    try std.testing.expect(view.hasOptionsByName("Mode"));
+    try std.testing.expect(!view.hasOptions(0));
     try std.testing.expectEqual(@as(?usize, 2), view.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, 1), view.indexOfName("Voices"));
     try std.testing.expect(view.hasId(2));
@@ -3037,6 +3135,8 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?[]const u8, null), view.optionLabel(3, 3));
     try std.testing.expectEqual(@as(?[]const u8, null), view.optionLabelByName("Missing", 0));
     try std.testing.expectEqual(@as(?f64, null), view.optionNormalized(3, 3));
+    try std.testing.expect(!view.hasOptionsById(99));
+    try std.testing.expect(!view.hasOptionsByName("Missing"));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), view.indexOfName("Missing"));
     try std.testing.expect(!view.hasId(99));
@@ -3147,6 +3247,12 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?f64, null), editor.plainMaximum(2));
     try std.testing.expectEqual(@as(?f64, null), editor.plainMinimumById(99));
     try std.testing.expectEqual(@as(?f64, null), editor.plainMaximumByName("Missing"));
+    try std.testing.expect(editor.hasPlainRange(0));
+    try std.testing.expect(editor.hasPlainRangeById(1));
+    try std.testing.expect(editor.hasPlainRangeByName("Voices"));
+    try std.testing.expect(!editor.hasPlainRange(2));
+    try std.testing.expect(!editor.hasPlainRangeById(99));
+    try std.testing.expect(!editor.hasPlainRangeByName("Missing"));
     try std.testing.expectEqual(@as(?bool, false), editor.isBypass(0));
     try std.testing.expectEqual(@as(?bool, false), editor.isBypassById(0));
     try std.testing.expectEqual(@as(?bool, false), editor.isBypassByName("Gain"));
@@ -3172,6 +3278,10 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?f64, 1.0), editor.optionNormalized(3, 2));
     try std.testing.expectEqual(@as(?f64, 0.5), editor.optionNormalizedById(3, 1));
     try std.testing.expectEqual(@as(?f64, 0.0), editor.optionNormalizedByName("Mode", 0));
+    try std.testing.expect(editor.hasOptions(3));
+    try std.testing.expect(editor.hasOptionsById(3));
+    try std.testing.expect(editor.hasOptionsByName("Mode"));
+    try std.testing.expect(!editor.hasOptions(0));
     try std.testing.expectEqual(@as(?usize, 2), editor.indexOfId(2));
     try std.testing.expectEqual(@as(?usize, 1), editor.indexOfName("Voices"));
     try std.testing.expect(editor.hasId(2));
@@ -3194,6 +3304,8 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?[]const u8, null), editor.optionLabel(3, 3));
     try std.testing.expectEqual(@as(?[]const u8, null), editor.optionLabelByName("Missing", 0));
     try std.testing.expectEqual(@as(?f64, null), editor.optionNormalized(3, 3));
+    try std.testing.expect(!editor.hasOptionsById(99));
+    try std.testing.expect(!editor.hasOptionsByName("Missing"));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfId(99));
     try std.testing.expectEqual(@as(?usize, null), editor.indexOfName("Missing"));
     try std.testing.expect(!editor.hasId(99));
