@@ -1570,24 +1570,63 @@ test "plugin instance exposes typed parameter field access" {
 }
 
 test "plugin instance exposes parameter editor" {
+    const Mode = enum { clean, boost, mute };
     const Gain = struct {
         pub const name = "Instance Parameter Editor";
         pub const vendor = "zig-vst3";
         pub const Params = struct {
-            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
-            bypass: parameters.BoolParam = .{ .id = 1, .name = "Bypass" },
+            gain: parameters.FloatParam = .{ .id = 0, .name = "Gain", .short_name = "G", .units = "dB", .min = -12.0, .max = 6.0, .default = 0.0 },
+            bypass: parameters.BoolParam = .{ .id = 1, .name = "Bypass", .default = false, .is_bypass = true },
+            mode: parameters.EnumParam(Mode) = .{ .id = 2, .name = "Mode", .default = .clean },
         };
     };
     const Instance = PluginInstance(Gain);
     var instance = try Instance.init(std.testing.allocator, .{});
 
     const editor = instance.parameterEditor();
-    try std.testing.expect(editor.store("gain", 0.75));
+    try std.testing.expectEqual(@as(usize, 3), editor.parameterCount());
+    try std.testing.expectEqual(@as(?u32, 0), editor.id(0));
+    try std.testing.expectEqualStrings("Gain", editor.name(0).?);
+    try std.testing.expectEqualStrings("G", editor.shortNameById(0).?);
+    try std.testing.expectEqualStrings("dB", editor.unitsByName("Gain").?);
+    try std.testing.expectEqual(@as(?f64, 0.0), editor.defaultNormalizedByName("Mode"));
+    try std.testing.expectEqual(@as(?bool, true), editor.isBypassByName("Bypass"));
+    try std.testing.expectEqual(@as(?i32, 2), editor.stepCountByName("Mode"));
+    try std.testing.expectEqual(@as(?bool, true), editor.isListById(2));
+    try std.testing.expectEqual(@as(?usize, 2), editor.indexOfName("Mode"));
+    try std.testing.expect(editor.hasId(1));
+    try std.testing.expect(!editor.hasName("Missing"));
+
+    var buffer: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("mute", try editor.formatPlainByName("Mode", 1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), try editor.parsePlainByName("Mode", "mute"));
+    try std.testing.expectEqual(@as(?f64, 2.0), editor.plainFromNormalizedByName("Mode", 1.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), editor.normalizedFromPlainByName("Mode", 2.0));
+
+    try std.testing.expect(editor.store("gain", 6.0));
     try std.testing.expect(editor.storePlainById(1, 1.0));
+    try std.testing.expect(editor.storeByName("Mode", 1.0));
+    try std.testing.expectEqual(@as(f64, 6.0), editor.load("gain"));
+    try std.testing.expectEqual(true, editor.load("bypass"));
+    try std.testing.expectEqual(Mode.mute, editor.load("mode"));
+    try std.testing.expectEqual(@as(?f64, 1.0), editor.loadById(2));
+    try std.testing.expectEqual(@as(?f64, 2.0), editor.loadPlainByName("Mode"));
+
+    try std.testing.expect(!editor.storeIndex(99, 1.0));
+    try std.testing.expect(!editor.storePlainByName("Missing", 1.0));
+    try std.testing.expectEqual(@as(?f64, null), editor.loadIndex(99));
+    try std.testing.expectEqual(@as(?f64, null), editor.loadPlainByName("Missing"));
+
+    try std.testing.expect(editor.resetToDefaultById(1));
+    try std.testing.expectEqual(false, editor.load("bypass"));
+    editor.resetToDefaults();
+    try std.testing.expectEqual(@as(f64, 0.0), editor.load("gain"));
+    try std.testing.expectEqual(Mode.clean, editor.load("mode"));
 
     const view = instance.parameterView();
-    try std.testing.expectEqual(@as(f64, 0.75), view.load("gain"));
-    try std.testing.expectEqual(true, view.load("bypass"));
+    try std.testing.expectEqual(@as(f64, 0.0), view.load("gain"));
+    try std.testing.expectEqual(false, view.load("bypass"));
+    try std.testing.expectEqual(Mode.clean, view.load("mode"));
 }
 
 test "plugin instance applies process parameter changes before dispatch" {
