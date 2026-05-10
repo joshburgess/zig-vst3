@@ -7,7 +7,7 @@ const mode_gain_spec = @import("mode_gain_spec.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
 
-const ModeGainFactory = factory.StaticFactory(.{
+const ModeGainFactory = factory.StaticFactory3(.{
     .vendor = mode_gain_spec.Spec.vendor,
     .url = mode_gain_spec.Spec.url,
     .email = mode_gain_spec.Spec.email,

@@ -7,7 +7,7 @@ const voice_mix_component = @import("voice_mix_component.zig");
 const voice_mix_controller = @import("voice_mix_controller.zig");
 const voice_mix_spec = @import("voice_mix_spec.zig");
 
-const VoiceMixFactory = factory.StaticFactory(.{
+const VoiceMixFactory = factory.StaticFactory3(.{
     .vendor = voice_mix_spec.Spec.vendor,
     .url = voice_mix_spec.Spec.url,
     .email = voice_mix_spec.Spec.email,

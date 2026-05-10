@@ -7,7 +7,7 @@ const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
 
-const NoteGateFactory = factory.StaticFactory(.{
+const NoteGateFactory = factory.StaticFactory3(.{
     .vendor = note_gate_spec.Spec.vendor,
     .url = note_gate_spec.Spec.url,
     .email = note_gate_spec.Spec.email,

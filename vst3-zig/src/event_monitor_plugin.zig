@@ -7,7 +7,7 @@ const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
 
-const EventMonitorFactory = factory.StaticFactory(.{
+const EventMonitorFactory = factory.StaticFactory3(.{
     .vendor = event_monitor_spec.Spec.vendor,
     .url = event_monitor_spec.Spec.url,
     .email = event_monitor_spec.Spec.email,
