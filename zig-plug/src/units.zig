@@ -70,10 +70,28 @@ pub fn UnitSet(comptime config: Config) type {
             return null;
         }
 
+        pub fn duplicateUnitName(_: Self) ?[]const u8 {
+            for (config.units, 0..) |left, left_index| {
+                for (config.units, 0..) |right, right_index| {
+                    if (right_index > left_index and std.mem.eql(u8, right.name, left.name)) return left.name;
+                }
+            }
+            return null;
+        }
+
         pub fn duplicateProgramListId(_: Self) ?i32 {
             for (config.program_lists, 0..) |left, left_index| {
                 for (config.program_lists, 0..) |right, right_index| {
                     if (right_index > left_index and right.id == left.id) return left.id;
+                }
+            }
+            return null;
+        }
+
+        pub fn duplicateProgramListName(_: Self) ?[]const u8 {
+            for (config.program_lists, 0..) |left, left_index| {
+                for (config.program_lists, 0..) |right, right_index| {
+                    if (right_index > left_index and std.mem.eql(u8, right.name, left.name)) return left.name;
                 }
             }
             return null;
@@ -252,6 +270,7 @@ pub fn UnitSet(comptime config: Config) type {
         pub fn validateUnits(self: Self) !void {
             if (config.units.len == 0) return error.MissingRootUnit;
             if (self.duplicateUnitId() != null) return error.DuplicateUnitId;
+            if (self.duplicateUnitName() != null) return error.DuplicateUnitName;
             const root = self.unitById(root_unit_id) orelse return error.MissingRootUnit;
             if (root.name.len == 0) return error.EmptyUnitName;
             if (root.parent_id != no_parent_unit_id) return error.InvalidUnitParent;
@@ -278,6 +297,7 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn validateProgramLists(self: Self) !void {
             if (self.duplicateProgramListId() != null) return error.DuplicateProgramListId;
+            if (self.duplicateProgramListName() != null) return error.DuplicateProgramListName;
             for (config.program_lists) |list| {
                 if (list.id == no_program_list_id) return error.ReservedProgramListId;
                 if (list.name.len == 0) return error.EmptyProgramListName;
@@ -428,6 +448,9 @@ test "unit set validates ids names and links" {
     const DuplicateUnits = UnitSet(.{
         .units = &.{ Unit.root("Root"), .{ .id = root_unit_id, .name = "Other" } },
     });
+    const DuplicateUnitNames = UnitSet(.{
+        .units = &.{ Unit.root("Root"), .{ .id = 1, .name = "Root", .parent_id = root_unit_id } },
+    });
     const MissingRoot = UnitSet(.{
         .units = &.{.{ .id = 1, .name = "Oscillator", .parent_id = root_unit_id }},
     });
@@ -452,6 +475,9 @@ test "unit set validates ids names and links" {
     });
     const DuplicateProgramLists = UnitSet(.{
         .program_lists = &.{ .{ .id = 1, .name = "A" }, .{ .id = 1, .name = "B" } },
+    });
+    const DuplicateProgramListNames = UnitSet(.{
+        .program_lists = &.{ .{ .id = 1, .name = "Programs" }, .{ .id = 2, .name = "Programs" } },
     });
     const ReservedProgramListId = UnitSet(.{
         .program_lists = &.{.{ .id = no_program_list_id, .name = "Reserved" }},
@@ -482,6 +508,7 @@ test "unit set validates ids names and links" {
     });
 
     try std.testing.expectError(error.DuplicateUnitId, (DuplicateUnits{}).validate());
+    try std.testing.expectError(error.DuplicateUnitName, (DuplicateUnitNames{}).validate());
     try std.testing.expectError(error.MissingRootUnit, (MissingRoot{}).validate());
     try std.testing.expectError(error.EmptyUnitName, (EmptyUnitName{}).validate());
     try std.testing.expectError(error.InvalidUnitParent, (InvalidParent{}).validate());
@@ -489,6 +516,7 @@ test "unit set validates ids names and links" {
     try std.testing.expectError(error.CyclicUnitParent, (CyclicParent{}).validate());
     try std.testing.expectError(error.InvalidUnitProgramList, (InvalidProgramListLink{}).validate());
     try std.testing.expectError(error.DuplicateProgramListId, (DuplicateProgramLists{}).validate());
+    try std.testing.expectError(error.DuplicateProgramListName, (DuplicateProgramListNames{}).validate());
     try std.testing.expectError(error.ReservedProgramListId, (ReservedProgramListId{}).validate());
     try std.testing.expectError(error.EmptyProgramListName, (EmptyProgramListName{}).validate());
     try std.testing.expectError(error.EmptyProgramName, (EmptyProgramName{}).validate());
