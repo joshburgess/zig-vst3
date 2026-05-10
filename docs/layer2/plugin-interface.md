@@ -49,7 +49,7 @@ Unit and program helpers:
 - Unit metadata validation rejects missing or duplicate root units, empty unit or program names, duplicate program-list ids, duplicate program names, duplicate program parameter ids, duplicate program info keys, missing or cyclic unit parents, and unit links to unknown program lists.
 - Parameter metadata validation rejects descriptors whose `unit_id` does not match a reflected unit.
 - Program snapshot validation rejects parameter ids that do not match reflected parameters.
-- `PluginInstance.unitCount`, `unit`, `unitById`, `rootUnit`, `unitIndexOfId`, `hasUnit`, `programListCount`, `programList`, `programListById`, `programListIndexOfId`, `hasProgramList`, `programListForUnit`, `programCount`, `program`, `programName`, `programIndexOfName`, `programParameterCount`, `programParameter`, `programParameterById`, `programInfo`, and `programInfoByName` expose the reflected metadata.
+- `PluginInstance.unitCount`, `unit`, `unitById`, `rootUnit`, `unitIndexOfId`, `hasUnit`, `programListCount`, `programList`, `programListById`, `programListIndexOfId`, `hasProgramList`, `programListForUnit`, `programCount`, `program`, `programByName`, `programName`, `programIndexOfName`, `programParameterCount`, `programParameter`, `programParameterById`, `programInfo`, and `programInfoByName` expose the reflected metadata.
 - `PluginInstance.applyProgram` and `applyProgramByName` apply a program's normalized parameter snapshot to reflected parameter ids after validating the whole snapshot.
 
 Audio helpers:
