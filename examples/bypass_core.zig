@@ -36,6 +36,7 @@ test "bypass core example declares reflected bool parameter" {
 
     try std.testing.expectEqualStrings("zig-plug Core Bypass", Spec.name);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
+    try std.testing.expectEqual(@as(usize, 1), parameter_set.parameterCount());
     try std.testing.expectEqual(false, spec.values.view(&parameter_set).load("bypass"));
     plug.plugin.validateLifecycle(Bypass);
 }
