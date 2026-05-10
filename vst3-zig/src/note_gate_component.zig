@@ -33,10 +33,14 @@ const NoteGateState = struct {
     fn applyEventsAt(self: *NoteGateState, comptime Sample: type, context: *plug_process.ProcessContext(Sample), sample_offset: usize) void {
         var events = context.inputEventsAtOffset(sample_offset);
         while (events.next()) |event| {
-            if (event.isNoteAttack()) {
-                self.holdNote(event.pitch);
-            } else if (event.isNoteRelease()) {
-                self.releaseNote(event.pitch);
+            if (event.asNoteOn()) |note| {
+                if (note.velocity > 0.0) {
+                    self.holdNote(note.pitch);
+                } else {
+                    self.releaseNote(note.pitch);
+                }
+            } else if (event.asNoteOff()) |note| {
+                self.releaseNote(note.pitch);
             }
         }
     }
