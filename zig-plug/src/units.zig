@@ -217,6 +217,10 @@ pub fn UnitSet(comptime config: Config) type {
             return null;
         }
 
+        pub fn hasProgramName(self: Self, list_id: i32, name: []const u8) bool {
+            return self.programIndexOfName(list_id, name) != null;
+        }
+
         pub fn programParameterCount(self: Self, list_id: i32, program_index: usize) ?usize {
             const item = self.program(list_id, program_index) orelse return null;
             return item.parameters.len;
@@ -432,6 +436,9 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?Program, null), set.programByName(10, "Missing"));
     try std.testing.expectEqual(@as(?usize, 1), set.programIndexOfName(10, "Drive"));
     try std.testing.expectEqual(@as(?usize, null), set.programIndexOfName(10, "Missing"));
+    try std.testing.expect(set.hasProgramName(10, "Drive"));
+    try std.testing.expect(!set.hasProgramName(10, "Missing"));
+    try std.testing.expect(!set.hasProgramName(99, "Drive"));
     try std.testing.expectEqual(@as(?usize, 1), set.programParameterCount(10, 1));
     try std.testing.expectEqual(@as(?usize, 1), set.programParameterCountByName(10, "Drive"));
     try std.testing.expectEqual(@as(?usize, null), set.programParameterCountByName(10, "Missing"));
