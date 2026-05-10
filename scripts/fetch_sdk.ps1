@@ -5,15 +5,37 @@ $SdkTag = if ($env:VST3_SDK_TAG) { $env:VST3_SDK_TAG } else { "v3.8.0_build_66" 
 $SdkCommit = if ($env:VST3_SDK_COMMIT) { $env:VST3_SDK_COMMIT } else { "9fad9770f2ae8542ab1a548a68c1ad1ac690abe0" }
 $SdkDir = if ($env:VST3_SDK_DIR) { $env:VST3_SDK_DIR } else { ".vst3-sdk/vst3sdk" }
 
+function Invoke-WithRetry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ScriptBlock]$Command,
+        [int]$Attempts = 3,
+        [int]$DelaySeconds = 5
+    )
+
+    for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
+        try {
+            & $Command
+            return
+        } catch {
+            if ($Attempt -eq $Attempts) {
+                throw
+            }
+            Write-Warning "Command failed, retrying in $DelaySeconds seconds: $_"
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+}
+
 if (Test-Path (Join-Path $SdkDir ".git")) {
-    git -C $SdkDir fetch --tags $SdkRepo $SdkTag
+    Invoke-WithRetry { git -C $SdkDir fetch --tags $SdkRepo $SdkTag }
     git -C $SdkDir checkout --force $SdkCommit
 } else {
     $Parent = Split-Path -Parent $SdkDir
     if ($Parent) {
         New-Item -ItemType Directory -Force -Path $Parent | Out-Null
     }
-    git clone --branch $SdkTag --depth 1 $SdkRepo $SdkDir
+    Invoke-WithRetry { git clone --branch $SdkTag --depth 1 $SdkRepo $SdkDir }
 }
 
 $ActualCommit = (git -C $SdkDir rev-parse HEAD).Trim()
@@ -22,6 +44,6 @@ if ($ActualCommit -ne $SdkCommit) {
 }
 
 git -C $SdkDir submodule sync --recursive
-git -C $SdkDir submodule update --init --depth 1
+Invoke-WithRetry { git -C $SdkDir submodule update --init --depth 1 }
 
 Write-Host "VST3 SDK ready at $SdkDir ($ActualCommit)"
