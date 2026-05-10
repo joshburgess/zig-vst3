@@ -605,6 +605,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             self.spec.values.resetToDefaults(&self.spec.parameter_set);
         }
 
+        pub fn resetParameterIndexToDefault(self: *Self, index: usize) bool {
+            return self.parameterEditor().resetToDefaultIndex(index);
+        }
+
+        pub fn resetParameterByIdToDefault(self: *Self, id: u32) bool {
+            return self.parameterEditor().resetToDefaultById(id);
+        }
+
+        pub fn resetParameterByNameToDefault(self: *Self, name: []const u8) bool {
+            return self.parameterEditor().resetToDefaultByName(name);
+        }
+
+        pub fn resetParameterToDefault(self: *Self, comptime field_name: []const u8) bool {
+            return self.parameterEditor().resetToDefault(field_name);
+        }
+
         pub fn applyParameterChanges(self: *Self, changes: process_api.ParameterChanges) void {
             self.spec.values.applyChanges(&self.spec.parameter_set, changes);
         }
@@ -1454,6 +1470,23 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(f64, 0.0), instance.loadParameter("gain"));
     try std.testing.expectEqual(false, instance.loadParameter("bypass"));
     try std.testing.expectEqual(Mode.clean, instance.loadParameter("mode"));
+
+    try std.testing.expect(instance.storeParameter("gain", 6.0));
+    try std.testing.expect(instance.storeParameter("bypass", true));
+    try std.testing.expect(instance.storeParameter("mode", .mute));
+    try std.testing.expect(instance.resetParameterToDefault("gain"));
+    try std.testing.expectEqual(@as(f64, 0.0), instance.loadParameter("gain"));
+    try std.testing.expectEqual(true, instance.loadParameter("bypass"));
+    try std.testing.expect(instance.resetParameterIndexToDefault(1));
+    try std.testing.expectEqual(false, instance.loadParameter("bypass"));
+    try std.testing.expect(instance.resetParameterByIdToDefault(2));
+    try std.testing.expectEqual(Mode.clean, instance.loadParameter("mode"));
+    try std.testing.expect(instance.storeParameter("mode", .mute));
+    try std.testing.expect(instance.resetParameterByNameToDefault("Mode"));
+    try std.testing.expectEqual(Mode.clean, instance.loadParameter("mode"));
+    try std.testing.expect(!instance.resetParameterIndexToDefault(99));
+    try std.testing.expect(!instance.resetParameterByIdToDefault(99));
+    try std.testing.expect(!instance.resetParameterByNameToDefault("Missing"));
 }
 
 test "plugin instance exposes parameter editor" {

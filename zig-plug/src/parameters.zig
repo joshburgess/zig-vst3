@@ -941,6 +941,12 @@ pub fn ParameterValues(comptime Params: type) type {
             }
         }
 
+        pub fn resetToDefault(self: *Self, set: *const Set, index: usize) bool {
+            const default = set.defaultNormalized(index) orelse return false;
+            self.values[index].store(default);
+            return true;
+        }
+
         pub fn loadById(self: *const Self, set: *const Set, id: u32) ?f64 {
             const index = set.indexOfId(id) orelse return null;
             return self.load(index);
@@ -993,6 +999,20 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn storeField(self: *Self, set: *const Set, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) bool {
             const param = set.descriptor(field_name);
             return self.store(set.indexOfField(field_name), param.normalize(plain));
+        }
+
+        pub fn resetToDefaultById(self: *Self, set: *const Set, id: u32) bool {
+            const index = set.indexOfId(id) orelse return false;
+            return self.resetToDefault(set, index);
+        }
+
+        pub fn resetToDefaultByName(self: *Self, set: *const Set, name: []const u8) bool {
+            const index = set.indexOfName(name) orelse return false;
+            return self.resetToDefault(set, index);
+        }
+
+        pub fn resetFieldToDefault(self: *Self, set: *const Set, comptime field_name: []const u8) bool {
+            return self.resetToDefault(set, set.indexOfField(field_name));
         }
 
         pub fn applyChangesCount(self: *Self, set: *const Set, changes: process.ParameterChanges) usize {
@@ -1635,6 +1655,22 @@ pub fn ParameterEditor(comptime Params: type) type {
             self.values.resetToDefaults(self.set);
         }
 
+        pub fn resetToDefaultIndex(self: Self, index: usize) bool {
+            return self.values.resetToDefault(self.set, index);
+        }
+
+        pub fn resetToDefaultById(self: Self, wanted_id: u32) bool {
+            return self.values.resetToDefaultById(self.set, wanted_id);
+        }
+
+        pub fn resetToDefaultByName(self: Self, wanted_name: []const u8) bool {
+            return self.values.resetToDefaultByName(self.set, wanted_name);
+        }
+
+        pub fn resetToDefault(self: Self, comptime field_name: []const u8) bool {
+            return self.values.resetFieldToDefault(self.set, field_name);
+        }
+
         pub fn applyChangesCount(self: Self, changes: process.ParameterChanges) usize {
             return self.values.applyChangesCount(self.set, changes);
         }
@@ -2182,6 +2218,15 @@ test "parameter values initialize from reflected defaults" {
     values.resetToDefaults(&set);
     try std.testing.expectEqual(@as(?f64, 0.25), values.load(0));
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(1));
+    try std.testing.expect(values.store(0, 1.0));
+    try std.testing.expect(values.store(1, 0.0));
+    try std.testing.expect(values.resetToDefault(&set, 0));
+    try std.testing.expectEqual(@as(?f64, 0.25), values.load(0));
+    try std.testing.expectEqual(@as(?f64, 0.0), values.load(1));
+    try std.testing.expect(values.resetToDefaultById(&set, 1));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.load(1));
+    try std.testing.expect(!values.resetToDefault(&set, 99));
+    try std.testing.expect(!values.resetToDefaultById(&set, 99));
 }
 
 test "parameter values expose plain value access by id" {
@@ -2569,6 +2614,23 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(i64, 1), view.load("voices"));
     try std.testing.expectEqual(false, view.load("bypass"));
     try std.testing.expectEqual(Mode.clean, view.load("mode"));
+
+    try std.testing.expect(editor.store("gain", 6.0));
+    try std.testing.expect(editor.store("voices", 4));
+    try std.testing.expect(editor.store("bypass", true));
+    try std.testing.expect(editor.store("mode", .mute));
+    try std.testing.expect(editor.resetToDefault("gain"));
+    try std.testing.expectEqual(@as(f64, 0.0), view.load("gain"));
+    try std.testing.expectEqual(@as(i64, 4), view.load("voices"));
+    try std.testing.expect(editor.resetToDefaultIndex(1));
+    try std.testing.expectEqual(@as(i64, 1), view.load("voices"));
+    try std.testing.expect(editor.resetToDefaultById(2));
+    try std.testing.expectEqual(false, view.load("bypass"));
+    try std.testing.expect(editor.resetToDefaultByName("Mode"));
+    try std.testing.expectEqual(Mode.clean, view.load("mode"));
+    try std.testing.expect(!editor.resetToDefaultIndex(99));
+    try std.testing.expect(!editor.resetToDefaultById(99));
+    try std.testing.expect(!editor.resetToDefaultByName("Missing"));
 }
 
 test "parameter values apply reflected parameter changes by id" {
