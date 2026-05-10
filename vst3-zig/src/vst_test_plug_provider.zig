@@ -217,6 +217,42 @@ test "test plug provider tracks released plugin pair" {
     try std.testing.expectEqual(controller, provider.last_released_controller.?);
 }
 
+test "test plug provider delegates component controller and release hooks through provider2" {
+    const component: *ivstcomponent.IComponent = @ptrFromInt(0x1000);
+    const controller: *ivsteditcontroller.IEditController = @ptrFromInt(0x2000);
+    const Provider = TestPlugProvider(struct {
+        pub fn getComponent(_: anytype) ?*ivstcomponent.IComponent {
+            return component;
+        }
+
+        pub fn getController(_: anytype) ?*ivsteditcontroller.IEditController {
+            return controller;
+        }
+
+        pub fn releasePlugIn(_: anytype, released_component: ?*ivstcomponent.IComponent, released_controller: ?*ivsteditcontroller.IEditController) types.tresult {
+            return if (released_component == component and released_controller == controller) types.kResultFalse else types.kInvalidArgument;
+        }
+    });
+    var provider = Provider{};
+    const provider2 = provider.asProvider2();
+
+    try std.testing.expectEqual(component, provider2.vtable.getComponent(provider2).?);
+    try std.testing.expectEqual(controller, provider2.vtable.getController(provider2).?);
+    try std.testing.expectEqual(types.kResultFalse, provider2.vtable.releasePlugIn(provider2, component, controller));
+    try std.testing.expectEqual(@as(types.uint32, 1), provider.release_count);
+    try std.testing.expectEqual(component, provider.last_released_component.?);
+    try std.testing.expectEqual(controller, provider.last_released_controller.?);
+}
+
+test "test plug provider reports missing component UID deterministically" {
+    const Provider = TestPlugProvider(struct {});
+    var provider = Provider{};
+    var out_uid: tuid.TUID = [_]u8{0xAA} ** 16;
+
+    try std.testing.expectEqual(types.kResultFalse, provider.asProvider().vtable.getComponentUID(provider.asProvider(), &out_uid));
+    try std.testing.expectEqualSlices(u8, &([_]u8{0xAA} ** 16), &out_uid);
+}
+
 test "test plug provider exposes provider2 and factory" {
     const Provider = TestPlugProvider(struct {});
     var provider = Provider{};
