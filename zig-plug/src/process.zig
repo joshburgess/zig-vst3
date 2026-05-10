@@ -1208,6 +1208,51 @@ test "process context reports frame count for input-only and output-only process
     try std.testing.expectEqual(@as(usize, 0), input_only.outputChannelCount());
 }
 
+test "process context validates attachments for input-only and output-only processors" {
+    const input = [_]f32{ 0.1, 0.2, 0.3 };
+    var output = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const no_input_channels = [_][]const f32{};
+    const no_output_channels = [_][]f32{};
+    const output_changes = [_]ParameterChange{
+        .{ .id = 1, .sample_offset = 3, .normalized = 0.75 },
+    };
+    const input_changes = [_]ParameterChange{
+        .{ .id = 1, .sample_offset = 2, .normalized = 0.5 },
+    };
+    const output_events = [_]Event{
+        Event.noteOn(3, 0, 60, 1.0),
+    };
+    const input_events = [_]Event{
+        Event.noteOn(2, 0, 60, 1.0),
+    };
+    var output_storage: [1]Event = undefined;
+    var output_writer = EventWriter.init(&output_storage, output.len);
+    var input_storage: [1]Event = undefined;
+    var input_writer = EventWriter.init(&input_storage, input.len);
+
+    const output_only = try ProcessContext(f32).initWith(48_000.0, &no_input_channels, &output_channels, .{
+        .parameter_changes = &output_changes,
+        .events = &output_events,
+        .output_events = &output_writer,
+    });
+    try std.testing.expectEqual(@as(usize, output.len), output_only.frameCount());
+    try std.testing.expectEqual(@as(?usize, 3), output_only.latestParameterChangeOffset());
+    try std.testing.expectEqual(@as(?usize, 3), output_only.latestEventOffset());
+    try std.testing.expect(output_only.hasOutputEventWriter());
+
+    const input_only = try ProcessContext(f32).initWith(48_000.0, &input_channels, &no_output_channels, .{
+        .parameter_changes = &input_changes,
+        .events = &input_events,
+        .output_events = &input_writer,
+    });
+    try std.testing.expectEqual(@as(usize, input.len), input_only.frameCount());
+    try std.testing.expectEqual(@as(?usize, 2), input_only.latestParameterChangeOffset());
+    try std.testing.expectEqual(@as(?usize, 2), input_only.latestEventOffset());
+    try std.testing.expect(input_only.hasOutputEventWriter());
+}
+
 test "process context rejects invalid sample rates" {
     const input = [_]f32{0.0};
     var output = [_]f32{0.0};
