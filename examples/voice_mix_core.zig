@@ -96,10 +96,16 @@ test "voice mix core example declares reflected unit and program metadata" {
 test "voice mix core example applies reflected program snapshots" {
     var instance = try Instance.init(std.testing.allocator, .{});
 
-    try std.testing.expect(try instance.applyProgramByName(voice_program_list_id, "Quad"));
+    try std.testing.expect(try instance.applyProgramByNameForUnit(voice_unit_id, "Quad"));
     try std.testing.expectEqual(@as(i64, 4), instance.loadParameter("voices"));
-    try std.testing.expect(try instance.applyProgramByName(voice_program_list_id, "Single"));
+    try std.testing.expect(try instance.applyProgramByNameForUnitName("Voices", "Single"));
     try std.testing.expectEqual(@as(i64, 1), instance.loadParameter("voices"));
+    try std.testing.expect(try instance.applyProgramForUnit(voice_unit_id, 1));
+    try std.testing.expectEqual(@as(i64, 4), instance.loadParameter("voices"));
+    try std.testing.expect(try instance.applyProgramForUnitName("Voices", 0));
+    try std.testing.expectEqual(@as(i64, 1), instance.loadParameter("voices"));
+    try std.testing.expect(!try instance.applyProgramByNameForUnit(voice_unit_id, "Missing"));
+    try std.testing.expect(!try instance.applyProgramByNameForUnitName("Missing", "Quad"));
 }
 
 test "voice mix core example applies int parameter changes" {
