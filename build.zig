@@ -74,8 +74,15 @@ pub fn build(b: *std.Build) void {
         .core_example_source_file = "examples/event_echo_core.zig",
         .bundle_id = "dev.zig-vst3.event-echo",
     });
+    const sine_synth = addExamplePlugin(b, target, optimize, zig_plug_core, zig_plug, entry_symbols_step, .{
+        .short_name = "sine-synth",
+        .display_name = "sine synth",
+        .artifact_name = "zig_vst3_sine_synth",
+        .root_source_file = "vst3-zig/src/sine_synth_plugin.zig",
+        .core_example_source_file = "examples/sine_synth_core.zig",
+        .bundle_id = "dev.zig-vst3.sine-synth",
+    });
     const event_monitor_core_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/event_monitor_core.zig");
-    const sine_synth_core_tests = addZigPlugTest(b, target, optimize, zig_plug, "examples/sine_synth_core.zig");
     const example_bundle_steps = [_]Vst3BundleSteps{
         gain.bundles,
         bypass.bundles,
@@ -83,6 +90,7 @@ pub fn build(b: *std.Build) void {
         voice_mix.bundles,
         note_gate.bundles,
         event_echo.bundles,
+        sine_synth.bundles,
     };
     const vst3_test_module = b.createModule(.{
         .root_source_file = b.path("vst3-zig/src/root.zig"),
@@ -123,14 +131,15 @@ pub fn build(b: *std.Build) void {
         voice_mix.plugin_tests,
         note_gate.plugin_tests,
         event_echo.plugin_tests,
+        sine_synth.plugin_tests,
         gain.core_example_tests,
         bypass.core_example_tests,
         mode_gain.core_example_tests,
         voice_mix.core_example_tests,
         note_gate.core_example_tests,
         event_echo.core_example_tests,
+        sine_synth.core_example_tests,
         event_monitor_core_tests,
-        sine_synth_core_tests,
     });
 
     const validate_step = b.step("validate", "Run the VST3 SDK validator for -Dplugin=path/to/Plugin.vst3");
@@ -172,6 +181,11 @@ pub fn build(b: *std.Build) void {
         .display_name = "event echo",
         .artifact_name = "zig_vst3_event_echo",
     });
+    const validate_sine_synth_step = addVst3ValidationStep(b, target, sine_synth.bundles.native, .{
+        .short_name = "sine-synth",
+        .display_name = "sine synth",
+        .artifact_name = "zig_vst3_sine_synth",
+    });
     const validate_examples_step = b.step("validate-examples", "Build and validate all native VST3 example bundles");
     addStepDependencies(validate_examples_step, &.{
         validate_gain_step,
@@ -180,6 +194,7 @@ pub fn build(b: *std.Build) void {
         validate_voice_mix_step,
         validate_note_gate_step,
         validate_event_echo_step,
+        validate_sine_synth_step,
     });
 
     const bundle_examples_step = b.step("bundle-examples", "Build native VST3 bundles for all example plugins");
