@@ -228,6 +228,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.rootUnit();
         }
 
+        pub fn rootUnitId(self: *const Self) i32 {
+            return self.spec.units.rootUnitId();
+        }
+
+        pub fn rootUnitName(self: *const Self) []const u8 {
+            return self.spec.units.rootUnitName();
+        }
+
         pub fn unitIndexOfId(self: *const Self, id: i32) ?usize {
             return self.spec.units.unitIndexOfId(id);
         }
@@ -1518,6 +1526,8 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expect(!instance.unitsEmpty());
     try std.testing.expect(instance.hasUnits());
     try std.testing.expectEqualStrings("Main", instance.rootUnit().name);
+    try std.testing.expectEqual(units_api.root_unit_id, instance.rootUnitId());
+    try std.testing.expectEqualStrings("Main", instance.rootUnitName());
     try std.testing.expectEqual(@as(?usize, 1), instance.unitIndexOfId(1));
     try std.testing.expectEqual(@as(?usize, null), instance.unitIndexOfId(99));
     try std.testing.expectEqual(@as(?usize, 1), instance.unitIndexOfName("Voice"));

@@ -451,6 +451,14 @@ pub fn UnitSet(comptime config: Config) type {
             return self.unitById(root_unit_id) orelse Unit.root("Root");
         }
 
+        pub fn rootUnitId(self: Self) i32 {
+            return self.rootUnit().id;
+        }
+
+        pub fn rootUnitName(self: Self) []const u8 {
+            return self.rootUnit().name;
+        }
+
         pub fn validateUnits(self: Self) !void {
             if (config.units.len == 0) return error.MissingRootUnit;
             if (self.duplicateUnitId() != null) return error.DuplicateUnitId;
@@ -547,9 +555,11 @@ test "default unit set exposes root unit only" {
     try std.testing.expect(set.programListsEmpty());
     try std.testing.expect(!set.hasProgramLists());
     try std.testing.expectEqual(root_unit_id, set.rootUnit().id);
+    try std.testing.expectEqual(root_unit_id, set.rootUnitId());
     try std.testing.expectEqual(no_parent_unit_id, set.rootUnit().parent_id);
     try std.testing.expectEqual(no_program_list_id, set.rootUnit().program_list_id);
     try std.testing.expectEqualStrings("Root", set.rootUnit().name);
+    try std.testing.expectEqualStrings("Root", set.rootUnitName());
     try std.testing.expect(set.rootUnit().isRoot());
     try std.testing.expect(!set.rootUnit().hasParent());
     try std.testing.expect(!set.rootUnit().hasProgramList());
