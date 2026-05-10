@@ -1067,6 +1067,26 @@ pub fn ParameterValues(comptime Params: type) type {
             return param.denormalize(self.loadFieldNormalized(set, field_name));
         }
 
+        pub fn isDefault(self: *const Self, set: *const Set, index: usize) ?bool {
+            const current = self.load(index) orelse return null;
+            const default = set.defaultNormalized(index) orelse return null;
+            return current == default;
+        }
+
+        pub fn isDefaultById(self: *const Self, set: *const Set, id: u32) ?bool {
+            const index = set.indexOfId(id) orelse return null;
+            return self.isDefault(set, index);
+        }
+
+        pub fn isDefaultByName(self: *const Self, set: *const Set, name: []const u8) ?bool {
+            const index = set.indexOfName(name) orelse return null;
+            return self.isDefault(set, index);
+        }
+
+        pub fn fieldIsDefault(self: *const Self, set: *const Set, comptime field_name: []const u8) bool {
+            return self.isDefault(set, set.indexOfField(field_name)).?;
+        }
+
         pub fn storeById(self: *Self, set: *const Set, id: u32, value: f64) bool {
             const index = set.indexOfId(id) orelse return false;
             return self.store(index, value);
@@ -1090,6 +1110,10 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn storeField(self: *Self, set: *const Set, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) bool {
             const param = set.descriptor(field_name);
             return self.store(set.indexOfField(field_name), param.normalize(plain));
+        }
+
+        pub fn storeFieldNormalized(self: *Self, set: *const Set, comptime field_name: []const u8, normalized: f64) bool {
+            return self.store(set.indexOfField(field_name), normalized);
         }
 
         pub fn resetToDefaultById(self: *Self, set: *const Set, id: u32) bool {
@@ -1456,6 +1480,22 @@ pub fn ParameterView(comptime Params: type) type {
         pub fn loadPlainByName(self: Self, wanted_name: []const u8) ?f64 {
             return self.values.loadPlainByName(self.set, wanted_name);
         }
+
+        pub fn isDefaultIndex(self: Self, index: usize) ?bool {
+            return self.values.isDefault(self.set, index);
+        }
+
+        pub fn isDefaultById(self: Self, wanted_id: u32) ?bool {
+            return self.values.isDefaultById(self.set, wanted_id);
+        }
+
+        pub fn isDefaultByName(self: Self, wanted_name: []const u8) ?bool {
+            return self.values.isDefaultByName(self.set, wanted_name);
+        }
+
+        pub fn isDefault(self: Self, comptime field_name: []const u8) bool {
+            return self.values.fieldIsDefault(self.set, field_name);
+        }
     };
 }
 
@@ -1818,8 +1858,24 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.values.loadPlainByName(self.set, wanted_name);
         }
 
+        pub fn isDefaultIndex(self: Self, index: usize) ?bool {
+            return self.values.isDefault(self.set, index);
+        }
+
+        pub fn isDefaultById(self: Self, wanted_id: u32) ?bool {
+            return self.values.isDefaultById(self.set, wanted_id);
+        }
+
+        pub fn isDefaultByName(self: Self, wanted_name: []const u8) ?bool {
+            return self.values.isDefaultByName(self.set, wanted_name);
+        }
+
+        pub fn isDefault(self: Self, comptime field_name: []const u8) bool {
+            return self.values.fieldIsDefault(self.set, field_name);
+        }
+
         pub fn storeNormalized(self: Self, comptime field_name: []const u8, normalized: f64) bool {
-            return self.values.store(self.set.indexOfField(field_name), normalized);
+            return self.values.storeFieldNormalized(self.set, field_name, normalized);
         }
 
         pub fn store(self: Self, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) bool {
@@ -2457,6 +2513,10 @@ test "parameter values expose typed field access" {
     try std.testing.expectEqual(@as(i64, 1), values.loadField(&set, "voices"));
     try std.testing.expectEqual(false, values.loadField(&set, "bypass"));
     try std.testing.expectEqual(Mode.clean, values.loadField(&set, "mode"));
+    try std.testing.expectEqual(@as(?bool, true), values.isDefault(&set, 0));
+    try std.testing.expectEqual(@as(?bool, true), values.isDefaultById(&set, 3));
+    try std.testing.expectEqual(@as(?bool, true), values.isDefaultByName(&set, "Mode"));
+    try std.testing.expect(values.fieldIsDefault(&set, "mode"));
 
     try std.testing.expect(values.storeField(&set, "gain", 6.0));
     try std.testing.expect(values.storeField(&set, "voices", 4));
@@ -2468,6 +2528,16 @@ test "parameter values expose typed field access" {
     try std.testing.expectEqual(true, values.loadField(&set, "bypass"));
     try std.testing.expectEqual(Mode.mute, values.loadField(&set, "mode"));
     try std.testing.expectEqual(@as(f64, 1.0), values.loadFieldNormalized(&set, "mode"));
+    try std.testing.expectEqual(@as(?bool, false), values.isDefault(&set, 0));
+    try std.testing.expectEqual(@as(?bool, false), values.isDefaultById(&set, 3));
+    try std.testing.expectEqual(@as(?bool, false), values.isDefaultByName(&set, "Mode"));
+    try std.testing.expect(!values.fieldIsDefault(&set, "mode"));
+    try std.testing.expect(values.storeFieldNormalized(&set, "mode", 0.0));
+    try std.testing.expectEqual(Mode.clean, values.loadField(&set, "mode"));
+    try std.testing.expect(values.fieldIsDefault(&set, "mode"));
+    try std.testing.expectEqual(@as(?bool, null), values.isDefault(&set, 99));
+    try std.testing.expectEqual(@as(?bool, null), values.isDefaultById(&set, 99));
+    try std.testing.expectEqual(@as(?bool, null), values.isDefaultByName(&set, "Missing"));
 }
 
 test "parameter view binds reflected set and values" {
@@ -2750,6 +2820,10 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expect(editor.storePlainById(1, 3.0));
     try std.testing.expect(editor.storeByName("Gain", 0.75));
     try std.testing.expect(editor.storePlainByName("Voices", 4.0));
+    try std.testing.expectEqual(@as(?bool, false), editor.isDefaultIndex(0));
+    try std.testing.expectEqual(@as(?bool, false), editor.isDefaultById(3));
+    try std.testing.expectEqual(@as(?bool, false), editor.isDefaultByName("Mode"));
+    try std.testing.expect(!editor.isDefault("mode"));
     try std.testing.expect(!editor.storeNormalized("gain", std.math.nan(f64)));
     try std.testing.expect(!editor.storeIndex(0, std.math.inf(f64)));
     try std.testing.expect(!editor.storeById(0, -std.math.inf(f64)));
@@ -2760,6 +2834,9 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expect(!editor.storePlainById(99, 1.0));
     try std.testing.expect(!editor.storeByName("Missing", 1.0));
     try std.testing.expect(!editor.storePlainByName("Missing", 1.0));
+    try std.testing.expectEqual(@as(?bool, null), editor.isDefaultIndex(99));
+    try std.testing.expectEqual(@as(?bool, null), editor.isDefaultById(99));
+    try std.testing.expectEqual(@as(?bool, null), editor.isDefaultByName("Missing"));
 
     try std.testing.expectEqual(@as(f64, 1.5), editor.load("gain"));
     try std.testing.expectEqual(@as(i64, 4), editor.load("voices"));
@@ -2784,6 +2861,10 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(i64, 4), view.load("voices"));
     try std.testing.expectEqual(false, view.load("bypass"));
     try std.testing.expectEqual(Mode.mute, view.load("mode"));
+    try std.testing.expectEqual(@as(?bool, false), view.isDefaultIndex(0));
+    try std.testing.expectEqual(@as(?bool, false), view.isDefaultById(3));
+    try std.testing.expectEqual(@as(?bool, false), view.isDefaultByName("Mode"));
+    try std.testing.expect(!view.isDefault("mode"));
 
     const changes = [_]process.ParameterChange{
         .{ .id = 0, .sample_offset = 0, .normalized = 0.0 },
@@ -2808,6 +2889,10 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(i64, 1), view.load("voices"));
     try std.testing.expectEqual(false, view.load("bypass"));
     try std.testing.expectEqual(Mode.clean, view.load("mode"));
+    try std.testing.expectEqual(@as(?bool, true), view.isDefaultIndex(0));
+    try std.testing.expectEqual(@as(?bool, true), view.isDefaultById(3));
+    try std.testing.expectEqual(@as(?bool, true), view.isDefaultByName("Mode"));
+    try std.testing.expect(view.isDefault("mode"));
 
     try std.testing.expect(editor.store("gain", 6.0));
     try std.testing.expect(editor.store("voices", 4));

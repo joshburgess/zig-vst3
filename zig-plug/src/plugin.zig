@@ -636,6 +636,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.parameterView().loadPlainByName(name);
         }
 
+        pub fn parameterIsDefaultIndex(self: *const Self, index: usize) ?bool {
+            return self.parameterView().isDefaultIndex(index);
+        }
+
+        pub fn parameterIsDefaultById(self: *const Self, id: u32) ?bool {
+            return self.parameterView().isDefaultById(id);
+        }
+
+        pub fn parameterIsDefaultByName(self: *const Self, name: []const u8) ?bool {
+            return self.parameterView().isDefaultByName(name);
+        }
+
+        pub fn parameterIsDefault(self: *const Self, comptime field_name: []const u8) bool {
+            return self.parameterView().isDefault(field_name);
+        }
+
         pub fn storeParameter(self: *Self, comptime field_name: []const u8, plain: parameters.FieldPlainType(Plugin.Params, field_name)) bool {
             return self.parameterEditor().store(field_name, plain);
         }
@@ -1721,11 +1737,22 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(false, view.load("bypass"));
     try std.testing.expectEqual(Mode.boost, view.load("mode"));
     try std.testing.expectEqual(@as(f64, 0.5), view.loadNormalized("mode"));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsDefaultIndex(0));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsDefaultById(2));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsDefaultByName("Mode"));
+    try std.testing.expect(!instance.parameterIsDefault("mode"));
+    try std.testing.expectEqual(@as(?bool, null), instance.parameterIsDefaultIndex(99));
+    try std.testing.expectEqual(@as(?bool, null), instance.parameterIsDefaultById(99));
+    try std.testing.expectEqual(@as(?bool, null), instance.parameterIsDefaultByName("Missing"));
 
     instance.resetParametersToDefaults();
     try std.testing.expectEqual(@as(f64, 0.0), instance.loadParameter("gain"));
     try std.testing.expectEqual(false, instance.loadParameter("bypass"));
     try std.testing.expectEqual(Mode.clean, instance.loadParameter("mode"));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterIsDefaultIndex(0));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterIsDefaultById(2));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterIsDefaultByName("Mode"));
+    try std.testing.expect(instance.parameterIsDefault("mode"));
 
     try std.testing.expect(instance.storeParameter("gain", 6.0));
     try std.testing.expect(instance.storeParameter("bypass", true));
