@@ -678,6 +678,25 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expectEqual(@as(f64, 1.0), view.fieldDefaultNormalized("gain"));
     try std.testing.expectEqual(@as(f64, 1.0), view.fieldDefaultPlain("gain"));
     try std.testing.expect(view.fieldHasPlainRange("gain"));
+    var format_buffer: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("0.500", try view.formatFieldPlain("gain", 0.5, &format_buffer));
+    try std.testing.expectEqual(@as(f64, 0.25), try view.parseFieldPlain("gain", "0.25"));
+    try std.testing.expectEqual(@as(f64, 0.5), view.fieldPlainFromNormalized("gain", 0.5));
+    try std.testing.expectEqual(@as(f64, 0.5), view.fieldNormalizedFromPlain("gain", 0.5));
+    try std.testing.expectEqual(plug.process.ParameterChange{
+        .id = 0,
+        .sample_offset = 4,
+        .normalized = 0.5,
+    }, view.parameterChange("gain", 4, 0.5));
+    try std.testing.expectEqual(plug.process.ParameterChange{
+        .id = 0,
+        .sample_offset = 5,
+        .normalized = 0.25,
+    }, view.parameterChangeNormalized("gain", 5, 0.25));
+    try std.testing.expectEqualStrings("0.500", try view.formatPlainByName("Gain", 0.5, &format_buffer));
+    try std.testing.expectEqual(@as(f64, 0.25), try view.parsePlainById(0, "0.25"));
+    try std.testing.expectEqual(@as(?f64, 0.5), view.plainFromNormalizedIndex(0, 0.5));
+    try std.testing.expectEqual(@as(?f64, 0.25), view.normalizedFromPlainByName("Gain", 0.25));
     try std.testing.expectEqual(@as(f64, 0.5), view.loadNormalized("gain"));
     try std.testing.expectEqual(@as(f64, 0.5), view.load("gain"));
     try std.testing.expectEqual(@as(?f64, 0.5), view.loadIndex(0));
