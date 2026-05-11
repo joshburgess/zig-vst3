@@ -24,7 +24,7 @@ Recent work has concentrated on Layer 2 API polish:
 - `mode_gain_core` now exercises enum option metadata helpers by index, id, display name, and field name.
 - `bypass_core` now exercises automatable, read-only, bypass, step-count, and list flag helpers.
 - `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including value-level helpers, direct unit/program-list lookup helpers, counted program snapshot application, and duplicate diagnostics.
-- `event_echo_core` now uses validated output-event planning and exercises direct event-writer helpers plus process-context output-event appends, unavailable-writer errors, routing, capacity, next-offset, first/latest, offset/kind predicates, and clearing helpers.
+- `event_echo_core` now uses validated output-event planning and exercises direct event-writer helpers plus process-context output-event writer attachment, appends, unavailable-writer errors, routing, capacity, next-offset, first/latest, offset/kind predicates, and clearing helpers.
 - `event_monitor_core` now exercises direct event-view helpers, input-event count, emptiness, first/latest, only predicates, typed event payload views, event retargeting helpers, and bus, channel, and bus-channel routing offset helpers.
 - `sine_synth_core` now exercises process timing, block duration, sample-offset, and remaining-frame helpers.
 - README and Layer 2 docs were updated to match the current public API.
@@ -44,6 +44,8 @@ The marker scan exits with status 1 when there are no matches, which is expected
 
 The worktree was clean before this handover refresh. The latest pushed commits before this document update were:
 
+- `2b08508` Exercise output event writer attachment
+- `1549057` Refresh handover after event coverage
 - `7f2dfd7` Exercise output event unavailable errors
 - `58bb483` Exercise output event context appends
 - `2f667f5` Exercise program snapshot counts
@@ -96,7 +98,7 @@ The worktree was clean before this handover refresh. The latest pushed commits b
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
-CI checkpoint: the run for `7f2dfd7` was pending and the run for `58bb483` was in progress when this handover refresh began. The latest completed non-cancelled run inspected was `b61e5dd`, which passed. Intermediate runs after `b61e5dd` were cancelled by newer pushes, which is expected for this workflow.
+CI checkpoint: the run for `2b08508` was pending and the run for `1549057` was in progress when this handover refresh began. The latest completed non-cancelled run inspected was `b61e5dd`, which passed. Intermediate runs after `b61e5dd` were cancelled by newer pushes, which is expected for this workflow.
 
 ## What To Do Next
 
