@@ -105,6 +105,116 @@ test "event monitor core example declares reflected metadata" {
     plug.plugin.validateLifecycle(EventMonitor);
 }
 
+test "event monitor core example can inspect input event views" {
+    const events = [_]plug.process.Event{
+        plug.process.Event.noteOn(1, 0, 60, 0.75),
+        plug.process.Event.midiCc(2, 0, 74, 0.5),
+        plug.process.Event.noteOff(3, 0, 60, 0.0),
+    };
+    const view = try plug.process.Events.init(&events, 4);
+
+    try std.testing.expectEqual(@as(usize, 3), view.eventCount());
+    try std.testing.expect(!view.isEmpty());
+    try std.testing.expect(view.hasEvents());
+    try std.testing.expectEqual(@as(?usize, 1), view.firstSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 3), view.latestSampleOffset());
+    try std.testing.expectEqual(plug.process.EventKind.note_on, view.first().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, view.latest().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.midi_cc, view.firstAtOffset(2).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, view.latestAtOffset(3).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, view.firstKind(.note_on).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, view.latestKind(.note_off).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, view.firstKindAtOffset(.note_off, 3).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, view.latestKindAtOffset(.note_off, 3).?.kind);
+    try std.testing.expectEqual(@as(?usize, 1), view.firstSampleOffsetForKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, 3), view.latestSampleOffsetForKind(.note_off));
+    try std.testing.expectEqual(@as(usize, 1), view.countKind(.midi_cc));
+    try std.testing.expectEqual(@as(usize, 1), view.countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 1), view.countNoteReleases());
+    try std.testing.expectEqual(@as(usize, 1), view.countAtOffset(2));
+    try std.testing.expectEqual(@as(usize, 1), view.countKindAtOffset(.note_off, 3));
+    try std.testing.expectEqual(@as(usize, 3), view.countBus(0));
+    try std.testing.expectEqual(@as(usize, 3), view.countChannel(0));
+    try std.testing.expectEqual(@as(usize, 3), view.countBusChannel(0, 0));
+    try std.testing.expect(view.hasKind(.note_on));
+    try std.testing.expect(view.kindEmpty(.pitch_bend));
+    try std.testing.expect(view.hasNoteAttacks());
+    try std.testing.expect(view.hasNoteReleases());
+    try std.testing.expect(view.hasAtOffset(2));
+    try std.testing.expect(!view.hasAtOffset(0));
+    try std.testing.expect(view.hasKindAtOffset(.midi_cc, 2));
+    try std.testing.expect(view.offsetEmpty(0));
+    try std.testing.expect(view.kindAtOffsetEmpty(.midi_cc, 3));
+    try std.testing.expect(view.hasBus(0));
+    try std.testing.expect(!view.busEmpty(0));
+    try std.testing.expect(view.channelEmpty(1));
+    try std.testing.expect(view.hasBusChannel(0, 0));
+    try std.testing.expect(view.busChannelEmpty(1, 0));
+    try std.testing.expect(!view.onlyAtOffset(1));
+    try std.testing.expect(!view.onlyKind(.note_on));
+    try std.testing.expect(!view.onlyKindAtOffset(.note_on, 1));
+    try std.testing.expect(!view.onlyNoteAttacks());
+    try std.testing.expect(!view.onlyNoteReleases());
+    try std.testing.expect(view.onlyBus(0));
+    try std.testing.expect(view.onlyChannel(0));
+    try std.testing.expect(view.onlyBusChannel(0, 0));
+    try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffset(1));
+    try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffsetForKind(.note_off, 1));
+    try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffsetForBus(0, 1));
+    try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffsetForChannel(0, 1));
+    try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffsetForBusChannel(0, 0, 1));
+
+    var note_events = view.ofKind(.note_on);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, note_events.next().?.kind);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), note_events.next());
+
+    var events_at_offset = view.atOffset(2);
+    try std.testing.expectEqual(plug.process.EventKind.midi_cc, events_at_offset.next().?.kind);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), events_at_offset.next());
+
+    var segments = view.blockSegments(4);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = 1 }, segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 1, .end_offset = 2 }, segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 2, .end_offset = 3 }, segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 3, .end_offset = 4 }, segments.next().?);
+    try std.testing.expectEqual(@as(?plug.process.BlockSegment, null), segments.next());
+
+    const note_only_items = [_]plug.process.Event{
+        plug.process.Event.noteOn(1, 0, 60, 0.75),
+    };
+    const note_only = try plug.process.Events.init(&note_only_items, 4);
+    try std.testing.expect(note_only.onlyAtOffset(1));
+    try std.testing.expect(note_only.onlyKind(.note_on));
+    try std.testing.expect(note_only.onlyKindAtOffset(.note_on, 1));
+    try std.testing.expect(note_only.onlyNoteAttacks());
+    try std.testing.expect(!note_only.onlyNoteReleases());
+
+    const outside_block = [_]plug.process.Event{
+        plug.process.Event.noteOn(4, 0, 60, 0.75),
+    };
+    const bad_channel = [_]plug.process.Event{
+        plug.process.Event.noteOn(1, 16, 60, 0.75),
+    };
+    const bad_pitch = [_]plug.process.Event{
+        plug.process.Event.noteOn(1, 0, 128, 0.75),
+    };
+    const bad_control = [_]plug.process.Event{
+        plug.process.Event.midiCc(1, 0, 128, 0.5),
+    };
+    const bad_bus = [_]plug.process.Event{
+        plug.process.Event.noteOn(1, 0, 60, 0.75).withBusIndex(-1),
+    };
+    const bad_value = [_]plug.process.Event{
+        plug.process.Event.pitchBend(1, 0, 2.0),
+    };
+    try std.testing.expectError(error.EventOutsideBlock, plug.process.Events.init(&outside_block, 4));
+    try std.testing.expectError(error.InvalidEventChannel, plug.process.Events.init(&bad_channel, 4));
+    try std.testing.expectError(error.InvalidEventPitch, plug.process.Events.init(&bad_pitch, 4));
+    try std.testing.expectError(error.InvalidEventControlNumber, plug.process.Events.init(&bad_control, 4));
+    try std.testing.expectError(error.InvalidEventBusIndex, plug.process.Events.init(&bad_bus, 4));
+    try std.testing.expectError(error.EventValueOutsideNormalizedRange, plug.process.Events.init(&bad_value, 4));
+}
+
 test "event monitor core example summarizes input event kinds" {
     var plugin = EventMonitor{};
     const input = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
