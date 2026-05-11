@@ -85,6 +85,33 @@ pub const Program = struct {
     pub fn hasDuplicateInfoKeys(self: Program) bool {
         return self.duplicateInfoKey() != null;
     }
+
+    pub fn parameter(self: Program, index: usize) ?ProgramParameter {
+        if (index >= self.parameters.len) return null;
+        return self.parameters[index];
+    }
+
+    pub fn parameterById(self: Program, parameter_id: u32) ?ProgramParameter {
+        for (self.parameters) |item| {
+            if (item.parameter_id == parameter_id) return item;
+        }
+        return null;
+    }
+
+    pub fn hasParameter(self: Program, parameter_id: u32) bool {
+        return self.parameterById(parameter_id) != null;
+    }
+
+    pub fn infoValue(self: Program, key: []const u8) ?[]const u8 {
+        for (self.info) |item| {
+            if (std.mem.eql(u8, item.key, key)) return item.value;
+        }
+        return null;
+    }
+
+    pub fn hasInfoKey(self: Program, key: []const u8) bool {
+        return self.infoValue(key) != null;
+    }
 };
 
 pub const ProgramParameter = struct {
@@ -125,6 +152,27 @@ pub const ProgramList = struct {
 
     pub fn hasDuplicateProgramNames(self: ProgramList) bool {
         return self.duplicateProgramName() != null;
+    }
+
+    pub fn program(self: ProgramList, index: usize) ?Program {
+        if (index >= self.programs.len) return null;
+        return self.programs[index];
+    }
+
+    pub fn programIndexOfName(self: ProgramList, name: []const u8) ?usize {
+        for (self.programs, 0..) |item, index| {
+            if (std.mem.eql(u8, item.name, name)) return index;
+        }
+        return null;
+    }
+
+    pub fn programByName(self: ProgramList, name: []const u8) ?Program {
+        const index = self.programIndexOfName(name) orelse return null;
+        return self.program(index);
+    }
+
+    pub fn hasProgramName(self: ProgramList, name: []const u8) bool {
+        return self.programIndexOfName(name) != null;
     }
 };
 
@@ -372,21 +420,17 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn program(self: Self, list_id: i32, program_index: usize) ?Program {
             const list = self.programListById(list_id) orelse return null;
-            if (program_index >= list.programs.len) return null;
-            return list.programs[program_index];
+            return list.program(program_index);
         }
 
         pub fn programByName(self: Self, list_id: i32, name: []const u8) ?Program {
-            const index = self.programIndexOfName(list_id, name) orelse return null;
-            return self.program(list_id, index);
+            const list = self.programListById(list_id) orelse return null;
+            return list.programByName(name);
         }
 
         pub fn programIndexOfName(self: Self, list_id: i32, name: []const u8) ?usize {
             const list = self.programListById(list_id) orelse return null;
-            for (list.programs, 0..) |item, index| {
-                if (std.mem.eql(u8, item.name, name)) return index;
-            }
-            return null;
+            return list.programIndexOfName(name);
         }
 
         pub fn hasProgramName(self: Self, list_id: i32, name: []const u8) bool {
@@ -429,22 +473,17 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programParameter(self: Self, list_id: i32, program_index: usize, parameter_index: usize) ?ProgramParameter {
             const item = self.program(list_id, program_index) orelse return null;
-            if (parameter_index >= item.parameters.len) return null;
-            return item.parameters[parameter_index];
+            return item.parameter(parameter_index);
         }
 
         pub fn programParameterByName(self: Self, list_id: i32, program_name: []const u8, parameter_index: usize) ?ProgramParameter {
             const item = self.programByName(list_id, program_name) orelse return null;
-            if (parameter_index >= item.parameters.len) return null;
-            return item.parameters[parameter_index];
+            return item.parameter(parameter_index);
         }
 
         pub fn programParameterById(self: Self, list_id: i32, program_index: usize, parameter_id: u32) ?ProgramParameter {
             const item = self.program(list_id, program_index) orelse return null;
-            for (item.parameters) |parameter| {
-                if (parameter.parameter_id == parameter_id) return parameter;
-            }
-            return null;
+            return item.parameterById(parameter_id);
         }
 
         pub fn hasProgramParameter(self: Self, list_id: i32, program_index: usize, parameter_id: u32) bool {
@@ -457,10 +496,7 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programParameterByNameAndId(self: Self, list_id: i32, program_name: []const u8, parameter_id: u32) ?ProgramParameter {
             const item = self.programByName(list_id, program_name) orelse return null;
-            for (item.parameters) |parameter| {
-                if (parameter.parameter_id == parameter_id) return parameter;
-            }
-            return null;
+            return item.parameterById(parameter_id);
         }
 
         pub fn hasProgramParameterByName(self: Self, list_id: i32, program_name: []const u8, parameter_id: u32) bool {
@@ -473,11 +509,8 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programInfo(self: Self, list_id: i32, program_index: usize, key: []const u8) ?[]const u8 {
             const list = self.programListById(list_id) orelse return null;
-            if (program_index >= list.programs.len) return null;
-            for (list.programs[program_index].info) |item| {
-                if (std.mem.eql(u8, item.key, key)) return item.value;
-            }
-            return null;
+            const item = list.program(program_index) orelse return null;
+            return item.infoValue(key);
         }
 
         pub fn hasProgramInfo(self: Self, list_id: i32, program_index: usize, key: []const u8) bool {
@@ -704,6 +737,14 @@ test "unit set exposes custom units and programs" {
     try std.testing.expect(set.programListById(10).?.hasPrograms());
     try std.testing.expectEqual(@as(?[]const u8, null), set.programListById(10).?.duplicateProgramName());
     try std.testing.expect(!set.programListById(10).?.hasDuplicateProgramNames());
+    try std.testing.expectEqualStrings("Drive", set.programListById(10).?.program(1).?.name);
+    try std.testing.expectEqual(@as(?Program, null), set.programListById(10).?.program(2));
+    try std.testing.expectEqual(@as(?usize, 1), set.programListById(10).?.programIndexOfName("Drive"));
+    try std.testing.expectEqual(@as(?usize, null), set.programListById(10).?.programIndexOfName("Missing"));
+    try std.testing.expectEqualStrings("Drive", set.programListById(10).?.programByName("Drive").?.name);
+    try std.testing.expectEqual(@as(?Program, null), set.programListById(10).?.programByName("Missing"));
+    try std.testing.expect(set.programListById(10).?.hasProgramName("Drive"));
+    try std.testing.expect(!set.programListById(10).?.hasProgramName("Missing"));
     try std.testing.expect(set.programListHasPrograms(10));
     try std.testing.expect(set.programListHasProgramsByName("Oscillator Presets"));
     try std.testing.expect(!set.programListHasPrograms(99));
@@ -743,6 +784,16 @@ test "unit set exposes custom units and programs" {
     try std.testing.expect(!set.program(10, 0).?.hasDuplicateParameterIds());
     try std.testing.expectEqual(@as(?[]const u8, null), set.program(10, 0).?.duplicateInfoKey());
     try std.testing.expect(!set.program(10, 0).?.hasDuplicateInfoKeys());
+    try std.testing.expectEqual(@as(u32, 3), set.program(10, 0).?.parameter(0).?.parameter_id);
+    try std.testing.expectEqual(@as(?ProgramParameter, null), set.program(10, 0).?.parameter(1));
+    try std.testing.expectEqual(@as(f64, 0.25), set.program(10, 0).?.parameterById(3).?.normalized);
+    try std.testing.expectEqual(@as(?ProgramParameter, null), set.program(10, 0).?.parameterById(99));
+    try std.testing.expect(set.program(10, 0).?.hasParameter(3));
+    try std.testing.expect(!set.program(10, 0).?.hasParameter(99));
+    try std.testing.expectEqualStrings("Clean", set.program(10, 0).?.infoValue("category").?);
+    try std.testing.expectEqual(@as(?[]const u8, null), set.program(10, 0).?.infoValue("missing"));
+    try std.testing.expect(set.program(10, 0).?.hasInfoKey("category"));
+    try std.testing.expect(!set.program(10, 0).?.hasInfoKey("missing"));
     try std.testing.expect(!set.program(10, 1).?.hasInfo());
     try std.testing.expect(set.program(10, 1).?.infoEmpty());
     try std.testing.expectEqualStrings("Drive", set.programByName(10, "Drive").?.name);
