@@ -200,6 +200,10 @@ test "gain core example formats and converts float parameters" {
     try std.testing.expectEqualStrings("Gain", instance.parameterFieldName("gain"));
     try std.testing.expectEqualStrings("x", instance.parameterFieldUnits("gain"));
     try std.testing.expectEqual(@as(f64, 1.0), instance.parameterFieldDefaultNormalized("gain"));
+    try std.testing.expectEqual(@as(f64, 1.0), instance.parameterFieldDefaultPlain("gain"));
+    try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterFieldPlainMinimum("gain"));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterFieldPlainMaximum("gain"));
+    try std.testing.expect(instance.parameterFieldHasPlainRange("gain"));
 
     try std.testing.expectEqualStrings("0.500", try instance.formatParameterFieldPlain("gain", 0.5, &buffer));
     try std.testing.expectEqual(@as(f64, 0.25), try instance.parseParameterFieldPlain("gain", "0.25"));
