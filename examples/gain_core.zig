@@ -352,6 +352,21 @@ test "gain core example validates process context attachments" {
     };
     var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
 
+    const valid_changes = [_]plug.process.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = 0.5 },
+    };
+    const valid_events = [_]plug.process.Event{
+        plug.process.Event.noteOn(0, 0, 60, 0.75),
+    };
+    try context.setParameterChanges(&valid_changes);
+    try std.testing.expectEqual(@as(usize, 1), context.parameterChangeCount());
+    try context.setEvents(&valid_events);
+    try std.testing.expectEqual(@as(usize, 1), context.inputEventCount());
+    try context.setParameterChanges(&.{});
+    try context.setEvents(&.{});
+    try std.testing.expect(context.parameterChangesEmpty());
+    try std.testing.expect(context.inputEventsEmpty());
+
     try std.testing.expectError(error.ParameterChangeOutsideBlock, context.setParameterChanges(&outside_block_changes));
     try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, context.setParameterChanges(&outside_range_changes));
     try std.testing.expectError(error.EventOutsideBlock, context.setEvents(&outside_block_events));
@@ -369,8 +384,13 @@ test "gain core example validates process context attachments" {
     ));
 
     var output_event_storage: [1]plug.process.Event = undefined;
+    var output_events = plug.process.EventWriter.init(&output_event_storage, input.len);
+    try context.setOutputEvents(&output_events);
+    try std.testing.expect(context.hasOutputEventWriter());
+    try std.testing.expectEqual(@as(usize, input.len), context.outputEventFrameCount());
     var mismatched_writer = plug.process.EventWriter.init(&output_event_storage, 2);
     try std.testing.expectError(error.MismatchedFrameCount, context.setOutputEvents(&mismatched_writer));
+    try std.testing.expectEqual(@as(usize, input.len), context.outputEventFrameCount());
     try std.testing.expectError(error.MismatchedFrameCount, plug.process.ProcessContext(f32).initWith(
         48_000.0,
         &input_channels,
