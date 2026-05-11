@@ -254,6 +254,15 @@ test "event echo core example writes input events to output events" {
     try std.testing.expect(!context.hasOutputEvent(.note_on));
     try std.testing.expect(!context.hasOutputNoteAttacks());
     try std.testing.expect(!context.hasOutputNoteReleases());
+
+    try context.appendOutputEvent(events[0]);
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
+    try std.testing.expectEqual(@as(usize, 1), try context.appendOutputEventCount(events[1]));
+    try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
+    context.clearOutputEvents();
+    try std.testing.expect(context.outputEventsEmpty());
+    try std.testing.expectEqual(@as(usize, 2), try context.appendOutputEventsCount(try plug.process.Events.init(&events, input.len)));
+    try std.testing.expect(context.outputEventsFull());
 }
 
 test "event echo core example leaves output unchanged when capacity is too small" {
