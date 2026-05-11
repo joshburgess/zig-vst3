@@ -41,6 +41,44 @@ pub const Spec = plug.plugin.PluginSpec(Gain);
 pub const Instance = plug.plugin.PluginInstance(Gain);
 pub const parameter_set = Spec.ParameterSet.init(.{});
 
+const LifecycleProbe = struct {
+    pub const name = "zig-vst3-plugin Lifecycle Probe";
+    pub const vendor = "zig-vst3";
+    pub const audio_input = false;
+    pub const Params = struct {
+        level: plug.parameters.FloatParam = .{ .id = 0, .name = "Level", .min = 0.0, .max = 1.0, .default = 0.5 },
+    };
+
+    prepared_sample_rate: f64 = 0.0,
+    prepared_max_block_size: u32 = 0,
+    processed64: bool = false,
+    deinitialized: bool = false,
+
+    pub fn prepare(self: *LifecycleProbe, config: plug.plugin.PrepareConfig) void {
+        self.prepared_sample_rate = config.sample_rate;
+        self.prepared_max_block_size = config.max_block_size;
+    }
+
+    pub fn process64WithParameterView(
+        self: *LifecycleProbe,
+        context: *plug.process.ProcessContext(f64),
+        params: plug.parameters.ParameterView(Params),
+    ) void {
+        self.processed64 = true;
+        const level = params.load("level");
+        for (0..context.outputChannelCount()) |channel| {
+            const output = context.outputChannel(channel) orelse continue;
+            for (0..context.frameCount()) |sample| {
+                output[sample] = level;
+            }
+        }
+    }
+
+    pub fn deinit(self: *LifecycleProbe) void {
+        self.deinitialized = true;
+    }
+};
+
 test "gain core example declares reflected metadata" {
     const spec = Spec.init(.{});
     var instance = try Instance.init(std.testing.allocator, .{});
@@ -195,6 +233,30 @@ test "gain core example declares reflected metadata" {
     try std.testing.expect(!instance.hasParameterName("Missing"));
     try std.testing.expectEqual(@as(f64, 1.0), spec.values.view(&parameter_set).loadNormalized("gain"));
     plug.plugin.validateLifecycle(Gain);
+}
+
+test "gain core example drives lifecycle hook variants" {
+    const ProbeInstance = plug.plugin.PluginInstance(LifecycleProbe);
+    var instance = try ProbeInstance.init(std.testing.allocator, .{});
+    var output = [_]f64{ 0.0, 0.0 };
+    const input_channels = [_][]const f64{};
+    const output_channels = [_][]f64{&output};
+    var context = try plug.process.ProcessContext(f64).init(48_000.0, &input_channels, &output_channels);
+
+    try std.testing.expect(instance.hasPrepareHook());
+    try std.testing.expect(instance.hasProcess64Hook());
+    try std.testing.expect(instance.hasDeinitHook());
+    instance.prepare(.{ .sample_rate = 96_000.0, .max_block_size = 128 });
+    try std.testing.expectEqual(@as(f64, 96_000.0), instance.plugin.prepared_sample_rate);
+    try std.testing.expectEqual(@as(u32, 128), instance.plugin.prepared_max_block_size);
+
+    instance.process64(&context);
+    try std.testing.expect(instance.plugin.processed64);
+    try std.testing.expectEqual(@as(f64, 0.5), output[0]);
+    try std.testing.expectEqual(@as(f64, 0.5), output[1]);
+
+    instance.deinit();
+    try std.testing.expect(instance.plugin.deinitialized);
 }
 
 test "gain core example processes through zig-vst3-plugin context" {
