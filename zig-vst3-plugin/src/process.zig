@@ -295,6 +295,14 @@ pub const ParameterChanges = struct {
         return self.hasChanges() and self.count(id) == self.items.len;
     }
 
+    pub fn onlyAtOffset(self: ParameterChanges, sample_offset: usize) bool {
+        return self.hasChanges() and self.countAtOffset(sample_offset) == self.items.len;
+    }
+
+    pub fn onlyForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) bool {
+        return self.hasChanges() and self.countForIdAtOffset(id, sample_offset) == self.items.len;
+    }
+
     pub fn latestNormalized(self: ParameterChanges, id: u32) ?f64 {
         const change = self.latest(id) orelse return null;
         return change.normalized;
@@ -2094,6 +2102,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.only(id);
         }
 
+        pub fn onlyParameterChangesAtOffset(self: @This(), sample_offset: usize) bool {
+            return self.parameter_changes.onlyAtOffset(sample_offset);
+        }
+
+        pub fn onlyParameterChangesForIdAtOffset(self: @This(), id: u32, sample_offset: usize) bool {
+            return self.parameter_changes.onlyForIdAtOffset(id, sample_offset);
+        }
+
         pub fn latestParameterNormalized(self: @This(), id: u32) ?f64 {
             return self.parameter_changes.latestNormalized(id);
         }
@@ -3167,6 +3183,10 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(context.parameterChangesForIdAtOffsetEmpty(2, 1));
     try std.testing.expect(context.onlyParameterChangesForId(1));
     try std.testing.expect(!context.onlyParameterChangesForId(2));
+    try std.testing.expect(context.onlyParameterChangesAtOffset(1));
+    try std.testing.expect(!context.onlyParameterChangesAtOffset(0));
+    try std.testing.expect(context.onlyParameterChangesForIdAtOffset(1, 1));
+    try std.testing.expect(!context.onlyParameterChangesForIdAtOffset(2, 1));
     try std.testing.expectEqual(@as(?f64, 0.5), context.latestParameterNormalized(1));
     try std.testing.expectEqual(@as(?f64, 0.5), context.firstParameterNormalized(1));
     try std.testing.expectEqual(@as(?f64, 0.5), context.firstParameterNormalizedAtOffset(1));
@@ -3425,6 +3445,8 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expect(!view.idAtOffsetEmpty(7, 0));
     try std.testing.expect(view.idAtOffsetEmpty(8, 0));
     try std.testing.expect(!view.only(7));
+    try std.testing.expect(!view.onlyAtOffset(0));
+    try std.testing.expect(!view.onlyForIdAtOffset(7, 0));
     const gain_only_changes = [_]ParameterChange{
         .{ .id = 7, .sample_offset = 0, .normalized = 0.25 },
         .{ .id = 7, .sample_offset = 3, .normalized = 0.75 },
@@ -3432,6 +3454,18 @@ test "parameter changes validate block offsets and normalized values" {
     const gain_only = try ParameterChanges.init(&gain_only_changes, 4);
     try std.testing.expect(gain_only.only(7));
     try std.testing.expect(!gain_only.only(8));
+    try std.testing.expect(!gain_only.onlyAtOffset(0));
+    try std.testing.expect(!gain_only.onlyForIdAtOffset(7, 0));
+    const same_offset_changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 2, .normalized = 0.25 },
+        .{ .id = 7, .sample_offset = 2, .normalized = 0.75 },
+    };
+    const same_offset = try ParameterChanges.init(&same_offset_changes, 4);
+    try std.testing.expect(same_offset.only(7));
+    try std.testing.expect(same_offset.onlyAtOffset(2));
+    try std.testing.expect(!same_offset.onlyAtOffset(3));
+    try std.testing.expect(same_offset.onlyForIdAtOffset(7, 2));
+    try std.testing.expect(!same_offset.onlyForIdAtOffset(8, 2));
     try std.testing.expectEqual(@as(f64, 0.25), view.first(7).?.normalized);
     try std.testing.expectEqual(@as(?f64, 0.25), view.firstNormalized(7));
     try std.testing.expectEqual(@as(f64, 0.25), view.firstNormalizedOr(7, 0.0));
@@ -3493,6 +3527,8 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expect(!(ParameterChanges{}).hasChanges());
     try std.testing.expect((ParameterChanges{}).empty(7));
     try std.testing.expect(!(ParameterChanges{}).only(7));
+    try std.testing.expect(!(ParameterChanges{}).onlyAtOffset(0));
+    try std.testing.expect(!(ParameterChanges{}).onlyForIdAtOffset(7, 0));
     try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).firstSampleOffset());
     try std.testing.expectEqual(@as(?ParameterChange, null), (ParameterChanges{}).firstChange());
     try std.testing.expectEqual(@as(?ParameterChange, null), (ParameterChanges{}).latestChange());
