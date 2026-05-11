@@ -1434,6 +1434,66 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return report.extraRestoredEntryCount(self.parameterStateEntryCount());
         }
 
+        pub fn parameterStateReportMatchesIgnoredCount(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.matchesIgnoredCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportHasFewerIgnoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.hasFewerIgnoredEntriesThan(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportHasMoreIgnoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.hasMoreIgnoredEntriesThan(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportMissingIgnoredEntryCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            return report.missingIgnoredEntryCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportExtraIgnoredEntryCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            return report.extraIgnoredEntryCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportMatchesAccountedCount(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.matchesAccountedCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportHasFewerAccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.hasFewerAccountedEntriesThan(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportHasMoreAccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.hasMoreAccountedEntriesThan(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportMissingAccountedEntryCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            return report.missingAccountedEntryCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportExtraAccountedEntryCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            return report.extraAccountedEntryCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportMatchesUnaccountedCount(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.matchesUnaccountedCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportHasFewerUnaccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.hasFewerUnaccountedEntriesThan(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportHasMoreUnaccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.hasMoreUnaccountedEntriesThan(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportMissingUnaccountedEntryCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            return report.missingUnaccountedEntryCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportExtraUnaccountedEntryCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            return report.extraUnaccountedEntryCount(self.parameterStateEntryCount());
+        }
+
         pub fn readParameterStateHeader(self: *const Self, reader: anytype) !state.ParameterStateHeader {
             _ = self;
             return state.readParameterStateHeader(reader);

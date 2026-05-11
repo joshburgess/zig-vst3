@@ -36,7 +36,7 @@ Malformed state headers, unsupported format versions, truncated entries, duplica
 - `state.identityParameterMigrationIndex`, `state.duplicateParameterMigrationIndex`, and `state.ambiguousParameterMigrationIndex`: report the first matching migration entry index for diagnostics before strict validation. Linear old-id to new-id chains are not ambiguous.
 - `state.migratedParameterId(id, migrations)`: resolves a saved parameter id through the same old-id to new-id migration list used by state loading.
 
-`PluginInstance` binds state entry-count compatibility checks, migrated state reads, migration diagnostics, and migrated-id resolution to instance code. Header helpers compare decoded header entry counts with the current parameter count. Restore-report helpers compare both decoded entries and restored entries, so callers can distinguish newer state files with extra ignored ids from state files that failed to restore every current parameter.
+`PluginInstance` binds state entry-count compatibility checks, migrated state reads, migration diagnostics, and migrated-id resolution to instance code. Header helpers compare decoded header entry counts with the current parameter count. Restore-report helpers compare decoded, restored, ignored, accounted, and unaccounted entries, so callers can distinguish newer state files with extra ignored ids from state files that failed to restore every current parameter.
 
 The checked gain example covers direct state size constants, checked encoded-size helpers, header-only writing, header entry-count, empty, delta, and encoded-size helpers, migrated state reads, plus migration diagnostic indexes, in addition to instance-bound compatibility checks.
 
