@@ -645,6 +645,21 @@ pub fn ParameterSet(comptime Params: type) type {
             return null;
         }
 
+        pub fn firstDescriptorErrorIndex(self: *const Self) ?usize {
+            inline for (fields, 0..) |field, field_index| {
+                if (parameterDescriptorError(@field(self.params, field.name)) != null) return field_index;
+            }
+            return null;
+        }
+
+        pub fn firstDescriptorErrorName(self: *const Self) ?[]const u8 {
+            inline for (fields) |field| {
+                const param = @field(self.params, field.name);
+                if (parameterDescriptorError(param) != null) return param.name;
+            }
+            return null;
+        }
+
         pub fn validateDescriptors(self: *const Self) !void {
             if (self.firstDescriptorError()) |err| return err;
         }
@@ -3167,7 +3182,11 @@ test "parameter set validates descriptor names and ranges" {
     const invalid_int_default_set = ParameterSet(InvalidIntDefaultParams).init(.{});
 
     try std.testing.expectEqual(error.EmptyParameterName, empty_name_set.firstDescriptorError().?);
+    try std.testing.expectEqual(@as(?usize, 0), empty_name_set.firstDescriptorErrorIndex());
+    try std.testing.expectEqualStrings("", empty_name_set.firstDescriptorErrorName().?);
     try std.testing.expectError(error.EmptyParameterName, empty_name_set.validateDescriptors());
+    try std.testing.expectEqual(@as(?usize, 0), invalid_name_set.firstDescriptorErrorIndex());
+    try std.testing.expectEqualStrings("Ga\x00in", invalid_name_set.firstDescriptorErrorName().?);
     try std.testing.expectError(error.InvalidParameterMetadata, invalid_name_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterMetadata, invalid_short_name_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterMetadata, invalid_units_set.validateDescriptors());
@@ -3186,6 +3205,9 @@ test "parameter set validates complete metadata" {
     const Set = ParameterSet(Params);
     const set = Set.init(.{});
 
+    try std.testing.expect(set.firstDescriptorError() == null);
+    try std.testing.expect(set.firstDescriptorErrorIndex() == null);
+    try std.testing.expect(set.firstDescriptorErrorName() == null);
     try set.validate();
 }
 
