@@ -181,11 +181,15 @@ test "gain core example can smooth normalized gain changes" {
     try std.testing.expect(smoother.active());
     try std.testing.expect(!smoother.finished());
     try std.testing.expectEqual(@as(usize, 4), smoother.remainingSamples());
+    try std.testing.expectApproxEqAbs(1.0, smoother.targetDelta(), 0.000001);
+    try std.testing.expect(smoother.needsSmoothing(0.25));
     try std.testing.expectApproxEqAbs(0.25, smoother.next(), 0.000001);
     try std.testing.expectApproxEqAbs(0.5, smoother.next(), 0.000001);
     smoother.reset(0.75);
     try std.testing.expectApproxEqAbs(0.75, smoother.currentValue(), 0.000001);
     try std.testing.expectApproxEqAbs(0.75, smoother.targetValue(), 0.000001);
+    try std.testing.expectApproxEqAbs(0.0, smoother.targetDelta(), 0.000001);
+    try std.testing.expect(smoother.atTarget(0.0));
     try std.testing.expect(!smoother.active());
     try std.testing.expect(smoother.finished());
 }
