@@ -20,6 +20,7 @@
 
 The checked gain example covers direct `ParameterValues` storage, instance-bound parameter handles, copying, default-state helpers, counted stores/resets, bound `ParameterView` metadata, conversions, and reads, bound `ParameterEditor` metadata, conversions, and edits, and editor-level process-change application counts.
 The checked mode-gain example covers enum option metadata through direct instance helpers and bound view/editor helpers.
+The checked bypass example covers bool flag metadata through direct instance helpers and bound view/editor helpers.
 
 ## Boundary Rules
 
