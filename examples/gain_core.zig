@@ -251,16 +251,53 @@ test "gain core example round-trips parameter state" {
     var bytes: [plug.state.encodedSize(Gain.Params)]u8 = undefined;
 
     try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
+    try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), instance.encodedParameterStateSize());
+    try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), instance.parameterStateEncodedSize());
+    try std.testing.expectEqual(@as(usize, 1), instance.parameterStateEntryCount());
 
     var out_stream = std.io.fixedBufferStream(&bytes);
     try instance.writeParameterState(out_stream.writer());
 
+    var header_stream = std.io.fixedBufferStream(&bytes);
+    const header = try restored.readParameterStateHeader(header_stream.reader());
+    const empty_header = plug.state.ParameterStateHeader{ .version = plug.state.format_version, .entry_count = 0 };
+    const newer_header = plug.state.ParameterStateHeader{ .version = plug.state.format_version, .entry_count = 2 };
+
+    try std.testing.expect(header.isCurrentVersion());
+    try std.testing.expect(restored.parameterStateHeaderMatchesEntryCount(header));
+    try std.testing.expect(!restored.parameterStateHeaderHasFewerEntries(header));
+    try std.testing.expect(!restored.parameterStateHeaderHasMoreEntries(header));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateHeaderMissingEntryCount(header));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateHeaderExtraEntryCount(header));
+    try std.testing.expect(!restored.parameterStateHeaderMatchesEntryCount(empty_header));
+    try std.testing.expect(restored.parameterStateHeaderHasFewerEntries(empty_header));
+    try std.testing.expectEqual(@as(usize, 1), restored.parameterStateHeaderMissingEntryCount(empty_header));
+    try std.testing.expect(!restored.parameterStateHeaderMatchesEntryCount(newer_header));
+    try std.testing.expect(restored.parameterStateHeaderHasMoreEntries(newer_header));
+    try std.testing.expectEqual(@as(usize, 1), restored.parameterStateHeaderExtraEntryCount(newer_header));
+
     var in_stream = std.io.fixedBufferStream(&bytes);
     const report = try restored.readParameterStateReport(in_stream.reader());
+    const empty_report = plug.state.ReadParameterStateReport{ .entry_count = 0, .restored_count = 0, .ignored_count = 0 };
+    const newer_report = plug.state.ReadParameterStateReport{ .entry_count = 2, .restored_count = 1, .ignored_count = 1 };
 
     try std.testing.expectEqual(@as(usize, 1), report.decodedCount());
     try std.testing.expectEqual(@as(usize, 1), report.restoredCount());
     try std.testing.expectEqual(@as(usize, 0), report.ignoredCount());
+    try std.testing.expect(restored.parameterStateReportMatchesDecodedCount(report));
+    try std.testing.expect(restored.parameterStateReportMatchesRestoredCount(report));
+    try std.testing.expect(!restored.parameterStateReportHasFewerDecodedEntries(report));
+    try std.testing.expect(!restored.parameterStateReportHasMoreDecodedEntries(report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportMissingDecodedEntryCount(report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportExtraDecodedEntryCount(report));
+    try std.testing.expect(restored.parameterStateReportHasFewerDecodedEntries(empty_report));
+    try std.testing.expect(restored.parameterStateReportHasFewerRestoredEntries(empty_report));
+    try std.testing.expectEqual(@as(usize, 1), restored.parameterStateReportMissingDecodedEntryCount(empty_report));
+    try std.testing.expectEqual(@as(usize, 1), restored.parameterStateReportMissingRestoredEntryCount(empty_report));
+    try std.testing.expect(restored.parameterStateReportHasMoreDecodedEntries(newer_report));
+    try std.testing.expect(restored.parameterStateReportMatchesRestoredCount(newer_report));
+    try std.testing.expectEqual(@as(usize, 1), restored.parameterStateReportExtraDecodedEntryCount(newer_report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportExtraRestoredEntryCount(newer_report));
     try std.testing.expect(report.hasDecodedEntries());
     try std.testing.expect(report.hasRestoredEntries());
     try std.testing.expect(!report.hasIgnoredEntries());

@@ -1371,7 +1371,7 @@ pub fn PluginInstance(comptime Plugin: type) type {
         }
 
         pub fn parameterStateEntryCount(self: *const Self) usize {
-            return self.spec.parameter_set.count;
+            return self.spec.parameter_set.parameterCount();
         }
 
         pub fn parameterStateHeaderMatchesEntryCount(self: *const Self, header: state.ParameterStateHeader) bool {
