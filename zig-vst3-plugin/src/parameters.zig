@@ -1626,6 +1626,42 @@ pub fn ParameterView(comptime Params: type) type {
             return Set.count != 0;
         }
 
+        pub fn duplicateId(self: Self) ?u32 {
+            return self.set.duplicateId();
+        }
+
+        pub fn duplicateIdIndex(self: Self) ?usize {
+            return self.set.duplicateIdIndex();
+        }
+
+        pub fn duplicateName(self: Self) ?[]const u8 {
+            return self.set.duplicateName();
+        }
+
+        pub fn duplicateNameIndex(self: Self) ?usize {
+            return self.set.duplicateNameIndex();
+        }
+
+        pub fn hasDuplicateIds(self: Self) bool {
+            return self.set.hasDuplicateIds();
+        }
+
+        pub fn hasDuplicateNames(self: Self) bool {
+            return self.set.hasDuplicateNames();
+        }
+
+        pub fn firstDescriptorError(self: Self) ?anyerror {
+            return self.set.firstDescriptorError();
+        }
+
+        pub fn firstDescriptorErrorIndex(self: Self) ?usize {
+            return self.set.firstDescriptorErrorIndex();
+        }
+
+        pub fn firstDescriptorErrorName(self: Self) ?[]const u8 {
+            return self.set.firstDescriptorErrorName();
+        }
+
         pub fn id(self: Self, index: usize) ?u32 {
             return self.set.id(index);
         }
@@ -1902,6 +1938,22 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.fieldDefaultNormalized(field_name);
         }
 
+        pub fn fieldDefaultPlain(self: Self, comptime field_name: []const u8) FieldPlainType(Params, field_name) {
+            return self.set.fieldDefaultPlain(field_name);
+        }
+
+        pub fn fieldPlainMinimum(self: Self, comptime field_name: []const u8) ?f64 {
+            return self.set.fieldPlainMinimum(field_name);
+        }
+
+        pub fn fieldPlainMaximum(self: Self, comptime field_name: []const u8) ?f64 {
+            return self.set.fieldPlainMaximum(field_name);
+        }
+
+        pub fn fieldHasPlainRange(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldHasPlainRange(field_name);
+        }
+
         pub fn fieldIsBypass(self: Self, comptime field_name: []const u8) bool {
             return self.set.fieldIsBypass(field_name);
         }
@@ -1924,6 +1976,26 @@ pub fn ParameterView(comptime Params: type) type {
 
         pub fn fieldIsList(self: Self, comptime field_name: []const u8) bool {
             return self.set.fieldIsList(field_name);
+        }
+
+        pub fn fieldOptionCount(self: Self, comptime field_name: []const u8) ?usize {
+            return self.set.fieldOptionCount(field_name);
+        }
+
+        pub fn fieldOptionLabel(self: Self, comptime field_name: []const u8, option_index: usize) ?[]const u8 {
+            return self.set.fieldOptionLabel(field_name, option_index);
+        }
+
+        pub fn fieldOptionNormalized(self: Self, comptime field_name: []const u8, option_index: usize) ?f64 {
+            return self.set.fieldOptionNormalized(field_name, option_index);
+        }
+
+        pub fn fieldHasOptions(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldHasOptions(field_name);
+        }
+
+        pub fn fieldOptionsEmpty(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldOptionsEmpty(field_name);
         }
 
         pub fn formatFieldPlain(self: Self, comptime field_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
@@ -2103,6 +2175,42 @@ pub fn ParameterEditor(comptime Params: type) type {
             return Set.count != 0;
         }
 
+        pub fn duplicateId(self: Self) ?u32 {
+            return self.set.duplicateId();
+        }
+
+        pub fn duplicateIdIndex(self: Self) ?usize {
+            return self.set.duplicateIdIndex();
+        }
+
+        pub fn duplicateName(self: Self) ?[]const u8 {
+            return self.set.duplicateName();
+        }
+
+        pub fn duplicateNameIndex(self: Self) ?usize {
+            return self.set.duplicateNameIndex();
+        }
+
+        pub fn hasDuplicateIds(self: Self) bool {
+            return self.set.hasDuplicateIds();
+        }
+
+        pub fn hasDuplicateNames(self: Self) bool {
+            return self.set.hasDuplicateNames();
+        }
+
+        pub fn firstDescriptorError(self: Self) ?anyerror {
+            return self.set.firstDescriptorError();
+        }
+
+        pub fn firstDescriptorErrorIndex(self: Self) ?usize {
+            return self.set.firstDescriptorErrorIndex();
+        }
+
+        pub fn firstDescriptorErrorName(self: Self) ?[]const u8 {
+            return self.set.firstDescriptorErrorName();
+        }
+
         pub fn id(self: Self, index: usize) ?u32 {
             return self.set.id(index);
         }
@@ -2379,6 +2487,22 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.fieldDefaultNormalized(field_name);
         }
 
+        pub fn fieldDefaultPlain(self: Self, comptime field_name: []const u8) FieldPlainType(Params, field_name) {
+            return self.set.fieldDefaultPlain(field_name);
+        }
+
+        pub fn fieldPlainMinimum(self: Self, comptime field_name: []const u8) ?f64 {
+            return self.set.fieldPlainMinimum(field_name);
+        }
+
+        pub fn fieldPlainMaximum(self: Self, comptime field_name: []const u8) ?f64 {
+            return self.set.fieldPlainMaximum(field_name);
+        }
+
+        pub fn fieldHasPlainRange(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldHasPlainRange(field_name);
+        }
+
         pub fn fieldIsBypass(self: Self, comptime field_name: []const u8) bool {
             return self.set.fieldIsBypass(field_name);
         }
@@ -2401,6 +2525,26 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn fieldIsList(self: Self, comptime field_name: []const u8) bool {
             return self.set.fieldIsList(field_name);
+        }
+
+        pub fn fieldOptionCount(self: Self, comptime field_name: []const u8) ?usize {
+            return self.set.fieldOptionCount(field_name);
+        }
+
+        pub fn fieldOptionLabel(self: Self, comptime field_name: []const u8, option_index: usize) ?[]const u8 {
+            return self.set.fieldOptionLabel(field_name, option_index);
+        }
+
+        pub fn fieldOptionNormalized(self: Self, comptime field_name: []const u8, option_index: usize) ?f64 {
+            return self.set.fieldOptionNormalized(field_name, option_index);
+        }
+
+        pub fn fieldHasOptions(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldHasOptions(field_name);
+        }
+
+        pub fn fieldOptionsEmpty(self: Self, comptime field_name: []const u8) bool {
+            return self.set.fieldOptionsEmpty(field_name);
         }
 
         pub fn formatFieldPlain(self: Self, comptime field_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
@@ -3474,6 +3618,15 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(usize, 4), view.parameterCount());
     try std.testing.expect(!view.parametersEmpty());
     try std.testing.expect(view.hasParameters());
+    try std.testing.expectEqual(@as(?u32, null), view.duplicateId());
+    try std.testing.expectEqual(@as(?usize, null), view.duplicateIdIndex());
+    try std.testing.expectEqual(@as(?[]const u8, null), view.duplicateName());
+    try std.testing.expectEqual(@as(?usize, null), view.duplicateNameIndex());
+    try std.testing.expect(!view.hasDuplicateIds());
+    try std.testing.expect(!view.hasDuplicateNames());
+    try std.testing.expectEqual(@as(?anyerror, null), view.firstDescriptorError());
+    try std.testing.expectEqual(@as(?usize, null), view.firstDescriptorErrorIndex());
+    try std.testing.expectEqual(@as(?[]const u8, null), view.firstDescriptorErrorName());
     try std.testing.expectEqual(@as(?u32, 0), view.id(0));
     try std.testing.expectEqualStrings("Voices", view.name(1).?);
     try std.testing.expectEqualStrings("Bypass", view.nameById(2).?);
@@ -3586,6 +3739,14 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqualStrings("Vox", view.fieldShortName("voices"));
     try std.testing.expectEqualStrings("dB", view.fieldUnits("gain"));
     try std.testing.expectEqual(@as(f64, 0.0), view.fieldDefaultNormalized("mode"));
+    try std.testing.expectEqual(@as(f64, 0.0), view.fieldDefaultPlain("gain"));
+    try std.testing.expectEqual(@as(i64, 1), view.fieldDefaultPlain("voices"));
+    try std.testing.expectEqual(Mode.clean, view.fieldDefaultPlain("mode"));
+    try std.testing.expectEqual(@as(?f64, -12.0), view.fieldPlainMinimum("gain"));
+    try std.testing.expectEqual(@as(?f64, 4.0), view.fieldPlainMaximum("voices"));
+    try std.testing.expectEqual(@as(?f64, null), view.fieldPlainMinimum("bypass"));
+    try std.testing.expect(view.fieldHasPlainRange("gain"));
+    try std.testing.expect(!view.fieldHasPlainRange("bypass"));
     try std.testing.expect(!view.fieldIsBypass("gain"));
     try std.testing.expect(view.fieldCanAutomate("gain"));
     try std.testing.expect(!view.fieldCanAutomate("voices"));
@@ -3593,6 +3754,14 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(i32, 0), view.fieldUnitId("gain"));
     try std.testing.expectEqual(@as(i32, 2), view.fieldStepCount("mode"));
     try std.testing.expect(view.fieldIsList("mode"));
+    try std.testing.expectEqual(@as(?usize, 3), view.fieldOptionCount("mode"));
+    try std.testing.expectEqualStrings("boost", view.fieldOptionLabel("mode", 1).?);
+    try std.testing.expectEqual(@as(?f64, 1.0), view.fieldOptionNormalized("mode", 2));
+    try std.testing.expectEqual(@as(?usize, null), view.fieldOptionCount("gain"));
+    try std.testing.expect(view.fieldHasOptions("mode"));
+    try std.testing.expect(!view.fieldOptionsEmpty("mode"));
+    try std.testing.expect(!view.fieldHasOptions("gain"));
+    try std.testing.expect(view.fieldOptionsEmpty("gain"));
     var buffer: [16]u8 = undefined;
     try std.testing.expectEqualStrings("mute", try view.formatFieldPlain("mode", 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try view.parseFieldPlain("mode", "mute"));
@@ -3666,6 +3835,15 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(usize, 4), editor.parameterCount());
     try std.testing.expect(!editor.parametersEmpty());
     try std.testing.expect(editor.hasParameters());
+    try std.testing.expectEqual(@as(?u32, null), editor.duplicateId());
+    try std.testing.expectEqual(@as(?usize, null), editor.duplicateIdIndex());
+    try std.testing.expectEqual(@as(?[]const u8, null), editor.duplicateName());
+    try std.testing.expectEqual(@as(?usize, null), editor.duplicateNameIndex());
+    try std.testing.expect(!editor.hasDuplicateIds());
+    try std.testing.expect(!editor.hasDuplicateNames());
+    try std.testing.expectEqual(@as(?anyerror, null), editor.firstDescriptorError());
+    try std.testing.expectEqual(@as(?usize, null), editor.firstDescriptorErrorIndex());
+    try std.testing.expectEqual(@as(?[]const u8, null), editor.firstDescriptorErrorName());
     try std.testing.expectEqual(@as(?u32, 0), editor.id(0));
     try std.testing.expectEqualStrings("Voices", editor.name(1).?);
     try std.testing.expectEqualStrings("Bypass", editor.nameById(2).?);
@@ -3767,6 +3945,14 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqualStrings("Vox", editor.fieldShortName("voices"));
     try std.testing.expectEqualStrings("dB", editor.fieldUnits("gain"));
     try std.testing.expectEqual(@as(f64, 0.0), editor.fieldDefaultNormalized("mode"));
+    try std.testing.expectEqual(@as(f64, 0.0), editor.fieldDefaultPlain("gain"));
+    try std.testing.expectEqual(@as(i64, 1), editor.fieldDefaultPlain("voices"));
+    try std.testing.expectEqual(Mode.clean, editor.fieldDefaultPlain("mode"));
+    try std.testing.expectEqual(@as(?f64, -12.0), editor.fieldPlainMinimum("gain"));
+    try std.testing.expectEqual(@as(?f64, 4.0), editor.fieldPlainMaximum("voices"));
+    try std.testing.expectEqual(@as(?f64, null), editor.fieldPlainMinimum("bypass"));
+    try std.testing.expect(editor.fieldHasPlainRange("gain"));
+    try std.testing.expect(!editor.fieldHasPlainRange("bypass"));
     try std.testing.expect(!editor.fieldIsBypass("gain"));
     try std.testing.expect(editor.fieldCanAutomate("gain"));
     try std.testing.expect(!editor.fieldCanAutomate("voices"));
@@ -3774,6 +3960,14 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(i32, 0), editor.fieldUnitId("gain"));
     try std.testing.expectEqual(@as(i32, 2), editor.fieldStepCount("mode"));
     try std.testing.expect(editor.fieldIsList("mode"));
+    try std.testing.expectEqual(@as(?usize, 3), editor.fieldOptionCount("mode"));
+    try std.testing.expectEqualStrings("boost", editor.fieldOptionLabel("mode", 1).?);
+    try std.testing.expectEqual(@as(?f64, 1.0), editor.fieldOptionNormalized("mode", 2));
+    try std.testing.expectEqual(@as(?usize, null), editor.fieldOptionCount("gain"));
+    try std.testing.expect(editor.fieldHasOptions("mode"));
+    try std.testing.expect(!editor.fieldOptionsEmpty("mode"));
+    try std.testing.expect(!editor.fieldHasOptions("gain"));
+    try std.testing.expect(editor.fieldOptionsEmpty("gain"));
     var buffer: [16]u8 = undefined;
     try std.testing.expectEqualStrings("mute", try editor.formatFieldPlain("mode", 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try editor.parseFieldPlain("mode", "mute"));

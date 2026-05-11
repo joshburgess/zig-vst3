@@ -21,8 +21,8 @@ Malformed state headers, unsupported format versions, truncated entries, duplica
 - `state.encodedSizeForCountChecked(count)`: checked byte count for a binary state with `count` entries.
 - `state.encodedSize(Params)`: byte count for a full parameter snapshot.
 - `state.format_version`: current binary and debug JSON state format version.
-- `state.ParameterStateHeader`: decoded binary header metadata with version, entry count, entry-count presence and emptiness checks, current-version checks, expected-count comparisons, older/newer-state entry-count deltas, and encoded-size helpers.
-- `state.ReadParameterStateReport`: counts decoded, restored, ignored, accounted, and unaccounted entries from a state load, with decoded-count comparisons and deltas, decoded/restored/ignored/unaccounted presence and absence helpers plus all/partial accounting, restore, ignore, mixed restored/ignored, fully-handled, enum classification, and classification predicate helpers for host state loads.
+- `state.ParameterStateHeader`: decoded binary header metadata with version, entry count, entry-count presence, absence, and emptiness checks, current-version checks, expected-count comparisons, older/newer-state entry-count deltas, and encoded-size helpers.
+- `state.ReadParameterStateReport`: counts decoded, restored, ignored, accounted, and unaccounted entries from a state load, with decoded/restored/ignored/accounted/unaccounted-count comparisons and deltas, decoded/restored/ignored/unaccounted presence and absence helpers plus all/partial accounting, restore, ignore, mixed restored/ignored, fully-handled, enum classification, and classification predicate helpers for host state loads.
 - `state.ReadParameterStateClassification`: compact state-load classification for empty, fully restored, fully ignored, restored-and-ignored, and partial loads.
 - `state.writeParameterStateHeaderForCount(count, writer)`: writes the binary header for tools that need a header-only state fixture.
 - `state.readParameterStateHeader(reader)`: validates the magic header and returns version and entry count without decoding parameter entries.
@@ -35,5 +35,7 @@ Malformed state headers, unsupported format versions, truncated entries, duplica
 - `state.validateParameterIdMigrations(migrations)`: rejects identity mappings, duplicate old ids, ambiguous target ids, and cyclic migration chains before state loading mutates parameter values.
 - `state.identityParameterMigrationIndex`, `state.duplicateParameterMigrationIndex`, and `state.ambiguousParameterMigrationIndex`: report the first matching migration entry index for diagnostics before strict validation.
 - `state.migratedParameterId(id, migrations)`: resolves a saved parameter id through the same old-id to new-id migration list used by state loading.
+
+`PluginInstance` binds state entry-count compatibility checks to the current reflected parameter set. Header helpers compare decoded header entry counts with the current parameter count. Restore-report helpers compare both decoded entries and restored entries, so callers can distinguish newer state files with extra ignored ids from state files that failed to restore every current parameter.
 
 Program lists can remain metadata-only, or each program can carry a finite normalized parameter snapshot through `plug.units.ProgramParameter`. `PluginInstance.applyProgram`, `applyProgramByName`, and the unit-based program application helpers validate the complete snapshot and then apply matching parameter ids. The `*Count` variants report `null` for missing targets or the number of parameter values that changed.
