@@ -913,6 +913,18 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.parameter_set.hasDuplicateNames();
         }
 
+        pub fn firstParameterDescriptorError(self: *const Self) ?anyerror {
+            return self.spec.parameter_set.firstDescriptorError();
+        }
+
+        pub fn firstParameterDescriptorErrorIndex(self: *const Self) ?usize {
+            return self.spec.parameter_set.firstDescriptorErrorIndex();
+        }
+
+        pub fn firstParameterDescriptorErrorName(self: *const Self) ?[]const u8 {
+            return self.spec.parameter_set.firstDescriptorErrorName();
+        }
+
         pub fn hasParameterId(self: *const Self, id: u32) bool {
             return self.spec.parameter_set.hasId(id);
         }
@@ -2314,6 +2326,9 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?usize, null), instance.duplicateParameterNameIndex());
     try std.testing.expect(!instance.hasDuplicateParameterIds());
     try std.testing.expect(!instance.hasDuplicateParameterNames());
+    try std.testing.expectEqual(@as(?anyerror, null), instance.firstParameterDescriptorError());
+    try std.testing.expectEqual(@as(?usize, null), instance.firstParameterDescriptorErrorIndex());
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.firstParameterDescriptorErrorName());
     try std.testing.expect(instance.hasParameterId(0));
     try std.testing.expect(!instance.hasParameterId(99));
     try std.testing.expect(instance.hasParameterName("Mode"));
