@@ -11,13 +11,16 @@ The immediate focus has been finishing `zig-vst3` and tightening `zig-vst3-plugi
 Recent work has concentrated on Layer 2 API polish:
 
 - State diagnostics and migration helpers are exposed through `PluginInstance`.
+- Parameter migration validation accepts linear old-id chains while still rejecting independently converging target ids.
 - Parameter descriptor diagnostics are exposed through `PluginInstance`.
 - State header and restore-report compatibility helpers are bound to a plugin instance.
-- Process context timing, block, offset, segment, automation, and output-event planning helpers were added and tested.
+- Process context timing, block, offset, segment, automation, defaulted overall automation reads, and output-event planning helpers were added and tested.
 - Event routing next-offset helpers and offset-only event predicates were added to `Events`, `EventWriter`, and `ProcessContext`.
 - `PluginInstance` now exposes same-plugin parameter value copying.
 - `PluginInstance` now exposes migrated parameter id resolution alongside migration diagnostics.
 - `PluginInstance` now exposes direct unit root, parent, and program-list relationship helpers.
+- `gain_core` now exercises parameter descriptor diagnostics, counted parameter stores, counted resets, same-plugin value copying, defaulted overall automation reads, and migrated parameter-id resolution.
+- `voice_mix_core` now exercises unit, program-list, program parameter, and program info helper coverage.
 - `event_echo_core` now uses validated output-event planning.
 - `event_monitor_core` now exercises bus, channel, and bus-channel routing offset helpers.
 - README and Layer 2 docs were updated to match the current public API.
@@ -37,13 +40,14 @@ The marker scan exits with status 1 when there are no matches, which is expected
 
 The worktree was clean before this handover refresh. The latest pushed commits before this document update were:
 
-- `eb66f72` Expose unit relationship helpers
-- `a7c030a` Expose migrated parameter id helper
-- `72bde46` Add plugin parameter value copying
-- `e6b464e` Refresh project handover
-- `608ac18` Add offset-only event predicates
-- `bf625b8` Exercise event routing offsets in monitor example
-- `e4bbe30` Add event routing next-offset helpers
+- `77dd1ec` Exercise parameter descriptor diagnostics in gain example
+- `7de9031` Exercise program metadata helpers in voice mix example
+- `6e22220` Exercise parameter value copying in gain example
+- `9df263a` Add defaulted any-parameter automation reads
+- `1962413` Allow chained parameter id migrations
+- `f4b0f39` Exercise unit relationship helpers in voice mix example
+- `1efc3be` Exercise parameter-change only predicates in gain example
+- `3642a65` Add offset-only parameter change predicates
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
