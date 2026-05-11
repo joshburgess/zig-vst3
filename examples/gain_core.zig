@@ -677,6 +677,59 @@ test "gain core example round-trips parameter state" {
     );
 }
 
+test "gain core example classifies parameter state reports" {
+    const empty = plug.state.ReadParameterStateReport{ .entry_count = 0, .restored_count = 0, .ignored_count = 0 };
+    const ignored = plug.state.ReadParameterStateReport{ .entry_count = 2, .restored_count = 0, .ignored_count = 2 };
+    const partial = plug.state.ReadParameterStateReport{ .entry_count = 3, .restored_count = 1, .ignored_count = 1 };
+
+    try std.testing.expectEqual(@as(usize, 0), empty.accountedCount());
+    try std.testing.expectEqual(@as(usize, 0), empty.unaccountedCount());
+    try std.testing.expect(empty.hasNoDecodedEntries());
+    try std.testing.expect(empty.decodedEntriesEmpty());
+    try std.testing.expect(empty.accountedAllEntries());
+    try std.testing.expectEqual(plug.state.ReadParameterStateClassification.empty, empty.classification());
+    try std.testing.expect(empty.isEmptyClassification());
+
+    try std.testing.expectEqual(@as(usize, 2), ignored.accountedCount());
+    try std.testing.expectEqual(@as(usize, 0), ignored.unaccountedCount());
+    try std.testing.expect(ignored.hasIgnoredEntries());
+    try std.testing.expect(!ignored.hasNoIgnoredEntries());
+    try std.testing.expect(!ignored.ignoredEntriesEmpty());
+    try std.testing.expect(ignored.hasNoRestoredEntries());
+    try std.testing.expect(ignored.restoredEntriesEmpty());
+    try std.testing.expect(ignored.matchesIgnoredCount(2));
+    try std.testing.expect(ignored.hasMoreIgnoredEntriesThan(1));
+    try std.testing.expectEqual(@as(usize, 0), ignored.missingIgnoredEntryCount(2));
+    try std.testing.expectEqual(@as(usize, 1), ignored.extraIgnoredEntryCount(1));
+    try std.testing.expect(ignored.fullyHandled());
+    try std.testing.expect(ignored.ignoredAllEntries());
+    try std.testing.expect(!ignored.ignoredPartialEntries());
+    try std.testing.expectEqual(plug.state.ReadParameterStateClassification.ignored_all, ignored.classification());
+    try std.testing.expect(ignored.isIgnoredAllClassification());
+
+    try std.testing.expectEqual(@as(usize, 2), partial.accountedCount());
+    try std.testing.expectEqual(@as(usize, 1), partial.unaccountedCount());
+    try std.testing.expect(partial.matchesAccountedCount(2));
+    try std.testing.expect(partial.hasFewerAccountedEntriesThan(3));
+    try std.testing.expect(partial.hasMoreAccountedEntriesThan(1));
+    try std.testing.expectEqual(@as(usize, 1), partial.missingAccountedEntryCount(3));
+    try std.testing.expectEqual(@as(usize, 1), partial.extraAccountedEntryCount(1));
+    try std.testing.expect(partial.matchesUnaccountedCount(1));
+    try std.testing.expect(partial.hasMoreUnaccountedEntriesThan(0));
+    try std.testing.expectEqual(@as(usize, 1), partial.missingUnaccountedEntryCount(2));
+    try std.testing.expectEqual(@as(usize, 1), partial.extraUnaccountedEntryCount(0));
+    try std.testing.expect(partial.hasUnaccountedEntries());
+    try std.testing.expect(!partial.hasNoUnaccountedEntries());
+    try std.testing.expect(!partial.unaccountedEntriesEmpty());
+    try std.testing.expect(!partial.fullyHandled());
+    try std.testing.expect(partial.accountedPartialEntries());
+    try std.testing.expect(partial.restoredPartialEntries());
+    try std.testing.expect(partial.ignoredPartialEntries());
+    try std.testing.expect(partial.restoredAndIgnoredEntries());
+    try std.testing.expectEqual(plug.state.ReadParameterStateClassification.partial, partial.classification());
+    try std.testing.expect(partial.isPartialClassification());
+}
+
 test "gain core example resolves migrated state parameter ids" {
     var instance = try Instance.init(std.testing.allocator, .{});
     const migrations = [_]plug.state.ParameterIdMigration{
