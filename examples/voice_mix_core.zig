@@ -76,6 +76,14 @@ test "voice mix core example declares reflected unit and program metadata" {
 
     try std.testing.expectEqual(@as(usize, 2), instance.unitCount());
     try std.testing.expectEqualStrings("Main", instance.rootUnitName());
+    const root_unit = instance.rootUnit();
+    try std.testing.expect(root_unit.isRoot());
+    try std.testing.expect(!root_unit.hasParent());
+    try std.testing.expect(!root_unit.hasProgramList());
+    const voice_unit = instance.unitById(voice_unit_id).?;
+    try std.testing.expect(!voice_unit.isRoot());
+    try std.testing.expect(voice_unit.hasParent());
+    try std.testing.expect(voice_unit.hasProgramList());
     try std.testing.expectEqualStrings("Voices", instance.unitById(voice_unit_id).?.name);
     try std.testing.expectEqual(@as(i32, voice_unit_id), instance.unitByName("Voices").?.id);
     try std.testing.expectEqual(@as(?usize, 1), instance.unitIndexOfName("Voices"));
@@ -103,6 +111,10 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expectEqual(@as(i32, voice_program_list_id), instance.programListByName("Voice Presets").?.id);
     try std.testing.expectEqual(@as(?usize, 0), instance.programListIndexOfName("Voice Presets"));
     try std.testing.expect(instance.hasProgramListName("Voice Presets"));
+    const program_list = instance.programListByName("Voice Presets").?;
+    try std.testing.expectEqual(@as(usize, 2), program_list.programCount());
+    try std.testing.expect(!program_list.isEmpty());
+    try std.testing.expect(program_list.hasPrograms());
     try std.testing.expectEqual(@as(?i32, null), instance.duplicateProgramListId());
     try std.testing.expectEqual(@as(?usize, null), instance.duplicateProgramListIdIndex());
     try std.testing.expect(!instance.hasDuplicateProgramListIds());
@@ -119,6 +131,19 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expectEqualStrings("Quad", instance.programByName(voice_program_list_id, "Quad").?.name);
     try std.testing.expectEqual(@as(?usize, 1), instance.programIndexOfName(voice_program_list_id, "Quad"));
     try std.testing.expect(instance.hasProgramName(voice_program_list_id, "Quad"));
+    const quad_program = instance.programByName(voice_program_list_id, "Quad").?;
+    try std.testing.expectEqual(@as(usize, 1), quad_program.parameterCount());
+    try std.testing.expectEqual(@as(usize, 1), quad_program.infoCount());
+    try std.testing.expect(quad_program.hasParameters());
+    try std.testing.expect(!quad_program.parametersEmpty());
+    try std.testing.expect(quad_program.hasInfo());
+    try std.testing.expect(!quad_program.infoEmpty());
+    try std.testing.expect(quad_program.hasParameter(0));
+    try std.testing.expectEqual(@as(?usize, 0), quad_program.parameterIndexOfId(0));
+    try std.testing.expectEqual(@as(f64, 1.0), quad_program.parameterById(0).?.normalized);
+    try std.testing.expect(quad_program.hasInfoKey("voices"));
+    try std.testing.expectEqual(@as(?usize, 0), quad_program.infoIndexOfKey("voices"));
+    try std.testing.expectEqualStrings("4", quad_program.infoValue("voices").?);
     try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateProgramName(voice_program_list_id));
     try std.testing.expectEqual(@as(?usize, null), instance.duplicateProgramNameIndex(voice_program_list_id));
     try std.testing.expect(!instance.hasDuplicateProgramNames(voice_program_list_id));
