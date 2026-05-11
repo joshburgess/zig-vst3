@@ -103,6 +103,32 @@ test "mode gain core example formats and parses enum parameters" {
     try std.testing.expectEqual(Mode.clean, instance.loadParameter("mode"));
 }
 
+test "mode gain core example exposes bound enum option metadata" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+
+    const view = instance.parameterView();
+    try std.testing.expectEqual(@as(?usize, 3), view.optionCount(0));
+    try std.testing.expectEqual(@as(?usize, 3), view.optionCountById(0));
+    try std.testing.expectEqualStrings("clean", view.optionLabelByName("Mode", 0).?);
+    try std.testing.expectEqual(@as(?f64, 0.5), view.optionNormalizedById(0, 1));
+    try std.testing.expect(view.hasOptions(0));
+    try std.testing.expect(!view.optionsEmptyByName("Mode"));
+    try std.testing.expectEqual(@as(?usize, 3), view.fieldOptionCount("mode"));
+    try std.testing.expectEqualStrings("mute", view.fieldOptionLabel("mode", 2).?);
+    try std.testing.expectEqual(@as(?f64, 1.0), view.fieldOptionNormalized("mode", 2));
+    try std.testing.expect(view.fieldHasOptions("mode"));
+
+    const editor = instance.parameterEditor();
+    try std.testing.expectEqual(@as(?usize, 3), editor.optionCountByName("Mode"));
+    try std.testing.expectEqualStrings("boost", editor.optionLabel(0, 1).?);
+    try std.testing.expectEqual(@as(?f64, 0.0), editor.optionNormalizedByName("Mode", 0));
+    try std.testing.expect(editor.hasOptionsById(0));
+    try std.testing.expect(!editor.optionsEmpty(0));
+    try std.testing.expectEqualStrings("clean", editor.fieldOptionLabel("mode", 0).?);
+    try std.testing.expectEqual(@as(?f64, 0.5), editor.fieldOptionNormalized("mode", 1));
+    try std.testing.expect(!editor.fieldOptionsEmpty("mode"));
+}
+
 test "mode gain core example can run through plugin instance" {
     var instance = try Instance.init(std.testing.allocator, .{});
     const input = [_]f32{ 0.25, 0.5 };

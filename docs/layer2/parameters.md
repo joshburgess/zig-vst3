@@ -19,6 +19,7 @@
 - `ParameterEditor(Params)`: a descriptor/value pair for parameter metadata, id/name/field index lookup, index-based, id-based, name-based, and field-based metadata helpers including optional numeric plain ranges and enum options, reflected `ParameterChange` construction, plain/normalized conversion, id-based, name-based, and field-based plain conversion, plain text formatting/parsing, typed, normalized, index-based, id-based, and name-based reads and stores plus counted store helpers, default-state and aggregate non-default checks, accepted-count and changed-count process-change application, and bulk or single-parameter default reset without passing the set into each call.
 
 The checked gain example covers direct `ParameterValues` storage, instance-bound parameter handles, copying, default-state helpers, counted stores/resets, bound `ParameterView` metadata, conversions, and reads, bound `ParameterEditor` metadata, conversions, and edits, and editor-level process-change application counts.
+The checked mode-gain example covers enum option metadata through direct instance helpers and bound view/editor helpers.
 
 ## Boundary Rules
 
