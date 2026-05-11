@@ -280,6 +280,48 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.hasUnitName(name);
         }
 
+        pub fn unitIsRoot(self: *const Self, id: i32) bool {
+            const item = self.unitById(id) orelse return false;
+            return item.isRoot();
+        }
+
+        pub fn unitIsRootByName(self: *const Self, name: []const u8) bool {
+            const item = self.unitByName(name) orelse return false;
+            return item.isRoot();
+        }
+
+        pub fn unitHasParent(self: *const Self, id: i32) bool {
+            const item = self.unitById(id) orelse return false;
+            return item.hasParent();
+        }
+
+        pub fn unitHasParentByName(self: *const Self, name: []const u8) bool {
+            const item = self.unitByName(name) orelse return false;
+            return item.hasParent();
+        }
+
+        pub fn unitParentId(self: *const Self, id: i32) ?i32 {
+            const item = self.unitById(id) orelse return null;
+            if (!item.hasParent()) return null;
+            return item.parent_id;
+        }
+
+        pub fn unitParentIdByName(self: *const Self, name: []const u8) ?i32 {
+            const item = self.unitByName(name) orelse return null;
+            if (!item.hasParent()) return null;
+            return item.parent_id;
+        }
+
+        pub fn unitHasProgramList(self: *const Self, id: i32) bool {
+            const item = self.unitById(id) orelse return false;
+            return item.hasProgramList();
+        }
+
+        pub fn unitHasProgramListByName(self: *const Self, name: []const u8) bool {
+            const item = self.unitByName(name) orelse return false;
+            return item.hasProgramList();
+        }
+
         pub fn programListCount(self: *const Self) usize {
             return self.spec.units.programListCount();
         }
@@ -1930,6 +1972,23 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expect(!instance.hasUnit(99));
     try std.testing.expect(instance.hasUnitName("Voice"));
     try std.testing.expect(!instance.hasUnitName("Missing"));
+    try std.testing.expect(instance.unitIsRoot(units_api.root_unit_id));
+    try std.testing.expect(instance.unitIsRootByName("Main"));
+    try std.testing.expect(!instance.unitIsRoot(1));
+    try std.testing.expect(!instance.unitIsRootByName("Voice"));
+    try std.testing.expect(!instance.unitIsRootByName("Missing"));
+    try std.testing.expect(!instance.unitHasParent(units_api.root_unit_id));
+    try std.testing.expect(instance.unitHasParent(1));
+    try std.testing.expect(instance.unitHasParentByName("Voice"));
+    try std.testing.expect(!instance.unitHasParentByName("Missing"));
+    try std.testing.expectEqual(@as(?i32, units_api.root_unit_id), instance.unitParentId(1));
+    try std.testing.expectEqual(@as(?i32, units_api.root_unit_id), instance.unitParentIdByName("Voice"));
+    try std.testing.expectEqual(@as(?i32, null), instance.unitParentId(units_api.root_unit_id));
+    try std.testing.expectEqual(@as(?i32, null), instance.unitParentIdByName("Missing"));
+    try std.testing.expect(instance.unitHasProgramList(1));
+    try std.testing.expect(instance.unitHasProgramListByName("Voice"));
+    try std.testing.expect(!instance.unitHasProgramList(units_api.root_unit_id));
+    try std.testing.expect(!instance.unitHasProgramListByName("Missing"));
     try std.testing.expectEqual(@as(usize, 1), instance.programListCount());
     try std.testing.expect(!instance.programListsEmpty());
     try std.testing.expect(instance.hasProgramLists());
