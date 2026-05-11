@@ -407,6 +407,10 @@ test "gain core example splits blocks at automation changes" {
     try std.testing.expectEqual(@as(?f64, 0.25), context.latestAnyParameterNormalized());
     try std.testing.expectEqual(@as(f64, 0.5), context.firstAnyParameterNormalizedOr(1.0));
     try std.testing.expectEqual(@as(f64, 0.25), context.latestAnyParameterNormalizedOr(1.0));
+    const parameter_changes = context.parameterChanges();
+    try std.testing.expectEqual(@as(usize, 2), parameter_changes.changeCount());
+    try std.testing.expectEqual(changes[0], parameter_changes.firstChange().?);
+    try std.testing.expectEqual(changes[1], parameter_changes.latestChange().?);
     try std.testing.expectEqual(@as(usize, 2), context.parameterChangeCount());
     try std.testing.expect(!context.parameterChangesEmpty());
     try std.testing.expect(context.hasParameterChanges());
