@@ -86,6 +86,32 @@ test "bypass core example formats and parses bool parameters" {
     try std.testing.expectEqual(false, instance.loadParameter("bypass"));
 }
 
+test "bypass core example exposes bound parameter flag metadata" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+
+    const view = instance.parameterView();
+    try std.testing.expectEqual(@as(?bool, false), view.isBypassByName("Bypass"));
+    try std.testing.expectEqual(@as(?bool, true), view.canAutomateById(0));
+    try std.testing.expectEqual(@as(?bool, false), view.isReadOnly(0));
+    try std.testing.expectEqual(@as(?i32, 1), view.stepCountByName("Bypass"));
+    try std.testing.expectEqual(@as(?bool, false), view.isListById(0));
+    try std.testing.expect(!view.fieldIsBypass("bypass"));
+    try std.testing.expect(view.fieldCanAutomate("bypass"));
+    try std.testing.expect(!view.fieldIsReadOnly("bypass"));
+    try std.testing.expectEqual(@as(i32, 1), view.fieldStepCount("bypass"));
+    try std.testing.expect(!view.fieldIsList("bypass"));
+
+    const editor = instance.parameterEditor();
+    try std.testing.expectEqual(@as(?bool, false), editor.isBypass(0));
+    try std.testing.expectEqual(@as(?bool, true), editor.canAutomateByName("Bypass"));
+    try std.testing.expectEqual(@as(?bool, false), editor.isReadOnlyById(0));
+    try std.testing.expectEqual(@as(?i32, 1), editor.stepCount(0));
+    try std.testing.expectEqual(@as(?bool, false), editor.isListByName("Bypass"));
+    try std.testing.expect(editor.fieldCanAutomate("bypass"));
+    try std.testing.expect(!editor.fieldIsReadOnly("bypass"));
+    try std.testing.expectEqual(@as(i32, 1), editor.fieldStepCount("bypass"));
+}
+
 test "bypass core example can run through plugin instance" {
     var instance = try Instance.init(std.testing.allocator, .{});
     const input = [_]f32{ 0.25, 0.5 };
