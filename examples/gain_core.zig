@@ -272,6 +272,48 @@ test "gain core example formats and converts float parameters" {
     try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameter("gain"));
 }
 
+test "gain core example stores and resets float parameters by lookup" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.loadParameterIndex(0));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.loadParameterPlainIndex(0));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.loadParameterById(0));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.loadParameterPlainById(0));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.loadParameterByName("Gain"));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.loadParameterPlainByName("Gain"));
+    try std.testing.expectEqual(@as(?f64, null), instance.loadParameterIndex(99));
+    try std.testing.expectEqual(@as(?f64, null), instance.loadParameterByName("Missing"));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterIsDefaultIndex(0));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterIsDefaultById(0));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterIsDefaultByName("Gain"));
+    try std.testing.expect(instance.parameterIsDefault("gain"));
+
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterIndexCount(0, 0.5));
+    try std.testing.expectEqual(@as(?usize, 0), instance.storeParameterByIdCount(0, 0.5));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterPlainByIdCount(0, 0.25));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterByNameCount("Gain", 0.75));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterPlainByNameCount("Gain", 1.0));
+    try std.testing.expectEqual(@as(?usize, null), instance.storeParameterIndexCount(99, 0.5));
+    try std.testing.expectEqual(@as(?usize, null), instance.storeParameterByIdCount(99, 0.5));
+    try std.testing.expectEqual(@as(?usize, null), instance.storeParameterPlainByNameCount("Missing", 0.5));
+    try std.testing.expect(instance.parametersAllDefaults());
+
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterPlainIndexCount(0, 0.5));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsDefaultByName("Gain"));
+    try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterIndexToDefaultCount(0));
+    try std.testing.expectEqual(@as(?usize, 0), instance.resetParameterToDefaultIndexCount(0));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterByIdCount(0, 0.5));
+    try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterByIdToDefaultCount(0));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterByNameCount("Gain", 0.5));
+    try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterToDefaultByNameCount("Gain"));
+    try std.testing.expectEqual(@as(?usize, null), instance.resetParameterIndexToDefaultCount(99));
+    try std.testing.expectEqual(@as(?usize, null), instance.resetParameterByIdToDefaultCount(99));
+    try std.testing.expectEqual(@as(?usize, null), instance.resetParameterToDefaultByNameCount("Missing"));
+    try std.testing.expect(!instance.resetParameterToDefaultIndex(99));
+    try std.testing.expect(!instance.resetParameterToDefaultById(99));
+    try std.testing.expect(!instance.resetParameterToDefaultByName("Missing"));
+}
+
 test "gain core example copies and resets parameter values" {
     var source = try Instance.init(std.testing.allocator, .{});
     var target = try Instance.init(std.testing.allocator, .{});
