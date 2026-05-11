@@ -483,15 +483,29 @@ test "event monitor core example reports empty input event views" {
 test "event monitor core example can run through plugin instance" {
     var instance = try Instance.init(std.testing.allocator, .{});
     const input = [_]f32{ 0.0, 0.0 };
-    var output = [_]f32{ 0.0, 0.0 };
     const input_channels = [_][]const f32{&input};
-    const output_channels = [_][]f32{&output};
+    const output_channels = [_][]f32{};
     const events = [_]plug.process.Event{
         plug.process.Event.midiCc(1, 0, 1, 0.25),
     };
     var context = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
         .events = &events,
     });
+
+    try std.testing.expectEqual(@as(usize, 1), context.inputChannelCount());
+    try std.testing.expect(!context.inputChannelsEmpty());
+    try std.testing.expect(context.hasInputChannels());
+    try std.testing.expect(context.hasInputChannel(0));
+    try std.testing.expect(!context.inputChannelEmpty(0));
+    try std.testing.expectEqual(@as(usize, 0), context.outputChannelCount());
+    try std.testing.expect(context.outputChannelsEmpty());
+    try std.testing.expect(!context.hasOutputChannels());
+    try std.testing.expectEqual(@as(?[]f32, null), context.outputChannel(0));
+    try std.testing.expect(!context.hasOutputChannel(0));
+    try std.testing.expect(context.outputChannelEmpty(0));
+    try std.testing.expectEqual(@as(usize, input.len), context.inputFrameCount());
+    try std.testing.expectEqual(@as(usize, 0), context.outputFrameCount());
+    try std.testing.expectEqual(@as(usize, input.len), context.frameCount());
 
     instance.process(&context);
 

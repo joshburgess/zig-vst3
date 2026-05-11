@@ -87,6 +87,17 @@ test "sine synth core example responds to note events inside a block" {
         .events = &events,
     });
 
+    try std.testing.expectEqual(@as(usize, 0), context.inputChannelCount());
+    try std.testing.expect(context.inputChannelsEmpty());
+    try std.testing.expect(!context.hasInputChannels());
+    try std.testing.expectEqual(@as(?[]const f32, null), context.inputChannel(0));
+    try std.testing.expect(!context.hasInputChannel(0));
+    try std.testing.expect(context.inputChannelEmpty(0));
+    try std.testing.expectEqual(@as(usize, 1), context.outputChannelCount());
+    try std.testing.expect(!context.outputChannelsEmpty());
+    try std.testing.expect(context.hasOutputChannels());
+    try std.testing.expect(context.hasOutputChannel(0));
+    try std.testing.expect(!context.outputChannelEmpty(0));
     try std.testing.expectEqual(@as(usize, 0), context.inputFrameCount());
     try std.testing.expectEqual(@as(usize, output.len), context.outputFrameCount());
     try std.testing.expectEqual(@as(usize, output.len), context.frameCount());
