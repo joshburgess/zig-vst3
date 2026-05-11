@@ -126,6 +126,8 @@ test "gain core example declares reflected metadata" {
     try std.testing.expect(parameter_set.hasPlainRangeByName("Gain"));
     try std.testing.expect(!parameter_set.hasPlainRangeByName("Missing"));
     try std.testing.expectEqual(@as(?bool, false), parameter_set.isBypass(0));
+    try std.testing.expectEqual(@as(?bool, false), parameter_set.isBypassById(0));
+    try std.testing.expectEqual(@as(?bool, true), parameter_set.canAutomate(0));
     try std.testing.expectEqual(@as(?bool, true), parameter_set.canAutomateById(0));
     try std.testing.expectEqual(@as(?bool, false), parameter_set.isReadOnlyByName("Gain"));
     try std.testing.expectEqual(@as(?i32, plug.units.root_unit_id), parameter_set.unitId(0));
@@ -1066,6 +1068,8 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expect(!view.fieldIsBypass("gain"));
     try std.testing.expect(view.fieldCanAutomate("gain"));
     try std.testing.expect(!view.fieldIsReadOnly("gain"));
+    try std.testing.expectEqual(@as(?bool, false), view.isBypassById(0));
+    try std.testing.expectEqual(@as(?bool, true), view.canAutomate(0));
     try std.testing.expectEqual(@as(i32, plug.units.root_unit_id), view.fieldUnitId("gain"));
     try std.testing.expectEqual(@as(i32, 0), view.fieldStepCount("gain"));
     try std.testing.expect(!view.fieldIsList("gain"));
@@ -1090,7 +1094,9 @@ test "gain core example edits reflected parameter values directly" {
         .normalized = 0.25,
     }, view.parameterChangeNormalized("gain", 5, 0.25));
     try std.testing.expectEqualStrings("0.500", try view.formatPlainByName("Gain", 0.5, &format_buffer));
+    try std.testing.expectEqualStrings("0.250", try view.formatPlainIndex(0, 0.25, &format_buffer));
     try std.testing.expectEqual(@as(f64, 0.25), try view.parsePlainById(0, "0.25"));
+    try std.testing.expectEqual(@as(f64, 0.75), try view.parsePlainIndex(0, "0.75"));
     try std.testing.expectEqual(@as(?f64, 0.5), view.plainFromNormalizedIndex(0, 0.5));
     try std.testing.expectEqual(@as(?f64, 0.25), view.normalizedFromPlainByName("Gain", 0.25));
     try std.testing.expectEqual(@as(f64, 0.5), view.loadNormalized("gain"));
@@ -1124,6 +1130,8 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expectEqualStrings("Gain", editor.nameById(0).?);
     try std.testing.expectEqual(@as(?usize, 0), editor.indexOfName("Gain"));
     try std.testing.expect(editor.hasName("Gain"));
+    try std.testing.expectEqual(@as(?bool, false), editor.isBypassById(0));
+    try std.testing.expectEqual(@as(?bool, true), editor.canAutomate(0));
     try std.testing.expectEqual(@as(?bool, true), editor.canAutomateById(0));
     try std.testing.expectEqual(@as(?bool, false), editor.isReadOnlyByName("Gain"));
     try std.testing.expectEqual(@as(?i32, 0), editor.stepCountByName("Gain"));
@@ -1140,7 +1148,9 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expect(!editor.fieldHasOptions("gain"));
     try std.testing.expect(editor.fieldOptionsEmpty("gain"));
     try std.testing.expectEqualStrings("0.750", try editor.formatFieldPlain("gain", 0.75, &format_buffer));
+    try std.testing.expectEqualStrings("0.250", try editor.formatPlainIndex(0, 0.25, &format_buffer));
     try std.testing.expectEqual(@as(f64, 0.75), try editor.parsePlainByName("Gain", "0.75"));
+    try std.testing.expectEqual(@as(f64, 0.25), try editor.parsePlainIndex(0, "0.25"));
     try std.testing.expectEqual(@as(?f64, 0.75), editor.plainFromNormalizedById(0, 0.75));
     try std.testing.expectEqual(@as(?f64, 0.75), editor.normalizedFromPlainIndex(0, 0.75));
     try std.testing.expectEqual(plug.process.ParameterChange{
@@ -1156,12 +1166,19 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expect(editor.storeNormalized("gain", 0.75));
     try std.testing.expect(editor.store("gain", 0.5));
     try std.testing.expect(editor.storeIndex(0, 0.25));
+    try std.testing.expectEqual(@as(?usize, 1), editor.storeIndexCount(0, 0.5));
+    try std.testing.expectEqual(@as(?usize, 0), editor.storeIndexCount(0, 0.5));
+    try std.testing.expect(editor.storePlainIndex(0, 0.75));
+    try std.testing.expectEqual(@as(?usize, 1), editor.storePlainIndexCount(0, 0.25));
+    try std.testing.expectEqual(@as(?usize, 1), editor.storePlainByIdCount(0, 0.5));
     try std.testing.expect(editor.storePlainById(0, 0.5));
     try std.testing.expect(!editor.storeIndex(99, 0.5));
     try std.testing.expectEqual(@as(?usize, 1), editor.storeNormalizedCount("gain", 0.25));
     try std.testing.expectEqual(@as(f64, 0.25), editor.view().loadNormalized("gain"));
     try std.testing.expectEqual(@as(?usize, 1), editor.resetToDefaultCount("gain"));
     try std.testing.expectEqual(@as(?usize, 0), editor.resetToDefaultIndexCount(0));
+    try std.testing.expect(editor.storeIndex(0, 0.5));
+    try std.testing.expect(editor.resetToDefaultIndex(0));
     try std.testing.expect(editor.allDefaults());
     try std.testing.expectEqual(@as(usize, 0), editor.nonDefaultCount());
 
