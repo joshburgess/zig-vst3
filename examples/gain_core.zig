@@ -134,6 +134,12 @@ test "gain core example declares reflected metadata" {
     try std.testing.expectError(error.InvalidMaxBlockSize, (plug.plugin.PrepareConfig{ .sample_rate = 48_000.0, .max_block_size = 0 }).validate());
     try instance.prepareChecked(.{ .sample_rate = 48_000.0, .max_block_size = 64 });
     try std.testing.expectError(error.InvalidSampleRate, instance.prepareChecked(.{ .sample_rate = std.math.nan(f64), .max_block_size = 64 }));
+    const units = Spec.Units{};
+    try parameter_set.validateUniqueIds();
+    try parameter_set.validateUniqueNames();
+    try parameter_set.validateDescriptors();
+    try parameter_set.validate();
+    try parameter_set.validateUnitIds(units);
     try std.testing.expectEqual(@as(usize, 1), parameter_set.parameterCount());
     try std.testing.expect(!parameter_set.parametersEmpty());
     try std.testing.expect(parameter_set.hasParameters());
