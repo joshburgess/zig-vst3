@@ -20,12 +20,12 @@ Recent work has concentrated on Layer 2 API polish:
 - `PluginInstance` now exposes same-plugin parameter value copying.
 - `PluginInstance` now exposes migrated parameter id resolution alongside migration diagnostics.
 - `PluginInstance` now exposes direct unit root, parent, and program-list relationship helpers.
-- `gain_core` now exercises parameter descriptor diagnostics, counted parameter stores, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, state header/report compatibility helpers, and migrated parameter-id resolution.
+- `gain_core` now exercises parameter descriptor diagnostics, direct parameter metadata/default/plain-range helpers, counted parameter stores, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, state header/report compatibility helpers, and migrated parameter-id resolution.
 - `mode_gain_core` now exercises enum option metadata helpers by index, id, display name, and field name.
 - `bypass_core` now exercises automatable, read-only, bypass, step-count, and list flag helpers.
-- `voice_mix_core` now exercises unit, program-list, program parameter, and program info helper coverage.
-- `event_echo_core` now uses validated output-event planning.
-- `event_monitor_core` now exercises bus, channel, and bus-channel routing offset helpers.
+- `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including duplicate diagnostics.
+- `event_echo_core` now uses validated output-event planning and exercises output-event routing, capacity, next-offset, first/latest, and clearing helpers.
+- `event_monitor_core` now exercises typed event payload views, event retargeting helpers, and bus, channel, and bus-channel routing offset helpers.
 - README and Layer 2 docs were updated to match the current public API.
 
 Before this handoff, local checks were repeatedly run and passing:
@@ -43,18 +43,20 @@ The marker scan exits with status 1 when there are no matches, which is expected
 
 The worktree was clean before this handover refresh. The latest pushed commits before this document update were:
 
+- `8a82332` Exercise gain parameter metadata helpers
+- `5ee2f07` Exercise event payload retargeting helpers
+- `c31a457` Exercise output event routing helpers
+- `842f378` Exercise voice mix duplicate diagnostics
+- `1f91346` Refresh handover after checked example pass
 - `bf96b44` Exercise parameter flag helpers in bypass example
 - `8cfc429` Exercise enum option helpers in mode example
 - `5a0e2e5` Exercise parameter utility helpers in gain example
 - `5605be1` Exercise state compatibility helpers in gain example
 - `7779a9f` Refresh handover after Layer 2 coverage pass
-- `77dd1ec` Exercise parameter descriptor diagnostics in gain example
-- `7de9031` Exercise program metadata helpers in voice mix example
-- `6e22220` Exercise parameter value copying in gain example
-- `9df263a` Add defaulted any-parameter automation reads
-- `1962413` Allow chained parameter id migrations
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
+
+CI checkpoint: the run for `8a82332` was still in progress when this handover refresh began. The last completed non-cancelled run inspected was `1f91346`, which passed. The intermediate runs for `842f378`, `c31a457`, and `5ee2f07` were cancelled by newer pushes, which is expected for this workflow.
 
 ## What To Do Next
 
