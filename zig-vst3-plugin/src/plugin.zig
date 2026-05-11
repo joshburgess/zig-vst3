@@ -1252,6 +1252,26 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.parameter_set.count;
         }
 
+        pub fn parameterStateHeaderMatchesEntryCount(self: *const Self, header: state.ParameterStateHeader) bool {
+            return header.matchesEntryCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateHeaderHasFewerEntries(self: *const Self, header: state.ParameterStateHeader) bool {
+            return header.hasFewerEntriesThan(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateHeaderHasMoreEntries(self: *const Self, header: state.ParameterStateHeader) bool {
+            return header.hasMoreEntriesThan(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateHeaderMissingEntryCount(self: *const Self, header: state.ParameterStateHeader) usize {
+            return header.missingEntryCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateHeaderExtraEntryCount(self: *const Self, header: state.ParameterStateHeader) usize {
+            return header.extraEntryCount(self.parameterStateEntryCount());
+        }
+
         pub fn readParameterStateHeader(self: *const Self, reader: anytype) !state.ParameterStateHeader {
             _ = self;
             return state.readParameterStateHeader(reader);
@@ -3001,10 +3021,27 @@ test "plugin instance round-trips owned parameter state" {
 
     var header_stream = std.io.fixedBufferStream(&bytes);
     const header = try instance.readParameterStateHeader(header_stream.reader());
+    const older_header = state.ParameterStateHeader{ .version = state.format_version, .entry_count = 1 };
+    const newer_header = state.ParameterStateHeader{ .version = state.format_version, .entry_count = 3 };
     try std.testing.expect(header.isCurrentVersion());
     try std.testing.expect(header.matchesEntryCount(instance.parameterStateEntryCount()));
     try std.testing.expect(!header.hasFewerEntriesThan(instance.parameterStateEntryCount()));
     try std.testing.expect(!header.hasMoreEntriesThan(instance.parameterStateEntryCount()));
+    try std.testing.expect(instance.parameterStateHeaderMatchesEntryCount(header));
+    try std.testing.expect(!instance.parameterStateHeaderHasFewerEntries(header));
+    try std.testing.expect(!instance.parameterStateHeaderHasMoreEntries(header));
+    try std.testing.expectEqual(@as(usize, 0), instance.parameterStateHeaderMissingEntryCount(header));
+    try std.testing.expectEqual(@as(usize, 0), instance.parameterStateHeaderExtraEntryCount(header));
+    try std.testing.expect(!instance.parameterStateHeaderMatchesEntryCount(older_header));
+    try std.testing.expect(instance.parameterStateHeaderHasFewerEntries(older_header));
+    try std.testing.expect(!instance.parameterStateHeaderHasMoreEntries(older_header));
+    try std.testing.expectEqual(@as(usize, 1), instance.parameterStateHeaderMissingEntryCount(older_header));
+    try std.testing.expectEqual(@as(usize, 0), instance.parameterStateHeaderExtraEntryCount(older_header));
+    try std.testing.expect(!instance.parameterStateHeaderMatchesEntryCount(newer_header));
+    try std.testing.expect(!instance.parameterStateHeaderHasFewerEntries(newer_header));
+    try std.testing.expect(instance.parameterStateHeaderHasMoreEntries(newer_header));
+    try std.testing.expectEqual(@as(usize, 0), instance.parameterStateHeaderMissingEntryCount(newer_header));
+    try std.testing.expectEqual(@as(usize, 1), instance.parameterStateHeaderExtraEntryCount(newer_header));
 
     var in_stream = std.io.fixedBufferStream(&bytes);
     const report = try restored.readParameterStateReport(in_stream.reader());
