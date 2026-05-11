@@ -1449,6 +1449,11 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return state.ambiguousParameterMigrationIndex(migrations);
         }
 
+        pub fn migratedParameterId(self: *const Self, id: u32, migrations: []const state.ParameterIdMigration) u32 {
+            _ = self;
+            return state.migratedParameterId(id, migrations);
+        }
+
         pub fn process(self: *Self, context: *process_api.ProcessContext(f32)) void {
             self.applyParameterChanges(context.parameterChanges());
             if (Spec.has_process_with_parameter_view) {
@@ -3376,6 +3381,9 @@ test "plugin instance exposes parameter migration diagnostics" {
     try std.testing.expectEqual(@as(?usize, null), instance.identityParameterMigrationIndex(&valid));
     try std.testing.expectEqual(@as(?usize, null), instance.duplicateParameterMigrationIndex(&valid));
     try std.testing.expectEqual(@as(?usize, null), instance.ambiguousParameterMigrationIndex(&valid));
+    try std.testing.expectEqual(@as(u32, 1), instance.migratedParameterId(7, &valid));
+    try std.testing.expectEqual(@as(u32, 1), instance.migratedParameterId(9, &valid));
+    try std.testing.expectEqual(@as(u32, 12), instance.migratedParameterId(12, &valid));
     try std.testing.expectEqual(@as(?usize, 0), instance.identityParameterMigrationIndex(&identity));
     try std.testing.expectError(error.IdentityParameterMigration, instance.validateParameterIdMigrations(&identity));
     try std.testing.expectEqual(@as(?usize, 1), instance.duplicateParameterMigrationIndex(&duplicate));
