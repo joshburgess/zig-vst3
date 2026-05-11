@@ -27,6 +27,7 @@ Recent work has concentrated on Layer 2 API polish:
 - `event_echo_core` now uses validated output-event planning and exercises direct event-writer helpers plus append aliases, process-context output-event writer attachment, append planning, appends, written-output event views, event-output topology metadata, unavailable-writer errors, no-writer fallback helpers, routing, capacity, next-offset, kind-offset, kind emptiness, first/latest, offset/kind predicates, and clearing helpers.
 - `event_monitor_core` now exercises direct event validation and classification, direct event-view count, emptiness, first/latest, routing, iterator, segment, next-offset, and only helpers, input-event count, emptiness, first/latest, exact kind-at-offset reads, next-offset, only predicates, input-only analyzer topology metadata, input-only process-context channel predicates, empty input-event fallback helpers, typed event payload views including direct note-off payload access, event retargeting helpers, and bus, channel, and bus-channel routing offset helpers.
 - `sine_synth_core` now exercises direct `PluginSpec` output-only generator topology flags, output-only process-context channel predicates, process timing, block duration, sample-offset, remaining-frame helpers, and combined event plus automation process-block segments.
+- The C and C++ Layer 1 ABI harness executables now disable C sanitization so Zig 0.14.0 does not pull the Debug C sanitizer runtime into native macOS CI links.
 - README and Layer 2 docs were updated to match the current public API.
 
 Before this handoff, local checks were repeatedly run and passing:
@@ -40,12 +41,14 @@ rg -n "<project text-rule markers>" .github docs PROJECT_BUILD_PLAN.md README.md
 
 The marker scan exits with status 1 when there are no matches, which is expected.
 
-`zig build validate-examples` was also attempted after the one-sided process-context coverage. It failed before running validation because the Steinberg validator was not available: `.vst3-sdk/vst3sdk` is absent and `VST3_VALIDATOR` is not set.
+`zig build validate-examples` was attempted earlier after the one-sided process-context coverage. It failed before running validation because the Steinberg validator was not available. `scripts/fetch_sdk.sh` was run after the ABI harness fix, so this workspace now has the pinned `.vst3-sdk/vst3sdk` checkout needed for full local Layer 1 ABI checks.
 
 ## Last Known Git State
 
 The worktree was clean before this handover refresh. The latest pushed commits before this refresh were:
 
+- `f808411` Disable C sanitizer for ABI harnesses
+- `9d8fc4a` Refresh handover after validation coverage
 - `cc688dd` Exercise metadata validation helpers
 - `509f9c3` Exercise lifecycle hook variants
 - `72cbcbf` Exercise state read wrappers
@@ -164,7 +167,7 @@ The worktree was clean before this handover refresh. The latest pushed commits b
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
-CI checkpoint: after pushing `cc688dd`, GitHub Actions showed `cc688dd` pending and `509f9c3` in progress. Runs for `72cbcbf` and `ab1dc13` were cancelled by newer pushes, which is expected for this workflow. The latest completed failure inspected was `bae332c`: all build/test jobs, repository hygiene, validator jobs, cross-compile jobs, and Ubuntu Layer 1 ABI passed, but macOS Layer 1 ABI failed while Zig 0.14.0 built native ABI harnesses with `failed to parse TBD file: NotLibStub` while parsing `.zig-cache/.../libubsan_rt.a`.
+CI checkpoint: after pushing `f808411`, GitHub Actions run `25699948714` completed successfully. Repository hygiene, build/test on Ubuntu, macOS, and Windows, Layer 1 ABI on Ubuntu and macOS, validator jobs on Ubuntu and macOS, and all cross-compile jobs passed. The earlier macOS Layer 1 ABI failure on `bae332c` and `9d8fc4a` was the Zig 0.14.0 native C sanitizer link issue with `libubsan_rt.a`; `f808411` fixed it by disabling C sanitization for the ABI harness executables.
 
 ## What To Do Next
 
