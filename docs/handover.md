@@ -15,6 +15,9 @@ Recent work has concentrated on Layer 2 API polish:
 - State header and restore-report compatibility helpers are bound to a plugin instance.
 - Process context timing, block, offset, segment, automation, and output-event planning helpers were added and tested.
 - Event routing next-offset helpers and offset-only event predicates were added to `Events`, `EventWriter`, and `ProcessContext`.
+- `PluginInstance` now exposes same-plugin parameter value copying.
+- `PluginInstance` now exposes migrated parameter id resolution alongside migration diagnostics.
+- `PluginInstance` now exposes direct unit root, parent, and program-list relationship helpers.
 - `event_echo_core` now uses validated output-event planning.
 - `event_monitor_core` now exercises bus, channel, and bus-channel routing offset helpers.
 - README and Layer 2 docs were updated to match the current public API.
@@ -34,12 +37,13 @@ The marker scan exits with status 1 when there are no matches, which is expected
 
 The worktree was clean before this handover refresh. The latest pushed commits before this document update were:
 
+- `eb66f72` Expose unit relationship helpers
+- `a7c030a` Expose migrated parameter id helper
+- `72bde46` Add plugin parameter value copying
+- `e6b464e` Refresh project handover
 - `608ac18` Add offset-only event predicates
 - `bf625b8` Exercise event routing offsets in monitor example
 - `e4bbe30` Add event routing next-offset helpers
-- `2bb5345` Add Layer 2 metadata helper coverage
-- `95231d2` Add project handover note
-- `6f94515` Cover defaulted exact-offset automation clamping
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
