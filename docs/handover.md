@@ -20,13 +20,13 @@ Recent work has concentrated on Layer 2 API polish:
 - `PluginInstance` now exposes same-plugin parameter value copying.
 - `PluginInstance` now exposes migrated parameter id resolution alongside migration diagnostics.
 - `PluginInstance` now exposes direct unit root, parent, and program-list relationship helpers.
-- `gain_core` now exercises plugin topology and lifecycle predicates, plugin metadata defaults and overrides, prepare validation, process-context timing and validation, valid process attachment setters, direct process parameter-change views, audio channel and buffer-view helpers, parameter presence predicates, parameter descriptor diagnostics, direct `ParameterSet` metadata and conversion helpers, direct and field-name parameter metadata/default/plain-range/flag/unit/option helpers, direct descriptor handles, direct parameter value storage/editor helpers, reset aliases, instance-bound parameter handles, bound parameter-view metadata/conversions/reads, bound parameter-editor metadata/conversions, editor process-change counts, lookup-based loads, counted stores, direct parameter-change application, normalized parameter-change constructors, parameter-change value predicates, direct parameter-change view helpers, parameter-change next-offset helpers, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, per-id and per-offset automation reads, parameter and block segment value helpers, parameter segment iterators, state size constants, state header-only writing, state header/report compatibility helpers, ignored/accounted/unaccounted state report helpers, migrated state reads, migrated parameter-id resolution, state migration diagnostics, and reflected-storage process hooks for `f32` and `f64`.
-- `mode_gain_core` now exercises enum option metadata helpers by index, id, display name, and field name through direct instance helpers and bound view/editor helpers.
+- `gain_core` now exercises plugin topology and lifecycle predicates, plugin metadata defaults and overrides, prepare validation, process-context timing and validation, valid process attachment setters, direct process parameter-change views, audio channel and buffer-view helpers including empty direct audio views, parameter presence predicates, parameter descriptor diagnostics, direct `ParameterSet` metadata and conversion helpers, direct and field-name parameter metadata/default/plain-range/flag/unit/option helpers, direct descriptor handles, direct parameter value storage/editor helpers, reset aliases, instance-bound parameter handles, bound parameter-view metadata/conversions/reads, bound parameter-editor metadata/conversions, editor process-change counts, lookup-based loads, counted stores, direct parameter-change application, normalized parameter-change constructors, parameter-change value predicates, direct parameter-change view helpers, parameter-change next-offset helpers, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, per-id and per-offset automation reads, parameter and block segment value helpers, parameter segment iterators, state size constants, state header-only writing, state header/report compatibility helpers, ignored/accounted/unaccounted state report helpers, migrated state reads, migrated parameter-id resolution, state migration diagnostics, and reflected-storage process hooks for `f32` and `f64`.
+- `mode_gain_core` now exercises enum option metadata helpers by index, id, display name, and field name through direct `ParameterSet`, direct instance, and bound view/editor helpers.
 - `bypass_core` now exercises automatable, read-only, bypass, step-count, and list flag helpers through direct instance helpers and bound view/editor helpers.
 - `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including the direct instance unit-set handle, value-level helpers, direct unit/program-list lookup helpers, direct program-list/program lookup and duplicate helpers, counted program snapshot application, and duplicate diagnostics.
 - `event_echo_core` now uses validated output-event planning and exercises direct event-writer helpers plus process-context output-event writer attachment, append planning, appends, written-output event views, event-output topology metadata, unavailable-writer errors, no-writer fallback helpers, routing, capacity, next-offset, kind-offset, first/latest, offset/kind predicates, and clearing helpers.
-- `event_monitor_core` now exercises direct event validation and classification, direct event-view helpers, input-event count, emptiness, first/latest, next-offset, only predicates, input-only analyzer topology metadata, empty input-event fallback helpers, typed event payload views, event retargeting helpers, and bus, channel, and bus-channel routing offset helpers.
-- `sine_synth_core` now exercises output-only generator topology metadata, process timing, block duration, sample-offset, remaining-frame helpers, and combined event plus automation process-block segments.
+- `event_monitor_core` now exercises direct event validation and classification, direct event-view helpers, input-event count, emptiness, first/latest, next-offset, only predicates, input-only analyzer topology metadata, input-only process-context channel predicates, empty input-event fallback helpers, typed event payload views, event retargeting helpers, and bus, channel, and bus-channel routing offset helpers.
+- `sine_synth_core` now exercises output-only generator topology metadata, output-only process-context channel predicates, process timing, block duration, sample-offset, remaining-frame helpers, and combined event plus automation process-block segments.
 - README and Layer 2 docs were updated to match the current public API.
 
 Before this handoff, local checks were repeatedly run and passing:
@@ -40,10 +40,16 @@ rg -n "<project text-rule markers>" .github docs PROJECT_BUILD_PLAN.md README.md
 
 The marker scan exits with status 1 when there are no matches, which is expected.
 
+`zig build validate-examples` was also attempted after the one-sided process-context coverage. It failed before running validation because the Steinberg validator was not available: `.vst3-sdk/vst3sdk` is absent and `VST3_VALIDATOR` is not set.
+
 ## Last Known Git State
 
 The worktree was clean before this handover refresh. The latest pushed commits at this refresh were:
 
+- `a09897a` Exercise one-sided process contexts
+- `2551e6c` Exercise empty audio buffer views
+- `96728c7` Exercise parameter set option metadata
+- `68a3f93` Refresh handover after parameter coverage
 - `3311c5c` Exercise parameter set metadata
 - `b7ba289` Exercise parameter set conversions
 - `69fea31` Exercise process attachment setters
@@ -135,7 +141,7 @@ The worktree was clean before this handover refresh. The latest pushed commits a
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
-CI checkpoint: after pushing `3311c5c`, GitHub Actions showed `3311c5c` pending and `b7ba289` in progress. The intervening runs for `69fea31`, `3adb8fa`, and `ce11fe0` were cancelled by newer pushes, which is expected for this workflow. The latest completed non-cancelled run inspected was `e036cd7`, which passed.
+CI checkpoint: after pushing `a09897a`, GitHub Actions showed `a09897a` in progress. The intervening runs for `2551e6c`, `96728c7`, `68a3f93`, `3311c5c`, `b7ba289`, `69fea31`, and `3adb8fa` were cancelled by newer pushes, which is expected for this workflow. The latest completed non-cancelled run inspected was `e036cd7`, which passed.
 
 ## What To Do Next
 
