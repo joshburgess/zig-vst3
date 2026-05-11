@@ -160,6 +160,51 @@ test "gain core example processes through zig-vst3-plugin context" {
     try std.testing.expectEqual(@as(f32, 0.5), output[2]);
 }
 
+test "gain core example can inspect audio buffer views" {
+    const in_left = [_]f32{ 0.1, 0.2, 0.3 };
+    const in_right = [_]f32{ 0.4, 0.5, 0.6 };
+    const short_input = [_]f32{ 0.7, 0.8 };
+    var out_left = [_]f32{ 0.0, 0.0, 0.0 };
+    var out_right = [_]f32{ 0.0, 0.0, 0.0 };
+    var short_output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{ &in_left, &in_right };
+    const mismatched_input_channels = [_][]const f32{ &in_left, &short_input };
+    const output_channels = [_][]f32{ &out_left, &out_right };
+    const mismatched_output_channels = [_][]f32{ &out_left, &short_output };
+
+    const inputs = try plug.process.AudioInputs(f32).init(&input_channels);
+    try std.testing.expectEqual(@as(usize, 2), inputs.channelCount());
+    try std.testing.expect(!inputs.isEmpty());
+    try std.testing.expect(inputs.hasChannels());
+    try std.testing.expectEqual(@as(usize, 3), inputs.frameCount());
+    try std.testing.expect(inputs.hasChannel(1));
+    try std.testing.expect(!inputs.channelEmpty(1));
+    try std.testing.expectEqual(@as(f32, 0.4), inputs.channel(1).?[0]);
+    try std.testing.expectEqual(@as(?[]const f32, null), inputs.channel(2));
+    try std.testing.expect(!inputs.hasChannel(2));
+    try std.testing.expect(inputs.channelEmpty(2));
+    try std.testing.expectError(error.MismatchedFrameCount, plug.process.AudioInputs(f32).init(&mismatched_input_channels));
+
+    const outputs = try plug.process.AudioOutputs(f32).init(&output_channels);
+    try std.testing.expectEqual(@as(usize, 2), outputs.channelCount());
+    try std.testing.expect(!outputs.isEmpty());
+    try std.testing.expect(outputs.hasChannels());
+    try std.testing.expectEqual(@as(usize, 3), outputs.frameCount());
+    try std.testing.expect(outputs.hasChannel(1));
+    try std.testing.expect(!outputs.channelEmpty(1));
+    try std.testing.expectEqual(@as(f32, 0.0), outputs.channel(1).?[0]);
+    try std.testing.expectEqual(@as(?[]f32, null), outputs.channel(2));
+    try std.testing.expect(!outputs.hasChannel(2));
+    try std.testing.expect(outputs.channelEmpty(2));
+    outputs.fill(0.25);
+    try std.testing.expectEqual(@as(f32, 0.25), out_left[0]);
+    try std.testing.expectEqual(@as(f32, 0.25), out_right[2]);
+    outputs.clear();
+    try std.testing.expectEqual(@as(f32, 0.0), out_left[0]);
+    try std.testing.expectEqual(@as(f32, 0.0), out_right[2]);
+    try std.testing.expectError(error.MismatchedFrameCount, plug.process.AudioOutputs(f32).init(&mismatched_output_channels));
+}
+
 test "gain core example splits blocks at automation changes" {
     var plugin = Gain{};
     const input = [_]f32{ 1.0, 1.0, 1.0, 1.0, 1.0 };
