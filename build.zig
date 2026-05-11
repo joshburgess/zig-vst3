@@ -371,6 +371,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .link_libc = true,
+            .sanitize_c = false,
         }),
     });
     funknown_harness.root_module.addCSourceFile(.{
@@ -398,6 +399,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .link_libc = true,
+            .sanitize_c = false,
         }),
     });
     multi_interface_harness.root_module.addCSourceFile(.{
@@ -416,6 +418,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .link_libc = true,
             .link_libcpp = true,
+            .sanitize_c = false,
         }),
     });
     multi_interface_cpp_harness.root_module.addCSourceFile(.{
@@ -434,6 +437,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .link_libc = true,
             .link_libcpp = true,
+            .sanitize_c = false,
         }),
     });
     multi_interface_sdk_harness.root_module.addIncludePath(b.path(".vst3-sdk/vst3sdk"));
