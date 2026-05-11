@@ -308,7 +308,21 @@ test "event echo core example ignores events when no output writer is attached" 
 
     try std.testing.expect(!context.hasOutputEventWriter());
     try std.testing.expectEqual(@as(usize, 0), context.outputEventCount());
+    try std.testing.expectEqual(@as(usize, 0), context.outputEventCapacity());
+    try std.testing.expectEqual(@as(usize, 0), context.outputEventRemainingCapacity());
+    try std.testing.expectEqual(@as(usize, 0), context.outputEventFrameCount());
     try std.testing.expect(context.outputEventsEmpty());
+    try std.testing.expect(!context.hasOutputEvents());
+    try std.testing.expect(context.outputEventsFull());
+    try std.testing.expect(!context.canAppendOutputEvent());
+    try std.testing.expect(!context.canAppendOutputEventValue(events[0]));
+    try std.testing.expectEqual(@as(?usize, null), context.firstOutputEventOffset());
+    try std.testing.expectEqual(@as(?usize, null), context.latestOutputEventOffset());
+    try std.testing.expectEqual(@as(?plug.process.Event, null), context.firstWrittenOutputEvent());
+    try std.testing.expectEqual(@as(?plug.process.Event, null), context.latestWrittenOutputEvent());
+    try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForBusChannel(0, 0, 0));
+    var missing_output_notes = context.outputEventsOfKind(.note_on);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), missing_output_notes.next());
     try std.testing.expectError(error.OutputEventsUnavailable, context.appendOutputEvent(events[0]));
     try std.testing.expectError(error.OutputEventsUnavailable, context.appendOutputEvents(try plug.process.Events.init(&events, input.len)));
 
