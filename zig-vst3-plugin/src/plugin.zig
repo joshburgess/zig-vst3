@@ -3047,6 +3047,7 @@ test "plugin instance reads parameter state with migrations" {
     });
 
     try std.testing.expectEqual(state.ReadParameterStateReport{ .entry_count = 1, .restored_count = 1, .ignored_count = 0 }, report);
+    try std.testing.expect(report.isRestoredAllClassification());
     try std.testing.expectEqual(@as(f64, 0.25), new_instance.loadParameterNormalized("output"));
 }
 
