@@ -22,10 +22,10 @@ Recent work has concentrated on Layer 2 API polish:
 - `PluginInstance` now exposes direct unit root, parent, and program-list relationship helpers.
 - `gain_core` now exercises plugin topology and lifecycle predicates, prepare validation, process-context validation, audio channel and buffer-view helpers, parameter presence predicates, parameter descriptor diagnostics, direct and field-name parameter metadata/default/plain-range helpers, direct parameter value storage/editor helpers, instance-bound parameter handles, bound parameter-view metadata/conversions/reads, bound parameter-editor metadata/conversions, editor process-change counts, lookup-based loads, counted stores, direct parameter-change application, parameter-change value predicates, direct parameter-change view helpers, parameter-change next-offset helpers, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, per-id and per-offset automation reads, parameter and block segment value helpers, parameter segment iterators, state size constants, state header-only writing, state header/report compatibility helpers, ignored/accounted/unaccounted state report helpers, migrated parameter-id resolution, state migration diagnostics, and reflected-storage process hooks for `f32` and `f64`.
 - `mode_gain_core` now exercises enum option metadata helpers by index, id, display name, and field name through direct instance helpers and bound view/editor helpers.
-- `bypass_core` now exercises automatable, read-only, bypass, step-count, and list flag helpers.
-- `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including value-level helpers, direct unit/program-list lookup helpers, counted program snapshot application, and duplicate diagnostics.
-- `event_echo_core` now uses validated output-event planning and exercises direct event-writer helpers plus process-context output-event writer attachment, appends, unavailable-writer errors, routing, capacity, next-offset, kind-offset, first/latest, offset/kind predicates, and clearing helpers.
-- `event_monitor_core` now exercises direct event-view helpers, input-event count, emptiness, first/latest, next-offset, only predicates, typed event payload views, event retargeting helpers, and bus, channel, and bus-channel routing offset helpers.
+- `bypass_core` now exercises automatable, read-only, bypass, step-count, and list flag helpers through direct instance helpers and bound view/editor helpers.
+- `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including value-level helpers, direct unit/program-list lookup helpers, direct program-list/program lookup and duplicate helpers, counted program snapshot application, and duplicate diagnostics.
+- `event_echo_core` now uses validated output-event planning and exercises direct event-writer helpers plus process-context output-event writer attachment, appends, unavailable-writer errors, no-writer fallback helpers, routing, capacity, next-offset, kind-offset, first/latest, offset/kind predicates, and clearing helpers.
+- `event_monitor_core` now exercises direct event-view helpers, input-event count, emptiness, first/latest, next-offset, only predicates, empty input-event fallback helpers, typed event payload views, event retargeting helpers, and bus, channel, and bus-channel routing offset helpers.
 - `sine_synth_core` now exercises process timing, block duration, sample-offset, remaining-frame helpers, and combined event plus automation process-block segments.
 - README and Layer 2 docs were updated to match the current public API.
 
@@ -44,6 +44,11 @@ The marker scan exits with status 1 when there are no matches, which is expected
 
 The worktree was clean before this handover refresh. The latest pushed commits before this document update were:
 
+- `806eab4` Exercise empty input event helpers
+- `007289a` Exercise output event fallback helpers
+- `2e4a314` Exercise bound parameter flag metadata
+- `c4e8f2f` Exercise program value helpers
+- `79c43b5` Refresh handover after segment coverage
 - `0278f83` Exercise bound enum option metadata
 - `81ccc8b` Exercise process block segments
 - `6f09d1b` Exercise instance parameter handles
@@ -111,7 +116,7 @@ The worktree was clean before this handover refresh. The latest pushed commits b
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
-CI checkpoint: the run for `0278f83` was pending and the run for `81ccc8b` was in progress when this handover refresh began. The latest inspected completed runs after `33c5f76` were cancelled by newer pushes, which is expected for this workflow. The latest completed non-cancelled run inspected remains `33c5f76`, which passed.
+CI checkpoint: the run for `806eab4` was pending and the run for `007289a` was in progress when this handover refresh began. The latest inspected completed runs after `33c5f76` were cancelled by newer pushes, which is expected for this workflow. The latest completed non-cancelled run inspected remains `33c5f76`, which passed.
 
 ## What To Do Next
 
