@@ -543,6 +543,58 @@ test "gain core example stores and resets float parameters by lookup" {
     try std.testing.expect(!instance.resetParameterToDefaultByName("Missing"));
 }
 
+test "gain core example edits reflected parameter values directly" {
+    var values = Spec.ParameterValues.init(&parameter_set);
+
+    try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.loadPlain(&parameter_set, 0));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.loadById(&parameter_set, 0));
+    try std.testing.expectEqual(@as(?f64, 1.0), values.loadPlainByName(&parameter_set, "Gain"));
+    try std.testing.expectEqual(@as(f64, 1.0), values.loadFieldNormalized(&parameter_set, "gain"));
+    try std.testing.expectEqual(@as(f64, 1.0), values.loadField(&parameter_set, "gain"));
+    try std.testing.expectEqual(@as(?bool, true), values.isDefault(&parameter_set, 0));
+    try std.testing.expectEqual(@as(?bool, true), values.isDefaultById(&parameter_set, 0));
+    try std.testing.expect(values.fieldIsDefault(&parameter_set, "gain"));
+    try std.testing.expect(values.allDefaults(&parameter_set));
+    try std.testing.expect(!values.hasNonDefaults(&parameter_set));
+    try std.testing.expectEqual(@as(usize, 0), values.nonDefaultCount(&parameter_set));
+
+    try std.testing.expectEqual(@as(?usize, 1), values.storeCount(0, 0.5));
+    try std.testing.expectEqual(@as(?usize, 0), values.storeCount(0, 0.5));
+    try std.testing.expectEqual(@as(?usize, null), values.storeCount(99, 0.5));
+    try std.testing.expectEqual(@as(?usize, null), values.storeCount(0, std.math.nan(f64)));
+    try std.testing.expectEqual(@as(?usize, 1), values.storePlainCount(&parameter_set, 0, 0.25));
+    try std.testing.expectEqual(@as(?usize, 1), values.storeByIdCount(&parameter_set, 0, 0.75));
+    try std.testing.expectEqual(@as(?usize, 1), values.storePlainByNameCount(&parameter_set, "Gain", 0.5));
+    try std.testing.expectEqual(@as(?usize, 1), values.storeFieldCount(&parameter_set, "gain", 0.25));
+    try std.testing.expectEqual(@as(?usize, 1), values.storeFieldNormalizedCount(&parameter_set, "gain", 0.5));
+    try std.testing.expectEqual(@as(?usize, null), values.storeByIdCount(&parameter_set, 99, 0.5));
+    try std.testing.expectEqual(@as(?usize, null), values.storePlainByNameCount(&parameter_set, "Missing", 0.5));
+    try std.testing.expect(!values.allDefaults(&parameter_set));
+    try std.testing.expect(values.hasNonDefaults(&parameter_set));
+    try std.testing.expectEqual(@as(usize, 1), values.nonDefaultCount(&parameter_set));
+
+    var copied = Spec.ParameterValues.init(&parameter_set);
+    copied.copyFrom(&values);
+    try std.testing.expectEqual(@as(f64, 0.5), copied.loadFieldNormalized(&parameter_set, "gain"));
+
+    var editor = copied.editor(&parameter_set);
+    try std.testing.expectEqual(@as(usize, 1), editor.parameterCount());
+    try std.testing.expect(!editor.parametersEmpty());
+    try std.testing.expect(editor.hasParameters());
+    try std.testing.expectEqual(@as(?usize, 1), editor.storeNormalizedCount("gain", 0.25));
+    try std.testing.expectEqual(@as(f64, 0.25), editor.view().loadNormalized("gain"));
+    try std.testing.expectEqual(@as(?usize, 1), editor.resetToDefaultCount("gain"));
+    try std.testing.expectEqual(@as(?usize, 0), editor.resetToDefaultIndexCount(0));
+    try std.testing.expect(editor.allDefaults());
+    try std.testing.expectEqual(@as(usize, 0), editor.nonDefaultCount());
+
+    try std.testing.expectEqual(@as(?usize, 1), values.resetToDefaultCount(&parameter_set, 0));
+    try std.testing.expectEqual(@as(?usize, 0), values.resetToDefaultByIdCount(&parameter_set, 0));
+    try std.testing.expectEqual(@as(?usize, null), values.resetToDefaultByNameCount(&parameter_set, "Missing"));
+    try std.testing.expectEqual(@as(usize, 0), values.resetToDefaultsCount(&parameter_set));
+}
+
 test "gain core example applies reflected parameter changes directly" {
     var instance = try Instance.init(std.testing.allocator, .{});
     const raw_changes = [_]plug.process.ParameterChange{
