@@ -1383,8 +1383,12 @@ test "gain core example round-trips parameter state" {
 
     var in_stream = std.io.fixedBufferStream(&bytes);
     const report = try restored.readParameterStateReport(in_stream.reader());
+    var directly_restored = try Instance.init(std.testing.allocator, .{});
+    var direct_in_stream = std.io.fixedBufferStream(&bytes);
+    try directly_restored.readParameterState(direct_in_stream.reader());
     const empty_report = plug.state.ReadParameterStateReport{ .entry_count = 0, .restored_count = 0, .ignored_count = 0 };
     const newer_report = plug.state.ReadParameterStateReport{ .entry_count = 2, .restored_count = 1, .ignored_count = 1 };
+    const over_restored_report = plug.state.ReadParameterStateReport{ .entry_count = 2, .restored_count = 2, .ignored_count = 0 };
     const ignored_report = plug.state.ReadParameterStateReport{ .entry_count = 1, .restored_count = 0, .ignored_count = 1 };
     const unaccounted_report = plug.state.ReadParameterStateReport{ .entry_count = 2, .restored_count = 0, .ignored_count = 0 };
 
@@ -1403,6 +1407,7 @@ test "gain core example round-trips parameter state" {
     try std.testing.expectEqual(@as(usize, 1), restored.parameterStateReportMissingRestoredEntryCount(empty_report));
     try std.testing.expect(restored.parameterStateReportHasMoreDecodedEntries(newer_report));
     try std.testing.expect(restored.parameterStateReportMatchesRestoredCount(newer_report));
+    try std.testing.expect(restored.parameterStateReportHasMoreRestoredEntries(over_restored_report));
     try std.testing.expectEqual(@as(usize, 1), restored.parameterStateReportExtraDecodedEntryCount(newer_report));
     try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportExtraRestoredEntryCount(newer_report));
     try std.testing.expect(!restored.parameterStateReportMatchesIgnoredCount(report));
@@ -1437,6 +1442,7 @@ test "gain core example round-trips parameter state" {
     try std.testing.expect(report.restoredAllEntries());
     try std.testing.expect(!report.ignoredAllEntries());
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(f64, 0.25), directly_restored.loadParameterNormalized("gain"));
 
     var json_bytes: [128]u8 = undefined;
     var json_stream = std.io.fixedBufferStream(&json_bytes);
