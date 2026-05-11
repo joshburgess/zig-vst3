@@ -43,6 +43,7 @@ pub const parameter_set = Spec.ParameterSet.init(.{});
 
 test "gain core example declares reflected metadata" {
     const spec = Spec.init(.{});
+    var instance = try Instance.init(std.testing.allocator, .{});
 
     try std.testing.expectEqualStrings("zig-vst3-plugin Core Gain", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
@@ -50,6 +51,21 @@ test "gain core example declares reflected metadata" {
     try std.testing.expectEqual(@as(usize, 1), parameter_set.parameterCount());
     try std.testing.expectEqualStrings("Gain", parameter_set.shortName(0).?);
     try std.testing.expectEqualStrings("x", parameter_set.units(0).?);
+    try std.testing.expectEqual(@as(?usize, 0), instance.parameterIndexOfId(0));
+    try std.testing.expectEqual(@as(?usize, null), instance.parameterIndexOfId(99));
+    try std.testing.expectEqual(@as(?u32, null), instance.duplicateParameterId());
+    try std.testing.expectEqual(@as(?usize, null), instance.duplicateParameterIdIndex());
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateParameterName());
+    try std.testing.expectEqual(@as(?usize, null), instance.duplicateParameterNameIndex());
+    try std.testing.expect(!instance.hasDuplicateParameterIds());
+    try std.testing.expect(!instance.hasDuplicateParameterNames());
+    try std.testing.expectEqual(@as(?anyerror, null), instance.firstParameterDescriptorError());
+    try std.testing.expectEqual(@as(?usize, null), instance.firstParameterDescriptorErrorIndex());
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.firstParameterDescriptorErrorName());
+    try std.testing.expect(instance.hasParameterId(0));
+    try std.testing.expect(!instance.hasParameterId(99));
+    try std.testing.expect(instance.hasParameterName("Gain"));
+    try std.testing.expect(!instance.hasParameterName("Missing"));
     try std.testing.expectEqual(@as(f64, 1.0), spec.values.view(&parameter_set).loadNormalized("gain"));
     plug.plugin.validateLifecycle(Gain);
 }
