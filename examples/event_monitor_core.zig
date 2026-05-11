@@ -4,6 +4,7 @@ const plug = @import("zig-vst3-plugin");
 pub const EventMonitor = struct {
     pub const name = "zig-vst3-plugin Core Event Monitor";
     pub const vendor = "zig-vst3";
+    pub const audio_output = false;
     pub const Params = struct {};
 
     note_on_count: usize = 0,
@@ -99,9 +100,15 @@ pub const Spec = plug.plugin.PluginSpec(EventMonitor);
 pub const Instance = plug.plugin.PluginInstance(EventMonitor);
 
 test "event monitor core example declares reflected metadata" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+
     try std.testing.expectEqualStrings("zig-vst3-plugin Core Event Monitor", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
     try std.testing.expectEqual(@as(usize, 0), Spec.ParameterSet.count);
+    try std.testing.expect(instance.hasAudioInput());
+    try std.testing.expect(!instance.hasAudioOutput());
+    try std.testing.expect(instance.hasEventInput());
+    try std.testing.expect(!instance.hasEventOutput());
     plug.plugin.validateLifecycle(EventMonitor);
 }
 
