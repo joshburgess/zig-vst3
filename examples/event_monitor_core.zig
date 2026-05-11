@@ -105,6 +105,10 @@ test "event monitor core example declares reflected metadata" {
     try std.testing.expectEqualStrings("zig-vst3-plugin Core Event Monitor", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
     try std.testing.expectEqual(@as(usize, 0), Spec.ParameterSet.count);
+    try std.testing.expect(Spec.audio_input);
+    try std.testing.expect(!Spec.audio_output);
+    try std.testing.expect(Spec.event_input);
+    try std.testing.expect(!Spec.event_output);
     try std.testing.expect(instance.hasAudioInput());
     try std.testing.expect(!instance.hasAudioOutput());
     try std.testing.expect(instance.hasEventInput());

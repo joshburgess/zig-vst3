@@ -64,6 +64,10 @@ test "sine synth core example declares reflected metadata" {
     try std.testing.expectEqualStrings("zig-vst3-plugin Core Sine Synth", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
+    try std.testing.expect(!Spec.audio_input);
+    try std.testing.expect(Spec.audio_output);
+    try std.testing.expect(Spec.event_input);
+    try std.testing.expect(!Spec.event_output);
     try std.testing.expect(!instance.hasAudioInput());
     try std.testing.expect(instance.hasAudioOutput());
     try std.testing.expect(instance.hasEventInput());
