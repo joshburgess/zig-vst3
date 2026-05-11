@@ -613,6 +613,18 @@ test "gain core example formats and converts float parameters" {
     const descriptor = instance.parameterFieldDescriptor("gain");
     try std.testing.expectEqual(@as(u32, 0), descriptor.id);
     try std.testing.expectEqualStrings("Gain", descriptor.name);
+    try std.testing.expect(descriptor.containsPlain(0.5));
+    try std.testing.expect(!descriptor.containsPlain(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 0.0), descriptor.clampPlain(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 1.0), descriptor.clampPlain(2.0));
+    try std.testing.expectEqual(@as(f64, 0.25), descriptor.normalize(0.25));
+    try std.testing.expectEqual(@as(f64, 0.75), descriptor.denormalize(0.75));
+    try std.testing.expectEqual(@as(f64, 1.0), descriptor.defaultNormalized());
+    try std.testing.expectEqualStrings("50%", try descriptor.formatPercent(0.5, &buffer));
+    try std.testing.expectEqualStrings("0.500", try descriptor.formatPlain(0.5, &buffer));
+    try std.testing.expectEqual(@as(f64, 0.25), descriptor.plainFromNormalized(0.25));
+    try std.testing.expectEqual(@as(f64, 0.25), descriptor.normalizedFromPlain(0.25));
+    try std.testing.expectEqual(@as(f64, 0.25), try descriptor.parsePlain(" 0.25 "));
     try std.testing.expectEqual(@as(u32, 0), instance.parameterFieldId("gain"));
     try std.testing.expectEqualStrings("Gain", instance.parameterFieldName("gain"));
     try std.testing.expectEqualStrings("Gain", instance.parameterFieldShortName("gain"));

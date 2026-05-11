@@ -73,6 +73,7 @@ test "voice mix core example declares reflected int parameter" {
 
 test "voice mix core example declares reflected unit and program metadata" {
     var instance = try Instance.init(std.testing.allocator, .{});
+    var buffer: [16]u8 = undefined;
 
     try std.testing.expectEqual(@as(usize, 2), instance.unitCount());
     try std.testing.expect(!instance.unitsEmpty());
@@ -98,6 +99,18 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expectEqual(@as(?usize, 1), instance.unitIndexOfName("Voices"));
     try std.testing.expect(instance.hasUnit(voice_unit_id));
     try std.testing.expect(instance.hasUnitName("Voices"));
+    const descriptor = instance.parameterFieldDescriptor("voices");
+    try std.testing.expect(descriptor.containsPlain(4));
+    try std.testing.expect(!descriptor.containsPlain(0));
+    try std.testing.expectEqual(@as(i64, 1), descriptor.clampPlain(0));
+    try std.testing.expectEqual(@as(i64, 4), descriptor.clampPlain(9));
+    try std.testing.expectEqual(@as(f64, 1.0), descriptor.normalize(4));
+    try std.testing.expectEqual(@as(i64, 3), descriptor.denormalize(0.5));
+    try std.testing.expectEqual(@as(f64, 0.0), descriptor.defaultNormalized());
+    try std.testing.expectEqualStrings("4", try descriptor.formatPlain(1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 4.0), descriptor.plainFromNormalized(1.0));
+    try std.testing.expectEqual(@as(f64, 1.0), descriptor.normalizedFromPlain(4.0));
+    try std.testing.expectEqual(@as(f64, 1.0), try descriptor.parsePlain("4"));
     try std.testing.expectEqual(@as(?i32, null), instance.duplicateUnitId());
     try std.testing.expectEqual(@as(?usize, null), instance.duplicateUnitIdIndex());
     try std.testing.expect(!instance.hasDuplicateUnitIds());
