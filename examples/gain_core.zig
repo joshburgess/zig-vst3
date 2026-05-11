@@ -151,6 +151,24 @@ test "gain core example processes through zig-vst3-plugin context" {
 
     try std.testing.expectEqual(@as(usize, 1), context.inputChannelCount());
     try std.testing.expectEqual(@as(usize, 1), context.outputChannelCount());
+    try std.testing.expectEqual(@as(usize, 3), context.inputFrameCount());
+    try std.testing.expectEqual(@as(usize, 3), context.outputFrameCount());
+    try std.testing.expectEqual(@as(usize, 3), context.frameCount());
+    try std.testing.expectEqual(@as(f64, 48_000.0), context.sampleRate());
+    try std.testing.expectEqual(@as(f64, 1.0 / 48_000.0), context.sampleDurationSeconds());
+    try std.testing.expectEqual(@as(f64, 3.0 / 48_000.0), context.blockDurationSeconds());
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = 3 }, context.blockSegment());
+    try std.testing.expect(context.containsSampleOffset(2));
+    try std.testing.expect(!context.containsSampleOffset(3));
+    try std.testing.expect(context.isEndOffset(3));
+    try std.testing.expect(!context.isEndOffset(2));
+    try std.testing.expect(context.isPastEndOffset(4));
+    try std.testing.expect(!context.isPastEndOffset(3));
+    try std.testing.expectEqual(@as(f64, 2.0 / 48_000.0), context.sampleOffsetSeconds(2));
+    try std.testing.expectEqual(@as(usize, 1), context.remainingFramesFromOffset(2));
+    try std.testing.expectEqual(@as(usize, 0), context.remainingFramesFromOffset(3));
+    try std.testing.expectEqual(@as(f64, 1.0 / 48_000.0), context.remainingSecondsFromOffset(2));
+    try std.testing.expectEqual(@as(f64, 0.0), context.remainingSecondsFromOffset(3));
     try std.testing.expect(!context.inputChannelsEmpty());
     try std.testing.expect(!context.outputChannelsEmpty());
     try std.testing.expect(context.hasInputChannels());
