@@ -217,6 +217,8 @@ test "gain core example round-trips parameter state" {
     try std.testing.expect(report.hasDecodedEntries());
     try std.testing.expect(report.hasRestoredEntries());
     try std.testing.expect(!report.hasIgnoredEntries());
+    try std.testing.expect(report.fullyHandled());
+    try std.testing.expectEqual(plug.state.ReadParameterStateClassification.restored_all, report.classification());
     try std.testing.expect(report.restoredAllEntries());
     try std.testing.expect(!report.ignoredAllEntries());
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadParameterNormalized("gain"));
