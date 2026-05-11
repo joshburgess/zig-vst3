@@ -20,7 +20,7 @@ Recent work has concentrated on Layer 2 API polish:
 - `PluginInstance` now exposes same-plugin parameter value copying.
 - `PluginInstance` now exposes migrated parameter id resolution alongside migration diagnostics.
 - `PluginInstance` now exposes direct unit root, parent, and program-list relationship helpers.
-- `gain_core` now exercises parameter descriptor diagnostics, direct parameter metadata/default/plain-range helpers, counted parameter stores, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, state header/report compatibility helpers, and migrated parameter-id resolution.
+- `gain_core` now exercises parameter descriptor diagnostics, direct and field-name parameter metadata/default/plain-range helpers, counted parameter stores, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, per-id and per-offset automation reads, parameter segment iterators, state header/report compatibility helpers, and migrated parameter-id resolution.
 - `mode_gain_core` now exercises enum option metadata helpers by index, id, display name, and field name.
 - `bypass_core` now exercises automatable, read-only, bypass, step-count, and list flag helpers.
 - `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including duplicate diagnostics.
@@ -43,6 +43,9 @@ The marker scan exits with status 1 when there are no matches, which is expected
 
 The worktree was clean before this handover refresh. The latest pushed commits before this document update were:
 
+- `ce6f0e5` Exercise automation range helpers in gain example
+- `3d87273` Exercise gain field range metadata helpers
+- `4cce8ca` Refresh handover after coverage checkpoint
 - `8a82332` Exercise gain parameter metadata helpers
 - `5ee2f07` Exercise event payload retargeting helpers
 - `c31a457` Exercise output event routing helpers
@@ -56,7 +59,7 @@ The worktree was clean before this handover refresh. The latest pushed commits b
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
-CI checkpoint: the run for `8a82332` was still in progress when this handover refresh began. The last completed non-cancelled run inspected was `1f91346`, which passed. The intermediate runs for `842f378`, `c31a457`, and `5ee2f07` were cancelled by newer pushes, which is expected for this workflow.
+CI checkpoint: the run for `ce6f0e5` was pending and the run for `3d87273` was in progress when this handover refresh began. The last completed non-cancelled run inspected was `1f91346`, which passed. Intermediate runs after `1f91346` were cancelled by newer pushes, which is expected for this workflow.
 
 ## What To Do Next
 
