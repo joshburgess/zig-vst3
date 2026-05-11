@@ -201,6 +201,26 @@ pub const ReadParameterStateReport = struct {
         if (self.ignoredAllEntries()) return .ignored_all;
         return .restored_and_ignored;
     }
+
+    pub fn isEmptyClassification(self: ReadParameterStateReport) bool {
+        return self.classification() == .empty;
+    }
+
+    pub fn isRestoredAllClassification(self: ReadParameterStateReport) bool {
+        return self.classification() == .restored_all;
+    }
+
+    pub fn isIgnoredAllClassification(self: ReadParameterStateReport) bool {
+        return self.classification() == .ignored_all;
+    }
+
+    pub fn isRestoredAndIgnoredClassification(self: ReadParameterStateReport) bool {
+        return self.classification() == .restored_and_ignored;
+    }
+
+    pub fn isPartialClassification(self: ReadParameterStateReport) bool {
+        return self.classification() == .partial;
+    }
 };
 
 pub fn encodedSize(comptime Params: type) usize {
@@ -489,6 +509,11 @@ test "parameter state round-trips normalized values" {
     try std.testing.expect(report.unaccountedEntriesEmpty());
     try std.testing.expect(report.fullyHandled());
     try std.testing.expectEqual(ReadParameterStateClassification.restored_all, report.classification());
+    try std.testing.expect(!report.isEmptyClassification());
+    try std.testing.expect(report.isRestoredAllClassification());
+    try std.testing.expect(!report.isIgnoredAllClassification());
+    try std.testing.expect(!report.isRestoredAndIgnoredClassification());
+    try std.testing.expect(!report.isPartialClassification());
     try std.testing.expect(report.accountedAllEntries());
     try std.testing.expect(!report.accountedPartialEntries());
     try std.testing.expect(report.restoredAllEntries());
@@ -606,6 +631,11 @@ test "parameter state ignores unknown parameter ids" {
     try std.testing.expect(!report.hasUnaccountedEntries());
     try std.testing.expect(report.fullyHandled());
     try std.testing.expectEqual(ReadParameterStateClassification.restored_and_ignored, report.classification());
+    try std.testing.expect(!report.isEmptyClassification());
+    try std.testing.expect(!report.isRestoredAllClassification());
+    try std.testing.expect(!report.isIgnoredAllClassification());
+    try std.testing.expect(report.isRestoredAndIgnoredClassification());
+    try std.testing.expect(!report.isPartialClassification());
     try std.testing.expect(report.accountedAllEntries());
     try std.testing.expect(!report.accountedPartialEntries());
     try std.testing.expect(!report.restoredAllEntries());
@@ -642,6 +672,11 @@ test "parameter state report classifies empty and ignored loads" {
     try std.testing.expect(empty.unaccountedEntriesEmpty());
     try std.testing.expect(empty.fullyHandled());
     try std.testing.expectEqual(ReadParameterStateClassification.empty, empty.classification());
+    try std.testing.expect(empty.isEmptyClassification());
+    try std.testing.expect(!empty.isRestoredAllClassification());
+    try std.testing.expect(!empty.isIgnoredAllClassification());
+    try std.testing.expect(!empty.isRestoredAndIgnoredClassification());
+    try std.testing.expect(!empty.isPartialClassification());
     try std.testing.expect(empty.accountedAllEntries());
     try std.testing.expect(!empty.accountedPartialEntries());
     try std.testing.expect(empty.restoredAllEntries());
@@ -662,6 +697,11 @@ test "parameter state report classifies empty and ignored loads" {
     try std.testing.expect(!ignored.hasUnaccountedEntries());
     try std.testing.expect(ignored.fullyHandled());
     try std.testing.expectEqual(ReadParameterStateClassification.ignored_all, ignored.classification());
+    try std.testing.expect(!ignored.isEmptyClassification());
+    try std.testing.expect(!ignored.isRestoredAllClassification());
+    try std.testing.expect(ignored.isIgnoredAllClassification());
+    try std.testing.expect(!ignored.isRestoredAndIgnoredClassification());
+    try std.testing.expect(!ignored.isPartialClassification());
     try std.testing.expect(ignored.accountedAllEntries());
     try std.testing.expect(!ignored.accountedPartialEntries());
     try std.testing.expect(!ignored.restoredAllEntries());
@@ -682,6 +722,11 @@ test "parameter state report classifies empty and ignored loads" {
     try std.testing.expect(!incomplete.unaccountedEntriesEmpty());
     try std.testing.expect(!incomplete.fullyHandled());
     try std.testing.expectEqual(ReadParameterStateClassification.partial, incomplete.classification());
+    try std.testing.expect(!incomplete.isEmptyClassification());
+    try std.testing.expect(!incomplete.isRestoredAllClassification());
+    try std.testing.expect(!incomplete.isIgnoredAllClassification());
+    try std.testing.expect(!incomplete.isRestoredAndIgnoredClassification());
+    try std.testing.expect(incomplete.isPartialClassification());
     try std.testing.expect(!incomplete.accountedAllEntries());
     try std.testing.expect(incomplete.accountedPartialEntries());
     try std.testing.expect(incomplete.restoredPartialEntries());

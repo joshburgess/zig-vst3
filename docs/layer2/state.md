@@ -22,7 +22,7 @@ Malformed state headers, unsupported format versions, truncated entries, duplica
 - `state.encodedSize(Params)`: byte count for a full parameter snapshot.
 - `state.format_version`: current binary and debug JSON state format version.
 - `state.ParameterStateHeader`: decoded binary header metadata with version, entry count, entry-count presence and emptiness checks, current-version checks, expected-count comparisons, older/newer-state entry-count deltas, and encoded-size helpers.
-- `state.ReadParameterStateReport`: counts decoded, restored, ignored, accounted, and unaccounted entries from a state load, with decoded-count comparisons and deltas, decoded/restored/ignored/unaccounted presence and absence helpers plus all/partial accounting, restore, ignore, mixed restored/ignored, fully-handled, and enum classification helpers for classifying host state loads.
+- `state.ReadParameterStateReport`: counts decoded, restored, ignored, accounted, and unaccounted entries from a state load, with decoded-count comparisons and deltas, decoded/restored/ignored/unaccounted presence and absence helpers plus all/partial accounting, restore, ignore, mixed restored/ignored, fully-handled, enum classification, and classification predicate helpers for host state loads.
 - `state.ReadParameterStateClassification`: compact state-load classification for empty, fully restored, fully ignored, restored-and-ignored, and partial loads.
 - `state.writeParameterStateHeaderForCount(count, writer)`: writes the binary header for tools that need a header-only state fixture.
 - `state.readParameterStateHeader(reader)`: validates the magic header and returns version and entry count without decoding parameter entries.
