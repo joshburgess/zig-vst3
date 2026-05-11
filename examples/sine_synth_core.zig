@@ -84,6 +84,17 @@ test "sine synth core example responds to note events inside a block" {
     try std.testing.expectEqual(@as(usize, 0), context.inputFrameCount());
     try std.testing.expectEqual(@as(usize, output.len), context.outputFrameCount());
     try std.testing.expectEqual(@as(usize, output.len), context.frameCount());
+    try std.testing.expectEqual(@as(f64, 48_000.0), context.sampleRate());
+    try std.testing.expectEqual(@as(f64, 1.0 / 48_000.0), context.sampleDurationSeconds());
+    try std.testing.expectEqual(@as(f64, 5.0 / 48_000.0), context.blockDurationSeconds());
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = output.len }, context.blockSegment());
+    try std.testing.expectEqual(@as(f64, 2.0 / 48_000.0), context.sampleOffsetSeconds(2));
+    try std.testing.expect(context.containsSampleOffset(4));
+    try std.testing.expect(!context.containsSampleOffset(5));
+    try std.testing.expect(context.isEndOffset(5));
+    try std.testing.expect(context.isPastEndOffset(6));
+    try std.testing.expectEqual(@as(usize, 3), context.remainingFramesFromOffset(2));
+    try std.testing.expectEqual(@as(f64, 3.0 / 48_000.0), context.remainingSecondsFromOffset(2));
 
     plugin.process(&context);
 
