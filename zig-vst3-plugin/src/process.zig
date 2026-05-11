@@ -153,6 +153,22 @@ pub const ParameterChanges = struct {
         return result;
     }
 
+    pub fn firstChange(self: ParameterChanges) ?ParameterChange {
+        var result: ?ParameterChange = null;
+        for (self.items) |item| {
+            if (result == null or item.sample_offset < result.?.sample_offset) result = item;
+        }
+        return result;
+    }
+
+    pub fn latestChange(self: ParameterChanges) ?ParameterChange {
+        var result: ?ParameterChange = null;
+        for (self.items) |item| {
+            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
+        }
+        return result;
+    }
+
     pub fn firstSampleOffsetForId(self: ParameterChanges, id: u32) ?usize {
         const change = self.first(id) orelse return null;
         return change.sample_offset;
@@ -1865,6 +1881,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.latestSampleOffsetForId(id);
         }
 
+        pub fn firstAnyParameterChange(self: @This()) ?ParameterChange {
+            return self.parameter_changes.firstChange();
+        }
+
+        pub fn latestAnyParameterChange(self: @This()) ?ParameterChange {
+            return self.parameter_changes.latestChange();
+        }
+
         pub fn latestParameterChange(self: @This(), id: u32) ?ParameterChange {
             return self.parameter_changes.latest(id);
         }
@@ -2886,6 +2910,8 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?usize, 1), context.latestParameterChangeOffsetForId(1));
     try std.testing.expectEqual(@as(?usize, null), context.firstParameterChangeOffsetForId(2));
     try std.testing.expectEqual(@as(?usize, null), context.latestParameterChangeOffsetForId(2));
+    try std.testing.expectEqual(changes[0], context.firstAnyParameterChange().?);
+    try std.testing.expectEqual(changes[0], context.latestAnyParameterChange().?);
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterChangeAtOffset(1).?.normalized);
@@ -3116,6 +3142,8 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expect(!changes[0].isForIdAtOffset(8, 0));
     try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 3), view.latestSampleOffset());
+    try std.testing.expectEqual(changes[0], view.firstChange().?);
+    try std.testing.expectEqual(changes[1], view.latestChange().?);
     try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffsetForId(7));
     try std.testing.expectEqual(@as(?usize, 3), view.latestSampleOffsetForId(7));
     try std.testing.expectEqual(@as(?usize, 2), view.firstSampleOffsetForId(8));
@@ -3208,6 +3236,8 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expect((ParameterChanges{}).empty(7));
     try std.testing.expect(!(ParameterChanges{}).only(7));
     try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).firstSampleOffset());
+    try std.testing.expectEqual(@as(?ParameterChange, null), (ParameterChanges{}).firstChange());
+    try std.testing.expectEqual(@as(?ParameterChange, null), (ParameterChanges{}).latestChange());
     try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).firstSampleOffsetForId(7));
     try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).latestSampleOffsetForId(7));
     try std.testing.expectEqual(@as(?usize, null), (ParameterChanges{}).latestSampleOffset());
