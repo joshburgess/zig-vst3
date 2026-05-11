@@ -127,6 +127,9 @@ test "event echo core example can inspect output event writers" {
 
     try std.testing.expectEqual(@as(usize, 3), writer.clearCount());
     try std.testing.expectEqual(@as(usize, 0), writer.clearCount());
+    try writer.append(source_items[0]);
+    try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
+    writer.clear();
     try writer.appendAll(source);
     try std.testing.expectEqual(@as(usize, 2), writer.eventCount());
     writer.clear();
