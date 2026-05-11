@@ -169,6 +169,26 @@ test "gain core example formats and converts float parameters" {
     try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameter("gain"));
 }
 
+test "gain core example copies and resets parameter values" {
+    var source = try Instance.init(std.testing.allocator, .{});
+    var target = try Instance.init(std.testing.allocator, .{});
+
+    try std.testing.expectEqual(@as(?usize, 1), source.storeParameterNormalizedCount("gain", 0.25));
+    try std.testing.expectEqual(@as(?usize, 0), source.storeParameterNormalizedCount("gain", 0.25));
+
+    target.copyParameterValuesFrom(&source);
+    try std.testing.expectEqual(@as(f64, 0.25), target.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(usize, 1), target.parameterNonDefaultCount());
+    try std.testing.expect(target.hasNonDefaultParameters());
+    try std.testing.expect(!target.parametersAllDefaults());
+
+    try std.testing.expectEqual(@as(?usize, 1), target.resetParameterToDefaultCount("gain"));
+    try std.testing.expectEqual(@as(?usize, 0), target.resetParameterToDefaultCount("gain"));
+    try std.testing.expectEqual(@as(usize, 0), target.parameterNonDefaultCount());
+    try std.testing.expect(!target.hasNonDefaultParameters());
+    try std.testing.expect(target.parametersAllDefaults());
+}
+
 test "gain core example applies sample-offset parameter changes" {
     var plugin = Gain{};
     const input = [_]f32{ 0.25, 0.5, 1.0 };
