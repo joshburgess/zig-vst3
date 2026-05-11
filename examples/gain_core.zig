@@ -1214,3 +1214,36 @@ test "gain core example resolves migrated state parameter ids" {
     try std.testing.expectEqual(@as(?usize, 1), instance.ambiguousParameterMigrationIndex(&ambiguous));
     try std.testing.expectError(error.AmbiguousParameterMigration, instance.validateParameterIdMigrations(&ambiguous));
 }
+
+test "gain core example reads migrated parameter state" {
+    const LegacyGain = struct {
+        pub const name = "zig-vst3-plugin Legacy Gain";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(7, "Gain", 0.0, 1.0, 1.0),
+        };
+    };
+    const LegacyInstance = plug.plugin.PluginInstance(LegacyGain);
+    var legacy = try LegacyInstance.init(std.testing.allocator, .{});
+    var restored = try Instance.init(std.testing.allocator, .{});
+    var reported = try Instance.init(std.testing.allocator, .{});
+    const migrations = [_]plug.state.ParameterIdMigration{
+        .{ .old_id = 7, .new_id = 11 },
+        .{ .old_id = 11, .new_id = 0 },
+    };
+    var bytes: [plug.state.encodedSize(LegacyGain.Params)]u8 = undefined;
+
+    try std.testing.expect(legacy.storeParameterNormalized("gain", 0.25));
+    var out_stream = std.io.fixedBufferStream(&bytes);
+    try legacy.writeParameterState(out_stream.writer());
+
+    var in_stream = std.io.fixedBufferStream(&bytes);
+    try restored.readParameterStateWithMigrations(in_stream.reader(), &migrations);
+    try std.testing.expectEqual(@as(f64, 0.25), restored.loadParameterNormalized("gain"));
+
+    var report_stream = std.io.fixedBufferStream(&bytes);
+    const report = try reported.readParameterStateWithMigrationsReport(report_stream.reader(), &migrations);
+    try std.testing.expectEqual(plug.state.ReadParameterStateReport{ .entry_count = 1, .restored_count = 1, .ignored_count = 0 }, report);
+    try std.testing.expect(report.isRestoredAllClassification());
+    try std.testing.expectEqual(@as(f64, 0.25), reported.loadParameterNormalized("gain"));
+}
