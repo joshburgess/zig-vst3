@@ -34,6 +34,14 @@ pub const ParameterSegment = struct {
     pub fn contains(self: ParameterSegment, sample_offset: usize) bool {
         return sample_offset >= self.start_offset and sample_offset < self.end_offset;
     }
+
+    pub fn startsAt(self: ParameterSegment, sample_offset: usize) bool {
+        return self.start_offset == sample_offset;
+    }
+
+    pub fn endsAt(self: ParameterSegment, sample_offset: usize) bool {
+        return self.end_offset == sample_offset;
+    }
 };
 
 fn clampNormalized(value: f64) f64 {
@@ -59,6 +67,14 @@ pub const BlockSegment = struct {
 
     pub fn contains(self: BlockSegment, sample_offset: usize) bool {
         return sample_offset >= self.start_offset and sample_offset < self.end_offset;
+    }
+
+    pub fn startsAt(self: BlockSegment, sample_offset: usize) bool {
+        return self.start_offset == sample_offset;
+    }
+
+    pub fn endsAt(self: BlockSegment, sample_offset: usize) bool {
+        return self.end_offset == sample_offset;
     }
 };
 
@@ -3311,6 +3327,10 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expect(!first_segment.isEmpty());
     try std.testing.expect(first_segment.contains(2));
     try std.testing.expect(!first_segment.contains(3));
+    try std.testing.expect(first_segment.startsAt(0));
+    try std.testing.expect(!first_segment.startsAt(1));
+    try std.testing.expect(first_segment.endsAt(3));
+    try std.testing.expect(!first_segment.endsAt(2));
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 3, .end_offset = 4, .normalized = 0.75 }, view.segmentAt(7, 3, 4, 1.0).?);
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 0, .end_offset = 2, .normalized = 0.5 }, view.segmentAt(8, 0, 4, 0.5).?);
     try std.testing.expectEqual(@as(?ParameterSegment, null), view.segmentAt(7, 4, 4, 1.0));
@@ -3409,6 +3429,10 @@ test "parameter changes iterate block segments split at change offsets" {
     try std.testing.expect(!first_segment.isEmpty());
     try std.testing.expect(first_segment.contains(0));
     try std.testing.expect(!first_segment.contains(1));
+    try std.testing.expect(first_segment.startsAt(0));
+    try std.testing.expect(!first_segment.startsAt(1));
+    try std.testing.expect(first_segment.endsAt(1));
+    try std.testing.expect(!first_segment.endsAt(0));
     try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 3 }, iterator.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 3, .end_offset = 5 }, iterator.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 5, .end_offset = 8 }, iterator.next().?);
@@ -4564,6 +4588,8 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventFrameCount());
     try std.testing.expect(!no_writer.canAppendOutputEvent());
     try std.testing.expect(!no_writer.canAppendOutputEvents(0));
+    try std.testing.expect(!no_writer.canAppendOutputEventValue(events[0]));
+    try std.testing.expect(!no_writer.canAppendOutputEventValues(try Events.init(&events, input.len)));
     try std.testing.expect(no_writer.outputEventsEmpty());
     try std.testing.expect(!no_writer.hasOutputEvents());
     try std.testing.expect(no_writer.outputEventsFull());
