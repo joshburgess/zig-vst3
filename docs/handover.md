@@ -20,7 +20,7 @@ Recent work has concentrated on Layer 2 API polish:
 - `PluginInstance` now exposes same-plugin parameter value copying.
 - `PluginInstance` now exposes migrated parameter id resolution alongside migration diagnostics.
 - `PluginInstance` now exposes direct unit root, parent, and program-list relationship helpers.
-- `gain_core` now exercises plugin topology and lifecycle predicates, prepare validation, process-context validation, audio channel and buffer-view helpers, parameter presence predicates, parameter descriptor diagnostics, direct and field-name parameter metadata/default/plain-range helpers, direct parameter value storage/editor helpers, lookup-based loads, counted stores, direct parameter-change application, parameter-change value predicates, direct parameter-change view helpers, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, per-id and per-offset automation reads, parameter and block segment value helpers, parameter segment iterators, state header/report compatibility helpers, ignored/accounted/unaccounted state report helpers, migrated parameter-id resolution, state migration diagnostics, and reflected-storage process hooks for `f32` and `f64`.
+- `gain_core` now exercises plugin topology and lifecycle predicates, prepare validation, process-context validation, audio channel and buffer-view helpers, parameter presence predicates, parameter descriptor diagnostics, direct and field-name parameter metadata/default/plain-range helpers, direct parameter value storage/editor helpers, bound parameter-view reads, editor process-change counts, lookup-based loads, counted stores, direct parameter-change application, parameter-change value predicates, direct parameter-change view helpers, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, per-id and per-offset automation reads, parameter and block segment value helpers, parameter segment iterators, state size constants, state header-only writing, state header/report compatibility helpers, ignored/accounted/unaccounted state report helpers, migrated parameter-id resolution, state migration diagnostics, and reflected-storage process hooks for `f32` and `f64`.
 - `mode_gain_core` now exercises enum option metadata helpers by index, id, display name, and field name.
 - `bypass_core` now exercises automatable, read-only, bypass, step-count, and list flag helpers.
 - `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including value-level helpers and duplicate diagnostics.
@@ -44,6 +44,10 @@ The marker scan exits with status 1 when there are no matches, which is expected
 
 The worktree was clean before this handover refresh. The latest pushed commits before this document update were:
 
+- `969e269` Exercise parameter view reads
+- `c42aab3` Exercise state header sizing helpers
+- `69b9b9d` Exercise editor change counts
+- `7bd4838` Refresh handover after hook coverage
 - `e6badd6` Exercise storage process hooks
 - `9ee4198` Exercise state migration diagnostics
 - `f64ccac` Exercise state header helpers
@@ -87,7 +91,7 @@ The worktree was clean before this handover refresh. The latest pushed commits b
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
-CI checkpoint: the run for `e6badd6` was pending and the run for `9ee4198` was in progress when this handover refresh began. The latest completed non-cancelled run inspected was `b61e5dd`, which passed. Intermediate runs after `b61e5dd` were cancelled by newer pushes, which is expected for this workflow.
+CI checkpoint: the run for `969e269` was pending and the run for `c42aab3` was in progress when this handover refresh began. The latest completed non-cancelled run inspected was `b61e5dd`, which passed. Intermediate runs after `b61e5dd` were cancelled by newer pushes, which is expected for this workflow.
 
 ## What To Do Next
 
