@@ -44,9 +44,34 @@ pub const parameter_set = Spec.ParameterSet.init(.{});
 test "gain core example declares reflected metadata" {
     const spec = Spec.init(.{});
     var instance = try Instance.init(std.testing.allocator, .{});
+    const CustomMetadata = struct {
+        pub const name = "zig-vst3-plugin Custom Metadata";
+        pub const vendor = "zig-vst3";
+        pub const url = "https://example.test/zig-vst3-plugin";
+        pub const email = "plugins@example.test";
+        pub const component_class_name = "Custom Metadata Processor";
+        pub const controller_class_name = "Custom Metadata Controller";
+        pub const component_category = "Custom Processor Category";
+        pub const controller_category = "Custom Controller Category";
+        pub const Params = Gain.Params;
+    };
+    const CustomSpec = plug.plugin.PluginSpec(CustomMetadata);
+    _ = try CustomSpec.initChecked(.{});
 
     try std.testing.expectEqualStrings("zig-vst3-plugin Core Gain", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
+    try std.testing.expectEqualStrings("", Spec.url);
+    try std.testing.expectEqualStrings("", Spec.email);
+    try std.testing.expectEqualStrings("zig-vst3-plugin Core Gain", Spec.component_class_name);
+    try std.testing.expectEqualStrings("zig-vst3-plugin Core Gain Controller", Spec.controller_class_name);
+    try std.testing.expectEqualStrings("Audio Module Class", Spec.component_category);
+    try std.testing.expectEqualStrings("Component Controller Class", Spec.controller_category);
+    try std.testing.expectEqualStrings("https://example.test/zig-vst3-plugin", CustomSpec.url);
+    try std.testing.expectEqualStrings("plugins@example.test", CustomSpec.email);
+    try std.testing.expectEqualStrings("Custom Metadata Processor", CustomSpec.component_class_name);
+    try std.testing.expectEqualStrings("Custom Metadata Controller", CustomSpec.controller_class_name);
+    try std.testing.expectEqualStrings("Custom Processor Category", CustomSpec.component_category);
+    try std.testing.expectEqualStrings("Custom Controller Category", CustomSpec.controller_category);
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
     try std.testing.expect(instance.hasAudioInput());
     try std.testing.expect(instance.hasAudioOutput());
