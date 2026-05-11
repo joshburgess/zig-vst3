@@ -318,6 +318,14 @@ pub const ParameterChanges = struct {
         return change.normalized;
     }
 
+    pub fn firstAnyNormalizedOr(self: ParameterChanges, default: f64) f64 {
+        return self.firstAnyNormalized() orelse clampNormalized(default);
+    }
+
+    pub fn latestAnyNormalizedOr(self: ParameterChanges, default: f64) f64 {
+        return self.latestAnyNormalized() orelse clampNormalized(default);
+    }
+
     pub fn firstNormalized(self: ParameterChanges, id: u32) ?f64 {
         const change = self.first(id) orelse return null;
         return change.normalized;
@@ -2038,6 +2046,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.latestAnyNormalized();
         }
 
+        pub fn firstAnyParameterNormalizedOr(self: @This(), default: f64) f64 {
+            return self.parameter_changes.firstAnyNormalizedOr(default);
+        }
+
+        pub fn latestAnyParameterNormalizedOr(self: @This(), default: f64) f64 {
+            return self.parameter_changes.latestAnyNormalizedOr(default);
+        }
+
         pub fn latestParameterChange(self: @This(), id: u32) ?ParameterChange {
             return self.parameter_changes.latest(id);
         }
@@ -3014,6 +3030,10 @@ test "process context reports usable frame count" {
     try std.testing.expectEqual(@as(?[]f64, null), context.outputChannel(2));
     try std.testing.expect(!context.hasOutputChannel(2));
     try std.testing.expect(context.outputChannelEmpty(2));
+    try std.testing.expectEqual(@as(?f64, null), context.firstAnyParameterNormalized());
+    try std.testing.expectEqual(@as(?f64, null), context.latestAnyParameterNormalized());
+    try std.testing.expectEqual(@as(f64, 0.25), context.firstAnyParameterNormalizedOr(0.25));
+    try std.testing.expectEqual(@as(f64, 0.75), context.latestAnyParameterNormalizedOr(0.75));
 
     context.fillOutputs(0.5);
     try std.testing.expectEqual(@as(f64, 0.5), out_left[0]);
@@ -3154,6 +3174,8 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(changes[0], context.latestAnyParameterChange().?);
     try std.testing.expectEqual(@as(?f64, 0.5), context.firstAnyParameterNormalized());
     try std.testing.expectEqual(@as(?f64, 0.5), context.latestAnyParameterNormalized());
+    try std.testing.expectEqual(@as(f64, 0.5), context.firstAnyParameterNormalizedOr(0.25));
+    try std.testing.expectEqual(@as(f64, 0.5), context.latestAnyParameterNormalizedOr(0.25));
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterChange(1).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterChangeAtOffset(1).?.normalized);
