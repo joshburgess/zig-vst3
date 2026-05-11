@@ -696,6 +696,14 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expectEqual(@as(usize, 1), editor.parameterCount());
     try std.testing.expect(!editor.parametersEmpty());
     try std.testing.expect(editor.hasParameters());
+    try std.testing.expectEqual(@as(?u32, 0), editor.id(0));
+    try std.testing.expectEqualStrings("Gain", editor.nameById(0).?);
+    try std.testing.expectEqual(@as(?usize, 0), editor.indexOfName("Gain"));
+    try std.testing.expect(editor.hasName("Gain"));
+    try std.testing.expectEqual(@as(?bool, true), editor.canAutomateById(0));
+    try std.testing.expectEqual(@as(?bool, false), editor.isReadOnlyByName("Gain"));
+    try std.testing.expectEqual(@as(?i32, 0), editor.stepCountByName("Gain"));
+    try std.testing.expect(!editor.isListByName("Gain").?);
     try std.testing.expectEqual(@as(?usize, 1), editor.storeNormalizedCount("gain", 0.25));
     try std.testing.expectEqual(@as(f64, 0.25), editor.view().loadNormalized("gain"));
     try std.testing.expectEqual(@as(?usize, 1), editor.resetToDefaultCount("gain"));
