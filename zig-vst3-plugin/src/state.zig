@@ -137,6 +137,11 @@ pub const ReadParameterStateReport = struct {
         return self.accountedCount() == self.entry_count;
     }
 
+    pub fn accountedPartialEntries(self: ReadParameterStateReport) bool {
+        const accounted = self.accountedCount();
+        return accounted != 0 and accounted < self.entry_count;
+    }
+
     pub fn restoredAllEntries(self: ReadParameterStateReport) bool {
         return self.restored_count == self.entry_count and self.ignored_count == 0;
     }
@@ -147,6 +152,14 @@ pub const ReadParameterStateReport = struct {
 
     pub fn ignoredAllEntries(self: ReadParameterStateReport) bool {
         return self.entry_count != 0 and self.ignored_count == self.entry_count and self.restored_count == 0;
+    }
+
+    pub fn ignoredPartialEntries(self: ReadParameterStateReport) bool {
+        return self.ignored_count != 0 and self.ignored_count < self.entry_count;
+    }
+
+    pub fn restoredAndIgnoredEntries(self: ReadParameterStateReport) bool {
+        return self.restored_count != 0 and self.ignored_count != 0;
     }
 };
 
@@ -399,9 +412,12 @@ test "parameter state round-trips normalized values" {
     try std.testing.expect(report.hasNoUnaccountedEntries());
     try std.testing.expect(report.unaccountedEntriesEmpty());
     try std.testing.expect(report.accountedAllEntries());
+    try std.testing.expect(!report.accountedPartialEntries());
     try std.testing.expect(report.restoredAllEntries());
     try std.testing.expect(!report.restoredPartialEntries());
     try std.testing.expect(!report.ignoredAllEntries());
+    try std.testing.expect(!report.ignoredPartialEntries());
+    try std.testing.expect(!report.restoredAndIgnoredEntries());
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadField(&set, "gain"));
     try std.testing.expectEqual(@as(f64, 0.75), restored.loadField(&set, "mix"));
 }
@@ -511,9 +527,12 @@ test "parameter state ignores unknown parameter ids" {
     try std.testing.expect(!report.hasNoIgnoredEntries());
     try std.testing.expect(!report.hasUnaccountedEntries());
     try std.testing.expect(report.accountedAllEntries());
+    try std.testing.expect(!report.accountedPartialEntries());
     try std.testing.expect(!report.restoredAllEntries());
     try std.testing.expect(report.restoredPartialEntries());
     try std.testing.expect(!report.ignoredAllEntries());
+    try std.testing.expect(report.ignoredPartialEntries());
+    try std.testing.expect(report.restoredAndIgnoredEntries());
     try std.testing.expectEqual(@as(f64, 0.75), values.loadField(&set, "gain"));
 }
 
@@ -537,9 +556,12 @@ test "parameter state report classifies empty and ignored loads" {
     try std.testing.expect(empty.hasNoUnaccountedEntries());
     try std.testing.expect(empty.unaccountedEntriesEmpty());
     try std.testing.expect(empty.accountedAllEntries());
+    try std.testing.expect(!empty.accountedPartialEntries());
     try std.testing.expect(empty.restoredAllEntries());
     try std.testing.expect(!empty.restoredPartialEntries());
     try std.testing.expect(!empty.ignoredAllEntries());
+    try std.testing.expect(!empty.ignoredPartialEntries());
+    try std.testing.expect(!empty.restoredAndIgnoredEntries());
 
     try std.testing.expect(ignored.hasDecodedEntries());
     try std.testing.expect(!ignored.hasNoDecodedEntries());
@@ -552,9 +574,12 @@ test "parameter state report classifies empty and ignored loads" {
     try std.testing.expect(!ignored.ignoredEntriesEmpty());
     try std.testing.expect(!ignored.hasUnaccountedEntries());
     try std.testing.expect(ignored.accountedAllEntries());
+    try std.testing.expect(!ignored.accountedPartialEntries());
     try std.testing.expect(!ignored.restoredAllEntries());
     try std.testing.expect(!ignored.restoredPartialEntries());
     try std.testing.expect(ignored.ignoredAllEntries());
+    try std.testing.expect(!ignored.ignoredPartialEntries());
+    try std.testing.expect(!ignored.restoredAndIgnoredEntries());
 
     try std.testing.expectEqual(@as(usize, 2), incomplete.accountedCount());
     try std.testing.expectEqual(@as(usize, 1), incomplete.unaccountedCount());
@@ -562,6 +587,10 @@ test "parameter state report classifies empty and ignored loads" {
     try std.testing.expect(!incomplete.hasNoUnaccountedEntries());
     try std.testing.expect(!incomplete.unaccountedEntriesEmpty());
     try std.testing.expect(!incomplete.accountedAllEntries());
+    try std.testing.expect(incomplete.accountedPartialEntries());
+    try std.testing.expect(incomplete.restoredPartialEntries());
+    try std.testing.expect(incomplete.ignoredPartialEntries());
+    try std.testing.expect(incomplete.restoredAndIgnoredEntries());
 }
 
 test "parameter state rejects duplicate restored parameter ids without partial updates" {
