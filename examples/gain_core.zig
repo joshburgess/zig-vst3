@@ -227,6 +227,8 @@ test "gain core example applies sample-offset parameter changes" {
 
 test "gain core example can smooth normalized gain changes" {
     var smoother = plug.parameters.LinearSmoother.init(0.0);
+    var exponential = plug.parameters.ExponentialSmoother.init(0.0, 0.5);
+    var logarithmic = plug.parameters.LogSmoother.init(0.25);
 
     smoother.setTarget(1.0, 4);
     try std.testing.expect(smoother.active());
@@ -243,6 +245,38 @@ test "gain core example can smooth normalized gain changes" {
     try std.testing.expect(smoother.atTarget(0.0));
     try std.testing.expect(!smoother.active());
     try std.testing.expect(smoother.finished());
+
+    exponential.setTarget(1.0);
+    try std.testing.expectApproxEqAbs(0.5, exponential.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(0.75, exponential.next(), 0.000001);
+    exponential.setCoefficient(2.0);
+    try std.testing.expectApproxEqAbs(1.0, exponential.coefficientValue(), 0.000001);
+    exponential.reset(0.25);
+    try std.testing.expectApproxEqAbs(0.25, exponential.currentValue(), 0.000001);
+    try std.testing.expect(exponential.atTarget(0.0));
+
+    logarithmic.setTarget(1.0, 2);
+    try std.testing.expect(logarithmic.active());
+    try std.testing.expectApproxEqAbs(0.5, logarithmic.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(1.0, logarithmic.next(), 0.000001);
+    try std.testing.expect(logarithmic.finished());
+}
+
+test "gain core example uses normalized and modulated parameter values" {
+    var normalized = plug.parameters.NormalizedValue.init(2.0);
+    var modulated = plug.parameters.ModulatedValue.init(0.5);
+
+    try std.testing.expectEqual(@as(f64, 1.0), normalized.load());
+    normalized.store(std.math.nan(f64));
+    try std.testing.expectEqual(@as(f64, 0.0), normalized.load());
+
+    try std.testing.expectEqual(@as(f64, 0.5), modulated.loadBase());
+    try std.testing.expectEqual(@as(f64, 0.0), modulated.loadModulation());
+    modulated.storeBase(0.25);
+    modulated.storeModulation(0.5);
+    try std.testing.expectEqual(@as(f64, 0.25), modulated.loadBase());
+    try std.testing.expectEqual(@as(f64, 0.5), modulated.loadModulation());
+    try std.testing.expectEqual(@as(f64, 0.75), modulated.load());
 }
 
 test "gain core example round-trips parameter state" {
