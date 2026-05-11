@@ -49,7 +49,12 @@ test "event echo core example writes input events to output events" {
     try std.testing.expectEqual(@as(usize, 0), context.outputEventRemainingCapacity());
     try std.testing.expectEqual(@as(usize, input.len), context.outputEventFrameCount());
     try std.testing.expect(context.hasOutputEvent(.note_on));
+    try std.testing.expect(context.hasOutputNoteAttacks());
+    try std.testing.expect(!context.hasOutputNoteReleases());
     try std.testing.expectEqual(@as(usize, 1), context.countOutputEvents(.note_on));
+    try std.testing.expectEqual(@as(usize, 1), context.countOutputNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 0), context.countOutputNoteReleases());
+    try std.testing.expect(context.onlyOutputNoteAttacks());
     try std.testing.expectEqual(plug.process.EventKind.note_on, context.firstWrittenOutputEvent().?.kind);
     try std.testing.expectEqual(plug.process.EventKind.note_on, context.latestWrittenOutputEvent().?.kind);
     try std.testing.expectEqual(@as(usize, 1), context.firstOutputEvent(.note_on).?.sample_offset);
@@ -143,5 +148,7 @@ test "event echo core example can run through plugin instance" {
 
     try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
     try std.testing.expect(context.hasOutputEvent(.note_off));
+    try std.testing.expect(context.hasOutputNoteReleases());
+    try std.testing.expectEqual(@as(usize, 1), context.countOutputNoteReleases());
     try std.testing.expectEqual(@as(usize, 0), context.firstOutputEvent(.note_off).?.sample_offset);
 }
