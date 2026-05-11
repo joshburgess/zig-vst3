@@ -74,6 +74,26 @@ test "mode gain core example formats and parses enum parameters" {
     try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterDefaultNormalizedByName("Mode"));
     try std.testing.expect(instance.parameterIsListByName("Mode").?);
     try std.testing.expectEqual(@as(?i32, 2), instance.parameterStepCountByName("Mode"));
+    try std.testing.expectEqual(@as(?usize, 3), instance.parameterOptionCount(0));
+    try std.testing.expectEqual(@as(?usize, 3), instance.parameterOptionCountById(0));
+    try std.testing.expectEqual(@as(?usize, 3), instance.parameterOptionCountByName("Mode"));
+    try std.testing.expectEqualStrings("clean", instance.parameterOptionLabel(0, 0).?);
+    try std.testing.expectEqualStrings("boost", instance.parameterOptionLabelById(0, 1).?);
+    try std.testing.expectEqualStrings("mute", instance.parameterOptionLabelByName("Mode", 2).?);
+    try std.testing.expectEqual(@as(?f64, 0.0), instance.parameterOptionNormalized(0, 0));
+    try std.testing.expectEqual(@as(?f64, 0.5), instance.parameterOptionNormalizedById(0, 1));
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterOptionNormalizedByName("Mode", 2));
+    try std.testing.expect(instance.parameterHasOptions(0));
+    try std.testing.expect(instance.parameterHasOptionsById(0));
+    try std.testing.expect(instance.parameterHasOptionsByName("Mode"));
+    try std.testing.expect(!instance.parameterOptionsEmpty(0));
+    try std.testing.expect(!instance.parameterOptionsEmptyById(0));
+    try std.testing.expect(!instance.parameterOptionsEmptyByName("Mode"));
+    try std.testing.expectEqual(@as(?usize, 3), instance.parameterFieldOptionCount("mode"));
+    try std.testing.expectEqualStrings("mute", instance.parameterFieldOptionLabel("mode", 2).?);
+    try std.testing.expectEqual(@as(?f64, 1.0), instance.parameterFieldOptionNormalized("mode", 2));
+    try std.testing.expect(instance.parameterFieldHasOptions("mode"));
+    try std.testing.expect(!instance.parameterFieldOptionsEmpty("mode"));
 
     try std.testing.expectEqualStrings("boost", try instance.formatParameterPlainByName("Mode", 0.5, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainByName("Mode", "mute"));
