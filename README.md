@@ -34,7 +34,7 @@ Implemented pieces include:
 - `zig-vst3-plugin` float, int, bool, and enum parameter descriptors with normalized/plain conversion, display formatting, parsing, unit assignment, atomic value storage, smoothing helpers, and reflected parameter-change construction
 - `zig-vst3-plugin` plugin specs and instances with reflected defaults, plugin/factory/class metadata, lifecycle validation, typed parameter access, bound parameter views, parameter existence and diagnostics, counted parameter stores, default-state, and default-reset helpers, accepted-change and changed-value process-change counts, parameter state header inspection, state read/write with compatibility and restore reports, debug JSON, migration validation and diagnostics, and process dispatch for 32-bit and 64-bit audio
 - `zig-vst3-plugin` unit and program-list metadata for host-facing organization, including value-level metadata predicates, named lookup, program-list lookup by unit name, and unit-based program snapshot application
-- `zig-vst3-plugin` process context helpers for typed effect, generator, and analyzer buffers, sample-accurate parameter changes, input events, output events, output-event capacity checks, and attachment-based context construction
+- `zig-vst3-plugin` process context helpers for typed effect, generator, and analyzer buffers, sample-accurate parameter changes, block/timing queries, input events, output events, validated output-event planning, and attachment-based context construction
 - Checked `zig-vst3-plugin` examples covering gain, bypass, enum mode gain, int voice mix, note gate, event echo, event monitor, and sine synth behavior through the public framework API
 
 ## Development
