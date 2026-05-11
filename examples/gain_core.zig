@@ -178,10 +178,17 @@ test "gain core example splits blocks at automation changes" {
     try std.testing.expectEqual(@as(f64, 0.5), context.parameterNormalizedAtOrBeforeOr(0, 2, 1.0));
     try std.testing.expectEqual(@as(?usize, 1), context.nextParameterChangeOffset(0));
     try std.testing.expectEqual(@as(?usize, 3), context.nextParameterChangeOffsetForId(0, 1));
+    const first_segment = context.parameterSegmentAt(0, 0, 1.0).?;
     try std.testing.expectEqual(
         plug.process.ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 1.0 },
-        context.parameterSegmentAt(0, 0, 1.0).?,
+        first_segment,
     );
+    try std.testing.expectEqual(@as(usize, 1), first_segment.frameCount());
+    try std.testing.expect(!first_segment.isEmpty());
+    try std.testing.expect(first_segment.contains(0));
+    try std.testing.expect(!first_segment.contains(1));
+    try std.testing.expect(first_segment.startsAt(0));
+    try std.testing.expect(first_segment.endsAt(1));
     try std.testing.expectEqual(
         plug.process.ParameterSegment{ .start_offset = 1, .end_offset = 3, .normalized = 0.5 },
         context.parameterSegmentAt(0, 1, 1.0).?,
@@ -204,6 +211,18 @@ test "gain core example splits blocks at automation changes" {
         parameter_segments.next().?,
     );
     try std.testing.expectEqual(@as(?plug.process.ParameterSegment, null), parameter_segments.next());
+    var block_segments = context.parameterBlockSegments();
+    const first_block_segment = block_segments.next().?;
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = 1 }, first_block_segment);
+    try std.testing.expectEqual(@as(usize, 1), first_block_segment.frameCount());
+    try std.testing.expect(!first_block_segment.isEmpty());
+    try std.testing.expect(first_block_segment.contains(0));
+    try std.testing.expect(!first_block_segment.contains(1));
+    try std.testing.expect(first_block_segment.startsAt(0));
+    try std.testing.expect(first_block_segment.endsAt(1));
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 1, .end_offset = 3 }, block_segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 3, .end_offset = 5 }, block_segments.next().?);
+    try std.testing.expectEqual(@as(?plug.process.BlockSegment, null), block_segments.next());
     try std.testing.expectEqual(@as(f32, 1.0), output[0]);
     try std.testing.expectEqual(@as(f32, 0.5), output[1]);
     try std.testing.expectEqual(@as(f32, 0.5), output[2]);
