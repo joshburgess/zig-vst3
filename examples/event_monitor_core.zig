@@ -26,8 +26,11 @@ pub const EventMonitor = struct {
     latest_aftertouch_bus: i32 = 0,
     main_bus_note_count: usize = 0,
     main_bus_event_count: usize = 0,
+    next_main_bus_event_offset: ?usize = null,
     channel_zero_midi_count: usize = 0,
     channel_zero_event_count: usize = 0,
+    next_channel_zero_event_offset: ?usize = null,
+    next_main_bus_channel_zero_event_offset: ?usize = null,
     latest_note_expression_int_value: u64 = 0,
 
     pub fn process(self: *EventMonitor, context: *plug.process.ProcessContext(f32)) void {
@@ -53,8 +56,11 @@ pub const EventMonitor = struct {
         self.latest_aftertouch_bus = 0;
         self.main_bus_note_count = 0;
         self.main_bus_event_count = context.countEventsForBus(0);
+        self.next_main_bus_event_offset = context.nextEventOffsetForBus(0, 0);
         self.channel_zero_midi_count = 0;
         self.channel_zero_event_count = context.countEventsForChannel(0);
+        self.next_channel_zero_event_offset = context.nextEventOffsetForChannel(0, 0);
+        self.next_main_bus_channel_zero_event_offset = context.nextEventOffsetForBusChannel(0, 0, 0);
         self.latest_note_expression_int_value = 0;
 
         self.note_on_count = context.countEvents(.note_on);
@@ -145,8 +151,11 @@ test "event monitor core example summarizes input event kinds" {
     try std.testing.expectEqual(@as(i32, 2), plugin.latest_aftertouch_bus);
     try std.testing.expectEqual(@as(usize, 2), plugin.main_bus_note_count);
     try std.testing.expectEqual(@as(usize, 10), plugin.main_bus_event_count);
+    try std.testing.expectEqual(@as(?usize, 1), plugin.next_main_bus_event_offset);
     try std.testing.expectEqual(@as(usize, 1), plugin.channel_zero_midi_count);
     try std.testing.expectEqual(@as(usize, 6), plugin.channel_zero_event_count);
+    try std.testing.expectEqual(@as(?usize, 1), plugin.next_channel_zero_event_offset);
+    try std.testing.expectEqual(@as(?usize, 1), plugin.next_main_bus_channel_zero_event_offset);
     try std.testing.expectEqual(@as(u64, 7), plugin.latest_note_expression_int_value);
 
     var segments = context.inputEventBlockSegments();
@@ -174,7 +183,10 @@ test "event monitor core example can run through plugin instance" {
 
     try std.testing.expectEqual(@as(usize, 1), instance.plugin.midi_cc_count);
     try std.testing.expectEqual(@as(usize, 1), instance.plugin.main_bus_event_count);
+    try std.testing.expectEqual(@as(?usize, 1), instance.plugin.next_main_bus_event_offset);
     try std.testing.expectEqual(@as(usize, 1), instance.plugin.channel_zero_midi_count);
     try std.testing.expectEqual(@as(usize, 1), instance.plugin.channel_zero_event_count);
+    try std.testing.expectEqual(@as(?usize, 1), instance.plugin.next_channel_zero_event_offset);
+    try std.testing.expectEqual(@as(?usize, 1), instance.plugin.next_main_bus_channel_zero_event_offset);
     try std.testing.expectEqual(@as(f64, 0.25), instance.plugin.latest_midi_cc_value);
 }
