@@ -121,7 +121,7 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 Checked input-event helper coverage includes direct event validation, event classification, typed payload views, event-view validation, count, emptiness, first/latest, next-offset, iterator, routing, only predicates, and empty input fallbacks.
 Checked output-event coverage includes direct writer and process-context append planning, append counts, capacity state, offset and kind-at-offset predicates, query views, block segments, no-writer fallbacks, validation failures, and clearing.
 Checked process-context validation covers valid attachment setters, invalid sample rates, mismatched frame counts, invalid attachments, and mismatched output-event writers.
-Checked audio-buffer coverage includes direct input/output views, empty views, mismatched frame validation, channel presence, and output fill/clear helpers.
+Checked audio-buffer coverage includes direct input/output views, empty views, input-only and output-only process contexts, mismatched frame validation, channel presence, and output fill/clear helpers.
 Checked process-block segment coverage includes combined input-event and parameter-change split points.
 Checked plugin metadata coverage includes factory contact, class-name, and category defaults and overrides.
 Checked topology coverage includes default effects, input-only analyzers, output-only generators, and event-output processors.
