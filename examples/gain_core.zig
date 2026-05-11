@@ -64,6 +64,8 @@ test "gain core example declares reflected metadata" {
     try instance.prepareChecked(.{ .sample_rate = 48_000.0, .max_block_size = 64 });
     try std.testing.expectError(error.InvalidSampleRate, instance.prepareChecked(.{ .sample_rate = std.math.nan(f64), .max_block_size = 64 }));
     try std.testing.expectEqual(@as(usize, 1), parameter_set.parameterCount());
+    try std.testing.expect(!parameter_set.parametersEmpty());
+    try std.testing.expect(parameter_set.hasParameters());
     try std.testing.expectEqualStrings("Gain", parameter_set.shortName(0).?);
     try std.testing.expectEqualStrings("x", parameter_set.units(0).?);
     try std.testing.expectEqual(@as(?usize, 0), instance.parameterIndexOfId(0));
@@ -579,6 +581,10 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expectEqual(@as(f64, 0.5), copied.loadFieldNormalized(&parameter_set, "gain"));
 
     var editor = copied.editor(&parameter_set);
+    const view = copied.view(&parameter_set);
+    try std.testing.expectEqual(@as(usize, 1), view.parameterCount());
+    try std.testing.expect(!view.parametersEmpty());
+    try std.testing.expect(view.hasParameters());
     try std.testing.expectEqual(@as(usize, 1), editor.parameterCount());
     try std.testing.expect(!editor.parametersEmpty());
     try std.testing.expect(editor.hasParameters());
