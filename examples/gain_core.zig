@@ -274,6 +274,56 @@ test "gain core example can inspect parameter change views" {
     try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, plug.process.ParameterChanges.init(&outside_range, 5));
 }
 
+test "gain core example validates process context attachments" {
+    const input = [_]f32{0.25};
+    var output = [_]f32{0.0};
+    var long_output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const long_output_channels = [_][]f32{&long_output};
+
+    try std.testing.expectError(error.InvalidSampleRate, plug.process.ProcessContext(f32).init(0.0, &input_channels, &output_channels));
+    try std.testing.expectError(error.InvalidSampleRate, plug.process.ProcessContext(f32).init(std.math.nan(f64), &input_channels, &output_channels));
+    try std.testing.expectError(error.MismatchedFrameCount, plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &long_output_channels));
+
+    const outside_block_changes = [_]plug.process.ParameterChange{
+        .{ .id = 0, .sample_offset = 1, .normalized = 0.5 },
+    };
+    const outside_range_changes = [_]plug.process.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = std.math.inf(f64) },
+    };
+    const outside_block_events = [_]plug.process.Event{
+        plug.process.Event.noteOn(1, 0, 60, 0.75),
+    };
+    var context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
+
+    try std.testing.expectError(error.ParameterChangeOutsideBlock, context.setParameterChanges(&outside_block_changes));
+    try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, context.setParameterChanges(&outside_range_changes));
+    try std.testing.expectError(error.EventOutsideBlock, context.setEvents(&outside_block_events));
+    try std.testing.expectError(error.ParameterChangeOutsideBlock, plug.process.ProcessContext(f32).initWith(
+        48_000.0,
+        &input_channels,
+        &output_channels,
+        .{ .parameter_changes = &outside_block_changes },
+    ));
+    try std.testing.expectError(error.EventOutsideBlock, plug.process.ProcessContext(f32).initWith(
+        48_000.0,
+        &input_channels,
+        &output_channels,
+        .{ .events = &outside_block_events },
+    ));
+
+    var output_event_storage: [1]plug.process.Event = undefined;
+    var mismatched_writer = plug.process.EventWriter.init(&output_event_storage, 2);
+    try std.testing.expectError(error.MismatchedFrameCount, context.setOutputEvents(&mismatched_writer));
+    try std.testing.expectError(error.MismatchedFrameCount, plug.process.ProcessContext(f32).initWith(
+        48_000.0,
+        &input_channels,
+        &output_channels,
+        .{ .output_events = &mismatched_writer },
+    ));
+}
+
 test "gain core example splits blocks at automation changes" {
     var plugin = Gain{};
     const input = [_]f32{ 1.0, 1.0, 1.0, 1.0, 1.0 };
