@@ -224,6 +224,11 @@ test "gain core example can inspect parameter change views" {
     try std.testing.expectEqual(@as(?usize, 1), view.firstSampleOffsetForId(0));
     try std.testing.expectEqual(@as(?usize, 3), view.latestSampleOffsetForId(0));
     try std.testing.expectEqual(@as(?usize, null), view.firstSampleOffsetForId(99));
+    try std.testing.expectEqual(@as(?usize, 1), view.nextSampleOffset(0));
+    try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffset(1));
+    try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffset(3));
+    try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffsetForId(0, 1));
+    try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForId(99, 1));
     try std.testing.expectEqual(changes[0], view.first(0).?);
     try std.testing.expectEqual(changes[1], view.latest(0).?);
     try std.testing.expectEqual(changes[0], view.firstAtOffset(1).?);
