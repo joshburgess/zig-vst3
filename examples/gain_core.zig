@@ -205,6 +205,75 @@ test "gain core example can inspect audio buffer views" {
     try std.testing.expectError(error.MismatchedFrameCount, plug.process.AudioOutputs(f32).init(&mismatched_output_channels));
 }
 
+test "gain core example can inspect parameter change views" {
+    const changes = [_]plug.process.ParameterChange{
+        parameter_set.parameterChange("gain", 1, 0.5),
+        parameter_set.parameterChange("gain", 3, 0.25),
+    };
+    const view = try plug.process.ParameterChanges.init(&changes, 5);
+
+    try std.testing.expectEqual(@as(usize, 2), view.changeCount());
+    try std.testing.expect(!view.isEmpty());
+    try std.testing.expect(view.hasChanges());
+    try std.testing.expectEqual(@as(?usize, 1), view.firstSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 3), view.latestSampleOffset());
+    try std.testing.expectEqual(changes[0], view.firstChange().?);
+    try std.testing.expectEqual(changes[1], view.latestChange().?);
+    try std.testing.expectEqual(@as(?usize, 1), view.firstSampleOffsetForId(0));
+    try std.testing.expectEqual(@as(?usize, 3), view.latestSampleOffsetForId(0));
+    try std.testing.expectEqual(@as(?usize, null), view.firstSampleOffsetForId(99));
+    try std.testing.expectEqual(changes[0], view.first(0).?);
+    try std.testing.expectEqual(changes[1], view.latest(0).?);
+    try std.testing.expectEqual(changes[0], view.firstAtOffset(1).?);
+    try std.testing.expectEqual(changes[1], view.latestAtOffset(3).?);
+    try std.testing.expectEqual(changes[1], view.firstForIdAtOffset(0, 3).?);
+    try std.testing.expectEqual(changes[1], view.latestForIdAtOffset(0, 3).?);
+    try std.testing.expectEqual(@as(?plug.process.ParameterChange, null), view.firstAtOffset(2));
+    try std.testing.expectEqual(@as(?plug.process.ParameterChange, null), view.firstForIdAtOffset(99, 3));
+    try std.testing.expectEqual(@as(usize, 2), view.count(0));
+    try std.testing.expectEqual(@as(usize, 1), view.countAtOffset(1));
+    try std.testing.expectEqual(@as(usize, 1), view.countForIdAtOffset(0, 3));
+    try std.testing.expect(view.has(0));
+    try std.testing.expect(!view.has(99));
+    try std.testing.expect(view.hasAtOffset(1));
+    try std.testing.expect(!view.hasAtOffset(2));
+    try std.testing.expect(view.hasForIdAtOffset(0, 3));
+    try std.testing.expect(!view.hasForIdAtOffset(99, 3));
+    try std.testing.expect(!view.empty(0));
+    try std.testing.expect(view.empty(99));
+    try std.testing.expect(!view.offsetEmpty(1));
+    try std.testing.expect(view.offsetEmpty(2));
+    try std.testing.expect(!view.idAtOffsetEmpty(0, 3));
+    try std.testing.expect(view.idAtOffsetEmpty(99, 3));
+    try std.testing.expect(view.only(0));
+    try std.testing.expect(!view.onlyAtOffset(1));
+    try std.testing.expect(!view.onlyForIdAtOffset(0, 1));
+
+    const same_offset_changes = [_]plug.process.ParameterChange{
+        .{ .id = 0, .sample_offset = 2, .normalized = 0.5 },
+        .{ .id = 1, .sample_offset = 2, .normalized = 0.25 },
+    };
+    const same_offset = try plug.process.ParameterChanges.init(&same_offset_changes, 5);
+    try std.testing.expect(same_offset.onlyAtOffset(2));
+    try std.testing.expect(!same_offset.only(0));
+
+    const same_id_offset_changes = [_]plug.process.ParameterChange{
+        .{ .id = 0, .sample_offset = 2, .normalized = 0.5 },
+        .{ .id = 0, .sample_offset = 2, .normalized = 0.25 },
+    };
+    const same_id_offset = try plug.process.ParameterChanges.init(&same_id_offset_changes, 5);
+    try std.testing.expect(same_id_offset.onlyForIdAtOffset(0, 2));
+
+    const outside_block = [_]plug.process.ParameterChange{
+        .{ .id = 0, .sample_offset = 5, .normalized = 0.5 },
+    };
+    const outside_range = [_]plug.process.ParameterChange{
+        .{ .id = 0, .sample_offset = 1, .normalized = 1.5 },
+    };
+    try std.testing.expectError(error.ParameterChangeOutsideBlock, plug.process.ParameterChanges.init(&outside_block, 5));
+    try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, plug.process.ParameterChanges.init(&outside_range, 5));
+}
+
 test "gain core example splits blocks at automation changes" {
     var plugin = Gain{};
     const input = [_]f32{ 1.0, 1.0, 1.0, 1.0, 1.0 };

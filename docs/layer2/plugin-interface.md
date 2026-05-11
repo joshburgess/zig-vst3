@@ -70,6 +70,7 @@ Timing and audio helpers:
 Parameter helpers:
 
 - `ParameterChange.isForId`, `isAtOffset`, and `isForIdAtOffset` cover value-level routing predicates before a change is added to a context.
+- `ParameterChanges.init` validates process-block changes and exposes value-level count, emptiness, first/latest, per-id, per-offset, and only-match helpers.
 - `ParameterSet.parameterChange`, `ParameterSet.parameterChangeNormalized`, `PluginInstance.parameterChange`, and `PluginInstance.parameterChangeNormalized` construct finite normalized changes from reflected field names for tests and non-host callers.
 - Parameter descriptors can set `unit_id` to group host-facing parameters under a reflected unit.
 - `ParameterValues.view(set)` and `PluginInstance.parameterView()` bind descriptors and values into a `ParameterView`.
