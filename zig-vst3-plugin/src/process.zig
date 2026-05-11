@@ -325,6 +325,14 @@ pub const ParameterChanges = struct {
         return change.normalized;
     }
 
+    pub fn firstNormalizedAtOffsetOr(self: ParameterChanges, sample_offset: usize, default: f64) f64 {
+        return self.firstNormalizedAtOffset(sample_offset) orelse clampNormalized(default);
+    }
+
+    pub fn latestNormalizedAtOffsetOr(self: ParameterChanges, sample_offset: usize, default: f64) f64 {
+        return self.latestNormalizedAtOffset(sample_offset) orelse clampNormalized(default);
+    }
+
     pub fn firstNormalizedForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) ?f64 {
         const change = self.firstForIdAtOffset(id, sample_offset) orelse return null;
         return change.normalized;
@@ -333,6 +341,14 @@ pub const ParameterChanges = struct {
     pub fn latestNormalizedForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) ?f64 {
         const change = self.latestForIdAtOffset(id, sample_offset) orelse return null;
         return change.normalized;
+    }
+
+    pub fn firstNormalizedForIdAtOffsetOr(self: ParameterChanges, id: u32, sample_offset: usize, default: f64) f64 {
+        return self.firstNormalizedForIdAtOffset(id, sample_offset) orelse clampNormalized(default);
+    }
+
+    pub fn latestNormalizedForIdAtOffsetOr(self: ParameterChanges, id: u32, sample_offset: usize, default: f64) f64 {
+        return self.latestNormalizedForIdAtOffset(id, sample_offset) orelse clampNormalized(default);
     }
 
     pub fn latestNormalizedOr(self: ParameterChanges, id: u32, default: f64) f64 {
@@ -2047,6 +2063,22 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.parameter_changes.latestNormalizedForIdAtOffset(id, sample_offset);
         }
 
+        pub fn firstParameterNormalizedAtOffsetOr(self: @This(), sample_offset: usize, default: f64) f64 {
+            return self.parameter_changes.firstNormalizedAtOffsetOr(sample_offset, default);
+        }
+
+        pub fn latestParameterNormalizedAtOffsetOr(self: @This(), sample_offset: usize, default: f64) f64 {
+            return self.parameter_changes.latestNormalizedAtOffsetOr(sample_offset, default);
+        }
+
+        pub fn firstParameterNormalizedForIdAtOffsetOr(self: @This(), id: u32, sample_offset: usize, default: f64) f64 {
+            return self.parameter_changes.firstNormalizedForIdAtOffsetOr(id, sample_offset, default);
+        }
+
+        pub fn latestParameterNormalizedForIdAtOffsetOr(self: @This(), id: u32, sample_offset: usize, default: f64) f64 {
+            return self.parameter_changes.latestNormalizedForIdAtOffsetOr(id, sample_offset, default);
+        }
+
         pub fn firstParameterNormalizedOr(self: @This(), id: u32, default: f64) f64 {
             return self.parameter_changes.firstNormalizedOr(id, default);
         }
@@ -3050,6 +3082,14 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?f64, null), context.latestParameterNormalizedAtOffset(0));
     try std.testing.expectEqual(@as(?f64, null), context.firstParameterNormalizedForIdAtOffset(2, 1));
     try std.testing.expectEqual(@as(?f64, null), context.latestParameterNormalizedForIdAtOffset(2, 1));
+    try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterNormalizedAtOffsetOr(1, 0.0));
+    try std.testing.expectEqual(@as(f64, 0.25), context.firstParameterNormalizedAtOffsetOr(0, 0.25));
+    try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterNormalizedAtOffsetOr(1, 0.0));
+    try std.testing.expectEqual(@as(f64, 0.25), context.latestParameterNormalizedAtOffsetOr(0, 0.25));
+    try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterNormalizedForIdAtOffsetOr(1, 1, 0.0));
+    try std.testing.expectEqual(@as(f64, 0.25), context.firstParameterNormalizedForIdAtOffsetOr(2, 1, 0.25));
+    try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterNormalizedForIdAtOffsetOr(1, 1, 0.0));
+    try std.testing.expectEqual(@as(f64, 0.25), context.latestParameterNormalizedForIdAtOffsetOr(2, 1, 0.25));
     try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterNormalizedOr(1, 0.0));
     try std.testing.expectEqual(@as(f64, 0.25), context.firstParameterNormalizedOr(2, 0.25));
     try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterNormalizedOr(1, 0.0));
@@ -3301,6 +3341,14 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(?f64, null), view.latestNormalizedAtOffset(1));
     try std.testing.expectEqual(@as(?f64, null), view.firstNormalizedForIdAtOffset(7, 2));
     try std.testing.expectEqual(@as(?f64, null), view.latestNormalizedForIdAtOffset(7, 2));
+    try std.testing.expectEqual(@as(f64, 0.25), view.firstNormalizedAtOffsetOr(0, 0.0));
+    try std.testing.expectEqual(@as(f64, 0.5), view.firstNormalizedAtOffsetOr(1, 0.5));
+    try std.testing.expectEqual(@as(f64, 1.0), view.latestNormalizedAtOffsetOr(2, 0.0));
+    try std.testing.expectEqual(@as(f64, 0.5), view.latestNormalizedAtOffsetOr(1, 0.5));
+    try std.testing.expectEqual(@as(f64, 0.25), view.firstNormalizedForIdAtOffsetOr(7, 0, 0.0));
+    try std.testing.expectEqual(@as(f64, 0.5), view.firstNormalizedForIdAtOffsetOr(7, 2, 0.5));
+    try std.testing.expectEqual(@as(f64, 0.25), view.latestNormalizedForIdAtOffsetOr(7, 0, 0.0));
+    try std.testing.expectEqual(@as(f64, 0.5), view.latestNormalizedForIdAtOffsetOr(7, 2, 0.5));
     try std.testing.expectEqual(@as(?f64, null), view.firstNormalized(9));
     try std.testing.expectEqual(@as(?f64, null), view.latestNormalized(9));
     try std.testing.expectEqual(@as(f64, 0.5), view.firstNormalizedOr(9, 0.5));
