@@ -64,7 +64,7 @@ Timing and audio helpers:
 - `inputChannel`, `outputChannel`, input/output per-index channel presence and emptiness checks, `inputChannelCount`, `outputChannelCount`, input/output channel presence and emptiness checks, `inputFrameCount`, `outputFrameCount`, and `frameCount`
 - `fillOutputs` and `clearOutputs`
 - `frameCount` uses the shared input/output frame count for effects, the output frame count for generators with no audio inputs, and the input frame count for analyzers with no audio outputs.
-- `BlockSegment` and `ParameterSegment` expose frame-count, empty, and sample-containment helpers for segmented processors.
+- `BlockSegment` and `ParameterSegment` expose frame-count, empty, sample-containment, start, and end helpers for segmented processors.
 
 Parameter helpers:
 
