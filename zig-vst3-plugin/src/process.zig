@@ -1855,6 +1855,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return @as(f64, @floatFromInt(self.frameCount())) / self.sample_rate;
         }
 
+        pub fn blockSegment(self: @This()) BlockSegment {
+            return .{ .start_offset = 0, .end_offset = self.frameCount() };
+        }
+
         pub fn sampleOffsetSeconds(self: @This(), sample_offset: usize) f64 {
             return @as(f64, @floatFromInt(sample_offset)) / self.sample_rate;
         }
@@ -2793,6 +2797,9 @@ test "process context reports usable frame count" {
     try std.testing.expectEqual(@as(f64, 48_000.0), context.sampleRate());
     try std.testing.expectEqual(@as(f64, 1.0 / 48_000.0), context.sampleDurationSeconds());
     try std.testing.expectEqual(@as(f64, 3.0 / 48_000.0), context.blockDurationSeconds());
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 3 }, context.blockSegment());
+    try std.testing.expect(context.blockSegment().contains(2));
+    try std.testing.expect(!context.blockSegment().contains(3));
     try std.testing.expectEqual(@as(f64, 2.0 / 48_000.0), context.sampleOffsetSeconds(2));
     try std.testing.expect(context.containsSampleOffset(0));
     try std.testing.expect(context.containsSampleOffset(2));
