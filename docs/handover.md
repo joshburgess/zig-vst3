@@ -20,7 +20,7 @@ Recent work has concentrated on Layer 2 API polish:
 - `PluginInstance` now exposes same-plugin parameter value copying.
 - `PluginInstance` now exposes migrated parameter id resolution alongside migration diagnostics.
 - `PluginInstance` now exposes direct unit root, parent, and program-list relationship helpers.
-- `gain_core` now exercises parameter descriptor diagnostics, direct and field-name parameter metadata/default/plain-range helpers, lookup-based loads, counted stores, direct parameter-change application, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, per-id and per-offset automation reads, parameter and block segment value helpers, parameter segment iterators, state header/report compatibility helpers, and migrated parameter-id resolution.
+- `gain_core` now exercises plugin topology and lifecycle predicates, prepare validation, parameter descriptor diagnostics, direct and field-name parameter metadata/default/plain-range helpers, lookup-based loads, counted stores, direct parameter-change application, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, per-id and per-offset automation reads, parameter and block segment value helpers, parameter segment iterators, state header/report compatibility helpers, and migrated parameter-id resolution.
 - `mode_gain_core` now exercises enum option metadata helpers by index, id, display name, and field name.
 - `bypass_core` now exercises automatable, read-only, bypass, step-count, and list flag helpers.
 - `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including value-level helpers and duplicate diagnostics.
@@ -44,6 +44,9 @@ The marker scan exits with status 1 when there are no matches, which is expected
 
 The worktree was clean before this handover refresh. The latest pushed commits before this document update were:
 
+- `b86a322` Exercise prepare validation in gain example
+- `05ead1e` Exercise plugin lifecycle predicates
+- `a167d91` Refresh handover after helper coverage
 - `dec52ae` Exercise process timing helpers
 - `a754fc0` Exercise process segment value helpers
 - `1820d90` Exercise unit program value helpers
@@ -66,7 +69,7 @@ The worktree was clean before this handover refresh. The latest pushed commits b
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
-CI checkpoint: the run for `dec52ae` was queued when this handover refresh began. The latest completed non-cancelled run inspected was `ca954cf`, which passed. Intermediate runs after `ca954cf` were cancelled by newer pushes, which is expected for this workflow.
+CI checkpoint: the run for `b86a322` was queued when this handover refresh began. The latest completed non-cancelled run inspected was `ca954cf`, which passed. Intermediate runs after `ca954cf` were cancelled by newer pushes, which is expected for this workflow.
 
 ## What To Do Next
 
