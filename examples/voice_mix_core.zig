@@ -75,17 +75,22 @@ test "voice mix core example declares reflected unit and program metadata" {
     var instance = try Instance.init(std.testing.allocator, .{});
 
     try std.testing.expectEqual(@as(usize, 2), instance.unitCount());
+    try std.testing.expect(!instance.unitsEmpty());
+    try std.testing.expect(instance.hasUnits());
+    try std.testing.expectEqual(@as(i32, plug.units.root_unit_id), instance.rootUnitId());
     try std.testing.expectEqualStrings("Main", instance.rootUnitName());
     const root_unit = instance.rootUnit();
     try std.testing.expect(root_unit.isRoot());
     try std.testing.expect(!root_unit.hasParent());
     try std.testing.expect(!root_unit.hasProgramList());
     const voice_unit = instance.unitById(voice_unit_id).?;
+    try std.testing.expectEqualStrings("Voices", instance.unit(1).?.name);
     try std.testing.expect(!voice_unit.isRoot());
     try std.testing.expect(voice_unit.hasParent());
     try std.testing.expect(voice_unit.hasProgramList());
     try std.testing.expectEqualStrings("Voices", instance.unitById(voice_unit_id).?.name);
     try std.testing.expectEqual(@as(i32, voice_unit_id), instance.unitByName("Voices").?.id);
+    try std.testing.expectEqual(@as(?usize, 1), instance.unitIndexOfId(voice_unit_id));
     try std.testing.expectEqual(@as(?usize, 1), instance.unitIndexOfName("Voices"));
     try std.testing.expect(instance.hasUnit(voice_unit_id));
     try std.testing.expect(instance.hasUnitName("Voices"));
@@ -108,8 +113,15 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expectEqual(@as(?i32, voice_program_list_id), instance.programListIdForUnitName("Voices"));
     try std.testing.expectEqualStrings("Voice Presets", instance.programListNameForUnit(voice_unit_id).?);
     try std.testing.expectEqualStrings("Voice Presets", instance.programListNameForUnitName("Voices").?);
+    try std.testing.expectEqual(@as(usize, 1), instance.programListCount());
+    try std.testing.expect(!instance.programListsEmpty());
+    try std.testing.expect(instance.hasProgramLists());
+    try std.testing.expectEqualStrings("Voice Presets", instance.programList(0).?.name);
+    try std.testing.expectEqualStrings("Voice Presets", instance.programListById(voice_program_list_id).?.name);
     try std.testing.expectEqual(@as(i32, voice_program_list_id), instance.programListByName("Voice Presets").?.id);
+    try std.testing.expectEqual(@as(?usize, 0), instance.programListIndexOfId(voice_program_list_id));
     try std.testing.expectEqual(@as(?usize, 0), instance.programListIndexOfName("Voice Presets"));
+    try std.testing.expect(instance.hasProgramList(voice_program_list_id));
     try std.testing.expect(instance.hasProgramListName("Voice Presets"));
     const program_list = instance.programListByName("Voice Presets").?;
     try std.testing.expectEqual(@as(usize, 2), program_list.programCount());
