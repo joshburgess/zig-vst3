@@ -151,6 +151,10 @@ test "event echo core example writes input events to output events" {
     try std.testing.expect(context.hasOutputEventWriter());
     try std.testing.expect(!context.outputEventsEmpty());
     try std.testing.expect(context.outputEventsFull());
+    const written_events = context.writtenOutputEvents();
+    try std.testing.expectEqual(@as(usize, 2), written_events.eventCount());
+    try std.testing.expectEqual(plug.process.EventKind.note_on, written_events.first().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, written_events.latest().?.kind);
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCapacity());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 0), context.outputEventRemainingCapacity());
@@ -262,6 +266,7 @@ test "event echo core example writes input events to output events" {
     try std.testing.expectEqual(@as(usize, 2), context.outputEventRemainingCapacity());
     try std.testing.expectEqual(@as(?usize, null), context.firstOutputEventOffset());
     try std.testing.expectEqual(@as(?usize, null), context.latestOutputEventOffset());
+    try std.testing.expect(context.writtenOutputEvents().isEmpty());
     try std.testing.expectEqual(@as(?plug.process.Event, null), context.firstWrittenOutputEvent());
     try std.testing.expectEqual(@as(?plug.process.Event, null), context.latestWrittenOutputEvent());
     try std.testing.expect(!context.hasOutputEvent(.note_on));
