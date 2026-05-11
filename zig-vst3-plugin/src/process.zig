@@ -2347,6 +2347,20 @@ pub fn ProcessContext(comptime Sample: type) type {
             return writer.canAppend(event_count);
         }
 
+        pub fn canAppendOutputEventValue(self: @This(), event: Event) bool {
+            const writer = self.output_events orelse return false;
+            event.validate(writer.frameCount()) catch return false;
+            return writer.canAppend(1);
+        }
+
+        pub fn canAppendOutputEventValues(self: @This(), events: Events) bool {
+            const writer = self.output_events orelse return false;
+            for (events.items) |event| {
+                event.validate(writer.frameCount()) catch return false;
+            }
+            return writer.canAppend(events.eventCount());
+        }
+
         pub fn writtenOutputEvents(self: @This()) Events {
             const writer = self.output_events orelse return .{};
             return writer.events();
@@ -4358,6 +4372,10 @@ test "process context exposes output event helpers" {
     try std.testing.expect(context.canAppendOutputEvent());
     try std.testing.expect(context.canAppendOutputEvents(2));
     try std.testing.expect(!context.canAppendOutputEvents(3));
+    try std.testing.expect(context.canAppendOutputEventValue(events[0]));
+    try std.testing.expect(context.canAppendOutputEventValues(try Events.init(&events, input.len)));
+    try std.testing.expect(!context.canAppendOutputEventValue(Event.noteOn(input.len, 0, 60, 1.0)));
+    try std.testing.expect(!context.canAppendOutputEventValue(Event.midiCc(0, 0, 1, 2.0)));
     try std.testing.expect(context.outputEventsEmpty());
     try std.testing.expect(!context.hasOutputEvents());
     try std.testing.expect(!context.outputEventsFull());
@@ -4367,6 +4385,7 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(usize, 1), context.outputEventRemainingCapacity());
     try std.testing.expect(context.canAppendOutputEvent());
     try std.testing.expect(!context.canAppendOutputEvents(2));
+    try std.testing.expect(!context.canAppendOutputEventValues(try Events.init(&events, input.len)));
     try std.testing.expectEqual(@as(?usize, 0), context.firstOutputEventOffset());
     try std.testing.expectEqual(@as(?usize, 0), context.latestOutputEventOffset());
     try std.testing.expectEqual(EventKind.note_on, context.firstWrittenOutputEvent().?.kind);
@@ -4413,6 +4432,7 @@ test "process context exposes output event helpers" {
     try std.testing.expect(context.outputEventsFull());
     try std.testing.expect(context.canAppendOutputEvents(0));
     try std.testing.expect(!context.canAppendOutputEvent());
+    try std.testing.expect(!context.canAppendOutputEventValue(events[0]));
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
     try std.testing.expectEqual(EventKind.note_on, context.firstOutputEvent(.note_on).?.kind);
     try std.testing.expectEqual(EventKind.note_off, context.firstOutputEvent(.note_off).?.kind);
