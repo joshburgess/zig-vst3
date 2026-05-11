@@ -1272,6 +1272,26 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return header.extraEntryCount(self.parameterStateEntryCount());
         }
 
+        pub fn parameterStateReportMatchesDecodedCount(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.matchesDecodedCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportHasFewerDecodedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.hasFewerDecodedEntriesThan(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportHasMoreDecodedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.hasMoreDecodedEntriesThan(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportMissingDecodedEntryCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            return report.missingDecodedEntryCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportExtraDecodedEntryCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            return report.extraDecodedEntryCount(self.parameterStateEntryCount());
+        }
+
         pub fn readParameterStateHeader(self: *const Self, reader: anytype) !state.ParameterStateHeader {
             _ = self;
             return state.readParameterStateHeader(reader);
@@ -3045,6 +3065,8 @@ test "plugin instance round-trips owned parameter state" {
 
     var in_stream = std.io.fixedBufferStream(&bytes);
     const report = try restored.readParameterStateReport(in_stream.reader());
+    const partial_report = state.ReadParameterStateReport{ .entry_count = 1, .restored_count = 1, .ignored_count = 0 };
+    const newer_report = state.ReadParameterStateReport{ .entry_count = 3, .restored_count = 2, .ignored_count = 1 };
 
     try std.testing.expectEqual(state.ReadParameterStateReport{ .entry_count = 2, .restored_count = 2, .ignored_count = 0 }, report);
     try std.testing.expectEqual(@as(usize, 2), report.decodedCount());
@@ -3058,6 +3080,21 @@ test "plugin instance round-trips owned parameter state" {
     try std.testing.expect(report.restoredAllEntries());
     try std.testing.expect(!report.restoredPartialEntries());
     try std.testing.expect(!report.ignoredAllEntries());
+    try std.testing.expect(restored.parameterStateReportMatchesDecodedCount(report));
+    try std.testing.expect(!restored.parameterStateReportHasFewerDecodedEntries(report));
+    try std.testing.expect(!restored.parameterStateReportHasMoreDecodedEntries(report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportMissingDecodedEntryCount(report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportExtraDecodedEntryCount(report));
+    try std.testing.expect(!restored.parameterStateReportMatchesDecodedCount(partial_report));
+    try std.testing.expect(restored.parameterStateReportHasFewerDecodedEntries(partial_report));
+    try std.testing.expect(!restored.parameterStateReportHasMoreDecodedEntries(partial_report));
+    try std.testing.expectEqual(@as(usize, 1), restored.parameterStateReportMissingDecodedEntryCount(partial_report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportExtraDecodedEntryCount(partial_report));
+    try std.testing.expect(!restored.parameterStateReportMatchesDecodedCount(newer_report));
+    try std.testing.expect(!restored.parameterStateReportHasFewerDecodedEntries(newer_report));
+    try std.testing.expect(restored.parameterStateReportHasMoreDecodedEntries(newer_report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportMissingDecodedEntryCount(newer_report));
+    try std.testing.expectEqual(@as(usize, 1), restored.parameterStateReportExtraDecodedEntryCount(newer_report));
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(f64, 0.75), restored.loadParameterNormalized("mix"));
 }
