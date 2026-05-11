@@ -13,13 +13,16 @@ Recent work has concentrated on Layer 2 API polish:
 - State diagnostics and migration helpers are exposed through `PluginInstance`.
 - Parameter migration validation accepts linear old-id chains while still rejecting independently converging target ids.
 - Parameter descriptor diagnostics are exposed through `PluginInstance`.
+- `PluginInstance.parameterStateEntryCount()` now uses the reflected parameter set method, which external checked examples instantiate correctly.
 - State header and restore-report compatibility helpers are bound to a plugin instance.
 - Process context timing, block, offset, segment, automation, defaulted overall automation reads, and output-event planning helpers were added and tested.
 - Event routing next-offset helpers and offset-only event predicates were added to `Events`, `EventWriter`, and `ProcessContext`.
 - `PluginInstance` now exposes same-plugin parameter value copying.
 - `PluginInstance` now exposes migrated parameter id resolution alongside migration diagnostics.
 - `PluginInstance` now exposes direct unit root, parent, and program-list relationship helpers.
-- `gain_core` now exercises parameter descriptor diagnostics, counted parameter stores, counted resets, same-plugin value copying, defaulted overall automation reads, and migrated parameter-id resolution.
+- `gain_core` now exercises parameter descriptor diagnostics, counted parameter stores, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, state header/report compatibility helpers, and migrated parameter-id resolution.
+- `mode_gain_core` now exercises enum option metadata helpers by index, id, display name, and field name.
+- `bypass_core` now exercises automatable, read-only, bypass, step-count, and list flag helpers.
 - `voice_mix_core` now exercises unit, program-list, program parameter, and program info helper coverage.
 - `event_echo_core` now uses validated output-event planning.
 - `event_monitor_core` now exercises bus, channel, and bus-channel routing offset helpers.
@@ -40,14 +43,16 @@ The marker scan exits with status 1 when there are no matches, which is expected
 
 The worktree was clean before this handover refresh. The latest pushed commits before this document update were:
 
+- `bf96b44` Exercise parameter flag helpers in bypass example
+- `8cfc429` Exercise enum option helpers in mode example
+- `5a0e2e5` Exercise parameter utility helpers in gain example
+- `5605be1` Exercise state compatibility helpers in gain example
+- `7779a9f` Refresh handover after Layer 2 coverage pass
 - `77dd1ec` Exercise parameter descriptor diagnostics in gain example
 - `7de9031` Exercise program metadata helpers in voice mix example
 - `6e22220` Exercise parameter value copying in gain example
 - `9df263a` Add defaulted any-parameter automation reads
 - `1962413` Allow chained parameter id migrations
-- `f4b0f39` Exercise unit relationship helpers in voice mix example
-- `1efc3be` Exercise parameter-change only predicates in gain example
-- `3642a65` Add offset-only parameter change predicates
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
