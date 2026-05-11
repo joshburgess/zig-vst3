@@ -219,6 +219,14 @@ test "gain core example splits blocks at automation changes" {
         .parameter_changes = &changes,
     });
 
+    try std.testing.expect(changes[0].isForId(0));
+    try std.testing.expect(!changes[0].isForId(99));
+    try std.testing.expect(changes[0].isAtOffset(1));
+    try std.testing.expect(!changes[0].isAtOffset(2));
+    try std.testing.expect(changes[0].isForIdAtOffset(0, 1));
+    try std.testing.expect(!changes[0].isForIdAtOffset(99, 1));
+    try std.testing.expect(!changes[0].isForIdAtOffset(0, 2));
+
     plugin.process(&context);
 
     try std.testing.expectEqual(@as(?f64, 0.5), context.firstAnyParameterNormalized());
