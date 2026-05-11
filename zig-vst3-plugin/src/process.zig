@@ -1369,6 +1369,33 @@ pub const Events = struct {
         return result;
     }
 
+    pub fn nextSampleOffsetForBus(self: Events, bus_index: i32, after_sample_offset: usize) ?usize {
+        var result: ?usize = null;
+        for (self.items) |item| {
+            if (!item.isForBus(bus_index) or item.sample_offset <= after_sample_offset) continue;
+            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+        }
+        return result;
+    }
+
+    pub fn nextSampleOffsetForChannel(self: Events, channel: i16, after_sample_offset: usize) ?usize {
+        var result: ?usize = null;
+        for (self.items) |item| {
+            if (!item.isForChannel(channel) or item.sample_offset <= after_sample_offset) continue;
+            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+        }
+        return result;
+    }
+
+    pub fn nextSampleOffsetForBusChannel(self: Events, bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
+        var result: ?usize = null;
+        for (self.items) |item| {
+            if (!item.isForBusChannel(bus_index, channel) or item.sample_offset <= after_sample_offset) continue;
+            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+        }
+        return result;
+    }
+
     pub fn ofKind(self: Events, kind: EventKind) EventKindIterator {
         return .{ .events = self, .kind = kind };
     }
@@ -1701,6 +1728,18 @@ pub const EventWriter = struct {
 
     pub fn nextSampleOffsetForKind(self: *const EventWriter, kind: EventKind, after_sample_offset: usize) ?usize {
         return self.events().nextSampleOffsetForKind(kind, after_sample_offset);
+    }
+
+    pub fn nextSampleOffsetForBus(self: *const EventWriter, bus_index: i32, after_sample_offset: usize) ?usize {
+        return self.events().nextSampleOffsetForBus(bus_index, after_sample_offset);
+    }
+
+    pub fn nextSampleOffsetForChannel(self: *const EventWriter, channel: i16, after_sample_offset: usize) ?usize {
+        return self.events().nextSampleOffsetForChannel(channel, after_sample_offset);
+    }
+
+    pub fn nextSampleOffsetForBusChannel(self: *const EventWriter, bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
+        return self.events().nextSampleOffsetForBusChannel(bus_index, channel, after_sample_offset);
     }
 
     pub fn ofKind(self: *const EventWriter, kind: EventKind) EventKindIterator {
@@ -2379,6 +2418,18 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.nextSampleOffsetForKind(kind, after_sample_offset);
         }
 
+        pub fn nextEventOffsetForBus(self: @This(), bus_index: i32, after_sample_offset: usize) ?usize {
+            return self.events.nextSampleOffsetForBus(bus_index, after_sample_offset);
+        }
+
+        pub fn nextEventOffsetForChannel(self: @This(), channel: i16, after_sample_offset: usize) ?usize {
+            return self.events.nextSampleOffsetForChannel(channel, after_sample_offset);
+        }
+
+        pub fn nextEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
+            return self.events.nextSampleOffsetForBusChannel(bus_index, channel, after_sample_offset);
+        }
+
         pub fn appendOutputEvent(self: *@This(), event: Event) !void {
             _ = try self.appendOutputEventCount(event);
         }
@@ -2667,6 +2718,18 @@ pub fn ProcessContext(comptime Sample: type) type {
 
         pub fn nextOutputEventOffsetForKind(self: @This(), kind: EventKind, after_sample_offset: usize) ?usize {
             return self.writtenOutputEvents().nextSampleOffsetForKind(kind, after_sample_offset);
+        }
+
+        pub fn nextOutputEventOffsetForBus(self: @This(), bus_index: i32, after_sample_offset: usize) ?usize {
+            return self.writtenOutputEvents().nextSampleOffsetForBus(bus_index, after_sample_offset);
+        }
+
+        pub fn nextOutputEventOffsetForChannel(self: @This(), channel: i16, after_sample_offset: usize) ?usize {
+            return self.writtenOutputEvents().nextSampleOffsetForChannel(channel, after_sample_offset);
+        }
+
+        pub fn nextOutputEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
+            return self.writtenOutputEvents().nextSampleOffsetForBusChannel(bus_index, channel, after_sample_offset);
         }
 
         pub fn clearOutputEvents(self: @This()) void {
@@ -3206,6 +3269,12 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffset(1));
     try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffsetForKind(.note_on, 0));
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffsetForKind(.note_off, 0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffsetForBus(0, 0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextEventOffsetForBus(1, 0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffsetForChannel(0, 0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextEventOffsetForChannel(1, 0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffsetForBusChannel(0, 0, 0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextEventOffsetForBusChannel(0, 1, 0));
     var note_events = context.inputEventsOfKind(.note_on);
     try std.testing.expectEqual(@as(i16, 60), note_events.next().?.pitch);
     try std.testing.expectEqual(@as(?Event, null), note_events.next());
@@ -3787,6 +3856,15 @@ test "events query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffset(3));
     try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffsetForKind(.note_on, 1));
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForKind(.note_off, 3));
+    try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffsetForBus(1, 1));
+    try std.testing.expectEqual(@as(?usize, 6), view.nextSampleOffsetForBus(1, 2));
+    try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForBus(1, 6));
+    try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffsetForChannel(1, 1));
+    try std.testing.expectEqual(@as(?usize, 6), view.nextSampleOffsetForChannel(1, 2));
+    try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForChannel(1, 6));
+    try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffsetForBusChannel(1, 1, 1));
+    try std.testing.expectEqual(@as(?usize, 6), view.nextSampleOffsetForBusChannel(1, 1, 2));
+    try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForBusChannel(1, 0, 1));
     try std.testing.expectEqual(@as(usize, 4), view.countBus(0));
     try std.testing.expectEqual(@as(usize, 2), view.countBus(1));
     try std.testing.expectEqual(@as(usize, 4), view.countChannel(0));
@@ -4347,6 +4425,12 @@ test "event writer queries written events by offset" {
     try std.testing.expectEqual(@as(?usize, 5), writer.nextSampleOffset(3));
     try std.testing.expectEqual(@as(?usize, 5), writer.nextSampleOffsetForKind(.note_on, 1));
     try std.testing.expectEqual(@as(?usize, null), writer.nextSampleOffsetForKind(.note_off, 3));
+    try std.testing.expectEqual(@as(?usize, 3), writer.nextSampleOffsetForBus(0, 1));
+    try std.testing.expectEqual(@as(?usize, null), writer.nextSampleOffsetForBus(1, 1));
+    try std.testing.expectEqual(@as(?usize, 3), writer.nextSampleOffsetForChannel(0, 1));
+    try std.testing.expectEqual(@as(?usize, null), writer.nextSampleOffsetForChannel(1, 1));
+    try std.testing.expectEqual(@as(?usize, 3), writer.nextSampleOffsetForBusChannel(0, 0, 1));
+    try std.testing.expectEqual(@as(?usize, null), writer.nextSampleOffsetForBusChannel(0, 1, 1));
 
     var offset_events = writer.atOffset(5);
     try std.testing.expectEqual(@as(i16, 67), offset_events.next().?.pitch);
@@ -4578,6 +4662,12 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffset(1));
     try std.testing.expectEqual(@as(?usize, 1), context.nextOutputEventOffsetForKind(.note_off, 0));
     try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForKind(.note_on, 0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextOutputEventOffsetForBus(0, 0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForBus(1, 0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextOutputEventOffsetForChannel(0, 0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForChannel(1, 0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextOutputEventOffsetForBusChannel(0, 0, 0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForBusChannel(0, 1, 0));
     try std.testing.expectEqual(@as(usize, 2), context.clearOutputEventsCount());
     try std.testing.expectEqual(@as(usize, 0), context.clearOutputEventsCount());
     try context.appendOutputEvent(events[0]);
@@ -4624,6 +4714,9 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?Event, null), context.latestOutputEventForChannel(0));
     try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffset(0));
     try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForKind(.note_on, 0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForBus(0, 0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForChannel(0, 0));
+    try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForBusChannel(0, 0, 0));
     var cleared_output_notes = context.outputEventsOfKind(.note_on);
     try std.testing.expectEqual(@as(?Event, null), cleared_output_notes.next());
     var cleared_output_segments = context.outputEventBlockSegments();
@@ -4685,6 +4778,9 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?Event, null), no_writer.latestOutputEventForChannel(0));
     try std.testing.expectEqual(@as(?usize, null), no_writer.nextOutputEventOffset(0));
     try std.testing.expectEqual(@as(?usize, null), no_writer.nextOutputEventOffsetForKind(.note_on, 0));
+    try std.testing.expectEqual(@as(?usize, null), no_writer.nextOutputEventOffsetForBus(0, 0));
+    try std.testing.expectEqual(@as(?usize, null), no_writer.nextOutputEventOffsetForChannel(0, 0));
+    try std.testing.expectEqual(@as(?usize, null), no_writer.nextOutputEventOffsetForBusChannel(0, 0, 0));
     var missing_output_notes = no_writer.outputEventsOfKind(.note_on);
     try std.testing.expectEqual(@as(?Event, null), missing_output_notes.next());
     try std.testing.expectError(error.OutputEventsUnavailable, no_writer.appendOutputEvent(events[0]));
