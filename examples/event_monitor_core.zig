@@ -8,6 +8,8 @@ pub const EventMonitor = struct {
 
     note_on_count: usize = 0,
     note_off_count: usize = 0,
+    note_attack_count: usize = 0,
+    note_release_count: usize = 0,
     midi_cc_count: usize = 0,
     pitch_bend_count: usize = 0,
     aftertouch_count: usize = 0,
@@ -31,6 +33,8 @@ pub const EventMonitor = struct {
     pub fn process(self: *EventMonitor, context: *plug.process.ProcessContext(f32)) void {
         self.note_on_count = 0;
         self.note_off_count = 0;
+        self.note_attack_count = context.countNoteAttacks();
+        self.note_release_count = context.countNoteReleases();
         self.midi_cc_count = 0;
         self.pitch_bend_count = 0;
         self.aftertouch_count = 0;
@@ -123,6 +127,8 @@ test "event monitor core example summarizes input event kinds" {
 
     try std.testing.expectEqual(@as(usize, 2), plugin.note_on_count);
     try std.testing.expectEqual(@as(usize, 1), plugin.note_off_count);
+    try std.testing.expectEqual(@as(usize, 2), plugin.note_attack_count);
+    try std.testing.expectEqual(@as(usize, 1), plugin.note_release_count);
     try std.testing.expectEqual(@as(usize, 1), plugin.midi_cc_count);
     try std.testing.expectEqual(@as(usize, 1), plugin.pitch_bend_count);
     try std.testing.expectEqual(@as(usize, 1), plugin.aftertouch_count);

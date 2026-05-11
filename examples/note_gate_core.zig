@@ -31,10 +31,16 @@ pub const NoteGate = struct {
     fn applyEventsAt(self: *NoteGate, context: *plug.process.ProcessContext(f32), sample_offset: usize) void {
         var events = context.inputEventsAtOffset(sample_offset);
         while (events.next()) |event| {
-            if (event.asNoteAttack()) |note| {
-                self.holdNote(note.channel, note.pitch);
-            } else if (event.asNoteRelease()) |note| {
-                self.releaseNote(note.channel, note.pitch);
+            switch (event.noteLifecycle()) {
+                .attack => {
+                    const note = event.asNoteAttack().?;
+                    self.holdNote(note.channel, note.pitch);
+                },
+                .release => {
+                    const note = event.asNoteRelease().?;
+                    self.releaseNote(note.channel, note.pitch);
+                },
+                .none => {},
             }
         }
     }
@@ -98,6 +104,9 @@ test "note gate core example passes audio when a note-on event is present" {
         .events = &events,
     });
 
+    try std.testing.expectEqual(@as(usize, 1), context.countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 0), context.countNoteReleases());
+    try std.testing.expect(context.onlyInputNoteAttacks());
     plugin.process(&context);
 
     try std.testing.expectEqual(@as(f32, 0.0), output[0]);
@@ -120,6 +129,10 @@ test "note gate core example closes on note-off inside a block" {
         .events = &events,
     });
 
+    try std.testing.expectEqual(@as(usize, 1), context.countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 1), context.countNoteReleases());
+    try std.testing.expect(context.hasNoteAttacks());
+    try std.testing.expect(context.hasNoteReleases());
     plugin.process(&context);
 
     try std.testing.expectEqual(@as(f32, 0.0), output[0]);
@@ -146,6 +159,8 @@ test "note gate core example stays open while overlapping notes are held" {
         .events = &events,
     });
 
+    try std.testing.expectEqual(@as(usize, 2), context.countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 2), context.countNoteReleases());
     plugin.process(&context);
 
     try std.testing.expectEqual(@as(f32, 0.25), output[0]);
@@ -173,6 +188,8 @@ test "note gate core example tracks same pitch on separate channels" {
         .events = &events,
     });
 
+    try std.testing.expectEqual(@as(usize, 2), context.countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 2), context.countNoteReleases());
     plugin.process(&context);
 
     try std.testing.expectEqual(@as(f32, 0.25), output[0]);
@@ -200,6 +217,8 @@ test "note gate core example treats zero-velocity note-on as note-off for that p
         .events = &events,
     });
 
+    try std.testing.expectEqual(@as(usize, 2), context.countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 2), context.countNoteReleases());
     plugin.process(&context);
 
     try std.testing.expectEqual(@as(f32, 0.25), output[0]);
