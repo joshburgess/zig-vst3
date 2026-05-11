@@ -69,6 +69,8 @@ test "gain core example processes through zig-vst3-plugin context" {
 
     plugin.process(&context);
 
+    try std.testing.expectEqual(@as(?f64, 0.5), context.firstAnyParameterNormalized());
+    try std.testing.expectEqual(@as(?f64, 0.5), context.latestAnyParameterNormalized());
     try std.testing.expectEqual(@as(f32, 0.125), output[0]);
     try std.testing.expectEqual(@as(f32, 0.25), output[1]);
     try std.testing.expectEqual(@as(f32, 0.5), output[2]);
@@ -90,6 +92,8 @@ test "gain core example splits blocks at automation changes" {
 
     plugin.process(&context);
 
+    try std.testing.expectEqual(@as(?f64, 0.5), context.firstAnyParameterNormalized());
+    try std.testing.expectEqual(@as(?f64, 0.25), context.latestAnyParameterNormalized());
     try std.testing.expectEqual(@as(f32, 1.0), output[0]);
     try std.testing.expectEqual(@as(f32, 0.5), output[1]);
     try std.testing.expectEqual(@as(f32, 0.5), output[2]);
