@@ -497,8 +497,15 @@ test "gain core example splits blocks at automation changes" {
     try std.testing.expectEqual(@as(?f64, 0.25), context.latestParameterNormalized(0));
     try std.testing.expectEqual(@as(?f64, 0.5), context.firstParameterNormalizedAtOffset(1));
     try std.testing.expectEqual(@as(?f64, 0.25), context.latestParameterNormalizedAtOffset(3));
+    try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterNormalizedAtOffsetOr(1, 1.0));
+    try std.testing.expectEqual(@as(f64, 0.75), context.firstParameterNormalizedAtOffsetOr(2, 0.75));
+    try std.testing.expectEqual(@as(f64, 0.25), context.latestParameterNormalizedAtOffsetOr(3, 1.0));
+    try std.testing.expectEqual(@as(f64, 0.75), context.latestParameterNormalizedAtOffsetOr(2, 0.75));
     try std.testing.expectEqual(@as(?f64, 0.25), context.firstParameterNormalizedForIdAtOffset(0, 3));
+    try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterNormalizedForIdAtOffsetOr(0, 1, 1.0));
     try std.testing.expectEqual(@as(f64, 0.75), context.firstParameterNormalizedForIdAtOffsetOr(99, 1, 0.75));
+    try std.testing.expectEqual(@as(f64, 0.25), context.latestParameterNormalizedForIdAtOffsetOr(0, 3, 1.0));
+    try std.testing.expectEqual(@as(f64, 0.75), context.latestParameterNormalizedForIdAtOffsetOr(99, 3, 0.75));
     try std.testing.expectEqual(@as(usize, 2), context.countParameterChanges(0));
     try std.testing.expectEqual(@as(usize, 1), context.countParameterChangesAtOffset(1));
     try std.testing.expectEqual(@as(usize, 1), context.countParameterChangesForIdAtOffset(0, 3));
