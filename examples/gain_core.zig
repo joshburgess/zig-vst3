@@ -731,6 +731,20 @@ test "gain core example round-trips parameter state" {
     const newer_header = plug.state.ParameterStateHeader{ .version = plug.state.format_version, .entry_count = 2 };
 
     try std.testing.expect(header.isCurrentVersion());
+    try std.testing.expectEqual(@as(usize, 1), header.entryCount());
+    try std.testing.expect(header.hasEntries());
+    try std.testing.expect(!header.hasNoEntries());
+    try std.testing.expect(!header.entriesEmpty());
+    try std.testing.expect(header.matchesEntryCount(1));
+    try std.testing.expect(!header.hasFewerEntriesThan(1));
+    try std.testing.expect(!header.hasMoreEntriesThan(1));
+    try std.testing.expectEqual(@as(usize, 1), header.missingEntryCount(2));
+    try std.testing.expectEqual(@as(usize, 1), header.extraEntryCount(0));
+    try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), header.encodedSize());
+    try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), try header.encodedSizeChecked());
+    try std.testing.expect(!empty_header.hasEntries());
+    try std.testing.expect(empty_header.hasNoEntries());
+    try std.testing.expect(empty_header.entriesEmpty());
     try std.testing.expect(restored.parameterStateHeaderMatchesEntryCount(header));
     try std.testing.expect(!restored.parameterStateHeaderHasFewerEntries(header));
     try std.testing.expect(!restored.parameterStateHeaderHasMoreEntries(header));
