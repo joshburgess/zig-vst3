@@ -21,7 +21,7 @@
 The checked gain example covers direct `FloatParam` descriptor utilities, direct `ParameterSet` metadata, diagnostics, and conversion helpers, direct `PluginInstance` metadata and conversion wrappers, direct `ParameterValues` storage, instance-bound parameter handles, copying, default-state helpers, counted stores/resets, reset aliases, direct field descriptor, flag, unit, option, and range metadata, bound `ParameterView` metadata, diagnostics, conversions, and reads, bound `ParameterEditor` metadata, diagnostics, conversions, and edits, and editor-level process-change application counts.
 The checked mode-gain example covers direct enum descriptor utilities and enum option metadata through direct `ParameterSet`, instance, and bound view/editor helpers.
 The checked bypass example covers direct bool descriptor utilities and bool flag metadata through direct instance helpers and bound view/editor helpers.
-The checked voice-mix example covers direct int descriptor utilities alongside unit and program metadata.
+The checked voice-mix example covers direct int descriptor utilities alongside unit metadata, program metadata, and counted or boolean program snapshot application.
 
 ## Boundary Rules
 
