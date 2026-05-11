@@ -264,6 +264,14 @@ test "gain core example can inspect audio buffer views" {
     try std.testing.expectEqual(@as(?[]const f32, null), inputs.channel(2));
     try std.testing.expect(!inputs.hasChannel(2));
     try std.testing.expect(inputs.channelEmpty(2));
+    const empty_inputs = try plug.process.AudioInputs(f32).init(&[_][]const f32{});
+    try std.testing.expectEqual(@as(usize, 0), empty_inputs.channelCount());
+    try std.testing.expect(empty_inputs.isEmpty());
+    try std.testing.expect(!empty_inputs.hasChannels());
+    try std.testing.expectEqual(@as(usize, 0), empty_inputs.frameCount());
+    try std.testing.expectEqual(@as(?[]const f32, null), empty_inputs.channel(0));
+    try std.testing.expect(!empty_inputs.hasChannel(0));
+    try std.testing.expect(empty_inputs.channelEmpty(0));
     try std.testing.expectError(error.MismatchedFrameCount, plug.process.AudioInputs(f32).init(&mismatched_input_channels));
 
     const outputs = try plug.process.AudioOutputs(f32).init(&output_channels);
@@ -277,6 +285,16 @@ test "gain core example can inspect audio buffer views" {
     try std.testing.expectEqual(@as(?[]f32, null), outputs.channel(2));
     try std.testing.expect(!outputs.hasChannel(2));
     try std.testing.expect(outputs.channelEmpty(2));
+    const empty_outputs = try plug.process.AudioOutputs(f32).init(&[_][]f32{});
+    try std.testing.expectEqual(@as(usize, 0), empty_outputs.channelCount());
+    try std.testing.expect(empty_outputs.isEmpty());
+    try std.testing.expect(!empty_outputs.hasChannels());
+    try std.testing.expectEqual(@as(usize, 0), empty_outputs.frameCount());
+    try std.testing.expectEqual(@as(?[]f32, null), empty_outputs.channel(0));
+    try std.testing.expect(!empty_outputs.hasChannel(0));
+    try std.testing.expect(empty_outputs.channelEmpty(0));
+    empty_outputs.fill(0.5);
+    empty_outputs.clear();
     outputs.fill(0.25);
     try std.testing.expectEqual(@as(f32, 0.25), out_left[0]);
     try std.testing.expectEqual(@as(f32, 0.25), out_right[2]);
