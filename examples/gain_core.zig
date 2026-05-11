@@ -909,6 +909,11 @@ test "gain core example stores and resets float parameters by lookup" {
 
     try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterPlainByNameCount("Gain", 1.0));
     try std.testing.expect(instance.parametersAllDefaults());
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterCount("gain", 0.5));
+    try std.testing.expect(instance.storeParameter("gain", 0.25));
+    try std.testing.expect(instance.storeParameterIndex(0, 0.5));
+    try std.testing.expect(instance.resetParameterToDefault("gain"));
+    try std.testing.expect(instance.parametersAllDefaults());
     try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterPlainIndexCount(0, 0.5));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsDefaultByName("Gain"));
     try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterIndexToDefaultCount(0));
@@ -986,6 +991,12 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expectEqual(@as(?usize, 1), values.storePlainCount(&parameter_set, 0, 0.25));
     try std.testing.expectEqual(@as(?usize, 1), values.storeByIdCount(&parameter_set, 0, 0.75));
     try std.testing.expectEqual(@as(?usize, 1), values.storePlainByNameCount(&parameter_set, "Gain", 0.5));
+    try std.testing.expect(values.storePlain(&parameter_set, 0, 0.75));
+    try std.testing.expect(values.storeById(&parameter_set, 0, 0.25));
+    try std.testing.expect(values.storeByName(&parameter_set, "Gain", 0.5));
+    try std.testing.expectEqual(@as(?usize, 0), values.storeByNameCount(&parameter_set, "Gain", 0.5));
+    try std.testing.expect(values.storePlainById(&parameter_set, 0, 0.25));
+    try std.testing.expect(values.storePlainByName(&parameter_set, "Gain", 0.5));
     try std.testing.expectEqual(@as(?usize, 1), values.storeFieldCount(&parameter_set, "gain", 0.25));
     try std.testing.expectEqual(@as(?usize, 1), values.storeFieldNormalizedCount(&parameter_set, "gain", 0.5));
     try std.testing.expectEqual(@as(?usize, null), values.storeByIdCount(&parameter_set, 99, 0.5));
@@ -995,6 +1006,15 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expectEqual(@as(usize, 1), values.nonDefaultCount(&parameter_set));
 
     var copied = Spec.ParameterValues.init(&parameter_set);
+    try std.testing.expect(copied.storeById(&parameter_set, 0, 0.5));
+    try std.testing.expect(copied.resetToDefaultById(&parameter_set, 0));
+    try std.testing.expect(copied.storeByName(&parameter_set, "Gain", 0.5));
+    try std.testing.expect(copied.resetToDefaultByName(&parameter_set, "Gain"));
+    try std.testing.expect(copied.storePlain(&parameter_set, 0, 0.5));
+    try std.testing.expect(copied.resetToDefault(&parameter_set, 0));
+    try std.testing.expect(copied.store(0, 0.5));
+    copied.resetToDefaults(&parameter_set);
+    try std.testing.expect(copied.allDefaults(&parameter_set));
     copied.copyFrom(&values);
     try std.testing.expectEqual(@as(f64, 0.5), copied.loadFieldNormalized(&parameter_set, "gain"));
     try std.testing.expect(copied.storeField(&parameter_set, "gain", 0.75));
