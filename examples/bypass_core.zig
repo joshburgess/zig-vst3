@@ -72,6 +72,16 @@ test "bypass core example formats and parses bool parameters" {
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsReadOnlyByName("Bypass"));
     try std.testing.expectEqual(@as(?i32, 1), instance.parameterStepCountByName("Bypass"));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsListByName("Bypass"));
+    const descriptor = instance.parameterFieldDescriptor("bypass");
+    try std.testing.expectEqual(@as(f64, 0.0), descriptor.defaultNormalized());
+    try std.testing.expectEqual(@as(f64, 1.0), descriptor.normalize(true));
+    try std.testing.expect(!descriptor.denormalize(0.49));
+    try std.testing.expect(descriptor.denormalize(0.5));
+    try std.testing.expectEqualStrings("On", try descriptor.formatPlain(1.0, &buffer));
+    try std.testing.expectEqual(@as(f64, 1.0), descriptor.plainFromNormalized(1.0));
+    try std.testing.expectEqual(@as(f64, 1.0), descriptor.normalizedFromPlain(0.75));
+    try std.testing.expectEqual(@as(f64, 1.0), try descriptor.parsePlain("true"));
+    try std.testing.expectError(error.InvalidBool, descriptor.parsePlain("maybe"));
     try std.testing.expect(!instance.parameterFieldIsBypass("bypass"));
     try std.testing.expect(instance.parameterFieldCanAutomate("bypass"));
     try std.testing.expect(!instance.parameterFieldIsReadOnly("bypass"));
