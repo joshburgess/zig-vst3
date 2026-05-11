@@ -314,6 +314,23 @@ test "gain core example stores and resets float parameters by lookup" {
     try std.testing.expect(!instance.resetParameterToDefaultByName("Missing"));
 }
 
+test "gain core example applies reflected parameter changes directly" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const raw_changes = [_]plug.process.ParameterChange{
+        instance.parameterChange("gain", 0, 0.5),
+    };
+    const changes = try plug.process.ParameterChanges.init(&raw_changes, 1);
+
+    try std.testing.expectEqual(@as(usize, 1), instance.applyParameterChangesChangedCount(changes));
+    try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(usize, 1), instance.applyParameterChangesCount(changes));
+    try std.testing.expectEqual(@as(usize, 0), instance.applyParameterChangesChangedCount(changes));
+
+    try std.testing.expect(instance.resetParameterToDefault("gain"));
+    instance.applyParameterChanges(changes);
+    try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("gain"));
+}
+
 test "gain core example copies and resets parameter values" {
     var source = try Instance.init(std.testing.allocator, .{});
     var target = try Instance.init(std.testing.allocator, .{});
