@@ -1327,6 +1327,14 @@ pub const Events = struct {
         return !self.hasKindAtOffset(kind, sample_offset);
     }
 
+    pub fn onlyAtOffset(self: Events, sample_offset: usize) bool {
+        return self.hasEvents() and self.countAtOffset(sample_offset) == self.items.len;
+    }
+
+    pub fn onlyKindAtOffset(self: Events, kind: EventKind, sample_offset: usize) bool {
+        return self.hasEvents() and self.countKindAtOffset(kind, sample_offset) == self.items.len;
+    }
+
     pub fn onlyKind(self: Events, kind: EventKind) bool {
         return self.hasEvents() and self.countKind(kind) == self.items.len;
     }
@@ -1696,6 +1704,14 @@ pub const EventWriter = struct {
 
     pub fn kindAtOffsetEmpty(self: *const EventWriter, kind: EventKind, sample_offset: usize) bool {
         return self.events().kindAtOffsetEmpty(kind, sample_offset);
+    }
+
+    pub fn onlyAtOffset(self: *const EventWriter, sample_offset: usize) bool {
+        return self.events().onlyAtOffset(sample_offset);
+    }
+
+    pub fn onlyKindAtOffset(self: *const EventWriter, kind: EventKind, sample_offset: usize) bool {
+        return self.events().onlyKindAtOffset(kind, sample_offset);
     }
 
     pub fn onlyKind(self: *const EventWriter, kind: EventKind) bool {
@@ -2378,6 +2394,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.kindAtOffsetEmpty(kind, sample_offset);
         }
 
+        pub fn onlyInputEventsAtOffset(self: @This(), sample_offset: usize) bool {
+            return self.events.onlyAtOffset(sample_offset);
+        }
+
+        pub fn onlyInputEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+            return self.events.onlyKindAtOffset(kind, sample_offset);
+        }
+
         pub fn noteAttacksEmpty(self: @This()) bool {
             return self.events.noteAttacksEmpty();
         }
@@ -2678,6 +2702,14 @@ pub fn ProcessContext(comptime Sample: type) type {
 
         pub fn outputEventsOfKindAtOffsetEmpty(self: @This(), kind: EventKind, sample_offset: usize) bool {
             return self.writtenOutputEvents().kindAtOffsetEmpty(kind, sample_offset);
+        }
+
+        pub fn onlyOutputEventsAtOffset(self: @This(), sample_offset: usize) bool {
+            return self.writtenOutputEvents().onlyAtOffset(sample_offset);
+        }
+
+        pub fn onlyOutputEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+            return self.writtenOutputEvents().onlyKindAtOffset(kind, sample_offset);
         }
 
         pub fn outputNoteAttacksEmpty(self: @This()) bool {
@@ -3243,6 +3275,10 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(context.eventsAtOffsetEmpty(0));
     try std.testing.expect(!context.eventsOfKindAtOffsetEmpty(.note_on, 1));
     try std.testing.expect(context.eventsOfKindAtOffsetEmpty(.note_off, 1));
+    try std.testing.expect(context.onlyInputEventsAtOffset(1));
+    try std.testing.expect(!context.onlyInputEventsAtOffset(0));
+    try std.testing.expect(context.onlyInputEventsOfKindAtOffset(.note_on, 1));
+    try std.testing.expect(!context.onlyInputEventsOfKindAtOffset(.note_off, 1));
     try std.testing.expect(context.onlyInputEventsOfKind(.note_on));
     try std.testing.expect(context.onlyInputEventsForBus(0));
     try std.testing.expect(context.onlyInputEventsForChannel(0));
@@ -3852,6 +3888,8 @@ test "events query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(i16, 72), view.latestKindAtOffset(.note_on, 5).?.pitch);
     try std.testing.expectEqual(@as(?Event, null), view.firstKindAtOffset(.note_off, 5));
     try std.testing.expectEqual(@as(?Event, null), view.latestKindAtOffset(.note_off, 5));
+    try std.testing.expect(!view.onlyAtOffset(5));
+    try std.testing.expect(!view.onlyKindAtOffset(.note_on, 5));
     try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffset(1));
     try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffset(3));
     try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffsetForKind(.note_on, 1));
@@ -3893,6 +3931,16 @@ test "events query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(i16, 67), note_ons.next().?.pitch);
     try std.testing.expectEqual(@as(i16, 72), note_ons.next().?.pitch);
     try std.testing.expectEqual(@as(?Event, null), note_ons.next());
+
+    const same_offset_items = [_]Event{
+        Event.noteOn(2, 0, 60, 1.0),
+        Event.noteOn(2, 0, 64, 0.5),
+    };
+    const same_offset_view = try Events.init(&same_offset_items, 8);
+    try std.testing.expect(same_offset_view.onlyAtOffset(2));
+    try std.testing.expect(!same_offset_view.onlyAtOffset(3));
+    try std.testing.expect(same_offset_view.onlyKindAtOffset(.note_on, 2));
+    try std.testing.expect(!same_offset_view.onlyKindAtOffset(.note_off, 2));
 }
 
 test "event constructors can target non-main buses" {
@@ -4419,6 +4467,8 @@ test "event writer queries written events by offset" {
     try std.testing.expectEqual(@as(i16, 67), writer.latestKindAtOffset(.note_on, 5).?.pitch);
     try std.testing.expectEqual(@as(?Event, null), writer.firstKindAtOffset(.note_off, 5));
     try std.testing.expectEqual(@as(?Event, null), writer.latestKindAtOffset(.note_off, 5));
+    try std.testing.expect(!writer.onlyAtOffset(5));
+    try std.testing.expect(!writer.onlyKindAtOffset(.note_on, 5));
     try std.testing.expectEqual(@as(?Event, null), writer.firstBus(1));
     try std.testing.expectEqual(@as(?Event, null), writer.latestChannel(1));
     try std.testing.expectEqual(@as(?usize, 3), writer.nextSampleOffset(1));
@@ -4435,6 +4485,15 @@ test "event writer queries written events by offset" {
     var offset_events = writer.atOffset(5);
     try std.testing.expectEqual(@as(i16, 67), offset_events.next().?.pitch);
     try std.testing.expectEqual(@as(?Event, null), offset_events.next());
+
+    var same_offset_storage: [2]Event = undefined;
+    var same_offset_writer = EventWriter.init(&same_offset_storage, 8);
+    try same_offset_writer.append(Event.noteOn(2, 0, 60, 1.0));
+    try same_offset_writer.append(Event.noteOn(2, 0, 64, 0.5));
+    try std.testing.expect(same_offset_writer.onlyAtOffset(2));
+    try std.testing.expect(!same_offset_writer.onlyAtOffset(3));
+    try std.testing.expect(same_offset_writer.onlyKindAtOffset(.note_on, 2));
+    try std.testing.expect(!same_offset_writer.onlyKindAtOffset(.note_off, 2));
 }
 
 test "event writer appends event views atomically" {
@@ -4569,6 +4628,9 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(EventKind.note_on, context.latestWrittenOutputEvent().?.kind);
     try std.testing.expectEqual(EventKind.note_on, context.firstOutputEventAtOffset(0).?.kind);
     try std.testing.expectEqual(EventKind.note_on, context.latestOutputEventAtOffset(0).?.kind);
+    try std.testing.expect(context.onlyOutputEventsAtOffset(0));
+    try std.testing.expect(context.onlyOutputEventsOfKindAtOffset(.note_on, 0));
+    try std.testing.expect(!context.onlyOutputEventsOfKindAtOffset(.note_off, 0));
     try std.testing.expectEqual(@as(?Event, null), context.firstOutputEventAtOffset(1));
     try std.testing.expectEqual(@as(?Event, null), context.latestOutputEventAtOffset(1));
     try std.testing.expect(!context.outputEventsEmpty());
@@ -4648,6 +4710,8 @@ test "process context exposes output event helpers" {
     try std.testing.expect(context.outputEventsForChannelEmpty(1));
     try std.testing.expect(!context.outputEventsForBusChannelEmpty(0, 0));
     try std.testing.expect(context.outputEventsForBusChannelEmpty(1, 0));
+    try std.testing.expect(!context.onlyOutputEventsAtOffset(1));
+    try std.testing.expect(!context.onlyOutputEventsOfKindAtOffset(.note_off, 1));
     try std.testing.expect(!context.onlyOutputEventsOfKind(.note_on));
     try std.testing.expect(!context.onlyOutputNoteAttacks());
     try std.testing.expect(!context.onlyOutputNoteReleases());
@@ -4703,6 +4767,8 @@ test "process context exposes output event helpers" {
     try std.testing.expect(!context.onlyOutputEventsOfKind(.note_on));
     try std.testing.expect(!context.onlyOutputNoteAttacks());
     try std.testing.expect(!context.onlyOutputNoteReleases());
+    try std.testing.expect(!context.onlyOutputEventsAtOffset(0));
+    try std.testing.expect(!context.onlyOutputEventsOfKindAtOffset(.note_on, 0));
     try std.testing.expect(!context.onlyOutputEventsForBus(0));
     try std.testing.expect(!context.onlyOutputEventsForChannel(0));
     try std.testing.expect(!context.onlyOutputEventsForBusChannel(0, 0));
@@ -4767,6 +4833,8 @@ test "process context exposes output event helpers" {
     try std.testing.expect(!no_writer.onlyOutputEventsOfKind(.note_on));
     try std.testing.expect(!no_writer.onlyOutputNoteAttacks());
     try std.testing.expect(!no_writer.onlyOutputNoteReleases());
+    try std.testing.expect(!no_writer.onlyOutputEventsAtOffset(0));
+    try std.testing.expect(!no_writer.onlyOutputEventsOfKindAtOffset(.note_on, 0));
     try std.testing.expect(!no_writer.onlyOutputEventsForBus(0));
     try std.testing.expect(!no_writer.onlyOutputEventsForChannel(0));
     try std.testing.expect(!no_writer.onlyOutputEventsForBusChannel(0, 0));
