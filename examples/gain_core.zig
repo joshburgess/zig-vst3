@@ -137,6 +137,9 @@ test "gain core example declares reflected metadata" {
     try std.testing.expectEqual(@as(?bool, false), parameter_set.isList(0));
     try std.testing.expectEqual(@as(?bool, false), parameter_set.isListById(0));
     try std.testing.expectEqual(@as(?bool, false), parameter_set.isListByName("Gain"));
+    try std.testing.expectEqual(@as(?u32, 0), instance.parameterId(0));
+    try std.testing.expectEqualStrings("Gain", instance.parameterName(0).?);
+    try std.testing.expectEqualStrings("Gain", instance.parameterNameById(0).?);
     try std.testing.expectEqual(@as(?usize, 0), instance.parameterIndexOfId(0));
     try std.testing.expectEqual(@as(?usize, null), instance.parameterIndexOfId(99));
     try std.testing.expectEqualStrings("Gain", instance.parameterShortName(0).?);
@@ -163,6 +166,18 @@ test "gain core example declares reflected metadata" {
     try std.testing.expect(!instance.parameterHasPlainRange(99));
     try std.testing.expect(!instance.parameterHasPlainRangeById(99));
     try std.testing.expect(!instance.parameterHasPlainRangeByName("Missing"));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsBypass(0));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsBypassById(0));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterCanAutomate(0));
+    try std.testing.expectEqual(@as(?bool, true), instance.parameterCanAutomateById(0));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsReadOnly(0));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsReadOnlyById(0));
+    try std.testing.expectEqual(@as(?i32, plug.units.root_unit_id), instance.parameterUnitId(0));
+    try std.testing.expectEqual(@as(?i32, plug.units.root_unit_id), instance.parameterUnitIdById(0));
+    try std.testing.expectEqual(@as(?i32, 0), instance.parameterStepCount(0));
+    try std.testing.expectEqual(@as(?i32, 0), instance.parameterStepCountById(0));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsList(0));
+    try std.testing.expectEqual(@as(?bool, false), instance.parameterIsListById(0));
     try std.testing.expectEqual(@as(?u32, null), instance.duplicateParameterId());
     try std.testing.expectEqual(@as(?usize, null), instance.duplicateParameterIdIndex());
     try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateParameterName());
@@ -848,6 +863,16 @@ test "gain core example formats and converts float parameters" {
     try std.testing.expectEqual(@as(f64, 0.25), try instance.parseParameterFieldPlain("gain", "0.25"));
     try std.testing.expectEqual(@as(f64, 0.75), instance.parameterFieldPlainFromNormalized("gain", 0.75));
     try std.testing.expectEqual(@as(f64, 0.25), instance.parameterFieldNormalizedFromPlain("gain", 0.25));
+    try std.testing.expectEqualStrings("0.500", try instance.formatParameterPlainIndex(0, 0.5, &buffer));
+    try std.testing.expectEqualStrings("0.250", try instance.formatParameterPlainById(0, 0.25, &buffer));
+    try std.testing.expectEqual(@as(f64, 0.75), try instance.parseParameterPlainIndex(0, "0.75"));
+    try std.testing.expectEqual(@as(f64, 0.25), try instance.parseParameterPlainById(0, "0.25"));
+    try std.testing.expectEqual(@as(?f64, 0.75), instance.parameterPlainFromNormalizedIndex(0, 0.75));
+    try std.testing.expectEqual(@as(?f64, 0.25), instance.parameterNormalizedFromPlainIndex(0, 0.25));
+    try std.testing.expectEqual(@as(?f64, 0.5), instance.parameterPlainFromNormalizedById(0, 0.5));
+    try std.testing.expectEqual(@as(?f64, 0.5), instance.parameterNormalizedFromPlainById(0, 0.5));
+    try std.testing.expectEqual(@as(?f64, 0.75), instance.parameterPlainFromNormalizedByName("Gain", 0.75));
+    try std.testing.expectEqual(@as(?f64, 0.25), instance.parameterNormalizedFromPlainByName("Gain", 0.25));
     try std.testing.expect(instance.storeParameterPlainByName("Gain", 0.5));
     try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameter("gain"));
 }
