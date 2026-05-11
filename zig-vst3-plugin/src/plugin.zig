@@ -212,6 +212,30 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.hasUnits();
         }
 
+        pub fn duplicateUnitId(self: *const Self) ?i32 {
+            return self.spec.units.duplicateUnitId();
+        }
+
+        pub fn duplicateUnitIdIndex(self: *const Self) ?usize {
+            return self.spec.units.duplicateUnitIdIndex();
+        }
+
+        pub fn hasDuplicateUnitIds(self: *const Self) bool {
+            return self.spec.units.hasDuplicateUnitIds();
+        }
+
+        pub fn duplicateUnitName(self: *const Self) ?[]const u8 {
+            return self.spec.units.duplicateUnitName();
+        }
+
+        pub fn duplicateUnitNameIndex(self: *const Self) ?usize {
+            return self.spec.units.duplicateUnitNameIndex();
+        }
+
+        pub fn hasDuplicateUnitNames(self: *const Self) bool {
+            return self.spec.units.hasDuplicateUnitNames();
+        }
+
         pub fn unit(self: *const Self, index: usize) ?units_api.Unit {
             return self.spec.units.unit(index);
         }
@@ -262,6 +286,30 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn hasProgramLists(self: *const Self) bool {
             return self.spec.units.hasProgramLists();
+        }
+
+        pub fn duplicateProgramListId(self: *const Self) ?i32 {
+            return self.spec.units.duplicateProgramListId();
+        }
+
+        pub fn duplicateProgramListIdIndex(self: *const Self) ?usize {
+            return self.spec.units.duplicateProgramListIdIndex();
+        }
+
+        pub fn hasDuplicateProgramListIds(self: *const Self) bool {
+            return self.spec.units.hasDuplicateProgramListIds();
+        }
+
+        pub fn duplicateProgramListName(self: *const Self) ?[]const u8 {
+            return self.spec.units.duplicateProgramListName();
+        }
+
+        pub fn duplicateProgramListNameIndex(self: *const Self) ?usize {
+            return self.spec.units.duplicateProgramListNameIndex();
+        }
+
+        pub fn hasDuplicateProgramListNames(self: *const Self) bool {
+            return self.spec.units.hasDuplicateProgramListNames();
         }
 
         pub fn programList(self: *const Self, index: usize) ?units_api.ProgramList {
@@ -404,6 +452,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programParameterById(list_id, program_index, parameter_id);
         }
 
+        pub fn programParameterIndexOfId(self: *const Self, list_id: i32, program_index: usize, parameter_id: u32) ?usize {
+            return self.spec.units.programParameterIndexOfId(list_id, program_index, parameter_id);
+        }
+
         pub fn hasProgramParameter(self: *const Self, list_id: i32, program_index: usize, parameter_id: u32) bool {
             return self.spec.units.hasProgramParameter(list_id, program_index, parameter_id);
         }
@@ -422,6 +474,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn programParameterByNameAndId(self: *const Self, list_id: i32, program_name: []const u8, parameter_id: u32) ?units_api.ProgramParameter {
             return self.spec.units.programParameterByNameAndId(list_id, program_name, parameter_id);
+        }
+
+        pub fn programParameterIndexOfIdByName(self: *const Self, list_id: i32, program_name: []const u8, parameter_id: u32) ?usize {
+            return self.spec.units.programParameterIndexOfIdByName(list_id, program_name, parameter_id);
         }
 
         pub fn hasProgramParameterByName(self: *const Self, list_id: i32, program_name: []const u8, parameter_id: u32) bool {
@@ -444,6 +500,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programInfo(list_id, program_index, key);
         }
 
+        pub fn programInfoEntry(self: *const Self, list_id: i32, program_index: usize, info_index: usize) ?units_api.ProgramInfo {
+            return self.spec.units.programInfoEntry(list_id, program_index, info_index);
+        }
+
+        pub fn programInfoIndexOfKey(self: *const Self, list_id: i32, program_index: usize, key: []const u8) ?usize {
+            return self.spec.units.programInfoIndexOfKey(list_id, program_index, key);
+        }
+
         pub fn hasProgramInfo(self: *const Self, list_id: i32, program_index: usize, key: []const u8) bool {
             return self.spec.units.hasProgramInfo(list_id, program_index, key);
         }
@@ -462,6 +526,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn programInfoByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) ?[]const u8 {
             return self.spec.units.programInfoByName(list_id, program_name, key);
+        }
+
+        pub fn programInfoEntryByName(self: *const Self, list_id: i32, program_name: []const u8, info_index: usize) ?units_api.ProgramInfo {
+            return self.spec.units.programInfoEntryByName(list_id, program_name, info_index);
+        }
+
+        pub fn programInfoIndexOfKeyByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) ?usize {
+            return self.spec.units.programInfoIndexOfKeyByName(list_id, program_name, key);
         }
 
         pub fn hasProgramInfoByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) bool {
@@ -937,6 +1009,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.parameter_set.indexOfField(field_name);
         }
 
+        pub fn parameterFieldDescriptor(self: *const Self, comptime field_name: []const u8) parameters.FieldDescriptor(Plugin.Params, field_name) {
+            return self.spec.parameter_set.descriptor(field_name);
+        }
+
         pub fn parameterFieldId(self: *const Self, comptime field_name: []const u8) u32 {
             return self.spec.parameter_set.fieldId(field_name);
         }
@@ -1290,6 +1366,26 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn parameterStateReportExtraDecodedEntryCount(self: *const Self, report: state.ReadParameterStateReport) usize {
             return report.extraDecodedEntryCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportMatchesRestoredCount(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.matchesRestoredCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportHasFewerRestoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.hasFewerRestoredEntriesThan(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportHasMoreRestoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            return report.hasMoreRestoredEntriesThan(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportMissingRestoredEntryCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            return report.missingRestoredEntryCount(self.parameterStateEntryCount());
+        }
+
+        pub fn parameterStateReportExtraRestoredEntryCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            return report.extraRestoredEntryCount(self.parameterStateEntryCount());
         }
 
         pub fn readParameterStateHeader(self: *const Self, reader: anytype) !state.ParameterStateHeader {
@@ -1805,6 +1901,12 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqual(@as(usize, 2), instance.unitCount());
     try std.testing.expect(!instance.unitsEmpty());
     try std.testing.expect(instance.hasUnits());
+    try std.testing.expectEqual(@as(?i32, null), instance.duplicateUnitId());
+    try std.testing.expectEqual(@as(?usize, null), instance.duplicateUnitIdIndex());
+    try std.testing.expect(!instance.hasDuplicateUnitIds());
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateUnitName());
+    try std.testing.expectEqual(@as(?usize, null), instance.duplicateUnitNameIndex());
+    try std.testing.expect(!instance.hasDuplicateUnitNames());
     try std.testing.expectEqualStrings("Main", instance.rootUnit().name);
     try std.testing.expectEqual(units_api.root_unit_id, instance.rootUnitId());
     try std.testing.expectEqualStrings("Main", instance.rootUnitName());
@@ -1822,6 +1924,12 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqual(@as(usize, 1), instance.programListCount());
     try std.testing.expect(!instance.programListsEmpty());
     try std.testing.expect(instance.hasProgramLists());
+    try std.testing.expectEqual(@as(?i32, null), instance.duplicateProgramListId());
+    try std.testing.expectEqual(@as(?usize, null), instance.duplicateProgramListIdIndex());
+    try std.testing.expect(!instance.hasDuplicateProgramListIds());
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateProgramListName());
+    try std.testing.expectEqual(@as(?usize, null), instance.duplicateProgramListNameIndex());
+    try std.testing.expect(!instance.hasDuplicateProgramListNames());
     try std.testing.expectEqual(@as(?usize, 0), instance.programListIndexOfId(7));
     try std.testing.expectEqual(@as(?usize, null), instance.programListIndexOfId(99));
     try std.testing.expectEqual(@as(?usize, 0), instance.programListIndexOfName("Voice Programs"));
@@ -1916,7 +2024,20 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByName(99, "Lead", 0));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByNameAndId(7, "Lead", 99));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByNameAndId(99, "Lead", 1));
+    try std.testing.expectEqual(@as(?usize, 0), instance.programParameterIndexOfId(7, 1, 1));
+    try std.testing.expectEqual(@as(?usize, null), instance.programParameterIndexOfId(7, 1, 99));
+    try std.testing.expectEqual(@as(?usize, null), instance.programParameterIndexOfId(7, 99, 1));
+    try std.testing.expectEqual(@as(?usize, 0), instance.programParameterIndexOfIdByName(7, "Lead", 1));
+    try std.testing.expectEqual(@as(?usize, null), instance.programParameterIndexOfIdByName(7, "Lead", 99));
+    try std.testing.expectEqual(@as(?usize, null), instance.programParameterIndexOfIdByName(7, "Missing", 1));
     try std.testing.expectEqualStrings("Clean", instance.programInfo(7, 0, "category").?);
+    try std.testing.expectEqualStrings("category", instance.programInfoEntry(7, 0, 0).?.key);
+    try std.testing.expectEqualStrings("Clean", instance.programInfoEntry(7, 0, 0).?.value);
+    try std.testing.expectEqual(@as(?units_api.ProgramInfo, null), instance.programInfoEntry(7, 0, 1));
+    try std.testing.expectEqual(@as(?units_api.ProgramInfo, null), instance.programInfoEntry(7, 99, 0));
+    try std.testing.expectEqual(@as(?usize, 0), instance.programInfoIndexOfKey(7, 0, "category"));
+    try std.testing.expectEqual(@as(?usize, null), instance.programInfoIndexOfKey(7, 0, "missing"));
+    try std.testing.expectEqual(@as(?usize, null), instance.programInfoIndexOfKey(7, 99, "category"));
     try std.testing.expectEqual(@as(?usize, 1), instance.programInfoCount(7, 0));
     try std.testing.expectEqual(@as(?usize, 0), instance.programInfoCountByName(7, "Lead"));
     try std.testing.expectEqual(@as(?usize, null), instance.programInfoCount(7, 99));
@@ -1941,6 +2062,13 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfo(7, 99, "category"));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfo(99, 0, "category"));
     try std.testing.expectEqualStrings("Clean", instance.programInfoByName(7, "Clean", "category").?);
+    try std.testing.expectEqualStrings("category", instance.programInfoEntryByName(7, "Clean", 0).?.key);
+    try std.testing.expectEqualStrings("Clean", instance.programInfoEntryByName(7, "Clean", 0).?.value);
+    try std.testing.expectEqual(@as(?units_api.ProgramInfo, null), instance.programInfoEntryByName(7, "Clean", 1));
+    try std.testing.expectEqual(@as(?units_api.ProgramInfo, null), instance.programInfoEntryByName(7, "Missing", 0));
+    try std.testing.expectEqual(@as(?usize, 0), instance.programInfoIndexOfKeyByName(7, "Clean", "category"));
+    try std.testing.expectEqual(@as(?usize, null), instance.programInfoIndexOfKeyByName(7, "Clean", "missing"));
+    try std.testing.expectEqual(@as(?usize, null), instance.programInfoIndexOfKeyByName(7, "Missing", "category"));
     try std.testing.expect(instance.hasProgramInfoByName(7, "Clean", "category"));
     try std.testing.expect(!instance.hasProgramInfoByName(7, "Clean", "missing"));
     try std.testing.expect(!instance.hasProgramInfoByName(7, "Missing", "category"));
@@ -2497,6 +2625,8 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?f64, null), instance.parameterPlainFromNormalizedByName("Missing", 0.0));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterNormalizedFromPlainByName("Missing", 0.0));
     try std.testing.expectEqual(@as(usize, 0), instance.parameterFieldIndex("gain"));
+    try std.testing.expectEqual(@as(u32, 0), instance.parameterFieldDescriptor("gain").id);
+    try std.testing.expectEqualStrings("Gain", instance.parameterFieldDescriptor("gain").name);
     try std.testing.expectEqual(@as(u32, 2), instance.parameterFieldId("mode"));
     try std.testing.expectEqualStrings("Gain", instance.parameterFieldName("gain"));
     try std.testing.expectEqualStrings("G", instance.parameterFieldShortName("gain"));
@@ -3067,6 +3197,7 @@ test "plugin instance round-trips owned parameter state" {
     const report = try restored.readParameterStateReport(in_stream.reader());
     const partial_report = state.ReadParameterStateReport{ .entry_count = 1, .restored_count = 1, .ignored_count = 0 };
     const newer_report = state.ReadParameterStateReport{ .entry_count = 3, .restored_count = 2, .ignored_count = 1 };
+    const over_restored_report = state.ReadParameterStateReport{ .entry_count = 3, .restored_count = 3, .ignored_count = 0 };
 
     try std.testing.expectEqual(state.ReadParameterStateReport{ .entry_count = 2, .restored_count = 2, .ignored_count = 0 }, report);
     try std.testing.expectEqual(@as(usize, 2), report.decodedCount());
@@ -3085,16 +3216,36 @@ test "plugin instance round-trips owned parameter state" {
     try std.testing.expect(!restored.parameterStateReportHasMoreDecodedEntries(report));
     try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportMissingDecodedEntryCount(report));
     try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportExtraDecodedEntryCount(report));
+    try std.testing.expect(restored.parameterStateReportMatchesRestoredCount(report));
+    try std.testing.expect(!restored.parameterStateReportHasFewerRestoredEntries(report));
+    try std.testing.expect(!restored.parameterStateReportHasMoreRestoredEntries(report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportMissingRestoredEntryCount(report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportExtraRestoredEntryCount(report));
     try std.testing.expect(!restored.parameterStateReportMatchesDecodedCount(partial_report));
     try std.testing.expect(restored.parameterStateReportHasFewerDecodedEntries(partial_report));
     try std.testing.expect(!restored.parameterStateReportHasMoreDecodedEntries(partial_report));
     try std.testing.expectEqual(@as(usize, 1), restored.parameterStateReportMissingDecodedEntryCount(partial_report));
     try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportExtraDecodedEntryCount(partial_report));
+    try std.testing.expect(!restored.parameterStateReportMatchesRestoredCount(partial_report));
+    try std.testing.expect(restored.parameterStateReportHasFewerRestoredEntries(partial_report));
+    try std.testing.expect(!restored.parameterStateReportHasMoreRestoredEntries(partial_report));
+    try std.testing.expectEqual(@as(usize, 1), restored.parameterStateReportMissingRestoredEntryCount(partial_report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportExtraRestoredEntryCount(partial_report));
     try std.testing.expect(!restored.parameterStateReportMatchesDecodedCount(newer_report));
     try std.testing.expect(!restored.parameterStateReportHasFewerDecodedEntries(newer_report));
     try std.testing.expect(restored.parameterStateReportHasMoreDecodedEntries(newer_report));
     try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportMissingDecodedEntryCount(newer_report));
     try std.testing.expectEqual(@as(usize, 1), restored.parameterStateReportExtraDecodedEntryCount(newer_report));
+    try std.testing.expect(restored.parameterStateReportMatchesRestoredCount(newer_report));
+    try std.testing.expect(!restored.parameterStateReportHasFewerRestoredEntries(newer_report));
+    try std.testing.expect(!restored.parameterStateReportHasMoreRestoredEntries(newer_report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportMissingRestoredEntryCount(newer_report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportExtraRestoredEntryCount(newer_report));
+    try std.testing.expect(!restored.parameterStateReportMatchesRestoredCount(over_restored_report));
+    try std.testing.expect(!restored.parameterStateReportHasFewerRestoredEntries(over_restored_report));
+    try std.testing.expect(restored.parameterStateReportHasMoreRestoredEntries(over_restored_report));
+    try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportMissingRestoredEntryCount(over_restored_report));
+    try std.testing.expectEqual(@as(usize, 1), restored.parameterStateReportExtraRestoredEntryCount(over_restored_report));
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(f64, 0.75), restored.loadParameterNormalized("mix"));
 }
