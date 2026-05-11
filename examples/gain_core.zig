@@ -617,6 +617,25 @@ test "gain core example stores and resets float parameters by lookup" {
     try std.testing.expect(!instance.resetParameterToDefaultByName("Missing"));
 }
 
+test "gain core example exposes bound instance parameter handles" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+
+    const set = instance.parameterSet();
+    try std.testing.expectEqual(@as(usize, 1), set.parameterCount());
+    try std.testing.expectEqualStrings("Gain", set.name(0).?);
+    try std.testing.expectEqual(@as(f64, 1.0), instance.parameterValuesConst().loadFieldNormalized(set, "gain"));
+
+    const view = instance.parameterView();
+    try std.testing.expectEqual(@as(f64, 1.0), view.loadNormalized("gain"));
+    try std.testing.expectEqualStrings("Gain", view.fieldName("gain"));
+
+    var editor = instance.parameterEditor();
+    try std.testing.expectEqual(@as(?usize, 1), editor.storeNormalizedCount("gain", 0.25));
+    try std.testing.expectEqual(@as(f64, 0.25), instance.parameterValues().loadFieldNormalized(set, "gain"));
+    try std.testing.expectEqual(@as(f64, 0.25), instance.parameterValuesConst().loadFieldNormalized(set, "gain"));
+    try std.testing.expectEqual(@as(f64, 0.25), view.loadNormalized("gain"));
+}
+
 test "gain core example edits reflected parameter values directly" {
     var values = Spec.ParameterValues.init(&parameter_set);
 
