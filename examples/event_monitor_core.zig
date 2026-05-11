@@ -437,9 +437,11 @@ test "event monitor core example summarizes input event kinds" {
     try std.testing.expect(events[0].isNoteForPitch(60));
     const zero_velocity_release = plug.process.Event.noteOn(2, 0, 62, 0.0);
     try std.testing.expect(zero_velocity_release.asNoteAttack() == null);
+    try std.testing.expect(zero_velocity_release.asNoteOff() == null);
     try std.testing.expectEqual(plug.process.NoteLifecycle.release, zero_velocity_release.noteLifecycle());
     try std.testing.expect(zero_velocity_release.isNoteRelease());
     try std.testing.expectEqual(@as(i16, 62), zero_velocity_release.asNoteRelease().?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), events[10].asNoteOff().?.pitch);
     const note_release = events[10].asNoteRelease().?;
     try std.testing.expectEqual(@as(i16, 60), note_release.pitch);
     try std.testing.expectEqual(plug.process.NoteLifecycle.release, events[10].noteLifecycle());
