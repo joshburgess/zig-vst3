@@ -56,6 +56,9 @@ test "event echo core example can inspect output event writers" {
     try std.testing.expectEqual(plug.process.EventKind.note_off, writer.latest().?.kind);
     try std.testing.expectEqual(plug.process.EventKind.note_on, writer.firstKind(.note_on).?.kind);
     try std.testing.expectEqual(plug.process.EventKind.note_off, writer.latestKind(.note_off).?.kind);
+    try std.testing.expectEqual(@as(?usize, 1), writer.firstSampleOffsetForKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, 2), writer.latestSampleOffsetForKind(.note_off));
+    try std.testing.expectEqual(@as(?usize, null), writer.firstSampleOffsetForKind(.midi_cc));
     try std.testing.expectEqual(plug.process.EventKind.note_off, writer.firstAtOffset(2).?.kind);
     try std.testing.expectEqual(plug.process.EventKind.note_off, writer.latestAtOffset(2).?.kind);
     try std.testing.expect(writer.hasKind(.note_on));
