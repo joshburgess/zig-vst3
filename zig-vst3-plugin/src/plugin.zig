@@ -1277,6 +1277,26 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return state.readParameterStateWithMigrationsReport(Plugin.Params, &self.spec.parameter_set, &self.spec.values, reader, migrations);
         }
 
+        pub fn validateParameterIdMigrations(self: *const Self, migrations: []const state.ParameterIdMigration) !void {
+            _ = self;
+            try state.validateParameterIdMigrations(migrations);
+        }
+
+        pub fn identityParameterMigrationIndex(self: *const Self, migrations: []const state.ParameterIdMigration) ?usize {
+            _ = self;
+            return state.identityParameterMigrationIndex(migrations);
+        }
+
+        pub fn duplicateParameterMigrationIndex(self: *const Self, migrations: []const state.ParameterIdMigration) ?usize {
+            _ = self;
+            return state.duplicateParameterMigrationIndex(migrations);
+        }
+
+        pub fn ambiguousParameterMigrationIndex(self: *const Self, migrations: []const state.ParameterIdMigration) ?usize {
+            _ = self;
+            return state.ambiguousParameterMigrationIndex(migrations);
+        }
+
         pub fn process(self: *Self, context: *process_api.ProcessContext(f32)) void {
             self.applyParameterChanges(context.parameterChanges());
             if (Spec.has_process_with_parameter_view) {
@@ -3049,6 +3069,46 @@ test "plugin instance reads parameter state with migrations" {
     try std.testing.expectEqual(state.ReadParameterStateReport{ .entry_count = 1, .restored_count = 1, .ignored_count = 0 }, report);
     try std.testing.expect(report.isRestoredAllClassification());
     try std.testing.expectEqual(@as(f64, 0.25), new_instance.loadParameterNormalized("output"));
+}
+
+test "plugin instance exposes parameter migration diagnostics" {
+    const Gain = struct {
+        pub const name = "Gain";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 0.5),
+        };
+    };
+
+    var instance = try PluginInstance(Gain).init(std.testing.allocator, .{});
+    defer instance.deinit();
+
+    const valid = [_]state.ParameterIdMigration{
+        .{ .old_id = 7, .new_id = 9 },
+        .{ .old_id = 9, .new_id = 1 },
+    };
+    const identity = [_]state.ParameterIdMigration{
+        .{ .old_id = 7, .new_id = 7 },
+    };
+    const duplicate = [_]state.ParameterIdMigration{
+        .{ .old_id = 7, .new_id = 9 },
+        .{ .old_id = 7, .new_id = 1 },
+    };
+    const ambiguous = [_]state.ParameterIdMigration{
+        .{ .old_id = 7, .new_id = 1 },
+        .{ .old_id = 9, .new_id = 1 },
+    };
+
+    try instance.validateParameterIdMigrations(&valid);
+    try std.testing.expectEqual(@as(?usize, null), instance.identityParameterMigrationIndex(&valid));
+    try std.testing.expectEqual(@as(?usize, null), instance.duplicateParameterMigrationIndex(&valid));
+    try std.testing.expectEqual(@as(?usize, null), instance.ambiguousParameterMigrationIndex(&valid));
+    try std.testing.expectEqual(@as(?usize, 0), instance.identityParameterMigrationIndex(&identity));
+    try std.testing.expectError(error.IdentityParameterMigration, instance.validateParameterIdMigrations(&identity));
+    try std.testing.expectEqual(@as(?usize, 1), instance.duplicateParameterMigrationIndex(&duplicate));
+    try std.testing.expectError(error.DuplicateParameterMigration, instance.validateParameterIdMigrations(&duplicate));
+    try std.testing.expectEqual(@as(?usize, 1), instance.ambiguousParameterMigrationIndex(&ambiguous));
+    try std.testing.expectError(error.AmbiguousParameterMigration, instance.validateParameterIdMigrations(&ambiguous));
 }
 
 test "plugin instance accepts metadata-only plugins" {
