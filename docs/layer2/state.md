@@ -38,6 +38,6 @@ Malformed state headers, unsupported format versions, truncated entries, duplica
 
 `PluginInstance` binds state entry-count compatibility checks, migration diagnostics, and migrated-id resolution to instance code. Header helpers compare decoded header entry counts with the current parameter count. Restore-report helpers compare both decoded entries and restored entries, so callers can distinguish newer state files with extra ignored ids from state files that failed to restore every current parameter.
 
-The checked gain example covers direct header entry-count, empty, delta, and encoded-size helpers in addition to instance-bound compatibility checks.
+The checked gain example covers direct header entry-count, empty, delta, and encoded-size helpers, plus migration diagnostic indexes, in addition to instance-bound compatibility checks.
 
 Program lists can remain metadata-only, or each program can carry a finite normalized parameter snapshot through `plug.units.ProgramParameter`. `PluginInstance.applyProgram`, `applyProgramByName`, and the unit-based program application helpers validate the complete snapshot and then apply matching parameter ids. The `*Count` variants report `null` for missing targets or the number of parameter values that changed.
