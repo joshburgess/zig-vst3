@@ -203,14 +203,24 @@ test "voice mix core example declares reflected unit and program metadata" {
 test "voice mix core example applies reflected program snapshots" {
     var instance = try Instance.init(std.testing.allocator, .{});
 
+    try std.testing.expectEqual(@as(?usize, 1), try instance.applyProgramCount(voice_program_list_id, 1));
+    try std.testing.expectEqual(@as(i64, 4), instance.loadParameter("voices"));
+    try std.testing.expectEqual(@as(?usize, 0), try instance.applyProgramCount(voice_program_list_id, 1));
+    try std.testing.expectEqual(@as(?usize, 1), try instance.applyProgramByNameCount(voice_program_list_id, "Single"));
+    try std.testing.expectEqual(@as(i64, 1), instance.loadParameter("voices"));
+    try std.testing.expectEqual(@as(?usize, 1), try instance.applyProgramByNameForUnitCount(voice_unit_id, "Quad"));
+    try std.testing.expectEqual(@as(i64, 4), instance.loadParameter("voices"));
     try std.testing.expect(try instance.applyProgramByNameForUnit(voice_unit_id, "Quad"));
     try std.testing.expectEqual(@as(i64, 4), instance.loadParameter("voices"));
-    try std.testing.expect(try instance.applyProgramByNameForUnitName("Voices", "Single"));
+    try std.testing.expectEqual(@as(?usize, 1), try instance.applyProgramByNameForUnitNameCount("Voices", "Single"));
     try std.testing.expectEqual(@as(i64, 1), instance.loadParameter("voices"));
-    try std.testing.expect(try instance.applyProgramForUnit(voice_unit_id, 1));
+    try std.testing.expectEqual(@as(?usize, 1), try instance.applyProgramForUnitCount(voice_unit_id, 1));
     try std.testing.expectEqual(@as(i64, 4), instance.loadParameter("voices"));
-    try std.testing.expect(try instance.applyProgramForUnitName("Voices", 0));
+    try std.testing.expectEqual(@as(?usize, 1), try instance.applyProgramForUnitNameCount("Voices", 0));
     try std.testing.expectEqual(@as(i64, 1), instance.loadParameter("voices"));
+    try std.testing.expect(try instance.applyProgramByNameForUnitName("Voices", "Quad"));
+    try std.testing.expectEqual(@as(i64, 4), instance.loadParameter("voices"));
+    try std.testing.expectEqual(@as(?usize, null), try instance.applyProgramCount(voice_program_list_id, 99));
     try std.testing.expect(!try instance.applyProgramByNameForUnit(voice_unit_id, "Missing"));
     try std.testing.expect(!try instance.applyProgramByNameForUnitName("Missing", "Quad"));
 }
