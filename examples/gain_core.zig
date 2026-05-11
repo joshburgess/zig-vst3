@@ -795,6 +795,26 @@ test "gain core example round-trips parameter state" {
     var instance = try Instance.init(std.testing.allocator, .{});
     var restored = try Instance.init(std.testing.allocator, .{});
     var bytes: [plug.state.encodedSize(Gain.Params)]u8 = undefined;
+    var header_bytes: [plug.state.encoded_header_size]u8 = undefined;
+
+    try std.testing.expectEqual(@as(usize, 12), plug.state.encoded_header_size);
+    try std.testing.expectEqual(@as(usize, 12), plug.state.encoded_entry_size);
+    try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), plug.state.encodedSizeForCount(1));
+    try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), try plug.state.encodedSizeForCountChecked(1));
+    try std.testing.expectEqual(std.math.maxInt(usize), plug.state.encodedSizeForCount(std.math.maxInt(usize)));
+    try std.testing.expectError(error.Overflow, plug.state.encodedSizeForCountChecked(std.math.maxInt(usize)));
+
+    var header_out_stream = std.io.fixedBufferStream(&header_bytes);
+    try plug.state.writeParameterStateHeaderForCount(1, header_out_stream.writer());
+    var header_in_stream = std.io.fixedBufferStream(&header_bytes);
+    try std.testing.expectEqual(
+        plug.state.ParameterStateHeader{ .version = plug.state.format_version, .entry_count = 1 },
+        try plug.state.readParameterStateHeader(header_in_stream.reader()),
+    );
+    try std.testing.expectError(
+        error.ParameterStateTooLarge,
+        plug.state.writeParameterStateHeaderForCount(@as(usize, std.math.maxInt(u16)) + 1, header_out_stream.writer()),
+    );
 
     try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
     try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), instance.encodedParameterStateSize());
