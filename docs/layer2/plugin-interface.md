@@ -121,6 +121,7 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 Checked input-event helper coverage includes direct event-view validation, count, emptiness, first/latest, next-offset, iterator, routing, and only predicates.
 Checked output-event coverage includes direct writer and process-context append planning, append counts, capacity state, offset and kind-at-offset predicates, query views, block segments, validation failures, and clearing.
 Checked process-context validation covers invalid sample rates, mismatched frame counts, invalid attachments, and mismatched output-event writers.
+Checked process-block segment coverage includes combined input-event and parameter-change split points.
 Checked state report coverage includes ignored, accounted, and unaccounted helper predicates.
 
 ## Open Work

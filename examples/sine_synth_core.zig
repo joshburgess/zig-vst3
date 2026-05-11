@@ -131,6 +131,30 @@ test "sine synth core example applies level automation at segment boundaries" {
     try std.testing.expect(plugin.active);
 }
 
+test "sine synth core example exposes process block segments" {
+    var output = [_]f32{ 0.0, 0.0, 0.0, 0.0, 0.0 };
+    const input_channels = [_][]const f32{};
+    const output_channels = [_][]f32{&output};
+    const events = [_]plug.process.Event{
+        plug.process.Event.noteOn(1, 0, 69, 1.0),
+        plug.process.Event.noteOff(3, 0, 69, 0.0),
+    };
+    const changes = [_]plug.process.ParameterChange{
+        parameter_set.parameterChange("level", 2, 0.5),
+    };
+    const context = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+        .parameter_changes = &changes,
+    });
+
+    var segments = context.processBlockSegments();
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = 1 }, segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 1, .end_offset = 2 }, segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 2, .end_offset = 3 }, segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 3, .end_offset = 5 }, segments.next().?);
+    try std.testing.expectEqual(@as(?plug.process.BlockSegment, null), segments.next());
+}
+
 test "sine synth core example treats zero-velocity note-on as note-off" {
     var plugin = SineSynth{};
     var output = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
