@@ -377,6 +377,12 @@ pub const EventKind = enum {
     other,
 };
 
+pub const NoteLifecycle = enum {
+    none,
+    attack,
+    release,
+};
+
 pub const NoteOn = struct {
     bus_index: i32,
     sample_offset: usize,
@@ -718,6 +724,12 @@ pub const Event = struct {
         return self.isKind(.note_off) or (self.isKind(.note_on) and self.velocity == 0.0);
     }
 
+    pub fn noteLifecycle(self: Event) NoteLifecycle {
+        if (self.isNoteAttack()) return .attack;
+        if (self.isNoteRelease()) return .release;
+        return .none;
+    }
+
     pub fn isNote(self: Event) bool {
         return self.isKind(.note_on) or self.isKind(.note_off);
     }
@@ -1041,6 +1053,22 @@ pub const Events = struct {
         return count;
     }
 
+    pub fn countNoteAttacks(self: Events) usize {
+        var count: usize = 0;
+        for (self.items) |item| {
+            if (item.isNoteAttack()) count += 1;
+        }
+        return count;
+    }
+
+    pub fn countNoteReleases(self: Events) usize {
+        var count: usize = 0;
+        for (self.items) |item| {
+            if (item.isNoteRelease()) count += 1;
+        }
+        return count;
+    }
+
     pub fn countAtOffset(self: Events, sample_offset: usize) usize {
         var count: usize = 0;
         for (self.items) |item| {
@@ -1205,6 +1233,14 @@ pub const Events = struct {
         return self.firstKind(kind) != null;
     }
 
+    pub fn hasNoteAttacks(self: Events) bool {
+        return self.countNoteAttacks() != 0;
+    }
+
+    pub fn hasNoteReleases(self: Events) bool {
+        return self.countNoteReleases() != 0;
+    }
+
     pub fn hasAtOffset(self: Events, sample_offset: usize) bool {
         return self.countAtOffset(sample_offset) != 0;
     }
@@ -1217,6 +1253,14 @@ pub const Events = struct {
         return !self.hasKind(kind);
     }
 
+    pub fn noteAttacksEmpty(self: Events) bool {
+        return !self.hasNoteAttacks();
+    }
+
+    pub fn noteReleasesEmpty(self: Events) bool {
+        return !self.hasNoteReleases();
+    }
+
     pub fn offsetEmpty(self: Events, sample_offset: usize) bool {
         return !self.hasAtOffset(sample_offset);
     }
@@ -1227,6 +1271,14 @@ pub const Events = struct {
 
     pub fn onlyKind(self: Events, kind: EventKind) bool {
         return self.hasEvents() and self.countKind(kind) == self.items.len;
+    }
+
+    pub fn onlyNoteAttacks(self: Events) bool {
+        return self.hasEvents() and self.countNoteAttacks() == self.items.len;
+    }
+
+    pub fn onlyNoteReleases(self: Events) bool {
+        return self.hasEvents() and self.countNoteReleases() == self.items.len;
     }
 
     pub fn onlyBus(self: Events, bus_index: i32) bool {
@@ -1417,6 +1469,14 @@ pub const EventWriter = struct {
         return self.events().countKind(kind);
     }
 
+    pub fn countNoteAttacks(self: *const EventWriter) usize {
+        return self.events().countNoteAttacks();
+    }
+
+    pub fn countNoteReleases(self: *const EventWriter) usize {
+        return self.events().countNoteReleases();
+    }
+
     pub fn countAtOffset(self: *const EventWriter, sample_offset: usize) usize {
         return self.events().countAtOffset(sample_offset);
     }
@@ -1505,6 +1565,14 @@ pub const EventWriter = struct {
         return self.events().hasKind(kind);
     }
 
+    pub fn hasNoteAttacks(self: *const EventWriter) bool {
+        return self.events().hasNoteAttacks();
+    }
+
+    pub fn hasNoteReleases(self: *const EventWriter) bool {
+        return self.events().hasNoteReleases();
+    }
+
     pub fn hasAtOffset(self: *const EventWriter, sample_offset: usize) bool {
         return self.events().hasAtOffset(sample_offset);
     }
@@ -1517,6 +1585,14 @@ pub const EventWriter = struct {
         return self.events().kindEmpty(kind);
     }
 
+    pub fn noteAttacksEmpty(self: *const EventWriter) bool {
+        return self.events().noteAttacksEmpty();
+    }
+
+    pub fn noteReleasesEmpty(self: *const EventWriter) bool {
+        return self.events().noteReleasesEmpty();
+    }
+
     pub fn offsetEmpty(self: *const EventWriter, sample_offset: usize) bool {
         return self.events().offsetEmpty(sample_offset);
     }
@@ -1527,6 +1603,14 @@ pub const EventWriter = struct {
 
     pub fn onlyKind(self: *const EventWriter, kind: EventKind) bool {
         return self.events().onlyKind(kind);
+    }
+
+    pub fn onlyNoteAttacks(self: *const EventWriter) bool {
+        return self.events().onlyNoteAttacks();
+    }
+
+    pub fn onlyNoteReleases(self: *const EventWriter) bool {
+        return self.events().onlyNoteReleases();
     }
 
     pub fn onlyBus(self: *const EventWriter, bus_index: i32) bool {
@@ -2053,6 +2137,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.countKind(kind);
         }
 
+        pub fn countNoteAttacks(self: @This()) usize {
+            return self.events.countNoteAttacks();
+        }
+
+        pub fn countNoteReleases(self: @This()) usize {
+            return self.events.countNoteReleases();
+        }
+
         pub fn countEventsAtOffset(self: @This(), sample_offset: usize) usize {
             return self.events.countAtOffset(sample_offset);
         }
@@ -2097,6 +2189,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.hasKindAtOffset(kind, sample_offset);
         }
 
+        pub fn hasNoteAttacks(self: @This()) bool {
+            return self.events.hasNoteAttacks();
+        }
+
+        pub fn hasNoteReleases(self: @This()) bool {
+            return self.events.hasNoteReleases();
+        }
+
         pub fn eventsForChannelEmpty(self: @This(), channel: i16) bool {
             return self.events.channelEmpty(channel);
         }
@@ -2113,8 +2213,24 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.kindAtOffsetEmpty(kind, sample_offset);
         }
 
+        pub fn noteAttacksEmpty(self: @This()) bool {
+            return self.events.noteAttacksEmpty();
+        }
+
+        pub fn noteReleasesEmpty(self: @This()) bool {
+            return self.events.noteReleasesEmpty();
+        }
+
         pub fn onlyInputEventsOfKind(self: @This(), kind: EventKind) bool {
             return self.events.onlyKind(kind);
+        }
+
+        pub fn onlyInputNoteAttacks(self: @This()) bool {
+            return self.events.onlyNoteAttacks();
+        }
+
+        pub fn onlyInputNoteReleases(self: @This()) bool {
+            return self.events.onlyNoteReleases();
         }
 
         pub fn onlyInputEventsForBus(self: @This(), bus_index: i32) bool {
@@ -2301,6 +2417,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.writtenOutputEvents().countKind(kind);
         }
 
+        pub fn countOutputNoteAttacks(self: @This()) usize {
+            return self.writtenOutputEvents().countNoteAttacks();
+        }
+
+        pub fn countOutputNoteReleases(self: @This()) usize {
+            return self.writtenOutputEvents().countNoteReleases();
+        }
+
         pub fn countOutputEventsAtOffset(self: @This(), sample_offset: usize) usize {
             return self.writtenOutputEvents().countAtOffset(sample_offset);
         }
@@ -2345,6 +2469,14 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.writtenOutputEvents().hasKindAtOffset(kind, sample_offset);
         }
 
+        pub fn hasOutputNoteAttacks(self: @This()) bool {
+            return self.writtenOutputEvents().hasNoteAttacks();
+        }
+
+        pub fn hasOutputNoteReleases(self: @This()) bool {
+            return self.writtenOutputEvents().hasNoteReleases();
+        }
+
         pub fn outputEventsForChannelEmpty(self: @This(), channel: i16) bool {
             return self.writtenOutputEvents().channelEmpty(channel);
         }
@@ -2361,8 +2493,24 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.writtenOutputEvents().kindAtOffsetEmpty(kind, sample_offset);
         }
 
+        pub fn outputNoteAttacksEmpty(self: @This()) bool {
+            return self.writtenOutputEvents().noteAttacksEmpty();
+        }
+
+        pub fn outputNoteReleasesEmpty(self: @This()) bool {
+            return self.writtenOutputEvents().noteReleasesEmpty();
+        }
+
         pub fn onlyOutputEventsOfKind(self: @This(), kind: EventKind) bool {
             return self.writtenOutputEvents().onlyKind(kind);
+        }
+
+        pub fn onlyOutputNoteAttacks(self: @This()) bool {
+            return self.writtenOutputEvents().onlyNoteAttacks();
+        }
+
+        pub fn onlyOutputNoteReleases(self: @This()) bool {
+            return self.writtenOutputEvents().onlyNoteReleases();
         }
 
         pub fn onlyOutputEventsForBus(self: @This(), bus_index: i32) bool {
@@ -2804,6 +2952,14 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(usize, 1), context.inputEventCount());
     try std.testing.expect(!context.inputEventsEmpty());
     try std.testing.expect(context.hasInputEvents());
+    try std.testing.expectEqual(@as(usize, 1), context.countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 0), context.countNoteReleases());
+    try std.testing.expect(context.hasNoteAttacks());
+    try std.testing.expect(!context.hasNoteReleases());
+    try std.testing.expect(!context.noteAttacksEmpty());
+    try std.testing.expect(context.noteReleasesEmpty());
+    try std.testing.expect(context.onlyInputNoteAttacks());
+    try std.testing.expect(!context.onlyInputNoteReleases());
     try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffset());
     try std.testing.expectEqual(@as(?usize, 1), context.latestEventOffset());
     try std.testing.expectEqual(@as(i16, 60), context.firstInputEvent().?.pitch);
@@ -3485,6 +3641,7 @@ test "event note helpers classify attacks and releases" {
 
     try std.testing.expect(attack.isNoteAttack());
     try std.testing.expect(!attack.isNoteRelease());
+    try std.testing.expectEqual(NoteLifecycle.attack, attack.noteLifecycle());
     try std.testing.expect(attack.isNoteForPitch(60));
     try std.testing.expect(!attack.isNoteForPitch(61));
     try std.testing.expectEqual(NoteOn{
@@ -3498,6 +3655,7 @@ test "event note helpers classify attacks and releases" {
 
     try std.testing.expect(!zero_velocity_release.isNoteAttack());
     try std.testing.expect(zero_velocity_release.isNoteRelease());
+    try std.testing.expectEqual(NoteLifecycle.release, zero_velocity_release.noteLifecycle());
     try std.testing.expect(zero_velocity_release.isNoteForPitch(60));
     try std.testing.expectEqual(@as(?NoteOn, null), zero_velocity_release.asNoteAttack());
     try std.testing.expectEqual(NoteOff{
@@ -3510,6 +3668,7 @@ test "event note helpers classify attacks and releases" {
 
     try std.testing.expect(!release.isNoteAttack());
     try std.testing.expect(release.isNoteRelease());
+    try std.testing.expectEqual(NoteLifecycle.release, release.noteLifecycle());
     try std.testing.expect(release.isNoteForPitch(60));
     try std.testing.expectEqual(@as(?NoteOn, null), release.asNoteAttack());
     try std.testing.expectEqual(NoteOff{
@@ -3522,9 +3681,52 @@ test "event note helpers classify attacks and releases" {
 
     try std.testing.expect(!cc.isNoteAttack());
     try std.testing.expect(!cc.isNoteRelease());
+    try std.testing.expectEqual(NoteLifecycle.none, cc.noteLifecycle());
     try std.testing.expect(!cc.isNoteForPitch(60));
     try std.testing.expectEqual(@as(?NoteOn, null), cc.asNoteAttack());
     try std.testing.expectEqual(@as(?NoteOff, null), cc.asNoteRelease());
+}
+
+test "events count note attacks and releases" {
+    const items = [_]Event{
+        Event.noteOn(0, 0, 60, 0.75),
+        Event.noteOn(1, 0, 60, 0.0),
+        Event.noteOff(2, 0, 60, 0.25),
+        Event.midiCc(3, 0, 64, 1.0),
+    };
+    const view = try Events.init(&items, 4);
+
+    try std.testing.expectEqual(@as(usize, 1), view.countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 2), view.countNoteReleases());
+    try std.testing.expect(view.hasNoteAttacks());
+    try std.testing.expect(view.hasNoteReleases());
+    try std.testing.expect(!view.noteAttacksEmpty());
+    try std.testing.expect(!view.noteReleasesEmpty());
+    try std.testing.expect(!view.onlyNoteAttacks());
+    try std.testing.expect(!view.onlyNoteReleases());
+
+    const attacks = try Events.init(&[_]Event{
+        Event.noteOn(0, 0, 60, 0.75),
+        Event.noteOn(1, 0, 67, 0.5),
+    }, 4);
+    try std.testing.expect(attacks.onlyNoteAttacks());
+    try std.testing.expect(!attacks.onlyNoteReleases());
+
+    const releases = try Events.init(&[_]Event{
+        Event.noteOn(0, 0, 60, 0.0),
+        Event.noteOff(1, 0, 67, 0.25),
+    }, 4);
+    try std.testing.expect(releases.onlyNoteReleases());
+    try std.testing.expect(!releases.onlyNoteAttacks());
+
+    try std.testing.expectEqual(@as(usize, 0), (Events{}).countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 0), (Events{}).countNoteReleases());
+    try std.testing.expect(!((Events{}).hasNoteAttacks()));
+    try std.testing.expect(!((Events{}).hasNoteReleases()));
+    try std.testing.expect((Events{}).noteAttacksEmpty());
+    try std.testing.expect((Events{}).noteReleasesEmpty());
+    try std.testing.expect(!((Events{}).onlyNoteAttacks()));
+    try std.testing.expect(!((Events{}).onlyNoteReleases()));
 }
 
 test "event category helpers classify routable event groups" {
@@ -3861,6 +4063,12 @@ test "event writer validates offsets and capacity" {
     try std.testing.expectEqual(@as(?usize, null), writer.firstSampleOffsetForKind(.note_on));
     try std.testing.expectEqual(@as(?usize, null), writer.latestSampleOffsetForKind(.note_on));
     try std.testing.expect(!writer.hasKind(.note_on));
+    try std.testing.expectEqual(@as(usize, 0), writer.countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 0), writer.countNoteReleases());
+    try std.testing.expect(!writer.hasNoteAttacks());
+    try std.testing.expect(!writer.hasNoteReleases());
+    try std.testing.expect(writer.noteAttacksEmpty());
+    try std.testing.expect(writer.noteReleasesEmpty());
     try std.testing.expect(writer.kindEmpty(.note_on));
     try std.testing.expect(!writer.hasAtOffset(0));
     try std.testing.expect(writer.offsetEmpty(0));
@@ -3870,6 +4078,8 @@ test "event writer validates offsets and capacity" {
     try std.testing.expect(writer.channelEmpty(0));
     try std.testing.expect(writer.busChannelEmpty(0, 0));
     try std.testing.expect(!writer.onlyKind(.note_on));
+    try std.testing.expect(!writer.onlyNoteAttacks());
+    try std.testing.expect(!writer.onlyNoteReleases());
     try std.testing.expect(!writer.onlyBus(0));
     try std.testing.expect(!writer.onlyChannel(0));
     try std.testing.expect(!writer.onlyBusChannel(0, 0));
@@ -3895,6 +4105,14 @@ test "event writer queries written events by offset" {
     try writer.append(Event.noteOff(3, 0, 60, 0.0));
     try writer.append(Event.noteOn(1, 0, 60, 1.0));
 
+    try std.testing.expectEqual(@as(usize, 2), writer.countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 1), writer.countNoteReleases());
+    try std.testing.expect(writer.hasNoteAttacks());
+    try std.testing.expect(writer.hasNoteReleases());
+    try std.testing.expect(!writer.noteAttacksEmpty());
+    try std.testing.expect(!writer.noteReleasesEmpty());
+    try std.testing.expect(!writer.onlyNoteAttacks());
+    try std.testing.expect(!writer.onlyNoteReleases());
     try std.testing.expectEqual(@as(?usize, 1), writer.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 5), writer.latestSampleOffset());
     try std.testing.expectEqual(EventKind.note_on, writer.first().?.kind);
@@ -4068,6 +4286,12 @@ test "process context exposes output event helpers" {
 
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 0), context.outputEventRemainingCapacity());
+    try std.testing.expectEqual(@as(usize, 1), context.countOutputNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 1), context.countOutputNoteReleases());
+    try std.testing.expect(context.hasOutputNoteAttacks());
+    try std.testing.expect(context.hasOutputNoteReleases());
+    try std.testing.expect(!context.outputNoteAttacksEmpty());
+    try std.testing.expect(!context.outputNoteReleasesEmpty());
     try std.testing.expectEqual(@as(?usize, 0), context.firstOutputEventOffset());
     try std.testing.expectEqual(@as(?usize, 1), context.latestOutputEventOffset());
     try std.testing.expectEqual(@as(?usize, 0), context.firstOutputEventOffsetForKind(.note_on));
@@ -4133,6 +4357,8 @@ test "process context exposes output event helpers" {
     try std.testing.expect(!context.outputEventsForBusChannelEmpty(0, 0));
     try std.testing.expect(context.outputEventsForBusChannelEmpty(1, 0));
     try std.testing.expect(!context.onlyOutputEventsOfKind(.note_on));
+    try std.testing.expect(!context.onlyOutputNoteAttacks());
+    try std.testing.expect(!context.onlyOutputNoteReleases());
     try std.testing.expect(context.onlyOutputEventsForBus(0));
     try std.testing.expect(context.onlyOutputEventsForChannel(0));
     try std.testing.expect(context.onlyOutputEventsForBusChannel(0, 0));
@@ -4159,6 +4385,12 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?usize, null), context.firstOutputEventOffsetForBus(0));
     try std.testing.expectEqual(@as(?usize, null), context.latestOutputEventOffsetForChannel(0));
     try std.testing.expect(!context.hasOutputEvent(.note_on));
+    try std.testing.expectEqual(@as(usize, 0), context.countOutputNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 0), context.countOutputNoteReleases());
+    try std.testing.expect(!context.hasOutputNoteAttacks());
+    try std.testing.expect(!context.hasOutputNoteReleases());
+    try std.testing.expect(context.outputNoteAttacksEmpty());
+    try std.testing.expect(context.outputNoteReleasesEmpty());
     try std.testing.expect(context.outputEventsOfKindEmpty(.note_on));
     try std.testing.expectEqual(@as(usize, 0), context.countOutputEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 0), context.countOutputEventsForBus(0));
@@ -4171,6 +4403,8 @@ test "process context exposes output event helpers" {
     try std.testing.expect(context.outputEventsForChannelEmpty(0));
     try std.testing.expect(context.outputEventsForBusChannelEmpty(0, 0));
     try std.testing.expect(!context.onlyOutputEventsOfKind(.note_on));
+    try std.testing.expect(!context.onlyOutputNoteAttacks());
+    try std.testing.expect(!context.onlyOutputNoteReleases());
     try std.testing.expect(!context.onlyOutputEventsForBus(0));
     try std.testing.expect(!context.onlyOutputEventsForChannel(0));
     try std.testing.expect(!context.onlyOutputEventsForBusChannel(0, 0));
@@ -4210,6 +4444,12 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?usize, null), no_writer.firstOutputEventOffsetForBus(0));
     try std.testing.expectEqual(@as(?usize, null), no_writer.latestOutputEventOffsetForChannel(0));
     try std.testing.expect(!no_writer.hasOutputEvent(.note_on));
+    try std.testing.expectEqual(@as(usize, 0), no_writer.countOutputNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 0), no_writer.countOutputNoteReleases());
+    try std.testing.expect(!no_writer.hasOutputNoteAttacks());
+    try std.testing.expect(!no_writer.hasOutputNoteReleases());
+    try std.testing.expect(no_writer.outputNoteAttacksEmpty());
+    try std.testing.expect(no_writer.outputNoteReleasesEmpty());
     try std.testing.expect(no_writer.outputEventsOfKindEmpty(.note_on));
     try std.testing.expectEqual(@as(usize, 0), no_writer.countOutputEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 0), no_writer.countOutputEventsForBus(0));
@@ -4222,6 +4462,8 @@ test "process context exposes output event helpers" {
     try std.testing.expect(no_writer.outputEventsForChannelEmpty(0));
     try std.testing.expect(no_writer.outputEventsForBusChannelEmpty(0, 0));
     try std.testing.expect(!no_writer.onlyOutputEventsOfKind(.note_on));
+    try std.testing.expect(!no_writer.onlyOutputNoteAttacks());
+    try std.testing.expect(!no_writer.onlyOutputNoteReleases());
     try std.testing.expect(!no_writer.onlyOutputEventsForBus(0));
     try std.testing.expect(!no_writer.onlyOutputEventsForChannel(0));
     try std.testing.expect(!no_writer.onlyOutputEventsForBusChannel(0, 0));
