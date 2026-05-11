@@ -1397,6 +1397,18 @@ pub const EventWriter = struct {
         return event_count <= self.remainingCapacity();
     }
 
+    pub fn canAppendEvent(self: *const EventWriter, event: Event) bool {
+        event.validate(self.frame_count) catch return false;
+        return self.canAppend(1);
+    }
+
+    pub fn canAppendEvents(self: *const EventWriter, source: Events) bool {
+        for (source.items) |event| {
+            event.validate(self.frame_count) catch return false;
+        }
+        return self.canAppend(source.eventCount());
+    }
+
     pub fn clear(self: *EventWriter) void {
         _ = self.clearCount();
     }
@@ -2349,16 +2361,12 @@ pub fn ProcessContext(comptime Sample: type) type {
 
         pub fn canAppendOutputEventValue(self: @This(), event: Event) bool {
             const writer = self.output_events orelse return false;
-            event.validate(writer.frameCount()) catch return false;
-            return writer.canAppend(1);
+            return writer.canAppendEvent(event);
         }
 
         pub fn canAppendOutputEventValues(self: @This(), events: Events) bool {
             const writer = self.output_events orelse return false;
-            for (events.items) |event| {
-                event.validate(writer.frameCount()) catch return false;
-            }
-            return writer.canAppend(events.eventCount());
+            return writer.canAppendEvents(events);
         }
 
         pub fn writtenOutputEvents(self: @This()) Events {
@@ -4097,6 +4105,14 @@ test "event writer validates offsets and capacity" {
     try std.testing.expect(!writer.isFull());
     try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
     try std.testing.expectEqual(@as(usize, 4), writer.frameCount());
+    try std.testing.expect(writer.canAppendEvent(Event.noteOn(0, 0, 60, 1.0)));
+    try std.testing.expect(writer.canAppendEvents(try Events.init(&[_]Event{Event.noteOn(0, 0, 60, 1.0)}, 4)));
+    try std.testing.expect(!writer.canAppendEvent(Event.noteOn(4, 0, 60, 1.0)));
+    try std.testing.expect(!writer.canAppendEvent(Event.midiCc(0, 0, 1, 2.0)));
+    try std.testing.expect(!writer.canAppendEvents(try Events.init(&[_]Event{
+        Event.noteOn(0, 0, 60, 1.0),
+        Event.noteOff(1, 0, 60, 0.0),
+    }, 4)));
     try writer.append(Event.noteOn(0, 0, 60, 1.0));
     try std.testing.expect(!writer.isEmpty());
     try std.testing.expect(writer.hasEvents());
@@ -4104,6 +4120,7 @@ test "event writer validates offsets and capacity" {
     try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
     try std.testing.expect(writer.canAppend(0));
     try std.testing.expect(!writer.canAppend(1));
+    try std.testing.expect(!writer.canAppendEvent(Event.noteOn(1, 0, 60, 1.0)));
     try std.testing.expectEqual(@as(?usize, 0), writer.firstSampleOffset());
     try std.testing.expectEqual(@as(?usize, 0), writer.latestSampleOffset());
     try std.testing.expect(writer.hasKind(.note_on));
