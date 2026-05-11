@@ -129,6 +129,86 @@ test "event monitor core example summarizes input event kinds" {
         .events = &events,
     });
 
+    const input_event_view = context.inputEvents();
+    try std.testing.expectEqual(@as(usize, 11), context.inputEventCount());
+    try std.testing.expectEqual(@as(usize, 11), input_event_view.eventCount());
+    try std.testing.expect(!context.inputEventsEmpty());
+    try std.testing.expect(context.hasInputEvents());
+    try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffset());
+    try std.testing.expectEqual(@as(?usize, 3), context.latestEventOffset());
+    try std.testing.expectEqual(plug.process.EventKind.note_on, context.firstInputEvent().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, context.latestInputEvent().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.midi_cc, context.firstInputEventAtOffset(2).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, context.latestInputEventAtOffset(3).?.kind);
+    try std.testing.expect(context.firstInputEventAtOffset(0) == null);
+    try std.testing.expect(context.hasEvent(.note_on));
+    try std.testing.expect(!context.eventsOfKindEmpty(.midi_cc));
+    try std.testing.expectEqual(@as(usize, 9), context.countEventsAtOffset(3));
+    try std.testing.expectEqual(@as(usize, 1), context.countEventsOfKindAtOffset(.note_on, 3));
+    try std.testing.expect(context.hasEventAtOffset(2));
+    try std.testing.expect(!context.hasEventAtOffset(0));
+    try std.testing.expect(context.hasEventOfKindAtOffset(.midi_cc, 2));
+    try std.testing.expect(!context.hasEventOfKindAtOffset(.midi_cc, 3));
+    try std.testing.expect(context.eventsAtOffsetEmpty(0));
+    try std.testing.expect(!context.eventsAtOffsetEmpty(3));
+    try std.testing.expect(context.eventsOfKindAtOffsetEmpty(.midi_cc, 3));
+    try std.testing.expect(!context.eventsOfKindAtOffsetEmpty(.midi_cc, 2));
+    try std.testing.expect(context.hasNoteAttacks());
+    try std.testing.expect(context.hasNoteReleases());
+    try std.testing.expect(!context.noteAttacksEmpty());
+    try std.testing.expect(!context.noteReleasesEmpty());
+    try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffsetForBus(0));
+    try std.testing.expectEqual(@as(?usize, 3), context.latestEventOffsetForBus(0));
+    try std.testing.expectEqual(@as(?usize, 3), context.firstEventOffsetForBus(2));
+    try std.testing.expectEqual(@as(usize, 10), context.countEventsForBus(0));
+    try std.testing.expect(context.hasEventsForBus(0));
+    try std.testing.expect(!context.eventsForBusEmpty(0));
+    try std.testing.expect(!context.hasEventsForBus(3));
+    try std.testing.expect(context.eventsForBusEmpty(3));
+    try std.testing.expectEqual(plug.process.EventKind.note_on, context.firstEventForBus(0).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, context.latestEventForBus(0).?.kind);
+    try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffsetForChannel(0));
+    try std.testing.expectEqual(@as(?usize, 3), context.latestEventOffsetForChannel(0));
+    try std.testing.expectEqual(@as(usize, 6), context.countEventsForChannel(0));
+    try std.testing.expect(context.hasEventsForChannel(0));
+    try std.testing.expect(!context.eventsForChannelEmpty(0));
+    try std.testing.expect(!context.hasEventsForChannel(9));
+    try std.testing.expect(context.eventsForChannelEmpty(9));
+    try std.testing.expectEqual(plug.process.EventKind.note_on, context.firstEventForChannel(0).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, context.latestEventForChannel(0).?.kind);
+    try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffsetForBusChannel(0, 0));
+    try std.testing.expectEqual(@as(?usize, 3), context.latestEventOffsetForBusChannel(0, 0));
+    try std.testing.expectEqual(@as(usize, 5), context.countEventsForBusChannel(0, 0));
+    try std.testing.expect(context.hasEventsForBusChannel(0, 0));
+    try std.testing.expect(!context.eventsForBusChannelEmpty(0, 0));
+    try std.testing.expect(!context.hasEventsForBusChannel(3, 0));
+    try std.testing.expect(context.eventsForBusChannelEmpty(3, 0));
+    try std.testing.expectEqual(plug.process.EventKind.note_on, context.firstEventForBusChannel(0, 0).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, context.latestEventForBusChannel(0, 0).?.kind);
+    try std.testing.expect(!context.onlyInputEventsAtOffset(3));
+    try std.testing.expect(!context.onlyInputEventsOfKind(.note_on));
+    try std.testing.expect(!context.onlyInputEventsOfKindAtOffset(.note_on, 3));
+    try std.testing.expect(!context.onlyInputNoteAttacks());
+    try std.testing.expect(!context.onlyInputNoteReleases());
+    try std.testing.expect(!context.onlyInputEventsForBus(0));
+    try std.testing.expect(!context.onlyInputEventsForChannel(0));
+    try std.testing.expect(!context.onlyInputEventsForBusChannel(0, 0));
+
+    const note_only_events = [_]plug.process.Event{
+        plug.process.Event.noteOn(1, 0, 60, 0.75),
+    };
+    const note_only_context = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &note_only_events,
+    });
+    try std.testing.expect(note_only_context.onlyInputEventsAtOffset(1));
+    try std.testing.expect(note_only_context.onlyInputEventsOfKind(.note_on));
+    try std.testing.expect(note_only_context.onlyInputEventsOfKindAtOffset(.note_on, 1));
+    try std.testing.expect(note_only_context.onlyInputNoteAttacks());
+    try std.testing.expect(!note_only_context.onlyInputNoteReleases());
+    try std.testing.expect(note_only_context.onlyInputEventsForBus(0));
+    try std.testing.expect(note_only_context.onlyInputEventsForChannel(0));
+    try std.testing.expect(note_only_context.onlyInputEventsForBusChannel(0, 0));
+
     const note_attack = events[0].asNoteAttack().?;
     try std.testing.expectEqual(@as(i16, 60), note_attack.pitch);
     try std.testing.expectEqual(plug.process.NoteLifecycle.attack, events[0].noteLifecycle());
