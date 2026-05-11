@@ -165,6 +165,8 @@ test "event echo core example writes input events to output events" {
     try std.testing.expectEqual(@as(usize, input.len), context.outputEventFrameCount());
     try std.testing.expect(context.hasOutputEvent(.note_on));
     try std.testing.expect(context.hasOutputEvent(.note_off));
+    try std.testing.expect(!context.outputEventsOfKindEmpty(.note_on));
+    try std.testing.expect(context.outputEventsOfKindEmpty(.midi_cc));
     try std.testing.expect(context.hasOutputNoteAttacks());
     try std.testing.expect(context.hasOutputNoteReleases());
     try std.testing.expect(!context.outputNoteAttacksEmpty());

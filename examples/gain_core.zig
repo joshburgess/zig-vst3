@@ -578,6 +578,9 @@ test "gain core example splits blocks at automation changes" {
     try std.testing.expectEqual(changes[1], context.latestParameterChangeForIdAtOffset(0, 3).?);
     try std.testing.expectEqual(@as(?f64, 0.5), context.firstParameterNormalized(0));
     try std.testing.expectEqual(@as(?f64, 0.25), context.latestParameterNormalized(0));
+    try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterNormalizedOr(0, 1.0));
+    try std.testing.expectEqual(@as(f64, 0.25), context.latestParameterNormalizedOr(0, 1.0));
+    try std.testing.expectEqual(@as(f64, 0.75), context.firstParameterNormalizedOr(99, 0.75));
     try std.testing.expectEqual(@as(?f64, 0.5), context.firstParameterNormalizedAtOffset(1));
     try std.testing.expectEqual(@as(?f64, 0.25), context.latestParameterNormalizedAtOffset(3));
     try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterNormalizedAtOffsetOr(1, 1.0));
@@ -587,6 +590,7 @@ test "gain core example splits blocks at automation changes" {
     try std.testing.expectEqual(@as(?f64, 0.25), context.firstParameterNormalizedForIdAtOffset(0, 3));
     try std.testing.expectEqual(@as(f64, 0.5), context.firstParameterNormalizedForIdAtOffsetOr(0, 1, 1.0));
     try std.testing.expectEqual(@as(f64, 0.75), context.firstParameterNormalizedForIdAtOffsetOr(99, 1, 0.75));
+    try std.testing.expectEqual(@as(?f64, 0.25), context.latestParameterNormalizedForIdAtOffset(0, 3));
     try std.testing.expectEqual(@as(f64, 0.25), context.latestParameterNormalizedForIdAtOffsetOr(0, 3, 1.0));
     try std.testing.expectEqual(@as(f64, 0.75), context.latestParameterNormalizedForIdAtOffsetOr(99, 3, 0.75));
     try std.testing.expectEqual(@as(usize, 2), context.countParameterChanges(0));
@@ -602,6 +606,8 @@ test "gain core example splits blocks at automation changes" {
     try std.testing.expect(context.parameterChangesForIdEmpty(99));
     try std.testing.expect(!context.parameterChangesAtOffsetEmpty(1));
     try std.testing.expect(context.parameterChangesAtOffsetEmpty(2));
+    try std.testing.expect(!context.parameterChangesForIdAtOffsetEmpty(0, 3));
+    try std.testing.expect(context.parameterChangesForIdAtOffsetEmpty(99, 3));
     try std.testing.expect(context.onlyParameterChangesForId(0));
     try std.testing.expect(!context.onlyParameterChangesAtOffset(1));
     try std.testing.expect(!context.onlyParameterChangesForIdAtOffset(0, 1));
