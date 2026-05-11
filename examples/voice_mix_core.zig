@@ -77,6 +77,10 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expectEqual(@as(usize, 2), instance.unitCount());
     try std.testing.expect(!instance.unitsEmpty());
     try std.testing.expect(instance.hasUnits());
+    const units = instance.unitSet();
+    try std.testing.expectEqual(@as(usize, 2), units.unitCount());
+    try std.testing.expectEqualStrings("Main", units.rootUnitName());
+    try std.testing.expectEqualStrings("Voice Presets", units.programListForUnitName("Voices").?.name);
     try std.testing.expectEqual(@as(i32, plug.units.root_unit_id), instance.rootUnitId());
     try std.testing.expectEqualStrings("Main", instance.rootUnitName());
     const root_unit = instance.rootUnit();
