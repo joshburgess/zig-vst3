@@ -229,6 +229,11 @@ test "gain core example can inspect parameter change views" {
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffset(3));
     try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffsetForId(0, 1));
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForId(99, 1));
+    try std.testing.expectEqual(plug.process.ParameterChange{
+        .id = 0,
+        .sample_offset = 4,
+        .normalized = 0.75,
+    }, parameter_set.parameterChangeNormalized("gain", 4, 0.75));
     try std.testing.expectEqual(changes[0], view.first(0).?);
     try std.testing.expectEqual(changes[1], view.latest(0).?);
     try std.testing.expectEqual(changes[0], view.firstAtOffset(1).?);
@@ -778,6 +783,11 @@ test "gain core example edits reflected parameter values directly" {
 
 test "gain core example applies reflected parameter changes directly" {
     var instance = try Instance.init(std.testing.allocator, .{});
+    try std.testing.expectEqual(plug.process.ParameterChange{
+        .id = 0,
+        .sample_offset = 2,
+        .normalized = 0.25,
+    }, instance.parameterChangeNormalized("gain", 2, 0.25));
     const raw_changes = [_]plug.process.ParameterChange{
         instance.parameterChange("gain", 0, 0.5),
     };
