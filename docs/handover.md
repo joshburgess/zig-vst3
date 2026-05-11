@@ -20,12 +20,13 @@ Recent work has concentrated on Layer 2 API polish:
 - `PluginInstance` now exposes same-plugin parameter value copying.
 - `PluginInstance` now exposes migrated parameter id resolution alongside migration diagnostics.
 - `PluginInstance` now exposes direct unit root, parent, and program-list relationship helpers.
-- `gain_core` now exercises parameter descriptor diagnostics, direct and field-name parameter metadata/default/plain-range helpers, counted parameter stores, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, per-id and per-offset automation reads, parameter segment iterators, state header/report compatibility helpers, and migrated parameter-id resolution.
+- `gain_core` now exercises parameter descriptor diagnostics, direct and field-name parameter metadata/default/plain-range helpers, lookup-based loads, counted stores, direct parameter-change application, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, per-id and per-offset automation reads, parameter and block segment value helpers, parameter segment iterators, state header/report compatibility helpers, and migrated parameter-id resolution.
 - `mode_gain_core` now exercises enum option metadata helpers by index, id, display name, and field name.
 - `bypass_core` now exercises automatable, read-only, bypass, step-count, and list flag helpers.
-- `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including duplicate diagnostics.
+- `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including value-level helpers and duplicate diagnostics.
 - `event_echo_core` now uses validated output-event planning and exercises output-event routing, capacity, next-offset, first/latest, and clearing helpers.
 - `event_monitor_core` now exercises typed event payload views, event retargeting helpers, and bus, channel, and bus-channel routing offset helpers.
+- `sine_synth_core` now exercises process timing, block duration, sample-offset, and remaining-frame helpers.
 - README and Layer 2 docs were updated to match the current public API.
 
 Before this handoff, local checks were repeatedly run and passing:
@@ -43,6 +44,12 @@ The marker scan exits with status 1 when there are no matches, which is expected
 
 The worktree was clean before this handover refresh. The latest pushed commits before this document update were:
 
+- `dec52ae` Exercise process timing helpers
+- `a754fc0` Exercise process segment value helpers
+- `1820d90` Exercise unit program value helpers
+- `f934f66` Exercise direct parameter change application
+- `e7995a5` Exercise lookup parameter wrappers in gain example
+- `ca954cf` Refresh handover after automation coverage
 - `ce6f0e5` Exercise automation range helpers in gain example
 - `3d87273` Exercise gain field range metadata helpers
 - `4cce8ca` Refresh handover after coverage checkpoint
@@ -59,7 +66,7 @@ The worktree was clean before this handover refresh. The latest pushed commits b
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
-CI checkpoint: the run for `ce6f0e5` was pending and the run for `3d87273` was in progress when this handover refresh began. The last completed non-cancelled run inspected was `1f91346`, which passed. Intermediate runs after `1f91346` were cancelled by newer pushes, which is expected for this workflow.
+CI checkpoint: the run for `dec52ae` was queued when this handover refresh began. The latest completed non-cancelled run inspected was `ca954cf`, which passed. Intermediate runs after `ca954cf` were cancelled by newer pushes, which is expected for this workflow.
 
 ## What To Do Next
 
