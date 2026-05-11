@@ -122,6 +122,29 @@ test "gain core example processes through zig-vst3-plugin context" {
         .parameter_changes = &changes,
     });
 
+    try std.testing.expectEqual(@as(usize, 1), context.inputChannelCount());
+    try std.testing.expectEqual(@as(usize, 1), context.outputChannelCount());
+    try std.testing.expect(!context.inputChannelsEmpty());
+    try std.testing.expect(!context.outputChannelsEmpty());
+    try std.testing.expect(context.hasInputChannels());
+    try std.testing.expect(context.hasOutputChannels());
+    try std.testing.expect(context.hasInputChannel(0));
+    try std.testing.expect(!context.hasInputChannel(1));
+    try std.testing.expect(!context.inputChannelEmpty(0));
+    try std.testing.expect(context.inputChannelEmpty(1));
+    try std.testing.expect(context.hasOutputChannel(0));
+    try std.testing.expect(!context.hasOutputChannel(1));
+    try std.testing.expect(!context.outputChannelEmpty(0));
+    try std.testing.expect(context.outputChannelEmpty(1));
+    try std.testing.expectEqual(@as(f32, 0.25), context.inputChannel(0).?[0]);
+    try std.testing.expectEqual(@as(?[]const f32, null), context.inputChannel(1));
+    try std.testing.expectEqual(@as(f32, 0.0), context.outputChannel(0).?[0]);
+    try std.testing.expectEqual(@as(?[]f32, null), context.outputChannel(1));
+    context.fillOutputs(0.75);
+    try std.testing.expectEqual(@as(f32, 0.75), output[0]);
+    context.clearOutputs();
+    try std.testing.expectEqual(@as(f32, 0.0), output[0]);
+
     plugin.process(&context);
 
     try std.testing.expectEqual(@as(?f64, 0.5), context.firstAnyParameterNormalized());
