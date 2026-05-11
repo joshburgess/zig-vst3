@@ -308,6 +308,13 @@ test "event echo core example ignores events when no output writer is attached" 
     try std.testing.expect(context.outputEventsEmpty());
     try std.testing.expectError(error.OutputEventsUnavailable, context.appendOutputEvent(events[0]));
     try std.testing.expectError(error.OutputEventsUnavailable, context.appendOutputEvents(try plug.process.Events.init(&events, input.len)));
+
+    var output_event_storage: [1]plug.process.Event = undefined;
+    var output_events = plug.process.EventWriter.init(&output_event_storage, input.len);
+    try context.setOutputEvents(&output_events);
+    try std.testing.expect(context.hasOutputEventWriter());
+    try context.appendOutputEvent(events[0]);
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
 }
 
 test "event echo core example can run through plugin instance" {
