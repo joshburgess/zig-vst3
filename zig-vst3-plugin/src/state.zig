@@ -373,6 +373,32 @@ pub fn validateParameterIdMigrations(migrations: []const ParameterIdMigration) !
     }
 }
 
+pub fn identityParameterMigrationIndex(migrations: []const ParameterIdMigration) ?usize {
+    for (migrations, 0..) |migration, index| {
+        if (migration.old_id == migration.new_id) return index;
+    }
+    return null;
+}
+
+pub fn duplicateParameterMigrationIndex(migrations: []const ParameterIdMigration) ?usize {
+    for (migrations, 0..) |left, left_index| {
+        for (migrations, 0..) |right, right_index| {
+            if (right_index > left_index and left.old_id == right.old_id) return right_index;
+        }
+    }
+    return null;
+}
+
+pub fn ambiguousParameterMigrationIndex(migrations: []const ParameterIdMigration) ?usize {
+    for (migrations, 0..) |left, left_index| {
+        const left_target = migratedParameterId(left.old_id, migrations);
+        for (migrations, 0..) |right, right_index| {
+            if (right_index > left_index and left_target == migratedParameterId(right.old_id, migrations)) return right_index;
+        }
+    }
+    return null;
+}
+
 pub fn migratedParameterId(id: u32, migrations: []const ParameterIdMigration) u32 {
     var current = id;
     for (0..migrations.len + 1) |_| {
@@ -925,6 +951,14 @@ test "parameter state exposes migration resolution" {
     try std.testing.expectEqual(@as(u32, 3), migratedParameterId(3, &migrations));
     try std.testing.expectEqual(@as(u32, 1), migratedParameterId(1, &cycle));
     try std.testing.expectEqual(@as(u32, 1), migratedParameterId(1, &longer_cycle));
+    try std.testing.expectEqual(@as(?usize, null), identityParameterMigrationIndex(&migrations));
+    try std.testing.expectEqual(@as(?usize, null), duplicateParameterMigrationIndex(&migrations));
+    try std.testing.expectEqual(@as(?usize, null), ambiguousParameterMigrationIndex(&migrations));
+    try std.testing.expectEqual(@as(?usize, 0), identityParameterMigrationIndex(&identity));
+    try std.testing.expectEqual(@as(?usize, 1), ambiguousParameterMigrationIndex(&cycle));
+    try std.testing.expectEqual(@as(?usize, 2), ambiguousParameterMigrationIndex(&longer_cycle));
+    try std.testing.expectEqual(@as(?usize, 1), ambiguousParameterMigrationIndex(&converging));
+    try std.testing.expectEqual(@as(?usize, 2), ambiguousParameterMigrationIndex(&chained_converging));
     try validateParameterIdMigrations(&migrations);
     try std.testing.expectError(error.IdentityParameterMigration, validateParameterIdMigrations(&identity));
     try std.testing.expectError(error.CyclicParameterMigration, validateParameterIdMigrations(&cycle));
@@ -957,6 +991,10 @@ test "parameter state rejects ambiguous migrations before partial updates" {
     try writeParameterState(OldParams, &old_set, &old_values, out_stream.writer());
 
     var duplicate_stream = std.io.fixedBufferStream(&bytes);
+    try std.testing.expectEqual(@as(?usize, 1), duplicateParameterMigrationIndex(&.{
+        .{ .old_id = 1, .new_id = 9 },
+        .{ .old_id = 1, .new_id = 10 },
+    }));
     try std.testing.expectError(error.DuplicateParameterMigration, readParameterStateWithMigrations(NewParams, &new_set, &new_values, duplicate_stream.reader(), &.{
         .{ .old_id = 1, .new_id = 9 },
         .{ .old_id = 1, .new_id = 10 },
@@ -964,6 +1002,10 @@ test "parameter state rejects ambiguous migrations before partial updates" {
     try std.testing.expectEqual(@as(f64, 0.8), new_values.loadField(&new_set, "output"));
 
     var ambiguous_stream = std.io.fixedBufferStream(&bytes);
+    try std.testing.expectEqual(@as(?usize, 1), ambiguousParameterMigrationIndex(&.{
+        .{ .old_id = 1, .new_id = 9 },
+        .{ .old_id = 2, .new_id = 9 },
+    }));
     try std.testing.expectError(error.AmbiguousParameterMigration, readParameterStateWithMigrations(NewParams, &new_set, &new_values, ambiguous_stream.reader(), &.{
         .{ .old_id = 1, .new_id = 9 },
         .{ .old_id = 2, .new_id = 9 },
@@ -971,6 +1013,9 @@ test "parameter state rejects ambiguous migrations before partial updates" {
     try std.testing.expectEqual(@as(f64, 0.8), new_values.loadField(&new_set, "output"));
 
     var identity_stream = std.io.fixedBufferStream(&bytes);
+    try std.testing.expectEqual(@as(?usize, 0), identityParameterMigrationIndex(&.{
+        .{ .old_id = 1, .new_id = 1 },
+    }));
     try std.testing.expectError(error.IdentityParameterMigration, readParameterStateWithMigrations(NewParams, &new_set, &new_values, identity_stream.reader(), &.{
         .{ .old_id = 1, .new_id = 1 },
     }));
