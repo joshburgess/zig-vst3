@@ -60,7 +60,7 @@ Unit and program helpers:
 
 Timing and audio helpers:
 
-- `sampleRate`, `sampleDurationSeconds`, `blockDurationSeconds`, `sampleOffsetSeconds`, `remainingFramesFromOffset`, and `remainingSecondsFromOffset`
+- `sampleRate`, `sampleDurationSeconds`, `blockDurationSeconds`, `sampleOffsetSeconds`, sample-offset containment/end predicates, `remainingFramesFromOffset`, and `remainingSecondsFromOffset`
 - `inputChannel`, `outputChannel`, input/output per-index channel presence and emptiness checks, `inputChannelCount`, `outputChannelCount`, input/output channel presence and emptiness checks, `inputFrameCount`, `outputFrameCount`, and `frameCount`
 - `fillOutputs` and `clearOutputs`
 - `frameCount` uses the shared input/output frame count for effects, the output frame count for generators with no audio inputs, and the input frame count for analyzers with no audio outputs.

@@ -1859,6 +1859,18 @@ pub fn ProcessContext(comptime Sample: type) type {
             return @as(f64, @floatFromInt(sample_offset)) / self.sample_rate;
         }
 
+        pub fn containsSampleOffset(self: @This(), sample_offset: usize) bool {
+            return sample_offset < self.frameCount();
+        }
+
+        pub fn isEndOffset(self: @This(), sample_offset: usize) bool {
+            return sample_offset == self.frameCount();
+        }
+
+        pub fn isPastEndOffset(self: @This(), sample_offset: usize) bool {
+            return sample_offset > self.frameCount();
+        }
+
         pub fn remainingFramesFromOffset(self: @This(), sample_offset: usize) usize {
             return self.frameCount() -| sample_offset;
         }
@@ -2782,6 +2794,14 @@ test "process context reports usable frame count" {
     try std.testing.expectEqual(@as(f64, 1.0 / 48_000.0), context.sampleDurationSeconds());
     try std.testing.expectEqual(@as(f64, 3.0 / 48_000.0), context.blockDurationSeconds());
     try std.testing.expectEqual(@as(f64, 2.0 / 48_000.0), context.sampleOffsetSeconds(2));
+    try std.testing.expect(context.containsSampleOffset(0));
+    try std.testing.expect(context.containsSampleOffset(2));
+    try std.testing.expect(!context.containsSampleOffset(3));
+    try std.testing.expect(!context.isEndOffset(2));
+    try std.testing.expect(context.isEndOffset(3));
+    try std.testing.expect(!context.isEndOffset(4));
+    try std.testing.expect(!context.isPastEndOffset(3));
+    try std.testing.expect(context.isPastEndOffset(4));
     try std.testing.expectEqual(@as(usize, 1), context.remainingFramesFromOffset(2));
     try std.testing.expectEqual(@as(usize, 0), context.remainingFramesFromOffset(3));
     try std.testing.expectEqual(@as(usize, 0), context.remainingFramesFromOffset(4));
