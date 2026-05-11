@@ -659,24 +659,49 @@ test "gain core example stores and resets float parameters by lookup" {
     try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterPlainByIdCount(0, 0.25));
     try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterByNameCount("Gain", 0.75));
     try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterPlainByNameCount("Gain", 1.0));
+    try std.testing.expect(instance.storeParameterPlainIndex(0, 0.25));
+    try std.testing.expect(instance.storeParameterById(0, 0.5));
+    try std.testing.expect(instance.storeParameterPlainById(0, 0.25));
+    try std.testing.expect(instance.storeParameterByName("Gain", 0.75));
+    try std.testing.expect(!instance.storeParameterByName("Missing", 0.5));
     try std.testing.expectEqual(@as(?usize, null), instance.storeParameterIndexCount(99, 0.5));
     try std.testing.expectEqual(@as(?usize, null), instance.storeParameterByIdCount(99, 0.5));
     try std.testing.expectEqual(@as(?usize, null), instance.storeParameterPlainByNameCount("Missing", 0.5));
-    try std.testing.expect(instance.parametersAllDefaults());
 
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterPlainByNameCount("Gain", 1.0));
+    try std.testing.expect(instance.parametersAllDefaults());
     try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterPlainIndexCount(0, 0.5));
     try std.testing.expectEqual(@as(?bool, false), instance.parameterIsDefaultByName("Gain"));
     try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterIndexToDefaultCount(0));
     try std.testing.expectEqual(@as(?usize, 0), instance.resetParameterToDefaultIndexCount(0));
     try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterByIdCount(0, 0.5));
+    try std.testing.expect(instance.resetParameterToDefaultIndex(0));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterByIdCount(0, 0.5));
     try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterByIdToDefaultCount(0));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterByIdCount(0, 0.5));
+    try std.testing.expect(instance.resetParameterToDefaultById(0));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterByNameCount("Gain", 0.5));
+    try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterByNameToDefaultCount("Gain"));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterByNameCount("Gain", 0.5));
+    try std.testing.expect(instance.resetParameterByNameToDefault("Gain"));
     try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterByNameCount("Gain", 0.5));
     try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterToDefaultByNameCount("Gain"));
+    try std.testing.expectEqual(@as(?usize, 1), instance.storeParameterNormalizedCount("gain", 0.25));
+    try std.testing.expectEqual(@as(usize, 1), instance.resetParametersToDefaultsCount());
+    try std.testing.expectEqual(@as(usize, 0), instance.resetParametersToDefaultsCount());
+    try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
+    instance.resetParametersToDefaults();
+    try std.testing.expect(instance.parametersAllDefaults());
     try std.testing.expectEqual(@as(?usize, null), instance.resetParameterIndexToDefaultCount(99));
     try std.testing.expectEqual(@as(?usize, null), instance.resetParameterByIdToDefaultCount(99));
+    try std.testing.expectEqual(@as(?usize, null), instance.resetParameterToDefaultByIdCount(99));
+    try std.testing.expectEqual(@as(?usize, null), instance.resetParameterByNameToDefaultCount("Missing"));
     try std.testing.expectEqual(@as(?usize, null), instance.resetParameterToDefaultByNameCount("Missing"));
+    try std.testing.expect(!instance.resetParameterIndexToDefault(99));
     try std.testing.expect(!instance.resetParameterToDefaultIndex(99));
+    try std.testing.expect(!instance.resetParameterByIdToDefault(99));
     try std.testing.expect(!instance.resetParameterToDefaultById(99));
+    try std.testing.expect(!instance.resetParameterByNameToDefault("Missing"));
     try std.testing.expect(!instance.resetParameterToDefaultByName("Missing"));
 }
 
@@ -733,6 +758,11 @@ test "gain core example edits reflected parameter values directly" {
     var copied = Spec.ParameterValues.init(&parameter_set);
     copied.copyFrom(&values);
     try std.testing.expectEqual(@as(f64, 0.5), copied.loadFieldNormalized(&parameter_set, "gain"));
+    try std.testing.expect(copied.storeField(&parameter_set, "gain", 0.75));
+    try std.testing.expectEqual(@as(f64, 0.75), copied.loadField(&parameter_set, "gain"));
+    try std.testing.expectEqual(@as(?usize, 1), copied.resetFieldToDefaultCount(&parameter_set, "gain"));
+    try std.testing.expect(copied.resetFieldToDefault(&parameter_set, "gain"));
+    try std.testing.expect(copied.storeFieldNormalized(&parameter_set, "gain", 0.5));
 
     var editor = copied.editor(&parameter_set);
     const view = copied.view(&parameter_set);
@@ -841,6 +871,16 @@ test "gain core example edits reflected parameter values directly" {
         .sample_offset = 6,
         .normalized = 0.75,
     }, editor.parameterChange("gain", 6, 0.75));
+    try std.testing.expectEqual(plug.process.ParameterChange{
+        .id = 0,
+        .sample_offset = 7,
+        .normalized = 0.5,
+    }, editor.parameterChangeNormalized("gain", 7, 0.5));
+    try std.testing.expect(editor.storeNormalized("gain", 0.75));
+    try std.testing.expect(editor.store("gain", 0.5));
+    try std.testing.expect(editor.storeIndex(0, 0.25));
+    try std.testing.expect(editor.storePlainById(0, 0.5));
+    try std.testing.expect(!editor.storeIndex(99, 0.5));
     try std.testing.expectEqual(@as(?usize, 1), editor.storeNormalizedCount("gain", 0.25));
     try std.testing.expectEqual(@as(f64, 0.25), editor.view().loadNormalized("gain"));
     try std.testing.expectEqual(@as(?usize, 1), editor.resetToDefaultCount("gain"));
