@@ -14,12 +14,15 @@ Recent work has concentrated on Layer 2 API polish:
 - Parameter descriptor diagnostics are exposed through `PluginInstance`.
 - State header and restore-report compatibility helpers are bound to a plugin instance.
 - Process context timing, block, offset, segment, automation, and output-event planning helpers were added and tested.
+- Event routing next-offset helpers and offset-only event predicates were added to `Events`, `EventWriter`, and `ProcessContext`.
 - `event_echo_core` now uses validated output-event planning.
+- `event_monitor_core` now exercises bus, channel, and bus-channel routing offset helpers.
 - README and Layer 2 docs were updated to match the current public API.
 
 Before this handoff, local checks were repeatedly run and passing:
 
 ```sh
+zig build
 zig build test
 git diff --check
 rg -n "<project text-rule markers>" .github docs PROJECT_BUILD_PLAN.md README.md CHANGELOG.md zig-vst3 zig-vst3-plugin examples build.zig scripts
@@ -29,17 +32,14 @@ The marker scan exits with status 1 when there are no matches, which is expected
 
 ## Last Known Git State
 
-The worktree was clean before this document was added. The latest code commits before the handoff document were:
+The worktree was clean before this handover refresh. The latest pushed commits before this document update were:
 
+- `608ac18` Add offset-only event predicates
+- `bf625b8` Exercise event routing offsets in monitor example
+- `e4bbe30` Add event routing next-offset helpers
+- `2bb5345` Add Layer 2 metadata helper coverage
+- `95231d2` Add project handover note
 - `6f94515` Cover defaulted exact-offset automation clamping
-- `d0ce643` Add defaulted exact-offset automation reads
-- `8b9023c` Add segment boundary predicates
-- `997c528` Document process planning helpers
-- `6073f0c` Add validated event writer planning helpers
-- `11a992e` Use validated output event planning in echo example
-- `71cebcc` Add validated output event planning helpers
-- `606d5a9` Add process context block segment helper
-- `8b45c43` Add process context offset predicates
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
