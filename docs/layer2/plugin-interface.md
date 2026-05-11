@@ -124,7 +124,7 @@ Checked process-context validation covers valid attachment setters, invalid samp
 Checked audio-buffer coverage includes direct input/output views, empty views, input-only and output-only process contexts, mismatched frame validation, channel presence, and output fill/clear helpers.
 Checked process-block segment coverage includes combined input-event and parameter-change split points.
 Checked plugin metadata coverage includes factory contact, class-name, and category defaults and overrides.
-Checked topology coverage includes default effects, input-only analyzers, output-only generators, and event-output processors.
+Checked topology coverage includes direct `PluginSpec` topology flags, default effects, input-only analyzers, output-only generators, and event-output processors.
 Checked state report coverage includes ignored, accounted, and unaccounted helper predicates.
 
 ## Open Work
