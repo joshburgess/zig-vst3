@@ -240,3 +240,16 @@ test "gain core example round-trips parameter state" {
         json_stream.getWritten(),
     );
 }
+
+test "gain core example resolves migrated state parameter ids" {
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const migrations = [_]plug.state.ParameterIdMigration{
+        .{ .old_id = 7, .new_id = 11 },
+        .{ .old_id = 11, .new_id = 0 },
+    };
+
+    try instance.validateParameterIdMigrations(&migrations);
+    try std.testing.expectEqual(@as(u32, 0), instance.migratedParameterId(7, &migrations));
+    try std.testing.expectEqual(@as(u32, 0), instance.migratedParameterId(11, &migrations));
+    try std.testing.expectEqual(@as(u32, 42), instance.migratedParameterId(42, &migrations));
+}

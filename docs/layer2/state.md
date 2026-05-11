@@ -32,8 +32,8 @@ Malformed state headers, unsupported format versions, truncated entries, duplica
 - `state.readParameterStateWithMigrations(Params, set, values, reader, migrations)`: validates the migration list, reads entries, and maps renamed parameter ids before lookup.
 - `state.readParameterStateReport(Params, set, values, reader)`: reads entries and returns a report with restored and ignored counts.
 - `state.readParameterStateWithMigrationsReport(Params, set, values, reader, migrations)`: reads migrated entries and returns the same report.
-- `state.validateParameterIdMigrations(migrations)`: rejects identity mappings, duplicate old ids, ambiguous target ids, and cyclic migration chains before state loading mutates parameter values.
-- `state.identityParameterMigrationIndex`, `state.duplicateParameterMigrationIndex`, and `state.ambiguousParameterMigrationIndex`: report the first matching migration entry index for diagnostics before strict validation.
+- `state.validateParameterIdMigrations(migrations)`: rejects identity mappings, duplicate old ids, independently converging target ids, and cyclic migration chains before state loading mutates parameter values.
+- `state.identityParameterMigrationIndex`, `state.duplicateParameterMigrationIndex`, and `state.ambiguousParameterMigrationIndex`: report the first matching migration entry index for diagnostics before strict validation. Linear old-id to new-id chains are not ambiguous.
 - `state.migratedParameterId(id, migrations)`: resolves a saved parameter id through the same old-id to new-id migration list used by state loading.
 
 `PluginInstance` binds state entry-count compatibility checks, migration diagnostics, and migrated-id resolution to instance code. Header helpers compare decoded header entry counts with the current parameter count. Restore-report helpers compare both decoded entries and restored entries, so callers can distinguish newer state files with extra ignored ids from state files that failed to restore every current parameter.
