@@ -461,6 +461,73 @@ test "gain core example supports double precision processing" {
     try std.testing.expectEqual(@as(f64, 0.25), output[1]);
 }
 
+test "gain core example can process with reflected parameter storage" {
+    const StorageGain = struct {
+        pub const name = "zig-vst3-plugin Storage Gain";
+        pub const vendor = "zig-vst3";
+        pub const Params = Gain.Params;
+
+        pub fn processWithParameters(
+            _: *@This(),
+            context: *plug.process.ProcessContext(f32),
+            set: *const plug.parameters.ParameterSet(Params),
+            values: *const plug.parameters.ParameterValues(Params),
+        ) void {
+            const gain = @as(f32, @floatCast(values.loadFieldNormalized(set, "gain")));
+            for (0..context.outputChannelCount()) |channel| {
+                const input = context.inputChannel(channel) orelse continue;
+                const output = context.outputChannel(channel) orelse continue;
+                for (0..context.frameCount()) |sample| {
+                    output[sample] = input[sample] * gain;
+                }
+            }
+        }
+
+        pub fn process64WithParameters(
+            _: *@This(),
+            context: *plug.process.ProcessContext(f64),
+            set: *const plug.parameters.ParameterSet(Params),
+            values: *const plug.parameters.ParameterValues(Params),
+        ) void {
+            const gain = values.loadFieldNormalized(set, "gain");
+            for (0..context.outputChannelCount()) |channel| {
+                const input = context.inputChannel(channel) orelse continue;
+                const output = context.outputChannel(channel) orelse continue;
+                for (0..context.frameCount()) |sample| {
+                    output[sample] = input[sample] * gain;
+                }
+            }
+        }
+    };
+    const StorageInstance = plug.plugin.PluginInstance(StorageGain);
+    var instance = try StorageInstance.init(std.testing.allocator, .{});
+    const input32 = [_]f32{ 0.25, 0.5 };
+    var output32 = [_]f32{ 0.0, 0.0 };
+    const input64 = [_]f64{ 0.25, 0.5 };
+    var output64 = [_]f64{ 0.0, 0.0 };
+    const input_channels32 = [_][]const f32{&input32};
+    const output_channels32 = [_][]f32{&output32};
+    const input_channels64 = [_][]const f64{&input64};
+    const output_channels64 = [_][]f64{&output64};
+    const changes = [_]plug.process.ParameterChange{
+        instance.parameterChange("gain", 0, 0.5),
+    };
+    var context32 = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels32, &output_channels32, .{
+        .parameter_changes = &changes,
+    });
+    var context64 = try plug.process.ProcessContext(f64).init(48_000.0, &input_channels64, &output_channels64);
+
+    try std.testing.expect(instance.hasProcessHook());
+    try std.testing.expect(instance.hasProcess64Hook());
+    instance.process(&context32);
+    instance.process64(&context64);
+
+    try std.testing.expectEqual(@as(f32, 0.125), output32[0]);
+    try std.testing.expectEqual(@as(f32, 0.25), output32[1]);
+    try std.testing.expectEqual(@as(f64, 0.125), output64[0]);
+    try std.testing.expectEqual(@as(f64, 0.25), output64[1]);
+}
+
 test "gain core example can run through plugin instance" {
     var instance = try Instance.init(std.testing.allocator, .{});
     const input = [_]f32{ 0.25, 0.5 };

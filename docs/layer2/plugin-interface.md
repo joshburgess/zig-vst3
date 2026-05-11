@@ -97,6 +97,8 @@ The VST3 shell gives processors a bounded output-event writer and flushes writte
 
 Use `processWithParameterView` when a processor needs block-latest reflected parameter state. `processWithParameters` remains available for code that needs direct access to the reflected set and raw value storage. Use `context.parameterBlockSegments`, `context.inputEventBlockSegments`, or `context.processBlockSegments` when sample-accurate automation, MIDI timing, or both matter, and use `context.parameterNormalizedAtOrBeforeOr` at the segment start to resolve the descriptor/default value before the first automation point.
 
+Checked examples cover `processWithParameterView`, `processWithParameters`, and their `f64` process variants.
+
 ## Example
 
 ```zig
