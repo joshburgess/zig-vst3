@@ -889,6 +889,30 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.parameter_set.indexOfName(name);
         }
 
+        pub fn duplicateParameterId(self: *const Self) ?u32 {
+            return self.spec.parameter_set.duplicateId();
+        }
+
+        pub fn duplicateParameterIdIndex(self: *const Self) ?usize {
+            return self.spec.parameter_set.duplicateIdIndex();
+        }
+
+        pub fn duplicateParameterName(self: *const Self) ?[]const u8 {
+            return self.spec.parameter_set.duplicateName();
+        }
+
+        pub fn duplicateParameterNameIndex(self: *const Self) ?usize {
+            return self.spec.parameter_set.duplicateNameIndex();
+        }
+
+        pub fn hasDuplicateParameterIds(self: *const Self) bool {
+            return self.spec.parameter_set.hasDuplicateIds();
+        }
+
+        pub fn hasDuplicateParameterNames(self: *const Self) bool {
+            return self.spec.parameter_set.hasDuplicateNames();
+        }
+
         pub fn hasParameterId(self: *const Self, id: u32) bool {
             return self.spec.parameter_set.hasId(id);
         }
@@ -1421,9 +1445,14 @@ test "plugin spec and instance surface invalid parameter metadata" {
             gain: parameters.FloatParam = .{ .id = 0, .name = "Gain", .min = 0.0, .max = 1.0, .default = std.math.inf(f64) },
         };
     };
+    const DuplicateNameSpec = PluginSpec(DuplicateName);
+    const duplicate_name_set = DuplicateNameSpec.ParameterSet.init(.{});
 
     try std.testing.expectError(error.DuplicateParameterId, PluginSpec(Duplicate).initChecked(.{}));
     try std.testing.expectError(error.DuplicateParameterName, PluginSpec(DuplicateName).initChecked(.{}));
+    try std.testing.expectEqualStrings("Level", duplicate_name_set.duplicateName().?);
+    try std.testing.expectEqual(@as(?usize, 1), duplicate_name_set.duplicateNameIndex());
+    try std.testing.expect(duplicate_name_set.hasDuplicateNames());
     try std.testing.expectError(error.InvalidParameterRange, PluginInstance(Invalid).init(std.testing.allocator, .{}));
     try std.testing.expectError(error.InvalidParameterDefault, PluginInstance(InvalidDefault).init(std.testing.allocator, .{}));
 }
@@ -2255,6 +2284,12 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?usize, null), instance.parameterIndexOfId(99));
     try std.testing.expectEqual(@as(?usize, 2), instance.parameterIndexOfName("Mode"));
     try std.testing.expectEqual(@as(?usize, null), instance.parameterIndexOfName("Missing"));
+    try std.testing.expectEqual(@as(?u32, null), instance.duplicateParameterId());
+    try std.testing.expectEqual(@as(?usize, null), instance.duplicateParameterIdIndex());
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateParameterName());
+    try std.testing.expectEqual(@as(?usize, null), instance.duplicateParameterNameIndex());
+    try std.testing.expect(!instance.hasDuplicateParameterIds());
+    try std.testing.expect(!instance.hasDuplicateParameterNames());
     try std.testing.expect(instance.hasParameterId(0));
     try std.testing.expect(!instance.hasParameterId(99));
     try std.testing.expect(instance.hasParameterName("Mode"));
