@@ -43,7 +43,7 @@ A plugin type declares:
 - `process64WithParameters(self: *Plugin, context: *process.ProcessContext(f64), set: *const ParameterSet, values: *const ParameterValues) void`
 - `deinit(self: *Plugin) void`
 
-`process.ProcessContext(Sample)` carries typed input/output channel views, parameter changes, input events, optional output events, and the current sample rate. It exposes sample rate, sample duration, block duration, sample-offset seconds, and remaining-frame/second timing helpers. `ProcessContext(Sample).init(sample_rate, input_channels, output_channels)` builds the audio views, rejects non-positive or non-finite sample rates, validates matching frame counts within each side, and rejects side-to-side frame-count mismatches for processors with both audio inputs and outputs. `ProcessContext(Sample).initWith(sample_rate, input_channels, output_channels, .{ ... })` also attaches parameter changes, input events, and output-event storage while validating them against the context frame count.
+`process.ProcessContext(Sample)` carries typed input/output channel views, parameter changes, input events, optional output events, and the current sample rate. It exposes sample rate, sample duration, block duration, sample-offset seconds, and remaining-frame/second timing helpers. `ProcessContext(Sample).init(sample_rate, input_channels, output_channels)` builds the audio views, rejects non-positive or non-finite sample rates, validates matching frame counts within each side, and rejects side-to-side frame-count mismatches for processors with both audio inputs and outputs. `ProcessContext(Sample).initWith(sample_rate, input_channels, output_channels, .{ ... })` also attaches parameter changes, input events, and output-event storage while validating them against the context frame count. `setParameterChanges`, `setEvents`, and `setOutputEvents` replace attachments after initialization with the same validation.
 
 Unit and program helpers:
 
@@ -120,7 +120,7 @@ const GainSpec = plug.plugin.PluginSpec(Gain);
 
 Checked input-event helper coverage includes direct event validation, event classification, typed payload views, event-view validation, count, emptiness, first/latest, next-offset, iterator, routing, only predicates, and empty input fallbacks.
 Checked output-event coverage includes direct writer and process-context append planning, append counts, capacity state, offset and kind-at-offset predicates, query views, block segments, no-writer fallbacks, validation failures, and clearing.
-Checked process-context validation covers invalid sample rates, mismatched frame counts, invalid attachments, and mismatched output-event writers.
+Checked process-context validation covers valid attachment setters, invalid sample rates, mismatched frame counts, invalid attachments, and mismatched output-event writers.
 Checked process-block segment coverage includes combined input-event and parameter-change split points.
 Checked plugin metadata coverage includes factory contact, class-name, and category defaults and overrides.
 Checked topology coverage includes default effects, input-only analyzers, output-only generators, and event-output processors.
