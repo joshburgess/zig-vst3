@@ -59,6 +59,32 @@ pub const Program = struct {
     pub fn infoEmpty(self: Program) bool {
         return self.info.len == 0;
     }
+
+    pub fn duplicateParameterId(self: Program) ?u32 {
+        for (self.parameters, 0..) |left, left_index| {
+            for (self.parameters, 0..) |right, right_index| {
+                if (right_index > left_index and right.parameter_id == left.parameter_id) return left.parameter_id;
+            }
+        }
+        return null;
+    }
+
+    pub fn hasDuplicateParameterIds(self: Program) bool {
+        return self.duplicateParameterId() != null;
+    }
+
+    pub fn duplicateInfoKey(self: Program) ?[]const u8 {
+        for (self.info, 0..) |left, left_index| {
+            for (self.info, 0..) |right, right_index| {
+                if (right_index > left_index and std.mem.eql(u8, right.key, left.key)) return left.key;
+            }
+        }
+        return null;
+    }
+
+    pub fn hasDuplicateInfoKeys(self: Program) bool {
+        return self.duplicateInfoKey() != null;
+    }
 };
 
 pub const ProgramParameter = struct {
@@ -86,6 +112,19 @@ pub const ProgramList = struct {
 
     pub fn hasPrograms(self: ProgramList) bool {
         return self.programs.len != 0;
+    }
+
+    pub fn duplicateProgramName(self: ProgramList) ?[]const u8 {
+        for (self.programs, 0..) |left, left_index| {
+            for (self.programs, 0..) |right, right_index| {
+                if (right_index > left_index and std.mem.eql(u8, right.name, left.name)) return left.name;
+            }
+        }
+        return null;
+    }
+
+    pub fn hasDuplicateProgramNames(self: ProgramList) bool {
+        return self.duplicateProgramName() != null;
     }
 };
 
@@ -167,22 +206,12 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateProgramName(self: Self, list_id: i32) ?[]const u8 {
             const list = self.programListById(list_id) orelse return null;
-            for (list.programs, 0..) |left, left_index| {
-                for (list.programs, 0..) |right, right_index| {
-                    if (right_index > left_index and std.mem.eql(u8, right.name, left.name)) return left.name;
-                }
-            }
-            return null;
+            return list.duplicateProgramName();
         }
 
         pub fn duplicateProgramParameterId(self: Self, list_id: i32, program_index: usize) ?u32 {
             const item = self.program(list_id, program_index) orelse return null;
-            for (item.parameters, 0..) |left, left_index| {
-                for (item.parameters, 0..) |right, right_index| {
-                    if (right_index > left_index and right.parameter_id == left.parameter_id) return left.parameter_id;
-                }
-            }
-            return null;
+            return item.duplicateParameterId();
         }
 
         pub fn duplicateProgramParameterIdByName(self: Self, list_id: i32, program_name: []const u8) ?u32 {
@@ -192,12 +221,7 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateProgramInfoKey(self: Self, list_id: i32, program_index: usize) ?[]const u8 {
             const item = self.program(list_id, program_index) orelse return null;
-            for (item.info, 0..) |left, left_index| {
-                for (item.info, 0..) |right, right_index| {
-                    if (right_index > left_index and std.mem.eql(u8, right.key, left.key)) return left.key;
-                }
-            }
-            return null;
+            return item.duplicateInfoKey();
         }
 
         pub fn duplicateProgramInfoKeyByName(self: Self, list_id: i32, program_name: []const u8) ?[]const u8 {
@@ -678,6 +702,8 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(usize, 2), set.programListById(10).?.programCount());
     try std.testing.expect(!set.programListById(10).?.isEmpty());
     try std.testing.expect(set.programListById(10).?.hasPrograms());
+    try std.testing.expectEqual(@as(?[]const u8, null), set.programListById(10).?.duplicateProgramName());
+    try std.testing.expect(!set.programListById(10).?.hasDuplicateProgramNames());
     try std.testing.expect(set.programListHasPrograms(10));
     try std.testing.expect(set.programListHasProgramsByName("Oscillator Presets"));
     try std.testing.expect(!set.programListHasPrograms(99));
@@ -713,6 +739,10 @@ test "unit set exposes custom units and programs" {
     try std.testing.expect(!set.program(10, 0).?.parametersEmpty());
     try std.testing.expect(set.program(10, 0).?.hasInfo());
     try std.testing.expect(!set.program(10, 0).?.infoEmpty());
+    try std.testing.expectEqual(@as(?u32, null), set.program(10, 0).?.duplicateParameterId());
+    try std.testing.expect(!set.program(10, 0).?.hasDuplicateParameterIds());
+    try std.testing.expectEqual(@as(?[]const u8, null), set.program(10, 0).?.duplicateInfoKey());
+    try std.testing.expect(!set.program(10, 0).?.hasDuplicateInfoKeys());
     try std.testing.expect(!set.program(10, 1).?.hasInfo());
     try std.testing.expect(set.program(10, 1).?.infoEmpty());
     try std.testing.expectEqualStrings("Drive", set.programByName(10, "Drive").?.name);
@@ -886,6 +916,15 @@ test "unit set validates ids names and links" {
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .info = &.{ .{ .key = "category", .value = "clean" }, .{ .key = "category", .value = "lead" } } }} }},
     });
 
+    const duplicate_program_names = ProgramList{ .id = 1, .name = "Programs", .programs = &.{ .{ .name = "Clean" }, .{ .name = "Clean" } } };
+    const duplicate_program_parameters = Program{ .name = "Clean", .parameters = &.{ .{ .parameter_id = 1, .normalized = 0.25 }, .{ .parameter_id = 1, .normalized = 0.75 } } };
+    const duplicate_program_info = Program{ .name = "Clean", .info = &.{ .{ .key = "category", .value = "clean" }, .{ .key = "category", .value = "lead" } } };
+    try std.testing.expectEqualStrings("Clean", duplicate_program_names.duplicateProgramName().?);
+    try std.testing.expect(duplicate_program_names.hasDuplicateProgramNames());
+    try std.testing.expectEqual(@as(u32, 1), duplicate_program_parameters.duplicateParameterId().?);
+    try std.testing.expect(duplicate_program_parameters.hasDuplicateParameterIds());
+    try std.testing.expectEqualStrings("category", duplicate_program_info.duplicateInfoKey().?);
+    try std.testing.expect(duplicate_program_info.hasDuplicateInfoKeys());
     try std.testing.expectEqualStrings("Clean", (DuplicateProgramNames{}).duplicateProgramName(1).?);
     try std.testing.expect((DuplicateProgramNames{}).hasDuplicateProgramNames(1));
     try std.testing.expectEqual(@as(u32, 1), (DuplicateProgramParameters{}).duplicateProgramParameterId(1, 0).?);
