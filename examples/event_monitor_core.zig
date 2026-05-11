@@ -245,6 +245,8 @@ test "event monitor core example summarizes input event kinds" {
     var context = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
         .events = &events,
     });
+    try events[0].validate(input.len);
+    try std.testing.expectError(error.EventOutsideBlock, plug.process.Event.other(input.len).validate(input.len));
 
     const input_event_view = context.inputEvents();
     try std.testing.expectEqual(@as(usize, 11), context.inputEventCount());
@@ -332,20 +334,46 @@ test "event monitor core example summarizes input event kinds" {
     const note_attack = events[0].asNoteAttack().?;
     try std.testing.expectEqual(@as(i16, 60), note_attack.pitch);
     try std.testing.expectEqual(plug.process.NoteLifecycle.attack, events[0].noteLifecycle());
+    try std.testing.expect(events[0].isKind(.note_on));
+    try std.testing.expect(!events[0].isKind(.note_off));
+    try std.testing.expect(events[0].isAtOffset(1));
+    try std.testing.expect(!events[0].isAtOffset(2));
     try std.testing.expect(events[0].isKindAtOffset(.note_on, 1));
+    try std.testing.expect(events[0].isNoteAttack());
+    try std.testing.expect(events[0].isNote());
+    try std.testing.expect(events[0].hasChannel());
+    try std.testing.expect(events[0].isForChannel(0));
+    try std.testing.expect(events[0].isForBus(0));
+    try std.testing.expect(events[0].isForBusChannel(0, 0));
+    try std.testing.expect(!events[0].isForBusChannel(1, 0));
     try std.testing.expect(events[0].isNoteForPitch(60));
+    const zero_velocity_release = plug.process.Event.noteOn(2, 0, 62, 0.0);
+    try std.testing.expect(zero_velocity_release.asNoteAttack() == null);
+    try std.testing.expectEqual(plug.process.NoteLifecycle.release, zero_velocity_release.noteLifecycle());
+    try std.testing.expect(zero_velocity_release.isNoteRelease());
+    try std.testing.expectEqual(@as(i16, 62), zero_velocity_release.asNoteRelease().?.pitch);
     const note_release = events[10].asNoteRelease().?;
     try std.testing.expectEqual(@as(i16, 60), note_release.pitch);
     try std.testing.expectEqual(plug.process.NoteLifecycle.release, events[10].noteLifecycle());
     try std.testing.expect(events[10].isNoteRelease());
     try std.testing.expect(events[1].isMidi());
+    try std.testing.expect(events[1].hasChannel());
+    try std.testing.expect(events[1].isForChannel(0));
+    try std.testing.expect(events[1].asNoteOn() == null);
     try std.testing.expectEqual(@as(i16, 74), events[1].asMidiCC().?.control_number);
     try std.testing.expectEqual(@as(f32, 0.25), events[3].asPitchBend().?.value);
+    try std.testing.expect(events[4].isForBus(2));
+    try std.testing.expectEqual(@as(i32, 2), events[4].asAftertouch().?.bus_index);
+    try std.testing.expect(events[5].isNoteExpression());
+    try std.testing.expectEqual(@as(i32, 42), events[5].asNoteExpressionValue().?.note_id);
     try std.testing.expectEqual(@as(f32, 0.75), events[5].asNoteExpressionValue().?.value);
+    try std.testing.expectEqual(@as(u64, 7), events[6].asNoteExpressionInt().?.value);
     try std.testing.expectEqual(@as(u32, 5), events[7].asNoteExpressionText().?.expression_type_id);
     try std.testing.expect(events[8].isData());
+    try std.testing.expect(!events[8].hasChannel());
     try std.testing.expectEqualSlices(u8, &sysex, events[8].asData().?.data);
     try std.testing.expect(events[9].isOther());
+    try std.testing.expect(events[9].asData() == null);
 
     const retargeted_note = plug.process.Event.noteOn(0, 0, 60, 0.25)
         .withSampleOffset(2)
