@@ -196,6 +196,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return &self.spec.values;
         }
 
+        pub fn copyParameterValuesFrom(self: *Self, source: *const Self) void {
+            self.spec.values.copyFrom(&source.spec.values);
+        }
+
         pub fn unitSet(self: *const Self) *const Spec.Units {
             return &self.spec.units;
         }
@@ -2807,6 +2811,35 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expect(!instance.resetParameterToDefaultById(99));
     try std.testing.expect(!instance.resetParameterByNameToDefault("Missing"));
     try std.testing.expect(!instance.resetParameterToDefaultByName("Missing"));
+}
+
+test "plugin instance copies parameter values from another instance" {
+    const Mode = enum { clean, boost, mute };
+    const Gain = struct {
+        pub const name = "Instance Parameter Copy";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = .{ .id = 0, .name = "Gain", .min = -12.0, .max = 6.0, .default = 0.0 },
+            bypass: parameters.BoolParam = .{ .id = 1, .name = "Bypass", .default = false },
+            mode: parameters.EnumParam(Mode) = .{ .id = 2, .name = "Mode", .default = .clean },
+        };
+    };
+    const Instance = PluginInstance(Gain);
+    var source = try Instance.init(std.testing.allocator, .{});
+    var target = try Instance.init(std.testing.allocator, .{});
+
+    try std.testing.expect(source.storeParameter("gain", 6.0));
+    try std.testing.expect(source.storeParameter("bypass", true));
+    try std.testing.expect(source.storeParameter("mode", .mute));
+
+    target.copyParameterValuesFrom(&source);
+    try std.testing.expectEqual(@as(f64, 6.0), target.loadParameter("gain"));
+    try std.testing.expectEqual(true, target.loadParameter("bypass"));
+    try std.testing.expectEqual(Mode.mute, target.loadParameter("mode"));
+    try std.testing.expectEqual(@as(usize, 3), target.parameterNonDefaultCount());
+
+    try std.testing.expect(target.storeParameter("gain", 0.0));
+    try std.testing.expectEqual(@as(f64, 6.0), source.loadParameter("gain"));
 }
 
 test "plugin instance exposes parameter editor" {
