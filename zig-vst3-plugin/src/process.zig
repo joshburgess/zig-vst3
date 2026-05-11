@@ -3538,6 +3538,10 @@ test "parameter changes clamp defaulted normalized reads" {
 
     try std.testing.expectEqual(@as(f64, 1.0), view.firstNormalizedOr(9, 1.5));
     try std.testing.expectEqual(@as(f64, 0.0), view.latestNormalizedOr(9, -0.25));
+    try std.testing.expectEqual(@as(f64, 0.0), view.firstNormalizedAtOffsetOr(1, std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 1.0), view.latestNormalizedAtOffsetOr(1, 1.5));
+    try std.testing.expectEqual(@as(f64, 0.0), view.firstNormalizedForIdAtOffsetOr(7, 1, std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 1.0), view.latestNormalizedForIdAtOffsetOr(7, 1, 1.5));
     try std.testing.expectEqual(@as(f64, 0.0), view.normalizedAtOrBeforeOr(7, 1, std.math.nan(f64)));
     try std.testing.expectEqual(@as(f64, 0.5), view.normalizedAtOrBeforeOr(7, 2, 1.5));
 
