@@ -75,11 +75,19 @@ test "voice mix core example declares reflected unit and program metadata" {
     var instance = try Instance.init(std.testing.allocator, .{});
 
     try std.testing.expectEqual(@as(usize, 2), instance.unitCount());
+    try std.testing.expectEqualStrings("Main", instance.rootUnitName());
     try std.testing.expectEqualStrings("Voices", instance.unitById(voice_unit_id).?.name);
     try std.testing.expectEqual(@as(i32, voice_unit_id), instance.unitByName("Voices").?.id);
     try std.testing.expectEqual(@as(?usize, 1), instance.unitIndexOfName("Voices"));
     try std.testing.expect(instance.hasUnit(voice_unit_id));
     try std.testing.expect(instance.hasUnitName("Voices"));
+    try std.testing.expect(instance.unitIsRootByName("Main"));
+    try std.testing.expect(!instance.unitIsRoot(voice_unit_id));
+    try std.testing.expect(instance.unitHasParent(voice_unit_id));
+    try std.testing.expectEqual(@as(?i32, plug.units.root_unit_id), instance.unitParentIdByName("Voices"));
+    try std.testing.expect(instance.unitHasProgramList(voice_unit_id));
+    try std.testing.expect(instance.unitHasProgramListByName("Voices"));
+    try std.testing.expect(!instance.unitHasProgramListByName("Main"));
     try std.testing.expectEqualStrings("Voice Presets", instance.programListForUnit(voice_unit_id).?.name);
     try std.testing.expectEqual(@as(i32, voice_program_list_id), instance.programListForUnitName("Voices").?.id);
     try std.testing.expectEqual(@as(i32, voice_program_list_id), instance.programListByName("Voice Presets").?.id);
