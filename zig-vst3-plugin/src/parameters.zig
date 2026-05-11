@@ -610,6 +610,18 @@ pub fn ParameterSet(comptime Params: type) type {
             return null;
         }
 
+        pub fn duplicateIdIndex(self: *const Self) ?usize {
+            inline for (fields, 0..) |left_field, left_index| {
+                const left_id = @field(self.params, left_field.name).id;
+                inline for (fields, 0..) |right_field, right_index| {
+                    if (right_index > left_index and @field(self.params, right_field.name).id == left_id) {
+                        return right_index;
+                    }
+                }
+            }
+            return null;
+        }
+
         pub fn hasDuplicateIds(self: *const Self) bool {
             return self.duplicateId() != null;
         }
@@ -624,6 +636,18 @@ pub fn ParameterSet(comptime Params: type) type {
                 inline for (fields, 0..) |right_field, right_index| {
                     if (right_index > left_index and std.mem.eql(u8, @field(self.params, right_field.name).name, left_name)) {
                         return left_name;
+                    }
+                }
+            }
+            return null;
+        }
+
+        pub fn duplicateNameIndex(self: *const Self) ?usize {
+            inline for (fields, 0..) |left_field, left_index| {
+                const left_name = @field(self.params, left_field.name).name;
+                inline for (fields, 0..) |right_field, right_index| {
+                    if (right_index > left_index and std.mem.eql(u8, @field(self.params, right_field.name).name, left_name)) {
+                        return right_index;
                     }
                 }
             }
@@ -3111,6 +3135,7 @@ test "parameter set reports duplicate ids" {
     const set = Set.init(.{});
 
     try std.testing.expectEqual(@as(?u32, 7), set.duplicateId());
+    try std.testing.expectEqual(@as(?usize, 1), set.duplicateIdIndex());
     try std.testing.expect(set.hasDuplicateIds());
     try std.testing.expectError(error.DuplicateParameterId, set.validateUniqueIds());
 }
@@ -3124,6 +3149,7 @@ test "parameter set accepts unique ids" {
     const set = Set.init(.{});
 
     try std.testing.expectEqual(@as(?u32, null), set.duplicateId());
+    try std.testing.expectEqual(@as(?usize, null), set.duplicateIdIndex());
     try std.testing.expect(!set.hasDuplicateIds());
     try set.validateUniqueIds();
 }
@@ -3137,6 +3163,7 @@ test "parameter set reports duplicate names" {
     const set = Set.init(.{});
 
     try std.testing.expectEqualStrings("Level", set.duplicateName().?);
+    try std.testing.expectEqual(@as(?usize, 1), set.duplicateNameIndex());
     try std.testing.expect(set.hasDuplicateNames());
     try std.testing.expectError(error.DuplicateParameterName, set.validateUniqueNames());
     try std.testing.expectError(error.DuplicateParameterName, set.validate());
