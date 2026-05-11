@@ -246,6 +246,9 @@ test "event monitor core example summarizes input event kinds" {
     try std.testing.expect(context.hasInputEvents());
     try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffset());
     try std.testing.expectEqual(@as(?usize, 3), context.latestEventOffset());
+    try std.testing.expectEqual(@as(?usize, 2), context.nextEventOffset(1));
+    try std.testing.expectEqual(@as(?usize, 3), context.nextEventOffset(2));
+    try std.testing.expectEqual(@as(?usize, null), context.nextEventOffset(3));
     try std.testing.expectEqual(plug.process.EventKind.note_on, context.firstInputEvent().?.kind);
     try std.testing.expectEqual(plug.process.EventKind.note_off, context.latestInputEvent().?.kind);
     try std.testing.expectEqual(plug.process.EventKind.midi_cc, context.firstInputEventAtOffset(2).?.kind);
