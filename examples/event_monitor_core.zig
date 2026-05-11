@@ -417,6 +417,34 @@ test "event monitor core example summarizes input event kinds" {
     try std.testing.expectEqual(@as(?plug.process.BlockSegment, null), segments.next());
 }
 
+test "event monitor core example reports empty input event views" {
+    const input = [_]f32{0.0};
+    var output = [_]f32{0.0};
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
+
+    try std.testing.expectEqual(@as(usize, 0), context.inputEventCount());
+    try std.testing.expect(context.inputEventsEmpty());
+    try std.testing.expect(!context.hasInputEvents());
+    try std.testing.expectEqual(@as(?usize, null), context.firstEventOffset());
+    try std.testing.expectEqual(@as(?usize, null), context.latestEventOffset());
+    try std.testing.expectEqual(@as(?usize, null), context.nextEventOffset(0));
+    try std.testing.expectEqual(@as(usize, 0), context.countNoteAttacks());
+    try std.testing.expect(!context.hasNoteAttacks());
+    try std.testing.expect(context.noteAttacksEmpty());
+    try std.testing.expect(!context.onlyInputEventsOfKind(.note_on));
+    try std.testing.expectEqual(@as(?plug.process.Event, null), context.firstEvent(.note_on));
+    try std.testing.expectEqual(@as(?plug.process.Event, null), context.latestInputEvent());
+
+    var note_events = context.inputEventsOfKind(.note_on);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), note_events.next());
+
+    var segments = context.inputEventBlockSegments();
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = 1 }, segments.next().?);
+    try std.testing.expectEqual(@as(?plug.process.BlockSegment, null), segments.next());
+}
+
 test "event monitor core example can run through plugin instance" {
     var instance = try Instance.init(std.testing.allocator, .{});
     const input = [_]f32{ 0.0, 0.0 };
