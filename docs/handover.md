@@ -15,17 +15,17 @@ Recent work has concentrated on Layer 2 API polish:
 - Parameter descriptor diagnostics are exposed through `PluginInstance`.
 - `PluginInstance.parameterStateEntryCount()` now uses the reflected parameter set method, which external checked examples instantiate correctly.
 - State header and restore-report compatibility helpers are bound to a plugin instance.
-- Process context timing, block, offset, segment, automation, defaulted overall automation reads, and output-event planning helpers were added and tested.
+- Process context timing, block, offset, segment, automation, defaulted overall automation reads, audio channel/view helpers, input-event helper predicates, and output-event planning helpers were added and tested.
 - Event routing next-offset helpers and offset-only event predicates were added to `Events`, `EventWriter`, and `ProcessContext`.
 - `PluginInstance` now exposes same-plugin parameter value copying.
 - `PluginInstance` now exposes migrated parameter id resolution alongside migration diagnostics.
 - `PluginInstance` now exposes direct unit root, parent, and program-list relationship helpers.
-- `gain_core` now exercises plugin topology and lifecycle predicates, prepare validation, parameter descriptor diagnostics, direct and field-name parameter metadata/default/plain-range helpers, lookup-based loads, counted stores, direct parameter-change application, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, per-id and per-offset automation reads, parameter and block segment value helpers, parameter segment iterators, state header/report compatibility helpers, and migrated parameter-id resolution.
+- `gain_core` now exercises plugin topology and lifecycle predicates, prepare validation, audio channel and buffer-view helpers, parameter descriptor diagnostics, direct and field-name parameter metadata/default/plain-range helpers, lookup-based loads, counted stores, direct parameter-change application, parameter-change value predicates, direct parameter-change view helpers, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall automation reads, per-id and per-offset automation reads, parameter and block segment value helpers, parameter segment iterators, state header/report compatibility helpers, ignored/accounted/unaccounted state report helpers, and migrated parameter-id resolution.
 - `mode_gain_core` now exercises enum option metadata helpers by index, id, display name, and field name.
 - `bypass_core` now exercises automatable, read-only, bypass, step-count, and list flag helpers.
 - `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including value-level helpers and duplicate diagnostics.
 - `event_echo_core` now uses validated output-event planning and exercises output-event routing, capacity, next-offset, first/latest, and clearing helpers.
-- `event_monitor_core` now exercises typed event payload views, event retargeting helpers, and bus, channel, and bus-channel routing offset helpers.
+- `event_monitor_core` now exercises input-event count, emptiness, first/latest, only predicates, typed event payload views, event retargeting helpers, and bus, channel, and bus-channel routing offset helpers.
 - `sine_synth_core` now exercises process timing, block duration, sample-offset, and remaining-frame helpers.
 - README and Layer 2 docs were updated to match the current public API.
 
@@ -44,6 +44,13 @@ The marker scan exits with status 1 when there are no matches, which is expected
 
 The worktree was clean before this handover refresh. The latest pushed commits before this document update were:
 
+- `62e3603` Exercise state report helper predicates
+- `98f67a6` Exercise parameter change view helpers
+- `6ee5a89` Exercise parameter change predicates
+- `eb99186` Exercise input event helper predicates
+- `78d3720` Exercise audio buffer view helpers
+- `f04a83b` Exercise audio channel helpers in gain example
+- `b61e5dd` Refresh handover after prepare coverage
 - `b86a322` Exercise prepare validation in gain example
 - `05ead1e` Exercise plugin lifecycle predicates
 - `a167d91` Refresh handover after helper coverage
@@ -69,7 +76,7 @@ The worktree was clean before this handover refresh. The latest pushed commits b
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
-CI checkpoint: the run for `b86a322` was queued when this handover refresh began. The latest completed non-cancelled run inspected was `ca954cf`, which passed. Intermediate runs after `ca954cf` were cancelled by newer pushes, which is expected for this workflow.
+CI checkpoint: the run for `62e3603` was pending and the run for `98f67a6` was in progress when this handover refresh began. The latest completed non-cancelled run inspected was `b61e5dd`, which passed. Intermediate runs after `b61e5dd` were cancelled by newer pushes, which is expected for this workflow.
 
 ## What To Do Next
 
