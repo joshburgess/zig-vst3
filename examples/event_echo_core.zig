@@ -235,7 +235,10 @@ test "event echo core example writes input events to output events" {
     try std.testing.expectEqual(@as(?usize, 1), context.nextOutputEventOffsetForBusChannel(0, 0, 0));
     try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForBus(1, 0));
     try std.testing.expect(!context.canAppendOutputEvent());
+    try std.testing.expect(context.canAppendOutputEvents(0));
+    try std.testing.expect(!context.canAppendOutputEvents(1));
     try std.testing.expect(!context.canAppendOutputEventValue(events[0]));
+    try std.testing.expect(!context.canAppendOutputEventValues(try plug.process.Events.init(&events, input.len)));
 
     var output_events_at_offset = context.outputEventsAtOffset(1);
     try std.testing.expectEqual(plug.process.EventKind.note_off, output_events_at_offset.next().?.kind);
@@ -264,6 +267,8 @@ test "event echo core example writes input events to output events" {
     try std.testing.expect(!context.hasOutputEvent(.note_on));
     try std.testing.expect(!context.hasOutputNoteAttacks());
     try std.testing.expect(!context.hasOutputNoteReleases());
+    try std.testing.expect(context.canAppendOutputEvents(2));
+    try std.testing.expect(context.canAppendOutputEventValues(try plug.process.Events.init(&events, input.len)));
 
     try context.appendOutputEvent(events[0]);
     try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
@@ -322,7 +327,9 @@ test "event echo core example ignores events when no output writer is attached" 
     try std.testing.expect(!context.hasOutputEvents());
     try std.testing.expect(context.outputEventsFull());
     try std.testing.expect(!context.canAppendOutputEvent());
+    try std.testing.expect(!context.canAppendOutputEvents(0));
     try std.testing.expect(!context.canAppendOutputEventValue(events[0]));
+    try std.testing.expect(!context.canAppendOutputEventValues(try plug.process.Events.init(&events, input.len)));
     try std.testing.expectEqual(@as(?usize, null), context.firstOutputEventOffset());
     try std.testing.expectEqual(@as(?usize, null), context.latestOutputEventOffset());
     try std.testing.expectEqual(@as(?plug.process.Event, null), context.firstWrittenOutputEvent());
