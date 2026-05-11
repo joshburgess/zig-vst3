@@ -662,6 +662,18 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expect(editor.allDefaults());
     try std.testing.expectEqual(@as(usize, 0), editor.nonDefaultCount());
 
+    const editor_raw_changes = [_]plug.process.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = 0.5 },
+    };
+    const editor_changes = try plug.process.ParameterChanges.init(&editor_raw_changes, 1);
+    try std.testing.expectEqual(@as(usize, 1), editor.applyChangesChangedCount(editor_changes));
+    try std.testing.expectEqual(@as(f64, 0.5), editor.loadNormalized("gain"));
+    try std.testing.expectEqual(@as(usize, 1), editor.applyChangesCount(editor_changes));
+    try std.testing.expectEqual(@as(usize, 0), editor.applyChangesChangedCount(editor_changes));
+    editor.applyChanges(editor_changes);
+    try std.testing.expectEqual(@as(f64, 0.5), editor.view().loadNormalized("gain"));
+    try std.testing.expectEqual(@as(?usize, 1), editor.resetToDefaultCount("gain"));
+
     try std.testing.expectEqual(@as(?usize, 1), values.resetToDefaultCount(&parameter_set, 0));
     try std.testing.expectEqual(@as(?usize, 0), values.resetToDefaultByIdCount(&parameter_set, 0));
     try std.testing.expectEqual(@as(?usize, null), values.resetToDefaultByNameCount(&parameter_set, "Missing"));
