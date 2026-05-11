@@ -563,6 +563,9 @@ test "gain core example formats and converts float parameters" {
     var buffer: [16]u8 = undefined;
 
     try std.testing.expectEqual(@as(usize, 0), instance.parameterFieldIndex("gain"));
+    const descriptor = instance.parameterFieldDescriptor("gain");
+    try std.testing.expectEqual(@as(u32, 0), descriptor.id);
+    try std.testing.expectEqualStrings("Gain", descriptor.name);
     try std.testing.expectEqual(@as(u32, 0), instance.parameterFieldId("gain"));
     try std.testing.expectEqualStrings("Gain", instance.parameterFieldName("gain"));
     try std.testing.expectEqualStrings("x", instance.parameterFieldUnits("gain"));
@@ -696,6 +699,7 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expectEqual(@as(?f64, 0.0), view.plainMinimumByName("Gain"));
     try std.testing.expectEqual(@as(?f64, 1.0), view.plainMaximumById(0));
     try std.testing.expect(view.hasPlainRangeByName("Gain"));
+    try std.testing.expectEqual(@as(u32, 0), view.descriptor("gain").id);
     try std.testing.expectEqual(@as(u32, 0), view.fieldId("gain"));
     try std.testing.expectEqualStrings("Gain", view.fieldName("gain"));
     try std.testing.expectEqualStrings("x", view.fieldUnits("gain"));
@@ -747,6 +751,7 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expectEqual(@as(?bool, false), editor.isReadOnlyByName("Gain"));
     try std.testing.expectEqual(@as(?i32, 0), editor.stepCountByName("Gain"));
     try std.testing.expect(!editor.isListByName("Gain").?);
+    try std.testing.expectEqual(@as(u32, 0), editor.descriptor("gain").id);
     try std.testing.expectEqualStrings("0.750", try editor.formatFieldPlain("gain", 0.75, &format_buffer));
     try std.testing.expectEqual(@as(f64, 0.75), try editor.parsePlainByName("Gain", "0.75"));
     try std.testing.expectEqual(@as(?f64, 0.75), editor.plainFromNormalizedById(0, 0.75));
