@@ -142,9 +142,68 @@ test "gain core example splits blocks at automation changes" {
     try std.testing.expectEqual(@as(?f64, 0.25), context.latestAnyParameterNormalized());
     try std.testing.expectEqual(@as(f64, 0.5), context.firstAnyParameterNormalizedOr(1.0));
     try std.testing.expectEqual(@as(f64, 0.25), context.latestAnyParameterNormalizedOr(1.0));
+    try std.testing.expectEqual(@as(usize, 2), context.parameterChangeCount());
+    try std.testing.expect(!context.parameterChangesEmpty());
+    try std.testing.expect(context.hasParameterChanges());
+    try std.testing.expectEqual(@as(?usize, 1), context.firstParameterChangeOffset());
+    try std.testing.expectEqual(@as(?usize, 3), context.latestParameterChangeOffset());
+    try std.testing.expectEqual(@as(?usize, 1), context.firstParameterChangeOffsetForId(0));
+    try std.testing.expectEqual(@as(?usize, 3), context.latestParameterChangeOffsetForId(0));
+    try std.testing.expectEqual(@as(?usize, null), context.firstParameterChangeOffsetForId(99));
+    try std.testing.expectEqual(@as(?f64, 0.5), context.firstParameterNormalized(0));
+    try std.testing.expectEqual(@as(?f64, 0.25), context.latestParameterNormalized(0));
+    try std.testing.expectEqual(@as(?f64, 0.5), context.firstParameterNormalizedAtOffset(1));
+    try std.testing.expectEqual(@as(?f64, 0.25), context.latestParameterNormalizedAtOffset(3));
+    try std.testing.expectEqual(@as(?f64, 0.25), context.firstParameterNormalizedForIdAtOffset(0, 3));
+    try std.testing.expectEqual(@as(f64, 0.75), context.firstParameterNormalizedForIdAtOffsetOr(99, 1, 0.75));
+    try std.testing.expectEqual(@as(usize, 2), context.countParameterChanges(0));
+    try std.testing.expectEqual(@as(usize, 1), context.countParameterChangesAtOffset(1));
+    try std.testing.expectEqual(@as(usize, 1), context.countParameterChangesForIdAtOffset(0, 3));
+    try std.testing.expect(context.hasParameterChange(0));
+    try std.testing.expect(!context.hasParameterChange(99));
+    try std.testing.expect(context.hasParameterChangeAtOffset(1));
+    try std.testing.expect(!context.hasParameterChangeAtOffset(2));
+    try std.testing.expect(context.hasParameterChangeForIdAtOffset(0, 3));
+    try std.testing.expect(!context.hasParameterChangeForIdAtOffset(99, 3));
+    try std.testing.expect(!context.parameterChangesForIdEmpty(0));
+    try std.testing.expect(context.parameterChangesForIdEmpty(99));
+    try std.testing.expect(!context.parameterChangesAtOffsetEmpty(1));
+    try std.testing.expect(context.parameterChangesAtOffsetEmpty(2));
     try std.testing.expect(context.onlyParameterChangesForId(0));
     try std.testing.expect(!context.onlyParameterChangesAtOffset(1));
     try std.testing.expect(!context.onlyParameterChangesForIdAtOffset(0, 1));
+    try std.testing.expectEqual(@as(f64, 0.5), context.latestParameterChangeAtOrBefore(0, 2).?.normalized);
+    try std.testing.expectEqual(@as(?f64, 0.25), context.latestParameterNormalizedAtOrBefore(0, 4));
+    try std.testing.expectEqual(@as(f64, 1.0), context.parameterNormalizedAtOrBeforeOr(0, 0, 1.0));
+    try std.testing.expectEqual(@as(f64, 0.5), context.parameterNormalizedAtOrBeforeOr(0, 2, 1.0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextParameterChangeOffset(0));
+    try std.testing.expectEqual(@as(?usize, 3), context.nextParameterChangeOffsetForId(0, 1));
+    try std.testing.expectEqual(
+        plug.process.ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 1.0 },
+        context.parameterSegmentAt(0, 0, 1.0).?,
+    );
+    try std.testing.expectEqual(
+        plug.process.ParameterSegment{ .start_offset = 1, .end_offset = 3, .normalized = 0.5 },
+        context.parameterSegmentAt(0, 1, 1.0).?,
+    );
+    try std.testing.expectEqual(
+        plug.process.ParameterSegment{ .start_offset = 3, .end_offset = 5, .normalized = 0.25 },
+        context.parameterSegmentAt(0, 3, 1.0).?,
+    );
+    var parameter_segments = context.parameterSegments(0, 1.0);
+    try std.testing.expectEqual(
+        plug.process.ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 1.0 },
+        parameter_segments.next().?,
+    );
+    try std.testing.expectEqual(
+        plug.process.ParameterSegment{ .start_offset = 1, .end_offset = 3, .normalized = 0.5 },
+        parameter_segments.next().?,
+    );
+    try std.testing.expectEqual(
+        plug.process.ParameterSegment{ .start_offset = 3, .end_offset = 5, .normalized = 0.25 },
+        parameter_segments.next().?,
+    );
+    try std.testing.expectEqual(@as(?plug.process.ParameterSegment, null), parameter_segments.next());
     try std.testing.expectEqual(@as(f32, 1.0), output[0]);
     try std.testing.expectEqual(@as(f32, 0.5), output[1]);
     try std.testing.expectEqual(@as(f32, 0.5), output[2]);
