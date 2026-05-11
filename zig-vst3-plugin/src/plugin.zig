@@ -356,6 +356,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.hasProgramName(list_id, name);
         }
 
+        pub fn duplicateProgramName(self: *const Self, list_id: i32) ?[]const u8 {
+            return self.spec.units.duplicateProgramName(list_id);
+        }
+
+        pub fn hasDuplicateProgramNames(self: *const Self, list_id: i32) bool {
+            return self.spec.units.hasDuplicateProgramNames(list_id);
+        }
+
         pub fn programParameterCount(self: *const Self, list_id: i32, program_index: usize) ?usize {
             return self.spec.units.programParameterCount(list_id, program_index);
         }
@@ -396,12 +404,28 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.hasProgramParameter(list_id, program_index, parameter_id);
         }
 
+        pub fn duplicateProgramParameterId(self: *const Self, list_id: i32, program_index: usize) ?u32 {
+            return self.spec.units.duplicateProgramParameterId(list_id, program_index);
+        }
+
+        pub fn hasDuplicateProgramParameterIds(self: *const Self, list_id: i32, program_index: usize) bool {
+            return self.spec.units.hasDuplicateProgramParameterIds(list_id, program_index);
+        }
+
         pub fn programParameterByNameAndId(self: *const Self, list_id: i32, program_name: []const u8, parameter_id: u32) ?units_api.ProgramParameter {
             return self.spec.units.programParameterByNameAndId(list_id, program_name, parameter_id);
         }
 
         pub fn hasProgramParameterByName(self: *const Self, list_id: i32, program_name: []const u8, parameter_id: u32) bool {
             return self.spec.units.hasProgramParameterByName(list_id, program_name, parameter_id);
+        }
+
+        pub fn duplicateProgramParameterIdByName(self: *const Self, list_id: i32, program_name: []const u8) ?u32 {
+            return self.spec.units.duplicateProgramParameterIdByName(list_id, program_name);
+        }
+
+        pub fn hasDuplicateProgramParameterIdsByName(self: *const Self, list_id: i32, program_name: []const u8) bool {
+            return self.spec.units.hasDuplicateProgramParameterIdsByName(list_id, program_name);
         }
 
         pub fn programInfo(self: *const Self, list_id: i32, program_index: usize, key: []const u8) ?[]const u8 {
@@ -412,12 +436,28 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.hasProgramInfo(list_id, program_index, key);
         }
 
+        pub fn duplicateProgramInfoKey(self: *const Self, list_id: i32, program_index: usize) ?[]const u8 {
+            return self.spec.units.duplicateProgramInfoKey(list_id, program_index);
+        }
+
+        pub fn hasDuplicateProgramInfoKeys(self: *const Self, list_id: i32, program_index: usize) bool {
+            return self.spec.units.hasDuplicateProgramInfoKeys(list_id, program_index);
+        }
+
         pub fn programInfoByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) ?[]const u8 {
             return self.spec.units.programInfoByName(list_id, program_name, key);
         }
 
         pub fn hasProgramInfoByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) bool {
             return self.spec.units.hasProgramInfoByName(list_id, program_name, key);
+        }
+
+        pub fn duplicateProgramInfoKeyByName(self: *const Self, list_id: i32, program_name: []const u8) ?[]const u8 {
+            return self.spec.units.duplicateProgramInfoKeyByName(list_id, program_name);
+        }
+
+        pub fn hasDuplicateProgramInfoKeysByName(self: *const Self, list_id: i32, program_name: []const u8) bool {
+            return self.spec.units.hasDuplicateProgramInfoKeysByName(list_id, program_name);
         }
 
         pub fn programInfoCount(self: *const Self, list_id: i32, program_index: usize) ?usize {
@@ -1704,6 +1744,10 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expect(instance.hasProgramName(7, "Lead"));
     try std.testing.expect(!instance.hasProgramName(7, "Missing"));
     try std.testing.expect(!instance.hasProgramName(99, "Lead"));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateProgramName(7));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateProgramName(99));
+    try std.testing.expect(!instance.hasDuplicateProgramNames(7));
+    try std.testing.expect(!instance.hasDuplicateProgramNames(99));
     try std.testing.expectEqual(@as(?usize, 1), instance.programParameterCount(7, 1));
     try std.testing.expectEqual(@as(?usize, null), instance.programParameterCount(7, 99));
     try std.testing.expectEqual(@as(?usize, null), instance.programParameterCount(99, 0));
@@ -1726,9 +1770,17 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expect(instance.hasProgramParameter(7, 1, 1));
     try std.testing.expect(!instance.hasProgramParameter(7, 1, 99));
     try std.testing.expect(!instance.hasProgramParameter(99, 1, 1));
+    try std.testing.expectEqual(@as(?u32, null), instance.duplicateProgramParameterId(7, 1));
+    try std.testing.expectEqual(@as(?u32, null), instance.duplicateProgramParameterId(7, 99));
+    try std.testing.expect(!instance.hasDuplicateProgramParameterIds(7, 1));
+    try std.testing.expect(!instance.hasDuplicateProgramParameterIds(7, 99));
     try std.testing.expect(instance.hasProgramParameterByName(7, "Lead", 1));
     try std.testing.expect(!instance.hasProgramParameterByName(7, "Lead", 99));
     try std.testing.expect(!instance.hasProgramParameterByName(7, "Missing", 1));
+    try std.testing.expectEqual(@as(?u32, null), instance.duplicateProgramParameterIdByName(7, "Lead"));
+    try std.testing.expectEqual(@as(?u32, null), instance.duplicateProgramParameterIdByName(7, "Missing"));
+    try std.testing.expect(!instance.hasDuplicateProgramParameterIdsByName(7, "Lead"));
+    try std.testing.expect(!instance.hasDuplicateProgramParameterIdsByName(7, "Missing"));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByName(7, "Missing", 0));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByName(99, "Lead", 0));
     try std.testing.expectEqual(@as(?units_api.ProgramParameter, null), instance.programParameterByNameAndId(7, "Lead", 99));
@@ -1749,12 +1801,20 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expect(instance.hasProgramInfo(7, 0, "category"));
     try std.testing.expect(!instance.hasProgramInfo(7, 0, "missing"));
     try std.testing.expect(!instance.hasProgramInfo(7, 99, "category"));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateProgramInfoKey(7, 0));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateProgramInfoKey(7, 99));
+    try std.testing.expect(!instance.hasDuplicateProgramInfoKeys(7, 0));
+    try std.testing.expect(!instance.hasDuplicateProgramInfoKeys(7, 99));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfo(7, 99, "category"));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfo(99, 0, "category"));
     try std.testing.expectEqualStrings("Clean", instance.programInfoByName(7, "Clean", "category").?);
     try std.testing.expect(instance.hasProgramInfoByName(7, "Clean", "category"));
     try std.testing.expect(!instance.hasProgramInfoByName(7, "Clean", "missing"));
     try std.testing.expect(!instance.hasProgramInfoByName(7, "Missing", "category"));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateProgramInfoKeyByName(7, "Clean"));
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateProgramInfoKeyByName(7, "Missing"));
+    try std.testing.expect(!instance.hasDuplicateProgramInfoKeysByName(7, "Clean"));
+    try std.testing.expect(!instance.hasDuplicateProgramInfoKeysByName(7, "Missing"));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfoByName(7, "Missing", "category"));
     try std.testing.expectEqual(@as(?[]const u8, null), instance.programInfoByName(99, "Clean", "category"));
 }
