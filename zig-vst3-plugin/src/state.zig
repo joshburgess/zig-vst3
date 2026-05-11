@@ -93,6 +93,26 @@ pub const ReadParameterStateReport = struct {
         return self.entry_count -| self.accountedCount();
     }
 
+    pub fn matchesDecodedCount(self: ReadParameterStateReport, expected_count: usize) bool {
+        return self.entry_count == expected_count;
+    }
+
+    pub fn hasFewerDecodedEntriesThan(self: ReadParameterStateReport, expected_count: usize) bool {
+        return self.entry_count < expected_count;
+    }
+
+    pub fn hasMoreDecodedEntriesThan(self: ReadParameterStateReport, expected_count: usize) bool {
+        return self.entry_count > expected_count;
+    }
+
+    pub fn missingDecodedEntryCount(self: ReadParameterStateReport, expected_count: usize) usize {
+        return expected_count -| self.entry_count;
+    }
+
+    pub fn extraDecodedEntryCount(self: ReadParameterStateReport, expected_count: usize) usize {
+        return self.entry_count -| expected_count;
+    }
+
     pub fn hasDecodedEntries(self: ReadParameterStateReport) bool {
         return self.entry_count != 0;
     }
@@ -422,6 +442,16 @@ test "parameter state round-trips normalized values" {
     try std.testing.expectEqual(@as(usize, 0), report.ignoredCount());
     try std.testing.expectEqual(@as(usize, 2), report.accountedCount());
     try std.testing.expectEqual(@as(usize, 0), report.unaccountedCount());
+    try std.testing.expect(report.matchesDecodedCount(2));
+    try std.testing.expect(!report.matchesDecodedCount(3));
+    try std.testing.expect(report.hasFewerDecodedEntriesThan(3));
+    try std.testing.expect(!report.hasFewerDecodedEntriesThan(2));
+    try std.testing.expect(report.hasMoreDecodedEntriesThan(1));
+    try std.testing.expect(!report.hasMoreDecodedEntriesThan(2));
+    try std.testing.expectEqual(@as(usize, 1), report.missingDecodedEntryCount(3));
+    try std.testing.expectEqual(@as(usize, 0), report.missingDecodedEntryCount(1));
+    try std.testing.expectEqual(@as(usize, 1), report.extraDecodedEntryCount(1));
+    try std.testing.expectEqual(@as(usize, 0), report.extraDecodedEntryCount(3));
     try std.testing.expect(report.hasDecodedEntries());
     try std.testing.expect(report.hasRestoredEntries());
     try std.testing.expect(!report.hasIgnoredEntries());
@@ -567,6 +597,11 @@ test "parameter state report classifies empty and ignored loads" {
 
     try std.testing.expectEqual(@as(usize, 0), empty.accountedCount());
     try std.testing.expectEqual(@as(usize, 0), empty.unaccountedCount());
+    try std.testing.expect(empty.matchesDecodedCount(0));
+    try std.testing.expect(empty.hasFewerDecodedEntriesThan(1));
+    try std.testing.expect(!empty.hasMoreDecodedEntriesThan(0));
+    try std.testing.expectEqual(@as(usize, 1), empty.missingDecodedEntryCount(1));
+    try std.testing.expectEqual(@as(usize, 0), empty.extraDecodedEntryCount(1));
     try std.testing.expect(!empty.hasDecodedEntries());
     try std.testing.expect(empty.hasNoDecodedEntries());
     try std.testing.expect(empty.decodedEntriesEmpty());
@@ -611,6 +646,11 @@ test "parameter state report classifies empty and ignored loads" {
 
     try std.testing.expectEqual(@as(usize, 2), incomplete.accountedCount());
     try std.testing.expectEqual(@as(usize, 1), incomplete.unaccountedCount());
+    try std.testing.expect(incomplete.matchesDecodedCount(3));
+    try std.testing.expect(!incomplete.hasFewerDecodedEntriesThan(3));
+    try std.testing.expect(incomplete.hasMoreDecodedEntriesThan(2));
+    try std.testing.expectEqual(@as(usize, 1), incomplete.missingDecodedEntryCount(4));
+    try std.testing.expectEqual(@as(usize, 1), incomplete.extraDecodedEntryCount(2));
     try std.testing.expect(incomplete.hasUnaccountedEntries());
     try std.testing.expect(!incomplete.hasNoUnaccountedEntries());
     try std.testing.expect(!incomplete.unaccountedEntriesEmpty());
