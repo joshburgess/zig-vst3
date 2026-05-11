@@ -129,6 +129,64 @@ test "event monitor core example summarizes input event kinds" {
         .events = &events,
     });
 
+    const note_attack = events[0].asNoteAttack().?;
+    try std.testing.expectEqual(@as(i16, 60), note_attack.pitch);
+    try std.testing.expectEqual(plug.process.NoteLifecycle.attack, events[0].noteLifecycle());
+    try std.testing.expect(events[0].isKindAtOffset(.note_on, 1));
+    try std.testing.expect(events[0].isNoteForPitch(60));
+    const note_release = events[10].asNoteRelease().?;
+    try std.testing.expectEqual(@as(i16, 60), note_release.pitch);
+    try std.testing.expectEqual(plug.process.NoteLifecycle.release, events[10].noteLifecycle());
+    try std.testing.expect(events[10].isNoteRelease());
+    try std.testing.expect(events[1].isMidi());
+    try std.testing.expectEqual(@as(i16, 74), events[1].asMidiCC().?.control_number);
+    try std.testing.expectEqual(@as(f32, 0.25), events[3].asPitchBend().?.value);
+    try std.testing.expectEqual(@as(f32, 0.75), events[5].asNoteExpressionValue().?.value);
+    try std.testing.expectEqual(@as(u32, 5), events[7].asNoteExpressionText().?.expression_type_id);
+    try std.testing.expect(events[8].isData());
+    try std.testing.expectEqualSlices(u8, &sysex, events[8].asData().?.data);
+    try std.testing.expect(events[9].isOther());
+
+    const retargeted_note = plug.process.Event.noteOn(0, 0, 60, 0.25)
+        .withSampleOffset(2)
+        .withChannel(1)
+        .withPitch(64)
+        .withVelocity(0.5);
+    const retargeted_note_payload = retargeted_note.asNoteOn().?;
+    try std.testing.expectEqual(@as(usize, 2), retargeted_note_payload.sample_offset);
+    try std.testing.expectEqual(@as(i16, 1), retargeted_note_payload.channel);
+    try std.testing.expectEqual(@as(i16, 64), retargeted_note_payload.pitch);
+    try std.testing.expectEqual(@as(f32, 0.5), retargeted_note_payload.velocity);
+
+    const retargeted_cc = plug.process.Event.midiCc(0, 0, 1, 0.25)
+        .withBusIndex(2)
+        .withSampleOffset(3)
+        .withChannel(4)
+        .withControlNumber(74)
+        .withValue(0.5);
+    const cc_payload = retargeted_cc.asMidiCC().?;
+    try std.testing.expectEqual(@as(i32, 2), cc_payload.bus_index);
+    try std.testing.expectEqual(@as(usize, 3), cc_payload.sample_offset);
+    try std.testing.expectEqual(@as(i16, 4), cc_payload.channel);
+    try std.testing.expectEqual(@as(i16, 74), cc_payload.control_number);
+    try std.testing.expectEqual(@as(f32, 0.5), cc_payload.value);
+
+    const retargeted_expression = plug.process.Event.noteExpressionInt(0, 1, 2, 3)
+        .withNoteId(8)
+        .withExpressionTypeId(9)
+        .withIntValue(10);
+    const expression_payload = retargeted_expression.asNoteExpressionInt().?;
+    try std.testing.expectEqual(@as(i32, 8), expression_payload.note_id);
+    try std.testing.expectEqual(@as(u32, 9), expression_payload.expression_type_id);
+    try std.testing.expectEqual(@as(u64, 10), expression_payload.value);
+
+    const retargeted_data = plug.process.Event.dataEvent(0, 0, &sysex)
+        .withDataType(7)
+        .withData(sysex[1..]);
+    const data_payload = retargeted_data.asData().?;
+    try std.testing.expectEqual(@as(u32, 7), data_payload.data_type);
+    try std.testing.expectEqualSlices(u8, sysex[1..], data_payload.data);
+
     plugin.process(&context);
 
     try std.testing.expectEqual(@as(usize, 2), plugin.note_on_count);
