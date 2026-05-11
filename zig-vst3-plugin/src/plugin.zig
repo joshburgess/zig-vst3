@@ -1232,6 +1232,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return Spec.encoded_parameter_state_size;
         }
 
+        pub fn parameterStateEncodedSize(self: *const Self) usize {
+            return self.encodedParameterStateSize();
+        }
+
         pub fn parameterStateEntryCount(self: *const Self) usize {
             return self.spec.parameter_set.count;
         }
@@ -2952,6 +2956,7 @@ test "plugin instance round-trips owned parameter state" {
 
     try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), Instance.Spec.encoded_parameter_state_size);
     try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), instance.encodedParameterStateSize());
+    try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), instance.parameterStateEncodedSize());
     try std.testing.expectEqual(@as(usize, 2), instance.parameterStateEntryCount());
     try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
     try std.testing.expect(instance.storeParameterNormalized("mix", 0.75));
