@@ -23,6 +23,102 @@ test "event echo core example declares reflected metadata" {
     plug.plugin.validateLifecycle(EventEcho);
 }
 
+test "event echo core example can inspect output event writers" {
+    var storage: [3]plug.process.Event = undefined;
+    var writer = plug.process.EventWriter.init(&storage, 4);
+    const source_items = [_]plug.process.Event{
+        plug.process.Event.noteOn(1, 0, 60, 0.75),
+        plug.process.Event.noteOff(2, 0, 60, 0.0),
+    };
+    const source = try plug.process.Events.init(&source_items, 4);
+
+    try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
+    try std.testing.expect(writer.isEmpty());
+    try std.testing.expect(!writer.hasEvents());
+    try std.testing.expect(!writer.isFull());
+    try std.testing.expectEqual(@as(usize, 3), writer.capacity());
+    try std.testing.expectEqual(@as(usize, 3), writer.remainingCapacity());
+    try std.testing.expectEqual(@as(usize, 4), writer.frameCount());
+    try std.testing.expect(writer.canAppend(2));
+    try std.testing.expect(writer.canAppendEvents(source));
+    try std.testing.expect(writer.canAppendEvent(source_items[0]));
+    try std.testing.expect(!writer.canAppendEvent(plug.process.Event.noteOn(4, 0, 60, 0.75)));
+
+    try std.testing.expectEqual(@as(usize, 2), try writer.appendAllCount(source));
+    try std.testing.expectEqual(@as(usize, 2), writer.eventCount());
+    try std.testing.expect(!writer.isEmpty());
+    try std.testing.expect(writer.hasEvents());
+    try std.testing.expect(!writer.isFull());
+    try std.testing.expectEqual(@as(usize, 1), writer.remainingCapacity());
+    try std.testing.expectEqual(@as(?usize, 1), writer.firstSampleOffset());
+    try std.testing.expectEqual(@as(?usize, 2), writer.latestSampleOffset());
+    try std.testing.expectEqual(plug.process.EventKind.note_on, writer.first().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, writer.latest().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, writer.firstKind(.note_on).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, writer.latestKind(.note_off).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, writer.firstAtOffset(2).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, writer.latestAtOffset(2).?.kind);
+    try std.testing.expect(writer.hasKind(.note_on));
+    try std.testing.expect(writer.kindEmpty(.pitch_bend));
+    try std.testing.expectEqual(@as(usize, 1), writer.countKind(.note_on));
+    try std.testing.expectEqual(@as(usize, 1), writer.countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 1), writer.countNoteReleases());
+    try std.testing.expectEqual(@as(usize, 1), writer.countAtOffset(1));
+    try std.testing.expectEqual(@as(usize, 1), writer.countKindAtOffset(.note_off, 2));
+    try std.testing.expectEqual(@as(usize, 2), writer.countBus(0));
+    try std.testing.expectEqual(@as(usize, 2), writer.countChannel(0));
+    try std.testing.expectEqual(@as(usize, 2), writer.countBusChannel(0, 0));
+    try std.testing.expect(writer.hasBus(0));
+    try std.testing.expect(!writer.busEmpty(0));
+    try std.testing.expect(writer.channelEmpty(1));
+    try std.testing.expect(writer.hasBusChannel(0, 0));
+    try std.testing.expect(writer.busChannelEmpty(1, 0));
+    try std.testing.expect(!writer.onlyAtOffset(1));
+    try std.testing.expect(!writer.onlyKind(.note_on));
+    try std.testing.expect(!writer.onlyKindAtOffset(.note_on, 1));
+    try std.testing.expect(!writer.onlyNoteAttacks());
+    try std.testing.expect(!writer.onlyNoteReleases());
+    try std.testing.expect(writer.onlyBus(0));
+    try std.testing.expect(writer.onlyChannel(0));
+    try std.testing.expect(writer.onlyBusChannel(0, 0));
+
+    try std.testing.expectEqual(@as(usize, 1), try writer.appendCount(plug.process.Event.other(3)));
+    try std.testing.expect(writer.isFull());
+    try std.testing.expect(!writer.canAppend(1));
+    try std.testing.expectEqual(@as(usize, 3), writer.events().eventCount());
+    try std.testing.expectEqual(plug.process.EventKind.other, writer.latest().?.kind);
+    try std.testing.expectEqual(@as(?usize, 2), writer.nextSampleOffset(1));
+    try std.testing.expectEqual(@as(?usize, null), writer.nextSampleOffset(3));
+    try std.testing.expectEqual(@as(?usize, 2), writer.nextSampleOffsetForKind(.note_off, 1));
+    try std.testing.expectEqual(@as(?usize, 2), writer.nextSampleOffsetForBus(0, 1));
+    try std.testing.expectEqual(@as(?usize, 2), writer.nextSampleOffsetForChannel(0, 1));
+    try std.testing.expectEqual(@as(?usize, 2), writer.nextSampleOffsetForBusChannel(0, 0, 1));
+    try std.testing.expectError(error.EventStorageFull, writer.appendCount(plug.process.Event.noteOn(0, 0, 64, 0.5)));
+    try std.testing.expectError(error.EventOutsideBlock, writer.appendCount(plug.process.Event.noteOn(4, 0, 64, 0.5)));
+
+    var note_events = writer.ofKind(.note_on);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, note_events.next().?.kind);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), note_events.next());
+
+    var events_at_offset = writer.atOffset(2);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, events_at_offset.next().?.kind);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), events_at_offset.next());
+
+    var segments = writer.blockSegments();
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = 1 }, segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 1, .end_offset = 2 }, segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 2, .end_offset = 3 }, segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 3, .end_offset = 4 }, segments.next().?);
+    try std.testing.expectEqual(@as(?plug.process.BlockSegment, null), segments.next());
+
+    try std.testing.expectEqual(@as(usize, 3), writer.clearCount());
+    try std.testing.expectEqual(@as(usize, 0), writer.clearCount());
+    try writer.appendAll(source);
+    try std.testing.expectEqual(@as(usize, 2), writer.eventCount());
+    writer.clear();
+    try std.testing.expect(writer.isEmpty());
+}
+
 test "event echo core example writes input events to output events" {
     var plugin = EventEcho{};
     const input = [_]f32{ 0.0, 0.0 };
