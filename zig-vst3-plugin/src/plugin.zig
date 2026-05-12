@@ -1675,6 +1675,21 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return report.ignoredEntriesEmpty();
         }
 
+        pub fn parameterStateReportHasAccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.hasAccountedEntries();
+        }
+
+        pub fn parameterStateReportHasNoAccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.hasNoAccountedEntries();
+        }
+
+        pub fn parameterStateReportAccountedEntriesEmpty(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.accountedEntriesEmpty();
+        }
+
         pub fn parameterStateReportHasUnaccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
             _ = self;
             return report.hasUnaccountedEntries();
@@ -3640,6 +3655,9 @@ test "plugin instance round-trips owned parameter state" {
     try std.testing.expect(!report.hasNoRestoredEntries());
     try std.testing.expect(!report.hasIgnoredEntries());
     try std.testing.expect(report.hasNoIgnoredEntries());
+    try std.testing.expect(report.hasAccountedEntries());
+    try std.testing.expect(!report.hasNoAccountedEntries());
+    try std.testing.expect(!report.accountedEntriesEmpty());
     try std.testing.expect(report.restoredAllEntries());
     try std.testing.expect(!report.restoredPartialEntries());
     try std.testing.expect(!report.ignoredAllEntries());
@@ -3653,6 +3671,9 @@ test "plugin instance round-trips owned parameter state" {
     try std.testing.expect(!restored.parameterStateReportHasMoreRestoredEntries(report));
     try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportMissingRestoredEntryCount(report));
     try std.testing.expectEqual(@as(usize, 0), restored.parameterStateReportExtraRestoredEntryCount(report));
+    try std.testing.expect(restored.parameterStateReportHasAccountedEntries(report));
+    try std.testing.expect(!restored.parameterStateReportHasNoAccountedEntries(report));
+    try std.testing.expect(!restored.parameterStateReportAccountedEntriesEmpty(report));
     try std.testing.expect(!restored.parameterStateReportMatchesDecodedCount(partial_report));
     try std.testing.expect(restored.parameterStateReportHasFewerDecodedEntries(partial_report));
     try std.testing.expect(!restored.parameterStateReportHasMoreDecodedEntries(partial_report));

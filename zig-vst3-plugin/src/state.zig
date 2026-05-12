@@ -233,6 +233,18 @@ pub const ReadParameterStateReport = struct {
         return self.hasNoIgnoredEntries();
     }
 
+    pub fn hasAccountedEntries(self: ReadParameterStateReport) bool {
+        return self.accountedCount() != 0;
+    }
+
+    pub fn hasNoAccountedEntries(self: ReadParameterStateReport) bool {
+        return self.accountedCount() == 0;
+    }
+
+    pub fn accountedEntriesEmpty(self: ReadParameterStateReport) bool {
+        return self.hasNoAccountedEntries();
+    }
+
     pub fn hasUnaccountedEntries(self: ReadParameterStateReport) bool {
         return self.unaccountedCount() != 0;
     }
@@ -653,6 +665,9 @@ test "parameter state round-trips normalized values" {
     try std.testing.expect(!report.hasUnaccountedEntries());
     try std.testing.expect(report.hasNoUnaccountedEntries());
     try std.testing.expect(report.unaccountedEntriesEmpty());
+    try std.testing.expect(report.hasAccountedEntries());
+    try std.testing.expect(!report.hasNoAccountedEntries());
+    try std.testing.expect(!report.accountedEntriesEmpty());
     try std.testing.expect(report.fullyHandled());
     try std.testing.expectEqual(ReadParameterStateClassification.restored_all, report.classification());
     try std.testing.expect(!report.isEmptyClassification());
@@ -836,6 +851,9 @@ test "parameter state report classifies empty and ignored loads" {
     try std.testing.expect(!empty.hasUnaccountedEntries());
     try std.testing.expect(empty.hasNoUnaccountedEntries());
     try std.testing.expect(empty.unaccountedEntriesEmpty());
+    try std.testing.expect(!empty.hasAccountedEntries());
+    try std.testing.expect(empty.hasNoAccountedEntries());
+    try std.testing.expect(empty.accountedEntriesEmpty());
     try std.testing.expect(empty.fullyHandled());
     try std.testing.expectEqual(ReadParameterStateClassification.empty, empty.classification());
     try std.testing.expect(empty.isEmptyClassification());
@@ -922,6 +940,9 @@ test "parameter state report classifies empty and ignored loads" {
     try std.testing.expect(incomplete.hasUnaccountedEntries());
     try std.testing.expect(!incomplete.hasNoUnaccountedEntries());
     try std.testing.expect(!incomplete.unaccountedEntriesEmpty());
+    try std.testing.expect(incomplete.hasAccountedEntries());
+    try std.testing.expect(!incomplete.hasNoAccountedEntries());
+    try std.testing.expect(!incomplete.accountedEntriesEmpty());
     try std.testing.expect(!incomplete.fullyHandled());
     try std.testing.expectEqual(ReadParameterStateClassification.partial, incomplete.classification());
     try std.testing.expect(!incomplete.isEmptyClassification());
