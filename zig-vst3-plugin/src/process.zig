@@ -2475,16 +2475,32 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.blockSegments(self.frameCount());
         }
 
+        pub fn eventBlockSegments(self: @This()) EventBlockSegmentIterator {
+            return self.inputEventBlockSegments();
+        }
+
         pub fn inputEventCount(self: @This()) usize {
             return self.events.eventCount();
+        }
+
+        pub fn eventCount(self: @This()) usize {
+            return self.inputEventCount();
         }
 
         pub fn inputEventsEmpty(self: @This()) bool {
             return self.events.isEmpty();
         }
 
+        pub fn eventsEmpty(self: @This()) bool {
+            return self.inputEventsEmpty();
+        }
+
         pub fn hasInputEvents(self: @This()) bool {
             return self.events.hasEvents();
+        }
+
+        pub fn hasEvents(self: @This()) bool {
+            return self.hasInputEvents();
         }
 
         pub fn firstEventOffset(self: @This()) ?usize {
@@ -3805,8 +3821,11 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?BlockSegment, null), block_segments.next());
     try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.inputEventCount());
+    try std.testing.expectEqual(@as(usize, 1), context.eventCount());
     try std.testing.expect(!context.inputEventsEmpty());
+    try std.testing.expect(!context.eventsEmpty());
     try std.testing.expect(context.hasInputEvents());
+    try std.testing.expect(context.hasEvents());
     try std.testing.expectEqual(@as(usize, 1), context.countNoteAttacks());
     try std.testing.expectEqual(@as(usize, 1), context.countInputNoteAttacks());
     try std.testing.expectEqual(@as(usize, 0), context.countNoteReleases());
@@ -3990,6 +4009,10 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, event_segments.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 2 }, event_segments.next().?);
     try std.testing.expectEqual(@as(?BlockSegment, null), event_segments.next());
+    var generic_event_segments = context.eventBlockSegments();
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, generic_event_segments.next().?);
+    try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 2 }, generic_event_segments.next().?);
+    try std.testing.expectEqual(@as(?BlockSegment, null), generic_event_segments.next());
     var process_segments = context.processBlockSegments();
     try std.testing.expectEqual(BlockSegment{ .start_offset = 0, .end_offset = 1 }, process_segments.next().?);
     try std.testing.expectEqual(BlockSegment{ .start_offset = 1, .end_offset = 2 }, process_segments.next().?);

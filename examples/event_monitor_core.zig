@@ -585,6 +585,12 @@ test "event monitor core example summarizes input event kinds" {
     try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 2, .end_offset = 3 }, segments.next().?);
     try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 3, .end_offset = 4 }, segments.next().?);
     try std.testing.expectEqual(@as(?plug.process.BlockSegment, null), segments.next());
+    var generic_segments = context.eventBlockSegments();
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = 1 }, generic_segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 1, .end_offset = 2 }, generic_segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 2, .end_offset = 3 }, generic_segments.next().?);
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 3, .end_offset = 4 }, generic_segments.next().?);
+    try std.testing.expectEqual(@as(?plug.process.BlockSegment, null), generic_segments.next());
 }
 
 test "event monitor core example reports empty input event views" {
@@ -595,8 +601,11 @@ test "event monitor core example reports empty input event views" {
     const context = try plug.process.ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
 
     try std.testing.expectEqual(@as(usize, 0), context.inputEventCount());
+    try std.testing.expectEqual(@as(usize, 0), context.eventCount());
     try std.testing.expect(context.inputEventsEmpty());
+    try std.testing.expect(context.eventsEmpty());
     try std.testing.expect(!context.hasInputEvents());
+    try std.testing.expect(!context.hasEvents());
     try std.testing.expectEqual(@as(?usize, null), context.firstEventOffset());
     try std.testing.expectEqual(@as(?usize, null), context.latestEventOffset());
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffset(0));
@@ -614,6 +623,9 @@ test "event monitor core example reports empty input event views" {
     var segments = context.inputEventBlockSegments();
     try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = 1 }, segments.next().?);
     try std.testing.expectEqual(@as(?plug.process.BlockSegment, null), segments.next());
+    var generic_segments = context.eventBlockSegments();
+    try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = 1 }, generic_segments.next().?);
+    try std.testing.expectEqual(@as(?plug.process.BlockSegment, null), generic_segments.next());
 }
 
 test "event monitor core example can run through plugin instance" {
