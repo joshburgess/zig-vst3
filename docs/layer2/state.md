@@ -1,43 +1,110 @@
 # Layer 2 State
 
-`zig-vst3-plugin` state serialization stores reflected parameter values as normalized scalars. The current binary format is intentionally small:
+`zig-vst3-plugin` state stores reflected parameter values as normalized scalars. The VST3 bridge reads and writes the same format through `IBStream`, so plugin state does not depend on the current parameter count.
 
-- 8-byte magic header
-- 16-bit format version
-- 16-bit parameter entry count
-- repeated entries of parameter id plus normalized `f64` bits
+## Format
 
-Loading ignores unknown parameter ids, which lets newer plugin versions remove parameters without breaking older saved states. Missing parameters keep their current value, so newer plugin versions can add parameters and keep descriptor defaults when loading older state. Renamed parameters can be restored through explicit old-id to new-id migrations, including chained migrations across multiple plugin versions.
+The binary format is intentionally small:
 
-The VST3 bridge reads and writes this format directly through `IBStream`, so state loading is not tied to the current parameter count. Older shorter states can load into newer plugins, and newer states with extra ids can load into older plugins. `vst_stream.zig` provides a reusable fixed-buffer `IBStream`/`ISizeableStream` object for exercising this path without per-test stream mocks.
+- 8-byte magic header.
+- 16-bit format version.
+- 16-bit parameter entry count.
+- Repeated entries of parameter id plus normalized `f64` bits.
 
-Malformed state headers, unsupported format versions, truncated entries, duplicate restored parameter entries, non-finite or out-of-range normalized values, and failed `IBStream` writes are rejected. Failed reads do not apply partial parameter entries.
+Loading ignores unknown parameter ids. That lets newer plugin versions remove parameters without breaking older saved states. Missing parameters keep their current values, so newer versions can add parameters and keep descriptor defaults when loading older state.
 
-## Current API
+Malformed headers, unsupported versions, truncated entries, duplicate restored ids, non-finite or out-of-range normalized values, and failed writes are rejected. Failed reads do not apply partial parameter entries.
 
-- `state.encoded_header_size`: byte count for the binary state header.
-- `state.encoded_entry_size`: byte count for one binary parameter entry.
-- `state.encodedSizeForCount(count)`: byte count for a binary state with `count` entries, saturating at `usize` max on overflow.
-- `state.encodedSizeForCountChecked(count)`: checked byte count for a binary state with `count` entries.
-- `state.encodedSize(Params)`: byte count for a full parameter snapshot.
-- `state.format_version`: current binary and debug JSON state format version.
-- `state.ParameterStateHeader`: decoded binary header metadata with version, entry count, entry-count presence, absence, and emptiness checks, current-version checks, expected-count comparisons, older/newer-state entry-count deltas, and encoded-size helpers.
-- `state.ReadParameterStateReport`: counts decoded, restored, ignored, accounted, and unaccounted entries from a state load, with decoded/restored/ignored/accounted/unaccounted-count comparisons and deltas, decoded/restored/ignored/accounted/unaccounted presence and absence helpers plus all/partial accounting, restore, ignore, mixed restored/ignored, fully-handled, enum classification, and classification predicate helpers for host state loads.
-- `state.ReadParameterStateClassification`: compact state-load classification for empty, fully restored, fully ignored, restored-and-ignored, and partial loads.
-- `state.writeParameterStateHeaderForCount(count, writer)`: writes the binary header for tools that need a header-only state fixture.
-- `state.readParameterStateHeader(reader)`: validates the magic header and returns version and entry count without decoding parameter entries.
-- `state.writeParameterState(Params, set, values, writer)`: writes all reflected parameter values.
-- `state.writeParameterStateJson(Params, set, values, writer)`: writes the same reflected parameter values as compact debug JSON.
-- `state.readParameterState(Params, set, values, reader)`: reads entries and updates matching reflected values.
-- `state.readParameterStateWithMigrations(Params, set, values, reader, migrations)`: validates the migration list, reads entries, and maps renamed parameter ids before lookup.
-- `state.readParameterStateReport(Params, set, values, reader)`: reads entries and returns a report with restored and ignored counts.
-- `state.readParameterStateWithMigrationsReport(Params, set, values, reader, migrations)`: reads migrated entries and returns the same report.
-- `state.validateParameterIdMigrations(migrations)`: rejects identity mappings, duplicate old ids, independently converging target ids, and cyclic migration chains before state loading mutates parameter values.
-- `state.identityParameterMigrationIndex`, `state.duplicateParameterMigrationIndex`, and `state.ambiguousParameterMigrationIndex`: report the first matching migration entry index for diagnostics before strict validation. Linear old-id to new-id chains are not ambiguous.
-- `state.migratedParameterId(id, migrations)`: resolves a saved parameter id through the same old-id to new-id migration list used by state loading.
+## Write And Read State
 
-`PluginInstance` binds state reads, state entry-count compatibility checks, reflected and count-based encoded-size helpers, header-only writes, migrated state reads, migration diagnostics, and migrated-id resolution to instance code. Header helpers compare decoded header entry counts with the current parameter count. Restore-report helpers compare decoded, restored, ignored, accounted, and unaccounted entries, so callers can distinguish newer state files with extra ignored ids from state files that failed to restore every current parameter.
+Use `PluginInstance` in tests and adapters:
 
-The checked gain example covers direct and instance-bound state size constants, checked encoded-size helpers, header-only writing, header entry-count, empty, delta, and encoded-size helpers, migrated state reads, plus migration diagnostic indexes, in addition to instance-bound header metadata and report compatibility, count, presence, aggregate, and classification checks.
+```zig
+var instance = try plug.plugin.PluginInstance(Gain).init(allocator, .{});
+var editor = instance.parameterEditor();
+_ = editor.storeCount("gain", 0.5);
 
-Program lists can remain metadata-only, or each program can carry a finite normalized parameter snapshot through `plug.units.ProgramParameter`. `PluginInstance.applyProgram`, `applyProgramByName`, and the unit-based program application helpers validate the complete snapshot and then apply matching parameter ids. The `*Count` variants report `null` for missing targets or the number of parameter values that changed.
+var out = std.Io.Writer.fixed(buffer[0..]);
+try instance.writeParameterState(&out);
+
+var restored = try plug.plugin.PluginInstance(Gain).init(allocator, .{});
+var in = std.Io.Reader.fixed(out.buffered());
+try restored.readParameterState(&in);
+```
+
+Use the module functions when you already have a reflected set and value storage:
+
+```zig
+const Set = plug.parameters.ParameterSet(Params);
+const set = Set.init(.{});
+var values = plug.parameters.ParameterValues(Params).init(&set);
+
+try plug.state.writeParameterState(Params, &set, &values, writer);
+try plug.state.readParameterState(Params, &set, &values, reader);
+```
+
+`zig-vst3.vst_stream.FixedBufferStream` is useful for exercising the `IBStream` path without writing a stream mock.
+
+## Migrations
+
+Renamed parameters can be restored through explicit old-id to new-id mappings:
+
+```zig
+const migrations = &.{
+    .{ .old_id = 10, .new_id = 20 },
+    .{ .old_id = 20, .new_id = 30 },
+};
+
+try instance.readParameterStateWithMigrations(reader, migrations);
+```
+
+Migration chains are allowed. Validation rejects identity mappings, duplicate old ids, independently converging target ids, and cycles before loading mutates parameter values. Use `state.migratedParameterId` or the instance-bound equivalent when diagnostics need to show where a saved id will land.
+
+## Restore Reports
+
+Use report variants when state compatibility matters:
+
+```zig
+const report = try instance.readParameterStateWithMigrationsReport(reader, migrations);
+
+if (report.restoredAllEntries()) {
+    // Every decoded entry restored to a current parameter.
+}
+```
+
+Reports track decoded, restored, ignored, accounted, and unaccounted entry counts. Classification helpers distinguish empty, fully restored, fully ignored, restored-and-ignored, and partial loads. This is useful when accepting newer state files with extra ignored ids but still detecting truncated or incomplete restores.
+
+Header helpers inspect state without decoding entries:
+
+```zig
+const header = try instance.readParameterStateHeader(reader);
+const missing = instance.parameterStateHeaderMissingEntryCount(header);
+const extra = instance.parameterStateHeaderExtraEntryCount(header);
+```
+
+## Debug JSON
+
+For diagnostics and golden tests, write compact debug JSON:
+
+```zig
+try instance.writeParameterStateJson(writer);
+```
+
+The JSON uses the same format version and reflected parameter values as the binary state path. It is not the host-facing state format.
+
+## API Reference
+
+- `state.encoded_header_size`: binary header size.
+- `state.encoded_entry_size`: one parameter entry size.
+- `state.encodedSizeForCount(count)` and `state.encodedSizeForCountChecked(count)`: count-based state size helpers.
+- `state.encodedSize(Params)`: full reflected parameter snapshot size.
+- `state.format_version`: current binary and debug JSON state version.
+- `state.ParameterStateHeader`: decoded header metadata and entry-count compatibility helpers.
+- `state.ReadParameterStateReport`: decoded/restored/ignored/accounted/unaccounted counts and classification helpers.
+- `state.writeParameterStateHeaderForCount(count, writer)`: header-only fixtures.
+- `state.readParameterStateHeader(reader)`: header-only inspection.
+- `state.writeParameterState`, `readParameterState`, and migration/report variants.
+- `state.writeParameterStateJson`: debug JSON output.
+- `state.validateParameterIdMigrations` and migration diagnostic helpers.
+
+Program lists can also carry finite normalized parameter snapshots through `plug.units.ProgramParameter`. `PluginInstance.applyProgram` and related helpers validate the complete snapshot, then apply matching parameter ids.

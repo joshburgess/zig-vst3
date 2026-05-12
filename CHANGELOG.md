@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Release Notes
+
+- `zig-vst3-0.1.0` is intended as the first raw-layer preview release. The release target is ABI-checked Layer 1 declarations, reusable host/test helper objects, checked example bundles, and a documented pre-release framework layer.
+- The local release gate is `scripts/layer1_release_check.sh`. It runs `zig build test`, `zig build layer1-abi`, `zig build validator`, and `zig build validate-examples`.
+- Zig 0.16.0 and VST3 SDK `v3.8.0_build_66` are the release toolchain pins.
+
 ### Added
 
 - Public CI for Linux, macOS, and Windows build and test coverage.
@@ -40,3 +46,4 @@
 
 - Fresh manual host smoke rows are still needed for note-gate, event-monitor, and sine-synth before tagging `zig-vst3-0.1.0`.
 - Event Echo still needs a host smoke pass that directly observes echoed output events.
+- Windows bundle generation is covered in CI, but Windows validator execution is not yet part of the release gate.

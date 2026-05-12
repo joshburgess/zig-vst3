@@ -69,6 +69,58 @@ The raw layer includes fixed-capacity helper objects for tests and shell integra
 
 These helpers favor deterministic failure behavior. Failed reads, writes, lookups, queue opens, event reads, and string writes clear their output values where that prevents stale host-visible data.
 
+## Implement An SDK Helper Object
+
+Most raw helper objects follow the same pattern:
+
+1. Store one or more SDK interface structs as fields. Each interface field points at a static vtable.
+2. Store reference-count state with `std.atomic.Value(types.uint32)`.
+3. Add `asInterfaceName` helpers that return pointers to the embedded interface fields.
+4. Use `@fieldParentPtr` in vtable methods to recover the owning helper object.
+5. Implement `queryInterface` with `interface_map.queryWithAddRef`.
+6. Clear host-visible output values on failure when stale data would be misleading.
+
+The `vst_string_result.StringResult` helper is a small example because it exposes both `IStringResult` and `IString` from one object:
+
+```zig
+pub fn StringResult(comptime max_text8_bytes: usize, comptime max_text16_units: usize) type {
+    return extern struct {
+        const Self = @This();
+
+        result_iface: istringresult.IStringResult = .{ .vtable = &result_vtable },
+        string_iface: istringresult.IString = .{ .vtable = &string_vtable },
+        ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        text8: [max_text8_bytes]types.char8 = [_]types.char8{0} ** max_text8_bytes,
+        text16: [max_text16_units]types.char16 = [_]types.char16{0} ** max_text16_units,
+
+        pub fn asResult(self: *Self) *istringresult.IStringResult {
+            return &self.result_iface;
+        }
+
+        fn ownerFromResult(ptr: *anyopaque) *Self {
+            const iface: *istringresult.IStringResult = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("result_iface", iface);
+        }
+
+        fn queryCanonical(
+            self: *Self,
+            add_ref_ptr: *anyopaque,
+            requested_iid: *const tuid.TUID,
+            out: *?*anyopaque,
+        ) types.tresult {
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = &self.result_iface },
+                .{ .iid = &istringresult.istring_result_iid, .ptr = &self.result_iface },
+                .{ .iid = &istringresult.istring_iid, .ptr = &self.string_iface },
+            };
+            return interface_map.queryWithAddRef(add_ref_ptr, resultAddRef, &entries, requested_iid, out);
+        }
+    };
+}
+```
+
+For production helpers, keep vtable methods small and test both the direct helper API and the raw interface calls. If the object implements several interfaces, test `queryInterface` from each exposed interface pointer so canonical identity and reference-count behavior stay correct.
+
 ## Direct Raw Workflow
 
 Raw-layer code usually follows this shape:

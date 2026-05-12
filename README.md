@@ -102,6 +102,7 @@ zig build layer1-abi
 - [docs/layer2/state.md](docs/layer2/state.md): binary state format, migration, restore reports, and debug JSON.
 - [docs/layer1-api.md](docs/layer1-api.md): raw VST3 API guide.
 - [docs/layer1-coverage.md](docs/layer1-coverage.md): raw-layer coverage map.
+- [docs/stability.md](docs/stability.md): current pre-release compatibility policy.
 - [docs/host-matrix.md](docs/host-matrix.md): real host smoke-test results.
 - [docs/roadmap.md](docs/roadmap.md): remaining work and validation tiers.
 

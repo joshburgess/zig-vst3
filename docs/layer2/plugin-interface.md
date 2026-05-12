@@ -1,137 +1,221 @@
 # Layer 2 Plugin Interface
 
-The current `zig-vst3-plugin` layer is a compile-time plugin interface with a reusable Layer 1 bridge for reflected parameter metadata, string conversion, normalized/plain conversion, state, host automation and event collection, configurable stereo audio bus metadata for effects, input-only analyzers, and output-only generators, VST3 audio buffer views, optional process-state reset hooks, optional plug-view and XML representation creation, reusable error-context, string-result, cloneable, update-handler, persistent, persistent-attribute, unit-info, unit-data, inter-app-audio, test-interface, test-plug-provider, plugin-compatibility, plug-frame, context-menu, parameter-finder, content-scale, Linux run-loop, and Wayland host/frame helpers for custom editors and SDK callbacks, and main audio sample-size dispatch. The bundled examples use reusable simple stereo effect and reflected edit-controller shells.
+`zig-vst3-plugin` is the framework layer for writing plugins without hand-writing VST3 COM objects. A plugin is a Zig type with host metadata, a `Params` declaration, and optional lifecycle hooks. The framework reflects that type into parameter metadata, state, automation, events, bus topology, units, programs, and the reusable Layer 1 VST3 shells.
 
-## Current API
+Use this layer for normal effects, instruments, analyzers, and event processors. Drop to `zig-vst3` only when you need direct SDK interface control.
 
-A plugin type declares:
-
-- `name`: display name
-- `vendor`: vendor string
-- optional `url` and `email`: factory contact metadata
-- optional `component_class_name` and `controller_class_name`: host-facing VST3 class names
-- optional `component_category` and `controller_category`: host-facing VST3 class categories
-- optional `audio_input`, `audio_output`, `event_input`, and `event_output`: public bus topology metadata
-- `Params`: struct of `zig-vst3-plugin` parameter descriptors
-- optional lifecycle methods
-
-`PluginSpec(Plugin)` validates those declarations at compile time, including non-empty plugin/class/category metadata, NUL-free contact strings, reserved unit/program-list sentinel ids, program snapshot parameter ids, and normalized values, and exposes:
-
-- `ParameterSet`: reflected descriptor metadata
-- `ParameterValues`: atomic normalized values initialized from descriptor defaults
-- `Units`: reflected unit and program-list metadata
-- normalized plugin, factory, component, and controller metadata with conservative defaults
-- bus topology metadata with stereo audio input, stereo audio output, event input, and no event output as defaults
-- `encoded_parameter_state_size`: byte count for a full reflected parameter snapshot
-- lifecycle flags for optional `init`, `prepare`, `process`, `process64`, and `deinit` declarations
-- `initChecked(params)`: validates plugin, parameter, unit, and program metadata, then builds the reflected set and value storage
-- `init(params)`: builds the reflected set and value storage, panicking if metadata is invalid
-
-`PluginInstance(Plugin)` owns a plugin value plus its reflected spec, exposes normalized plugin/factory/component/controller metadata, exposes bus-topology, lifecycle-hook, and exact process-hook predicates, exposes the instance parameter set and mutable or const value storage, copies parameter values from another same-plugin instance with optional changed-count reporting, exposes bound parameter view/editor handles, provides reflected parameter metadata by index or id, count and emptiness checks, index and existence lookup, parameter and unit metadata validation, plain/normalized conversion by index, id, display name, or field, and plain text formatting/parsing helpers, provides typed, normalized, index-based, id-based, name-based, and plain parameter load/store helpers by id or display name, exposes reflected unit and program-list metadata, applies reflected parameter changes to instance-owned values before process dispatch, can return accepted-change and changed-value counts for automatable writable parameter changes, exposes reflected parameter-state entry count, encoded size, and count-based encoded-size helpers, reads and writes reflected parameter state for the instance, supports instance-bound header-only writes, migrated state reads, migration diagnostics, and migrated-id resolution, can report decoded, restored, ignored, accounted, and unaccounted state entries with presence, emptiness, and classification helpers, supports header-only state inspection plus instance-bound header and report entry-count compatibility checks through the state module, writes debug JSON for reflected parameter state, and drives only the lifecycle hooks the plugin declares. It creates the plugin through `init(allocator)` when present, otherwise it uses a default struct value for declaration-only plugin types.
-
-`PrepareConfig.validate` and `PluginInstance.prepareChecked` reject non-positive or non-finite sample rates and zero maximum block sizes before a plugin's `prepare` hook runs. `PluginInstance.prepare` remains the convenience wrapper for callers that already trust the configuration. The VST3 shell applies the same checks to host process setup before accepting it and rejects unsupported process sample-size tags before dispatch.
-
-`validateLifecycle(Plugin)` currently accepts:
-
-- `init(allocator: std.mem.Allocator) !Plugin`
-- `prepare(self: *Plugin, config: PrepareConfig) void`
-- `process(self: *Plugin, context: *process.ProcessContext(f32)) void`
-- `processWithParameterView(self: *Plugin, context: *process.ProcessContext(f32), view: ParameterView) void`
-- `processWithParameters(self: *Plugin, context: *process.ProcessContext(f32), set: *const ParameterSet, values: *const ParameterValues) void`
-- `process64(self: *Plugin, context: *process.ProcessContext(f64)) void`
-- `process64WithParameterView(self: *Plugin, context: *process.ProcessContext(f64), view: ParameterView) void`
-- `process64WithParameters(self: *Plugin, context: *process.ProcessContext(f64), set: *const ParameterSet, values: *const ParameterValues) void`
-- `deinit(self: *Plugin) void`
-
-`process.ProcessContext(Sample)` carries typed input/output channel views, parameter changes, input events, optional output events, and the current sample rate. It exposes sample rate, sample duration, block duration, sample-offset seconds, and remaining-frame/second timing helpers. `ProcessContext(Sample).init(sample_rate, input_channels, output_channels)` builds the audio views, rejects non-positive or non-finite sample rates, validates matching frame counts within each side, and rejects side-to-side frame-count mismatches for processors with both audio inputs and outputs. `ProcessContext(Sample).initWith(sample_rate, input_channels, output_channels, .{ ... })` also attaches parameter changes, input events, and output-event storage while validating them against the context frame count. `setParameterChanges`, `setEvents`, and `setOutputEvents` replace attachments after initialization with the same validation, and `outputEventWriter` returns the optional attached writer.
-
-Unit and program helpers:
-
-- Plugins may declare `pub const units = plug.units.Config{ ... }`.
-- `plug.units.Unit.root("Root")` declares the root unit. Additional units can attach to the root or another unit and may point at a program list.
-- `plug.units.ProgramList`, `plug.units.Program`, `plug.units.ProgramParameter`, and `plug.units.ProgramInfo` describe host-facing program names, optional normalized parameter snapshots, and program metadata.
-- `Unit.isRoot`, `Unit.hasParent`, `Unit.hasProgramList`, `Program.parameterCount`, `Program.infoCount`, `Program.hasParameters`, `Program.parametersEmpty`, `Program.hasInfo`, `Program.infoEmpty`, `ProgramList.programCount`, `ProgramList.programName`, `ProgramList.isEmpty`, and `ProgramList.hasPrograms` provide value-level metadata checks for reflected unit and program values.
-- Unit metadata validation rejects missing or duplicate root units, empty unit or program names, embedded NUL bytes in host-facing unit and program strings, duplicate unit names, duplicate program-list ids or names, duplicate program names, duplicate program parameter ids, duplicate program info keys, missing or cyclic unit parents, and unit links to unknown program lists.
-- Unit and program metadata helpers can identify duplicate unit ids/names, program-list ids/names, program names, program parameter ids, and program info keys by value, duplicate item index, and boolean predicates before strict validation is run. Value-level `ProgramList` and `Program` helpers also expose direct program, parameter snapshot, parameter-id index, info entry, and info-key index lookups without constructing a plugin instance.
-- Parameter metadata validation rejects descriptors whose `unit_id` does not match a reflected unit. `PluginSpec.validate`, `PluginInstance.validate`, `validateUniqueParameterIds`, `validateUniqueParameterNames`, `validateParameterDescriptors`, `validateParameters`, `validateParameterUnitIds`, `validateUnits`, `validateProgramLists`, `validateUnitSet`, and `validateProgramParameterIds` expose the same checks from an initialized instance.
-- Program snapshot validation rejects non-finite or out-of-range normalized values and parameter ids that do not match reflected parameters.
-- `PluginInstance.unitSet`, `unitCount`, unit emptiness checks, `unit`, `unitById`, `unitByName`, `rootUnit`, direct root unit id/name lookups, unit index and existence checks by id or name, unit root, parent, and program-list predicates by id or name, direct unit parent-id lookups by id or name, duplicate unit id/name diagnostics, `programListCount`, program-list emptiness and presence checks, `programList`, `programListById`, `programListByName`, program-list index and existence checks by id or name, duplicate program-list id/name diagnostics, `programListForUnit`, `programListForUnitName`, direct unit-to-program-list id/name lookups, `programCount`, `programCountByName`, unit-scoped program counts, `program`, `programByName`, `programByListName`, `programByNameForListName`, unit-scoped program lookups, `programName`, `programNameByListName`, unit-scoped program-name reads, program index and existence checks by list id, list name, unit id, or unit name, duplicate program-name value/index checks by list id, list name, unit id, or unit name, program parameter/info count and emptiness checks, `programParameter`, `programParameterByName`, `programParameterById`, `programParameterByNameAndId`, program-list-name and unit-scoped parameter snapshot helpers, program-parameter id index and existence checks, duplicate program-parameter id value/index checks by list id, list name, unit id, unit name, list-id plus program name, list-name plus program name, unit-id plus program name, or unit-name plus program name, `programInfo`, `programInfoByName`, program-list-name and unit-scoped program-info helpers, program-info entry-by-index and entry-by-key lookups, program-info key index and existence checks, and duplicate program-info key value/index checks by list id, list name, unit id, unit name, list-id plus program name, list-name plus program name, unit-id plus program name, or unit-name plus program name expose the reflected metadata.
-- `PluginInstance.applyProgram`, `applyProgramByName`, `applyProgramForListName`, `applyProgramByNameForListName`, `applyProgramForUnit`, `applyProgramByNameForUnit`, `applyProgramForUnitName`, and `applyProgramByNameForUnitName` apply a program's finite normalized parameter snapshot to reflected parameter ids after validating the whole snapshot. Their `*Count` variants return `null` for a missing target or the number of parameter values that changed.
-
-Timing and audio helpers:
-
-- `AudioInputs(Sample)` and `AudioOutputs(Sample)` validate channel frame counts and expose channel and single-sample access, channel count, emptiness, presence, frame-count, and output sample-write/fill/clear helpers.
-- `sampleRate`, `sampleDurationSeconds`, `blockDurationSeconds`, `blockSegment`, `sampleOffsetSeconds`, sample-offset containment/end predicates, `remainingFramesFromOffset`, and `remainingSecondsFromOffset`
-- `inputAudio`, `outputAudio`, `inputChannel`, `outputChannel`, `inputSample`, `outputSample`, `setOutputSample`, input/output per-index channel presence and emptiness checks, `inputChannelCount`, `outputChannelCount`, input/output channel presence and emptiness checks, `inputFrameCount`, `outputFrameCount`, and `frameCount`
-- `fillOutputs` and `clearOutputs`
-- `frameCount` uses the shared input/output frame count for effects, the output frame count for generators with no audio inputs, and the input frame count for analyzers with no audio outputs.
-- `BlockSegment` and `ParameterSegment` expose frame-count, empty, sample-containment, start, and end helpers for segmented processors.
-
-Parameter helpers:
-
-- `ParameterChange.isForId`, `isAtOffset`, and `isForIdAtOffset` cover value-level routing predicates before a change is added to a context.
-- `ParameterChanges.init` validates process-block changes and exposes value-level count, emptiness, first/latest, per-id, per-offset, id-and-offset iterators, only-match, normalized/defaulted-normalized, at-or-before, next-offset, and segment helpers.
-- `ParameterSet`, `ParameterView`, `ParameterEditor`, and `PluginInstance` construct normalized parameter changes from reflected field names, parameter ids, or display names for tests and non-host callers. Dynamic id and display-name constructors return `null` for a missing parameter.
-- Parameter descriptors can set `unit_id` to group host-facing parameters under a reflected unit.
-- `ParameterValues.view(set)` and `PluginInstance.parameterView()` bind descriptors and values into a `ParameterView`.
-- `ParameterValues.editor(set)` and `PluginInstance.parameterEditor()` bind descriptors and mutable values into a `ParameterEditor`, including copying from a bound `ParameterView` with changed-count reporting.
-- `PluginInstance` exposes direct index aliases for parameter plain text and normalized/plain conversion while retaining its explicit `...Index` names.
-- `ParameterSet`, `ParameterView`, `ParameterEditor`, and `PluginInstance` expose parameter counts and parameter metadata by index, id, display name, and reflected field name for ids, short names, units, normalized and plain defaults, numeric ranges, enum options, option presence and emptiness, bypass flags, automation/read-only flags, unit ids, step counts, and list flags, plus id and display-name existence checks, duplicate id/name diagnostics, first descriptor-error diagnostics, and metadata validation helpers.
-- `ParameterView` and `ParameterEditor` expose direct index conversion names matching `ParameterSet` for plain text and normalized/plain conversion while retaining their explicit `...Index` aliases.
-- `PluginInstance.parameterFieldDescriptor`, `parameterFieldId`, `parameterFieldName`, `parameterFieldShortName`, `parameterFieldUnits`, `parameterFieldDefaultNormalized`, `parameterFieldDefaultPlain`, `parameterFieldPlainMinimum`, `parameterFieldPlainMaximum`, `parameterFieldOptionCount`, `parameterFieldOptionLabel`, `parameterFieldOptionNormalized`, field option presence and emptiness checks, `parameterFieldIsBypass`, `parameterFieldCanAutomate`, `parameterFieldIsReadOnly`, `parameterFieldUnitId`, `parameterFieldStepCount`, and `parameterFieldIsList` expose reflected parameter metadata from comptime field names.
-- `ParameterValues`, `ParameterView`, `ParameterEditor`, and `PluginInstance` expose default-state checks by index, id, display name, and comptime field name, explicit index aliases for direct storage reads and writes, plus aggregate all-defaults, non-default presence, non-default count, counted store helpers, counted copy helpers, and counted bulk and single-parameter reset helpers for reset buttons and dirty-state UI. Counted store helpers return `null` for an invalid target or value, `0` for a no-op store, and `1` when the stored normalized value changes. Counted copy helpers return the number of stored normalized values changed by the copy.
-- `ParameterValues.applyChangesCount` and `PluginInstance.applyParameterChangesCount` apply process changes and return the number accepted by reflected metadata. `applyChangesChangedCount` and `applyParameterChangesChangedCount` return how many accepted changes actually changed stored normalized values. Unknown, non-automatable, and read-only parameters are ignored.
-- `ProcessContext.parameterChanges`, parameter-change iterators by id, offset, or id+offset, `parameterChangeCount`, parameter-change id/offset predicates, parameter-change presence and emptiness checks, first/latest/next parameter-change offsets, per-id first/latest/next offsets, overall first/latest reads, per-offset and id-at-offset first/latest reads, `latestParameterChange`, `firstParameterChange`, `countParameterChanges`, `hasParameterChange`, per-id and per-offset parameter-change count/presence/emptiness/only checks, overall first/latest normalized reads and defaulted variants, `latestParameterNormalized`, `firstParameterNormalized`, per-offset and id-at-offset normalized reads, clamped defaulted normalized reads including exact-offset and at-or-before variants, `latestParameterChangeAtOrBefore`, `latestParameterNormalizedAtOrBefore`, `parameterNormalizedAtOrBeforeOr`, `parameterSegmentAt`, `parameterSegments`, `parameterBlockSegments`, and `processBlockSegments` expose common process-time reads and no-allocation stable automation ranges.
-
-Event helpers:
-
-- `Event.noteOn`, `Event.noteOff`, `Event.midiCc`, `Event.pitchBend`, `Event.aftertouch`, `Event.noteExpressionValue`, `Event.noteExpressionInt`, `Event.noteExpressionText`, `Event.dataEvent`, and `Event.other` construct common input and output events.
-- `Event.asNoteOn`, `asNoteAttack`, `asNoteOff`, `asNoteRelease`, `asMidiCC`, `asPitchBend`, `asAftertouch`, `asNoteExpressionValue`, `asNoteExpressionInt`, `asNoteExpressionText`, and `asData` expose typed payload views for processors that do not want to switch on the broad event struct directly. `Event.noteLifecycle` classifies note attacks, note releases, and non-note events, and `asNoteRelease` handles both note-off and zero-velocity note-on releases.
-- `Event.withBusIndex`, `withSampleOffset`, `withChannel`, `withPitch`, `withValue`, `withIntValue`, `withVelocity`, `withNoteId`, `withExpressionTypeId`, `withDataType`, and `withData` retarget constructed events for generated output-event routing.
-- `Event.withControlNumber` preserves legacy MIDI controller numbers when a host bridge needs to keep them attached to converted events.
-- `Event.isKind`, `Event.isAtOffset`, `Event.isKindAtOffset`, `Event.isNoteAttack`, `Event.isNoteRelease`, `Event.isNote`, `Event.isMidi`, `Event.isNoteExpression`, `Event.isData`, `Event.isOther`, `Event.hasChannel`, `Event.isForChannel`, `Event.isForBus`, `Event.isForBusChannel`, and `Event.isNoteForPitch` cover common event routing checks, including the zero-velocity note-on release convention.
-- `Event.validate`, `Events.init`, and `EventWriter` reject events outside the current process block, negative bus indexes, invalid MIDI channel/pitch/controller metadata, and non-finite or out-of-range normalized event values. The VST3 bridge drops malformed or oversized host data-event payloads before exposing them to plugin code.
-- `ProcessContext.inputEvents`, `inputEventsOfKind`, `inputEventsAtOffset`, `inputEventsForBus`, `inputEventsForChannel`, `inputEventsForBusChannel`, generic and input-prefixed event block segments, count, presence, and emptiness checks, input-prefixed first/latest/next offset aliases, first/latest input-event reads, generic and input-prefixed per-offset first/latest reads, per-kind first/latest/next offsets and kind-at-offset first/latest reads, per-bus/channel/bus-channel first/latest/next offsets and reads, `firstEvent`, `latestEvent`, `firstInputEventOfKind`, `latestInputEventOfKind`, `hasEvent`, `hasInputEvent`, `countEvents`, `countInputEvents`, generic and input-prefixed note-attack and note-release count/presence/emptiness/only helpers, per-offset and kind-at-offset event count/presence/emptiness/only checks, and bus/channel/bus-channel event presence, emptiness, count, iterator, and only-event helpers expose input-event reads without reaching into the event view field.
-- `EventWriter.append`, `appendCount`, `appendAll`, and `appendAllCount` copy validated event views into bounded output storage. Its count, empty/full, capacity, remaining-capacity, frame-count, count-based and validated append planning, clear count, written-event view, first/latest-event reads, per-offset and kind-at-offset first/latest reads, per-bus/channel/bus-channel first/latest/next offsets and reads, block segment, offset, kind-query, bus/channel/bus-channel iterators, note-attack and note-release queries, per-offset and kind-at-offset queries including only-event checks, and bus/channel/bus-channel presence, emptiness, count, and only-event helpers support direct tests and non-context adapters.
-- `ProcessContext.setOutputEvents`, `outputEventWriter`, `appendOutputEvent`, `appendOutputEventCount`, `appendOutputEvents`, `appendOutputEventsCount`, `canAppendOutputEvent`, `canAppendOutputEvents`, validated output-event append planning, `writtenOutputEvents`, `outputEvents`, `outputEventsAtOffset`, `outputEventsOfKind`, `outputEventsForBus`, `outputEventsForChannel`, `outputEventsForBusChannel`, `clearOutputEvents`, `clearOutputEventsCount`, output-event first/latest reads, per-offset first/latest reads, kind and first/latest/next per-kind offset reads, first/latest output-event-of-kind aliases, kind-at-offset first/latest reads, per-bus/channel/bus-channel first/latest/next offsets and reads, bus/channel/bus-channel presence, emptiness, count, iterator, and only-event helpers, per-offset and kind-at-offset count/presence/emptiness/only helpers, note-attack and note-release helpers, `outputEventCount`, `outputEventCapacity`, `outputEventRemainingCapacity`, `outputEventFrameCount`, output-event presence and emptiness checks, and `outputEventsFull` let processors access the attached writer when needed, or write, inspect, reset, and plan output events through missing-writer-safe helpers. Output-event writers must use the same frame count as the process context.
-
-The VST3 shell gives processors a bounded output-event writer and flushes written events to the host after audio processing. It maps malformed process frame counts, channel counts, frame-count mismatches, invalid automation, and invalid event attachments to host-visible invalid-argument results, while retaining host-compatible no-op handling for process calls that omit usable audio buffers or per-block sample-rate context.
-
-Use `processWithParameterView` when a processor needs block-latest reflected parameter state. `processWithParameters` remains available for code that needs direct access to the reflected set and raw value storage. Use `context.parameterBlockSegments`, `context.eventBlockSegments`, `context.inputEventBlockSegments`, or `context.processBlockSegments` when sample-accurate automation, MIDI timing, or both matter, and use `context.parameterNormalizedAtOrBeforeOr` at the segment start to resolve the descriptor/default value before the first automation point.
-
-Checked examples cover `prepare`, `deinit`, `processWithParameterView`, `processWithParameters`, and their `f64` process variants.
-
-## Example
+## Minimal Plugin
 
 ```zig
 const plug = @import("zig-vst3-plugin");
 
-const Gain = struct {
-    pub const name = "Gain";
-    pub const vendor = "zig-vst3";
-    pub const url = "https://github.com/joshburgess/zig-vst3";
+pub const Gain = struct {
+    pub const name = "Simple Gain";
+    pub const vendor = "Example Audio";
+
     pub const Params = struct {
-        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+        gain: plug.parameters.FloatParam = .{
+            .id = 0,
+            .name = "Gain",
+            .min = 0.0,
+            .max = 1.0,
+            .default = 1.0,
+        },
     };
+
+    pub fn processWithParameterView(
+        _: *Gain,
+        context: *plug.process.ProcessContext(f32),
+        params: plug.parameters.ParameterView(Params),
+    ) void {
+        const gain: f32 = @floatCast(params.load("gain"));
+        for (0..context.outputChannelCount()) |channel| {
+            const input = context.inputChannel(channel) orelse continue;
+            const output = context.outputChannel(channel) orelse continue;
+            for (0..context.frameCount()) |sample| {
+                output[sample] = input[sample] * gain;
+            }
+        }
+    }
 };
 
-const GainSpec = plug.plugin.PluginSpec(Gain);
+pub const Spec = plug.plugin.PluginSpec(Gain);
+pub const Instance = plug.plugin.PluginInstance(Gain);
 ```
 
-`examples/gain_core.zig`, `examples/bypass_core.zig`, `examples/mode_gain_core.zig`, `examples/voice_mix_core.zig`, `examples/note_gate_core.zig`, `examples/event_echo_core.zig`, `examples/event_monitor_core.zig`, and `examples/sine_synth_core.zig` are checked examples for the public `zig-vst3-plugin` API. Together they cover float, bool, enum, and int parameters, enum option metadata, automatable and read-only parameter flags, plugin topology, lifecycle, and exact process-hook predicates, prepare validation, runtime reflected metadata counts, parameter defaults and plain ranges, atomic and modulated parameter values, linear, exponential, and logarithmic smoothers, parameter descriptor diagnostics, lookup-based parameter loads, counted parameter stores, counted value copying, counted default resets, field-name, id-based, and display-name parameter-change constructors, direct parameter-change application, same-plugin value copying with changed-count reporting, direct unit-set lookups, unit relationship helpers, program-list relationship helpers, unit and program value helpers, program-list-name program lookups, program snapshot metadata and list-name application, id-based parameter changes, sample-offset parameter changes, parameter-change iterators, parameter-change only predicates, parameter-change next-offset helpers, process timing helpers, audio buffer view helpers, direct process-context audio views, audio channel and single-sample access helpers, output sample writes, output fill and clear helpers, overall automation reads, defaulted overall and exact-offset automation reads, per-id and per-offset automation reads, segment value helpers, block-split automation, state-aware process hooks, state header compatibility, state restore reports, classification, classification predicates, migrated parameter-id resolution, state debug JSON, input events, typed event payload views, event retargeting helpers, note lifecycle helpers, event bus and channel predicates, event routing offset helpers, channel-aware held-note state, zero-velocity note-on release behavior, event-kind iteration, combined event and automation segment processing, output events, input-only processing, output-only processing, and audio processing through `process.ProcessContext(f32)`. `zig-vst3/src/gain_plugin.zig`, `zig-vst3/src/bypass_plugin.zig`, `zig-vst3/src/mode_gain_plugin.zig`, `zig-vst3/src/voice_mix_plugin.zig`, `zig-vst3/src/note_gate_plugin.zig`, `zig-vst3/src/event_echo_plugin.zig`, `zig-vst3/src/event_monitor_plugin.zig`, and `zig-vst3/src/sine_synth_plugin.zig` are bundled VST3 examples using the reusable shells. The shells query and retain `IHostApplication` during initialization, retain host channel-context, automation-state, and data-exchange interfaces, expose conservative defaults for host/plugin connection points, map public bus topology metadata onto audio and event buses, support standard stereo effects, input-only analyzers, and output-only stereo generators, validate process setup and sample-size dispatch, bound VST3 data-event payloads, reset stateful processors during setup, deactivation, and processing stop when a reset hook is provided, store the host component handler, and can send `beginEdit`, `performEdit`, `endEdit`, `setDirty`, `requestOpenEditor`, `startGroupEdit`, `finishGroupEdit`, context-menu, bus activation, system-time, progress, unit-selection, program-list, channel-context, automation-state, data-exchange, and unit-by-bus callbacks for plugin-side edits. Reflected `zig-vst3-plugin` unit and program-list metadata is exposed through `IUnitInfo`. `zig-vst3.vst_message` provides reusable `IMessage`, `IAttributeList`, and `IStreamAttributes` objects for future connection-point notifications and state/preset metadata. The shells also expose the optional VST3 controller and processor interfaces commonly queried by hosts, while still returning no-data/no-assignment results where the Layer 2 API does not yet model a feature. CI validates bundled examples on macOS and Linux and cross-compiles Linux, macOS, and Windows bundles for every bundled example.
+`PluginSpec(Plugin)` validates and reflects the declaration. `PluginInstance(Plugin)` owns a plugin value, parameter storage, state helpers, and bound metadata handles used by tests and the VST3 shell.
 
-Checked input-event helper coverage includes direct event validation, event classification, typed payload views, event-view validation, count, emptiness, first/latest, exact kind-at-offset reads, next-offset, iterator, block segment, routing, generic and input-prefixed only predicates, and empty input fallbacks.
-Checked output-event coverage includes direct writer and process-context append planning, append aliases and counts, capacity state, kind emptiness, offset and kind-at-offset predicates, query views, block segments, no-writer fallbacks, validation failures, and clearing.
-Checked process-context validation covers valid attachment setters, invalid sample rates, mismatched frame counts, invalid attachments, and mismatched output-event writers.
-Checked audio-buffer coverage includes direct input/output views, empty views, input-only and output-only process contexts, mismatched frame validation, channel presence, and output fill/clear helpers.
-Checked process-block segment coverage includes combined input-event and parameter-change split points.
-Checked plugin metadata coverage includes factory contact, class-name, and category defaults and overrides through direct specs and instance-bound accessors.
-Checked topology coverage includes direct `PluginSpec` topology flags, default effects, input-only analyzers, output-only generators, and event-output processors.
-Checked state report coverage includes ignored, accounted, and unaccounted helper predicates.
+## Metadata
 
-## Open Work
+Every plugin declares:
 
-- Complete the deferred Note Gate MIDI-routing host smoke test.
-- Add a host smoke test that directly observes Event Echo output events.
-- Add Event Monitor analyzer scan/load/save/reload host smoke coverage.
-- Add Sine Synth MIDI instrument host smoke coverage.
+- `name`: host-facing plugin name.
+- `vendor`: factory vendor string.
+- `Params`: a struct of parameter descriptors. Use `struct {}` for plugins without parameters.
+
+Optional declarations include:
+
+- `url` and `email`: factory contact metadata.
+- `component_class_name` and `controller_class_name`: VST3 class names.
+- `component_category` and `controller_category`: VST3 class categories.
+- `audio_input`, `audio_output`, `event_input`, and `event_output`: bus topology flags.
+- `units`: unit and program-list metadata.
+
+Default topology is a stereo effect with audio input, audio output, event input, and no event output. Set `audio_output = false` for an input-only analyzer, set `audio_input = false` for a generator, and set `event_output = true` for processors that emit events.
+
+## Lifecycle Hooks
+
+The framework calls only the hooks a plugin declares:
+
+```zig
+pub fn init(allocator: std.mem.Allocator) !Plugin
+pub fn prepare(self: *Plugin, config: plug.plugin.PrepareConfig) void
+pub fn process(self: *Plugin, context: *plug.process.ProcessContext(f32)) void
+pub fn process64(self: *Plugin, context: *plug.process.ProcessContext(f64)) void
+pub fn processWithParameterView(
+    self: *Plugin,
+    context: *plug.process.ProcessContext(f32),
+    params: plug.parameters.ParameterView(Plugin.Params),
+) void
+pub fn process64WithParameterView(
+    self: *Plugin,
+    context: *plug.process.ProcessContext(f64),
+    params: plug.parameters.ParameterView(Plugin.Params),
+) void
+pub fn processWithParameters(
+    self: *Plugin,
+    context: *plug.process.ProcessContext(f32),
+    set: *const plug.parameters.ParameterSet(Plugin.Params),
+    values: *const plug.parameters.ParameterValues(Plugin.Params),
+) void
+pub fn process64WithParameters(
+    self: *Plugin,
+    context: *plug.process.ProcessContext(f64),
+    set: *const plug.parameters.ParameterSet(Plugin.Params),
+    values: *const plug.parameters.ParameterValues(Plugin.Params),
+) void
+pub fn deinit(self: *Plugin) void
+```
+
+Use `processWithParameterView` for most plugins. Use the plain `process` hook when you want to read sample-accurate automation from the `ProcessContext`. Use the `process64` variants when the plugin supports 64-bit processing.
+
+`PrepareConfig` rejects non-finite or non-positive sample rates and zero maximum block sizes before `prepare` runs. The VST3 shell applies the same checks when hosts set up processing.
+
+## Process Context
+
+`process.ProcessContext(Sample)` carries typed audio buffers, parameter changes, input events, optional output-event storage, and sample-rate timing helpers.
+
+For sample-accurate automation, split the block at automation points:
+
+```zig
+pub fn process(_: *Gain, context: *plug.process.ProcessContext(f32)) void {
+    var segments = context.parameterBlockSegments();
+    while (segments.next()) |segment| {
+        const gain: f32 = @floatCast(
+            context.parameterNormalizedAtOrBeforeOr(0, segment.start_offset, 1.0),
+        );
+        for (0..context.outputChannelCount()) |channel| {
+            const input = context.inputChannel(channel) orelse continue;
+            const output = context.outputChannel(channel) orelse continue;
+            for (segment.start_offset..segment.end_offset) |sample| {
+                output[sample] = input[sample] * gain;
+            }
+        }
+    }
+}
+```
+
+Useful context helpers include:
+
+- `sampleRate`, `sampleDurationSeconds`, `blockDurationSeconds`, and `sampleOffsetSeconds`.
+- `inputChannel`, `outputChannel`, `inputSample`, `outputSample`, and `setOutputSample`.
+- `fillOutputs` and `clearOutputs`.
+- `parameterBlockSegments`, `eventBlockSegments`, `inputEventBlockSegments`, and `processBlockSegments`.
+
+`frameCount` uses the shared input/output frame count for effects, the output frame count for generators, and the input frame count for analyzers.
+
+## Events
+
+Events are value types. Processors can inspect typed payloads, route by offset, bus, channel, or kind, and append validated output events when an output writer is attached.
+
+```zig
+pub const EventEcho = struct {
+    pub const name = "Event Echo";
+    pub const vendor = "Example Audio";
+    pub const event_output = true;
+    pub const Params = struct {};
+
+    pub fn process(_: *EventEcho, context: *plug.process.ProcessContext(f32)) void {
+        const events = context.inputEvents();
+        if (!context.canAppendOutputEventValues(events)) return;
+        context.appendOutputEvents(events) catch return;
+    }
+};
+```
+
+Constructors include `Event.noteOn`, `Event.noteOff`, `Event.midiCc`, `Event.pitchBend`, `Event.aftertouch`, `Event.noteExpressionValue`, `Event.dataEvent`, and `Event.other`. `Event.asNoteOn`, `asNoteOff`, `asMidiCC`, and related helpers expose typed views without switching on the whole event struct.
+
+The VST3 bridge validates event offsets, channels, pitches, normalized values, and bounded data-event payloads before exposing events to plugin code.
+
+## Units And Programs
+
+Units group host-facing parameters. Program lists can publish named parameter snapshots.
+
+```zig
+const voice_unit_id: i32 = 1;
+const voice_program_list_id: i32 = 7;
+
+pub const VoiceMix = struct {
+    pub const name = "Voice Mix";
+    pub const vendor = "Example Audio";
+    pub const units = plug.units.Config{
+        .units = &.{
+            plug.units.Unit.root("Main"),
+            .{
+                .id = voice_unit_id,
+                .name = "Voices",
+                .parent_id = plug.units.root_unit_id,
+                .program_list_id = voice_program_list_id,
+            },
+        },
+        .program_lists = &.{.{
+            .id = voice_program_list_id,
+            .name = "Voice Presets",
+            .programs = &.{
+                .{ .name = "Single", .parameters = &.{.{ .parameter_id = 0, .normalized = 0.0 }} },
+                .{ .name = "Quad", .parameters = &.{.{ .parameter_id = 0, .normalized = 1.0 }} },
+            },
+        }},
+    };
+
+    pub const Params = struct {
+        voices: plug.parameters.IntParam = .{
+            .id = 0,
+            .name = "Voices",
+            .min = 1,
+            .max = 4,
+            .default = 1,
+            .unit_id = voice_unit_id,
+        },
+    };
+};
+```
+
+`PluginInstance.unitSet()` and the direct `plug.units.UnitSet` helpers expose unit, program-list, program, parameter snapshot, and metadata lookups by index, id, name, unit, or list.
+
+## Local Checks
+
+Use these checks while changing framework declarations or examples:
+
+```sh
+zig build test
+zig build validate-examples
+```
+
+The checked examples in `examples/*_core.zig` cover the public framework API. The bundled VST3 examples in `zig-vst3/src/*_plugin.zig` exercise the reusable VST3 shells.
+
+## Current Limits
+
+- The API is pre-release. Names and helper organization can still change before a public compatibility promise.
+- Host smoke rows for Note Gate, Event Echo output observation, Event Monitor, and Sine Synth are still deferred.
+- There is no bundled GUI toolkit. The raw layer exposes editor protocols and the framework can delegate editor creation, but plugin authors bring their own UI stack.

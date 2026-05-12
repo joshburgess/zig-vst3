@@ -1,40 +1,153 @@
 # Layer 2 Parameters
 
-`zig-vst3-plugin` parameters expose host-normalized values at the boundary and plain typed values inside plugin code.
+`zig-vst3-plugin` parameters expose normalized VST3 values to hosts and typed plain values to plugin code. Declare parameters as fields in `Plugin.Params`; the framework reflects that struct into metadata, storage, automation, state, and host parameter info.
 
-## Current API
+## Declare Parameters
 
-- `FloatParam`: bounded `f64` values with plain range checks/clamping, normalized/plain conversion, percent display, plain formatting, and plain parsing.
-- `IntParam`: bounded `i64` values with plain range checks/clamping, normalized/plain conversion, rounding on denormalization, plain formatting, and plain parsing.
-- `BoolParam`: midpoint-based boolean conversion with `On`/`Off` display and permissive parsing for `on`, `off`, `true`, `false`, `1`, and `0`.
-- `EnumParam(Enum)`: comptime enum descriptor with tag-name labels, option-count and index lookup helpers, and normalized declaration-order positions, including enums with sparse explicit tag values.
-- `NormalizedValue`: lock-free atomic storage for normalized `f64` values, stored as raw bits.
-- `ModulatedValue`: lock-free base value plus bipolar modulation offset, clamped to the normalized range, with base/modulation accessors.
-- `LinearSmoother`: sample-counted ramp between normalized values, with reset, current/target, target-delta, tolerance-based target checks, active/finished, and remaining-sample helpers.
-- `ExponentialSmoother`: coefficient-based smoothing toward a normalized target, with reset, current/target, target-delta, tolerance-based target checks, coefficient read, and coefficient update helpers.
-- `LogSmoother`: sample-counted multiplicative ramp for normalized values that must stay above zero, with reset, current/target, target-delta, tolerance-based target checks, active/finished, and remaining-sample helpers.
-- `ParameterSet(Params)`: comptime reflection over a struct of descriptors, including parameter count, host-facing id/name/short-name/units/default lookup by reflected index, id, or display name, reflected default plain values, optional plain-range lookup and predicates for numeric descriptors, optional enum option metadata lookup and predicates, id/name/field index and existence lookup, duplicate id/name value and index reporting, descriptor validation checks with first-error index/name reporting, field metadata helpers, reflected `ParameterChange` construction, string conversion, and normalized/plain conversion by reflected index, id, display name, or field.
-- `ParameterValues(Params)`: atomic normalized value storage initialized from reflected descriptor defaults, with index-based, id-based, and name-based normalized/plain load/store helpers, typed field-name load/store helpers for plugin code, normalized field-name stores, counted store helpers, value copying from another storage value with changed-count reporting, default-state checks, aggregate non-default counts, bulk and single-parameter default reset, accepted-count and changed-count process-change application, a `view(set)` helper for bound typed reads, and an `editor(set)` helper for bound typed writes.
-- `ParameterView(Params)`: a descriptor/value pair for parameter metadata, id/name/field index lookup, the same validation helpers as `ParameterSet`, index-based, id-based, name-based, and field-based metadata helpers including optional numeric plain ranges and enum options, reflected `ParameterChange` construction, direct index conversion names matching `ParameterSet`, explicit index aliases, id-based, name-based, and field-based plain conversion, plain text formatting/parsing, typed `load`, normalized `loadNormalized`, default-state and aggregate non-default checks, index-based reads, and id-based/name-based reads without passing the set into each call.
-- `ParameterEditor(Params)`: a descriptor/value pair for parameter metadata, id/name/field index lookup, the same validation helpers as `ParameterSet`, index-based, id-based, name-based, and field-based metadata helpers including optional numeric plain ranges and enum options, reflected `ParameterChange` construction, direct index conversion names matching `ParameterSet`, explicit index aliases, id-based, name-based, and field-based plain conversion, plain text formatting/parsing, typed, normalized, index-based, id-based, and name-based reads and stores plus counted store helpers, value copying from a bound view with changed-count reporting, default-state and aggregate non-default checks, accepted-count and changed-count process-change application, and bulk or single-parameter default reset without passing the set into each call.
+```zig
+const plug = @import("zig-vst3-plugin");
 
-The checked gain example covers direct `FloatParam` descriptor utilities, direct `ParameterSet` metadata, validation, diagnostics, and conversion helpers, direct `PluginInstance` metadata, validation, conversion wrappers, and conversion aliases, direct `ParameterValues` storage and alias helpers, instance-bound parameter handles, copying with changed-count reporting, default-state helpers, counted stores/resets, reset aliases, direct field descriptor, flag, unit, option, and range metadata, bound `ParameterView` metadata, validation, diagnostics, conversions, conversion aliases, reads, and index reads, bound `ParameterEditor` metadata, validation, diagnostics, conversions, conversion aliases, edits, copy-from-view with changed-count reporting, and index edits, and editor-level process-change application counts.
-The checked mode-gain example covers direct enum descriptor utilities and enum option metadata through direct `ParameterSet`, instance, and bound view/editor helpers.
-The checked bypass example covers direct bool descriptor utilities and bool flag metadata through direct instance helpers and bound view/editor helpers.
-The checked voice-mix example covers direct int descriptor utilities alongside unit metadata, program metadata, unit/program validation, and counted or boolean program snapshot application.
+pub const Params = struct {
+    gain: plug.parameters.FloatParam = .{
+        .id = 0,
+        .name = "Gain",
+        .short_name = "Gain",
+        .units = "x",
+        .min = 0.0,
+        .max = 1.0,
+        .default = 1.0,
+    },
+    bypass: plug.parameters.BoolParam = .{
+        .id = 1,
+        .name = "Bypass",
+        .default = false,
+        .is_bypass = true,
+    },
+    voices: plug.parameters.IntParam = .{
+        .id = 2,
+        .name = "Voices",
+        .min = 1,
+        .max = 4,
+        .default = 1,
+    },
+};
+```
+
+For list parameters, use `EnumParam`:
+
+```zig
+const Mode = enum { clean, warm, bright };
+
+pub const Params = struct {
+    mode: plug.parameters.EnumParam(Mode) = .{
+        .id = 3,
+        .name = "Mode",
+        .default = .clean,
+    },
+};
+```
+
+Descriptors can also set `can_automate`, `is_read_only`, and `unit_id`. `unit_id` links a parameter to `plug.units` metadata.
+
+## Descriptor Types
+
+- `FloatParam`: bounded `f64` values with normalized/plain conversion and text formatting/parsing.
+- `IntParam`: bounded `i64` values with normalized/plain conversion and rounded denormalization.
+- `BoolParam`: midpoint conversion with `On` and `Off` display text. `is_bypass` marks a dedicated bypass control.
+- `EnumParam(Enum)`: declaration-order list parameter for Zig enums, including enums with sparse explicit tag values.
+
+Float parameters are continuous. Bool parameters report one step. Int parameters report their integer range as discrete steps. Enum parameters report one step per enum transition and set the VST3 list flag.
+
+## Read Parameters In Process
+
+Most processors should accept a `ParameterView`:
+
+```zig
+pub fn processWithParameterView(
+    _: *Gain,
+    context: *plug.process.ProcessContext(f32),
+    params: plug.parameters.ParameterView(Params),
+) void {
+    const gain: f32 = @floatCast(params.load("gain"));
+    for (0..context.outputChannelCount()) |channel| {
+        const input = context.inputChannel(channel) orelse continue;
+        const output = context.outputChannel(channel) orelse continue;
+        for (0..context.frameCount()) |sample| {
+            output[sample] = input[sample] * gain;
+        }
+    }
+}
+```
+
+Use `process.ProcessContext` automation helpers when sample timing matters:
+
+```zig
+const latest_gain = context.parameterNormalizedAtOrBeforeOr(0, sample_offset, 1.0);
+```
+
+`ParameterView` provides typed field reads with `load("field_name")`, normalized reads with `loadNormalized("field_name")`, and id/name/index reads for code that is not tied to reflected field names.
+
+## Edit Parameters Outside Process
+
+`ParameterEditor` binds descriptors and mutable values:
+
+```zig
+var instance = try plug.plugin.PluginInstance(Gain).init(allocator, .{});
+var editor = instance.parameterEditor();
+
+_ = editor.storeCount("gain", 0.5);
+_ = editor.storeNormalizedCount("gain", 0.25);
+_ = editor.resetToDefaultCount("gain");
+```
+
+Counted stores return:
+
+- `null` for an invalid target or invalid normalized value.
+- `0` when the stored value is unchanged.
+- `1` when the stored value changes.
+
+`ParameterValues`, `ParameterView`, `ParameterEditor`, and `PluginInstance` expose matching default-state checks, non-default counts, counted copy helpers, and default resets. Prefer `PluginInstance.parameterView()` and `PluginInstance.parameterEditor()` in tests and host adapters because they keep the set and value storage bound together.
+
+## Metadata And Conversion
+
+`ParameterSet(Params)` is the reflected descriptor table. Use it when you need metadata without an instance:
+
+```zig
+const Set = plug.parameters.ParameterSet(Params);
+const set = Set.init(.{});
+
+const gain_id = set.id(0);
+const gain_name = set.name(0);
+const normalized = set.normalizePlainByName("Gain", 0.5);
+const display = try set.formatPlainById(0, 0.5, buffer[0..]);
+```
+
+`ParameterSet`, `ParameterView`, `ParameterEditor`, and `PluginInstance` expose parameter metadata by index, id, display name, and reflected field name:
+
+- id, display name, short name, units, default normalized value, and default plain value.
+- plain numeric range for numeric descriptors.
+- enum option count, label, and normalized value for list parameters.
+- bypass, automatable, read-only, unit id, step count, and list flags.
+- duplicate id/name diagnostics and first descriptor-error diagnostics.
 
 ## Boundary Rules
 
-Hosts speak normalized `0.0...1.0` values. Descriptors clamp normalized input before converting it to plain values, and direct normalized stores reject non-finite values. Plain input is clamped to each descriptor's declared range before normalization. Counted store helpers return `null` for invalid targets or non-finite normalized values, `0` when the clamped stored value is unchanged, and `1` when the stored value changes. Counted copy helpers return the number of normalized values changed by the copy.
+Hosts speak normalized `0.0...1.0` values. Descriptors clamp normalized input before converting it to plain values. Direct normalized stores reject non-finite values. Plain input is clamped to each descriptor's declared range before normalization.
 
-VST3 parameter metadata is reflected from descriptors. Float parameters are continuous, bool parameters report one step, int parameters report their integer range as discrete steps, and enum parameters report one step per enum transition with the list flag set. Descriptor validation rejects empty display names, embedded NUL bytes in host-facing strings, duplicate ids or names, invalid ranges, non-finite defaults, and defaults outside their declared range. Descriptors can set `short_name` and `units` for host parameter displays; empty `short_name` falls back to the full display name. Descriptors also expose `can_automate` and `is_read_only` so framework users can control the matching host parameter flags without dropping to the VST3 layer. Applying process-time parameter changes ignores non-automatable and read-only parameters. The VST3 bridge also rejects direct host-side edits for read-only parameters while still allowing state restore and plugin-owned value updates.
+Descriptor validation rejects empty display names, embedded NUL bytes in host-facing strings, duplicate ids or names, invalid ranges, non-finite defaults, and defaults outside their declared range. Empty `short_name` falls back to the display name.
 
-Each descriptor has a `unit_id` field. It defaults to the root unit and is reflected into host parameter metadata when the VST3 shell builds `ParameterInfo`.
+Applying process-time parameter changes ignores unknown, non-automatable, and read-only parameters. The VST3 bridge rejects direct host edits for read-only parameters while still allowing state restore and plugin-owned value updates.
 
-Parameter state that may be read by the audio thread should use `NormalizedValue`. It uses monotonic atomic loads and stores because parameter values are independent scalars; cross-parameter ordering is not part of the contract.
+## Smoothing And Modulation
 
-`BoolParam.is_bypass` marks a boolean parameter as the plugin bypass control for hosts that recognize dedicated bypass metadata.
+- `NormalizedValue`: atomic normalized storage for audio-thread reads.
+- `ModulatedValue`: atomic base value plus bipolar modulation offset, clamped to normalized range.
+- `LinearSmoother`: sample-counted ramp between normalized values.
+- `ExponentialSmoother`: coefficient-based smoothing toward a normalized target.
+- `LogSmoother`: sample-counted multiplicative ramp for normalized values above zero.
 
-## Open Work
+Use smoothers in plugin state when abrupt parameter changes would click or cause unstable DSP behavior.
 
-- Add real-host automation recording coverage for reflected parameter changes.
+## Current Limits
+
+- Real-host automation recording coverage is still pending.
