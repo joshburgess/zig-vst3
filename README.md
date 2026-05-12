@@ -2,82 +2,127 @@
 
 [![CI](https://github.com/joshburgess/zig-vst3/actions/workflows/ci.yml/badge.svg)](https://github.com/joshburgess/zig-vst3/actions/workflows/ci.yml)
 
-Zig bindings and framework experiments for building VST3 audio plugins.
+Zig libraries for building VST3 audio plugins.
 
-The current tree contains:
+This repository has two layers:
 
-- `zig-vst3/`: raw VST3 binding layer
-- `zig-vst3-plugin/`: higher-level plugin framework layer
-- `CHANGELOG.md`: release notes
-- `docs/roadmap.md`: current remaining work and validation tiers
-- `docs/layer1-api.md`: raw `zig-vst3` API guide
-- `docs/layer1-coverage.md`: Layer 1 protocol coverage map
-- `docs/layer1-release.md`: `zig-vst3` release checklist
+- `zig-vst3`: raw Zig bindings and helper objects for the VST3 COM API.
+- `zig-vst3-plugin`: a higher-level framework for writing plugins with reflected parameters, state, automation, events, and reusable VST3 shells.
 
-## Current Status
+The project currently builds and validates example VST3 bundles for effects, analyzers, event processors, and a MIDI-driven synth. It is still pre-release, but the core path is already covered by unit tests, ABI checks, Steinberg validator runs, and CI on Linux, macOS, and Windows.
 
-Layer 1 now builds VST3 example plugins that pass Steinberg's official validator on macOS and Linux in CI.
+## Which Layer Should I Use?
 
-Implemented pieces include:
+Use `zig-vst3-plugin` if you want to write an audio plugin:
 
-- TUID/FUID byte layout with SDK fixture comparison
-- Explicit `FUnknown` vtable prototype
-- Atomic reference counting with allocator-backed destruction tests
-- Synthetic multi-interface query dispatch
-- C ABI harnesses for `FUnknown` and multi-interface dispatch
-- `pluginterfaces/base`, `pluginterfaces/gui`, and broad `pluginterfaces/vst` ABI translations
-- Platform-specific VST3 module entry exports
-- macOS, Linux, and Windows `.vst3` bundle generation for gain, bypass, mode-gain, voice-mix, note-gate, event-echo, event-monitor, and sine-synth examples
-- Validator-passing example plugins with component, controller, processor, automatable parameters, sample-accurate parameter updates, state persistence, input events, and output events
-- Reusable component and controller shells covering configurable stereo effect/generator buses, default VST3 connection point, optional process-state reset hooks, optional plug-view factory hook, reusable plug-frame, context-menu, parameter-finder, content-scale, Linux run-loop, Wayland host/frame, plugin-compatibility, capability-support, host-application/wrapper/context, unit-info, and unit/program-data objects, optional XML representation hook, host application context, host channel-context, automation-state, and data-exchange interfaces with deterministic failure outputs, component-handler automation callbacks, component-handler editor/group/context-menu/bus/system-time/progress callbacks with deterministic delegated failure outputs, unit info and unit-handler callbacks, MIDI mapping/learn, MIDI 2 mapping, note expression, keyswitch, physical UI mapping, parameter helper, unit data, edit-controller extension, process-context requirement, and processor capability interfaces
-- Reusable `IBStream`, `ISizeableStream`, `IParameterChanges`, `IParamValueQueue`, `IEventList`, `IMessage`, `IErrorContext`, `IStringResult`, `IString`, `ICloneable`, `IPersistent`, `IAttributes`, `IAttributes2`, `IUpdateHandler`, `IDependent`, `IAttributeList`, `IStreamAttributes`, `IInterAppAudioHost`, `IInterAppAudioConnectionNotification`, `IInterAppAudioPresetManager`, `ITest`, `ITestResult`, `ITestSuite`, `ITestFactory`, `ITestPlugProvider`, and `ITestPlugProvider2` utility objects for state buffers, process automation/event queues, host/plugin notifications, error reporting, dependency updates, cloning adapters, test harnesses, and state/preset metadata, with deterministic failure outputs for fixed-capacity stream, message, attribute, parameter-change, and event-list helpers
-- `zig-vst3-plugin` float, int, bool, and enum parameter descriptors with normalized/plain conversion, display formatting, parsing, unit assignment, atomic value storage, smoothing helpers, and reflected parameter-change construction
-- `zig-vst3-plugin` plugin specs and instances with reflected defaults, plugin/factory/class metadata, lifecycle validation, typed parameter access, bound parameter views, parameter existence and diagnostics, counted parameter stores, default-state, and default-reset helpers, accepted-change and changed-value process-change counts, parameter state header inspection, state read/write with compatibility and restore reports, debug JSON, migration validation and diagnostics, and process dispatch for 32-bit and 64-bit audio
-- `zig-vst3-plugin` unit and program-list metadata for host-facing organization, including value-level metadata predicates, duplicate diagnostics, named lookup, program-list lookup by unit name, and unit-based program snapshot application
-- `zig-vst3-plugin` process context helpers for typed effect, generator, and analyzer buffers, sample-accurate parameter changes, block/timing queries, input events, output events, validated output-event planning, and attachment-based context construction
-- Checked `zig-vst3-plugin` examples covering gain, bypass, enum mode gain, int voice mix, note gate, event echo, event monitor, and sine synth behavior through the public framework API
+- Declare parameters as Zig struct fields.
+- Read and write typed parameter values in your processor.
+- Use sample-accurate automation, input events, output events, state save/load, and unit/program metadata without hand-writing VST3 COM plumbing.
+- Build bundled examples through the reusable component, controller, and processor shells.
 
-## Development
+Use `zig-vst3` directly if you need raw VST3 control:
 
-Required toolchain:
+- Implement or test a specific SDK interface.
+- Build custom component/controller/processor objects.
+- Control `queryInterface` behavior and optional interfaces precisely.
+- Add ABI fixtures or host-side test helpers.
+
+## Current Example Plugins
+
+The repository includes checked framework examples and bundled VST3 examples for:
+
+- `gain`: stereo gain with a continuous parameter.
+- `bypass`: bypass metadata and boolean parameter behavior.
+- `mode-gain`: enum/list parameter behavior.
+- `voice-mix`: unit and program-list metadata with integer parameters.
+- `note-gate`: audio gated by note events.
+- `event-echo`: input events echoed to an output event bus.
+- `event-monitor`: input-only analyzer topology and event inspection helpers.
+- `sine-synth`: output-only generator/instrument behavior driven by note input.
+
+Native macOS and Linux validator jobs run the bundled examples in CI. Windows bundle generation is covered by CI cross-builds; Windows validator and real-host rows are still future work.
+
+## Requirements
 
 - Zig 0.16.0
+- VST3 SDK `v3.8.0_build_66`, fetched by the project scripts when needed
 
-Run the local checks:
+See [docs/toolchain.md](docs/toolchain.md) for the exact pinned versions.
+
+## Quick Start
+
+Run the basic checks:
 
 ```sh
 zig build
 zig build test
-zig build phase1
 ```
 
-The public CI workflow runs build and test jobs on Linux, macOS, and Windows, Layer 1 ABI checks on Linux and macOS, Linux/macOS validator checks for the example bundles, and Linux, macOS, and Windows cross-bundle smoke checks.
+Build all native example bundles:
 
-Before tagging `zig-vst3-0.1.0`, follow the Layer 1 release checklist in `docs/layer1-release.md`.
+```sh
+zig build clean-bundles
+zig build bundle-examples
+```
 
-Build and validate the example plugins on native macOS or Linux:
+Build one example bundle:
+
+```sh
+zig build bundle-gain
+```
+
+Build target bundle layouts:
+
+```sh
+zig build -Dtarget=x86_64-linux-gnu bundle-examples-linux
+zig build -Dtarget=x86_64-windows-gnu bundle-examples-windows
+```
+
+## Validator Checks
+
+On native macOS or Linux, build the Steinberg validator and validate the example bundles:
 
 ```sh
 zig build validator
 zig build validate-examples
 ```
 
-Build platform bundles:
+The broader raw-layer gate is:
 
 ```sh
-zig build bundle-gain
-zig build bundle-bypass
-zig build bundle-mode-gain
-zig build bundle-voice-mix
-zig build bundle-note-gate
-zig build bundle-event-echo
-zig build bundle-event-monitor
-zig build -Dtarget=x86_64-linux-gnu bundle-examples-linux
-zig build -Dtarget=x86_64-windows-gnu bundle-examples-windows
+zig build layer1-abi
 ```
 
-Remove stale generated bundles before host smoke testing:
+`layer1-abi` compares Zig declarations against SDK-backed C++ fixture programs and entry-symbol checks.
 
-```sh
-zig build clean-bundles
-```
+## Documentation
+
+- [docs/layer2/plugin-interface.md](docs/layer2/plugin-interface.md): framework plugin API.
+- [docs/layer2/parameters.md](docs/layer2/parameters.md): parameters, plain/normalized values, smoothing, metadata, and editors.
+- [docs/layer2/state.md](docs/layer2/state.md): binary state format, migration, restore reports, and debug JSON.
+- [docs/layer1-api.md](docs/layer1-api.md): raw VST3 API guide.
+- [docs/layer1-coverage.md](docs/layer1-coverage.md): raw-layer coverage map.
+- [docs/host-matrix.md](docs/host-matrix.md): real host smoke-test results.
+- [docs/roadmap.md](docs/roadmap.md): remaining work and validation tiers.
+
+## CI Coverage
+
+The public CI workflow currently runs:
+
+- Linux, macOS, and Windows build and test jobs.
+- Linux and macOS Layer 1 ABI checks.
+- Linux and macOS Steinberg validator checks for bundled examples.
+- Linux, macOS, and Windows cross-bundle smoke checks.
+- Repository prose hygiene checks.
+
+## Current Limits
+
+- This is pre-release API. Expect some naming and organization changes before a public compatibility promise.
+- Manual host coverage is currently macOS REAPER-heavy. MIDI-heavy and analyzer/instrument host smoke rows are still being filled in.
+- Windows bundle generation is covered in CI, but Windows validator execution is not.
+- There is no bundled GUI toolkit. The raw layer exposes editor protocols and the framework can delegate editor creation, but plugin authors bring their own UI stack.
+- This project builds plugins, not hosts.
+
+## Release Status
+
+Before tagging `zig-vst3-0.1.0`, follow [docs/layer1-release.md](docs/layer1-release.md). The release checklist requires local gates, green CI, and fresh host smoke rows or explicit release-note deferrals for untested host scenarios.
