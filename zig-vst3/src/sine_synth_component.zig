@@ -1,10 +1,12 @@
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const plug_process = @import("zig-vst3-plugin-core").process;
+const plug_state = @import("zig-vst3-plugin-core").state;
 const sine_synth_controller = @import("sine_synth_controller.zig");
 const sine_synth_spec = @import("sine_synth_spec.zig");
 const std = @import("std");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 
 pub const cid = tuid.inlineUid(0x8C7F6A10, 0x4D2B4A9F, 0xA515C8A1, 0xBC1E3D72);
@@ -357,4 +359,29 @@ test "sine synth component resets process state when deactivated" {
     try std.testing.expect(!synth.active);
     try std.testing.expectEqual(@as(i16, 69), synth.note);
     try std.testing.expectEqual(@as(f64, 0.0), synth.phase);
+}
+
+test "sine synth component round-trips level state through host callbacks" {
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+
+    resetSineSynthState();
+    sine_synth_controller.setLevel(0.75);
+    defer sine_synth_controller.setLevel(sine_synth_spec.default_level);
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    const Stream = vst_stream.FixedBufferStream(plug_state.encodedSize(sine_synth_spec.Spec.Params));
+    var stream = Stream{};
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getState(component_iface, stream.asStream()));
+    try std.testing.expectEqual(@as(usize, plug_state.encodedSize(sine_synth_spec.Spec.Params)), stream.data().len);
+
+    sine_synth_controller.setLevel(0.0);
+    try std.testing.expectEqual(@as(f64, 0.0), sine_synth_controller.level());
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setState(component_iface, stream.asStream()));
+    try std.testing.expectApproxEqAbs(@as(f64, 0.75), sine_synth_controller.level(), 0.000001);
 }

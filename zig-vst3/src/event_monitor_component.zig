@@ -2,9 +2,11 @@ const event_monitor_controller = @import("event_monitor_controller.zig");
 const event_monitor_spec = @import("event_monitor_spec.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const plug_process = @import("zig-vst3-plugin-core").process;
+const plug_state = @import("zig-vst3-plugin-core").state;
 const std = @import("std");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 
 pub const cid = tuid.inlineUid(0x4E0A7C91, 0x2B8D4AAE, 0xA82F3C19, 0x6D57E204);
@@ -329,4 +331,21 @@ test "event monitor component summarizes host event list input through double pr
     try std.testing.expectEqual(@as(usize, 1), monitor.aftertouch_count);
     try std.testing.expectEqual(@as(?usize, 3), monitor.latest_event_offset);
     try std.testing.expectApproxEqAbs(@as(f64, 64.0 / 127.0), monitor.latest_midi_cc_value, 0.000001);
+}
+
+test "event monitor component round-trips empty state through host callbacks" {
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    const Stream = vst_stream.FixedBufferStream(plug_state.encodedSize(event_monitor_spec.Spec.Params));
+    var stream = Stream{};
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getState(component_iface, stream.asStream()));
+    try std.testing.expectEqual(@as(usize, plug_state.encoded_header_size), stream.data().len);
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setState(component_iface, stream.asStream()));
 }
