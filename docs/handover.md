@@ -6,7 +6,7 @@ Last updated: 2026-05-12
 
 The repository is `zig-vst3`. The core raw VST3 library is now consistently named `zig-vst3`; the higher-level plugin framework is `zig-vst3-plugin`, with `zig-vst3-plugin-core` as the pure framework module used by raw API and tests.
 
-The immediate focus has been finishing `zig-vst3` and tightening `zig-vst3-plugin` enough to make it a practical plugin framework API. The raw API is broadly usable: it has translated ABI coverage, reusable VST3 shells, bundled example plugins, validator integration, public CI across macOS, Linux, and Windows, and several host-tested examples. REAPER smoke testing confirmed all bundled examples except `note_gate`, which remains deferred because MIDI testing was not convenient in the old session.
+The immediate focus has been finishing `zig-vst3` and tightening `zig-vst3-plugin` enough to make it a practical plugin framework API. The raw API is broadly usable: it has translated ABI coverage, reusable VST3 shells, bundled example plugins, validator integration, public CI across macOS, Linux, and Windows, and several host-tested examples. REAPER smoke testing confirmed the core audio examples; `event_echo` has a partial pass without direct output-event observation, and `note_gate`, `event_monitor`, and `sine_synth` remain deferred until MIDI, analyzer, and instrument host routes are convenient.
 
 Recent work has concentrated on plugin framework API polish:
 

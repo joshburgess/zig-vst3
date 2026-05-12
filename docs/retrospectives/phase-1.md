@@ -32,9 +32,9 @@ Status: first plugin milestone complete locally on macOS. This document records 
 - Refcount destruction is still callback-based in the low-level helpers. The raw API now has a reusable allocator-owned callback, but higher-level object factory ergonomics are still open.
 - Windows C ABI harness execution is not wired yet. Cross-compilation passes, but the C harnesses run only on non-Windows CI jobs for now.
 - The current SDK C++ harness covers `FUnknown` dispatch but still uses local synthetic extension interfaces for the test-only `callA`/`callB`/`callC` methods.
-- REAPER smoke testing has save/reload passes for the non-MIDI examples. `zig_vst3_note_gate.vst3`, `zig_vst3_event_monitor.vst3`, and `zig_vst3_sine_synth.vst3` remain deferred until MIDI/analyzer/instrument host routes are convenient.
+- REAPER smoke testing has save/reload passes for the core audio examples, and `zig_vst3_event_echo.vst3` has a partial pass without direct output-event observation. `zig_vst3_note_gate.vst3`, `zig_vst3_event_monitor.vst3`, and `zig_vst3_sine_synth.vst3` remain deferred until MIDI, analyzer, and instrument host routes are convenient.
 
 ## Follow-Up Tasks
 
 - Decide whether the plugin framework hides raw callback-based destruction behind object factory helpers.
-- Complete the deferred Note Gate, Event Monitor, and Sine Synth host smoke tests.
+- Complete the deferred Note Gate, Event Echo output-event observation, Event Monitor, and Sine Synth host smoke tests.

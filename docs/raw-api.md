@@ -250,5 +250,5 @@ zig build validate-examples
 
 - The binding surface is broad and now includes reusable helpers for the known SDK 3.8.0 interface groups in the inventory. Some rare interfaces still expose raw declarations rather than production-oriented convenience wrappers.
 - GUI/editor coverage is unit-test and ABI-test based. Real embedded editor behavior still needs host-specific smoke tests.
-- Windows validator execution is not yet part of CI.
+- Windows validator execution is deferred until the project has a runner that can build and execute Steinberg's validator reliably.
 - Manual host coverage is currently macOS REAPER-heavy, with MIDI-heavy and analyzer/instrument examples still deferred.

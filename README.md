@@ -120,7 +120,7 @@ The public CI workflow currently runs:
 
 - This is pre-release API. Expect some naming and organization changes before a public compatibility promise.
 - Manual host coverage is currently macOS REAPER-heavy. MIDI-heavy and analyzer/instrument host smoke rows are still being filled in.
-- Windows bundle generation is covered in CI, but Windows validator execution is not.
+- Windows bundle generation is covered in CI, but Windows validator execution is deferred until the project has a suitable runner.
 - There is no bundled GUI toolkit. The raw API exposes editor protocols and the framework can delegate editor creation, but plugin authors bring their own UI stack.
 - This project builds plugins, not hosts.
 
