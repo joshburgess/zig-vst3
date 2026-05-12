@@ -140,6 +140,15 @@ test "gain core example declares reflected metadata" {
     try parameter_set.validateDescriptors();
     try parameter_set.validate();
     try parameter_set.validateUnitIds(units);
+    try instance.validateUniqueParameterIds();
+    try instance.validateUniqueParameterNames();
+    try instance.validateParameterDescriptors();
+    try instance.validateParameters();
+    try instance.validateParameterUnitIds();
+    try instance.validateUnits();
+    try instance.validateProgramLists();
+    try instance.validateUnitSet();
+    try instance.validateProgramParameterIds();
     try std.testing.expectEqual(@as(usize, 1), parameter_set.parameterCount());
     try std.testing.expect(!parameter_set.parametersEmpty());
     try std.testing.expect(parameter_set.hasParameters());
@@ -1028,10 +1037,20 @@ test "gain core example exposes bound instance parameter handles" {
     try std.testing.expectEqual(@as(f64, 1.0), instance.parameterValuesConst().loadFieldNormalized(set, "gain"));
 
     const view = instance.parameterView();
+    try view.validateUniqueIds();
+    try view.validateUniqueNames();
+    try view.validateDescriptors();
+    try view.validate();
+    try view.validateUnitIds(Spec.Units{});
     try std.testing.expectEqual(@as(f64, 1.0), view.loadNormalized("gain"));
     try std.testing.expectEqualStrings("Gain", view.fieldName("gain"));
 
     var editor = instance.parameterEditor();
+    try editor.validateUniqueIds();
+    try editor.validateUniqueNames();
+    try editor.validateDescriptors();
+    try editor.validate();
+    try editor.validateUnitIds(Spec.Units{});
     try std.testing.expectEqual(@as(?usize, 1), editor.storeNormalizedCount("gain", 0.25));
     try std.testing.expectEqual(@as(f64, 0.25), instance.parameterValues().loadFieldNormalized(set, "gain"));
     try std.testing.expectEqual(@as(f64, 0.25), instance.parameterValuesConst().loadFieldNormalized(set, "gain"));
