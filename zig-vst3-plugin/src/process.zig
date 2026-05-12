@@ -2970,6 +2970,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return writer.events();
         }
 
+        pub fn outputEvents(self: @This()) Events {
+            return self.writtenOutputEvents();
+        }
+
         pub fn outputEventBlockSegments(self: @This()) EventBlockSegmentIterator {
             const writer = self.output_events orelse return (Events{}).blockSegments(self.frameCount());
             return writer.blockSegments();
@@ -5311,6 +5315,7 @@ test "process context exposes output event helpers" {
     try std.testing.expect(!context.canAppendOutputEventValues(try Events.init(&events, input.len)));
     try std.testing.expectEqual(@as(?usize, 0), context.firstOutputEventOffset());
     try std.testing.expectEqual(@as(?usize, 0), context.latestOutputEventOffset());
+    try std.testing.expectEqual(@as(usize, 1), context.outputEvents().eventCount());
     try std.testing.expectEqual(EventKind.note_on, context.firstWrittenOutputEvent().?.kind);
     try std.testing.expectEqual(EventKind.note_on, context.latestWrittenOutputEvent().?.kind);
     try std.testing.expectEqual(EventKind.note_on, context.firstOutputEventAtOffset(0).?.kind);
