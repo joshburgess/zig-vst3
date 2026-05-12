@@ -557,6 +557,7 @@ test "gain core example validates process context attachments" {
     var output_events = plug.process.EventWriter.init(&output_event_storage, input.len);
     try context.setOutputEvents(&output_events);
     try std.testing.expect(context.hasOutputEventWriter());
+    try std.testing.expect(context.outputEventWriter().? == &output_events);
     try std.testing.expectEqual(@as(usize, input.len), context.outputEventFrameCount());
     var mismatched_writer = plug.process.EventWriter.init(&output_event_storage, 2);
     try std.testing.expectError(error.MismatchedFrameCount, context.setOutputEvents(&mismatched_writer));

@@ -2041,6 +2041,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             self.output_events = writer;
         }
 
+        pub fn outputEventWriter(self: @This()) ?*EventWriter {
+            return self.output_events;
+        }
+
         pub fn sampleRate(self: @This()) f64 {
             return self.sample_rate;
         }
@@ -3226,6 +3230,7 @@ test "process context validates attachments for input-only and output-only proce
     try std.testing.expectEqual(@as(?usize, 3), output_only.latestParameterChangeOffset());
     try std.testing.expectEqual(@as(?usize, 3), output_only.latestEventOffset());
     try std.testing.expect(output_only.hasOutputEventWriter());
+    try std.testing.expect(output_only.outputEventWriter().? == &output_writer);
 
     const input_only = try ProcessContext(f32).initWith(48_000.0, &input_channels, &no_output_channels, .{
         .parameter_changes = &input_changes,
@@ -3236,6 +3241,7 @@ test "process context validates attachments for input-only and output-only proce
     try std.testing.expectEqual(@as(?usize, 2), input_only.latestParameterChangeOffset());
     try std.testing.expectEqual(@as(?usize, 2), input_only.latestEventOffset());
     try std.testing.expect(input_only.hasOutputEventWriter());
+    try std.testing.expect(input_only.outputEventWriter().? == &input_writer);
 }
 
 test "process context rejects invalid sample rates" {
@@ -4787,6 +4793,7 @@ test "process context exposes output event helpers" {
     });
 
     try std.testing.expect(context.hasOutputEventWriter());
+    try std.testing.expect(context.outputEventWriter().? == &writer);
     try std.testing.expectEqual(@as(usize, 0), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCapacity());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventRemainingCapacity());
@@ -4979,6 +4986,7 @@ test "process context exposes output event helpers" {
 
     var no_writer = try ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
     try std.testing.expect(!no_writer.hasOutputEventWriter());
+    try std.testing.expectEqual(@as(?*EventWriter, null), no_writer.outputEventWriter());
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventCount());
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventCapacity());
     try std.testing.expectEqual(@as(usize, 0), no_writer.outputEventRemainingCapacity());

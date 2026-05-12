@@ -156,6 +156,7 @@ test "event echo core example writes input events to output events" {
     plugin.process(&context);
 
     try std.testing.expect(context.hasOutputEventWriter());
+    try std.testing.expect(context.outputEventWriter().? == &output_events);
     try std.testing.expect(!context.outputEventsEmpty());
     try std.testing.expect(context.outputEventsFull());
     const written_events = context.writtenOutputEvents();
