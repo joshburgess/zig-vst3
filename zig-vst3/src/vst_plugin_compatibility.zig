@@ -38,7 +38,7 @@ pub fn PluginCompatibility(comptime json: []const u8) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugincompatibility.iplugin_compatibility_iid, .ptr = ptr },
@@ -46,15 +46,15 @@ pub fn PluginCompatibility(comptime json: []const u8) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPluginCompatibility");
         }
 
-        fn getCompatibilityJSON(_: *anyopaque, stream: ?*ibstream.IBStream) callconv(.C) types.tresult {
+        fn getCompatibilityJSON(_: *anyopaque, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const out = stream orelse return types.kInvalidArgument;
             var bytes_written: types.int32 = 0;
             const result = out.vtable.write(out, @constCast(json.ptr), @intCast(json.len), &bytes_written);

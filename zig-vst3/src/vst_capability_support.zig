@@ -38,7 +38,7 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstpluginterfacesupport.iplug_interface_support_iid, .ptr = ptr },
@@ -46,15 +46,15 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPlugInterfaceSupport");
         }
 
-        fn isPlugInterfaceSupported(ptr: *anyopaque, iid: *const tuid.TUID) callconv(.C) types.tresult {
+        fn isPlugInterfaceSupported(ptr: *anyopaque, iid: *const tuid.TUID) callconv(.c) types.tresult {
             const self = owner(ptr);
             const count = @min(self.count, max_iids);
             for (self.supported[0..count]) |supported| {
@@ -90,7 +90,7 @@ pub fn PrefetchableSupport(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstprefetchablesupport.iprefetchable_support_iid, .ptr = ptr },
@@ -98,15 +98,15 @@ pub fn PrefetchableSupport(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPrefetchableSupport");
         }
 
-        fn getPrefetchableSupport(ptr: *anyopaque, out: *ivstprefetchablesupport.PrefetchableSupport) callconv(.C) types.tresult {
+        fn getPrefetchableSupport(ptr: *anyopaque, out: *ivstprefetchablesupport.PrefetchableSupport) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.get_count += 1;
             out.* = self.state;
@@ -147,7 +147,7 @@ pub fn MidiLearn(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstmidilearn.imidi_learn_iid, .ptr = ptr },
@@ -155,15 +155,15 @@ pub fn MidiLearn(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IMidiLearn");
         }
 
-        fn onLiveMIDIControllerInput(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, controller: vsttypes.CtrlNumber) callconv(.C) types.tresult {
+        fn onLiveMIDIControllerInput(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, controller: vsttypes.CtrlNumber) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.input_count += 1;
             self.last_bus = bus_index;
@@ -245,28 +245,28 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return interface_map.queryWithAddRef(add_ref_ptr, mappingAddRef, &entries, requested_iid, out);
         }
 
-        fn mappingQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn mappingQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             return ownerFromMapping(ptr).queryCanonical(ptr, requested_iid, out);
         }
 
-        fn learnQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn learnQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromLearn(ptr);
             return self.queryCanonical(&self.iface, requested_iid, out);
         }
 
-        fn mappingAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn mappingAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromMapping(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn learnAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn learnAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromLearn(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn mappingRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn mappingRelease(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromMapping(ptr).ref_count, "IMidiMapping2");
         }
 
-        fn learnRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn learnRelease(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromLearn(ptr).ref_count, "IMidiLearn2");
         }
 
@@ -275,12 +275,12 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return direction == @intFromEnum(ivstcomponent.BusDirections.kInput);
         }
 
-        fn getNumMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection) callconv(.C) types.uint32 {
+        fn getNumMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection) callconv(.c) types.uint32 {
             const self = ownerFromMapping(ptr);
             return if (acceptsDirection(direction)) @min(self.midi2_count, max_midi2) else 0;
         }
 
-        fn getMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi2ControllerParamIDAssignmentList) callconv(.C) types.tresult {
+        fn getMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi2ControllerParamIDAssignmentList) callconv(.c) types.tresult {
             const self = ownerFromMapping(ptr);
             if (!acceptsDirection(direction)) return types.kResultFalse;
             const count = @min(self.midi2_count, max_midi2);
@@ -291,12 +291,12 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return types.kResultOk;
         }
 
-        fn getNumMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection) callconv(.C) types.uint32 {
+        fn getNumMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection) callconv(.c) types.uint32 {
             const self = ownerFromMapping(ptr);
             return if (acceptsDirection(direction)) @min(self.midi1_count, max_midi1) else 0;
         }
 
-        fn getMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi1ControllerParamIDAssignmentList) callconv(.C) types.tresult {
+        fn getMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi1ControllerParamIDAssignmentList) callconv(.c) types.tresult {
             const self = ownerFromMapping(ptr);
             if (!acceptsDirection(direction)) return types.kResultFalse;
             const count = @min(self.midi1_count, max_midi1);
@@ -307,7 +307,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return types.kResultOk;
         }
 
-        fn onLiveMidi2ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) callconv(.C) types.tresult {
+        fn onLiveMidi2ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) callconv(.c) types.tresult {
             const self = ownerFromLearn(ptr);
             self.midi2_input_count += 1;
             self.last_bus = bus_index;
@@ -317,7 +317,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return types.kResultOk;
         }
 
-        fn onLiveMidi1ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: vsttypes.CtrlNumber) callconv(.C) types.tresult {
+        fn onLiveMidi1ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: vsttypes.CtrlNumber) callconv(.c) types.tresult {
             const self = ownerFromLearn(ptr);
             self.midi1_input_count += 1;
             self.last_bus = bus_index;
@@ -377,7 +377,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstphysicalui.inote_expression_physical_ui_mapping_iid, .ptr = ptr },
@@ -385,15 +385,15 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "INoteExpressionPhysicalUIMapping");
         }
 
-        fn getPhysicalUIMapping(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, out: *ivstphysicalui.PhysicalUIMapList) callconv(.C) types.tresult {
+        fn getPhysicalUIMapping(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, out: *ivstphysicalui.PhysicalUIMapList) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.request_count += 1;
             self.last_bus = bus_index;

@@ -25,7 +25,7 @@ pub fn WaylandHost(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iwaylandframe.iwayland_host_iid, .ptr = ptr },
@@ -33,22 +33,22 @@ pub fn WaylandHost(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IWaylandHost");
         }
 
-        fn openWaylandConnection(ptr: *anyopaque) callconv(.C) ?*iwaylandframe.wl_display {
+        fn openWaylandConnection(ptr: *anyopaque) callconv(.c) ?*iwaylandframe.wl_display {
             const self = owner(ptr);
             self.open_count += 1;
             if (@hasDecl(Config, "openWaylandConnection")) return Config.openWaylandConnection(self);
             return null;
         }
 
-        fn closeWaylandConnection(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.C) types.tresult {
+        fn closeWaylandConnection(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.close_count += 1;
             self.last_closed_display = display;
@@ -87,7 +87,7 @@ pub fn WaylandFrame(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iwaylandframe.iwayland_frame_iid, .ptr = ptr },
@@ -95,15 +95,15 @@ pub fn WaylandFrame(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IWaylandFrame");
         }
 
-        fn getWaylandSurface(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.C) ?*iwaylandframe.wl_surface {
+        fn getWaylandSurface(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.wl_surface {
             const self = owner(ptr);
             self.surface_count += 1;
             self.last_display = display;
@@ -113,7 +113,7 @@ pub fn WaylandFrame(comptime Config: type) type {
             return null;
         }
 
-        fn getParentSurface(ptr: *anyopaque, rect: *iplugview.ViewRect, display: ?*iwaylandframe.wl_display) callconv(.C) ?*iwaylandframe.xdg_surface {
+        fn getParentSurface(ptr: *anyopaque, rect: *iplugview.ViewRect, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.xdg_surface {
             const self = owner(ptr);
             self.parent_surface_count += 1;
             self.last_display = display;
@@ -128,7 +128,7 @@ pub fn WaylandFrame(comptime Config: type) type {
             return null;
         }
 
-        fn getParentToplevel(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.C) ?*iwaylandframe.xdg_toplevel {
+        fn getParentToplevel(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.xdg_toplevel {
             const self = owner(ptr);
             self.parent_toplevel_count += 1;
             self.last_display = display;

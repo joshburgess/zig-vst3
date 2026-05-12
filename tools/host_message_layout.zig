@@ -4,7 +4,7 @@ const host = @import("zig-vst3").pluginterfaces.vst.ivsthostapplication;
 const message = @import("zig-vst3").pluginterfaces.vst.ivstmessage;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try printType(stdout, "IAttributeList", attributes.IAttributeList);
     try printType(stdout, "IStreamAttributes", attributes.IStreamAttributes);
     try printType(stdout, "IMessage", message.IMessage);

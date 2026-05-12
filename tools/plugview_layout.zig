@@ -3,7 +3,7 @@ const plugview = @import("zig-vst3").pluginterfaces.gui.iplugview;
 const scale = @import("zig-vst3").pluginterfaces.gui.iplugviewcontentscalesupport;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("Platform.kPlatformTypeHWND {s}\n", .{std.mem.span(plugview.PlatformType.kPlatformTypeHWND)});
     try stdout.print("Platform.kPlatformTypeHIView {s}\n", .{std.mem.span(plugview.PlatformType.kPlatformTypeHIView)});
     try stdout.print("Platform.kPlatformTypeNSView {s}\n", .{std.mem.span(plugview.PlatformType.kPlatformTypeNSView)});

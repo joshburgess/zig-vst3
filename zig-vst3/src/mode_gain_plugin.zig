@@ -26,7 +26,9 @@ const ModeGainFactory = factory.StaticFactory3(.{
     },
 });
 
-pub usingnamespace entry.Exports(ModeGainFactory);
+comptime {
+    entry.exportPlugin(ModeGainFactory);
+}
 
 test "mode gain export returns enumerable factory" {
     const plugin_factory = ModeGainFactory.getPluginFactory().?;

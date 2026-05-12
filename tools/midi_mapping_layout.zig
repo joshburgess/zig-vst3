@@ -3,7 +3,7 @@ const learn = @import("zig-vst3").pluginterfaces.vst.ivstmidilearn;
 const mapping2 = @import("zig-vst3").pluginterfaces.vst.ivstmidimapping2;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try printType(stdout, "Midi2Controller", mapping2.Midi2Controller);
     try printType(stdout, "Midi2ControllerParamIDAssignment", mapping2.Midi2ControllerParamIDAssignment);
     try printOffset(stdout, "Midi2ControllerParamIDAssignment", "pId", mapping2.Midi2ControllerParamIDAssignment, "pId");

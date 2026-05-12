@@ -2,7 +2,7 @@ const std = @import("std");
 const data_exchange = @import("zig-vst3").pluginterfaces.vst.ivstdataexchange;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("InvalidDataExchangeQueueID {}\n", .{data_exchange.InvalidDataExchangeQueueID});
     try stdout.print("InvalidDataExchangeBlockID {}\n", .{data_exchange.InvalidDataExchangeBlockID});
 

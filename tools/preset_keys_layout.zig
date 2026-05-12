@@ -2,7 +2,7 @@ const std = @import("std");
 const preset_keys = @import("zig-vst3").pluginterfaces.vst.vstpresetkeys;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("PresetAttributes.kPlugInName {s}\n", .{preset_keys.PresetAttributes.kPlugInName});
     try stdout.print("PresetAttributes.kPlugInCategory {s}\n", .{preset_keys.PresetAttributes.kPlugInCategory});
     try stdout.print("PresetAttributes.kInstrument {s}\n", .{preset_keys.PresetAttributes.kInstrument});

@@ -7,7 +7,7 @@ const parameter_changes = @import("zig-vst3").pluginterfaces.vst.ivstparameterch
 const vsttypes = @import("zig-vst3").pluginterfaces.vst.vsttypes;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("kVstAudioEffectClass {s}\n", .{audio_processor.kVstAudioEffectClass});
     try stdout.print("ComponentFlags.kDistributable {}\n", .{audio_processor.ComponentFlags.kDistributable});
     try stdout.print("ComponentFlags.kSimpleModeSupported {}\n", .{audio_processor.ComponentFlags.kSimpleModeSupported});
@@ -215,30 +215,30 @@ fn eventListSelf(self: *anyopaque) *MockEventList {
     return @ptrCast(@alignCast(self));
 }
 
-fn eventListQueryInterface(_: *anyopaque, _: *const @import("zig-vst3").tuid.TUID, obj: *?*anyopaque) callconv(.C) base.tresult {
+fn eventListQueryInterface(_: *anyopaque, _: *const @import("zig-vst3").tuid.TUID, obj: *?*anyopaque) callconv(.c) base.tresult {
     obj.* = null;
     return base.kNoInterface;
 }
 
-fn eventListAddRef(_: *anyopaque) callconv(.C) base.uint32 {
+fn eventListAddRef(_: *anyopaque) callconv(.c) base.uint32 {
     return 1;
 }
 
-fn eventListRelease(_: *anyopaque) callconv(.C) base.uint32 {
+fn eventListRelease(_: *anyopaque) callconv(.c) base.uint32 {
     return 1;
 }
 
-fn eventListGetEventCount(_: *anyopaque) callconv(.C) base.int32 {
+fn eventListGetEventCount(_: *anyopaque) callconv(.c) base.int32 {
     return 3;
 }
 
-fn eventListGetEvent(self: *anyopaque, index: base.int32, event: *events.Event) callconv(.C) base.tresult {
+fn eventListGetEvent(self: *anyopaque, index: base.int32, event: *events.Event) callconv(.c) base.tresult {
     if (index == 1) return base.kResultFalse;
     event.* = eventListSelf(self).event_storage[@intCast(index)];
     return base.kResultOk;
 }
 
-fn eventListAddEvent(_: *anyopaque, _: *events.Event) callconv(.C) base.tresult {
+fn eventListAddEvent(_: *anyopaque, _: *events.Event) callconv(.c) base.tresult {
     return base.kResultFalse;
 }
 
@@ -270,28 +270,28 @@ fn paramQueueSelf(self: *anyopaque) *MockParamValueQueue {
     return @ptrCast(@alignCast(self));
 }
 
-fn paramQueueQueryInterface(_: *anyopaque, _: *const @import("zig-vst3").tuid.TUID, obj: *?*anyopaque) callconv(.C) base.tresult {
+fn paramQueueQueryInterface(_: *anyopaque, _: *const @import("zig-vst3").tuid.TUID, obj: *?*anyopaque) callconv(.c) base.tresult {
     obj.* = null;
     return base.kNoInterface;
 }
 
-fn paramQueueAddRef(_: *anyopaque) callconv(.C) base.uint32 {
+fn paramQueueAddRef(_: *anyopaque) callconv(.c) base.uint32 {
     return 1;
 }
 
-fn paramQueueRelease(_: *anyopaque) callconv(.C) base.uint32 {
+fn paramQueueRelease(_: *anyopaque) callconv(.c) base.uint32 {
     return 1;
 }
 
-fn paramQueueGetParameterId(self: *anyopaque) callconv(.C) vsttypes.ParamID {
+fn paramQueueGetParameterId(self: *anyopaque) callconv(.c) vsttypes.ParamID {
     return paramQueueSelf(self).param_id;
 }
 
-fn paramQueueGetPointCount(_: *anyopaque) callconv(.C) base.int32 {
+fn paramQueueGetPointCount(_: *anyopaque) callconv(.c) base.int32 {
     return 3;
 }
 
-fn paramQueueGetPoint(self: *anyopaque, index: base.int32, sample_offset: *base.int32, value: *vsttypes.ParamValue) callconv(.C) base.tresult {
+fn paramQueueGetPoint(self: *anyopaque, index: base.int32, sample_offset: *base.int32, value: *vsttypes.ParamValue) callconv(.c) base.tresult {
     if (index == 1) return base.kResultFalse;
     const queue = paramQueueSelf(self);
     sample_offset.* = queue.sample_offsets[@intCast(index)];
@@ -299,7 +299,7 @@ fn paramQueueGetPoint(self: *anyopaque, index: base.int32, sample_offset: *base.
     return base.kResultOk;
 }
 
-fn paramQueueAddPoint(_: *anyopaque, _: base.int32, _: vsttypes.ParamValue, _: *base.int32) callconv(.C) base.tresult {
+fn paramQueueAddPoint(_: *anyopaque, _: base.int32, _: vsttypes.ParamValue, _: *base.int32) callconv(.c) base.tresult {
     return base.kResultFalse;
 }
 
@@ -331,29 +331,29 @@ fn parameterChangesSelf(self: *anyopaque) *MockParameterChanges {
     return @ptrCast(@alignCast(self));
 }
 
-fn parameterChangesQueryInterface(_: *anyopaque, _: *const @import("zig-vst3").tuid.TUID, obj: *?*anyopaque) callconv(.C) base.tresult {
+fn parameterChangesQueryInterface(_: *anyopaque, _: *const @import("zig-vst3").tuid.TUID, obj: *?*anyopaque) callconv(.c) base.tresult {
     obj.* = null;
     return base.kNoInterface;
 }
 
-fn parameterChangesAddRef(_: *anyopaque) callconv(.C) base.uint32 {
+fn parameterChangesAddRef(_: *anyopaque) callconv(.c) base.uint32 {
     return 1;
 }
 
-fn parameterChangesRelease(_: *anyopaque) callconv(.C) base.uint32 {
+fn parameterChangesRelease(_: *anyopaque) callconv(.c) base.uint32 {
     return 1;
 }
 
-fn parameterChangesGetParameterCount(_: *anyopaque) callconv(.C) base.int32 {
+fn parameterChangesGetParameterCount(_: *anyopaque) callconv(.c) base.int32 {
     return 3;
 }
 
-fn parameterChangesGetParameterData(self: *anyopaque, index: base.int32) callconv(.C) ?*parameter_changes.IParamValueQueue {
+fn parameterChangesGetParameterData(self: *anyopaque, index: base.int32) callconv(.c) ?*parameter_changes.IParamValueQueue {
     if (index == 1) return null;
     const changes = parameterChangesSelf(self);
     return &changes.queues[if (index == 0) 0 else 1].iface;
 }
 
-fn parameterChangesAddParameterData(_: *anyopaque, _: *const vsttypes.ParamID, _: *base.int32) callconv(.C) ?*parameter_changes.IParamValueQueue {
+fn parameterChangesAddParameterData(_: *anyopaque, _: *const vsttypes.ParamID, _: *base.int32) callconv(.c) ?*parameter_changes.IParamValueQueue {
     return null;
 }

@@ -28,11 +28,11 @@ pub const ProgramListInfo = extern struct {
 };
 
 pub const IUnitHandlerVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    notifyUnitSelection: *const fn (*anyopaque, vsttypes.UnitID) callconv(.C) base_types.tresult,
-    notifyProgramListChange: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    notifyUnitSelection: *const fn (*anyopaque, vsttypes.UnitID) callconv(.c) base_types.tresult,
+    notifyProgramListChange: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32) callconv(.c) base_types.tresult,
 };
 
 pub const IUnitHandler = extern struct {
@@ -40,10 +40,10 @@ pub const IUnitHandler = extern struct {
 };
 
 pub const IUnitHandler2VTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    notifyUnitByBusChange: *const fn (*anyopaque) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    notifyUnitByBusChange: *const fn (*anyopaque) callconv(.c) base_types.tresult,
 };
 
 pub const IUnitHandler2 = extern struct {
@@ -51,21 +51,21 @@ pub const IUnitHandler2 = extern struct {
 };
 
 pub const IUnitInfoVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    getUnitCount: *const fn (*anyopaque) callconv(.C) base_types.int32,
-    getUnitInfo: *const fn (*anyopaque, base_types.int32, *UnitInfo) callconv(.C) base_types.tresult,
-    getProgramListCount: *const fn (*anyopaque) callconv(.C) base_types.int32,
-    getProgramListInfo: *const fn (*anyopaque, base_types.int32, *ProgramListInfo) callconv(.C) base_types.tresult,
-    getProgramName: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, [*]vsttypes.TChar) callconv(.C) base_types.tresult,
-    getProgramInfo: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, vsttypes.CString, [*]vsttypes.TChar) callconv(.C) base_types.tresult,
-    hasProgramPitchNames: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32) callconv(.C) base_types.tresult,
-    getProgramPitchName: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, base_types.int16, [*]vsttypes.TChar) callconv(.C) base_types.tresult,
-    getSelectedUnit: *const fn (*anyopaque) callconv(.C) vsttypes.UnitID,
-    selectUnit: *const fn (*anyopaque, vsttypes.UnitID) callconv(.C) base_types.tresult,
-    getUnitByBus: *const fn (*anyopaque, vsttypes.MediaType, vsttypes.BusDirection, base_types.int32, base_types.int32, *vsttypes.UnitID) callconv(.C) base_types.tresult,
-    setUnitProgramData: *const fn (*anyopaque, base_types.int32, base_types.int32, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    getUnitCount: *const fn (*anyopaque) callconv(.c) base_types.int32,
+    getUnitInfo: *const fn (*anyopaque, base_types.int32, *UnitInfo) callconv(.c) base_types.tresult,
+    getProgramListCount: *const fn (*anyopaque) callconv(.c) base_types.int32,
+    getProgramListInfo: *const fn (*anyopaque, base_types.int32, *ProgramListInfo) callconv(.c) base_types.tresult,
+    getProgramName: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, [*]vsttypes.TChar) callconv(.c) base_types.tresult,
+    getProgramInfo: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, vsttypes.CString, [*]vsttypes.TChar) callconv(.c) base_types.tresult,
+    hasProgramPitchNames: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32) callconv(.c) base_types.tresult,
+    getProgramPitchName: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, base_types.int16, [*]vsttypes.TChar) callconv(.c) base_types.tresult,
+    getSelectedUnit: *const fn (*anyopaque) callconv(.c) vsttypes.UnitID,
+    selectUnit: *const fn (*anyopaque, vsttypes.UnitID) callconv(.c) base_types.tresult,
+    getUnitByBus: *const fn (*anyopaque, vsttypes.MediaType, vsttypes.BusDirection, base_types.int32, base_types.int32, *vsttypes.UnitID) callconv(.c) base_types.tresult,
+    setUnitProgramData: *const fn (*anyopaque, base_types.int32, base_types.int32, ?*ibstream.IBStream) callconv(.c) base_types.tresult,
 };
 
 pub const IUnitInfo = extern struct {
@@ -73,12 +73,12 @@ pub const IUnitInfo = extern struct {
 };
 
 pub const IProgramListDataVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    programDataSupported: *const fn (*anyopaque, vsttypes.ProgramListID) callconv(.C) base_types.tresult,
-    getProgramData: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
-    setProgramData: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    programDataSupported: *const fn (*anyopaque, vsttypes.ProgramListID) callconv(.c) base_types.tresult,
+    getProgramData: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, ?*ibstream.IBStream) callconv(.c) base_types.tresult,
+    setProgramData: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, ?*ibstream.IBStream) callconv(.c) base_types.tresult,
 };
 
 pub const IProgramListData = extern struct {
@@ -86,12 +86,12 @@ pub const IProgramListData = extern struct {
 };
 
 pub const IUnitDataVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    unitDataSupported: *const fn (*anyopaque, vsttypes.UnitID) callconv(.C) base_types.tresult,
-    getUnitData: *const fn (*anyopaque, vsttypes.UnitID, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
-    setUnitData: *const fn (*anyopaque, vsttypes.UnitID, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    unitDataSupported: *const fn (*anyopaque, vsttypes.UnitID) callconv(.c) base_types.tresult,
+    getUnitData: *const fn (*anyopaque, vsttypes.UnitID, ?*ibstream.IBStream) callconv(.c) base_types.tresult,
+    setUnitData: *const fn (*anyopaque, vsttypes.UnitID, ?*ibstream.IBStream) callconv(.c) base_types.tresult,
 };
 
 pub const IUnitData = extern struct {

@@ -7,7 +7,7 @@ const Entry = struct {
 };
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     const entries = [_]Entry{
         .{ .name = "FUnknown", .bytes = tuid.inlineUid(0x00000000, 0x00000000, 0xC0000000, 0x00000046) },
         .{ .name = "IPluginBase", .bytes = tuid.inlineUid(0x22888DDB, 0x156E45AE, 0x8358B348, 0x08190625) },

@@ -2,7 +2,7 @@ const std = @import("std");
 const component = @import("zig-vst3").pluginterfaces.vst.ivstcomponent;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("kDefaultFactoryFlags {}\n", .{component.kDefaultFactoryFlags});
     try stdout.print("MediaTypes.kAudio {}\n", .{@intFromEnum(component.MediaTypes.kAudio)});
     try stdout.print("MediaTypes.kEvent {}\n", .{@intFromEnum(component.MediaTypes.kEvent)});

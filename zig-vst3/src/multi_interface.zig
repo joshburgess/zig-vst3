@@ -8,24 +8,24 @@ pub const test_b_iid = tuid.inlineUid(0x22222222, 0x22222222, 0x22222222, 0x2222
 pub const test_c_iid = tuid.inlineUid(0x33333333, 0x33333333, 0x33333333, 0x33333333);
 
 pub const TestAVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) funknown.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) funknown.uint32,
-    release: *const fn (*anyopaque) callconv(.C) funknown.uint32,
-    callA: *const fn (*anyopaque) callconv(.C) funknown.uint32,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) funknown.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) funknown.uint32,
+    release: *const fn (*anyopaque) callconv(.c) funknown.uint32,
+    callA: *const fn (*anyopaque) callconv(.c) funknown.uint32,
 };
 
 pub const TestBVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) funknown.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) funknown.uint32,
-    release: *const fn (*anyopaque) callconv(.C) funknown.uint32,
-    callB: *const fn (*anyopaque) callconv(.C) funknown.uint32,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) funknown.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) funknown.uint32,
+    release: *const fn (*anyopaque) callconv(.c) funknown.uint32,
+    callB: *const fn (*anyopaque) callconv(.c) funknown.uint32,
 };
 
 pub const TestCVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) funknown.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) funknown.uint32,
-    release: *const fn (*anyopaque) callconv(.C) funknown.uint32,
-    callC: *const fn (*anyopaque) callconv(.C) funknown.uint32,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) funknown.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) funknown.uint32,
+    release: *const fn (*anyopaque) callconv(.c) funknown.uint32,
+    callC: *const fn (*anyopaque) callconv(.c) funknown.uint32,
 };
 
 pub const InterfaceHeader = extern struct {
@@ -103,73 +103,73 @@ fn query(object: *TestObject, requested_iid: *const tuid.TUID, out: *?*anyopaque
     return interface_map.query(&object.unknown, &entries, requested_iid, out);
 }
 
-fn queryFromUnknown(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) funknown.tresult {
+fn queryFromUnknown(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
     return query(objectFromUnknown(ptr), requested_iid, out);
 }
 
-fn queryFromA(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) funknown.tresult {
+fn queryFromA(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
     return query(objectFromA(ptr), requested_iid, out);
 }
 
-fn queryFromB(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) funknown.tresult {
+fn queryFromB(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
     return query(objectFromB(ptr), requested_iid, out);
 }
 
-fn queryFromC(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) funknown.tresult {
+fn queryFromC(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
     return query(objectFromC(ptr), requested_iid, out);
 }
 
-fn addRefFromUnknown(ptr: *anyopaque) callconv(.C) funknown.uint32 {
+fn addRefFromUnknown(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     return funknown.addRef(ptr);
 }
 
-fn releaseFromUnknown(ptr: *anyopaque) callconv(.C) funknown.uint32 {
+fn releaseFromUnknown(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     return funknown.release(ptr);
 }
 
-fn addRefFromA(ptr: *anyopaque) callconv(.C) funknown.uint32 {
+fn addRefFromA(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     const object = objectFromA(ptr);
     return object.unknown.vtable.addRef(&object.unknown);
 }
 
-fn releaseFromA(ptr: *anyopaque) callconv(.C) funknown.uint32 {
+fn releaseFromA(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     const object = objectFromA(ptr);
     return object.unknown.vtable.release(&object.unknown);
 }
 
-fn addRefFromB(ptr: *anyopaque) callconv(.C) funknown.uint32 {
+fn addRefFromB(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     const object = objectFromB(ptr);
     return object.unknown.vtable.addRef(&object.unknown);
 }
 
-fn releaseFromB(ptr: *anyopaque) callconv(.C) funknown.uint32 {
+fn releaseFromB(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     const object = objectFromB(ptr);
     return object.unknown.vtable.release(&object.unknown);
 }
 
-fn addRefFromC(ptr: *anyopaque) callconv(.C) funknown.uint32 {
+fn addRefFromC(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     const object = objectFromC(ptr);
     return object.unknown.vtable.addRef(&object.unknown);
 }
 
-fn releaseFromC(ptr: *anyopaque) callconv(.C) funknown.uint32 {
+fn releaseFromC(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     const object = objectFromC(ptr);
     return object.unknown.vtable.release(&object.unknown);
 }
 
-fn callA(ptr: *anyopaque) callconv(.C) funknown.uint32 {
+fn callA(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     const object = objectFromA(ptr);
     object.a_calls += 1;
     return object.a_calls;
 }
 
-fn callB(ptr: *anyopaque) callconv(.C) funknown.uint32 {
+fn callB(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     const object = objectFromB(ptr);
     object.b_calls += 1;
     return object.b_calls;
 }
 
-fn callC(ptr: *anyopaque) callconv(.C) funknown.uint32 {
+fn callC(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     const object = objectFromC(ptr);
     object.c_calls += 1;
     return object.c_calls;

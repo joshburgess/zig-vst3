@@ -24,7 +24,7 @@ pub fn ParameterFinder(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstplugview.iparameter_finder_iid, .ptr = ptr },
@@ -32,15 +32,15 @@ pub fn ParameterFinder(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IParameterFinder");
         }
 
-        fn findParameter(_: *anyopaque, x: types.int32, y: types.int32, out: *vsttypes.ParamID) callconv(.C) types.tresult {
+        fn findParameter(_: *anyopaque, x: types.int32, y: types.int32, out: *vsttypes.ParamID) callconv(.c) types.tresult {
             if (@hasDecl(Config, "findParameter")) {
                 if (Config.findParameter(x, y)) |id| {
                     out.* = id;
@@ -76,7 +76,7 @@ pub fn ParameterFunctionName(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstparameterfunctionname.iparameter_function_name_iid, .ptr = ptr },
@@ -84,15 +84,15 @@ pub fn ParameterFunctionName(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IParameterFunctionName");
         }
 
-        fn getParameterIDFromFunctionName(_: *anyopaque, unit_id: vsttypes.UnitID, function_name: types.FIDString, out: *vsttypes.ParamID) callconv(.C) types.tresult {
+        fn getParameterIDFromFunctionName(_: *anyopaque, unit_id: vsttypes.UnitID, function_name: types.FIDString, out: *vsttypes.ParamID) callconv(.c) types.tresult {
             if (@hasDecl(Config, "getParameterIDFromFunctionName")) {
                 if (Config.getParameterIDFromFunctionName(unit_id, function_name)) |id| {
                     out.* = id;
@@ -128,7 +128,7 @@ pub fn RemapParamID(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstremapparamid.iremap_param_id_iid, .ptr = ptr },
@@ -136,15 +136,15 @@ pub fn RemapParamID(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IRemapParamID");
         }
 
-        fn getCompatibleParamID(_: *anyopaque, class_id: *const tuid.TUID, old_param_id: vsttypes.ParamID, out: *vsttypes.ParamID) callconv(.C) types.tresult {
+        fn getCompatibleParamID(_: *anyopaque, class_id: *const tuid.TUID, old_param_id: vsttypes.ParamID, out: *vsttypes.ParamID) callconv(.c) types.tresult {
             if (@hasDecl(Config, "getCompatibleParamID")) {
                 if (Config.getCompatibleParamID(class_id, old_param_id)) |id| {
                     out.* = id;

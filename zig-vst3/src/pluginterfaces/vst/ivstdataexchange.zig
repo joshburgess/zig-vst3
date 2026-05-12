@@ -19,22 +19,22 @@ pub const DataExchangeBlock = extern struct {
 };
 
 pub const IDataExchangeHandlerVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    openQueue: *const fn (*anyopaque, ?*audio_processor.IAudioProcessor, base_types.uint32, base_types.uint32, base_types.uint32, DataExchangeUserContextID, *DataExchangeQueueID) callconv(.C) base_types.tresult,
-    closeQueue: *const fn (*anyopaque, DataExchangeQueueID) callconv(.C) base_types.tresult,
-    lockBlock: *const fn (*anyopaque, DataExchangeQueueID, *DataExchangeBlock) callconv(.C) base_types.tresult,
-    freeBlock: *const fn (*anyopaque, DataExchangeQueueID, DataExchangeBlockID, base_types.TBool) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    openQueue: *const fn (*anyopaque, ?*audio_processor.IAudioProcessor, base_types.uint32, base_types.uint32, base_types.uint32, DataExchangeUserContextID, *DataExchangeQueueID) callconv(.c) base_types.tresult,
+    closeQueue: *const fn (*anyopaque, DataExchangeQueueID) callconv(.c) base_types.tresult,
+    lockBlock: *const fn (*anyopaque, DataExchangeQueueID, *DataExchangeBlock) callconv(.c) base_types.tresult,
+    freeBlock: *const fn (*anyopaque, DataExchangeQueueID, DataExchangeBlockID, base_types.TBool) callconv(.c) base_types.tresult,
 };
 
 pub const IDataExchangeReceiverVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    queueOpened: *const fn (*anyopaque, DataExchangeUserContextID, base_types.uint32, *base_types.TBool) callconv(.C) void,
-    queueClosed: *const fn (*anyopaque, DataExchangeUserContextID) callconv(.C) void,
-    onDataExchangeBlocksReceived: *const fn (*anyopaque, DataExchangeUserContextID, base_types.uint32, ?[*]DataExchangeBlock, base_types.TBool) callconv(.C) void,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    queueOpened: *const fn (*anyopaque, DataExchangeUserContextID, base_types.uint32, *base_types.TBool) callconv(.c) void,
+    queueClosed: *const fn (*anyopaque, DataExchangeUserContextID) callconv(.c) void,
+    onDataExchangeBlocksReceived: *const fn (*anyopaque, DataExchangeUserContextID, base_types.uint32, ?[*]DataExchangeBlock, base_types.TBool) callconv(.c) void,
 };
 
 pub const IDataExchangeHandler = extern struct {

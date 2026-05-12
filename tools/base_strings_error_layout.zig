@@ -2,7 +2,7 @@ const std = @import("std");
 const base = @import("zig-vst3").pluginterfaces.base;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try printType(stdout, "IStringResult", base.istringresult.IStringResult);
     try printType(stdout, "IString", base.istringresult.IString);
     try printType(stdout, "IErrorContext", base.ierrorcontext.IErrorContext);

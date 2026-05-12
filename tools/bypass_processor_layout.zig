@@ -2,7 +2,7 @@ const std = @import("std");
 const bypass = @import("zig-vst3").pluginterfaces.vst.vstbypassprocessor;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("kMaxChannelsSupported {}\n", .{bypass.kMaxChannelsSupported});
     var audio_buffer32 = bypass.AudioBuffer(f32).init(std.heap.page_allocator);
     defer audio_buffer32.deinit();

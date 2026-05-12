@@ -384,7 +384,7 @@ pub fn writeParameterStateJson(
         try writer.writeAll("{\"id\":");
         try writer.print("{}", .{set.id(index).?});
         try writer.writeAll(",\"name\":");
-        try std.json.stringify(set.name(index).?, .{}, writer);
+        try writer.print("{f}", .{std.json.fmt(set.name(index).?, .{})});
         try writer.writeAll(",\"normalized\":");
         try writer.print("{d}", .{values.load(index).?});
         try writer.writeByte('}');
