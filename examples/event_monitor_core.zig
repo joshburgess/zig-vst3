@@ -421,13 +421,21 @@ test "event monitor core example summarizes input event kinds" {
     try std.testing.expect(context.eventsForBusChannelEmpty(3, 0));
     try std.testing.expectEqual(plug.process.EventKind.note_on, context.firstEventForBusChannel(0, 0).?.kind);
     try std.testing.expectEqual(plug.process.EventKind.note_off, context.latestEventForBusChannel(0, 0).?.kind);
+    try std.testing.expect(!context.onlyEventsAtOffset(3));
     try std.testing.expect(!context.onlyInputEventsAtOffset(3));
+    try std.testing.expect(!context.onlyEventsOfKind(.note_on));
     try std.testing.expect(!context.onlyInputEventsOfKind(.note_on));
+    try std.testing.expect(!context.onlyEventsOfKindAtOffset(.note_on, 3));
     try std.testing.expect(!context.onlyInputEventsOfKindAtOffset(.note_on, 3));
+    try std.testing.expect(!context.onlyNoteAttacks());
     try std.testing.expect(!context.onlyInputNoteAttacks());
+    try std.testing.expect(!context.onlyNoteReleases());
     try std.testing.expect(!context.onlyInputNoteReleases());
+    try std.testing.expect(!context.onlyEventsForBus(0));
     try std.testing.expect(!context.onlyInputEventsForBus(0));
+    try std.testing.expect(!context.onlyEventsForChannel(0));
     try std.testing.expect(!context.onlyInputEventsForChannel(0));
+    try std.testing.expect(!context.onlyEventsForBusChannel(0, 0));
     try std.testing.expect(!context.onlyInputEventsForBusChannel(0, 0));
 
     const note_only_events = [_]plug.process.Event{
@@ -436,13 +444,21 @@ test "event monitor core example summarizes input event kinds" {
     const note_only_context = try plug.process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
         .events = &note_only_events,
     });
+    try std.testing.expect(note_only_context.onlyEventsAtOffset(1));
     try std.testing.expect(note_only_context.onlyInputEventsAtOffset(1));
+    try std.testing.expect(note_only_context.onlyEventsOfKind(.note_on));
     try std.testing.expect(note_only_context.onlyInputEventsOfKind(.note_on));
+    try std.testing.expect(note_only_context.onlyEventsOfKindAtOffset(.note_on, 1));
     try std.testing.expect(note_only_context.onlyInputEventsOfKindAtOffset(.note_on, 1));
+    try std.testing.expect(note_only_context.onlyNoteAttacks());
     try std.testing.expect(note_only_context.onlyInputNoteAttacks());
+    try std.testing.expect(!note_only_context.onlyNoteReleases());
     try std.testing.expect(!note_only_context.onlyInputNoteReleases());
+    try std.testing.expect(note_only_context.onlyEventsForBus(0));
     try std.testing.expect(note_only_context.onlyInputEventsForBus(0));
+    try std.testing.expect(note_only_context.onlyEventsForChannel(0));
     try std.testing.expect(note_only_context.onlyInputEventsForChannel(0));
+    try std.testing.expect(note_only_context.onlyEventsForBusChannel(0, 0));
     try std.testing.expect(note_only_context.onlyInputEventsForBusChannel(0, 0));
 
     const note_attack = events[0].asNoteAttack().?;
@@ -584,6 +600,7 @@ test "event monitor core example reports empty input event views" {
     try std.testing.expectEqual(@as(usize, 0), context.countNoteAttacks());
     try std.testing.expect(!context.hasNoteAttacks());
     try std.testing.expect(context.noteAttacksEmpty());
+    try std.testing.expect(!context.onlyEventsOfKind(.note_on));
     try std.testing.expect(!context.onlyInputEventsOfKind(.note_on));
     try std.testing.expectEqual(@as(?plug.process.Event, null), context.firstEvent(.note_on));
     try std.testing.expectEqual(@as(?plug.process.Event, null), context.latestInputEvent());
