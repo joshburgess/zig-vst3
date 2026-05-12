@@ -1009,11 +1009,15 @@ test "gain core example formats and converts float parameters" {
     try std.testing.expectEqual(@as(f64, 0.75), instance.parameterFieldPlainFromNormalized("gain", 0.75));
     try std.testing.expectEqual(@as(f64, 0.25), instance.parameterFieldNormalizedFromPlain("gain", 0.25));
     try std.testing.expectEqualStrings("0.500", try instance.formatParameterPlainIndex(0, 0.5, &buffer));
+    try std.testing.expectEqualStrings("0.500", try instance.formatParameterPlain(0, 0.5, &buffer));
     try std.testing.expectEqualStrings("0.250", try instance.formatParameterPlainById(0, 0.25, &buffer));
     try std.testing.expectEqual(@as(f64, 0.75), try instance.parseParameterPlainIndex(0, "0.75"));
+    try std.testing.expectEqual(@as(f64, 0.75), try instance.parseParameterPlain(0, "0.75"));
     try std.testing.expectEqual(@as(f64, 0.25), try instance.parseParameterPlainById(0, "0.25"));
     try std.testing.expectEqual(@as(?f64, 0.75), instance.parameterPlainFromNormalizedIndex(0, 0.75));
+    try std.testing.expectEqual(@as(?f64, 0.75), instance.parameterPlainFromNormalized(0, 0.75));
     try std.testing.expectEqual(@as(?f64, 0.25), instance.parameterNormalizedFromPlainIndex(0, 0.25));
+    try std.testing.expectEqual(@as(?f64, 0.25), instance.parameterNormalizedFromPlain(0, 0.25));
     try std.testing.expectEqual(@as(?f64, 0.5), instance.parameterPlainFromNormalizedById(0, 0.5));
     try std.testing.expectEqual(@as(?f64, 0.5), instance.parameterNormalizedFromPlainById(0, 0.5));
     try std.testing.expectEqual(@as(?f64, 0.75), instance.parameterPlainFromNormalizedByName("Gain", 0.75));
