@@ -31,14 +31,13 @@ Highest priority:
 
 Medium priority:
 
-- Improve raw `zig-vst3` docs for users who want to use the raw API directly.
-- Decide whether Windows validator support is worth adding now, or keep it documented as future work.
+- Revisit Windows validator support after `0.1.0`; for now, CI covers Windows build and bundle generation, not native validator execution.
 - Broaden host smoke coverage beyond macOS REAPER when practical.
+- Expand raw `zig-vst3` docs when new direct-usage workflows appear.
 
 Release polish:
 
-- Add release notes before tagging public releases.
-- Define an API stability policy before promising compatibility for external users.
+- Keep `CHANGELOG.md`, `docs/stability.md`, and `docs/release-checklist.md` aligned before tagging public releases.
 - Add benchmarks for raw API overhead, framework process overhead, parameter update overhead, and state save/load time.
 
 ## Framework API Symmetry

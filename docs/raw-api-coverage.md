@@ -15,12 +15,12 @@ This map separates what is already gated from what remains future hardening. `do
 | Data exchange and host context | ABI fixtures and host helper tests for data exchange, channel context, automation state, and physical UI mapping | Real host coverage is still absent for data exchange and physical UI mapping |
 | Compatibility and wrapper metadata | ABI fixtures, wrapper helper tests, compatibility JSON streaming tests, and basic metadata JSON fixture coverage | Host-specific compatibility metadata fixtures as real wrapper needs appear |
 | Test provider APIs | ABI fixtures plus helper tests for provider creation, test result storage, test lifecycle delegation, suite registration, environment replacement, and factory delegation | Real use against Steinberg or host-provided test suites if external harnesses need it |
-| Validator | macOS and Linux validator runs in public CI against native VST3 bundles | Windows validator when runners can build and execute Steinberg validator reliably |
+| Validator | macOS and Linux validator runs in public CI against native VST3 bundles | Windows validator after the project has a runner that can build and execute Steinberg's validator reliably |
 | Host smoke | REAPER macOS rows for core audio examples | Event-echo output-event observation, deferred note-gate, event-monitor, and sine-synth rows, plus Linux/Windows hosts |
 
 ## Release Interpretation
 
-`zig-vst3-0.1.0` can be a useful raw API release once the deferred MIDI-heavy host rows are either filled in or explicitly moved to follow-up release notes. It should not be described as full VST3 protocol completion. The release claim should be narrower:
+`zig-vst3-0.1.0` can be a useful raw API release with the host deferrals listed in `CHANGELOG.md`. It should not be described as full VST3 protocol completion. The release claim should be narrower:
 
 - Raw bindings and helpers for the SDK 3.8.0 plugin-facing interface surface tracked in `docs/interface-inventory.md`
 - ABI fixtures for the translated interface groups used by the raw API

@@ -44,6 +44,9 @@
 
 ### Known Gaps
 
-- Fresh manual host smoke rows are still needed for note-gate, event-monitor, and sine-synth before tagging `zig-vst3-0.1.0`.
-- Event Echo still needs a host smoke pass that directly observes echoed output events.
-- Windows bundle generation is covered in CI, but Windows validator execution is not yet part of the release gate.
+- The first manual host pass is macOS REAPER-only. Linux and Windows real-host rows are deferred to a follow-up release.
+- Event Echo has scan/load/save/reload coverage in REAPER, but direct output-event host observation is deferred.
+- Note Gate MIDI-gated manual host coverage is deferred because it still needs an audio-plus-MIDI route test in a real host.
+- Event Monitor analyzer manual host coverage is deferred because it still needs a scan/load/save/reload pass with event input.
+- Sine Synth instrument manual host coverage is deferred because it still needs a MIDI-driven instrument pass in a real host.
+- Windows bundle generation is covered in CI. Windows validator execution is deferred until the project has a runner that can build and execute Steinberg's validator reliably.
