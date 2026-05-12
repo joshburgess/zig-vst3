@@ -684,8 +684,9 @@ pub fn PluginInstance(comptime Plugin: type) type {
             }
             var changed_count: usize = 0;
             for (item.parameters) |parameter| {
-                if (self.loadParameterById(parameter.parameter_id).? != parameter.normalized) changed_count += 1;
-                _ = self.storeParameterById(parameter.parameter_id, parameter.normalized);
+                changed_count += self.storeParameterByIdCount(parameter.parameter_id, parameter.normalized) orelse {
+                    return error.UnknownProgramParameter;
+                };
             }
             return changed_count;
         }
