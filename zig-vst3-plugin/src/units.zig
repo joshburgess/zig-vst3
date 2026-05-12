@@ -137,6 +137,11 @@ pub const Program = struct {
         return null;
     }
 
+    pub fn infoEntryByKey(self: Program, key: []const u8) ?ProgramInfo {
+        const index = self.infoIndexOfKey(key) orelse return null;
+        return self.infoEntry(index);
+    }
+
     pub fn infoValue(self: Program, key: []const u8) ?[]const u8 {
         const index = self.infoIndexOfKey(key) orelse return null;
         return self.info[index].value;
@@ -1158,6 +1163,26 @@ pub fn UnitSet(comptime config: Config) type {
             return item.infoEntry(info_index);
         }
 
+        pub fn programInfoEntryByKey(self: Self, list_id: i32, program_index: usize, key: []const u8) ?ProgramInfo {
+            const item = self.program(list_id, program_index) orelse return null;
+            return item.infoEntryByKey(key);
+        }
+
+        pub fn programInfoEntryByKeyByListName(self: Self, list_name: []const u8, program_index: usize, key: []const u8) ?ProgramInfo {
+            const item = self.programByListName(list_name, program_index) orelse return null;
+            return item.infoEntryByKey(key);
+        }
+
+        pub fn programInfoEntryByKeyForUnit(self: Self, unit_id: i32, program_index: usize, key: []const u8) ?ProgramInfo {
+            const item = self.programForUnit(unit_id, program_index) orelse return null;
+            return item.infoEntryByKey(key);
+        }
+
+        pub fn programInfoEntryByKeyForUnitName(self: Self, unit_name: []const u8, program_index: usize, key: []const u8) ?ProgramInfo {
+            const item = self.programForUnitName(unit_name, program_index) orelse return null;
+            return item.infoEntryByKey(key);
+        }
+
         pub fn programInfoIndexOfKey(self: Self, list_id: i32, program_index: usize, key: []const u8) ?usize {
             const item = self.program(list_id, program_index) orelse return null;
             return item.infoIndexOfKey(key);
@@ -1248,6 +1273,26 @@ pub fn UnitSet(comptime config: Config) type {
         pub fn programInfoEntryByNameForUnitName(self: Self, unit_name: []const u8, program_name: []const u8, info_index: usize) ?ProgramInfo {
             const item = self.programByNameForUnitName(unit_name, program_name) orelse return null;
             return item.infoEntry(info_index);
+        }
+
+        pub fn programInfoEntryByNameAndKey(self: Self, list_id: i32, program_name: []const u8, key: []const u8) ?ProgramInfo {
+            const item = self.programByName(list_id, program_name) orelse return null;
+            return item.infoEntryByKey(key);
+        }
+
+        pub fn programInfoEntryByNameAndKeyForListName(self: Self, list_name: []const u8, program_name: []const u8, key: []const u8) ?ProgramInfo {
+            const item = self.programByNameForListName(list_name, program_name) orelse return null;
+            return item.infoEntryByKey(key);
+        }
+
+        pub fn programInfoEntryByNameAndKeyForUnit(self: Self, unit_id: i32, program_name: []const u8, key: []const u8) ?ProgramInfo {
+            const item = self.programByNameForUnit(unit_id, program_name) orelse return null;
+            return item.infoEntryByKey(key);
+        }
+
+        pub fn programInfoEntryByNameAndKeyForUnitName(self: Self, unit_name: []const u8, program_name: []const u8, key: []const u8) ?ProgramInfo {
+            const item = self.programByNameForUnitName(unit_name, program_name) orelse return null;
+            return item.infoEntryByKey(key);
         }
 
         pub fn programInfoIndexOfKeyByName(self: Self, list_id: i32, program_name: []const u8, key: []const u8) ?usize {

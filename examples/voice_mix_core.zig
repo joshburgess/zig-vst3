@@ -288,6 +288,10 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expectEqualStrings("voices", units.programInfoEntryByListName("Voice Presets", 1, 0).?.key);
     try std.testing.expectEqualStrings("voices", units.programInfoEntryForUnit(voice_unit_id, 1, 0).?.key);
     try std.testing.expectEqualStrings("voices", units.programInfoEntryForUnitName("Voices", 1, 0).?.key);
+    try std.testing.expectEqualStrings("4", units.programInfoEntryByKey(voice_program_list_id, 1, "voices").?.value);
+    try std.testing.expectEqualStrings("4", units.programInfoEntryByKeyByListName("Voice Presets", 1, "voices").?.value);
+    try std.testing.expectEqualStrings("4", units.programInfoEntryByKeyForUnit(voice_unit_id, 1, "voices").?.value);
+    try std.testing.expectEqualStrings("4", units.programInfoEntryByKeyForUnitName("Voices", 1, "voices").?.value);
     try std.testing.expectEqual(@as(?usize, 0), units.programInfoIndexOfKey(voice_program_list_id, 1, "voices"));
     try std.testing.expectEqual(@as(?usize, 0), units.programInfoIndexOfKeyByListName("Voice Presets", 1, "voices"));
     try std.testing.expectEqual(@as(?usize, 0), units.programInfoIndexOfKeyForUnit(voice_unit_id, 1, "voices"));
@@ -316,6 +320,10 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expectEqualStrings("voices", units.programInfoEntryByNameForListName("Voice Presets", "Quad", 0).?.key);
     try std.testing.expectEqualStrings("voices", units.programInfoEntryByNameForUnit(voice_unit_id, "Quad", 0).?.key);
     try std.testing.expectEqualStrings("voices", units.programInfoEntryByNameForUnitName("Voices", "Quad", 0).?.key);
+    try std.testing.expectEqualStrings("4", units.programInfoEntryByNameAndKey(voice_program_list_id, "Quad", "voices").?.value);
+    try std.testing.expectEqualStrings("4", units.programInfoEntryByNameAndKeyForListName("Voice Presets", "Quad", "voices").?.value);
+    try std.testing.expectEqualStrings("4", units.programInfoEntryByNameAndKeyForUnit(voice_unit_id, "Quad", "voices").?.value);
+    try std.testing.expectEqualStrings("4", units.programInfoEntryByNameAndKeyForUnitName("Voices", "Quad", "voices").?.value);
     try std.testing.expectEqual(@as(?usize, 0), units.programInfoIndexOfKeyByName(voice_program_list_id, "Quad", "voices"));
     try std.testing.expectEqual(@as(?usize, 0), units.programInfoIndexOfKeyByNameForListName("Voice Presets", "Quad", "voices"));
     try std.testing.expectEqual(@as(?usize, 0), units.programInfoIndexOfKeyByNameForUnit(voice_unit_id, "Quad", "voices"));
@@ -471,6 +479,8 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expectEqual(@as(?usize, 0), quad_program.parameterIndexOfId(0));
     try std.testing.expectEqual(@as(f64, 1.0), quad_program.parameterById(0).?.normalized);
     try std.testing.expectEqualStrings("4", quad_program.infoEntry(0).?.value);
+    try std.testing.expectEqualStrings("4", quad_program.infoEntryByKey("voices").?.value);
+    try std.testing.expectEqual(@as(?plug.units.ProgramInfo, null), quad_program.infoEntryByKey("missing"));
     try std.testing.expect(quad_program.hasInfoKey("voices"));
     try std.testing.expectEqual(@as(?usize, 0), quad_program.infoIndexOfKey("voices"));
     try std.testing.expectEqualStrings("4", quad_program.infoValue("voices").?);
@@ -607,6 +617,10 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expectEqualStrings("voices", instance.programInfoEntryByListName("Voice Presets", 1, 0).?.key);
     try std.testing.expectEqualStrings("voices", instance.programInfoEntryForUnit(voice_unit_id, 1, 0).?.key);
     try std.testing.expectEqualStrings("voices", instance.programInfoEntryForUnitName("Voices", 1, 0).?.key);
+    try std.testing.expectEqualStrings("4", instance.programInfoEntryByKey(voice_program_list_id, 1, "voices").?.value);
+    try std.testing.expectEqualStrings("4", instance.programInfoEntryByKeyByListName("Voice Presets", 1, "voices").?.value);
+    try std.testing.expectEqualStrings("4", instance.programInfoEntryByKeyForUnit(voice_unit_id, 1, "voices").?.value);
+    try std.testing.expectEqualStrings("4", instance.programInfoEntryByKeyForUnitName("Voices", 1, "voices").?.value);
     try std.testing.expectEqual(@as(?usize, 0), instance.programInfoIndexOfKey(voice_program_list_id, 1, "voices"));
     try std.testing.expectEqual(@as(?usize, 0), instance.programInfoIndexOfKeyByListName("Voice Presets", 1, "voices"));
     try std.testing.expectEqual(@as(?usize, 0), instance.programInfoIndexOfKeyForUnit(voice_unit_id, 1, "voices"));
@@ -635,6 +649,10 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expectEqualStrings("voices", instance.programInfoEntryByNameForListName("Voice Presets", "Quad", 0).?.key);
     try std.testing.expectEqualStrings("voices", instance.programInfoEntryByNameForUnit(voice_unit_id, "Quad", 0).?.key);
     try std.testing.expectEqualStrings("voices", instance.programInfoEntryByNameForUnitName("Voices", "Quad", 0).?.key);
+    try std.testing.expectEqualStrings("4", instance.programInfoEntryByNameAndKey(voice_program_list_id, "Quad", "voices").?.value);
+    try std.testing.expectEqualStrings("4", instance.programInfoEntryByNameAndKeyForListName("Voice Presets", "Quad", "voices").?.value);
+    try std.testing.expectEqualStrings("4", instance.programInfoEntryByNameAndKeyForUnit(voice_unit_id, "Quad", "voices").?.value);
+    try std.testing.expectEqualStrings("4", instance.programInfoEntryByNameAndKeyForUnitName("Voices", "Quad", "voices").?.value);
     try std.testing.expectEqual(@as(?usize, 0), instance.programInfoIndexOfKeyByName(voice_program_list_id, "Quad", "voices"));
     try std.testing.expectEqual(@as(?usize, 0), instance.programInfoIndexOfKeyByNameForListName("Voice Presets", "Quad", "voices"));
     try std.testing.expectEqual(@as(?usize, 0), instance.programInfoIndexOfKeyByNameForUnit(voice_unit_id, "Quad", "voices"));
