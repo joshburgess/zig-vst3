@@ -3069,8 +3069,16 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.writtenOutputEvents().firstKind(kind);
         }
 
+        pub fn firstOutputEventOfKind(self: @This(), kind: EventKind) ?Event {
+            return self.firstOutputEvent(kind);
+        }
+
         pub fn latestOutputEvent(self: @This(), kind: EventKind) ?Event {
             return self.writtenOutputEvents().latestKind(kind);
+        }
+
+        pub fn latestOutputEventOfKind(self: @This(), kind: EventKind) ?Event {
+            return self.latestOutputEvent(kind);
         }
 
         pub fn firstOutputEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) ?Event {
@@ -5378,7 +5386,9 @@ test "process context exposes output event helpers" {
     try std.testing.expect(!context.canAppendOutputEventValue(events[0]));
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
     try std.testing.expectEqual(EventKind.note_on, context.firstOutputEvent(.note_on).?.kind);
+    try std.testing.expectEqual(EventKind.note_on, context.firstOutputEventOfKind(.note_on).?.kind);
     try std.testing.expectEqual(EventKind.note_off, context.firstOutputEvent(.note_off).?.kind);
+    try std.testing.expectEqual(EventKind.note_off, context.firstOutputEventOfKind(.note_off).?.kind);
     try std.testing.expectEqual(EventKind.note_on, context.firstOutputEventOfKindAtOffset(.note_on, 0).?.kind);
     try std.testing.expectEqual(EventKind.note_off, context.latestOutputEventOfKindAtOffset(.note_off, 1).?.kind);
     try std.testing.expectEqual(@as(?Event, null), context.firstOutputEventOfKindAtOffset(.note_off, 0));
@@ -5426,6 +5436,7 @@ test "process context exposes output event helpers" {
     try std.testing.expect(!context.onlyOutputEventsForChannel(1));
     try std.testing.expectEqual(EventKind.note_on, context.firstOutputEvent(.note_on).?.kind);
     try std.testing.expectEqual(EventKind.note_off, context.latestOutputEvent(.note_off).?.kind);
+    try std.testing.expectEqual(EventKind.note_off, context.latestOutputEventOfKind(.note_off).?.kind);
     try std.testing.expectEqual(@as(?usize, 1), context.nextOutputEventOffset(0));
     try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffset(1));
     try std.testing.expectEqual(@as(?usize, 1), context.nextOutputEventOffsetForKind(.note_off, 0));
@@ -5478,6 +5489,8 @@ test "process context exposes output event helpers" {
     try std.testing.expect(!context.onlyOutputEventsForBusChannel(0, 0));
     try std.testing.expectEqual(@as(?Event, null), context.firstOutputEvent(.note_on));
     try std.testing.expectEqual(@as(?Event, null), context.latestOutputEvent(.note_on));
+    try std.testing.expectEqual(@as(?Event, null), context.firstOutputEventOfKind(.note_on));
+    try std.testing.expectEqual(@as(?Event, null), context.latestOutputEventOfKind(.note_on));
     try std.testing.expectEqual(@as(?Event, null), context.firstOutputEventOfKindAtOffset(.note_on, 0));
     try std.testing.expectEqual(@as(?Event, null), context.latestOutputEventOfKindAtOffset(.note_on, 0));
     try std.testing.expectEqual(@as(?Event, null), context.firstOutputEventForBus(0));
@@ -5545,6 +5558,8 @@ test "process context exposes output event helpers" {
     try std.testing.expect(!no_writer.onlyOutputEventsForBusChannel(0, 0));
     try std.testing.expectEqual(@as(?Event, null), no_writer.firstOutputEvent(.note_on));
     try std.testing.expectEqual(@as(?Event, null), no_writer.latestOutputEvent(.note_on));
+    try std.testing.expectEqual(@as(?Event, null), no_writer.firstOutputEventOfKind(.note_on));
+    try std.testing.expectEqual(@as(?Event, null), no_writer.latestOutputEventOfKind(.note_on));
     try std.testing.expectEqual(@as(?Event, null), no_writer.firstOutputEventOfKindAtOffset(.note_on, 0));
     try std.testing.expectEqual(@as(?Event, null), no_writer.latestOutputEventOfKindAtOffset(.note_on, 0));
     try std.testing.expectEqual(@as(?Event, null), no_writer.firstOutputEventForBus(0));
