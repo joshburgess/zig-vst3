@@ -164,6 +164,8 @@ test "event echo core example writes input events to output events" {
     try std.testing.expectEqual(@as(usize, 2), written_events.eventCount());
     try std.testing.expectEqual(plug.process.EventKind.note_on, written_events.first().?.kind);
     try std.testing.expectEqual(plug.process.EventKind.note_off, written_events.latest().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, context.firstOutputEventOfKind(.note_on).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, context.latestOutputEventOfKind(.note_off).?.kind);
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCapacity());
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 0), context.outputEventRemainingCapacity());
