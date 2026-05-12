@@ -2839,12 +2839,20 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.eventsOfKindAtOffsetEmpty(kind, sample_offset);
         }
 
-        pub fn onlyInputEventsAtOffset(self: @This(), sample_offset: usize) bool {
+        pub fn onlyEventsAtOffset(self: @This(), sample_offset: usize) bool {
             return self.events.onlyAtOffset(sample_offset);
         }
 
-        pub fn onlyInputEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+        pub fn onlyInputEventsAtOffset(self: @This(), sample_offset: usize) bool {
+            return self.onlyEventsAtOffset(sample_offset);
+        }
+
+        pub fn onlyEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
             return self.events.onlyKindAtOffset(kind, sample_offset);
+        }
+
+        pub fn onlyInputEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+            return self.onlyEventsOfKindAtOffset(kind, sample_offset);
         }
 
         pub fn noteAttacksEmpty(self: @This()) bool {
@@ -2863,28 +2871,52 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.noteReleasesEmpty();
         }
 
-        pub fn onlyInputEventsOfKind(self: @This(), kind: EventKind) bool {
+        pub fn onlyEventsOfKind(self: @This(), kind: EventKind) bool {
             return self.events.onlyKind(kind);
         }
 
-        pub fn onlyInputNoteAttacks(self: @This()) bool {
+        pub fn onlyInputEventsOfKind(self: @This(), kind: EventKind) bool {
+            return self.onlyEventsOfKind(kind);
+        }
+
+        pub fn onlyNoteAttacks(self: @This()) bool {
             return self.events.onlyNoteAttacks();
         }
 
-        pub fn onlyInputNoteReleases(self: @This()) bool {
+        pub fn onlyInputNoteAttacks(self: @This()) bool {
+            return self.onlyNoteAttacks();
+        }
+
+        pub fn onlyNoteReleases(self: @This()) bool {
             return self.events.onlyNoteReleases();
         }
 
-        pub fn onlyInputEventsForBus(self: @This(), bus_index: i32) bool {
+        pub fn onlyInputNoteReleases(self: @This()) bool {
+            return self.onlyNoteReleases();
+        }
+
+        pub fn onlyEventsForBus(self: @This(), bus_index: i32) bool {
             return self.events.onlyBus(bus_index);
         }
 
-        pub fn onlyInputEventsForChannel(self: @This(), channel: i16) bool {
+        pub fn onlyInputEventsForBus(self: @This(), bus_index: i32) bool {
+            return self.onlyEventsForBus(bus_index);
+        }
+
+        pub fn onlyEventsForChannel(self: @This(), channel: i16) bool {
             return self.events.onlyChannel(channel);
         }
 
-        pub fn onlyInputEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) bool {
+        pub fn onlyInputEventsForChannel(self: @This(), channel: i16) bool {
+            return self.onlyEventsForChannel(channel);
+        }
+
+        pub fn onlyEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) bool {
             return self.events.onlyBusChannel(bus_index, channel);
+        }
+
+        pub fn onlyInputEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) bool {
+            return self.onlyEventsForBusChannel(bus_index, channel);
         }
 
         pub fn nextEventOffset(self: @This(), after_sample_offset: usize) ?usize {
@@ -3779,7 +3811,9 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(!context.inputNoteAttacksEmpty());
     try std.testing.expect(context.noteReleasesEmpty());
     try std.testing.expect(context.inputNoteReleasesEmpty());
+    try std.testing.expect(context.onlyNoteAttacks());
     try std.testing.expect(context.onlyInputNoteAttacks());
+    try std.testing.expect(!context.onlyNoteReleases());
     try std.testing.expect(!context.onlyInputNoteReleases());
     try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffset());
     try std.testing.expectEqual(@as(?usize, 1), context.firstInputEventOffset());
@@ -3864,15 +3898,25 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(!context.eventsOfKindAtOffsetEmpty(.note_on, 1));
     try std.testing.expect(!context.inputEventsOfKindAtOffsetEmpty(.note_on, 1));
     try std.testing.expect(context.eventsOfKindAtOffsetEmpty(.note_off, 1));
+    try std.testing.expect(context.onlyEventsAtOffset(1));
     try std.testing.expect(context.onlyInputEventsAtOffset(1));
+    try std.testing.expect(!context.onlyEventsAtOffset(0));
     try std.testing.expect(!context.onlyInputEventsAtOffset(0));
+    try std.testing.expect(context.onlyEventsOfKindAtOffset(.note_on, 1));
     try std.testing.expect(context.onlyInputEventsOfKindAtOffset(.note_on, 1));
+    try std.testing.expect(!context.onlyEventsOfKindAtOffset(.note_off, 1));
     try std.testing.expect(!context.onlyInputEventsOfKindAtOffset(.note_off, 1));
+    try std.testing.expect(context.onlyEventsOfKind(.note_on));
     try std.testing.expect(context.onlyInputEventsOfKind(.note_on));
+    try std.testing.expect(context.onlyEventsForBus(0));
     try std.testing.expect(context.onlyInputEventsForBus(0));
+    try std.testing.expect(context.onlyEventsForChannel(0));
     try std.testing.expect(context.onlyInputEventsForChannel(0));
+    try std.testing.expect(context.onlyEventsForBusChannel(0, 0));
     try std.testing.expect(context.onlyInputEventsForBusChannel(0, 0));
+    try std.testing.expect(!context.onlyEventsForBusChannel(0, 1));
     try std.testing.expect(!context.onlyInputEventsForBusChannel(0, 1));
+    try std.testing.expect(!context.onlyEventsForChannel(1));
     try std.testing.expect(!context.onlyInputEventsForChannel(1));
     try std.testing.expectEqual(@as(i16, 60), context.firstEvent(.note_on).?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.firstInputEventOfKind(.note_on).?.pitch);
