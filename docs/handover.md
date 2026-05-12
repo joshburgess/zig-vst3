@@ -51,7 +51,7 @@ Before this handoff, local checks were repeatedly run and passing:
 zig build
 zig build test
 git diff --check
-rg -n "<project text-rule markers>" .github docs PROJECT_BUILD_PLAN.md README.md CHANGELOG.md zig-vst3 zig-vst3-plugin examples build.zig scripts
+rg -n "<project text-rule markers>" .github docs README.md CHANGELOG.md zig-vst3 zig-vst3-plugin examples build.zig scripts
 ```
 
 The marker scan exits with status 1 when there are no matches, which is expected.
@@ -242,7 +242,7 @@ zig build test
 zig build validator
 zig build validate-examples
 git diff --check
-rg -n "<project text-rule markers>" .github docs PROJECT_BUILD_PLAN.md README.md CHANGELOG.md zig-vst3 zig-vst3-plugin examples build.zig scripts
+rg -n "<project text-rule markers>" .github docs README.md CHANGELOG.md zig-vst3 zig-vst3-plugin examples build.zig scripts
 ```
 
 Useful CI command when needed:

@@ -23,7 +23,7 @@ jobs:
       - name: Check prose punctuation
         run: |
           em_dash="$(printf '\342\200\224')"
-          if grep -R -n "$em_dash" README.md CONTRIBUTING.md PROJECT_BUILD_PLAN.md docs .github scripts; then
+          if grep -R -n "$em_dash" README.md CONTRIBUTING.md docs .github scripts; then
             echo "Use hyphen punctuation in prose instead of em dash characters." >&2
             exit 1
           fi

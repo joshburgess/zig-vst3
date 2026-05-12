@@ -8,8 +8,8 @@ The current tree contains:
 
 - `zig-vst3/`: raw VST3 binding layer
 - `zig-vst3-plugin/`: higher-level plugin framework layer
-- `PROJECT_BUILD_PLAN.md`: staged implementation plan
 - `CHANGELOG.md`: release notes
+- `docs/roadmap.md`: current remaining work and validation tiers
 - `docs/layer1-api.md`: raw `zig-vst3` API guide
 - `docs/layer1-coverage.md`: Layer 1 protocol coverage map
 - `docs/layer1-release.md`: `zig-vst3` release checklist
