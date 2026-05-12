@@ -1043,6 +1043,42 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.parameter_set.firstDescriptorErrorName();
         }
 
+        pub fn validateUniqueParameterIds(self: *const Self) !void {
+            try self.spec.parameter_set.validateUniqueIds();
+        }
+
+        pub fn validateUniqueParameterNames(self: *const Self) !void {
+            try self.spec.parameter_set.validateUniqueNames();
+        }
+
+        pub fn validateParameterDescriptors(self: *const Self) !void {
+            try self.spec.parameter_set.validateDescriptors();
+        }
+
+        pub fn validateParameters(self: *const Self) !void {
+            try self.spec.parameter_set.validate();
+        }
+
+        pub fn validateParameterUnitIds(self: *const Self) !void {
+            try self.spec.parameter_set.validateUnitIds(self.spec.units);
+        }
+
+        pub fn validateUnits(self: *const Self) !void {
+            try self.spec.units.validateUnits();
+        }
+
+        pub fn validateProgramLists(self: *const Self) !void {
+            try self.spec.units.validateProgramLists();
+        }
+
+        pub fn validateUnitSet(self: *const Self) !void {
+            try self.spec.units.validate();
+        }
+
+        pub fn validateProgramParameterIds(self: *const Self) !void {
+            try self.spec.units.validateProgramParameterIds(&self.spec.parameter_set);
+        }
+
         pub fn hasParameterId(self: *const Self, id: u32) bool {
             return self.spec.parameter_set.hasId(id);
         }

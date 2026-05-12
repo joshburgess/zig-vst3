@@ -1662,6 +1662,26 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.firstDescriptorErrorName();
         }
 
+        pub fn validateUniqueIds(self: Self) !void {
+            try self.set.validateUniqueIds();
+        }
+
+        pub fn validateUniqueNames(self: Self) !void {
+            try self.set.validateUniqueNames();
+        }
+
+        pub fn validateDescriptors(self: Self) !void {
+            try self.set.validateDescriptors();
+        }
+
+        pub fn validate(self: Self) !void {
+            try self.set.validate();
+        }
+
+        pub fn validateUnitIds(self: Self, unit_set: anytype) !void {
+            try self.set.validateUnitIds(unit_set);
+        }
+
         pub fn id(self: Self, index: usize) ?u32 {
             return self.set.id(index);
         }
@@ -2209,6 +2229,26 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn firstDescriptorErrorName(self: Self) ?[]const u8 {
             return self.set.firstDescriptorErrorName();
+        }
+
+        pub fn validateUniqueIds(self: Self) !void {
+            try self.set.validateUniqueIds();
+        }
+
+        pub fn validateUniqueNames(self: Self) !void {
+            try self.set.validateUniqueNames();
+        }
+
+        pub fn validateDescriptors(self: Self) !void {
+            try self.set.validateDescriptors();
+        }
+
+        pub fn validate(self: Self) !void {
+            try self.set.validate();
+        }
+
+        pub fn validateUnitIds(self: Self, unit_set: anytype) !void {
+            try self.set.validateUnitIds(unit_set);
         }
 
         pub fn id(self: Self, index: usize) ?u32 {
@@ -3277,11 +3317,16 @@ test "parameter set reports duplicate ids" {
     };
     const Set = ParameterSet(Params);
     const set = Set.init(.{});
+    var values = ParameterValues(Params).init(&set);
+    const view = values.view(&set);
+    var editor = values.editor(&set);
 
     try std.testing.expectEqual(@as(?u32, 7), set.duplicateId());
     try std.testing.expectEqual(@as(?usize, 1), set.duplicateIdIndex());
     try std.testing.expect(set.hasDuplicateIds());
     try std.testing.expectError(error.DuplicateParameterId, set.validateUniqueIds());
+    try std.testing.expectError(error.DuplicateParameterId, view.validateUniqueIds());
+    try std.testing.expectError(error.DuplicateParameterId, editor.validateUniqueIds());
 }
 
 test "parameter set accepts unique ids" {
@@ -3305,12 +3350,19 @@ test "parameter set reports duplicate names" {
     };
     const Set = ParameterSet(Params);
     const set = Set.init(.{});
+    var values = ParameterValues(Params).init(&set);
+    const view = values.view(&set);
+    var editor = values.editor(&set);
 
     try std.testing.expectEqualStrings("Level", set.duplicateName().?);
     try std.testing.expectEqual(@as(?usize, 1), set.duplicateNameIndex());
     try std.testing.expect(set.hasDuplicateNames());
     try std.testing.expectError(error.DuplicateParameterName, set.validateUniqueNames());
     try std.testing.expectError(error.DuplicateParameterName, set.validate());
+    try std.testing.expectError(error.DuplicateParameterName, view.validateUniqueNames());
+    try std.testing.expectError(error.DuplicateParameterName, editor.validateUniqueNames());
+    try std.testing.expectError(error.DuplicateParameterName, view.validate());
+    try std.testing.expectError(error.DuplicateParameterName, editor.validate());
 }
 
 test "parameter set validates descriptor names and ranges" {
@@ -3400,9 +3452,19 @@ test "parameter set validates unit ids against reflected units" {
     const units = Units{};
     const set = ParameterSet(Params).init(.{});
     const invalid_set = ParameterSet(InvalidParams).init(.{});
+    var values = ParameterValues(Params).init(&set);
+    const view = values.view(&set);
+    var editor = values.editor(&set);
+    var invalid_values = ParameterValues(InvalidParams).init(&invalid_set);
+    const invalid_view = invalid_values.view(&invalid_set);
+    var invalid_editor = invalid_values.editor(&invalid_set);
 
     try set.validateUnitIds(units);
+    try view.validateUnitIds(units);
+    try editor.validateUnitIds(units);
     try std.testing.expectError(error.InvalidParameterUnit, invalid_set.validateUnitIds(units));
+    try std.testing.expectError(error.InvalidParameterUnit, invalid_view.validateUnitIds(units));
+    try std.testing.expectError(error.InvalidParameterUnit, invalid_editor.validateUnitIds(units));
 }
 
 test "integer parameter step count saturates to VST limit" {

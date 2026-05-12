@@ -83,6 +83,11 @@ test "voice mix core example declares reflected unit and program metadata" {
     try direct_units.validateProgramLists();
     try direct_units.validate();
     try direct_units.validateProgramParameterIds(&parameter_set);
+    try instance.validateUnits();
+    try instance.validateProgramLists();
+    try instance.validateUnitSet();
+    try instance.validateParameterUnitIds();
+    try instance.validateProgramParameterIds();
     const units = instance.unitSet();
     try std.testing.expectEqual(@as(usize, 2), units.unitCount());
     try std.testing.expect(!units.unitsEmpty());
