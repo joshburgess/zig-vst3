@@ -2,8 +2,11 @@ const std = @import("std");
 const plugview = @import("zig-vst3").pluginterfaces.gui.iplugview;
 const scale = @import("zig-vst3").pluginterfaces.gui.iplugviewcontentscalesupport;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("Platform.kPlatformTypeHWND {s}\n", .{std.mem.span(plugview.PlatformType.kPlatformTypeHWND)});
     try stdout.print("Platform.kPlatformTypeHIView {s}\n", .{std.mem.span(plugview.PlatformType.kPlatformTypeHIView)});
     try stdout.print("Platform.kPlatformTypeNSView {s}\n", .{std.mem.span(plugview.PlatformType.kPlatformTypeNSView)});

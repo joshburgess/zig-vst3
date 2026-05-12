@@ -2,8 +2,11 @@ const std = @import("std");
 const channel = @import("zig-vst3").pluginterfaces.vst.ivstchannelcontextinfo;
 const physical = @import("zig-vst3").pluginterfaces.vst.ivstphysicalui;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("PhysicalUITypeIDs.kPUIXMovement {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kPUIXMovement)});
     try stdout.print("PhysicalUITypeIDs.kPUIYMovement {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kPUIYMovement)});
     try stdout.print("PhysicalUITypeIDs.kPUIPressure {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kPUIPressure)});

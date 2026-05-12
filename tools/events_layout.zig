@@ -3,8 +3,11 @@ const events = @import("zig-vst3").pluginterfaces.vst.ivstevents;
 const helpers = @import("zig-vst3").pluginterfaces.vst.vsteventshelper;
 const noteexpression = @import("zig-vst3").pluginterfaces.vst.ivstnoteexpression;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("NoteIDUserRange.kNoteIDUserRangeLowerBound {}\n", .{@intFromEnum(events.NoteIDUserRange.kNoteIDUserRangeLowerBound)});
     try stdout.print("NoteIDUserRange.kNoteIDUserRangeUpperBound {}\n", .{@intFromEnum(events.NoteIDUserRange.kNoteIDUserRangeUpperBound)});
     try stdout.print("DataEvent.kMidiSysEx {}\n", .{@intFromEnum(events.DataEvent.DataTypes.kMidiSysEx)});

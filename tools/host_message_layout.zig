@@ -3,8 +3,11 @@ const attributes = @import("zig-vst3").pluginterfaces.vst.ivstattributes;
 const host = @import("zig-vst3").pluginterfaces.vst.ivsthostapplication;
 const message = @import("zig-vst3").pluginterfaces.vst.ivstmessage;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try printType(stdout, "IAttributeList", attributes.IAttributeList);
     try printType(stdout, "IStreamAttributes", attributes.IStreamAttributes);
     try printType(stdout, "IMessage", message.IMessage);

@@ -1,8 +1,11 @@
 const std = @import("std");
 const component = @import("zig-vst3").pluginterfaces.vst.ivstcomponent;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("kDefaultFactoryFlags {}\n", .{component.kDefaultFactoryFlags});
     try stdout.print("MediaTypes.kAudio {}\n", .{@intFromEnum(component.MediaTypes.kAudio)});
     try stdout.print("MediaTypes.kEvent {}\n", .{@intFromEnum(component.MediaTypes.kEvent)});

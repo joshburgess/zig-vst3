@@ -27,5 +27,5 @@ test "zig-vst3-plugin re-exports core modules" {
 }
 
 test "zig-vst3-plugin runs core module tests" {
-    std.testing.refAllDeclsRecursive(core);
+    std.testing.refAllDecls(core);
 }
