@@ -261,6 +261,18 @@ test "event echo core example writes input events to output events" {
     var output_note_events = context.outputEventsOfKind(.note_on);
     try std.testing.expectEqual(@as(usize, 0), output_note_events.next().?.sample_offset);
     try std.testing.expectEqual(@as(?plug.process.Event, null), output_note_events.next());
+    var output_bus_events = context.outputEventsForBus(0);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, output_bus_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, output_bus_events.next().?.kind);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), output_bus_events.next());
+    var output_channel_events = context.outputEventsForChannel(0);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, output_channel_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, output_channel_events.next().?.kind);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), output_channel_events.next());
+    var output_bus_channel_events = context.outputEventsForBusChannel(0, 0);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, output_bus_channel_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, output_bus_channel_events.next().?.kind);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), output_bus_channel_events.next());
 
     var segments = context.outputEventBlockSegments();
     try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = 1 }, segments.next().?);

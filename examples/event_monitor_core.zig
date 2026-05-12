@@ -182,6 +182,21 @@ test "event monitor core example can inspect input event views" {
     var events_at_offset = view.atOffset(2);
     try std.testing.expectEqual(plug.process.EventKind.midi_cc, events_at_offset.next().?.kind);
     try std.testing.expectEqual(@as(?plug.process.Event, null), events_at_offset.next());
+    var bus_events = view.forBus(0);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, bus_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.midi_cc, bus_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, bus_events.next().?.kind);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), bus_events.next());
+    var channel_events = view.forChannel(0);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, channel_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.midi_cc, channel_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, channel_events.next().?.kind);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), channel_events.next());
+    var bus_channel_events = view.forBusChannel(0, 0);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, bus_channel_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.midi_cc, bus_channel_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, bus_channel_events.next().?.kind);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), bus_channel_events.next());
 
     var segments = view.blockSegments(4);
     try std.testing.expectEqual(plug.process.BlockSegment{ .start_offset = 0, .end_offset = 1 }, segments.next().?);
@@ -326,6 +341,17 @@ test "event monitor core example summarizes input event kinds" {
     var offset_three_events = input_event_view.atOffset(3);
     try std.testing.expectEqual(plug.process.EventKind.note_on, offset_three_events.next().?.kind);
     try std.testing.expectEqual(plug.process.EventKind.pitch_bend, offset_three_events.next().?.kind);
+    var bus_two_events = context.inputEventsForBus(2);
+    try std.testing.expectEqual(plug.process.EventKind.aftertouch, bus_two_events.next().?.kind);
+    try std.testing.expectEqual(@as(?plug.process.Event, null), bus_two_events.next());
+    var channel_zero_events = context.inputEventsForChannel(0);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, channel_zero_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.midi_cc, channel_zero_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, channel_zero_events.next().?.kind);
+    var bus_channel_zero_events = context.inputEventsForBusChannel(0, 0);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, bus_channel_zero_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.midi_cc, bus_channel_zero_events.next().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_on, bus_channel_zero_events.next().?.kind);
     var input_event_segments = input_event_view.blockSegments(input.len);
     try std.testing.expectEqual(
         plug.process.BlockSegment{ .start_offset = 0, .end_offset = 1 },
