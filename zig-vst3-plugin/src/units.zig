@@ -436,8 +436,18 @@ pub fn UnitSet(comptime config: Config) type {
             return item.duplicateInfoKey();
         }
 
+        pub fn duplicateProgramInfoKeyByListName(self: Self, list_name: []const u8, program_index: usize) ?[]const u8 {
+            const item = self.programByListName(list_name, program_index) orelse return null;
+            return item.duplicateInfoKey();
+        }
+
         pub fn duplicateProgramInfoKeyIndex(self: Self, list_id: i32, program_index: usize) ?usize {
             const item = self.program(list_id, program_index) orelse return null;
+            return item.duplicateInfoKeyIndex();
+        }
+
+        pub fn duplicateProgramInfoKeyIndexByListName(self: Self, list_name: []const u8, program_index: usize) ?usize {
+            const item = self.programByListName(list_name, program_index) orelse return null;
             return item.duplicateInfoKeyIndex();
         }
 
@@ -446,9 +456,19 @@ pub fn UnitSet(comptime config: Config) type {
             return self.duplicateProgramInfoKey(list_id, index);
         }
 
+        pub fn duplicateProgramInfoKeyByNameForListName(self: Self, list_name: []const u8, program_name: []const u8) ?[]const u8 {
+            const item = self.programByNameForListName(list_name, program_name) orelse return null;
+            return item.duplicateInfoKey();
+        }
+
         pub fn duplicateProgramInfoKeyIndexByName(self: Self, list_id: i32, program_name: []const u8) ?usize {
             const index = self.programIndexOfName(list_id, program_name) orelse return null;
             return self.duplicateProgramInfoKeyIndex(list_id, index);
+        }
+
+        pub fn duplicateProgramInfoKeyIndexByNameForListName(self: Self, list_name: []const u8, program_name: []const u8) ?usize {
+            const item = self.programByNameForListName(list_name, program_name) orelse return null;
+            return item.duplicateInfoKeyIndex();
         }
 
         pub fn unit(_: Self, index: usize) ?Unit {
@@ -871,8 +891,18 @@ pub fn UnitSet(comptime config: Config) type {
             return item.infoValue(key);
         }
 
+        pub fn programInfoByListName(self: Self, list_name: []const u8, program_index: usize, key: []const u8) ?[]const u8 {
+            const item = self.programByListName(list_name, program_index) orelse return null;
+            return item.infoValue(key);
+        }
+
         pub fn programInfoEntry(self: Self, list_id: i32, program_index: usize, info_index: usize) ?ProgramInfo {
             const item = self.program(list_id, program_index) orelse return null;
+            return item.infoEntry(info_index);
+        }
+
+        pub fn programInfoEntryByListName(self: Self, list_name: []const u8, program_index: usize, info_index: usize) ?ProgramInfo {
+            const item = self.programByListName(list_name, program_index) orelse return null;
             return item.infoEntry(info_index);
         }
 
@@ -881,12 +911,25 @@ pub fn UnitSet(comptime config: Config) type {
             return item.infoIndexOfKey(key);
         }
 
+        pub fn programInfoIndexOfKeyByListName(self: Self, list_name: []const u8, program_index: usize, key: []const u8) ?usize {
+            const item = self.programByListName(list_name, program_index) orelse return null;
+            return item.infoIndexOfKey(key);
+        }
+
         pub fn hasProgramInfo(self: Self, list_id: i32, program_index: usize, key: []const u8) bool {
             return self.programInfoIndexOfKey(list_id, program_index, key) != null;
         }
 
+        pub fn hasProgramInfoByListName(self: Self, list_name: []const u8, program_index: usize, key: []const u8) bool {
+            return self.programInfoIndexOfKeyByListName(list_name, program_index, key) != null;
+        }
+
         pub fn hasDuplicateProgramInfoKeys(self: Self, list_id: i32, program_index: usize) bool {
             return self.duplicateProgramInfoKey(list_id, program_index) != null;
+        }
+
+        pub fn hasDuplicateProgramInfoKeysByListName(self: Self, list_name: []const u8, program_index: usize) bool {
+            return self.duplicateProgramInfoKeyByListName(list_name, program_index) != null;
         }
 
         pub fn programInfoByName(self: Self, list_id: i32, program_name: []const u8, key: []const u8) ?[]const u8 {
@@ -894,8 +937,18 @@ pub fn UnitSet(comptime config: Config) type {
             return self.programInfo(list_id, index, key);
         }
 
+        pub fn programInfoByNameForListName(self: Self, list_name: []const u8, program_name: []const u8, key: []const u8) ?[]const u8 {
+            const item = self.programByNameForListName(list_name, program_name) orelse return null;
+            return item.infoValue(key);
+        }
+
         pub fn programInfoEntryByName(self: Self, list_id: i32, program_name: []const u8, info_index: usize) ?ProgramInfo {
             const item = self.programByName(list_id, program_name) orelse return null;
+            return item.infoEntry(info_index);
+        }
+
+        pub fn programInfoEntryByNameForListName(self: Self, list_name: []const u8, program_name: []const u8, info_index: usize) ?ProgramInfo {
+            const item = self.programByNameForListName(list_name, program_name) orelse return null;
             return item.infoEntry(info_index);
         }
 
@@ -904,16 +957,34 @@ pub fn UnitSet(comptime config: Config) type {
             return item.infoIndexOfKey(key);
         }
 
+        pub fn programInfoIndexOfKeyByNameForListName(self: Self, list_name: []const u8, program_name: []const u8, key: []const u8) ?usize {
+            const item = self.programByNameForListName(list_name, program_name) orelse return null;
+            return item.infoIndexOfKey(key);
+        }
+
         pub fn hasProgramInfoByName(self: Self, list_id: i32, program_name: []const u8, key: []const u8) bool {
             return self.programInfoIndexOfKeyByName(list_id, program_name, key) != null;
+        }
+
+        pub fn hasProgramInfoByNameForListName(self: Self, list_name: []const u8, program_name: []const u8, key: []const u8) bool {
+            return self.programInfoIndexOfKeyByNameForListName(list_name, program_name, key) != null;
         }
 
         pub fn hasDuplicateProgramInfoKeysByName(self: Self, list_id: i32, program_name: []const u8) bool {
             return self.duplicateProgramInfoKeyByName(list_id, program_name) != null;
         }
 
+        pub fn hasDuplicateProgramInfoKeysByNameForListName(self: Self, list_name: []const u8, program_name: []const u8) bool {
+            return self.duplicateProgramInfoKeyByNameForListName(list_name, program_name) != null;
+        }
+
         pub fn programInfoCount(self: Self, list_id: i32, program_index: usize) ?usize {
             const item = self.program(list_id, program_index) orelse return null;
+            return item.info.len;
+        }
+
+        pub fn programInfoCountByListName(self: Self, list_name: []const u8, program_index: usize) ?usize {
+            const item = self.programByListName(list_name, program_index) orelse return null;
             return item.info.len;
         }
 
@@ -922,8 +993,18 @@ pub fn UnitSet(comptime config: Config) type {
             return item.info.len;
         }
 
+        pub fn programInfoCountByNameForListName(self: Self, list_name: []const u8, program_name: []const u8) ?usize {
+            const item = self.programByNameForListName(list_name, program_name) orelse return null;
+            return item.info.len;
+        }
+
         pub fn programHasInfoEntries(self: Self, list_id: i32, program_index: usize) bool {
             const item = self.program(list_id, program_index) orelse return false;
+            return item.hasInfo();
+        }
+
+        pub fn programHasInfoEntriesByListName(self: Self, list_name: []const u8, program_index: usize) bool {
+            const item = self.programByListName(list_name, program_index) orelse return false;
             return item.hasInfo();
         }
 
@@ -932,13 +1013,28 @@ pub fn UnitSet(comptime config: Config) type {
             return item.hasInfo();
         }
 
+        pub fn programHasInfoEntriesByNameForListName(self: Self, list_name: []const u8, program_name: []const u8) bool {
+            const item = self.programByNameForListName(list_name, program_name) orelse return false;
+            return item.hasInfo();
+        }
+
         pub fn programInfoEmpty(self: Self, list_id: i32, program_index: usize) bool {
             const item = self.program(list_id, program_index) orelse return true;
             return item.infoEmpty();
         }
 
+        pub fn programInfoEmptyByListName(self: Self, list_name: []const u8, program_index: usize) bool {
+            const item = self.programByListName(list_name, program_index) orelse return true;
+            return item.infoEmpty();
+        }
+
         pub fn programInfoEmptyByName(self: Self, list_id: i32, program_name: []const u8) bool {
             const item = self.programByName(list_id, program_name) orelse return true;
+            return item.infoEmpty();
+        }
+
+        pub fn programInfoEmptyByNameForListName(self: Self, list_name: []const u8, program_name: []const u8) bool {
+            const item = self.programByNameForListName(list_name, program_name) orelse return true;
             return item.infoEmpty();
         }
 

@@ -778,80 +778,160 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programInfo(list_id, program_index, key);
         }
 
+        pub fn programInfoByListName(self: *const Self, list_name: []const u8, program_index: usize, key: []const u8) ?[]const u8 {
+            return self.spec.units.programInfoByListName(list_name, program_index, key);
+        }
+
         pub fn programInfoEntry(self: *const Self, list_id: i32, program_index: usize, info_index: usize) ?units_api.ProgramInfo {
             return self.spec.units.programInfoEntry(list_id, program_index, info_index);
+        }
+
+        pub fn programInfoEntryByListName(self: *const Self, list_name: []const u8, program_index: usize, info_index: usize) ?units_api.ProgramInfo {
+            return self.spec.units.programInfoEntryByListName(list_name, program_index, info_index);
         }
 
         pub fn programInfoIndexOfKey(self: *const Self, list_id: i32, program_index: usize, key: []const u8) ?usize {
             return self.spec.units.programInfoIndexOfKey(list_id, program_index, key);
         }
 
+        pub fn programInfoIndexOfKeyByListName(self: *const Self, list_name: []const u8, program_index: usize, key: []const u8) ?usize {
+            return self.spec.units.programInfoIndexOfKeyByListName(list_name, program_index, key);
+        }
+
         pub fn hasProgramInfo(self: *const Self, list_id: i32, program_index: usize, key: []const u8) bool {
             return self.spec.units.hasProgramInfo(list_id, program_index, key);
+        }
+
+        pub fn hasProgramInfoByListName(self: *const Self, list_name: []const u8, program_index: usize, key: []const u8) bool {
+            return self.spec.units.hasProgramInfoByListName(list_name, program_index, key);
         }
 
         pub fn duplicateProgramInfoKey(self: *const Self, list_id: i32, program_index: usize) ?[]const u8 {
             return self.spec.units.duplicateProgramInfoKey(list_id, program_index);
         }
 
+        pub fn duplicateProgramInfoKeyByListName(self: *const Self, list_name: []const u8, program_index: usize) ?[]const u8 {
+            return self.spec.units.duplicateProgramInfoKeyByListName(list_name, program_index);
+        }
+
         pub fn duplicateProgramInfoKeyIndex(self: *const Self, list_id: i32, program_index: usize) ?usize {
             return self.spec.units.duplicateProgramInfoKeyIndex(list_id, program_index);
+        }
+
+        pub fn duplicateProgramInfoKeyIndexByListName(self: *const Self, list_name: []const u8, program_index: usize) ?usize {
+            return self.spec.units.duplicateProgramInfoKeyIndexByListName(list_name, program_index);
         }
 
         pub fn hasDuplicateProgramInfoKeys(self: *const Self, list_id: i32, program_index: usize) bool {
             return self.spec.units.hasDuplicateProgramInfoKeys(list_id, program_index);
         }
 
+        pub fn hasDuplicateProgramInfoKeysByListName(self: *const Self, list_name: []const u8, program_index: usize) bool {
+            return self.spec.units.hasDuplicateProgramInfoKeysByListName(list_name, program_index);
+        }
+
         pub fn programInfoByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) ?[]const u8 {
             return self.spec.units.programInfoByName(list_id, program_name, key);
+        }
+
+        pub fn programInfoByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8, key: []const u8) ?[]const u8 {
+            return self.spec.units.programInfoByNameForListName(list_name, program_name, key);
         }
 
         pub fn programInfoEntryByName(self: *const Self, list_id: i32, program_name: []const u8, info_index: usize) ?units_api.ProgramInfo {
             return self.spec.units.programInfoEntryByName(list_id, program_name, info_index);
         }
 
+        pub fn programInfoEntryByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8, info_index: usize) ?units_api.ProgramInfo {
+            return self.spec.units.programInfoEntryByNameForListName(list_name, program_name, info_index);
+        }
+
         pub fn programInfoIndexOfKeyByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) ?usize {
             return self.spec.units.programInfoIndexOfKeyByName(list_id, program_name, key);
+        }
+
+        pub fn programInfoIndexOfKeyByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8, key: []const u8) ?usize {
+            return self.spec.units.programInfoIndexOfKeyByNameForListName(list_name, program_name, key);
         }
 
         pub fn hasProgramInfoByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) bool {
             return self.spec.units.hasProgramInfoByName(list_id, program_name, key);
         }
 
+        pub fn hasProgramInfoByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8, key: []const u8) bool {
+            return self.spec.units.hasProgramInfoByNameForListName(list_name, program_name, key);
+        }
+
         pub fn duplicateProgramInfoKeyByName(self: *const Self, list_id: i32, program_name: []const u8) ?[]const u8 {
             return self.spec.units.duplicateProgramInfoKeyByName(list_id, program_name);
+        }
+
+        pub fn duplicateProgramInfoKeyByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8) ?[]const u8 {
+            return self.spec.units.duplicateProgramInfoKeyByNameForListName(list_name, program_name);
         }
 
         pub fn duplicateProgramInfoKeyIndexByName(self: *const Self, list_id: i32, program_name: []const u8) ?usize {
             return self.spec.units.duplicateProgramInfoKeyIndexByName(list_id, program_name);
         }
 
+        pub fn duplicateProgramInfoKeyIndexByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8) ?usize {
+            return self.spec.units.duplicateProgramInfoKeyIndexByNameForListName(list_name, program_name);
+        }
+
         pub fn hasDuplicateProgramInfoKeysByName(self: *const Self, list_id: i32, program_name: []const u8) bool {
             return self.spec.units.hasDuplicateProgramInfoKeysByName(list_id, program_name);
+        }
+
+        pub fn hasDuplicateProgramInfoKeysByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8) bool {
+            return self.spec.units.hasDuplicateProgramInfoKeysByNameForListName(list_name, program_name);
         }
 
         pub fn programInfoCount(self: *const Self, list_id: i32, program_index: usize) ?usize {
             return self.spec.units.programInfoCount(list_id, program_index);
         }
 
+        pub fn programInfoCountByListName(self: *const Self, list_name: []const u8, program_index: usize) ?usize {
+            return self.spec.units.programInfoCountByListName(list_name, program_index);
+        }
+
         pub fn programInfoCountByName(self: *const Self, list_id: i32, program_name: []const u8) ?usize {
             return self.spec.units.programInfoCountByName(list_id, program_name);
+        }
+
+        pub fn programInfoCountByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8) ?usize {
+            return self.spec.units.programInfoCountByNameForListName(list_name, program_name);
         }
 
         pub fn programHasInfoEntries(self: *const Self, list_id: i32, program_index: usize) bool {
             return self.spec.units.programHasInfoEntries(list_id, program_index);
         }
 
+        pub fn programHasInfoEntriesByListName(self: *const Self, list_name: []const u8, program_index: usize) bool {
+            return self.spec.units.programHasInfoEntriesByListName(list_name, program_index);
+        }
+
         pub fn programHasInfoEntriesByName(self: *const Self, list_id: i32, program_name: []const u8) bool {
             return self.spec.units.programHasInfoEntriesByName(list_id, program_name);
+        }
+
+        pub fn programHasInfoEntriesByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8) bool {
+            return self.spec.units.programHasInfoEntriesByNameForListName(list_name, program_name);
         }
 
         pub fn programInfoEmpty(self: *const Self, list_id: i32, program_index: usize) bool {
             return self.spec.units.programInfoEmpty(list_id, program_index);
         }
 
+        pub fn programInfoEmptyByListName(self: *const Self, list_name: []const u8, program_index: usize) bool {
+            return self.spec.units.programInfoEmptyByListName(list_name, program_index);
+        }
+
         pub fn programInfoEmptyByName(self: *const Self, list_id: i32, program_name: []const u8) bool {
             return self.spec.units.programInfoEmptyByName(list_id, program_name);
+        }
+
+        pub fn programInfoEmptyByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8) bool {
+            return self.spec.units.programInfoEmptyByNameForListName(list_name, program_name);
         }
 
         pub fn applyProgram(self: *Self, list_id: i32, program_index: usize) !bool {
