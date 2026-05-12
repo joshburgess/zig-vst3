@@ -573,7 +573,7 @@ const StreamError = error{ StreamReadFailed, StreamWriteFailed };
 const IBStreamReader = struct {
     stream: *ibstream.IBStream,
 
-    const Reader = std.io.Reader(*IBStreamReader, StreamError, read);
+    const Reader = std.io.GenericReader(*IBStreamReader, StreamError, read);
 
     fn reader(self: *IBStreamReader) Reader {
         return .{ .context = self };
@@ -592,7 +592,7 @@ const IBStreamReader = struct {
 const IBStreamWriter = struct {
     stream: *ibstream.IBStream,
 
-    const Writer = std.io.Writer(*IBStreamWriter, StreamError, write);
+    const Writer = std.io.GenericWriter(*IBStreamWriter, StreamError, write);
 
     fn writer(self: *IBStreamWriter) Writer {
         return .{ .context = self };

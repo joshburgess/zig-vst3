@@ -26,7 +26,9 @@ const SineSynthFactory = factory.StaticFactory3(.{
     },
 });
 
-pub usingnamespace entry.Exports(SineSynthFactory);
+comptime {
+    entry.exportPlugin(SineSynthFactory);
+}
 
 test "sine synth export returns enumerable factory" {
     const plugin_factory = SineSynthFactory.getPluginFactory().?;

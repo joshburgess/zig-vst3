@@ -2,7 +2,7 @@ const std = @import("std");
 const units = @import("zig-vst3").pluginterfaces.vst.ivstunits;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("kRootUnitId {}\n", .{units.kRootUnitId});
     try stdout.print("kNoParentUnitId {}\n", .{units.kNoParentUnitId});
     try stdout.print("kNoProgramListId {}\n", .{units.kNoProgramListId});

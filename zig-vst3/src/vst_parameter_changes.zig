@@ -48,7 +48,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstparameterchanges.iparam_value_queue_iid, .ptr = ptr },
@@ -56,23 +56,23 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IParamValueQueue");
         }
 
-        fn getParameterId(ptr: *anyopaque) callconv(.C) vsttypes.ParamID {
+        fn getParameterId(ptr: *anyopaque) callconv(.c) vsttypes.ParamID {
             return owner(ptr).id;
         }
 
-        fn getPointCount(ptr: *anyopaque) callconv(.C) types.int32 {
+        fn getPointCount(ptr: *anyopaque) callconv(.c) types.int32 {
             return @intCast(owner(ptr).safePointCount());
         }
 
-        fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.C) types.tresult {
+        fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.c) types.tresult {
             if (index < 0) return types.kInvalidArgument;
             const self = owner(ptr);
             if (@as(usize, @intCast(index)) >= self.safePointCount()) return types.kInvalidArgument;
@@ -82,7 +82,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
             return types.kResultOk;
         }
 
-        fn addPoint(ptr: *anyopaque, sample_offset: types.int32, value: vsttypes.ParamValue, index: *types.int32) callconv(.C) types.tresult {
+        fn addPoint(ptr: *anyopaque, sample_offset: types.int32, value: vsttypes.ParamValue, index: *types.int32) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (self.point_count < 0 or self.point_count >= max_points) {
                 index.* = -1;
@@ -145,7 +145,7 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstparameterchanges.iparameter_changes_iid, .ptr = ptr },
@@ -153,26 +153,26 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IParameterChanges");
         }
 
-        fn getParameterCount(ptr: *anyopaque) callconv(.C) types.int32 {
+        fn getParameterCount(ptr: *anyopaque) callconv(.c) types.int32 {
             return @intCast(owner(ptr).safeQueueCount());
         }
 
-        fn getParameterData(ptr: *anyopaque, index: types.int32) callconv(.C) ?*ivstparameterchanges.IParamValueQueue {
+        fn getParameterData(ptr: *anyopaque, index: types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
             if (index < 0) return null;
             const self = owner(ptr);
             if (@as(usize, @intCast(index)) >= self.safeQueueCount()) return null;
             return self.queues[@intCast(index)].asInterface();
         }
 
-        fn addParameterData(ptr: *anyopaque, id: *const vsttypes.ParamID, index: *types.int32) callconv(.C) ?*ivstparameterchanges.IParamValueQueue {
+        fn addParameterData(ptr: *anyopaque, id: *const vsttypes.ParamID, index: *types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
             const self = owner(ptr);
             for (self.queues[0..self.safeQueueCount()], 0..) |*queue, queue_index| {
                 if (queue.id == id.*) {

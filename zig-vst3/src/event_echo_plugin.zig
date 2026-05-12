@@ -26,7 +26,9 @@ const EventEchoFactory = factory.StaticFactory3(.{
     },
 });
 
-pub usingnamespace entry.Exports(EventEchoFactory);
+comptime {
+    entry.exportPlugin(EventEchoFactory);
+}
 
 test "event echo export returns enumerable factory" {
     const plugin_factory = EventEchoFactory.getPluginFactory().?;

@@ -46,7 +46,7 @@ pub fn ErrorContext(comptime max_message_bytes: usize) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ierrorcontext.ierror_context_iid, .ptr = ptr },
@@ -54,24 +54,24 @@ pub fn ErrorContext(comptime max_message_bytes: usize) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IErrorContext");
         }
 
-        fn disableErrorUI(ptr: *anyopaque, state: bool) callconv(.C) void {
+        fn disableErrorUI(ptr: *anyopaque, state: bool) callconv(.c) void {
             owner(ptr).error_ui_disabled = state;
         }
 
-        fn errorMessageShown(ptr: *anyopaque) callconv(.C) types.tresult {
+        fn errorMessageShown(ptr: *anyopaque) callconv(.c) types.tresult {
             owner(ptr).shown = true;
             return types.kResultOk;
         }
 
-        fn getErrorMessage(ptr: *anyopaque, out: ?*istringresult.IString) callconv(.C) types.tresult {
+        fn getErrorMessage(ptr: *anyopaque, out: ?*istringresult.IString) callconv(.c) types.tresult {
             const target = out orelse return types.kInvalidArgument;
             target.vtable.setText8(target, @ptrCast(&owner(ptr).message));
             return types.kResultOk;

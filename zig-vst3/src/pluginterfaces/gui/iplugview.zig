@@ -24,21 +24,21 @@ pub const PlatformType = struct {
 };
 
 pub const IPlugViewVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    isPlatformTypeSupported: *const fn (*anyopaque, base_types.FIDString) callconv(.C) base_types.tresult,
-    attached: *const fn (*anyopaque, ?*anyopaque, base_types.FIDString) callconv(.C) base_types.tresult,
-    removed: *const fn (*anyopaque) callconv(.C) base_types.tresult,
-    onWheel: *const fn (*anyopaque, f32) callconv(.C) base_types.tresult,
-    onKeyDown: *const fn (*anyopaque, base_types.char16, base_types.int16, base_types.int16) callconv(.C) base_types.tresult,
-    onKeyUp: *const fn (*anyopaque, base_types.char16, base_types.int16, base_types.int16) callconv(.C) base_types.tresult,
-    getSize: *const fn (*anyopaque, *ViewRect) callconv(.C) base_types.tresult,
-    onSize: *const fn (*anyopaque, *ViewRect) callconv(.C) base_types.tresult,
-    onFocus: *const fn (*anyopaque, base_types.TBool) callconv(.C) base_types.tresult,
-    setFrame: *const fn (*anyopaque, ?*IPlugFrame) callconv(.C) base_types.tresult,
-    canResize: *const fn (*anyopaque) callconv(.C) base_types.tresult,
-    checkSizeConstraint: *const fn (*anyopaque, *ViewRect) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    isPlatformTypeSupported: *const fn (*anyopaque, base_types.FIDString) callconv(.c) base_types.tresult,
+    attached: *const fn (*anyopaque, ?*anyopaque, base_types.FIDString) callconv(.c) base_types.tresult,
+    removed: *const fn (*anyopaque) callconv(.c) base_types.tresult,
+    onWheel: *const fn (*anyopaque, f32) callconv(.c) base_types.tresult,
+    onKeyDown: *const fn (*anyopaque, base_types.char16, base_types.int16, base_types.int16) callconv(.c) base_types.tresult,
+    onKeyUp: *const fn (*anyopaque, base_types.char16, base_types.int16, base_types.int16) callconv(.c) base_types.tresult,
+    getSize: *const fn (*anyopaque, *ViewRect) callconv(.c) base_types.tresult,
+    onSize: *const fn (*anyopaque, *ViewRect) callconv(.c) base_types.tresult,
+    onFocus: *const fn (*anyopaque, base_types.TBool) callconv(.c) base_types.tresult,
+    setFrame: *const fn (*anyopaque, ?*IPlugFrame) callconv(.c) base_types.tresult,
+    canResize: *const fn (*anyopaque) callconv(.c) base_types.tresult,
+    checkSizeConstraint: *const fn (*anyopaque, *ViewRect) callconv(.c) base_types.tresult,
 };
 
 pub const IPlugView = extern struct {
@@ -46,10 +46,10 @@ pub const IPlugView = extern struct {
 };
 
 pub const IPlugFrameVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    resizeView: *const fn (*anyopaque, ?*IPlugView, *ViewRect) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    resizeView: *const fn (*anyopaque, ?*IPlugView, *ViewRect) callconv(.c) base_types.tresult,
 };
 
 pub const IPlugFrame = extern struct {
@@ -61,10 +61,10 @@ pub const Linux = struct {
     pub const FileDescriptor = c_int;
 
     pub const IEventHandlerVTable = extern struct {
-        queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-        addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-        release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-        onFDIsSet: *const fn (*anyopaque, FileDescriptor) callconv(.C) void,
+        queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+        addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+        release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+        onFDIsSet: *const fn (*anyopaque, FileDescriptor) callconv(.c) void,
     };
 
     pub const IEventHandler = extern struct {
@@ -72,10 +72,10 @@ pub const Linux = struct {
     };
 
     pub const ITimerHandlerVTable = extern struct {
-        queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-        addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-        release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-        onTimer: *const fn (*anyopaque) callconv(.C) void,
+        queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+        addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+        release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+        onTimer: *const fn (*anyopaque) callconv(.c) void,
     };
 
     pub const ITimerHandler = extern struct {
@@ -83,13 +83,13 @@ pub const Linux = struct {
     };
 
     pub const IRunLoopVTable = extern struct {
-        queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-        addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-        release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-        registerEventHandler: *const fn (*anyopaque, ?*IEventHandler, FileDescriptor) callconv(.C) base_types.tresult,
-        unregisterEventHandler: *const fn (*anyopaque, ?*IEventHandler) callconv(.C) base_types.tresult,
-        registerTimer: *const fn (*anyopaque, ?*ITimerHandler, TimerInterval) callconv(.C) base_types.tresult,
-        unregisterTimer: *const fn (*anyopaque, ?*ITimerHandler) callconv(.C) base_types.tresult,
+        queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+        addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+        release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+        registerEventHandler: *const fn (*anyopaque, ?*IEventHandler, FileDescriptor) callconv(.c) base_types.tresult,
+        unregisterEventHandler: *const fn (*anyopaque, ?*IEventHandler) callconv(.c) base_types.tresult,
+        registerTimer: *const fn (*anyopaque, ?*ITimerHandler, TimerInterval) callconv(.c) base_types.tresult,
+        unregisterTimer: *const fn (*anyopaque, ?*ITimerHandler) callconv(.c) base_types.tresult,
     };
 
     pub const IRunLoop = extern struct {

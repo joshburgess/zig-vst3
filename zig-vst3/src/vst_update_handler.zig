@@ -24,7 +24,7 @@ pub fn Dependent(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iupdatehandler.idependent_iid, .ptr = ptr },
@@ -32,15 +32,15 @@ pub fn Dependent(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IDependent");
         }
 
-        fn update(ptr: *anyopaque, changed: ?*anyopaque, message: types.int32) callconv(.C) void {
+        fn update(ptr: *anyopaque, changed: ?*anyopaque, message: types.int32) callconv(.c) void {
             const self = owner(ptr);
             self.last_changed = changed;
             self.last_message = message;
@@ -112,7 +112,7 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             return null;
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iupdatehandler.iupdate_handler_iid, .ptr = ptr },
@@ -120,15 +120,15 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries_for_query, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IUpdateHandler");
         }
 
-        fn addDependent(ptr: *anyopaque, changed: ?*anyopaque, dependent: ?*iupdatehandler.IDependent) callconv(.C) types.tresult {
+        fn addDependent(ptr: *anyopaque, changed: ?*anyopaque, dependent: ?*iupdatehandler.IDependent) callconv(.c) types.tresult {
             const dep = dependent orelse return types.kInvalidArgument;
             const self = owner(ptr);
             if (self.findEntry(changed, dep) != null) return types.kResultOk;
@@ -137,7 +137,7 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             return types.kResultOk;
         }
 
-        fn removeDependent(ptr: *anyopaque, changed: ?*anyopaque, dependent: ?*iupdatehandler.IDependent) callconv(.C) types.tresult {
+        fn removeDependent(ptr: *anyopaque, changed: ?*anyopaque, dependent: ?*iupdatehandler.IDependent) callconv(.c) types.tresult {
             const dep = dependent orelse return types.kInvalidArgument;
             const entry = owner(ptr).findEntry(changed, dep) orelse return types.kResultFalse;
             entry.* = .{};
@@ -145,7 +145,7 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             return types.kResultOk;
         }
 
-        fn triggerUpdates(ptr: *anyopaque, changed: ?*anyopaque, message: types.int32) callconv(.C) types.tresult {
+        fn triggerUpdates(ptr: *anyopaque, changed: ?*anyopaque, message: types.int32) callconv(.c) types.tresult {
             for (&owner(ptr).entries) |*entry| {
                 if (entry.dependent != null and entry.changed == changed) {
                     entry.dependent.?.vtable.update(entry.dependent.?, changed, message);
@@ -156,7 +156,7 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             return types.kResultOk;
         }
 
-        fn deferUpdates(ptr: *anyopaque, changed: ?*anyopaque, message: types.int32) callconv(.C) types.tresult {
+        fn deferUpdates(ptr: *anyopaque, changed: ?*anyopaque, message: types.int32) callconv(.c) types.tresult {
             var matched = false;
             for (&owner(ptr).entries) |*entry| {
                 if (entry.dependent != null and entry.changed == changed) {

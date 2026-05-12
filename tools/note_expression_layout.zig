@@ -2,7 +2,7 @@ const std = @import("std");
 const note_expression = @import("zig-vst3").pluginterfaces.vst.ivstnoteexpression;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("NoteExpressionTypeIDs.kVolumeTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kVolumeTypeID)});
     try stdout.print("NoteExpressionTypeIDs.kPanTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kPanTypeID)});
     try stdout.print("NoteExpressionTypeIDs.kTuningTypeID {}\n", .{@intFromEnum(note_expression.NoteExpressionTypeIDs.kTuningTypeID)});

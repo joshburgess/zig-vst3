@@ -4,7 +4,7 @@ const parameter_finder = @import("zig-vst3").pluginterfaces.vst.ivstplugview;
 const remap = @import("zig-vst3").pluginterfaces.vst.ivstremapparamid;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("FunctionNameType.kCompGainReduction {s}\n", .{std.mem.span(function_name.FunctionNameType.kCompGainReduction)});
     try stdout.print("FunctionNameType.kCompGainReductionMax {s}\n", .{std.mem.span(function_name.FunctionNameType.kCompGainReductionMax)});
     try stdout.print("FunctionNameType.kCompGainReductionPeakHold {s}\n", .{std.mem.span(function_name.FunctionNameType.kCompGainReductionPeakHold)});

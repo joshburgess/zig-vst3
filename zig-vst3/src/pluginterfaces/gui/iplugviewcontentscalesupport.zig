@@ -6,10 +6,10 @@ pub const iplug_view_content_scale_support_iid = tuid.inlineUid(0x65ED9690, 0x8A
 pub const ScaleFactor = f32;
 
 pub const IPlugViewContentScaleSupportVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    setContentScaleFactor: *const fn (*anyopaque, ScaleFactor) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    setContentScaleFactor: *const fn (*anyopaque, ScaleFactor) callconv(.c) base_types.tresult,
 };
 
 pub const IPlugViewContentScaleSupport = extern struct {

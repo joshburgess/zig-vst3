@@ -50,7 +50,7 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
             return @fieldParentPtr("info_listener", iface);
         }
 
-        fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.host_application },
@@ -63,7 +63,7 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
             return interface_map.queryWithAddRef(&self.host_application, addRefHost, &entries, requested_iid, out);
         }
 
-        fn queryInfo(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryInfo(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromInfo(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.info_listener },
@@ -72,32 +72,32 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
             return interface_map.queryWithAddRef(&self.info_listener, addRefInfo, &entries, requested_iid, out);
         }
 
-        fn addRefHost(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefHost(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromHost(ptr).host_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseHost(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseHost(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromHost(ptr).host_ref_count, "IHostApplication");
         }
 
-        fn addRefInfo(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefInfo(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromInfo(ptr);
             self.info_add_ref_count += 1;
             return self.info_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseInfo(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseInfo(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromInfo(ptr);
             self.info_release_count += 1;
             return funknown.decrementRefCount(&self.info_ref_count, "IInfoListener");
         }
 
-        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             copyString128(out, name);
             return types.kResultOk;
         }
 
-        fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             out.* = null;
             if (@hasDecl(Config, "createInstance")) {
@@ -108,7 +108,7 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
             return types.kResultFalse;
         }
 
-        fn setChannelContextInfos(ptr: *anyopaque, attributes: ?*ivstattributes.IAttributeList) callconv(.C) types.tresult {
+        fn setChannelContextInfos(ptr: *anyopaque, attributes: ?*ivstattributes.IAttributeList) callconv(.c) types.tresult {
             const self = ownerFromInfo(ptr);
             self.channel_context_count += 1;
             self.last_channel_context = attributes;
@@ -163,7 +163,7 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
             return @fieldParentPtr("automation_state", iface);
         }
 
-        fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.host_application },
@@ -176,7 +176,7 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
             return interface_map.queryWithAddRef(&self.host_application, addRefHost, &entries, requested_iid, out);
         }
 
-        fn queryAutomation(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryAutomation(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromAutomation(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.automation_state },
@@ -185,32 +185,32 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
             return interface_map.queryWithAddRef(&self.automation_state, addRefAutomation, &entries, requested_iid, out);
         }
 
-        fn addRefHost(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefHost(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromHost(ptr).host_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseHost(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseHost(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromHost(ptr).host_ref_count, "IHostApplication");
         }
 
-        fn addRefAutomation(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefAutomation(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromAutomation(ptr);
             self.automation_add_ref_count += 1;
             return self.automation_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseAutomation(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseAutomation(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromAutomation(ptr);
             self.automation_release_count += 1;
             return funknown.decrementRefCount(&self.automation_ref_count, "IAutomationState");
         }
 
-        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             copyString128(out, name);
             return types.kResultOk;
         }
 
-        fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             out.* = null;
             if (@hasDecl(Config, "createInstance")) {
@@ -221,7 +221,7 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
             return types.kResultFalse;
         }
 
-        fn setAutomationState(ptr: *anyopaque, state: types.int32) callconv(.C) types.tresult {
+        fn setAutomationState(ptr: *anyopaque, state: types.int32) callconv(.c) types.tresult {
             const self = ownerFromAutomation(ptr);
             self.last_state = state;
             if (@hasDecl(Config, "setAutomationState")) return Config.setAutomationState(self, state);
@@ -278,7 +278,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return @fieldParentPtr("data_exchange_handler", iface);
         }
 
-        fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.host_application },
@@ -291,7 +291,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.host_application, addRefHost, &entries, requested_iid, out);
         }
 
-        fn queryDataExchange(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryDataExchange(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.data_exchange_handler },
@@ -300,32 +300,32 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.data_exchange_handler, addRefDataExchange, &entries, requested_iid, out);
         }
 
-        fn addRefHost(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefHost(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromHost(ptr).host_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseHost(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseHost(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromHost(ptr).host_ref_count, "IHostApplication");
         }
 
-        fn addRefDataExchange(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefDataExchange(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromDataExchange(ptr);
             self.add_ref_count += 1;
             return self.data_exchange_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseDataExchange(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseDataExchange(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromDataExchange(ptr);
             self.release_count += 1;
             return funknown.decrementRefCount(&self.data_exchange_ref_count, "IDataExchangeHandler");
         }
 
-        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             copyString128(out, name);
             return types.kResultOk;
         }
 
-        fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             out.* = null;
             if (@hasDecl(Config, "createInstance")) {
@@ -336,7 +336,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return types.kResultFalse;
         }
 
-        fn openQueue(ptr: *anyopaque, processor: ?*ivstaudioprocessor.IAudioProcessor, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) callconv(.C) types.tresult {
+        fn openQueue(ptr: *anyopaque, processor: ?*ivstaudioprocessor.IAudioProcessor, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
             self.open_count += 1;
             self.last_user_context_id = user_context_id;
@@ -349,7 +349,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return types.kResultFalse;
         }
 
-        fn closeQueue(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID) callconv(.C) types.tresult {
+        fn closeQueue(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
             self.close_count += 1;
             self.last_queue_id = queue_id;
@@ -357,7 +357,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn lockBlock(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) callconv(.C) types.tresult {
+        fn lockBlock(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
             block.* = .{};
             if (@hasDecl(Config, "lockBlock")) {
@@ -368,7 +368,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn freeBlock(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID, block_id: ivstdataexchange.DataExchangeBlockID, flags: types.TBool) callconv(.C) types.tresult {
+        fn freeBlock(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID, block_id: ivstdataexchange.DataExchangeBlockID, flags: types.TBool) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
             if (@hasDecl(Config, "freeBlock")) return Config.freeBlock(self, queue_id, block_id, flags);
             return types.kResultOk;

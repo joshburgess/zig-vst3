@@ -50,37 +50,37 @@ pub fn TestPlugProvider(comptime Config: type) type {
             return interface_map.queryWithAddRef(add_ref_ptr, providerAddRef, &entries, requested_iid, out);
         }
 
-        fn providerQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn providerQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             return ownerFromProvider(ptr).queryCanonical(ptr, requested_iid, out);
         }
 
-        fn provider2Query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn provider2Query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromProvider2(ptr);
             return self.queryCanonical(&self.iface, requested_iid, out);
         }
 
-        fn providerAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn providerAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromProvider(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn provider2AddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn provider2AddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromProvider2(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn providerRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn providerRelease(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromProvider(ptr).ref_count, "ITestPlugProvider");
         }
 
-        fn provider2Release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn provider2Release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromProvider2(ptr).ref_count, "ITestPlugProvider2");
         }
 
-        fn getComponent(ptr: *anyopaque) callconv(.C) ?*ivstcomponent.IComponent {
+        fn getComponent(ptr: *anyopaque) callconv(.c) ?*ivstcomponent.IComponent {
             const self = ownerFromProvider(ptr);
             return componentFor(self);
         }
 
-        fn provider2GetComponent(ptr: *anyopaque) callconv(.C) ?*ivstcomponent.IComponent {
+        fn provider2GetComponent(ptr: *anyopaque) callconv(.c) ?*ivstcomponent.IComponent {
             const self = ownerFromProvider2(ptr);
             return componentFor(self);
         }
@@ -90,12 +90,12 @@ pub fn TestPlugProvider(comptime Config: type) type {
             return self.component;
         }
 
-        fn getController(ptr: *anyopaque) callconv(.C) ?*ivsteditcontroller.IEditController {
+        fn getController(ptr: *anyopaque) callconv(.c) ?*ivsteditcontroller.IEditController {
             const self = ownerFromProvider(ptr);
             return controllerFor(self);
         }
 
-        fn provider2GetController(ptr: *anyopaque) callconv(.C) ?*ivsteditcontroller.IEditController {
+        fn provider2GetController(ptr: *anyopaque) callconv(.c) ?*ivsteditcontroller.IEditController {
             const self = ownerFromProvider2(ptr);
             return controllerFor(self);
         }
@@ -105,11 +105,11 @@ pub fn TestPlugProvider(comptime Config: type) type {
             return self.controller;
         }
 
-        fn releasePlugIn(ptr: *anyopaque, component: ?*ivstcomponent.IComponent, controller: ?*ivsteditcontroller.IEditController) callconv(.C) types.tresult {
+        fn releasePlugIn(ptr: *anyopaque, component: ?*ivstcomponent.IComponent, controller: ?*ivsteditcontroller.IEditController) callconv(.c) types.tresult {
             return releasePlugInFor(ownerFromProvider(ptr), component, controller);
         }
 
-        fn provider2ReleasePlugIn(ptr: *anyopaque, component: ?*ivstcomponent.IComponent, controller: ?*ivsteditcontroller.IEditController) callconv(.C) types.tresult {
+        fn provider2ReleasePlugIn(ptr: *anyopaque, component: ?*ivstcomponent.IComponent, controller: ?*ivsteditcontroller.IEditController) callconv(.c) types.tresult {
             return releasePlugInFor(ownerFromProvider2(ptr), component, controller);
         }
 
@@ -121,12 +121,12 @@ pub fn TestPlugProvider(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getSubCategories(ptr: *anyopaque, out: *istringresult.IStringResult) callconv(.C) types.tresult {
+        fn getSubCategories(ptr: *anyopaque, out: *istringresult.IStringResult) callconv(.c) types.tresult {
             _ = ownerFromProvider(ptr);
             return subCategoriesFor(out);
         }
 
-        fn provider2GetSubCategories(ptr: *anyopaque, out: *istringresult.IStringResult) callconv(.C) types.tresult {
+        fn provider2GetSubCategories(ptr: *anyopaque, out: *istringresult.IStringResult) callconv(.c) types.tresult {
             _ = ownerFromProvider2(ptr);
             return subCategoriesFor(out);
         }
@@ -136,12 +136,12 @@ pub fn TestPlugProvider(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getComponentUID(ptr: *anyopaque, out: *anyopaque) callconv(.C) types.tresult {
+        fn getComponentUID(ptr: *anyopaque, out: *anyopaque) callconv(.c) types.tresult {
             _ = ownerFromProvider(ptr);
             return componentUidFor(out);
         }
 
-        fn provider2GetComponentUID(ptr: *anyopaque, out: *anyopaque) callconv(.C) types.tresult {
+        fn provider2GetComponentUID(ptr: *anyopaque, out: *anyopaque) callconv(.c) types.tresult {
             _ = ownerFromProvider2(ptr);
             return componentUidFor(out);
         }
@@ -153,7 +153,7 @@ pub fn TestPlugProvider(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getPluginFactory(ptr: *anyopaque) callconv(.C) ?*ipluginbase.IPluginFactory {
+        fn getPluginFactory(ptr: *anyopaque) callconv(.c) ?*ipluginbase.IPluginFactory {
             const self = ownerFromProvider2(ptr);
             if (@hasDecl(Config, "getPluginFactory")) return Config.getPluginFactory(self);
             return self.factory;

@@ -26,7 +26,9 @@ const NoteGateFactory = factory.StaticFactory3(.{
     },
 });
 
-pub usingnamespace entry.Exports(NoteGateFactory);
+comptime {
+    entry.exportPlugin(NoteGateFactory);
+}
 
 test "note gate export returns enumerable factory" {
     const plugin_factory = NoteGateFactory.getPluginFactory().?;

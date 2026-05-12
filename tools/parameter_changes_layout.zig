@@ -2,7 +2,7 @@ const std = @import("std");
 const parameter_changes = @import("zig-vst3").pluginterfaces.vst.ivstparameterchanges;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try printType(stdout, "IParamValueQueue", parameter_changes.IParamValueQueue);
     try printType(stdout, "IParameterChanges", parameter_changes.IParameterChanges);
 

@@ -4,7 +4,7 @@ const interface_support = @import("zig-vst3").pluginterfaces.vst.ivstpluginterfa
 const prefetch = @import("zig-vst3").pluginterfaces.vst.ivstprefetchablesupport;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("ePrefetchableSupport.kIsNeverPrefetchable {}\n", .{@intFromEnum(prefetch.ePrefetchableSupport.kIsNeverPrefetchable)});
     try stdout.print("ePrefetchableSupport.kIsYetPrefetchable {}\n", .{@intFromEnum(prefetch.ePrefetchableSupport.kIsYetPrefetchable)});
     try stdout.print("ePrefetchableSupport.kIsNotYetPrefetchable {}\n", .{@intFromEnum(prefetch.ePrefetchableSupport.kIsNotYetPrefetchable)});

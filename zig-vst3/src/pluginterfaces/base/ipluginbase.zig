@@ -8,21 +8,21 @@ pub const iplugin_factory2_iid = tuid.inlineUid(0x0007B650, 0xF24B4C0B, 0xA464ED
 pub const iplugin_factory3_iid = tuid.inlineUid(0x4555A2AB, 0xC1234E57, 0x9B122910, 0x36878931);
 
 pub const IPluginBaseVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) types.uint32,
-    initialize: *const fn (*anyopaque, ?*funknown.Header) callconv(.C) types.tresult,
-    terminate: *const fn (*anyopaque) callconv(.C) types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) types.uint32,
+    initialize: *const fn (*anyopaque, ?*funknown.Header) callconv(.c) types.tresult,
+    terminate: *const fn (*anyopaque) callconv(.c) types.tresult,
 };
 
 pub const IPluginFactoryVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) types.uint32,
-    getFactoryInfo: *const fn (*anyopaque, *PFactoryInfo) callconv(.C) types.tresult,
-    countClasses: *const fn (*anyopaque) callconv(.C) types.int32,
-    getClassInfo: *const fn (*anyopaque, types.int32, *PClassInfo) callconv(.C) types.tresult,
-    createInstance: *const fn (*anyopaque, types.FIDString, types.FIDString, *?*anyopaque) callconv(.C) types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) types.uint32,
+    getFactoryInfo: *const fn (*anyopaque, *PFactoryInfo) callconv(.c) types.tresult,
+    countClasses: *const fn (*anyopaque) callconv(.c) types.int32,
+    getClassInfo: *const fn (*anyopaque, types.int32, *PClassInfo) callconv(.c) types.tresult,
+    createInstance: *const fn (*anyopaque, types.FIDString, types.FIDString, *?*anyopaque) callconv(.c) types.tresult,
 };
 
 pub const IPluginFactory = extern struct {
@@ -30,14 +30,14 @@ pub const IPluginFactory = extern struct {
 };
 
 pub const IPluginFactory2VTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) types.uint32,
-    getFactoryInfo: *const fn (*anyopaque, *PFactoryInfo) callconv(.C) types.tresult,
-    countClasses: *const fn (*anyopaque) callconv(.C) types.int32,
-    getClassInfo: *const fn (*anyopaque, types.int32, *PClassInfo) callconv(.C) types.tresult,
-    createInstance: *const fn (*anyopaque, types.FIDString, types.FIDString, *?*anyopaque) callconv(.C) types.tresult,
-    getClassInfo2: *const fn (*anyopaque, types.int32, *PClassInfo2) callconv(.C) types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) types.uint32,
+    getFactoryInfo: *const fn (*anyopaque, *PFactoryInfo) callconv(.c) types.tresult,
+    countClasses: *const fn (*anyopaque) callconv(.c) types.int32,
+    getClassInfo: *const fn (*anyopaque, types.int32, *PClassInfo) callconv(.c) types.tresult,
+    createInstance: *const fn (*anyopaque, types.FIDString, types.FIDString, *?*anyopaque) callconv(.c) types.tresult,
+    getClassInfo2: *const fn (*anyopaque, types.int32, *PClassInfo2) callconv(.c) types.tresult,
 };
 
 pub const IPluginFactory2 = extern struct {
@@ -45,16 +45,16 @@ pub const IPluginFactory2 = extern struct {
 };
 
 pub const IPluginFactory3VTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) types.uint32,
-    getFactoryInfo: *const fn (*anyopaque, *PFactoryInfo) callconv(.C) types.tresult,
-    countClasses: *const fn (*anyopaque) callconv(.C) types.int32,
-    getClassInfo: *const fn (*anyopaque, types.int32, *PClassInfo) callconv(.C) types.tresult,
-    createInstance: *const fn (*anyopaque, types.FIDString, types.FIDString, *?*anyopaque) callconv(.C) types.tresult,
-    getClassInfo2: *const fn (*anyopaque, types.int32, *PClassInfo2) callconv(.C) types.tresult,
-    getClassInfoUnicode: *const fn (*anyopaque, types.int32, *PClassInfoW) callconv(.C) types.tresult,
-    setHostContext: *const fn (*anyopaque, ?*funknown.Header) callconv(.C) types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) types.uint32,
+    getFactoryInfo: *const fn (*anyopaque, *PFactoryInfo) callconv(.c) types.tresult,
+    countClasses: *const fn (*anyopaque) callconv(.c) types.int32,
+    getClassInfo: *const fn (*anyopaque, types.int32, *PClassInfo) callconv(.c) types.tresult,
+    createInstance: *const fn (*anyopaque, types.FIDString, types.FIDString, *?*anyopaque) callconv(.c) types.tresult,
+    getClassInfo2: *const fn (*anyopaque, types.int32, *PClassInfo2) callconv(.c) types.tresult,
+    getClassInfoUnicode: *const fn (*anyopaque, types.int32, *PClassInfoW) callconv(.c) types.tresult,
+    setHostContext: *const fn (*anyopaque, ?*funknown.Header) callconv(.c) types.tresult,
 };
 
 pub const IPluginFactory3 = extern struct {

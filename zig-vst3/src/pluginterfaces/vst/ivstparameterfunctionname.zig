@@ -18,10 +18,10 @@ pub const FunctionNameType = struct {
 };
 
 pub const IParameterFunctionNameVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    getParameterIDFromFunctionName: *const fn (*anyopaque, vsttypes.UnitID, base_types.FIDString, *vsttypes.ParamID) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    getParameterIDFromFunctionName: *const fn (*anyopaque, vsttypes.UnitID, base_types.FIDString, *vsttypes.ParamID) callconv(.c) base_types.tresult,
 };
 
 pub const IParameterFunctionName = extern struct {

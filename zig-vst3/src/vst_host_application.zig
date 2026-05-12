@@ -34,7 +34,7 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             owner(ptr).query_count += 1;
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
@@ -43,24 +43,24 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
             self.add_ref_count += 1;
             return self.ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
             self.release_count += 1;
             return funknown.decrementRefCount(&self.ref_count, "IHostApplication");
         }
 
-        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+        fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             copyString128(out, name);
             return types.kResultOk;
         }
 
-        fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.create_instance_count += 1;
             out.* = null;
@@ -98,7 +98,7 @@ pub fn WrapperMarker(comptime Interface: type, comptime VTable: type, comptime i
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = iid, .ptr = ptr },
@@ -106,11 +106,11 @@ pub fn WrapperMarker(comptime Interface: type, comptime VTable: type, comptime i
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, owner_name);
         }
 
@@ -146,7 +146,7 @@ pub fn WrapperMPESupport(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivsthostapplication.ivst3_wrapper_mpe_support_iid, .ptr = ptr },
@@ -154,15 +154,15 @@ pub fn WrapperMPESupport(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IVst3WrapperMPESupport");
         }
 
-        fn enableMPEInputProcessing(ptr: *anyopaque, state: types.TBool) callconv(.C) types.tresult {
+        fn enableMPEInputProcessing(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (@hasDecl(Config, "enableMPEInputProcessing")) {
                 const result = Config.enableMPEInputProcessing(self, state);
@@ -172,7 +172,7 @@ pub fn WrapperMPESupport(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn setMPEInputDeviceSettings(ptr: *anyopaque, master_channel: types.int32, member_begin_channel: types.int32, member_end_channel: types.int32) callconv(.C) types.tresult {
+        fn setMPEInputDeviceSettings(ptr: *anyopaque, master_channel: types.int32, member_begin_channel: types.int32, member_end_channel: types.int32) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (@hasDecl(Config, "setMPEInputDeviceSettings")) {
                 const result = Config.setMPEInputDeviceSettings(self, master_channel, member_begin_channel, member_end_channel);

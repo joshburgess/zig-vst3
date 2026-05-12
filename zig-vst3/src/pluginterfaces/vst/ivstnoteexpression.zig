@@ -92,13 +92,13 @@ pub const KeyswitchInfo = extern struct {
 };
 
 pub const INoteExpressionControllerVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    getNoteExpressionCount: *const fn (*anyopaque, base_types.int32, base_types.int16) callconv(.C) base_types.int32,
-    getNoteExpressionInfo: *const fn (*anyopaque, base_types.int32, base_types.int16, base_types.int32, *NoteExpressionTypeInfo) callconv(.C) base_types.tresult,
-    getNoteExpressionStringByValue: *const fn (*anyopaque, base_types.int32, base_types.int16, NoteExpressionTypeID, NoteExpressionValue, [*]vsttypes.TChar) callconv(.C) base_types.tresult,
-    getNoteExpressionValueByString: *const fn (*anyopaque, base_types.int32, base_types.int16, NoteExpressionTypeID, [*:0]const vsttypes.TChar, *NoteExpressionValue) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    getNoteExpressionCount: *const fn (*anyopaque, base_types.int32, base_types.int16) callconv(.c) base_types.int32,
+    getNoteExpressionInfo: *const fn (*anyopaque, base_types.int32, base_types.int16, base_types.int32, *NoteExpressionTypeInfo) callconv(.c) base_types.tresult,
+    getNoteExpressionStringByValue: *const fn (*anyopaque, base_types.int32, base_types.int16, NoteExpressionTypeID, NoteExpressionValue, [*]vsttypes.TChar) callconv(.c) base_types.tresult,
+    getNoteExpressionValueByString: *const fn (*anyopaque, base_types.int32, base_types.int16, NoteExpressionTypeID, [*:0]const vsttypes.TChar, *NoteExpressionValue) callconv(.c) base_types.tresult,
 };
 
 pub const INoteExpressionController = extern struct {
@@ -106,11 +106,11 @@ pub const INoteExpressionController = extern struct {
 };
 
 pub const IKeyswitchControllerVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    getKeyswitchCount: *const fn (*anyopaque, base_types.int32, base_types.int16) callconv(.C) base_types.int32,
-    getKeyswitchInfo: *const fn (*anyopaque, base_types.int32, base_types.int16, base_types.int32, *KeyswitchInfo) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    getKeyswitchCount: *const fn (*anyopaque, base_types.int32, base_types.int16) callconv(.c) base_types.int32,
+    getKeyswitchInfo: *const fn (*anyopaque, base_types.int32, base_types.int16, base_types.int32, *KeyswitchInfo) callconv(.c) base_types.tresult,
 };
 
 pub const IKeyswitchController = extern struct {

@@ -2,7 +2,7 @@ const std = @import("std");
 const context_menu = @import("zig-vst3").pluginterfaces.vst.ivstcontextmenu;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("IContextMenuItem.kIsSeparator {}\n", .{context_menu.IContextMenuItem.Flags.kIsSeparator});
     try stdout.print("IContextMenuItem.kIsDisabled {}\n", .{context_menu.IContextMenuItem.Flags.kIsDisabled});
     try stdout.print("IContextMenuItem.kIsChecked {}\n", .{context_menu.IContextMenuItem.Flags.kIsChecked});

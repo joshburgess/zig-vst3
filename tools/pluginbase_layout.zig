@@ -2,7 +2,7 @@ const std = @import("std");
 const pluginbase = @import("zig-vst3").pluginterfaces.base.ipluginbase;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("PFactoryInfo.kURLSize {}\n", .{pluginbase.PFactoryInfo.kURLSize});
     try stdout.print("PFactoryInfo.kEmailSize {}\n", .{pluginbase.PFactoryInfo.kEmailSize});
     try stdout.print("PFactoryInfo.kNameSize {}\n", .{pluginbase.PFactoryInfo.kNameSize});

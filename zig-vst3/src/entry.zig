@@ -14,13 +14,35 @@ pub fn Exports(comptime PluginFactory: type) type {
     };
 }
 
+pub fn exportPlugin(comptime PluginFactory: type) void {
+    if (builtin.is_test) return;
+
+    const PluginExports = Exports(PluginFactory);
+    @export(&PluginExports.GetPluginFactory, .{ .name = "GetPluginFactory" });
+
+    switch (builtin.os.tag) {
+        .windows => {
+            @export(&PluginExports.InitDll, .{ .name = "InitDll" });
+            @export(&PluginExports.ExitDll, .{ .name = "ExitDll" });
+        },
+        .macos => {
+            @export(&PluginExports.bundleEntry, .{ .name = "bundleEntry" });
+            @export(&PluginExports.bundleExit, .{ .name = "bundleExit" });
+        },
+        else => {
+            @export(&PluginExports.ModuleEntry, .{ .name = "ModuleEntry" });
+            @export(&PluginExports.ModuleExit, .{ .name = "ModuleExit" });
+        },
+    }
+}
+
 fn WindowsExports(comptime PluginFactory: type) type {
     return struct {
-        export fn GetPluginFactory() ?*ipluginbase.IPluginFactory {
+        pub fn GetPluginFactory() callconv(.c) ?*ipluginbase.IPluginFactory {
             return PluginFactory.getPluginFactory();
         }
 
-        export fn InitDll() bool {
+        pub fn InitDll() callconv(.c) bool {
             if (@hasDecl(PluginFactory, "initDll")) {
                 return PluginFactory.initDll();
             }
@@ -30,7 +52,7 @@ fn WindowsExports(comptime PluginFactory: type) type {
             return true;
         }
 
-        export fn ExitDll() bool {
+        pub fn ExitDll() callconv(.c) bool {
             if (@hasDecl(PluginFactory, "exitDll")) {
                 return PluginFactory.exitDll();
             }
@@ -44,11 +66,11 @@ fn WindowsExports(comptime PluginFactory: type) type {
 
 fn MacExports(comptime PluginFactory: type) type {
     return struct {
-        export fn GetPluginFactory() ?*ipluginbase.IPluginFactory {
+        pub fn GetPluginFactory() callconv(.c) ?*ipluginbase.IPluginFactory {
             return PluginFactory.getPluginFactory();
         }
 
-        export fn bundleEntry(context: EntryContext) bool {
+        pub fn bundleEntry(context: EntryContext) callconv(.c) bool {
             if (@hasDecl(PluginFactory, "bundleEntry")) {
                 return PluginFactory.bundleEntry(context);
             }
@@ -58,7 +80,7 @@ fn MacExports(comptime PluginFactory: type) type {
             return true;
         }
 
-        export fn bundleExit() bool {
+        pub fn bundleExit() callconv(.c) bool {
             if (@hasDecl(PluginFactory, "bundleExit")) {
                 return PluginFactory.bundleExit();
             }
@@ -72,18 +94,18 @@ fn MacExports(comptime PluginFactory: type) type {
 
 fn LinuxExports(comptime PluginFactory: type) type {
     return struct {
-        export fn GetPluginFactory() ?*ipluginbase.IPluginFactory {
+        pub fn GetPluginFactory() callconv(.c) ?*ipluginbase.IPluginFactory {
             return PluginFactory.getPluginFactory();
         }
 
-        export fn ModuleEntry(context: EntryContext) bool {
+        pub fn ModuleEntry(context: EntryContext) callconv(.c) bool {
             if (@hasDecl(PluginFactory, "moduleEntry")) {
                 return PluginFactory.moduleEntry(context);
             }
             return true;
         }
 
-        export fn ModuleExit() bool {
+        pub fn ModuleExit() callconv(.c) bool {
             if (@hasDecl(PluginFactory, "moduleExit")) {
                 return PluginFactory.moduleExit();
             }
