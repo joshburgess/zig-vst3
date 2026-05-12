@@ -2511,12 +2511,20 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.latest();
         }
 
-        pub fn firstInputEventAtOffset(self: @This(), sample_offset: usize) ?Event {
+        pub fn firstEventAtOffset(self: @This(), sample_offset: usize) ?Event {
             return self.events.firstAtOffset(sample_offset);
         }
 
-        pub fn latestInputEventAtOffset(self: @This(), sample_offset: usize) ?Event {
+        pub fn firstInputEventAtOffset(self: @This(), sample_offset: usize) ?Event {
+            return self.firstEventAtOffset(sample_offset);
+        }
+
+        pub fn latestEventAtOffset(self: @This(), sample_offset: usize) ?Event {
             return self.events.latestAtOffset(sample_offset);
+        }
+
+        pub fn latestInputEventAtOffset(self: @This(), sample_offset: usize) ?Event {
+            return self.latestEventAtOffset(sample_offset);
         }
 
         pub fn firstEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
@@ -3821,9 +3829,13 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?usize, 1), context.latestInputEventOffset());
     try std.testing.expectEqual(@as(i16, 60), context.firstInputEvent().?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.latestInputEvent().?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.firstEventAtOffset(1).?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.firstInputEventAtOffset(1).?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.latestEventAtOffset(1).?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.latestInputEventAtOffset(1).?.pitch);
+    try std.testing.expectEqual(@as(?Event, null), context.firstEventAtOffset(0));
     try std.testing.expectEqual(@as(?Event, null), context.firstInputEventAtOffset(0));
+    try std.testing.expectEqual(@as(?Event, null), context.latestEventAtOffset(0));
     try std.testing.expectEqual(@as(?Event, null), context.latestInputEventAtOffset(0));
     try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffsetForKind(.note_on));
     try std.testing.expectEqual(@as(?usize, 1), context.latestEventOffsetForKind(.note_on));
