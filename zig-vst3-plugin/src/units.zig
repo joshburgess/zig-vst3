@@ -551,6 +551,16 @@ pub fn UnitSet(comptime config: Config) type {
             return list.programs.len;
         }
 
+        pub fn programCountForUnit(self: Self, unit_id: i32) ?usize {
+            const list = self.programListForUnit(unit_id) orelse return null;
+            return list.programCount();
+        }
+
+        pub fn programCountForUnitName(self: Self, unit_name: []const u8) ?usize {
+            const list = self.programListForUnitName(unit_name) orelse return null;
+            return list.programCount();
+        }
+
         pub fn programName(self: Self, list_id: i32, program_index: usize) ?[]const u8 {
             const list = self.programListById(list_id) orelse return null;
             return list.programName(program_index);
@@ -558,6 +568,16 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programNameByListName(self: Self, list_name: []const u8, program_index: usize) ?[]const u8 {
             const list = self.programListByName(list_name) orelse return null;
+            return list.programName(program_index);
+        }
+
+        pub fn programNameForUnit(self: Self, unit_id: i32, program_index: usize) ?[]const u8 {
+            const list = self.programListForUnit(unit_id) orelse return null;
+            return list.programName(program_index);
+        }
+
+        pub fn programNameForUnitName(self: Self, unit_name: []const u8, program_index: usize) ?[]const u8 {
+            const list = self.programListForUnitName(unit_name) orelse return null;
             return list.programName(program_index);
         }
 
@@ -571,6 +591,16 @@ pub fn UnitSet(comptime config: Config) type {
             return list.program(program_index);
         }
 
+        pub fn programForUnit(self: Self, unit_id: i32, program_index: usize) ?Program {
+            const list = self.programListForUnit(unit_id) orelse return null;
+            return list.program(program_index);
+        }
+
+        pub fn programForUnitName(self: Self, unit_name: []const u8, program_index: usize) ?Program {
+            const list = self.programListForUnitName(unit_name) orelse return null;
+            return list.program(program_index);
+        }
+
         pub fn programByName(self: Self, list_id: i32, name: []const u8) ?Program {
             const list = self.programListById(list_id) orelse return null;
             return list.programByName(name);
@@ -578,6 +608,16 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programByNameForListName(self: Self, list_name: []const u8, name: []const u8) ?Program {
             const list = self.programListByName(list_name) orelse return null;
+            return list.programByName(name);
+        }
+
+        pub fn programByNameForUnit(self: Self, unit_id: i32, name: []const u8) ?Program {
+            const list = self.programListForUnit(unit_id) orelse return null;
+            return list.programByName(name);
+        }
+
+        pub fn programByNameForUnitName(self: Self, unit_name: []const u8, name: []const u8) ?Program {
+            const list = self.programListForUnitName(unit_name) orelse return null;
             return list.programByName(name);
         }
 
@@ -591,12 +631,30 @@ pub fn UnitSet(comptime config: Config) type {
             return list.programIndexOfName(name);
         }
 
+        pub fn programIndexOfNameForUnit(self: Self, unit_id: i32, name: []const u8) ?usize {
+            const list = self.programListForUnit(unit_id) orelse return null;
+            return list.programIndexOfName(name);
+        }
+
+        pub fn programIndexOfNameForUnitName(self: Self, unit_name: []const u8, name: []const u8) ?usize {
+            const list = self.programListForUnitName(unit_name) orelse return null;
+            return list.programIndexOfName(name);
+        }
+
         pub fn hasProgramName(self: Self, list_id: i32, name: []const u8) bool {
             return self.programIndexOfName(list_id, name) != null;
         }
 
         pub fn hasProgramNameByListName(self: Self, list_name: []const u8, name: []const u8) bool {
             return self.programIndexOfNameByListName(list_name, name) != null;
+        }
+
+        pub fn hasProgramNameForUnit(self: Self, unit_id: i32, name: []const u8) bool {
+            return self.programIndexOfNameForUnit(unit_id, name) != null;
+        }
+
+        pub fn hasProgramNameForUnitName(self: Self, unit_name: []const u8, name: []const u8) bool {
+            return self.programIndexOfNameForUnitName(unit_name, name) != null;
         }
 
         pub fn hasDuplicateProgramNames(self: Self, list_id: i32) bool {
