@@ -618,80 +618,160 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programParameterCount(list_id, program_index);
         }
 
+        pub fn programParameterCountByListName(self: *const Self, list_name: []const u8, program_index: usize) ?usize {
+            return self.spec.units.programParameterCountByListName(list_name, program_index);
+        }
+
         pub fn programParameterCountByName(self: *const Self, list_id: i32, program_name: []const u8) ?usize {
             return self.spec.units.programParameterCountByName(list_id, program_name);
+        }
+
+        pub fn programParameterCountByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8) ?usize {
+            return self.spec.units.programParameterCountByNameForListName(list_name, program_name);
         }
 
         pub fn programHasParameters(self: *const Self, list_id: i32, program_index: usize) bool {
             return self.spec.units.programHasParameters(list_id, program_index);
         }
 
+        pub fn programHasParametersByListName(self: *const Self, list_name: []const u8, program_index: usize) bool {
+            return self.spec.units.programHasParametersByListName(list_name, program_index);
+        }
+
         pub fn programHasParametersByName(self: *const Self, list_id: i32, program_name: []const u8) bool {
             return self.spec.units.programHasParametersByName(list_id, program_name);
+        }
+
+        pub fn programHasParametersByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8) bool {
+            return self.spec.units.programHasParametersByNameForListName(list_name, program_name);
         }
 
         pub fn programParametersEmpty(self: *const Self, list_id: i32, program_index: usize) bool {
             return self.spec.units.programParametersEmpty(list_id, program_index);
         }
 
+        pub fn programParametersEmptyByListName(self: *const Self, list_name: []const u8, program_index: usize) bool {
+            return self.spec.units.programParametersEmptyByListName(list_name, program_index);
+        }
+
         pub fn programParametersEmptyByName(self: *const Self, list_id: i32, program_name: []const u8) bool {
             return self.spec.units.programParametersEmptyByName(list_id, program_name);
+        }
+
+        pub fn programParametersEmptyByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8) bool {
+            return self.spec.units.programParametersEmptyByNameForListName(list_name, program_name);
         }
 
         pub fn programParameter(self: *const Self, list_id: i32, program_index: usize, parameter_index: usize) ?units_api.ProgramParameter {
             return self.spec.units.programParameter(list_id, program_index, parameter_index);
         }
 
+        pub fn programParameterByListName(self: *const Self, list_name: []const u8, program_index: usize, parameter_index: usize) ?units_api.ProgramParameter {
+            return self.spec.units.programParameterByListName(list_name, program_index, parameter_index);
+        }
+
         pub fn programParameterByName(self: *const Self, list_id: i32, program_name: []const u8, parameter_index: usize) ?units_api.ProgramParameter {
             return self.spec.units.programParameterByName(list_id, program_name, parameter_index);
+        }
+
+        pub fn programParameterByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8, parameter_index: usize) ?units_api.ProgramParameter {
+            return self.spec.units.programParameterByNameForListName(list_name, program_name, parameter_index);
         }
 
         pub fn programParameterById(self: *const Self, list_id: i32, program_index: usize, parameter_id: u32) ?units_api.ProgramParameter {
             return self.spec.units.programParameterById(list_id, program_index, parameter_id);
         }
 
+        pub fn programParameterByIdForListName(self: *const Self, list_name: []const u8, program_index: usize, parameter_id: u32) ?units_api.ProgramParameter {
+            return self.spec.units.programParameterByIdForListName(list_name, program_index, parameter_id);
+        }
+
         pub fn programParameterIndexOfId(self: *const Self, list_id: i32, program_index: usize, parameter_id: u32) ?usize {
             return self.spec.units.programParameterIndexOfId(list_id, program_index, parameter_id);
+        }
+
+        pub fn programParameterIndexOfIdByListName(self: *const Self, list_name: []const u8, program_index: usize, parameter_id: u32) ?usize {
+            return self.spec.units.programParameterIndexOfIdByListName(list_name, program_index, parameter_id);
         }
 
         pub fn hasProgramParameter(self: *const Self, list_id: i32, program_index: usize, parameter_id: u32) bool {
             return self.spec.units.hasProgramParameter(list_id, program_index, parameter_id);
         }
 
+        pub fn hasProgramParameterByListName(self: *const Self, list_name: []const u8, program_index: usize, parameter_id: u32) bool {
+            return self.spec.units.hasProgramParameterByListName(list_name, program_index, parameter_id);
+        }
+
         pub fn duplicateProgramParameterId(self: *const Self, list_id: i32, program_index: usize) ?u32 {
             return self.spec.units.duplicateProgramParameterId(list_id, program_index);
+        }
+
+        pub fn duplicateProgramParameterIdByListName(self: *const Self, list_name: []const u8, program_index: usize) ?u32 {
+            return self.spec.units.duplicateProgramParameterIdByListName(list_name, program_index);
         }
 
         pub fn duplicateProgramParameterIdIndex(self: *const Self, list_id: i32, program_index: usize) ?usize {
             return self.spec.units.duplicateProgramParameterIdIndex(list_id, program_index);
         }
 
+        pub fn duplicateProgramParameterIdIndexByListName(self: *const Self, list_name: []const u8, program_index: usize) ?usize {
+            return self.spec.units.duplicateProgramParameterIdIndexByListName(list_name, program_index);
+        }
+
         pub fn hasDuplicateProgramParameterIds(self: *const Self, list_id: i32, program_index: usize) bool {
             return self.spec.units.hasDuplicateProgramParameterIds(list_id, program_index);
+        }
+
+        pub fn hasDuplicateProgramParameterIdsByListName(self: *const Self, list_name: []const u8, program_index: usize) bool {
+            return self.spec.units.hasDuplicateProgramParameterIdsByListName(list_name, program_index);
         }
 
         pub fn programParameterByNameAndId(self: *const Self, list_id: i32, program_name: []const u8, parameter_id: u32) ?units_api.ProgramParameter {
             return self.spec.units.programParameterByNameAndId(list_id, program_name, parameter_id);
         }
 
+        pub fn programParameterByNameAndIdForListName(self: *const Self, list_name: []const u8, program_name: []const u8, parameter_id: u32) ?units_api.ProgramParameter {
+            return self.spec.units.programParameterByNameAndIdForListName(list_name, program_name, parameter_id);
+        }
+
         pub fn programParameterIndexOfIdByName(self: *const Self, list_id: i32, program_name: []const u8, parameter_id: u32) ?usize {
             return self.spec.units.programParameterIndexOfIdByName(list_id, program_name, parameter_id);
+        }
+
+        pub fn programParameterIndexOfIdByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8, parameter_id: u32) ?usize {
+            return self.spec.units.programParameterIndexOfIdByNameForListName(list_name, program_name, parameter_id);
         }
 
         pub fn hasProgramParameterByName(self: *const Self, list_id: i32, program_name: []const u8, parameter_id: u32) bool {
             return self.spec.units.hasProgramParameterByName(list_id, program_name, parameter_id);
         }
 
+        pub fn hasProgramParameterByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8, parameter_id: u32) bool {
+            return self.spec.units.hasProgramParameterByNameForListName(list_name, program_name, parameter_id);
+        }
+
         pub fn duplicateProgramParameterIdByName(self: *const Self, list_id: i32, program_name: []const u8) ?u32 {
             return self.spec.units.duplicateProgramParameterIdByName(list_id, program_name);
+        }
+
+        pub fn duplicateProgramParameterIdByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8) ?u32 {
+            return self.spec.units.duplicateProgramParameterIdByNameForListName(list_name, program_name);
         }
 
         pub fn duplicateProgramParameterIdIndexByName(self: *const Self, list_id: i32, program_name: []const u8) ?usize {
             return self.spec.units.duplicateProgramParameterIdIndexByName(list_id, program_name);
         }
 
+        pub fn duplicateProgramParameterIdIndexByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8) ?usize {
+            return self.spec.units.duplicateProgramParameterIdIndexByNameForListName(list_name, program_name);
+        }
+
         pub fn hasDuplicateProgramParameterIdsByName(self: *const Self, list_id: i32, program_name: []const u8) bool {
             return self.spec.units.hasDuplicateProgramParameterIdsByName(list_id, program_name);
+        }
+
+        pub fn hasDuplicateProgramParameterIdsByNameForListName(self: *const Self, list_name: []const u8, program_name: []const u8) bool {
+            return self.spec.units.hasDuplicateProgramParameterIdsByNameForListName(list_name, program_name);
         }
 
         pub fn programInfo(self: *const Self, list_id: i32, program_index: usize, key: []const u8) ?[]const u8 {
