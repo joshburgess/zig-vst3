@@ -163,6 +163,7 @@ test "gain core example declares reflected metadata" {
     try instance.validateProgramLists();
     try instance.validateUnitSet();
     try instance.validateProgramParameterIds();
+    try instance.validate();
     try std.testing.expectEqual(@as(usize, 1), parameter_set.parameterCount());
     try std.testing.expect(!parameter_set.parametersEmpty());
     try std.testing.expect(parameter_set.hasParameters());

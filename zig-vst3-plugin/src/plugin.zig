@@ -51,22 +51,27 @@ pub fn PluginSpec(comptime Plugin: type) type {
         units: Units = .{},
 
         pub fn initChecked(params: Params) !Self {
-            try validateMetadata();
             const set = ParameterSet.init(params);
-            try set.validate();
             const units = Units{};
-            try units.validate();
-            try set.validateUnitIds(units);
-            try units.validateProgramParameterIds(&set);
-            return .{
+            const spec = Self{
                 .parameter_set = set,
                 .values = ParameterValues.init(&set),
                 .units = units,
             };
+            try spec.validate();
+            return spec;
         }
 
         pub fn init(params: Params) Self {
             return initChecked(params) catch @panic("invalid plugin metadata");
+        }
+
+        pub fn validate(self: *const Self) !void {
+            try validateMetadata();
+            try self.parameter_set.validate();
+            try self.units.validate();
+            try self.parameter_set.validateUnitIds(self.units);
+            try self.units.validateProgramParameterIds(&self.parameter_set);
         }
 
         fn validateMetadata() !void {
@@ -1808,6 +1813,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             try self.spec.units.validateProgramParameterIds(&self.spec.parameter_set);
         }
 
+        pub fn validate(self: *const Self) !void {
+            try self.spec.validate();
+        }
+
         pub fn hasParameterId(self: *const Self, id: u32) bool {
             return self.spec.parameter_set.hasId(id);
         }
@@ -2694,6 +2703,7 @@ test "plugin spec exposes metadata and parameter defaults" {
     const Spec = PluginSpec(Gain);
     var spec = Spec.init(.{});
 
+    try spec.validate();
     try std.testing.expectEqualStrings("Gain", Spec.name);
     try std.testing.expectEqualStrings("zig-vst3", Spec.vendor);
     try std.testing.expectEqualStrings("", Spec.url);
