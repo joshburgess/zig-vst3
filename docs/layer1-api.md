@@ -121,6 +121,105 @@ pub fn StringResult(comptime max_text8_bytes: usize, comptime max_text16_units: 
 
 For production helpers, keep vtable methods small and test both the direct helper API and the raw interface calls. If the object implements several interfaces, test `queryInterface` from each exposed interface pointer so canonical identity and reference-count behavior stay correct.
 
+## Query Interfaces Directly
+
+Raw helpers expose SDK interface pointers through `asInterface`-style methods. Call the vtable exactly as a host would:
+
+```zig
+const Stream = vst_stream.FixedBufferStream(64);
+var stream = Stream{};
+const iface = stream.asStream();
+
+var queried: ?*anyopaque = null;
+try std.testing.expectEqual(
+    types.kResultOk,
+    iface.vtable.queryInterface(iface, &ibstream.isizeable_stream_iid, &queried),
+);
+
+const sizeable: *ibstream.ISizeableStream = @ptrCast(@alignCast(queried.?));
+defer _ = sizeable.vtable.release(sizeable);
+
+var size: types.int64 = -1;
+try std.testing.expectEqual(types.kResultOk, sizeable.vtable.getStreamSize(sizeable, &size));
+```
+
+Always release successful `queryInterface` results in tests and host adapters. The helpers increment the shared reference count through `interface_map.queryWithAddRef`.
+
+## Use IBStream Helpers
+
+`vst_stream.FixedBufferStream` is useful for state, preset, and stream callback tests:
+
+```zig
+const Stream = vst_stream.FixedBufferStream(16);
+var stream = Stream{};
+const iface = stream.asStream();
+
+var input = [_]u8{ 1, 2, 3 };
+var written: types.int32 = 0;
+try std.testing.expectEqual(types.kResultOk, iface.vtable.write(iface, &input, input.len, &written));
+
+var pos: types.int64 = -1;
+try std.testing.expectEqual(
+    types.kResultOk,
+    iface.vtable.seek(iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), &pos),
+);
+
+var output = [_]u8{0} ** 3;
+var read: types.int32 = 0;
+try std.testing.expectEqual(types.kResultOk, iface.vtable.read(iface, &output, output.len, &read));
+```
+
+The helper implements both `IBStream` and `ISizeableStream`. Failed reads and writes leave reported byte counts at zero where the SDK method provides an output count.
+
+## Use Event Lists
+
+`vst_event_list.EventList` gives tests a bounded `IEventList`:
+
+```zig
+const List = vst_event_list.EventList(4);
+var list = List{};
+const iface = list.asInterface();
+
+var event = ivstevents.Event{
+    .sampleOffset = 3,
+    .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+    .data = .{ .noteOn = .{ .pitch = 60, .velocity = 0.5 } },
+};
+
+try std.testing.expectEqual(types.kResultOk, iface.vtable.addEvent(iface, &event));
+try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getEventCount(iface));
+
+var read_event = ivstevents.Event{};
+try std.testing.expectEqual(types.kResultOk, iface.vtable.getEvent(iface, 0, &read_event));
+```
+
+Out-of-range reads clear the output event before returning an error result. This prevents stale event data from being misread by the caller.
+
+## Use Parameter Changes
+
+`vst_parameter_changes.ParameterChanges` and `ParamValueQueue` model VST3 automation queues:
+
+```zig
+const Changes = vst_parameter_changes.ParameterChanges(2, 8);
+var changes = Changes{};
+
+const queue = changes.addQueue(7).?;
+try std.testing.expectEqual(types.kResultOk, queue.appendPoint(0, 0.25));
+try std.testing.expectEqual(types.kResultOk, queue.appendPoint(32, 0.75));
+
+const iface = changes.asInterface();
+try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getParameterCount(iface));
+
+const queue_iface = iface.vtable.getParameterData(iface, 0).?;
+try std.testing.expectEqual(@as(vsttypes.ParamID, 7), queue_iface.vtable.getParameterId(queue_iface));
+
+var offset: types.int32 = -1;
+var value: vsttypes.ParamValue = -1;
+try std.testing.expectEqual(types.kResultOk, queue_iface.vtable.getPoint(queue_iface, 1, &offset, &value));
+```
+
+`addParameterData` returns an existing queue for a repeated parameter id and reports the queue index through the SDK output pointer. When capacity is exhausted, it returns `null` and writes `-1` to the index output.
+
 ## Direct Raw Workflow
 
 Raw-layer code usually follows this shape:
