@@ -1589,6 +1589,9 @@ test "gain core example round-trips parameter state" {
     try std.testing.expect(!restored.parameterStateReportHasUnaccountedEntries(report));
     try std.testing.expect(restored.parameterStateReportHasNoUnaccountedEntries(report));
     try std.testing.expect(restored.parameterStateReportUnaccountedEntriesEmpty(report));
+    try std.testing.expect(restored.parameterStateReportHasAccountedEntries(report));
+    try std.testing.expect(!restored.parameterStateReportHasNoAccountedEntries(report));
+    try std.testing.expect(!restored.parameterStateReportAccountedEntriesEmpty(report));
     try std.testing.expect(restored.parameterStateReportFullyHandled(report));
     try std.testing.expect(restored.parameterStateReportAccountedAllEntries(report));
     try std.testing.expect(!restored.parameterStateReportAccountedPartialEntries(report));
@@ -1633,6 +1636,9 @@ test "gain core example classifies parameter state reports" {
     try std.testing.expectEqual(@as(usize, 0), instance.parameterStateReportUnaccountedCount(empty));
     try std.testing.expect(instance.parameterStateReportHasNoDecodedEntries(empty));
     try std.testing.expect(instance.parameterStateReportDecodedEntriesEmpty(empty));
+    try std.testing.expect(!instance.parameterStateReportHasAccountedEntries(empty));
+    try std.testing.expect(instance.parameterStateReportHasNoAccountedEntries(empty));
+    try std.testing.expect(instance.parameterStateReportAccountedEntriesEmpty(empty));
     try std.testing.expect(instance.parameterStateReportAccountedAllEntries(empty));
     try std.testing.expectEqual(plug.state.ReadParameterStateClassification.empty, instance.parameterStateReportClassification(empty));
     try std.testing.expect(instance.parameterStateReportIsEmptyClassification(empty));
@@ -1658,6 +1664,9 @@ test "gain core example classifies parameter state reports" {
     try std.testing.expectEqual(plug.state.ReadParameterStateClassification.ignored_all, ignored.classification());
     try std.testing.expect(ignored.isIgnoredAllClassification());
     try std.testing.expectEqual(@as(usize, 2), instance.parameterStateReportAccountedCount(ignored));
+    try std.testing.expect(instance.parameterStateReportHasAccountedEntries(ignored));
+    try std.testing.expect(!instance.parameterStateReportHasNoAccountedEntries(ignored));
+    try std.testing.expect(!instance.parameterStateReportAccountedEntriesEmpty(ignored));
     try std.testing.expect(instance.parameterStateReportHasIgnoredEntries(ignored));
     try std.testing.expect(!instance.parameterStateReportHasNoIgnoredEntries(ignored));
     try std.testing.expect(!instance.parameterStateReportIgnoredEntriesEmpty(ignored));
@@ -1692,6 +1701,9 @@ test "gain core example classifies parameter state reports" {
     try std.testing.expect(partial.isPartialClassification());
     try std.testing.expectEqual(@as(usize, 2), instance.parameterStateReportAccountedCount(partial));
     try std.testing.expectEqual(@as(usize, 1), instance.parameterStateReportUnaccountedCount(partial));
+    try std.testing.expect(instance.parameterStateReportHasAccountedEntries(partial));
+    try std.testing.expect(!instance.parameterStateReportHasNoAccountedEntries(partial));
+    try std.testing.expect(!instance.parameterStateReportAccountedEntriesEmpty(partial));
     try std.testing.expect(instance.parameterStateReportHasUnaccountedEntries(partial));
     try std.testing.expect(!instance.parameterStateReportHasNoUnaccountedEntries(partial));
     try std.testing.expect(!instance.parameterStateReportUnaccountedEntriesEmpty(partial));
