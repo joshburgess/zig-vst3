@@ -2232,6 +2232,10 @@ pub fn ParameterView(comptime Params: type) type {
             return self.values.load(index);
         }
 
+        pub fn loadPlain(self: Self, index: usize) ?f64 {
+            return self.loadPlainIndex(index);
+        }
+
         pub fn loadPlainIndex(self: Self, index: usize) ?f64 {
             return self.values.loadPlain(self.set, index);
         }
@@ -2893,6 +2897,10 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.values.load(index);
         }
 
+        pub fn loadPlain(self: Self, index: usize) ?f64 {
+            return self.loadPlainIndex(index);
+        }
+
         pub fn loadPlainIndex(self: Self, index: usize) ?f64 {
             return self.values.loadPlain(self.set, index);
         }
@@ -2963,6 +2971,14 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn storeIndexCount(self: Self, index: usize, normalized: f64) ?usize {
             return self.values.storeCount(index, normalized);
+        }
+
+        pub fn storePlain(self: Self, index: usize, plain: f64) bool {
+            return self.storePlainIndex(index, plain);
+        }
+
+        pub fn storePlainCount(self: Self, index: usize, plain: f64) ?usize {
+            return self.storePlainIndexCount(index, plain);
         }
 
         pub fn storePlainIndex(self: Self, index: usize, plain: f64) bool {
@@ -4073,8 +4089,10 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(Mode.mute, view.load("mode"));
     try std.testing.expectEqual(@as(f64, 1.0), view.loadNormalized("mode"));
     try std.testing.expectEqual(@as(?f64, 1.0), view.loadIndex(3));
+    try std.testing.expectEqual(@as(?f64, 2.0), view.loadPlain(3));
     try std.testing.expectEqual(@as(?f64, 2.0), view.loadPlainIndex(3));
     try std.testing.expectEqual(@as(?f64, null), view.loadIndex(99));
+    try std.testing.expectEqual(@as(?f64, null), view.loadPlain(99));
     try std.testing.expectEqual(@as(?f64, null), view.loadPlainIndex(99));
     try std.testing.expectEqual(@as(?f64, 1.0), view.loadById(3));
     try std.testing.expectEqual(@as(?f64, 2.0), view.loadPlainById(3));
@@ -4295,6 +4313,7 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expect(editor.store("mode", .mute));
     try std.testing.expect(editor.storeNormalized("gain", 0.5));
     try std.testing.expect(editor.storeIndex(0, 0.75));
+    try std.testing.expect(editor.storePlain(1, 2.0));
     try std.testing.expect(editor.storePlainIndex(1, 2.0));
     try std.testing.expect(editor.storeById(2, 0.0));
     try std.testing.expect(editor.storePlainById(1, 3.0));
@@ -4312,6 +4331,7 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expect(!editor.storeById(0, -std.math.inf(f64)));
     try std.testing.expect(!editor.storeByName("Gain", std.math.nan(f64)));
     try std.testing.expect(!editor.storeIndex(99, 1.0));
+    try std.testing.expect(!editor.storePlain(99, 1.0));
     try std.testing.expect(!editor.storePlainIndex(99, 1.0));
     try std.testing.expect(!editor.storeById(99, 1.0));
     try std.testing.expect(!editor.storePlainById(99, 1.0));
@@ -4326,12 +4346,14 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?usize, 0), editor.storeCount("gain", 0.0));
     try std.testing.expectEqual(@as(?usize, 1), editor.storeCount("gain", 3.0));
     try std.testing.expectEqual(@as(?usize, 0), editor.storeIndexCount(0, 0.8333333333333334));
-    try std.testing.expectEqual(@as(?usize, 1), editor.storePlainIndexCount(0, 6.0));
+    try std.testing.expectEqual(@as(?usize, 1), editor.storePlainCount(0, 6.0));
+    try std.testing.expectEqual(@as(?usize, 0), editor.storePlainIndexCount(0, 6.0));
     try std.testing.expectEqual(@as(?usize, 0), editor.storeByIdCount(0, 1.0));
     try std.testing.expectEqual(@as(?usize, 1), editor.storePlainByIdCount(0, 3.0));
     try std.testing.expectEqual(@as(?usize, 0), editor.storeByNameCount("Gain", 0.8333333333333334));
     try std.testing.expectEqual(@as(?usize, 1), editor.storePlainByNameCount("Gain", 1.5));
     try std.testing.expectEqual(@as(?usize, null), editor.storeIndexCount(99, 1.0));
+    try std.testing.expectEqual(@as(?usize, null), editor.storePlainCount(99, 1.0));
     try std.testing.expectEqual(@as(?usize, null), editor.storePlainIndexCount(99, 1.0));
     try std.testing.expectEqual(@as(?usize, null), editor.storeByIdCount(99, 1.0));
     try std.testing.expectEqual(@as(?usize, null), editor.storePlainByIdCount(99, 1.0));
@@ -4347,10 +4369,12 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(Mode.mute, editor.load("mode"));
     try std.testing.expectEqual(@as(f64, 1.0), editor.loadNormalized("mode"));
     try std.testing.expectEqual(@as(?f64, 1.0), editor.loadIndex(3));
+    try std.testing.expectEqual(@as(?f64, 2.0), editor.loadPlain(3));
     try std.testing.expectEqual(@as(?f64, 2.0), editor.loadPlainIndex(3));
     try std.testing.expectEqual(@as(?f64, 0.0), editor.loadById(2));
     try std.testing.expectEqual(@as(?f64, 0.0), editor.loadPlainById(2));
     try std.testing.expectEqual(@as(?f64, null), editor.loadIndex(99));
+    try std.testing.expectEqual(@as(?f64, null), editor.loadPlain(99));
     try std.testing.expectEqual(@as(?f64, null), editor.loadPlainIndex(99));
     try std.testing.expectEqual(@as(?f64, null), editor.loadById(99));
     try std.testing.expectEqual(@as(?f64, null), editor.loadPlainById(99));
