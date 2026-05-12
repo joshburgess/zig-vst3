@@ -1,6 +1,6 @@
 # Roadmap
 
-This file tracks current project work. It replaces the original staged build plan, which was useful during scaffolding but no longer matched the repository state.
+This file tracks current project work and release readiness.
 
 ## Current Focus
 

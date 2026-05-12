@@ -14,4 +14,4 @@ Pinned compiler version: 0.16.0
 
 ## Reference Projects
 
-Pinned reference-project revisions will be recorded here during Phase 0.4.
+No external reference-project revisions are pinned for the current release.

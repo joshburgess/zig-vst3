@@ -1,6 +1,6 @@
 # Contributing
 
-Keep changes small, focused, and covered by the validation tier that matches the risk of the change. `docs/roadmap.md` tracks current project priorities, and `docs/layer1-release.md` tracks the raw-layer release gate.
+Keep changes small, focused, and covered by the validation tier that matches the risk of the change. `docs/roadmap.md` tracks current project priorities, and `docs/release-checklist.md` tracks the raw API release gate.
 
 For each code change:
 
