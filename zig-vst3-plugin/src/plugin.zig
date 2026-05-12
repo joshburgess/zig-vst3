@@ -478,12 +478,28 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programCountByName(list_name);
         }
 
+        pub fn programCountForUnit(self: *const Self, unit_id: i32) ?usize {
+            return self.spec.units.programCountForUnit(unit_id);
+        }
+
+        pub fn programCountForUnitName(self: *const Self, unit_name: []const u8) ?usize {
+            return self.spec.units.programCountForUnitName(unit_name);
+        }
+
         pub fn programName(self: *const Self, list_id: i32, program_index: usize) ?[]const u8 {
             return self.spec.units.programName(list_id, program_index);
         }
 
         pub fn programNameByListName(self: *const Self, list_name: []const u8, program_index: usize) ?[]const u8 {
             return self.spec.units.programNameByListName(list_name, program_index);
+        }
+
+        pub fn programNameForUnit(self: *const Self, unit_id: i32, program_index: usize) ?[]const u8 {
+            return self.spec.units.programNameForUnit(unit_id, program_index);
+        }
+
+        pub fn programNameForUnitName(self: *const Self, unit_name: []const u8, program_index: usize) ?[]const u8 {
+            return self.spec.units.programNameForUnitName(unit_name, program_index);
         }
 
         pub fn program(self: *const Self, list_id: i32, program_index: usize) ?units_api.Program {
@@ -494,12 +510,28 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programByListName(list_name, program_index);
         }
 
+        pub fn programForUnit(self: *const Self, unit_id: i32, program_index: usize) ?units_api.Program {
+            return self.spec.units.programForUnit(unit_id, program_index);
+        }
+
+        pub fn programForUnitName(self: *const Self, unit_name: []const u8, program_index: usize) ?units_api.Program {
+            return self.spec.units.programForUnitName(unit_name, program_index);
+        }
+
         pub fn programByName(self: *const Self, list_id: i32, name: []const u8) ?units_api.Program {
             return self.spec.units.programByName(list_id, name);
         }
 
         pub fn programByNameForListName(self: *const Self, list_name: []const u8, name: []const u8) ?units_api.Program {
             return self.spec.units.programByNameForListName(list_name, name);
+        }
+
+        pub fn programByNameForUnit(self: *const Self, unit_id: i32, name: []const u8) ?units_api.Program {
+            return self.spec.units.programByNameForUnit(unit_id, name);
+        }
+
+        pub fn programByNameForUnitName(self: *const Self, unit_name: []const u8, name: []const u8) ?units_api.Program {
+            return self.spec.units.programByNameForUnitName(unit_name, name);
         }
 
         pub fn programIndexOfName(self: *const Self, list_id: i32, name: []const u8) ?usize {
@@ -510,12 +542,28 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programIndexOfNameByListName(list_name, name);
         }
 
+        pub fn programIndexOfNameForUnit(self: *const Self, unit_id: i32, name: []const u8) ?usize {
+            return self.spec.units.programIndexOfNameForUnit(unit_id, name);
+        }
+
+        pub fn programIndexOfNameForUnitName(self: *const Self, unit_name: []const u8, name: []const u8) ?usize {
+            return self.spec.units.programIndexOfNameForUnitName(unit_name, name);
+        }
+
         pub fn hasProgramName(self: *const Self, list_id: i32, name: []const u8) bool {
             return self.spec.units.hasProgramName(list_id, name);
         }
 
         pub fn hasProgramNameByListName(self: *const Self, list_name: []const u8, name: []const u8) bool {
             return self.spec.units.hasProgramNameByListName(list_name, name);
+        }
+
+        pub fn hasProgramNameForUnit(self: *const Self, unit_id: i32, name: []const u8) bool {
+            return self.spec.units.hasProgramNameForUnit(unit_id, name);
+        }
+
+        pub fn hasProgramNameForUnitName(self: *const Self, unit_name: []const u8, name: []const u8) bool {
+            return self.spec.units.hasProgramNameForUnitName(unit_name, name);
         }
 
         pub fn duplicateProgramName(self: *const Self, list_id: i32) ?[]const u8 {
