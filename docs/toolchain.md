@@ -2,7 +2,7 @@
 
 ## Zig
 
-Pinned compiler version: 0.14.0
+Pinned compiler version: 0.15.2
 
 ## VST3 SDK
 

@@ -16,10 +16,10 @@ pub const RepresentationInfo = extern struct {
 pub const kNameSize = RepresentationInfo.kNameSize;
 
 pub const IXmlRepresentationControllerVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    getXmlRepresentationStream: *const fn (*anyopaque, *RepresentationInfo, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    getXmlRepresentationStream: *const fn (*anyopaque, *RepresentationInfo, ?*ibstream.IBStream) callconv(.c) base_types.tresult,
 };
 
 pub const IXmlRepresentationController = extern struct {

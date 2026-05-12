@@ -12,7 +12,7 @@ pub const FactoryInfo = struct {
 };
 
 pub const ClassInfo = struct {
-    pub const CreateFn = *const fn (types.FIDString, *?*anyopaque) callconv(.C) types.tresult;
+    pub const CreateFn = *const fn (types.FIDString, *?*anyopaque) callconv(.c) types.tresult;
 
     cid: tuid.TUID,
     cardinality: types.int32 = ipluginbase.PClassInfo.kManyInstances,
@@ -56,7 +56,7 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
             return @fieldParentPtr("iface", iface);
         }
 
-        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             if (std.mem.eql(u8, requested_iid, &funknown.iid) or
                 std.mem.eql(u8, requested_iid, &ipluginbase.iplugin_factory_iid))
             {
@@ -69,15 +69,15 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
             return types.kNoInterface;
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPluginFactory");
         }
 
-        fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.C) types.tresult {
+        fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.c) types.tresult {
             out.* = .{ .flags = info.flags };
             copyZ(&out.vendor, info.vendor);
             copyZ(&out.url, info.url);
@@ -85,11 +85,11 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
             return types.kResultOk;
         }
 
-        fn countClasses(_: *anyopaque) callconv(.C) types.int32 {
+        fn countClasses(_: *anyopaque) callconv(.c) types.int32 {
             return @intCast(classes.len);
         }
 
-        fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.C) types.tresult {
+        fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.c) types.tresult {
             if (comptime classes.len == 0) {
                 out.* = .{};
                 return types.kInvalidArgument;
@@ -110,7 +110,7 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
             }
         }
 
-        fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
             for (classes) |class| {
                 if (std.mem.eql(u8, cid[0..16], &class.cid)) {
                     if (class.create) |create| {
@@ -173,7 +173,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
             return @fieldParentPtr("iface", iface);
         }
 
-        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             if (std.mem.eql(u8, requested_iid, &funknown.iid) or
                 std.mem.eql(u8, requested_iid, &ipluginbase.iplugin_factory_iid) or
                 std.mem.eql(u8, requested_iid, &ipluginbase.iplugin_factory2_iid) or
@@ -188,15 +188,15 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
             return types.kNoInterface;
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPluginFactory3");
         }
 
-        fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.C) types.tresult {
+        fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.c) types.tresult {
             out.* = .{ .flags = info.flags };
             copyZ(&out.vendor, info.vendor);
             copyZ(&out.url, info.url);
@@ -204,11 +204,11 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
             return types.kResultOk;
         }
 
-        fn countClasses(_: *anyopaque) callconv(.C) types.int32 {
+        fn countClasses(_: *anyopaque) callconv(.c) types.int32 {
             return @intCast(classes.len);
         }
 
-        fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.C) types.tresult {
+        fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.c) types.tresult {
             const class = classAt(index) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
@@ -222,7 +222,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
             return types.kResultOk;
         }
 
-        fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
             for (classes) |class| {
                 if (std.mem.eql(u8, cid[0..16], &class.cid)) {
                     if (class.create) |create| {
@@ -238,7 +238,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
             return types.kNoInterface;
         }
 
-        fn getClassInfo2(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo2) callconv(.C) types.tresult {
+        fn getClassInfo2(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo2) callconv(.c) types.tresult {
             const class = classAt(index) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
@@ -257,7 +257,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
             return types.kResultOk;
         }
 
-        fn getClassInfoUnicode(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfoW) callconv(.C) types.tresult {
+        fn getClassInfoUnicode(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfoW) callconv(.c) types.tresult {
             const class = classAt(index) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
@@ -276,7 +276,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
             return types.kResultOk;
         }
 
-        fn setHostContext(ptr: *anyopaque, context: ?*funknown.Header) callconv(.C) types.tresult {
+        fn setHostContext(ptr: *anyopaque, context: ?*funknown.Header) callconv(.c) types.tresult {
             owner(ptr).host_context = context;
             return types.kResultOk;
         }
@@ -400,7 +400,7 @@ test "static factory clears invalid class info outputs" {
 
 test "static factory dispatches createInstance by class id" {
     const Create = struct {
-        fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
             if (!std.mem.eql(u8, requested_iid[0..16], &funknown.iid)) return types.kNoInterface;
             out.* = @ptrFromInt(0x1);
             return types.kResultOk;
@@ -425,7 +425,7 @@ test "static factory dispatches createInstance by class id" {
 
 test "static factory clears failed create outputs" {
     const Create = struct {
-        fn create(_: types.FIDString, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn create(_: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
             out.* = @ptrFromInt(0x1);
             return types.kNoInterface;
         }

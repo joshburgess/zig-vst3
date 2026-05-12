@@ -55,20 +55,20 @@ pub const RoutingInfo = extern struct {
 };
 
 pub const IComponentVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    initialize: *const fn (*anyopaque, ?*anyopaque) callconv(.C) base_types.tresult,
-    terminate: *const fn (*anyopaque) callconv(.C) base_types.tresult,
-    getControllerClassId: *const fn (*anyopaque, *tuid.TUID) callconv(.C) base_types.tresult,
-    setIoMode: *const fn (*anyopaque, vsttypes.IoMode) callconv(.C) base_types.tresult,
-    getBusCount: *const fn (*anyopaque, vsttypes.MediaType, vsttypes.BusDirection) callconv(.C) base_types.int32,
-    getBusInfo: *const fn (*anyopaque, vsttypes.MediaType, vsttypes.BusDirection, base_types.int32, *BusInfo) callconv(.C) base_types.tresult,
-    getRoutingInfo: *const fn (*anyopaque, *RoutingInfo, *RoutingInfo) callconv(.C) base_types.tresult,
-    activateBus: *const fn (*anyopaque, vsttypes.MediaType, vsttypes.BusDirection, base_types.int32, base_types.TBool) callconv(.C) base_types.tresult,
-    setActive: *const fn (*anyopaque, base_types.TBool) callconv(.C) base_types.tresult,
-    setState: *const fn (*anyopaque, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
-    getState: *const fn (*anyopaque, ?*ibstream.IBStream) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    initialize: *const fn (*anyopaque, ?*anyopaque) callconv(.c) base_types.tresult,
+    terminate: *const fn (*anyopaque) callconv(.c) base_types.tresult,
+    getControllerClassId: *const fn (*anyopaque, *tuid.TUID) callconv(.c) base_types.tresult,
+    setIoMode: *const fn (*anyopaque, vsttypes.IoMode) callconv(.c) base_types.tresult,
+    getBusCount: *const fn (*anyopaque, vsttypes.MediaType, vsttypes.BusDirection) callconv(.c) base_types.int32,
+    getBusInfo: *const fn (*anyopaque, vsttypes.MediaType, vsttypes.BusDirection, base_types.int32, *BusInfo) callconv(.c) base_types.tresult,
+    getRoutingInfo: *const fn (*anyopaque, *RoutingInfo, *RoutingInfo) callconv(.c) base_types.tresult,
+    activateBus: *const fn (*anyopaque, vsttypes.MediaType, vsttypes.BusDirection, base_types.int32, base_types.TBool) callconv(.c) base_types.tresult,
+    setActive: *const fn (*anyopaque, base_types.TBool) callconv(.c) base_types.tresult,
+    setState: *const fn (*anyopaque, ?*ibstream.IBStream) callconv(.c) base_types.tresult,
+    getState: *const fn (*anyopaque, ?*ibstream.IBStream) callconv(.c) base_types.tresult,
 };
 
 pub const IComponent = extern struct {

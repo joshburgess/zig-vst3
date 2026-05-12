@@ -34,7 +34,7 @@ pub fn ComponentHandler(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.iface },
@@ -43,19 +43,19 @@ pub fn ComponentHandler(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.iface, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
             self.add_ref_count += 1;
             return self.ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
             self.release_count += 1;
             return funknown.decrementRefCount(&self.ref_count, "IComponentHandler");
         }
 
-        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.begin_count += 1;
             self.last_param_id = id;
@@ -63,7 +63,7 @@ pub fn ComponentHandler(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.perform_count += 1;
             self.last_param_id = id;
@@ -72,7 +72,7 @@ pub fn ComponentHandler(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.end_count += 1;
             self.last_param_id = id;
@@ -80,7 +80,7 @@ pub fn ComponentHandler(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.C) types.tresult {
+        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.restart_count += 1;
             self.last_restart_flags = flags;
@@ -135,7 +135,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
             return @fieldParentPtr("handler2", iface);
         }
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
@@ -148,7 +148,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromHandler2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryFromHandler2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler2 },
@@ -157,51 +157,51 @@ pub fn ComponentHandler2(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.handler2, addRefFromHandler2, &entries, requested_iid, out);
         }
 
-        fn addRefFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "IComponentHandler");
         }
 
-        fn addRefFromHandler2(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefFromHandler2(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromHandler2(ptr);
             self.handler2_add_ref_count += 1;
             return self.handler2_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseFromHandler2(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseFromHandler2(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromHandler2(ptr);
             self.handler2_release_count += 1;
             return funknown.decrementRefCount(&self.handler2_ref_count, "IComponentHandler2");
         }
 
-        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
             return types.kResultOk;
         }
 
-        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
             return types.kResultOk;
         }
 
-        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
             return types.kResultOk;
         }
 
-        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.C) types.tresult {
+        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
             return types.kResultOk;
         }
 
-        fn setDirty(ptr: *anyopaque, state: types.TBool) callconv(.C) types.tresult {
+        fn setDirty(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
             self.dirty_count += 1;
             self.last_dirty_state = state;
@@ -209,7 +209,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn requestOpenEditor(ptr: *anyopaque, name: types.FIDString) callconv(.C) types.tresult {
+        fn requestOpenEditor(ptr: *anyopaque, name: types.FIDString) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
             self.open_editor_count += 1;
             self.last_editor_name = name;
@@ -217,14 +217,14 @@ pub fn ComponentHandler2(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn startGroupEdit(ptr: *anyopaque) callconv(.C) types.tresult {
+        fn startGroupEdit(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
             self.start_group_count += 1;
             if (@hasDecl(Config, "startGroupEdit")) return Config.startGroupEdit(self);
             return types.kResultOk;
         }
 
-        fn finishGroupEdit(ptr: *anyopaque) callconv(.C) types.tresult {
+        fn finishGroupEdit(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
             self.finish_group_count += 1;
             if (@hasDecl(Config, "finishGroupEdit")) return Config.finishGroupEdit(self);
@@ -284,7 +284,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
             return @fieldParentPtr("handler3", iface);
         }
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
@@ -297,7 +297,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromHandler3(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryFromHandler3(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler3(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler3 },
@@ -306,51 +306,51 @@ pub fn ComponentHandler3(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.handler3, addRefFromHandler3, &entries, requested_iid, out);
         }
 
-        fn addRefFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "IComponentHandler");
         }
 
-        fn addRefFromHandler3(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefFromHandler3(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromHandler3(ptr);
             self.handler3_add_ref_count += 1;
             return self.handler3_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseFromHandler3(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseFromHandler3(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromHandler3(ptr);
             self.handler3_release_count += 1;
             return funknown.decrementRefCount(&self.handler3_ref_count, "IComponentHandler3");
         }
 
-        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
             return types.kResultOk;
         }
 
-        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
             return types.kResultOk;
         }
 
-        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
             return types.kResultOk;
         }
 
-        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.C) types.tresult {
+        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
             return types.kResultOk;
         }
 
-        fn createContextMenu(ptr: *anyopaque, view: ?*iplugview.IPlugView, param_id: ?*const vsttypes.ParamID) callconv(.C) ?*ivstcontextmenu.IContextMenu {
+        fn createContextMenu(ptr: *anyopaque, view: ?*iplugview.IPlugView, param_id: ?*const vsttypes.ParamID) callconv(.c) ?*ivstcontextmenu.IContextMenu {
             const self = ownerFromHandler3(ptr);
             self.context_menu_count += 1;
             if (param_id) |id| self.last_param_id = id.*;
@@ -426,7 +426,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             return @fieldParentPtr("system_time", iface);
         }
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
@@ -443,7 +443,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromBus(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryFromBus(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromBus(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.bus_activation },
@@ -452,7 +452,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.bus_activation, addRefFromBus, &entries, requested_iid, out);
         }
 
-        fn queryFromTime(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryFromTime(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromTime(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.system_time },
@@ -461,63 +461,63 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.system_time, addRefFromTime, &entries, requested_iid, out);
         }
 
-        fn addRefFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "IComponentHandler");
         }
 
-        fn addRefFromBus(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefFromBus(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromBus(ptr);
             self.bus_add_ref_count += 1;
             return self.bus_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseFromBus(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseFromBus(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromBus(ptr);
             self.bus_release_count += 1;
             return funknown.decrementRefCount(&self.bus_ref_count, "IComponentHandlerBusActivation");
         }
 
-        fn addRefFromTime(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefFromTime(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromTime(ptr);
             self.time_add_ref_count += 1;
             return self.time_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseFromTime(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseFromTime(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromTime(ptr);
             self.time_release_count += 1;
             return funknown.decrementRefCount(&self.time_ref_count, "IComponentHandlerSystemTime");
         }
 
-        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
             return types.kResultOk;
         }
 
-        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
             return types.kResultOk;
         }
 
-        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
             return types.kResultOk;
         }
 
-        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.C) types.tresult {
+        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
             return types.kResultOk;
         }
 
-        fn requestBusActivation(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, state: types.TBool) callconv(.C) types.tresult {
+        fn requestBusActivation(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, state: types.TBool) callconv(.c) types.tresult {
             const self = ownerFromBus(ptr);
             self.bus_activation_count += 1;
             self.last_media_type = media_type;
@@ -528,7 +528,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getSystemTime(ptr: *anyopaque, out: *types.int64) callconv(.C) types.tresult {
+        fn getSystemTime(ptr: *anyopaque, out: *types.int64) callconv(.c) types.tresult {
             const self = ownerFromTime(ptr);
             self.system_time_count += 1;
             const value = if (@hasDecl(Config, "system_time")) Config.system_time else 0;
@@ -603,7 +603,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
             return @fieldParentPtr("progress", iface);
         }
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
@@ -616,7 +616,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromProgress(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryFromProgress(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.progress },
@@ -625,51 +625,51 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.progress, addRefFromProgress, &entries, requested_iid, out);
         }
 
-        fn addRefFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "IComponentHandler");
         }
 
-        fn addRefFromProgress(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefFromProgress(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromProgress(ptr);
             self.progress_add_ref_count += 1;
             return self.progress_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseFromProgress(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseFromProgress(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromProgress(ptr);
             self.progress_release_count += 1;
             return funknown.decrementRefCount(&self.progress_ref_count, "IProgress");
         }
 
-        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
             return types.kResultOk;
         }
 
-        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
             return types.kResultOk;
         }
 
-        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
             return types.kResultOk;
         }
 
-        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.C) types.tresult {
+        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
             return types.kResultOk;
         }
 
-        fn start(ptr: *anyopaque, progress_type: types.uint32, description: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) callconv(.C) types.tresult {
+        fn start(ptr: *anyopaque, progress_type: types.uint32, description: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
             self.start_count += 1;
             self.last_type = progress_type;
@@ -684,7 +684,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn update(ptr: *anyopaque, id: ivsteditcontroller.ProgressID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+        fn update(ptr: *anyopaque, id: ivsteditcontroller.ProgressID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
             self.update_count += 1;
             self.last_id = id;
@@ -693,7 +693,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn finish(ptr: *anyopaque, id: ivsteditcontroller.ProgressID) callconv(.C) types.tresult {
+        fn finish(ptr: *anyopaque, id: ivsteditcontroller.ProgressID) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
             self.finish_count += 1;
             self.last_id = id;
@@ -770,7 +770,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
             return @fieldParentPtr("unit_handler2", iface);
         }
 
-        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.handler },
@@ -787,7 +787,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.handler, addRefFromHandler, &entries, requested_iid, out);
         }
 
-        fn queryFromUnit(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryFromUnit(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.unit_handler },
@@ -796,7 +796,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.unit_handler, addRefFromUnit, &entries, requested_iid, out);
         }
 
-        fn queryFromUnit2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryFromUnit2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromUnit2(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.unit_handler2 },
@@ -805,63 +805,63 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
             return interface_map.queryWithAddRef(&self.unit_handler2, addRefFromUnit2, &entries, requested_iid, out);
         }
 
-        fn addRefFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseFromHandler(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "IComponentHandler");
         }
 
-        fn addRefFromUnit(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefFromUnit(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromUnit(ptr);
             self.unit_add_ref_count += 1;
             return self.unit_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseFromUnit(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseFromUnit(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromUnit(ptr);
             self.unit_release_count += 1;
             return funknown.decrementRefCount(&self.unit_ref_count, "IUnitHandler");
         }
 
-        fn addRefFromUnit2(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefFromUnit2(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromUnit2(ptr);
             self.unit2_add_ref_count += 1;
             return self.unit2_ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseFromUnit2(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseFromUnit2(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromUnit2(ptr);
             self.unit2_release_count += 1;
             return funknown.decrementRefCount(&self.unit2_ref_count, "IUnitHandler2");
         }
 
-        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+        fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
             return types.kResultOk;
         }
 
-        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.C) types.tresult {
+        fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
             return types.kResultOk;
         }
 
-        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.C) types.tresult {
+        fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
             return types.kResultOk;
         }
 
-        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.C) types.tresult {
+        fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
             return types.kResultOk;
         }
 
-        fn notifyUnitSelection(ptr: *anyopaque, unit_id: vsttypes.UnitID) callconv(.C) types.tresult {
+        fn notifyUnitSelection(ptr: *anyopaque, unit_id: vsttypes.UnitID) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
             self.unit_selection_count += 1;
             self.last_unit_id = unit_id;
@@ -869,7 +869,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn notifyProgramListChange(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32) callconv(.C) types.tresult {
+        fn notifyProgramListChange(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
             self.program_list_count += 1;
             self.last_program_list_id = list_id;
@@ -878,7 +878,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn notifyUnitByBusChange(ptr: *anyopaque) callconv(.C) types.tresult {
+        fn notifyUnitByBusChange(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = ownerFromUnit2(ptr);
             self.unit_by_bus_count += 1;
             if (@hasDecl(Config, "notifyUnitByBusChange")) return Config.notifyUnitByBusChange(self);

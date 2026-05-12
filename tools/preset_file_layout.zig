@@ -6,7 +6,7 @@ fn printChunkID(writer: anytype, label: []const u8, id: preset_file.ChunkID) !vo
 }
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("sizeof.ChunkID {}\n", .{@sizeOf(preset_file.ChunkID)});
     try stdout.print("sizeof.Entry {}\n", .{@sizeOf(preset_file.Entry)});
     try stdout.print("alignof.Entry {}\n", .{@alignOf(preset_file.Entry)});

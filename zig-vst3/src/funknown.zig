@@ -10,17 +10,17 @@ pub const kNoInterface: tresult = -1;
 pub const iid = tuid.inlineUid(0x00000000, 0x00000000, 0xC0000000, 0x00000046);
 
 pub const VTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) uint32,
-    release: *const fn (*anyopaque) callconv(.C) uint32,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) uint32,
+    release: *const fn (*anyopaque) callconv(.c) uint32,
 };
 
 pub const Header = extern struct {
     vtable: *const VTable,
     ref_count: std.atomic.Value(uint32),
-    destroy: ?*const fn (*anyopaque) callconv(.C) void,
+    destroy: ?*const fn (*anyopaque) callconv(.c) void,
 
-    pub fn init(vtable: *const VTable, destroy: ?*const fn (*anyopaque) callconv(.C) void) Header {
+    pub fn init(vtable: *const VTable, destroy: ?*const fn (*anyopaque) callconv(.c) void) Header {
         return .{
             .vtable = vtable,
             .ref_count = std.atomic.Value(uint32).init(1),
@@ -54,7 +54,7 @@ fn ownerFromUnknown(ptr: *anyopaque) *TestObject {
     return @fieldParentPtr("unknown", header);
 }
 
-fn testQueryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) tresult {
+fn testQueryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) tresult {
     const self = ownerFromUnknown(ptr);
     self.query_count += 1;
 
@@ -68,12 +68,12 @@ fn testQueryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*
     return kNoInterface;
 }
 
-pub fn addRef(ptr: *anyopaque) callconv(.C) uint32 {
+pub fn addRef(ptr: *anyopaque) callconv(.c) uint32 {
     const header: *Header = @ptrCast(@alignCast(ptr));
     return header.ref_count.fetchAdd(1, .monotonic) + 1;
 }
 
-pub fn release(ptr: *anyopaque) callconv(.C) uint32 {
+pub fn release(ptr: *anyopaque) callconv(.c) uint32 {
     const header: *Header = @ptrCast(@alignCast(ptr));
     const next = decrementRefCount(&header.ref_count, "FUnknown");
     if (next == 0) {
@@ -100,9 +100,9 @@ pub fn decrementRefCount(ref_count: *std.atomic.Value(uint32), comptime owner_na
     }
 }
 
-pub fn allocatorDestroyFn(comptime Object: type, comptime header_field: []const u8) *const fn (*anyopaque) callconv(.C) void {
+pub fn allocatorDestroyFn(comptime Object: type, comptime header_field: []const u8) *const fn (*anyopaque) callconv(.c) void {
     return struct {
-        fn destroy(ptr: *anyopaque) callconv(.C) void {
+        fn destroy(ptr: *anyopaque) callconv(.c) void {
             const header: *Header = @ptrCast(@alignCast(ptr));
             const object: *Object = @fieldParentPtr(header_field, header);
             const allocator = object.allocator;
@@ -111,15 +111,15 @@ pub fn allocatorDestroyFn(comptime Object: type, comptime header_field: []const 
     }.destroy;
 }
 
-fn testAddRef(ptr: *anyopaque) callconv(.C) uint32 {
+fn testAddRef(ptr: *anyopaque) callconv(.c) uint32 {
     return addRef(ptr);
 }
 
-fn testRelease(ptr: *anyopaque) callconv(.C) uint32 {
+fn testRelease(ptr: *anyopaque) callconv(.c) uint32 {
     return release(ptr);
 }
 
-fn testDestroy(ptr: *anyopaque) callconv(.C) void {
+fn testDestroy(ptr: *anyopaque) callconv(.c) void {
     ownerFromUnknown(ptr).destroy_count += 1;
 }
 

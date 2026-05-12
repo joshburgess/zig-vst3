@@ -2,7 +2,7 @@ const std = @import("std");
 const edit_controller = @import("zig-vst3").pluginterfaces.vst.ivsteditcontroller;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("kVstComponentControllerClass {s}\n", .{edit_controller.kVstComponentControllerClass});
     try stdout.print("ViewType.kEditor {s}\n", .{edit_controller.ViewType.kEditor});
     try stdout.print("ParameterInfo.kNoFlags {}\n", .{edit_controller.ParameterInfo.ParameterFlags.kNoFlags});

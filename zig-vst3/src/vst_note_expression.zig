@@ -63,39 +63,39 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             return interface_map.queryWithAddRef(add_ref_ptr, noteExpressionAddRef, &entries, requested_iid, out);
         }
 
-        fn noteExpressionQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn noteExpressionQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             return ownerFromNoteExpression(ptr).queryCanonical(ptr, requested_iid, out);
         }
 
-        fn keyswitchQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn keyswitchQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromKeyswitch(ptr);
             return self.queryCanonical(&self.note_expression, requested_iid, out);
         }
 
-        fn noteExpressionAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn noteExpressionAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromNoteExpression(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn keyswitchAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn keyswitchAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromKeyswitch(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn noteExpressionRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn noteExpressionRelease(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromNoteExpression(ptr).ref_count, "INoteExpressionController");
         }
 
-        fn keyswitchRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn keyswitchRelease(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromKeyswitch(ptr).ref_count, "IKeyswitchController");
         }
 
-        fn getNoteExpressionCount(ptr: *anyopaque, bus_index: types.int32, channel: types.int16) callconv(.C) types.int32 {
+        fn getNoteExpressionCount(ptr: *anyopaque, bus_index: types.int32, channel: types.int16) callconv(.c) types.int32 {
             const self = ownerFromNoteExpression(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;
             return @intCast(@min(self.expression_count, max_expressions));
         }
 
-        fn getNoteExpressionInfo(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, index: types.int32, out: *ivstnoteexpression.NoteExpressionTypeInfo) callconv(.C) types.tresult {
+        fn getNoteExpressionInfo(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, index: types.int32, out: *ivstnoteexpression.NoteExpressionTypeInfo) callconv(.c) types.tresult {
             const self = ownerFromNoteExpression(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;
@@ -107,7 +107,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             return types.kResultOk;
         }
 
-        fn getNoteExpressionStringByValue(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, type_id: ivstnoteexpression.NoteExpressionTypeID, value: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+        fn getNoteExpressionStringByValue(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, type_id: ivstnoteexpression.NoteExpressionTypeID, value: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = ownerFromNoteExpression(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;
@@ -116,7 +116,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             return types.kResultFalse;
         }
 
-        fn getNoteExpressionValueByString(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, type_id: ivstnoteexpression.NoteExpressionTypeID, text: [*:0]const vsttypes.TChar, out: *ivstnoteexpression.NoteExpressionValue) callconv(.C) types.tresult {
+        fn getNoteExpressionValueByString(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, type_id: ivstnoteexpression.NoteExpressionTypeID, text: [*:0]const vsttypes.TChar, out: *ivstnoteexpression.NoteExpressionValue) callconv(.c) types.tresult {
             const self = ownerFromNoteExpression(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;
@@ -125,14 +125,14 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             return types.kResultFalse;
         }
 
-        fn getKeyswitchCount(ptr: *anyopaque, bus_index: types.int32, channel: types.int16) callconv(.C) types.int32 {
+        fn getKeyswitchCount(ptr: *anyopaque, bus_index: types.int32, channel: types.int16) callconv(.c) types.int32 {
             const self = ownerFromKeyswitch(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;
             return @intCast(@min(self.keyswitch_count, max_keyswitches));
         }
 
-        fn getKeyswitchInfo(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, index: types.int32, out: *ivstnoteexpression.KeyswitchInfo) callconv(.C) types.tresult {
+        fn getKeyswitchInfo(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, index: types.int32, out: *ivstnoteexpression.KeyswitchInfo) callconv(.c) types.tresult {
             const self = ownerFromKeyswitch(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;

@@ -95,7 +95,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstunits.iunit_info_iid, .ptr = ptr },
@@ -103,19 +103,19 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IUnitInfo");
         }
 
-        fn getUnitCount(ptr: *anyopaque) callconv(.C) types.int32 {
+        fn getUnitCount(ptr: *anyopaque) callconv(.c) types.int32 {
             return @intCast(owner(ptr).safeUnitCount());
         }
 
-        fn getUnitInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.C) types.tresult {
+        fn getUnitInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (index < 0 or @as(usize, @intCast(index)) >= self.safeUnitCount()) {
                 out.* = .{};
@@ -125,11 +125,11 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return types.kResultOk;
         }
 
-        fn getProgramListCount(ptr: *anyopaque) callconv(.C) types.int32 {
+        fn getProgramListCount(ptr: *anyopaque) callconv(.c) types.int32 {
             return @intCast(owner(ptr).safeProgramListCount());
         }
 
-        fn getProgramListInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.C) types.tresult {
+        fn getProgramListInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (index < 0 or @as(usize, @intCast(index)) >= self.safeProgramListCount()) {
                 out.* = .{};
@@ -139,7 +139,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return types.kResultOk;
         }
 
-        fn getProgramName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+        fn getProgramName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = owner(ptr);
             clearString128Ptr(out);
             if (@hasDecl(Config, "getProgramName")) {
@@ -150,7 +150,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return types.kInvalidArgument;
         }
 
-        fn getProgramInfo(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+        fn getProgramInfo(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = owner(ptr);
             clearString128Ptr(out);
             if (@hasDecl(Config, "getProgramInfo")) {
@@ -161,13 +161,13 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return types.kInvalidArgument;
         }
 
-        fn hasProgramPitchNames(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32) callconv(.C) types.tresult {
+        fn hasProgramPitchNames(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (@hasDecl(Config, "hasProgramPitchNames")) return Config.hasProgramPitchNames(self, list_id, program_index);
             return types.kResultFalse;
         }
 
-        fn getProgramPitchName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, pitch: types.int16, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+        fn getProgramPitchName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, pitch: types.int16, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = owner(ptr);
             clearString128Ptr(out);
             if (@hasDecl(Config, "getProgramPitchName")) {
@@ -178,11 +178,11 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return types.kInvalidArgument;
         }
 
-        fn getSelectedUnit(ptr: *anyopaque) callconv(.C) vsttypes.UnitID {
+        fn getSelectedUnit(ptr: *anyopaque) callconv(.c) vsttypes.UnitID {
             return owner(ptr).selected_unit;
         }
 
-        fn selectUnit(ptr: *anyopaque, id: vsttypes.UnitID) callconv(.C) types.tresult {
+        fn selectUnit(ptr: *anyopaque, id: vsttypes.UnitID) callconv(.c) types.tresult {
             const self = owner(ptr);
             for (self.units[0..self.safeUnitCount()]) |unit| {
                 if (unit.id == id) {
@@ -193,7 +193,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return types.kInvalidArgument;
         }
 
-        fn getUnitByBus(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, channel: types.int32, out: *vsttypes.UnitID) callconv(.C) types.tresult {
+        fn getUnitByBus(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, channel: types.int32, out: *vsttypes.UnitID) callconv(.c) types.tresult {
             const self = owner(ptr);
             out.* = ivstunits.kRootUnitId;
             if (@hasDecl(Config, "getUnitByBus")) {
@@ -204,7 +204,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return types.kResultOk;
         }
 
-        fn setUnitProgramData(ptr: *anyopaque, list_id: types.int32, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.C) types.tresult {
+        fn setUnitProgramData(ptr: *anyopaque, list_id: types.int32, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.unit_program_data_count += 1;
             self.last_unit_program_list_id = list_id;
@@ -275,39 +275,39 @@ pub fn UnitProgramData(comptime Config: type) type {
             return interface_map.queryWithAddRef(add_ref_ptr, programAddRef, &entries, requested_iid, out);
         }
 
-        fn programQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn programQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             return ownerFromProgram(ptr).queryCanonical(ptr, requested_iid, out);
         }
 
-        fn unitQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn unitQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
             return self.queryCanonical(&self.program_iface, requested_iid, out);
         }
 
-        fn programAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn programAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromProgram(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn unitAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn unitAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromUnit(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn programRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn programRelease(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromProgram(ptr).ref_count, "IProgramListData");
         }
 
-        fn unitRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn unitRelease(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromUnit(ptr).ref_count, "IUnitData");
         }
 
-        fn programDataSupported(ptr: *anyopaque, list_id: vsttypes.ProgramListID) callconv(.C) types.tresult {
+        fn programDataSupported(ptr: *anyopaque, list_id: vsttypes.ProgramListID) callconv(.c) types.tresult {
             const self = ownerFromProgram(ptr);
             self.last_program_list_id = list_id;
             if (@hasDecl(Config, "programDataSupported")) return Config.programDataSupported(self, list_id);
             return types.kResultFalse;
         }
 
-        fn getProgramData(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.C) types.tresult {
+        fn getProgramData(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = ownerFromProgram(ptr);
             self.program_get_count += 1;
             self.last_program_list_id = list_id;
@@ -316,7 +316,7 @@ pub fn UnitProgramData(comptime Config: type) type {
             return types.kResultFalse;
         }
 
-        fn setProgramData(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.C) types.tresult {
+        fn setProgramData(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = ownerFromProgram(ptr);
             self.program_set_count += 1;
             self.last_program_list_id = list_id;
@@ -325,14 +325,14 @@ pub fn UnitProgramData(comptime Config: type) type {
             return types.kResultFalse;
         }
 
-        fn unitDataSupported(ptr: *anyopaque, unit_id: vsttypes.UnitID) callconv(.C) types.tresult {
+        fn unitDataSupported(ptr: *anyopaque, unit_id: vsttypes.UnitID) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
             self.last_unit_id = unit_id;
             if (@hasDecl(Config, "unitDataSupported")) return Config.unitDataSupported(self, unit_id);
             return types.kResultFalse;
         }
 
-        fn getUnitData(ptr: *anyopaque, unit_id: vsttypes.UnitID, stream: ?*ibstream.IBStream) callconv(.C) types.tresult {
+        fn getUnitData(ptr: *anyopaque, unit_id: vsttypes.UnitID, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
             self.unit_get_count += 1;
             self.last_unit_id = unit_id;
@@ -340,7 +340,7 @@ pub fn UnitProgramData(comptime Config: type) type {
             return types.kResultFalse;
         }
 
-        fn setUnitData(ptr: *anyopaque, unit_id: vsttypes.UnitID, stream: ?*ibstream.IBStream) callconv(.C) types.tresult {
+        fn setUnitData(ptr: *anyopaque, unit_id: vsttypes.UnitID, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
             self.unit_set_count += 1;
             self.last_unit_id = unit_id;

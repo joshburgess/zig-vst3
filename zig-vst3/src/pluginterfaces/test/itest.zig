@@ -9,37 +9,37 @@ pub const itest_suite_iid = tuid.inlineUid(0x5CA7106F, 0x98784AA5, 0xB4D30D71, 0
 pub const itest_factory_iid = tuid.inlineUid(0xAB483D3A, 0x15264650, 0xBF86EEF6, 0x9A327A93);
 
 pub const ITestVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    setup: *const fn (*anyopaque) callconv(.C) bool,
-    run: *const fn (*anyopaque, ?*ITestResult) callconv(.C) bool,
-    teardown: *const fn (*anyopaque) callconv(.C) bool,
-    getDescription: *const fn (*anyopaque) callconv(.C) ?[*:0]const base_types.char16,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    setup: *const fn (*anyopaque) callconv(.c) bool,
+    run: *const fn (*anyopaque, ?*ITestResult) callconv(.c) bool,
+    teardown: *const fn (*anyopaque) callconv(.c) bool,
+    getDescription: *const fn (*anyopaque) callconv(.c) ?[*:0]const base_types.char16,
 };
 
 pub const ITestResultVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    addErrorMessage: *const fn (*anyopaque, ?[*:0]const base_types.char16) callconv(.C) void,
-    addMessage: *const fn (*anyopaque, ?[*:0]const base_types.char16) callconv(.C) void,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    addErrorMessage: *const fn (*anyopaque, ?[*:0]const base_types.char16) callconv(.c) void,
+    addMessage: *const fn (*anyopaque, ?[*:0]const base_types.char16) callconv(.c) void,
 };
 
 pub const ITestSuiteVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    addTest: *const fn (*anyopaque, base_types.FIDString, ?*ITest) callconv(.C) base_types.tresult,
-    addTestSuite: *const fn (*anyopaque, base_types.FIDString, ?*ITestSuite) callconv(.C) base_types.tresult,
-    setEnvironment: *const fn (*anyopaque, ?*ITest) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    addTest: *const fn (*anyopaque, base_types.FIDString, ?*ITest) callconv(.c) base_types.tresult,
+    addTestSuite: *const fn (*anyopaque, base_types.FIDString, ?*ITestSuite) callconv(.c) base_types.tresult,
+    setEnvironment: *const fn (*anyopaque, ?*ITest) callconv(.c) base_types.tresult,
 };
 
 pub const ITestFactoryVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    createTests: *const fn (*anyopaque, ?*anyopaque, ?*ITestSuite) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    createTests: *const fn (*anyopaque, ?*anyopaque, ?*ITestSuite) callconv(.c) base_types.tresult,
 };
 
 pub const ITest = extern struct {

@@ -3,7 +3,7 @@ const channel = @import("zig-vst3").pluginterfaces.vst.ivstchannelcontextinfo;
 const physical = @import("zig-vst3").pluginterfaces.vst.ivstphysicalui;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("PhysicalUITypeIDs.kPUIXMovement {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kPUIXMovement)});
     try stdout.print("PhysicalUITypeIDs.kPUIYMovement {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kPUIYMovement)});
     try stdout.print("PhysicalUITypeIDs.kPUIPressure {}\n", .{@intFromEnum(physical.PhysicalUITypeIDs.kPUIPressure)});

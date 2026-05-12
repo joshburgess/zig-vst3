@@ -26,7 +26,7 @@ pub fn ContentScaleSupport(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &scale_support.iplug_view_content_scale_support_iid, .ptr = ptr },
@@ -34,15 +34,15 @@ pub fn ContentScaleSupport(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPlugViewContentScaleSupport");
         }
 
-        fn setContentScaleFactor(ptr: *anyopaque, factor: scale_support.ScaleFactor) callconv(.C) types.tresult {
+        fn setContentScaleFactor(ptr: *anyopaque, factor: scale_support.ScaleFactor) callconv(.c) types.tresult {
             if (factor <= 0 or !std.math.isFinite(factor)) return types.kInvalidArgument;
             if (@hasDecl(Config, "setContentScaleFactor")) {
                 const result = Config.setContentScaleFactor(factor);

@@ -41,7 +41,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return @fieldParentPtr("sizeable_iface", iface);
         }
 
-        fn queryStream(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn queryStream(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromStream(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.iface },
@@ -51,7 +51,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return interface_map.queryWithAddRef(&self.iface, addRefStream, &entries, requested_iid, out);
         }
 
-        fn querySizeable(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn querySizeable(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromSizeable(ptr);
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.iface },
@@ -61,23 +61,23 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return interface_map.queryWithAddRef(&self.iface, addRefStream, &entries, requested_iid, out);
         }
 
-        fn addRefStream(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefStream(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromStream(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn addRefSizeable(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRefSizeable(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromSizeable(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn releaseStream(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseStream(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromStream(ptr).ref_count, "IBStream");
         }
 
-        fn releaseSizeable(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn releaseSizeable(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromSizeable(ptr).ref_count, "ISizeableStream");
         }
 
-        fn read(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_read: ?*types.int32) callconv(.C) types.tresult {
+        fn read(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_read: ?*types.int32) callconv(.c) types.tresult {
             if (bytes_read) |out| out.* = 0;
             if (byte_count < 0) return types.kInvalidArgument;
             const requested: usize = @intCast(byte_count);
@@ -95,7 +95,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return types.kResultOk;
         }
 
-        fn write(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_written: ?*types.int32) callconv(.C) types.tresult {
+        fn write(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_written: ?*types.int32) callconv(.c) types.tresult {
             if (bytes_written) |out| out.* = 0;
             if (byte_count < 0) return types.kInvalidArgument;
             const requested: usize = @intCast(byte_count);
@@ -117,7 +117,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return types.kResultOk;
         }
 
-        fn seek(ptr: *anyopaque, offset: types.int64, mode: types.int32, result: ?*types.int64) callconv(.C) types.tresult {
+        fn seek(ptr: *anyopaque, offset: types.int64, mode: types.int32, result: ?*types.int64) callconv(.c) types.tresult {
             const self = ownerFromStream(ptr);
             const next = switch (mode) {
                 @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet) => offset,
@@ -137,17 +137,17 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return types.kResultOk;
         }
 
-        fn tell(ptr: *anyopaque, pos: *types.int64) callconv(.C) types.tresult {
+        fn tell(ptr: *anyopaque, pos: *types.int64) callconv(.c) types.tresult {
             pos.* = @intCast(ownerFromStream(ptr).pos);
             return types.kResultOk;
         }
 
-        fn getStreamSize(ptr: *anyopaque, size: *types.int64) callconv(.C) types.tresult {
+        fn getStreamSize(ptr: *anyopaque, size: *types.int64) callconv(.c) types.tresult {
             size.* = @intCast(ownerFromSizeable(ptr).len);
             return types.kResultOk;
         }
 
-        fn setStreamSize(ptr: *anyopaque, size: types.int64) callconv(.C) types.tresult {
+        fn setStreamSize(ptr: *anyopaque, size: types.int64) callconv(.c) types.tresult {
             if (size < 0 or size > capacity) return types.kResultFalse;
             const self = ownerFromSizeable(ptr);
             const next: usize = @intCast(size);

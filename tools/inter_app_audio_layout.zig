@@ -2,7 +2,7 @@ const std = @import("std");
 const inter_app_audio = @import("zig-vst3").pluginterfaces.vst.ivstinterappaudio;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try printType(stdout, "IInterAppAudioHost", inter_app_audio.IInterAppAudioHost);
     try printType(stdout, "IInterAppAudioConnectionNotification", inter_app_audio.IInterAppAudioConnectionNotification);
     try printType(stdout, "IInterAppAudioPresetManager", inter_app_audio.IInterAppAudioPresetManager);

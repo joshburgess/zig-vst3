@@ -26,7 +26,9 @@ const VoiceMixFactory = factory.StaticFactory3(.{
     },
 });
 
-pub usingnamespace entry.Exports(VoiceMixFactory);
+comptime {
+    entry.exportPlugin(VoiceMixFactory);
+}
 
 test "voice mix export returns enumerable factory" {
     const plugin_factory = VoiceMixFactory.getPluginFactory().?;

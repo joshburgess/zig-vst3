@@ -2,7 +2,7 @@ const std = @import("std");
 const midi = @import("zig-vst3").pluginterfaces.vst.ivstmidicontrollers;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try printController(stdout, "kCtrlBankSelectMSB", midi.kCtrlBankSelectMSB);
     try printController(stdout, "kCtrlModWheel", midi.kCtrlModWheel);
     try printController(stdout, "kCtrlBreath", midi.kCtrlBreath);

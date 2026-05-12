@@ -26,7 +26,9 @@ const EventMonitorFactory = factory.StaticFactory3(.{
     },
 });
 
-pub usingnamespace entry.Exports(EventMonitorFactory);
+comptime {
+    entry.exportPlugin(EventMonitorFactory);
+}
 
 test "event monitor export returns enumerable factory" {
     const plugin_factory = EventMonitorFactory.getPluginFactory().?;

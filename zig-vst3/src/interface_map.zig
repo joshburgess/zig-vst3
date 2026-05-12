@@ -29,7 +29,7 @@ pub fn query(
 
 pub fn queryWithAddRef(
     add_ref_ptr: *anyopaque,
-    add_ref: *const fn (*anyopaque) callconv(.C) funknown.uint32,
+    add_ref: *const fn (*anyopaque) callconv(.c) funknown.uint32,
     entries: []const Entry,
     requested_iid: *const tuid.TUID,
     out: *?*anyopaque,
@@ -46,7 +46,7 @@ pub fn queryWithAddRef(
     return funknown.kNoInterface;
 }
 
-fn testAddRef(ptr: *anyopaque) callconv(.C) funknown.uint32 {
+fn testAddRef(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     const object: *funknown.TestObject = @ptrCast(@alignCast(ptr));
     return object.asUnknown().vtable.addRef(object.asUnknown());
 }

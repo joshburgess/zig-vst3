@@ -28,7 +28,7 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &itest.itest_result_iid, .ptr = ptr },
@@ -36,19 +36,19 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "ITestResult");
         }
 
-        fn addErrorMessage(ptr: *anyopaque, text: ?[*:0]const types.char16) callconv(.C) void {
+        fn addErrorMessage(ptr: *anyopaque, text: ?[*:0]const types.char16) callconv(.c) void {
             owner(ptr).store(&owner(ptr).errors, &owner(ptr).error_count, text);
         }
 
-        fn addMessage(ptr: *anyopaque, text: ?[*:0]const types.char16) callconv(.C) void {
+        fn addMessage(ptr: *anyopaque, text: ?[*:0]const types.char16) callconv(.c) void {
             owner(ptr).store(&owner(ptr).messages, &owner(ptr).message_count, text);
         }
 
@@ -104,7 +104,7 @@ pub fn Test(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &itest.itest_iid, .ptr = ptr },
@@ -112,22 +112,22 @@ pub fn Test(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "ITest");
         }
 
-        fn setup(ptr: *anyopaque) callconv(.C) bool {
+        fn setup(ptr: *anyopaque) callconv(.c) bool {
             const self = owner(ptr);
             self.setup_count += 1;
             if (@hasDecl(Config, "setup")) return Config.setup(self);
             return true;
         }
 
-        fn run(ptr: *anyopaque, result: ?*itest.ITestResult) callconv(.C) bool {
+        fn run(ptr: *anyopaque, result: ?*itest.ITestResult) callconv(.c) bool {
             const self = owner(ptr);
             self.run_count += 1;
             self.last_result = result;
@@ -135,14 +135,14 @@ pub fn Test(comptime Config: type) type {
             return true;
         }
 
-        fn teardown(ptr: *anyopaque) callconv(.C) bool {
+        fn teardown(ptr: *anyopaque) callconv(.c) bool {
             const self = owner(ptr);
             self.teardown_count += 1;
             if (@hasDecl(Config, "teardown")) return Config.teardown(self);
             return true;
         }
 
-        fn getDescription(_: *anyopaque) callconv(.C) ?[*:0]const types.char16 {
+        fn getDescription(_: *anyopaque) callconv(.c) ?[*:0]const types.char16 {
             if (@hasDecl(Config, "description")) return Config.description;
             return null;
         }
@@ -193,7 +193,7 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &itest.itest_suite_iid, .ptr = ptr },
@@ -201,15 +201,15 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "ITestSuite");
         }
 
-        fn addTest(ptr: *anyopaque, name: types.FIDString, test_iface: ?*itest.ITest) callconv(.C) types.tresult {
+        fn addTest(ptr: *anyopaque, name: types.FIDString, test_iface: ?*itest.ITest) callconv(.c) types.tresult {
             const self = owner(ptr);
             const index = self.test_count;
             self.test_count += 1;
@@ -219,7 +219,7 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
             return types.kResultOk;
         }
 
-        fn addTestSuite(ptr: *anyopaque, name: types.FIDString, suite_iface: ?*itest.ITestSuite) callconv(.C) types.tresult {
+        fn addTestSuite(ptr: *anyopaque, name: types.FIDString, suite_iface: ?*itest.ITestSuite) callconv(.c) types.tresult {
             const self = owner(ptr);
             const index = self.suite_count;
             self.suite_count += 1;
@@ -229,7 +229,7 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
             return types.kResultOk;
         }
 
-        fn setEnvironment(ptr: *anyopaque, environment: ?*itest.ITest) callconv(.C) types.tresult {
+        fn setEnvironment(ptr: *anyopaque, environment: ?*itest.ITest) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (environment) |value| _ = value.vtable.addRef(value);
             if (self.environment) |previous| _ = previous.vtable.release(previous);
@@ -267,7 +267,7 @@ pub fn TestFactory(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &itest.itest_factory_iid, .ptr = ptr },
@@ -275,15 +275,15 @@ pub fn TestFactory(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "ITestFactory");
         }
 
-        fn createTests(ptr: *anyopaque, context: ?*anyopaque, suite: ?*itest.ITestSuite) callconv(.C) types.tresult {
+        fn createTests(ptr: *anyopaque, context: ?*anyopaque, suite: ?*itest.ITestSuite) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.create_count += 1;
             self.last_context = context;
