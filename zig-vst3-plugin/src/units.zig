@@ -356,8 +356,18 @@ pub fn UnitSet(comptime config: Config) type {
             return list.duplicateProgramName();
         }
 
+        pub fn duplicateProgramNameByListName(self: Self, list_name: []const u8) ?[]const u8 {
+            const list = self.programListByName(list_name) orelse return null;
+            return list.duplicateProgramName();
+        }
+
         pub fn duplicateProgramNameIndex(self: Self, list_id: i32) ?usize {
             const list = self.programListById(list_id) orelse return null;
+            return list.duplicateProgramNameIndex();
+        }
+
+        pub fn duplicateProgramNameIndexByListName(self: Self, list_name: []const u8) ?usize {
+            const list = self.programListByName(list_name) orelse return null;
             return list.duplicateProgramNameIndex();
         }
 
@@ -566,6 +576,11 @@ pub fn UnitSet(comptime config: Config) type {
             return list.programByName(name);
         }
 
+        pub fn programByNameForListName(self: Self, list_name: []const u8, name: []const u8) ?Program {
+            const list = self.programListByName(list_name) orelse return null;
+            return list.programByName(name);
+        }
+
         pub fn programIndexOfName(self: Self, list_id: i32, name: []const u8) ?usize {
             const list = self.programListById(list_id) orelse return null;
             return list.programIndexOfName(name);
@@ -586,6 +601,10 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn hasDuplicateProgramNames(self: Self, list_id: i32) bool {
             return self.duplicateProgramName(list_id) != null;
+        }
+
+        pub fn hasDuplicateProgramNamesByListName(self: Self, list_name: []const u8) bool {
+            return self.duplicateProgramNameByListName(list_name) != null;
         }
 
         pub fn programParameterCount(self: Self, list_id: i32, program_index: usize) ?usize {
