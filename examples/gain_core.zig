@@ -1505,7 +1505,25 @@ test "gain core example round-trips parameter state" {
     try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
     try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), instance.encodedParameterStateSize());
     try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), instance.parameterStateEncodedSize());
+    try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), instance.encodedParameterStateSizeForCount(1));
+    try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), instance.parameterStateEncodedSizeForCount(1));
+    try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), try instance.encodedParameterStateSizeForCountChecked(1));
+    try std.testing.expectEqual(@as(usize, plug.state.encodedSize(Gain.Params)), try instance.parameterStateEncodedSizeForCountChecked(1));
+    try std.testing.expectEqual(std.math.maxInt(usize), instance.parameterStateEncodedSizeForCount(std.math.maxInt(usize)));
+    try std.testing.expectError(error.Overflow, instance.parameterStateEncodedSizeForCountChecked(std.math.maxInt(usize)));
     try std.testing.expectEqual(@as(usize, 1), instance.parameterStateEntryCount());
+
+    var instance_header_out_stream = std.io.fixedBufferStream(&header_bytes);
+    try instance.writeParameterStateHeader(instance_header_out_stream.writer());
+    var instance_header_in_stream = std.io.fixedBufferStream(&header_bytes);
+    try std.testing.expectEqual(
+        plug.state.ParameterStateHeader{ .version = plug.state.format_version, .entry_count = 1 },
+        try instance.readParameterStateHeader(instance_header_in_stream.reader()),
+    );
+    try std.testing.expectError(
+        error.ParameterStateTooLarge,
+        instance.writeParameterStateHeaderForCount(@as(usize, std.math.maxInt(u16)) + 1, instance_header_out_stream.writer()),
+    );
 
     var out_stream = std.io.fixedBufferStream(&bytes);
     try instance.writeParameterState(out_stream.writer());
