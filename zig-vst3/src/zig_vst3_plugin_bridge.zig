@@ -1954,6 +1954,85 @@ test "zig-vst3-plugin bridge dispatches double precision main audio" {
     try std.testing.expectEqual(@as(f64, 5.0), output_samples[1]);
 }
 
+test "zig-vst3-plugin bridge passes double precision process context inputs" {
+    const Recorder = struct {
+        saw_double: *bool,
+        parameter_count: *usize,
+        parameter_offset: *usize,
+        event_count: *usize,
+        event_pitch: *i16,
+
+        pub fn process(self: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
+            self.saw_double.* = Sample == f64;
+            self.parameter_count.* = context.parameterChangeCount();
+            if (context.firstParameterChange(9)) |change| {
+                self.parameter_offset.* = change.sample_offset;
+            }
+            self.event_count.* = context.inputEventCount();
+            if (context.firstEvent(.note_on)) |event| {
+                self.event_pitch.* = event.pitch;
+                context.appendOutputEvent(plug.process.Event.noteOff(event.sample_offset + 1, event.channel, event.pitch, 0.0)) catch {};
+            }
+        }
+    };
+
+    var input_samples = [_]f64{ 0.0, 0.0, 0.0 };
+    var output_samples = [_]f64{ 0.0, 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f64{&input_samples};
+    var output_channel_ptrs = [_][*]f64{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers64 = &input_channel_ptrs },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers64 = &output_channel_ptrs },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+    const data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = input_samples.len,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64),
+        .processContext = &process_context,
+    };
+    const parameter_items = [_]plug.process.ParameterChange{.{
+        .id = 9,
+        .sample_offset = 1,
+        .normalized = 0.5,
+    }};
+    const event_items = [_]plug.process.Event{
+        plug.process.Event.noteOn(1, 0, 67, 0.5),
+    };
+    const parameter_changes = try plug.process.ParameterChanges.init(&parameter_items, input_samples.len);
+    const events = try plug.process.Events.init(&event_items, input_samples.len);
+    var output_event_storage: [1]plug.process.Event = undefined;
+    var output_events = plug.process.EventWriter.init(&output_event_storage, input_samples.len);
+    var saw_double = false;
+    var parameter_count: usize = 0;
+    var parameter_offset: usize = 99;
+    var event_count: usize = 0;
+    var event_pitch: i16 = -1;
+
+    try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, parameter_changes, events, &output_events, Recorder{
+        .saw_double = &saw_double,
+        .parameter_count = &parameter_count,
+        .parameter_offset = &parameter_offset,
+        .event_count = &event_count,
+        .event_pitch = &event_pitch,
+    }));
+    try std.testing.expect(saw_double);
+    try std.testing.expectEqual(@as(usize, 1), parameter_count);
+    try std.testing.expectEqual(@as(usize, 1), parameter_offset);
+    try std.testing.expectEqual(@as(usize, 1), event_count);
+    try std.testing.expectEqual(@as(i16, 67), event_pitch);
+    try std.testing.expectEqual(@as(usize, 1), output_events.eventCount());
+    try std.testing.expectEqual(@as(usize, 2), output_events.events().items[0].sample_offset);
+    try std.testing.expectEqual(@as(i16, 67), output_events.events().items[0].pitch);
+}
+
 test "zig-vst3-plugin bridge passes automation and events to main audio processors" {
     const Recorder = struct {
         parameter_count: *usize,
