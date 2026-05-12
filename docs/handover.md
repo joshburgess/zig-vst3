@@ -15,19 +15,21 @@ Recent work has concentrated on Layer 2 API polish:
 - Parameter descriptor diagnostics are exposed through `PluginInstance`.
 - `PluginInstance.parameterStateEntryCount()` now uses the reflected parameter set method, which external checked examples instantiate correctly.
 - State header metadata, migrated-read, restore-report compatibility, restore-report count, presence, aggregate, classification, and state migration diagnostics helpers are bound to a plugin instance.
-- Process context timing, block, offset, segment, automation, defaulted automation reads, direct parameter-change and input/output event views, audio channel/view helpers, valid attachment setters, input-event helper predicates, output-event planning helpers, and direct `PluginSpec` topology flags were added and tested.
+- `ParameterView` and `ParameterEditor` now forward `ParameterSet` validation helpers, and `PluginInstance` exposes parameter, unit, program-list, unit-set, and program-parameter validation checks.
+- Process context timing, block, offset, segment, automation, defaulted automation reads, direct parameter-change and input/output event views, direct input/output audio views, audio channel/view helpers, valid attachment setters, input-event helper predicates, output-event planning helpers, and direct `PluginSpec` topology flags were added and tested.
 - Event routing next-offset helpers and offset-only event predicates were added to `Events`, `EventWriter`, and `ProcessContext`.
 - `PluginInstance` now exposes same-plugin parameter value copying.
 - `PluginInstance` now exposes migrated parameter id resolution alongside migration diagnostics.
 - `PluginInstance` now exposes direct unit root, parent, and program-list relationship helpers.
-- `gain_core` now exercises direct `PluginSpec` topology flags, plugin topology and lifecycle predicates, plugin metadata defaults and overrides, prepare validation, process-context timing and validation, valid process attachment setters, direct process parameter-change reads and value views, audio channel and buffer-view helpers including empty direct audio views, parameter presence predicates, parameter descriptor diagnostics, direct `ParameterSet` metadata, validation, diagnostics, and conversion helpers, direct `PluginInstance` metadata and conversion wrappers, direct and field-name parameter metadata/default/plain-range/flag/unit/option helpers, direct descriptor handles, direct parameter value storage/editor helpers and aliases, reset aliases, instance-bound parameter handles, bound parameter-view metadata/diagnostics/conversions/reads and index aliases, bound parameter-editor metadata/diagnostics/conversions/edits and index aliases, editor process-change counts, lookup-based loads, counted stores, direct parameter-change application, normalized parameter-change constructors, parameter-change value predicates, direct parameter-change view helpers, parameter-change next-offset helpers, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall, first/latest, and exact-offset automation reads, per-id and per-offset automation reads, parameter and block segment value helpers, parameter segment iterators, state size constants, state header-only writing, state header metadata and compatibility helpers, ignored/accounted/unaccounted state report helpers, instance-bound state report count, presence, aggregate, and classification helpers, migrated state reads, direct instance state read wrappers, migrated parameter-id resolution, state migration diagnostics, reflected-storage process hooks for `f32` and `f64`, and prepare/deinit/f64 parameter-view lifecycle hook variants.
+- `gain_core` now exercises direct `PluginSpec` topology flags, plugin topology and lifecycle predicates, plugin metadata defaults and overrides, prepare validation, process-context timing and validation, direct process-context audio views, valid process attachment setters, direct process parameter-change reads and value views, audio channel and buffer-view helpers including empty direct audio views, parameter presence predicates, parameter descriptor diagnostics, direct `ParameterSet` metadata, validation, diagnostics, and conversion helpers, direct `PluginInstance` metadata, validation, and conversion wrappers, direct and field-name parameter metadata/default/plain-range/flag/unit/option helpers, direct descriptor handles, direct parameter value storage/editor helpers and aliases, reset aliases, instance-bound parameter handles, bound parameter-view metadata/validation/diagnostics/conversions/reads and index aliases, bound parameter-editor metadata/validation/diagnostics/conversions/edits and index aliases, editor process-change counts, lookup-based loads, counted stores, direct parameter-change application, normalized parameter-change constructors, parameter-change value predicates, direct parameter-change view helpers, parameter-change next-offset helpers, counted resets, same-plugin value copying, parameter utility values and smoothers, defaulted overall, first/latest, and exact-offset automation reads, per-id and per-offset automation reads, parameter and block segment value helpers, parameter segment iterators, state size constants, state header-only writing, state header metadata and compatibility helpers, ignored/accounted/unaccounted state report helpers, instance-bound state report count, presence, aggregate, and classification helpers, migrated state reads, direct instance state read wrappers, migrated parameter-id resolution, state migration diagnostics, reflected-storage process hooks for `f32` and `f64`, and prepare/deinit/f64 parameter-view lifecycle hook variants.
 - `mode_gain_core` now exercises enum option metadata helpers by index, id, display name, and field name through direct `ParameterSet`, direct instance, and bound view/editor helpers.
 - `bypass_core` now exercises automatable, read-only, bypass, step-count, and list flag helpers through direct instance helpers and bound view/editor helpers.
-- `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including direct unit-set validation, direct unit-set unit/program/program-snapshot/info lookups, value-level helpers, direct instance unit/program-list lookup helpers, direct unit parent helpers, direct program-list/program lookup and duplicate helpers, counted and boolean program snapshot application, and duplicate diagnostics.
+- `voice_mix_core` now exercises unit, program-list, program, program-parameter, and program-info helper coverage, including direct unit-set validation, instance-bound validation, direct unit-set unit/program/program-snapshot/info lookups, value-level helpers, direct instance unit/program-list lookup helpers, direct unit parent helpers, direct program-list/program lookup and duplicate helpers, counted and boolean program snapshot application, and duplicate diagnostics.
 - `event_echo_core` now uses validated output-event planning and exercises direct event-writer helpers plus append aliases, process-context output-event writer attachment, append planning, appends, written-output event views, event-output topology metadata, unavailable-writer errors, no-writer fallback helpers, routing, capacity, next-offset, kind-offset, kind emptiness, first/latest, offset/kind predicates, and clearing helpers.
 - `event_monitor_core` now exercises direct event validation and classification, direct event-view count, emptiness, first/latest, routing, iterator, segment, next-offset, and only helpers, input-event count, emptiness, first/latest, exact kind-at-offset reads, next-offset, only predicates, input-only analyzer topology metadata, input-only process-context channel predicates, empty input-event fallback helpers, typed event payload views including direct note-off payload access, event retargeting helpers, and bus, channel, and bus-channel routing offset helpers.
 - `sine_synth_core` now exercises direct `PluginSpec` output-only generator topology flags, output-only process-context channel predicates, process timing, block duration, sample-offset, remaining-frame helpers, and combined event plus automation process-block segments.
 - The C and C++ Layer 1 ABI harness executables now disable C sanitization so Zig 0.14.0 does not pull the Debug C sanitizer runtime into native macOS CI links.
+- `scripts/build_validator.sh` now supports local macOS Command Line Tools installs by passing Apple clang paths and the SDK-required `XCODE_VERSION` cache value when full Xcode is not active.
 - README and Layer 2 docs were updated to match the current public API.
 
 Before this handoff, local checks were repeatedly run and passing:
@@ -35,18 +37,24 @@ Before this handoff, local checks were repeatedly run and passing:
 ```sh
 zig build
 zig build test
+zig build validator
+zig build validate-examples
 git diff --check
 rg -n "<project text-rule markers>" .github docs PROJECT_BUILD_PLAN.md README.md CHANGELOG.md zig-vst3 zig-vst3-plugin examples build.zig scripts
 ```
 
 The marker scan exits with status 1 when there are no matches, which is expected.
 
-`zig build validate-examples` was attempted earlier after the one-sided process-context coverage. It failed before running validation because the Steinberg validator was not available. `scripts/fetch_sdk.sh` was run after the ABI harness fix, so this workspace now has the pinned `.vst3-sdk/vst3sdk` checkout needed for full local Layer 1 ABI checks.
+`zig build validate-examples` now passes locally after building Steinberg's validator from the pinned `.vst3-sdk/vst3sdk` checkout. The local machine has Command Line Tools but not full Xcode, and the validator wrapper now handles that setup.
 
 ## Last Known Git State
 
 The worktree was clean before this handover refresh. The latest pushed commits before this refresh were:
 
+- `ee4eadf` Support CLT validator builds
+- `01da017` Bind process audio view helpers
+- `f3a4b39` Bind parameter validation helpers
+- `c1cd585` Refresh handover after state wrappers
 - `5f9b9e7` Bind state header metadata helpers
 - `c3351ee` Bind state report classification helpers
 - `0a2147b` Refresh handover after ABI fix
@@ -170,7 +178,7 @@ The worktree was clean before this handover refresh. The latest pushed commits b
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
-CI checkpoint: after pushing `5f9b9e7`, GitHub Actions showed `5f9b9e7` in progress. The `c3351ee` run was cancelled by the newer push, which is expected for this workflow. The latest completed green checkpoint before the state-wrapper commits was `0a2147b`; repository hygiene, build/test on Ubuntu, macOS, and Windows, Layer 1 ABI on Ubuntu and macOS, validator jobs on Ubuntu and macOS, and all cross-compile jobs passed. The earlier macOS Layer 1 ABI failure on `bae332c` and `9d8fc4a` was the Zig 0.14.0 native C sanitizer link issue with `libubsan_rt.a`; `f808411` fixed it by disabling C sanitization for the ABI harness executables.
+CI checkpoint: after pushing `ee4eadf`, GitHub Actions showed run `25706336139` queued. The previous branch-head run for `01da017` completed successfully, including repository hygiene, build/test on Ubuntu, macOS, and Windows, Layer 1 ABI on Ubuntu and macOS, validator jobs on Ubuntu and macOS, and all cross-compile jobs. The `f3a4b39` run was cancelled by the newer push, which is expected for this workflow. The `c1cd585` run `25705656122` also completed successfully. The earlier macOS Layer 1 ABI failure on `bae332c` and `9d8fc4a` was the Zig 0.14.0 native C sanitizer link issue with `libubsan_rt.a`; `f808411` fixed it by disabling C sanitization for the ABI harness executables.
 
 ## What To Do Next
 
@@ -178,7 +186,7 @@ Keep prioritizing `zig-vst3` and `zig-vst3-plugin` completion before starting br
 
 Recommended next slices:
 
-1. Continue Layer 2 API symmetry checks in `zig-vst3-plugin/src/process.zig`, `parameters.zig`, `state.zig`, `units.zig`, and `plugin.zig`. The latest pass found and filled state header/report wrapper gaps. Unit-set exact helper names and process parameter-change helpers were checked and already mirrored, so the next pass should look for real API gaps rather than blindly chasing constructor/type aliases.
+1. Continue Layer 2 API symmetry checks in `zig-vst3-plugin/src/process.zig`, `parameters.zig`, `state.zig`, `units.zig`, and `plugin.zig`. Recent passes filled state header/report wrapper gaps, parameter validation wrapper gaps, and direct process audio view gaps. Unit-set exact helper names, process parameter-change helpers, and event-writer direct view helpers were checked and already mirrored, so the next pass should look for real API gaps rather than blindly chasing constructor/type aliases.
 2. Add focused tests whenever a helper is added. Prefer extending nearby existing tests over creating broad new fixtures.
 3. Keep docs synchronized in `docs/layer2/plugin-interface.md`, `docs/layer2/parameters.md`, `docs/layer2/state.md`, and `README.md` when public surface changes.
 4. Revisit deferred host smoke coverage:
@@ -191,6 +199,8 @@ Useful local gates:
 
 ```sh
 zig build test
+zig build validator
+zig build validate-examples
 git diff --check
 rg -n "<project text-rule markers>" .github docs PROJECT_BUILD_PLAN.md README.md CHANGELOG.md zig-vst3 zig-vst3-plugin examples build.zig scripts
 ```
