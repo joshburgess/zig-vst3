@@ -114,11 +114,11 @@ test "event echo component writes output events through processor shell" {
     var output_channel_ptrs = [_][*]f32{&output_samples};
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
     }};
     var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 48_000.0 };
 
@@ -192,11 +192,11 @@ test "event echo component writes output events through double precision process
     var output_channel_ptrs = [_][*]f64{&output_samples};
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers64 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers64 = input_channel_ptrs[0..].ptr },
     }};
     var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers64 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers64 = output_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 48_000.0 };
 

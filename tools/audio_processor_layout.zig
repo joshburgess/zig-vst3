@@ -66,8 +66,8 @@ pub fn main() !void {
     var channel64 = [_]f64{0} ** 4;
     var channels32 = [_][*]f32{&channel32};
     var channels64 = [_][*]f64{&channel64};
-    var buffers32 = audio_processor.AudioBusBuffers{ .channelBuffers = .{ .channelBuffers32 = &channels32 } };
-    var buffers64 = audio_processor.AudioBusBuffers{ .channelBuffers = .{ .channelBuffers64 = &channels64 } };
+    var buffers32 = audio_processor.AudioBusBuffers{ .channelBuffers = .{ .channelBuffers32 = channels32[0..].ptr } };
+    var buffers64 = audio_processor.AudioBusBuffers{ .channelBuffers = .{ .channelBuffers64 = channels64[0..].ptr } };
     try stdout.print("AudioProcessorAlgo.getChannelBuffersPointer.32 {}\n", .{@intFromBool(audio_processor_algo.getChannelBuffersPointer(&setup32, &buffers32) == @as(?*anyopaque, @ptrCast(&channels32)))});
     try stdout.print("AudioProcessorAlgo.getChannelBuffersPointer.64 {}\n", .{@intFromBool(audio_processor_algo.getChannelBuffersPointer(&setup64, &buffers64) == @as(?*anyopaque, @ptrCast(&channels64)))});
     try stdout.print("AudioProcessorAlgo.getSampleFramesSizeInBytes.32 {}\n", .{audio_processor_algo.getSampleFramesSizeInBytes(&setup32, 8)});
@@ -81,8 +81,8 @@ pub fn main() !void {
     var dest32_ch1 = [_]f32{0} ** 6;
     var src32_channels = [_][*]f32{ &src32_ch0, &src32_ch1 };
     var dest32_channels = [_][*]f32{ &dest32_ch0, &dest32_ch1 };
-    var src32 = audio_processor.AudioBusBuffers{ .numChannels = 2, .channelBuffers = .{ .channelBuffers32 = &src32_channels } };
-    var dest32 = audio_processor.AudioBusBuffers{ .numChannels = 2, .channelBuffers = .{ .channelBuffers32 = &dest32_channels } };
+    var src32 = audio_processor.AudioBusBuffers{ .numChannels = 2, .channelBuffers = .{ .channelBuffers32 = src32_channels[0..].ptr } };
+    var dest32 = audio_processor.AudioBusBuffers{ .numChannels = 2, .channelBuffers = .{ .channelBuffers32 = dest32_channels[0..].ptr } };
     audio_processor_algo.copy32(&src32, &dest32, 3, 2);
     try stdout.print("AudioProcessorAlgo.copy32.dest0.2 {d:.1}\n", .{dest32_ch0[2]});
     try stdout.print("AudioProcessorAlgo.copy32.dest1.4 {d:.1}\n", .{dest32_ch1[4]});
@@ -99,8 +99,8 @@ pub fn main() !void {
     var dest64_ch0 = [_]f64{0} ** 5;
     var src64_channels = [_][*]f64{&src64_ch0};
     var dest64_channels = [_][*]f64{&dest64_ch0};
-    var src64 = audio_processor.AudioBusBuffers{ .numChannels = 1, .channelBuffers = .{ .channelBuffers64 = &src64_channels } };
-    var dest64 = audio_processor.AudioBusBuffers{ .numChannels = 1, .channelBuffers = .{ .channelBuffers64 = &dest64_channels } };
+    var src64 = audio_processor.AudioBusBuffers{ .numChannels = 1, .channelBuffers = .{ .channelBuffers64 = src64_channels[0..].ptr } };
+    var dest64 = audio_processor.AudioBusBuffers{ .numChannels = 1, .channelBuffers = .{ .channelBuffers64 = dest64_channels[0..].ptr } };
     audio_processor_algo.copy64(&src64, &dest64, 2, 1);
     try stdout.print("AudioProcessorAlgo.copy64.dest0.2 {d:.1}\n", .{dest64_ch0[2]});
     audio_processor_algo.multiply64(&src64, &dest64, 2, 3);
