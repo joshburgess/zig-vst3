@@ -1,8 +1,11 @@
 const std = @import("std");
 const edit_controller = @import("zig-vst3").pluginterfaces.vst.ivsteditcontroller;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("kVstComponentControllerClass {s}\n", .{edit_controller.kVstComponentControllerClass});
     try stdout.print("ViewType.kEditor {s}\n", .{edit_controller.ViewType.kEditor});
     try stdout.print("ParameterInfo.kNoFlags {}\n", .{edit_controller.ParameterInfo.ParameterFlags.kNoFlags});

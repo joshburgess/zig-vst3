@@ -1,8 +1,11 @@
 const std = @import("std");
 const context_menu = @import("zig-vst3").pluginterfaces.vst.ivstcontextmenu;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("IContextMenuItem.kIsSeparator {}\n", .{context_menu.IContextMenuItem.Flags.kIsSeparator});
     try stdout.print("IContextMenuItem.kIsDisabled {}\n", .{context_menu.IContextMenuItem.Flags.kIsDisabled});
     try stdout.print("IContextMenuItem.kIsChecked {}\n", .{context_menu.IContextMenuItem.Flags.kIsChecked});

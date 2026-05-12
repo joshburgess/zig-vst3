@@ -2,8 +2,11 @@ const std = @import("std");
 const learn = @import("zig-vst3").pluginterfaces.vst.ivstmidilearn;
 const mapping2 = @import("zig-vst3").pluginterfaces.vst.ivstmidimapping2;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try printType(stdout, "Midi2Controller", mapping2.Midi2Controller);
     try printType(stdout, "Midi2ControllerParamIDAssignment", mapping2.Midi2ControllerParamIDAssignment);
     try printOffset(stdout, "Midi2ControllerParamIDAssignment", "pId", mapping2.Midi2ControllerParamIDAssignment, "pId");

@@ -5,8 +5,11 @@ fn printChunkID(writer: anytype, label: []const u8, id: preset_file.ChunkID) !vo
     try writer.print("{s} {s}\n", .{ label, id });
 }
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("sizeof.ChunkID {}\n", .{@sizeOf(preset_file.ChunkID)});
     try stdout.print("sizeof.Entry {}\n", .{@sizeOf(preset_file.Entry)});
     try stdout.print("alignof.Entry {}\n", .{@alignOf(preset_file.Entry)});

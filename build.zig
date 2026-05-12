@@ -216,7 +216,7 @@ pub fn build(b: *std.Build) void {
     addVst3BundleDependencies(bundle_examples_step, &example_bundle_steps, .native);
 
     const clean_bundles_step = b.step("clean-bundles", "Remove generated VST3 bundles from zig-out/bundle");
-    clean_bundles_step.dependOn(&b.addRemoveDirTree(b.path("zig-out/bundle")).step);
+    clean_bundles_step.dependOn(&b.addSystemCommand(&.{ "rm", "-rf", "zig-out/bundle" }).step);
 
     const bundle_examples_linux_step = b.step("bundle-examples-linux", "Build Linux VST3 bundles for all example plugins");
     addVst3BundleDependencies(bundle_examples_linux_step, &example_bundle_steps, .linux);

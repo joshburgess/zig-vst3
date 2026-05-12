@@ -3,8 +3,11 @@ const automation = @import("zig-vst3").pluginterfaces.vst.ivstautomationstate;
 const interface_support = @import("zig-vst3").pluginterfaces.vst.ivstpluginterfacesupport;
 const prefetch = @import("zig-vst3").pluginterfaces.vst.ivstprefetchablesupport;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("ePrefetchableSupport.kIsNeverPrefetchable {}\n", .{@intFromEnum(prefetch.ePrefetchableSupport.kIsNeverPrefetchable)});
     try stdout.print("ePrefetchableSupport.kIsYetPrefetchable {}\n", .{@intFromEnum(prefetch.ePrefetchableSupport.kIsYetPrefetchable)});
     try stdout.print("ePrefetchableSupport.kIsNotYetPrefetchable {}\n", .{@intFromEnum(prefetch.ePrefetchableSupport.kIsNotYetPrefetchable)});

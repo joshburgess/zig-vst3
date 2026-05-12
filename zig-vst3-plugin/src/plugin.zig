@@ -4,6 +4,34 @@ const process_api = @import("process.zig");
 const state = @import("state.zig");
 const units_api = @import("units.zig");
 
+const FixedBufferStream = struct {
+    buffer: []u8,
+    reader_interface: std.Io.Reader,
+    writer_interface: std.Io.Writer,
+
+    fn init(buffer: []u8) FixedBufferStream {
+        return .{
+            .buffer = buffer,
+            .reader_interface = std.Io.Reader.fixed(buffer),
+            .writer_interface = std.Io.Writer.fixed(buffer),
+        };
+    }
+
+    fn reader(self: *FixedBufferStream) *std.Io.Reader {
+        self.reader_interface = std.Io.Reader.fixed(self.buffer);
+        return &self.reader_interface;
+    }
+
+    fn writer(self: *FixedBufferStream) *std.Io.Writer {
+        self.writer_interface = std.Io.Writer.fixed(self.buffer);
+        return &self.writer_interface;
+    }
+
+    fn getWritten(self: *const FixedBufferStream) []const u8 {
+        return self.writer_interface.buffered();
+    }
+};
+
 pub fn PluginSpec(comptime Plugin: type) type {
     if (!@hasDecl(Plugin, "Params")) {
         @compileError("Plugin must declare Params");
@@ -4506,17 +4534,17 @@ test "plugin instance round-trips owned parameter state" {
     try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
     try std.testing.expect(instance.storeParameterNormalized("mix", 0.75));
 
-    var header_out_stream = std.io.fixedBufferStream(&header_bytes);
+    var header_out_stream = FixedBufferStream.init(&header_bytes);
     try instance.writeParameterStateHeader(header_out_stream.writer());
-    var header_in_stream = std.io.fixedBufferStream(&header_bytes);
+    var header_in_stream = FixedBufferStream.init(&header_bytes);
     try std.testing.expectEqual(
         state.ParameterStateHeader{ .version = state.format_version, .entry_count = 2 },
         try instance.readParameterStateHeader(header_in_stream.reader()),
     );
 
-    var counted_header_out_stream = std.io.fixedBufferStream(&header_bytes);
+    var counted_header_out_stream = FixedBufferStream.init(&header_bytes);
     try instance.writeParameterStateHeaderForCount(1, counted_header_out_stream.writer());
-    var counted_header_in_stream = std.io.fixedBufferStream(&header_bytes);
+    var counted_header_in_stream = FixedBufferStream.init(&header_bytes);
     try std.testing.expectEqual(
         state.ParameterStateHeader{ .version = state.format_version, .entry_count = 1 },
         try instance.readParameterStateHeader(counted_header_in_stream.reader()),
@@ -4526,10 +4554,10 @@ test "plugin instance round-trips owned parameter state" {
         instance.writeParameterStateHeaderForCount(@as(usize, std.math.maxInt(u16)) + 1, counted_header_out_stream.writer()),
     );
 
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     try instance.writeParameterState(out_stream.writer());
 
-    var header_stream = std.io.fixedBufferStream(&bytes);
+    var header_stream = FixedBufferStream.init(&bytes);
     const header = try instance.readParameterStateHeader(header_stream.reader());
     const older_header = state.ParameterStateHeader{ .version = state.format_version, .entry_count = 1 };
     const newer_header = state.ParameterStateHeader{ .version = state.format_version, .entry_count = 3 };
@@ -4553,7 +4581,7 @@ test "plugin instance round-trips owned parameter state" {
     try std.testing.expectEqual(@as(usize, 0), instance.parameterStateHeaderMissingEntryCount(newer_header));
     try std.testing.expectEqual(@as(usize, 1), instance.parameterStateHeaderExtraEntryCount(newer_header));
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     const report = try restored.readParameterStateReport(in_stream.reader());
     const partial_report = state.ReadParameterStateReport{ .entry_count = 1, .restored_count = 1, .ignored_count = 0 };
     const newer_report = state.ReadParameterStateReport{ .entry_count = 3, .restored_count = 2, .ignored_count = 1 };
@@ -4632,7 +4660,7 @@ test "plugin instance writes parameter state debug json" {
     try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
     try std.testing.expect(instance.storeParameterNormalized("mix", 0.75));
 
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     try instance.writeParameterStateJson(out_stream.writer());
 
     try std.testing.expectEqualStrings(
@@ -4663,10 +4691,10 @@ test "plugin instance reads parameter state with migrations" {
     var bytes: [state.encodedSize(OldGain.Params)]u8 = undefined;
 
     try std.testing.expect(old_instance.storeParameterNormalized("gain", 0.25));
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     try old_instance.writeParameterState(out_stream.writer());
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     const report = try new_instance.readParameterStateWithMigrationsReport(in_stream.reader(), &.{
         .{ .old_id = 7, .new_id = 9 },
         .{ .old_id = 9, .new_id = 11 },

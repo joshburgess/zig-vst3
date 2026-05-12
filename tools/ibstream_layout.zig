@@ -1,8 +1,11 @@
 const std = @import("std");
 const ibstream = @import("zig-vst3").pluginterfaces.base.ibstream;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try printType(stdout, "Steinberg::IBStream", ibstream.IBStream);
     try printType(stdout, "Steinberg::ISizeableStream", ibstream.ISizeableStream);
     try stdout.print("IBStream.kIBSeekSet {}\n", .{@intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet)});
