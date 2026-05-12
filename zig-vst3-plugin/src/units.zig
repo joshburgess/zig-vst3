@@ -401,6 +401,16 @@ pub fn UnitSet(comptime config: Config) type {
             return item.duplicateParameterId();
         }
 
+        pub fn duplicateProgramParameterIdForUnit(self: Self, unit_id: i32, program_index: usize) ?u32 {
+            const item = self.programForUnit(unit_id, program_index) orelse return null;
+            return item.duplicateParameterId();
+        }
+
+        pub fn duplicateProgramParameterIdForUnitName(self: Self, unit_name: []const u8, program_index: usize) ?u32 {
+            const item = self.programForUnitName(unit_name, program_index) orelse return null;
+            return item.duplicateParameterId();
+        }
+
         pub fn duplicateProgramParameterIdIndex(self: Self, list_id: i32, program_index: usize) ?usize {
             const item = self.program(list_id, program_index) orelse return null;
             return item.duplicateParameterIdIndex();
@@ -408,6 +418,16 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateProgramParameterIdIndexByListName(self: Self, list_name: []const u8, program_index: usize) ?usize {
             const item = self.programByListName(list_name, program_index) orelse return null;
+            return item.duplicateParameterIdIndex();
+        }
+
+        pub fn duplicateProgramParameterIdIndexForUnit(self: Self, unit_id: i32, program_index: usize) ?usize {
+            const item = self.programForUnit(unit_id, program_index) orelse return null;
+            return item.duplicateParameterIdIndex();
+        }
+
+        pub fn duplicateProgramParameterIdIndexForUnitName(self: Self, unit_name: []const u8, program_index: usize) ?usize {
+            const item = self.programForUnitName(unit_name, program_index) orelse return null;
             return item.duplicateParameterIdIndex();
         }
 
@@ -421,6 +441,16 @@ pub fn UnitSet(comptime config: Config) type {
             return item.duplicateParameterId();
         }
 
+        pub fn duplicateProgramParameterIdByNameForUnit(self: Self, unit_id: i32, program_name: []const u8) ?u32 {
+            const item = self.programByNameForUnit(unit_id, program_name) orelse return null;
+            return item.duplicateParameterId();
+        }
+
+        pub fn duplicateProgramParameterIdByNameForUnitName(self: Self, unit_name: []const u8, program_name: []const u8) ?u32 {
+            const item = self.programByNameForUnitName(unit_name, program_name) orelse return null;
+            return item.duplicateParameterId();
+        }
+
         pub fn duplicateProgramParameterIdIndexByName(self: Self, list_id: i32, program_name: []const u8) ?usize {
             const index = self.programIndexOfName(list_id, program_name) orelse return null;
             return self.duplicateProgramParameterIdIndex(list_id, index);
@@ -428,6 +458,16 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateProgramParameterIdIndexByNameForListName(self: Self, list_name: []const u8, program_name: []const u8) ?usize {
             const item = self.programByNameForListName(list_name, program_name) orelse return null;
+            return item.duplicateParameterIdIndex();
+        }
+
+        pub fn duplicateProgramParameterIdIndexByNameForUnit(self: Self, unit_id: i32, program_name: []const u8) ?usize {
+            const item = self.programByNameForUnit(unit_id, program_name) orelse return null;
+            return item.duplicateParameterIdIndex();
+        }
+
+        pub fn duplicateProgramParameterIdIndexByNameForUnitName(self: Self, unit_name: []const u8, program_name: []const u8) ?usize {
+            const item = self.programByNameForUnitName(unit_name, program_name) orelse return null;
             return item.duplicateParameterIdIndex();
         }
 
@@ -743,6 +783,16 @@ pub fn UnitSet(comptime config: Config) type {
             return item.parameters.len;
         }
 
+        pub fn programParameterCountForUnit(self: Self, unit_id: i32, program_index: usize) ?usize {
+            const item = self.programForUnit(unit_id, program_index) orelse return null;
+            return item.parameters.len;
+        }
+
+        pub fn programParameterCountForUnitName(self: Self, unit_name: []const u8, program_index: usize) ?usize {
+            const item = self.programForUnitName(unit_name, program_index) orelse return null;
+            return item.parameters.len;
+        }
+
         pub fn programParameterCountByName(self: Self, list_id: i32, program_name: []const u8) ?usize {
             const item = self.programByName(list_id, program_name) orelse return null;
             return item.parameters.len;
@@ -750,6 +800,16 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programParameterCountByNameForListName(self: Self, list_name: []const u8, program_name: []const u8) ?usize {
             const item = self.programByNameForListName(list_name, program_name) orelse return null;
+            return item.parameters.len;
+        }
+
+        pub fn programParameterCountByNameForUnit(self: Self, unit_id: i32, program_name: []const u8) ?usize {
+            const item = self.programByNameForUnit(unit_id, program_name) orelse return null;
+            return item.parameters.len;
+        }
+
+        pub fn programParameterCountByNameForUnitName(self: Self, unit_name: []const u8, program_name: []const u8) ?usize {
+            const item = self.programByNameForUnitName(unit_name, program_name) orelse return null;
             return item.parameters.len;
         }
 
@@ -763,6 +823,16 @@ pub fn UnitSet(comptime config: Config) type {
             return item.hasParameters();
         }
 
+        pub fn programHasParametersForUnit(self: Self, unit_id: i32, program_index: usize) bool {
+            const item = self.programForUnit(unit_id, program_index) orelse return false;
+            return item.hasParameters();
+        }
+
+        pub fn programHasParametersForUnitName(self: Self, unit_name: []const u8, program_index: usize) bool {
+            const item = self.programForUnitName(unit_name, program_index) orelse return false;
+            return item.hasParameters();
+        }
+
         pub fn programHasParametersByName(self: Self, list_id: i32, program_name: []const u8) bool {
             const item = self.programByName(list_id, program_name) orelse return false;
             return item.hasParameters();
@@ -770,6 +840,16 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programHasParametersByNameForListName(self: Self, list_name: []const u8, program_name: []const u8) bool {
             const item = self.programByNameForListName(list_name, program_name) orelse return false;
+            return item.hasParameters();
+        }
+
+        pub fn programHasParametersByNameForUnit(self: Self, unit_id: i32, program_name: []const u8) bool {
+            const item = self.programByNameForUnit(unit_id, program_name) orelse return false;
+            return item.hasParameters();
+        }
+
+        pub fn programHasParametersByNameForUnitName(self: Self, unit_name: []const u8, program_name: []const u8) bool {
+            const item = self.programByNameForUnitName(unit_name, program_name) orelse return false;
             return item.hasParameters();
         }
 
@@ -783,6 +863,16 @@ pub fn UnitSet(comptime config: Config) type {
             return item.parametersEmpty();
         }
 
+        pub fn programParametersEmptyForUnit(self: Self, unit_id: i32, program_index: usize) bool {
+            const item = self.programForUnit(unit_id, program_index) orelse return true;
+            return item.parametersEmpty();
+        }
+
+        pub fn programParametersEmptyForUnitName(self: Self, unit_name: []const u8, program_index: usize) bool {
+            const item = self.programForUnitName(unit_name, program_index) orelse return true;
+            return item.parametersEmpty();
+        }
+
         pub fn programParametersEmptyByName(self: Self, list_id: i32, program_name: []const u8) bool {
             const item = self.programByName(list_id, program_name) orelse return true;
             return item.parametersEmpty();
@@ -790,6 +880,16 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programParametersEmptyByNameForListName(self: Self, list_name: []const u8, program_name: []const u8) bool {
             const item = self.programByNameForListName(list_name, program_name) orelse return true;
+            return item.parametersEmpty();
+        }
+
+        pub fn programParametersEmptyByNameForUnit(self: Self, unit_id: i32, program_name: []const u8) bool {
+            const item = self.programByNameForUnit(unit_id, program_name) orelse return true;
+            return item.parametersEmpty();
+        }
+
+        pub fn programParametersEmptyByNameForUnitName(self: Self, unit_name: []const u8, program_name: []const u8) bool {
+            const item = self.programByNameForUnitName(unit_name, program_name) orelse return true;
             return item.parametersEmpty();
         }
 
@@ -803,6 +903,16 @@ pub fn UnitSet(comptime config: Config) type {
             return item.parameter(parameter_index);
         }
 
+        pub fn programParameterForUnit(self: Self, unit_id: i32, program_index: usize, parameter_index: usize) ?ProgramParameter {
+            const item = self.programForUnit(unit_id, program_index) orelse return null;
+            return item.parameter(parameter_index);
+        }
+
+        pub fn programParameterForUnitName(self: Self, unit_name: []const u8, program_index: usize, parameter_index: usize) ?ProgramParameter {
+            const item = self.programForUnitName(unit_name, program_index) orelse return null;
+            return item.parameter(parameter_index);
+        }
+
         pub fn programParameterByName(self: Self, list_id: i32, program_name: []const u8, parameter_index: usize) ?ProgramParameter {
             const item = self.programByName(list_id, program_name) orelse return null;
             return item.parameter(parameter_index);
@@ -810,6 +920,16 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programParameterByNameForListName(self: Self, list_name: []const u8, program_name: []const u8, parameter_index: usize) ?ProgramParameter {
             const item = self.programByNameForListName(list_name, program_name) orelse return null;
+            return item.parameter(parameter_index);
+        }
+
+        pub fn programParameterByNameForUnit(self: Self, unit_id: i32, program_name: []const u8, parameter_index: usize) ?ProgramParameter {
+            const item = self.programByNameForUnit(unit_id, program_name) orelse return null;
+            return item.parameter(parameter_index);
+        }
+
+        pub fn programParameterByNameForUnitName(self: Self, unit_name: []const u8, program_name: []const u8, parameter_index: usize) ?ProgramParameter {
+            const item = self.programByNameForUnitName(unit_name, program_name) orelse return null;
             return item.parameter(parameter_index);
         }
 
@@ -823,6 +943,16 @@ pub fn UnitSet(comptime config: Config) type {
             return item.parameterById(parameter_id);
         }
 
+        pub fn programParameterByIdForUnit(self: Self, unit_id: i32, program_index: usize, parameter_id: u32) ?ProgramParameter {
+            const item = self.programForUnit(unit_id, program_index) orelse return null;
+            return item.parameterById(parameter_id);
+        }
+
+        pub fn programParameterByIdForUnitName(self: Self, unit_name: []const u8, program_index: usize, parameter_id: u32) ?ProgramParameter {
+            const item = self.programForUnitName(unit_name, program_index) orelse return null;
+            return item.parameterById(parameter_id);
+        }
+
         pub fn programParameterIndexOfId(self: Self, list_id: i32, program_index: usize, parameter_id: u32) ?usize {
             const item = self.program(list_id, program_index) orelse return null;
             return item.parameterIndexOfId(parameter_id);
@@ -830,6 +960,16 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programParameterIndexOfIdByListName(self: Self, list_name: []const u8, program_index: usize, parameter_id: u32) ?usize {
             const item = self.programByListName(list_name, program_index) orelse return null;
+            return item.parameterIndexOfId(parameter_id);
+        }
+
+        pub fn programParameterIndexOfIdForUnit(self: Self, unit_id: i32, program_index: usize, parameter_id: u32) ?usize {
+            const item = self.programForUnit(unit_id, program_index) orelse return null;
+            return item.parameterIndexOfId(parameter_id);
+        }
+
+        pub fn programParameterIndexOfIdForUnitName(self: Self, unit_name: []const u8, program_index: usize, parameter_id: u32) ?usize {
+            const item = self.programForUnitName(unit_name, program_index) orelse return null;
             return item.parameterIndexOfId(parameter_id);
         }
 
@@ -841,12 +981,28 @@ pub fn UnitSet(comptime config: Config) type {
             return self.programParameterIndexOfIdByListName(list_name, program_index, parameter_id) != null;
         }
 
+        pub fn hasProgramParameterForUnit(self: Self, unit_id: i32, program_index: usize, parameter_id: u32) bool {
+            return self.programParameterIndexOfIdForUnit(unit_id, program_index, parameter_id) != null;
+        }
+
+        pub fn hasProgramParameterForUnitName(self: Self, unit_name: []const u8, program_index: usize, parameter_id: u32) bool {
+            return self.programParameterIndexOfIdForUnitName(unit_name, program_index, parameter_id) != null;
+        }
+
         pub fn hasDuplicateProgramParameterIds(self: Self, list_id: i32, program_index: usize) bool {
             return self.duplicateProgramParameterId(list_id, program_index) != null;
         }
 
         pub fn hasDuplicateProgramParameterIdsByListName(self: Self, list_name: []const u8, program_index: usize) bool {
             return self.duplicateProgramParameterIdByListName(list_name, program_index) != null;
+        }
+
+        pub fn hasDuplicateProgramParameterIdsForUnit(self: Self, unit_id: i32, program_index: usize) bool {
+            return self.duplicateProgramParameterIdForUnit(unit_id, program_index) != null;
+        }
+
+        pub fn hasDuplicateProgramParameterIdsForUnitName(self: Self, unit_name: []const u8, program_index: usize) bool {
+            return self.duplicateProgramParameterIdForUnitName(unit_name, program_index) != null;
         }
 
         pub fn programParameterByNameAndId(self: Self, list_id: i32, program_name: []const u8, parameter_id: u32) ?ProgramParameter {
@@ -856,6 +1012,16 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programParameterByNameAndIdForListName(self: Self, list_name: []const u8, program_name: []const u8, parameter_id: u32) ?ProgramParameter {
             const item = self.programByNameForListName(list_name, program_name) orelse return null;
+            return item.parameterById(parameter_id);
+        }
+
+        pub fn programParameterByNameAndIdForUnit(self: Self, unit_id: i32, program_name: []const u8, parameter_id: u32) ?ProgramParameter {
+            const item = self.programByNameForUnit(unit_id, program_name) orelse return null;
+            return item.parameterById(parameter_id);
+        }
+
+        pub fn programParameterByNameAndIdForUnitName(self: Self, unit_name: []const u8, program_name: []const u8, parameter_id: u32) ?ProgramParameter {
+            const item = self.programByNameForUnitName(unit_name, program_name) orelse return null;
             return item.parameterById(parameter_id);
         }
 
@@ -869,6 +1035,16 @@ pub fn UnitSet(comptime config: Config) type {
             return item.parameterIndexOfId(parameter_id);
         }
 
+        pub fn programParameterIndexOfIdByNameForUnit(self: Self, unit_id: i32, program_name: []const u8, parameter_id: u32) ?usize {
+            const item = self.programByNameForUnit(unit_id, program_name) orelse return null;
+            return item.parameterIndexOfId(parameter_id);
+        }
+
+        pub fn programParameterIndexOfIdByNameForUnitName(self: Self, unit_name: []const u8, program_name: []const u8, parameter_id: u32) ?usize {
+            const item = self.programByNameForUnitName(unit_name, program_name) orelse return null;
+            return item.parameterIndexOfId(parameter_id);
+        }
+
         pub fn hasProgramParameterByName(self: Self, list_id: i32, program_name: []const u8, parameter_id: u32) bool {
             return self.programParameterIndexOfIdByName(list_id, program_name, parameter_id) != null;
         }
@@ -877,12 +1053,28 @@ pub fn UnitSet(comptime config: Config) type {
             return self.programParameterIndexOfIdByNameForListName(list_name, program_name, parameter_id) != null;
         }
 
+        pub fn hasProgramParameterByNameForUnit(self: Self, unit_id: i32, program_name: []const u8, parameter_id: u32) bool {
+            return self.programParameterIndexOfIdByNameForUnit(unit_id, program_name, parameter_id) != null;
+        }
+
+        pub fn hasProgramParameterByNameForUnitName(self: Self, unit_name: []const u8, program_name: []const u8, parameter_id: u32) bool {
+            return self.programParameterIndexOfIdByNameForUnitName(unit_name, program_name, parameter_id) != null;
+        }
+
         pub fn hasDuplicateProgramParameterIdsByName(self: Self, list_id: i32, program_name: []const u8) bool {
             return self.duplicateProgramParameterIdByName(list_id, program_name) != null;
         }
 
         pub fn hasDuplicateProgramParameterIdsByNameForListName(self: Self, list_name: []const u8, program_name: []const u8) bool {
             return self.duplicateProgramParameterIdByNameForListName(list_name, program_name) != null;
+        }
+
+        pub fn hasDuplicateProgramParameterIdsByNameForUnit(self: Self, unit_id: i32, program_name: []const u8) bool {
+            return self.duplicateProgramParameterIdByNameForUnit(unit_id, program_name) != null;
+        }
+
+        pub fn hasDuplicateProgramParameterIdsByNameForUnitName(self: Self, unit_name: []const u8, program_name: []const u8) bool {
+            return self.duplicateProgramParameterIdByNameForUnitName(unit_name, program_name) != null;
         }
 
         pub fn programInfo(self: Self, list_id: i32, program_index: usize, key: []const u8) ?[]const u8 {
