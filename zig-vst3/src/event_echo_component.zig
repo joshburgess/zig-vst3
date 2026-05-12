@@ -2,8 +2,10 @@ const event_echo_controller = @import("event_echo_controller.zig");
 const event_echo_spec = @import("event_echo_spec.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const plug_process = @import("zig-vst3-plugin-core").process;
+const plug_state = @import("zig-vst3-plugin-core").state;
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 
 pub const cid = tuid.inlineUid(0xD9C97C5A, 0x062A4B52, 0x9C3DF51C, 0xFFAC4B41);
@@ -237,4 +239,22 @@ test "event echo component writes output events through double precision process
     try std.testing.expectEqual(@as(types.int16, 0), written_event.data.noteOn.channel);
     try std.testing.expectEqual(@as(types.int16, 60), written_event.data.noteOn.pitch);
     try std.testing.expectEqual(@as(f32, 0.75), written_event.data.noteOn.velocity);
+}
+
+test "event echo component round-trips empty state through host callbacks" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    const Stream = vst_stream.FixedBufferStream(plug_state.encodedSize(event_echo_spec.Spec.Params));
+    var stream = Stream{};
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getState(component_iface, stream.asStream()));
+    try std.testing.expectEqual(@as(usize, plug_state.encoded_header_size), stream.data().len);
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setState(component_iface, stream.asStream()));
 }

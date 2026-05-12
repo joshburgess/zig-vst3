@@ -1,8 +1,11 @@
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const note_gate_controller = @import("note_gate_controller.zig");
+const note_gate_spec = @import("note_gate_spec.zig");
 const plug_process = @import("zig-vst3-plugin-core").process;
+const plug_state = @import("zig-vst3-plugin-core").state;
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 
 pub const cid = tuid.inlineUid(0x70E3A630, 0x5EE54F09, 0x94C968A8, 0x22947A9F);
@@ -375,4 +378,23 @@ test "note gate component resets process state when deactivated" {
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setActive(component_iface, 0));
     try std.testing.expect(!gate.open);
     try std.testing.expectEqual(@as(usize, 0), gate.held_note_count);
+}
+
+test "note gate component round-trips empty state through host callbacks" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+
+    resetNoteGateState();
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    const Stream = vst_stream.FixedBufferStream(plug_state.encodedSize(note_gate_spec.Spec.Params));
+    var stream = Stream{};
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getState(component_iface, stream.asStream()));
+    try std.testing.expectEqual(@as(usize, plug_state.encoded_header_size), stream.data().len);
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setState(component_iface, stream.asStream()));
 }
