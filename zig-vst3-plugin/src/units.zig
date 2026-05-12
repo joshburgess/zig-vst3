@@ -201,6 +201,11 @@ pub const ProgramList = struct {
         return self.programs[index];
     }
 
+    pub fn programName(self: ProgramList, index: usize) ?[]const u8 {
+        const item = self.program(index) orelse return null;
+        return item.name;
+    }
+
     pub fn programIndexOfName(self: ProgramList, name: []const u8) ?usize {
         for (self.programs, 0..) |item, index| {
             if (std.mem.eql(u8, item.name, name)) return index;
@@ -538,8 +543,7 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programName(self: Self, list_id: i32, program_index: usize) ?[]const u8 {
             const list = self.programListById(list_id) orelse return null;
-            if (program_index >= list.programs.len) return null;
-            return list.programs[program_index].name;
+            return list.programName(program_index);
         }
 
         pub fn program(self: Self, list_id: i32, program_index: usize) ?Program {
@@ -918,6 +922,8 @@ test "unit set exposes custom units and programs" {
     try std.testing.expect(!set.programListById(10).?.hasDuplicateProgramNames());
     try std.testing.expectEqualStrings("Drive", set.programListById(10).?.program(1).?.name);
     try std.testing.expectEqual(@as(?Program, null), set.programListById(10).?.program(2));
+    try std.testing.expectEqualStrings("Drive", set.programListById(10).?.programName(1).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), set.programListById(10).?.programName(2));
     try std.testing.expectEqual(@as(?usize, 1), set.programListById(10).?.programIndexOfName("Drive"));
     try std.testing.expectEqual(@as(?usize, null), set.programListById(10).?.programIndexOfName("Missing"));
     try std.testing.expectEqualStrings("Drive", set.programListById(10).?.programByName("Drive").?.name);

@@ -251,6 +251,8 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expect(!program_list.isEmpty());
     try std.testing.expect(program_list.hasPrograms());
     try std.testing.expectEqualStrings("Single", program_list.program(0).?.name);
+    try std.testing.expectEqualStrings("Quad", program_list.programName(1).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), program_list.programName(2));
     try std.testing.expectEqual(@as(?usize, 1), program_list.programIndexOfName("Quad"));
     try std.testing.expectEqualStrings("Quad", program_list.programByName("Quad").?.name);
     try std.testing.expect(program_list.hasProgramName("Single"));
