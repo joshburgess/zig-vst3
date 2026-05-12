@@ -27,7 +27,6 @@ For normal code changes, run the smallest tier that covers the changed behavior.
 Highest priority:
 
 - Complete deferred host smoke tests for `note_gate`, `event_echo`, `event_monitor`, and `sine_synth`.
-- Do one more Layer 2 API symmetry pass across `process.zig`, `parameters.zig`, `state.zig`, `units.zig`, and `plugin.zig`.
 - Keep `docs/layer2/plugin-interface.md`, `docs/layer2/parameters.md`, `docs/layer2/state.md`, and `README.md` aligned with any public API changes.
 
 Medium priority:
@@ -41,6 +40,20 @@ Release polish:
 - Add release notes before tagging public releases.
 - Define an API stability policy before promising compatibility for external users.
 - Add benchmarks for raw Layer 1 overhead, framework process overhead, parameter update overhead, and state save/load time.
+
+## Layer 2 API Symmetry
+
+The current `zig-vst3-plugin` public surface has had a symmetry pass across `process.zig`, `parameters.zig`, `state.zig`, `units.zig`, and `plugin.zig`.
+
+Current interpretation:
+
+- `ParameterSet`, `ParameterView`, and `ParameterEditor` share the same metadata, validation, conversion, and reflected parameter-change construction surface. `ParameterEditor` adds mutation, reset, copy, and process-change application methods.
+- `PluginInstance` exposes the practical instance-bound parameter, unit, program-list, program, state, lifecycle, topology, process, and metadata helpers without forwarding every value-level helper as an alias.
+- `UnitSet` retains the broad program metadata lookup surface. `PluginInstance` forwards the host-facing and instance-useful paths, especially list-id, list-name, unit-id, and unit-name program metadata paths.
+- `ProcessContext` provides direct input, output, parameter-change, input-event, output-event, timing, segment, and writer helpers. The current distinction between input events, output events, and generic event views is intentional.
+- `state` value types provide direct report/header helpers, while `PluginInstance` binds the helpers that need the reflected parameter count.
+
+Do not add aliases only to make every type expose every spelling. Add new API only when a real workflow needs the helper at that layer.
 
 ## Non-goals
 

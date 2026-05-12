@@ -11,6 +11,18 @@ The raw layer deliberately keeps ABI details visible:
 
 Use `zig-vst3-plugin` when you want a higher-level plugin framework. Use `zig-vst3` directly when you need access to VST3 interfaces, host callback objects, custom shell behavior, or ABI tests.
 
+## When To Use Layer 1 Directly
+
+The raw layer is useful when the framework layer is too opinionated for the job:
+
+- You need to expose or test a specific SDK interface directly.
+- You are building a custom component, controller, processor, editor, or host-side test object.
+- You need exact control over `queryInterface` results and optional interfaces.
+- You are checking ABI layout, TUID bytes, entry symbols, or bundle structure.
+- You want to prototype a VST3 behavior before deciding whether it belongs in `zig-vst3-plugin`.
+
+For normal audio effects, instruments, analyzers, parameters, state, automation, and event routing, start with `zig-vst3-plugin`.
+
 ## Modules
 
 - `zig-vst3/src/pluginterfaces/base`: raw base interfaces, base types, stream, persistence, update, compatibility, and factory declarations.
@@ -56,6 +68,31 @@ The raw layer includes fixed-capacity helper objects for tests and shell integra
 - `vst_context_menu`, `vst_test_plug_provider`, and `vst_test_interfaces`
 
 These helpers favor deterministic failure behavior. Failed reads, writes, lookups, queue opens, event reads, and string writes clear their output values where that prevents stale host-visible data.
+
+## Direct Raw Workflow
+
+Raw-layer code usually follows this shape:
+
+1. Translate or import the relevant SDK interface from `zig-vst3/src/pluginterfaces`.
+2. Use `funknown.zig` and `interface_map.zig` helpers to implement reference counting and interface lookup.
+3. Expose the object through `factory.zig` and `entry.zig`, or attach it to one of the reusable shells.
+4. Add a Zig test for behavior and, when ABI layout is involved, an SDK-backed fixture under `tests/abi`.
+5. Run `zig build test` and `zig build layer1-abi`.
+
+Keep raw objects conservative around host-visible outputs. If a method fails, clear output buffers, counts, and pointers when stale values could be misread by a host.
+
+## Bundle And Validator Flow
+
+Use the bundle steps when validating raw-layer changes against real VST3 loading:
+
+```sh
+zig build clean-bundles
+zig build bundle-examples
+zig build validator
+zig build validate-examples
+```
+
+`bundle-examples-linux` and `bundle-examples-windows` cross-build target bundle layouts. They prove the bundle shape and compilation target, but they do not replace native validator or real-host smoke tests on those platforms.
 
 ## Current Limits
 
