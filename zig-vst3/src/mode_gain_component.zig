@@ -1,8 +1,11 @@
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const mode_gain_controller = @import("mode_gain_controller.zig");
+const mode_gain_spec = @import("mode_gain_spec.zig");
 const plug_process = @import("zig-vst3-plugin-core").process;
+const plug_state = @import("zig-vst3-plugin-core").state;
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 
 pub const cid = tuid.inlineUid(0xDD49909F, 0x3FF84D0B, 0x84B8D39C, 0x59666363);
@@ -174,5 +177,42 @@ test "mode gain component applies host parameter changes through double precisio
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqualSlices(f64, &.{ 2.0, -1.0, 0.5 }, &output_samples);
+    try std.testing.expectEqual(@as(f64, 2.0), mode_gain_controller.gain());
+}
+
+test "mode gain component round-trips mode state through host callbacks" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+
+    mode_gain_controller.applyParameterChanges(.{ .items = &.{.{
+        .id = mode_gain_controller.mode_param_id,
+        .sample_offset = 0,
+        .normalized = 0.5,
+    }} });
+    defer mode_gain_controller.applyParameterChanges(.{ .items = &.{.{
+        .id = mode_gain_controller.mode_param_id,
+        .sample_offset = 0,
+        .normalized = 0.0,
+    }} });
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    const Stream = vst_stream.FixedBufferStream(plug_state.encodedSize(mode_gain_spec.Spec.Params));
+    var stream = Stream{};
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getState(component_iface, stream.asStream()));
+    try std.testing.expectEqual(@as(usize, plug_state.encodedSize(mode_gain_spec.Spec.Params)), stream.data().len);
+
+    mode_gain_controller.applyParameterChanges(.{ .items = &.{.{
+        .id = mode_gain_controller.mode_param_id,
+        .sample_offset = 0,
+        .normalized = 0.0,
+    }} });
+    try std.testing.expectEqual(@as(f64, 1.0), mode_gain_controller.gain());
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setState(component_iface, stream.asStream()));
     try std.testing.expectEqual(@as(f64, 2.0), mode_gain_controller.gain());
 }
