@@ -118,6 +118,14 @@ test "gain core example declares reflected metadata" {
     try std.testing.expect(CustomSpec.audio_output);
     try std.testing.expect(CustomSpec.event_input);
     try std.testing.expect(!CustomSpec.event_output);
+    try std.testing.expectEqualStrings("zig-vst3-plugin Core Gain", instance.pluginName());
+    try std.testing.expectEqualStrings("zig-vst3", instance.pluginVendor());
+    try std.testing.expectEqualStrings("", instance.pluginUrl());
+    try std.testing.expectEqualStrings("", instance.pluginEmail());
+    try std.testing.expectEqualStrings("zig-vst3-plugin Core Gain", instance.componentClassName());
+    try std.testing.expectEqualStrings("zig-vst3-plugin Core Gain Controller", instance.controllerClassName());
+    try std.testing.expectEqualStrings("Audio Module Class", instance.componentCategory());
+    try std.testing.expectEqualStrings("Component Controller Class", instance.controllerCategory());
     try std.testing.expectEqual(@as(usize, 1), Spec.ParameterSet.count);
     try std.testing.expect(instance.hasAudioInput());
     try std.testing.expect(instance.hasAudioOutput());
