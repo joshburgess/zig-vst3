@@ -141,9 +141,12 @@ test "sine synth component renders host event list input through processor shell
     const ivstevents = @import("pluginterfaces/vst/ivstevents.zig");
     const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
     const vst_event_list = @import("vst_event_list.zig");
+    const vst_parameter_changes = @import("vst_parameter_changes.zig");
 
     resetSineSynthState();
-    sine_synth_controller.setLevel(sine_synth_spec.default_level);
+    sine_synth_controller.setLevel(0.0);
+    defer sine_synth_controller.setLevel(sine_synth_spec.default_level);
+
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
@@ -191,6 +194,11 @@ test "sine synth component renders host event list input through processor shell
     try std.testing.expectEqual(types.kResultOk, input_events.asInterface().vtable.addEvent(input_events.asInterface(), &note_on));
     try std.testing.expectEqual(types.kResultOk, input_events.asInterface().vtable.addEvent(input_events.asInterface(), &note_off));
 
+    const Changes = vst_parameter_changes.ParameterChanges(1, 1);
+    var changes = Changes{};
+    const level_queue = changes.addQueue(sine_synth_controller.level_param_id).?;
+    try std.testing.expectEqual(types.kResultOk, level_queue.appendPoint(0, 1.0));
+
     var data = ivstaudioprocessor.ProcessData{
         .numInputs = 0,
         .numOutputs = 1,
@@ -198,6 +206,7 @@ test "sine synth component renders host event list input through processor shell
         .numSamples = 4,
         .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
         .inputEvents = input_events.asInterface(),
+        .inputParameterChanges = changes.asInterface(),
         .processContext = &process_context,
     };
 
@@ -208,6 +217,7 @@ test "sine synth component renders host event list input through processor shell
     try std.testing.expectEqual(@as(f32, 0.0), left[3]);
     try std.testing.expectEqualSlices(f32, &left, &right);
     try std.testing.expect(!synth.active);
+    try std.testing.expectEqual(@as(f64, 1.0), sine_synth_controller.level());
 }
 
 test "sine synth processor treats zero-velocity note-on as note-off" {
