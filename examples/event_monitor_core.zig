@@ -370,12 +370,15 @@ test "event monitor core example summarizes input event kinds" {
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffset(3));
     try std.testing.expectEqual(plug.process.EventKind.note_on, context.firstInputEvent().?.kind);
     try std.testing.expectEqual(plug.process.EventKind.note_off, context.latestInputEvent().?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.midi_cc, context.firstEventAtOffset(2).?.kind);
     try std.testing.expectEqual(plug.process.EventKind.midi_cc, context.firstInputEventAtOffset(2).?.kind);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, context.latestEventAtOffset(3).?.kind);
     try std.testing.expectEqual(plug.process.EventKind.note_off, context.latestInputEventAtOffset(3).?.kind);
     try std.testing.expectEqual(plug.process.EventKind.note_on, context.firstEventOfKindAtOffset(.note_on, 3).?.kind);
     try std.testing.expectEqual(plug.process.EventKind.note_on, context.latestEventOfKindAtOffset(.note_on, 3).?.kind);
     try std.testing.expectEqual(@as(?plug.process.Event, null), context.firstEventOfKindAtOffset(.midi_cc, 3));
     try std.testing.expectEqual(@as(?plug.process.Event, null), context.latestEventOfKindAtOffset(.midi_cc, 3));
+    try std.testing.expect(context.firstEventAtOffset(0) == null);
     try std.testing.expect(context.firstInputEventAtOffset(0) == null);
     try std.testing.expect(context.hasEvent(.note_on));
     try std.testing.expect(!context.eventsOfKindEmpty(.midi_cc));
