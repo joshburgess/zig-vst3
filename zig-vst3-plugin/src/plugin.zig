@@ -716,6 +716,24 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.applyProgramCount(list_id, index);
         }
 
+        pub fn applyProgramForListName(self: *Self, list_name: []const u8, program_index: usize) !bool {
+            return (try self.applyProgramForListNameCount(list_name, program_index)) != null;
+        }
+
+        pub fn applyProgramForListNameCount(self: *Self, list_name: []const u8, program_index: usize) !?usize {
+            const list = self.programListByName(list_name) orelse return null;
+            return self.applyProgramCount(list.id, program_index);
+        }
+
+        pub fn applyProgramByNameForListName(self: *Self, list_name: []const u8, program_name: []const u8) !bool {
+            return (try self.applyProgramByNameForListNameCount(list_name, program_name)) != null;
+        }
+
+        pub fn applyProgramByNameForListNameCount(self: *Self, list_name: []const u8, program_name: []const u8) !?usize {
+            const list = self.programListByName(list_name) orelse return null;
+            return self.applyProgramByNameCount(list.id, program_name);
+        }
+
         pub fn applyProgramForUnit(self: *Self, unit_id: i32, program_index: usize) !bool {
             return (try self.applyProgramForUnitCount(unit_id, program_index)) != null;
         }
