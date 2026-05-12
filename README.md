@@ -58,6 +58,12 @@ zig build
 zig build test
 ```
 
+Run the local microbenchmarks:
+
+```sh
+zig build benchmark
+```
+
 Build all native example bundles:
 
 ```sh

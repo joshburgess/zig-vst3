@@ -38,7 +38,7 @@ Medium priority:
 Release polish:
 
 - Keep `CHANGELOG.md`, `docs/stability.md`, and `docs/release-checklist.md` aligned before tagging public releases.
-- Add benchmarks for raw API overhead, framework process overhead, parameter update overhead, and state save/load time.
+- Keep `zig build benchmark` useful as focused coverage for raw stream overhead, framework process overhead, parameter update overhead, and state save/load time.
 
 ## Framework API Symmetry
 

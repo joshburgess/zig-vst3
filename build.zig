@@ -128,6 +128,21 @@ pub fn build(b: *std.Build) void {
     zig_vst3_plugin_tests.root_module.addImport("zig-vst3", zig_vst3);
     zig_vst3_plugin_tests.root_module.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
 
+    const benchmark = b.addExecutable(.{
+        .name = "zig-vst3-benchmark",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/benchmark.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .link_libc = true,
+        }),
+    });
+    benchmark.root_module.addImport("zig-vst3", zig_vst3);
+    benchmark.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
+    benchmark.root_module.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
+    const benchmark_step = b.step("benchmark", "Run local zig-vst3 microbenchmarks");
+    benchmark_step.dependOn(&b.addRunArtifact(benchmark).step);
+
     const test_step = b.step("test", "Run unit tests");
     addRunArtifactDependencies(b, test_step, &.{
         vst3_tests,

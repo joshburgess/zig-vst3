@@ -21,6 +21,12 @@ That script runs:
 - `zig build validator` on macOS or Linux
 - `zig build validate-examples` on macOS or Linux
 
+For release-candidate performance sanity, also run:
+
+```sh
+zig build benchmark
+```
+
 Also verify:
 
 - GitHub Actions `CI` passes on `main`
