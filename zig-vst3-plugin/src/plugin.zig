@@ -1374,6 +1374,41 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.parameter_set.parameterCount();
         }
 
+        pub fn parameterStateHeaderEntryCount(self: *const Self, header: state.ParameterStateHeader) usize {
+            _ = self;
+            return header.entryCount();
+        }
+
+        pub fn parameterStateHeaderHasEntries(self: *const Self, header: state.ParameterStateHeader) bool {
+            _ = self;
+            return header.hasEntries();
+        }
+
+        pub fn parameterStateHeaderHasNoEntries(self: *const Self, header: state.ParameterStateHeader) bool {
+            _ = self;
+            return header.hasNoEntries();
+        }
+
+        pub fn parameterStateHeaderEntriesEmpty(self: *const Self, header: state.ParameterStateHeader) bool {
+            _ = self;
+            return header.entriesEmpty();
+        }
+
+        pub fn parameterStateHeaderIsCurrentVersion(self: *const Self, header: state.ParameterStateHeader) bool {
+            _ = self;
+            return header.isCurrentVersion();
+        }
+
+        pub fn parameterStateHeaderEncodedSize(self: *const Self, header: state.ParameterStateHeader) usize {
+            _ = self;
+            return header.encodedSize();
+        }
+
+        pub fn parameterStateHeaderEncodedSizeChecked(self: *const Self, header: state.ParameterStateHeader) !usize {
+            _ = self;
+            return header.encodedSizeChecked();
+        }
+
         pub fn parameterStateHeaderMatchesEntryCount(self: *const Self, header: state.ParameterStateHeader) bool {
             return header.matchesEntryCount(self.parameterStateEntryCount());
         }
