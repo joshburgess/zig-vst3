@@ -286,11 +286,11 @@ test "audio processor buffer helpers ignore invalid ranges" {
     var output_channels = [_][*]vsttypes.Sample32{&output_samples};
     var input = audio_processor.AudioBusBuffers{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &input_channels },
+        .channelBuffers = .{ .channelBuffers32 = input_channels[0..].ptr },
     };
     var output = audio_processor.AudioBusBuffers{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &output_channels },
+        .channelBuffers = .{ .channelBuffers32 = output_channels[0..].ptr },
     };
 
     copy32(&input, &output, 1, -1);
