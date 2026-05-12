@@ -134,7 +134,13 @@ test "gain core example declares reflected metadata" {
     try std.testing.expect(!instance.hasInitHook());
     try std.testing.expect(!instance.hasPrepareHook());
     try std.testing.expect(instance.hasProcessHook());
+    try std.testing.expect(instance.hasProcessFunctionHook());
+    try std.testing.expect(!instance.hasProcessWithParameterViewHook());
+    try std.testing.expect(!instance.hasProcessWithParametersHook());
     try std.testing.expect(instance.hasProcess64Hook());
+    try std.testing.expect(instance.hasProcess64FunctionHook());
+    try std.testing.expect(!instance.hasProcess64WithParameterViewHook());
+    try std.testing.expect(!instance.hasProcess64WithParametersHook());
     try std.testing.expect(instance.hasAnyProcessHook());
     try std.testing.expect(!instance.hasDeinitHook());
     try (plug.plugin.PrepareConfig{ .sample_rate = 48_000.0, .max_block_size = 64 }).validate();
@@ -267,7 +273,15 @@ test "gain core example drives lifecycle hook variants" {
     var context = try plug.process.ProcessContext(f64).init(48_000.0, &input_channels, &output_channels);
 
     try std.testing.expect(instance.hasPrepareHook());
+    try std.testing.expect(!instance.hasProcessHook());
+    try std.testing.expect(!instance.hasProcessFunctionHook());
+    try std.testing.expect(!instance.hasProcessWithParameterViewHook());
+    try std.testing.expect(!instance.hasProcessWithParametersHook());
     try std.testing.expect(instance.hasProcess64Hook());
+    try std.testing.expect(!instance.hasProcess64FunctionHook());
+    try std.testing.expect(instance.hasProcess64WithParameterViewHook());
+    try std.testing.expect(!instance.hasProcess64WithParametersHook());
+    try std.testing.expect(instance.hasAnyProcessHook());
     try std.testing.expect(instance.hasDeinitHook());
     instance.prepare(.{ .sample_rate = 96_000.0, .max_block_size = 128 });
     try std.testing.expectEqual(@as(f64, 96_000.0), instance.plugin.prepared_sample_rate);

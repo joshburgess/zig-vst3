@@ -170,9 +170,39 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return Spec.has_process or Spec.has_process_with_parameter_view or Spec.has_process_with_parameters;
         }
 
+        pub fn hasProcessFunctionHook(self: *const Self) bool {
+            _ = self;
+            return Spec.has_process;
+        }
+
+        pub fn hasProcessWithParameterViewHook(self: *const Self) bool {
+            _ = self;
+            return Spec.has_process_with_parameter_view;
+        }
+
+        pub fn hasProcessWithParametersHook(self: *const Self) bool {
+            _ = self;
+            return Spec.has_process_with_parameters;
+        }
+
         pub fn hasProcess64Hook(self: *const Self) bool {
             _ = self;
             return Spec.has_process64 or Spec.has_process64_with_parameter_view or Spec.has_process64_with_parameters;
+        }
+
+        pub fn hasProcess64FunctionHook(self: *const Self) bool {
+            _ = self;
+            return Spec.has_process64;
+        }
+
+        pub fn hasProcess64WithParameterViewHook(self: *const Self) bool {
+            _ = self;
+            return Spec.has_process64_with_parameter_view;
+        }
+
+        pub fn hasProcess64WithParametersHook(self: *const Self) bool {
+            _ = self;
+            return Spec.has_process64_with_parameters;
         }
 
         pub fn hasAnyProcessHook(self: *const Self) bool {
@@ -3368,7 +3398,13 @@ test "plugin instance exposes bus and lifecycle predicates" {
     try std.testing.expect(instance.hasInitHook());
     try std.testing.expect(instance.hasPrepareHook());
     try std.testing.expect(instance.hasProcessHook());
+    try std.testing.expect(!instance.hasProcessFunctionHook());
+    try std.testing.expect(instance.hasProcessWithParameterViewHook());
+    try std.testing.expect(!instance.hasProcessWithParametersHook());
     try std.testing.expect(instance.hasProcess64Hook());
+    try std.testing.expect(!instance.hasProcess64FunctionHook());
+    try std.testing.expect(instance.hasProcess64WithParameterViewHook());
+    try std.testing.expect(!instance.hasProcess64WithParametersHook());
     try std.testing.expect(instance.hasAnyProcessHook());
     try std.testing.expect(instance.hasDeinitHook());
 }
@@ -3396,7 +3432,13 @@ test "plugin spec allows declaration-only plugin types" {
     try std.testing.expect(!instance.hasInitHook());
     try std.testing.expect(!instance.hasPrepareHook());
     try std.testing.expect(!instance.hasProcessHook());
+    try std.testing.expect(!instance.hasProcessFunctionHook());
+    try std.testing.expect(!instance.hasProcessWithParameterViewHook());
+    try std.testing.expect(!instance.hasProcessWithParametersHook());
     try std.testing.expect(!instance.hasProcess64Hook());
+    try std.testing.expect(!instance.hasProcess64FunctionHook());
+    try std.testing.expect(!instance.hasProcess64WithParameterViewHook());
+    try std.testing.expect(!instance.hasProcess64WithParametersHook());
     try std.testing.expect(!instance.hasAnyProcessHook());
     try std.testing.expect(!instance.hasDeinitHook());
 }
@@ -3449,6 +3491,10 @@ test "plugin instance drives declared lifecycle hooks" {
     };
 
     try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("gain"));
+    try std.testing.expect(instance.hasProcessHook());
+    try std.testing.expect(instance.hasProcessFunctionHook());
+    try std.testing.expect(!instance.hasProcessWithParameterViewHook());
+    try std.testing.expect(!instance.hasProcessWithParametersHook());
     instance.prepare(.{ .sample_rate = 48_000.0, .max_block_size = 64 });
     instance.process(&context);
     instance.deinit();
