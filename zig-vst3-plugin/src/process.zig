@@ -126,6 +126,52 @@ pub const ParameterSegmentIterator = struct {
     }
 };
 
+pub const ParameterChangeIdIterator = struct {
+    changes: ParameterChanges,
+    id: u32,
+    next_index: usize = 0,
+
+    pub fn next(self: *ParameterChangeIdIterator) ?ParameterChange {
+        while (self.next_index < self.changes.items.len) {
+            const item = self.changes.items[self.next_index];
+            self.next_index += 1;
+            if (item.isForId(self.id)) return item;
+        }
+        return null;
+    }
+};
+
+pub const ParameterChangeOffsetIterator = struct {
+    changes: ParameterChanges,
+    sample_offset: usize,
+    next_index: usize = 0,
+
+    pub fn next(self: *ParameterChangeOffsetIterator) ?ParameterChange {
+        while (self.next_index < self.changes.items.len) {
+            const item = self.changes.items[self.next_index];
+            self.next_index += 1;
+            if (item.isAtOffset(self.sample_offset)) return item;
+        }
+        return null;
+    }
+};
+
+pub const ParameterChangeIdOffsetIterator = struct {
+    changes: ParameterChanges,
+    id: u32,
+    sample_offset: usize,
+    next_index: usize = 0,
+
+    pub fn next(self: *ParameterChangeIdOffsetIterator) ?ParameterChange {
+        while (self.next_index < self.changes.items.len) {
+            const item = self.changes.items[self.next_index];
+            self.next_index += 1;
+            if (item.isForIdAtOffset(self.id, self.sample_offset)) return item;
+        }
+        return null;
+    }
+};
+
 pub const ParameterChanges = struct {
     items: []const ParameterChange = &.{},
 
@@ -434,6 +480,28 @@ pub const ParameterChanges = struct {
         return .{
             .changes = self,
             .frame_count = frame_count,
+        };
+    }
+
+    pub fn forId(self: ParameterChanges, id: u32) ParameterChangeIdIterator {
+        return .{
+            .changes = self,
+            .id = id,
+        };
+    }
+
+    pub fn atOffset(self: ParameterChanges, sample_offset: usize) ParameterChangeOffsetIterator {
+        return .{
+            .changes = self,
+            .sample_offset = sample_offset,
+        };
+    }
+
+    pub fn forIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) ParameterChangeIdOffsetIterator {
+        return .{
+            .changes = self,
+            .id = id,
+            .sample_offset = sample_offset,
         };
     }
 };
@@ -2000,6 +2068,18 @@ pub fn ProcessContext(comptime Sample: type) type {
 
         pub fn parameterChanges(self: @This()) ParameterChanges {
             return self.parameter_changes;
+        }
+
+        pub fn parameterChangesForId(self: @This(), id: u32) ParameterChangeIdIterator {
+            return self.parameter_changes.forId(id);
+        }
+
+        pub fn parameterChangesAtOffset(self: @This(), sample_offset: usize) ParameterChangeOffsetIterator {
+            return self.parameter_changes.atOffset(sample_offset);
+        }
+
+        pub fn parameterChangesForIdAtOffset(self: @This(), id: u32, sample_offset: usize) ParameterChangeIdOffsetIterator {
+            return self.parameter_changes.forIdAtOffset(id, sample_offset);
         }
 
         pub fn parameterChangeCount(self: @This()) usize {
@@ -3606,6 +3686,25 @@ test "parameter changes query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(?f64, 1.0), view.latestNormalizedAtOrBefore(7, 5));
     try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffsetForId(7, 1));
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 5, .normalized = 0.25 }, view.segmentAt(7, 1, 8, 0.0).?);
+
+    var id_changes = view.forId(7);
+    try std.testing.expectEqual(changes[0], id_changes.next().?);
+    try std.testing.expectEqual(changes[2], id_changes.next().?);
+    try std.testing.expectEqual(changes[3], id_changes.next().?);
+    try std.testing.expectEqual(@as(?ParameterChange, null), id_changes.next());
+
+    var offset_changes = view.atOffset(5);
+    try std.testing.expectEqual(changes[0], offset_changes.next().?);
+    try std.testing.expectEqual(changes[3], offset_changes.next().?);
+    try std.testing.expectEqual(@as(?ParameterChange, null), offset_changes.next());
+
+    var id_offset_changes = view.forIdAtOffset(7, 5);
+    try std.testing.expectEqual(changes[0], id_offset_changes.next().?);
+    try std.testing.expectEqual(changes[3], id_offset_changes.next().?);
+    try std.testing.expectEqual(@as(?ParameterChange, null), id_offset_changes.next());
+
+    var missing_changes = view.forId(99);
+    try std.testing.expectEqual(@as(?ParameterChange, null), missing_changes.next());
 }
 
 test "parameter changes iterate stable automation segments without allocation" {

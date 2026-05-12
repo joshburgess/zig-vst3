@@ -654,6 +654,16 @@ test "gain core example splits blocks at automation changes" {
     try std.testing.expectEqual(@as(f64, 0.5), parameter_changes.normalizedAtOrBeforeOr(0, 2, 1.0));
     try std.testing.expectEqual(@as(?usize, 1), parameter_changes.nextSampleOffset(0));
     try std.testing.expectEqual(@as(?usize, 3), parameter_changes.nextSampleOffsetForId(0, 1));
+    var direct_id_changes = parameter_changes.forId(0);
+    try std.testing.expectEqual(changes[0], direct_id_changes.next().?);
+    try std.testing.expectEqual(changes[1], direct_id_changes.next().?);
+    try std.testing.expectEqual(@as(?plug.process.ParameterChange, null), direct_id_changes.next());
+    var direct_offset_changes = parameter_changes.atOffset(3);
+    try std.testing.expectEqual(changes[1], direct_offset_changes.next().?);
+    try std.testing.expectEqual(@as(?plug.process.ParameterChange, null), direct_offset_changes.next());
+    var direct_id_offset_changes = parameter_changes.forIdAtOffset(0, 3);
+    try std.testing.expectEqual(changes[1], direct_id_offset_changes.next().?);
+    try std.testing.expectEqual(@as(?plug.process.ParameterChange, null), direct_id_offset_changes.next());
     try std.testing.expectEqual(
         plug.process.ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 1.0 },
         parameter_changes.segmentAt(0, 0, context.frameCount(), 1.0).?,
@@ -725,6 +735,16 @@ test "gain core example splits blocks at automation changes" {
     try std.testing.expectEqual(@as(f64, 0.5), context.parameterNormalizedAtOrBeforeOr(0, 2, 1.0));
     try std.testing.expectEqual(@as(?usize, 1), context.nextParameterChangeOffset(0));
     try std.testing.expectEqual(@as(?usize, 3), context.nextParameterChangeOffsetForId(0, 1));
+    var context_id_changes = context.parameterChangesForId(0);
+    try std.testing.expectEqual(changes[0], context_id_changes.next().?);
+    try std.testing.expectEqual(changes[1], context_id_changes.next().?);
+    try std.testing.expectEqual(@as(?plug.process.ParameterChange, null), context_id_changes.next());
+    var context_offset_changes = context.parameterChangesAtOffset(3);
+    try std.testing.expectEqual(changes[1], context_offset_changes.next().?);
+    try std.testing.expectEqual(@as(?plug.process.ParameterChange, null), context_offset_changes.next());
+    var context_id_offset_changes = context.parameterChangesForIdAtOffset(0, 3);
+    try std.testing.expectEqual(changes[1], context_id_offset_changes.next().?);
+    try std.testing.expectEqual(@as(?plug.process.ParameterChange, null), context_id_offset_changes.next());
     const first_segment = context.parameterSegmentAt(0, 0, 1.0).?;
     try std.testing.expectEqual(
         plug.process.ParameterSegment{ .start_offset = 0, .end_offset = 1, .normalized = 1.0 },
