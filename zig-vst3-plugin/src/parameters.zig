@@ -2183,6 +2183,10 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.values.view(self.set);
         }
 
+        pub fn copyFrom(self: Self, source: ParameterView(Params)) void {
+            self.values.copyFrom(source.values);
+        }
+
         pub fn parameterCount(_: Self) usize {
             return Set.count;
         }
@@ -4151,6 +4155,14 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expect(!view.allDefaults());
     try std.testing.expect(view.hasNonDefaults());
     try std.testing.expectEqual(@as(usize, 3), view.nonDefaultCount());
+
+    var copied_values = Values.init(&set);
+    const copied_editor = copied_values.editor(&set);
+    copied_editor.copyFrom(view);
+    try std.testing.expectEqual(@as(f64, 1.5), copied_editor.load("gain"));
+    try std.testing.expectEqual(@as(i64, 4), copied_editor.load("voices"));
+    try std.testing.expectEqual(false, copied_editor.load("bypass"));
+    try std.testing.expectEqual(Mode.mute, copied_editor.load("mode"));
 
     const changes = [_]process.ParameterChange{
         .{ .id = 0, .sample_offset = 0, .normalized = 0.0 },
