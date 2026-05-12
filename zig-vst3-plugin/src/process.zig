@@ -2491,8 +2491,16 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.firstSampleOffset();
         }
 
+        pub fn firstInputEventOffset(self: @This()) ?usize {
+            return self.firstEventOffset();
+        }
+
         pub fn latestEventOffset(self: @This()) ?usize {
             return self.events.latestSampleOffset();
+        }
+
+        pub fn latestInputEventOffset(self: @This()) ?usize {
+            return self.latestEventOffset();
         }
 
         pub fn firstInputEvent(self: @This()) ?Event {
@@ -2515,160 +2523,320 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.firstSampleOffsetForKind(kind);
         }
 
+        pub fn firstInputEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
+            return self.firstEventOffsetForKind(kind);
+        }
+
         pub fn latestEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
             return self.events.latestSampleOffsetForKind(kind);
+        }
+
+        pub fn latestInputEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
+            return self.latestEventOffsetForKind(kind);
         }
 
         pub fn firstEventOffsetForBus(self: @This(), bus_index: i32) ?usize {
             return self.events.firstSampleOffsetForBus(bus_index);
         }
 
+        pub fn firstInputEventOffsetForBus(self: @This(), bus_index: i32) ?usize {
+            return self.firstEventOffsetForBus(bus_index);
+        }
+
         pub fn latestEventOffsetForBus(self: @This(), bus_index: i32) ?usize {
             return self.events.latestSampleOffsetForBus(bus_index);
+        }
+
+        pub fn latestInputEventOffsetForBus(self: @This(), bus_index: i32) ?usize {
+            return self.latestEventOffsetForBus(bus_index);
         }
 
         pub fn firstEventOffsetForChannel(self: @This(), channel: i16) ?usize {
             return self.events.firstSampleOffsetForChannel(channel);
         }
 
+        pub fn firstInputEventOffsetForChannel(self: @This(), channel: i16) ?usize {
+            return self.firstEventOffsetForChannel(channel);
+        }
+
         pub fn latestEventOffsetForChannel(self: @This(), channel: i16) ?usize {
             return self.events.latestSampleOffsetForChannel(channel);
+        }
+
+        pub fn latestInputEventOffsetForChannel(self: @This(), channel: i16) ?usize {
+            return self.latestEventOffsetForChannel(channel);
         }
 
         pub fn firstEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16) ?usize {
             return self.events.firstSampleOffsetForBusChannel(bus_index, channel);
         }
 
+        pub fn firstInputEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16) ?usize {
+            return self.firstEventOffsetForBusChannel(bus_index, channel);
+        }
+
         pub fn latestEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16) ?usize {
             return self.events.latestSampleOffsetForBusChannel(bus_index, channel);
+        }
+
+        pub fn latestInputEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16) ?usize {
+            return self.latestEventOffsetForBusChannel(bus_index, channel);
         }
 
         pub fn firstEvent(self: @This(), kind: EventKind) ?Event {
             return self.events.firstKind(kind);
         }
 
+        pub fn firstInputEventOfKind(self: @This(), kind: EventKind) ?Event {
+            return self.firstEvent(kind);
+        }
+
         pub fn latestEvent(self: @This(), kind: EventKind) ?Event {
             return self.events.latestKind(kind);
+        }
+
+        pub fn latestInputEventOfKind(self: @This(), kind: EventKind) ?Event {
+            return self.latestEvent(kind);
         }
 
         pub fn firstEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) ?Event {
             return self.events.firstKindAtOffset(kind, sample_offset);
         }
 
+        pub fn firstInputEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) ?Event {
+            return self.firstEventOfKindAtOffset(kind, sample_offset);
+        }
+
         pub fn latestEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) ?Event {
             return self.events.latestKindAtOffset(kind, sample_offset);
+        }
+
+        pub fn latestInputEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) ?Event {
+            return self.latestEventOfKindAtOffset(kind, sample_offset);
         }
 
         pub fn firstEventForBus(self: @This(), bus_index: i32) ?Event {
             return self.events.firstBus(bus_index);
         }
 
+        pub fn firstInputEventForBus(self: @This(), bus_index: i32) ?Event {
+            return self.firstEventForBus(bus_index);
+        }
+
         pub fn latestEventForBus(self: @This(), bus_index: i32) ?Event {
             return self.events.latestBus(bus_index);
+        }
+
+        pub fn latestInputEventForBus(self: @This(), bus_index: i32) ?Event {
+            return self.latestEventForBus(bus_index);
         }
 
         pub fn firstEventForChannel(self: @This(), channel: i16) ?Event {
             return self.events.firstChannel(channel);
         }
 
+        pub fn firstInputEventForChannel(self: @This(), channel: i16) ?Event {
+            return self.firstEventForChannel(channel);
+        }
+
         pub fn latestEventForChannel(self: @This(), channel: i16) ?Event {
             return self.events.latestChannel(channel);
+        }
+
+        pub fn latestInputEventForChannel(self: @This(), channel: i16) ?Event {
+            return self.latestEventForChannel(channel);
         }
 
         pub fn firstEventForBusChannel(self: @This(), bus_index: i32, channel: i16) ?Event {
             return self.events.firstBusChannel(bus_index, channel);
         }
 
+        pub fn firstInputEventForBusChannel(self: @This(), bus_index: i32, channel: i16) ?Event {
+            return self.firstEventForBusChannel(bus_index, channel);
+        }
+
         pub fn latestEventForBusChannel(self: @This(), bus_index: i32, channel: i16) ?Event {
             return self.events.latestBusChannel(bus_index, channel);
+        }
+
+        pub fn latestInputEventForBusChannel(self: @This(), bus_index: i32, channel: i16) ?Event {
+            return self.latestEventForBusChannel(bus_index, channel);
         }
 
         pub fn hasEvent(self: @This(), kind: EventKind) bool {
             return self.events.hasKind(kind);
         }
 
+        pub fn hasInputEvent(self: @This(), kind: EventKind) bool {
+            return self.hasEvent(kind);
+        }
+
         pub fn eventsOfKindEmpty(self: @This(), kind: EventKind) bool {
             return self.events.kindEmpty(kind);
+        }
+
+        pub fn inputEventsOfKindEmpty(self: @This(), kind: EventKind) bool {
+            return self.eventsOfKindEmpty(kind);
         }
 
         pub fn countEvents(self: @This(), kind: EventKind) usize {
             return self.events.countKind(kind);
         }
 
+        pub fn countInputEvents(self: @This(), kind: EventKind) usize {
+            return self.countEvents(kind);
+        }
+
         pub fn countNoteAttacks(self: @This()) usize {
             return self.events.countNoteAttacks();
+        }
+
+        pub fn countInputNoteAttacks(self: @This()) usize {
+            return self.countNoteAttacks();
         }
 
         pub fn countNoteReleases(self: @This()) usize {
             return self.events.countNoteReleases();
         }
 
+        pub fn countInputNoteReleases(self: @This()) usize {
+            return self.countNoteReleases();
+        }
+
         pub fn countEventsAtOffset(self: @This(), sample_offset: usize) usize {
             return self.events.countAtOffset(sample_offset);
+        }
+
+        pub fn countInputEventsAtOffset(self: @This(), sample_offset: usize) usize {
+            return self.countEventsAtOffset(sample_offset);
         }
 
         pub fn countEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) usize {
             return self.events.countKindAtOffset(kind, sample_offset);
         }
 
+        pub fn countInputEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) usize {
+            return self.countEventsOfKindAtOffset(kind, sample_offset);
+        }
+
         pub fn countEventsForBus(self: @This(), bus_index: i32) usize {
             return self.events.countBus(bus_index);
+        }
+
+        pub fn countInputEventsForBus(self: @This(), bus_index: i32) usize {
+            return self.countEventsForBus(bus_index);
         }
 
         pub fn countEventsForChannel(self: @This(), channel: i16) usize {
             return self.events.countChannel(channel);
         }
 
+        pub fn countInputEventsForChannel(self: @This(), channel: i16) usize {
+            return self.countEventsForChannel(channel);
+        }
+
         pub fn countEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) usize {
             return self.events.countBusChannel(bus_index, channel);
+        }
+
+        pub fn countInputEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) usize {
+            return self.countEventsForBusChannel(bus_index, channel);
         }
 
         pub fn hasEventsForBus(self: @This(), bus_index: i32) bool {
             return self.events.hasBus(bus_index);
         }
 
+        pub fn hasInputEventsForBus(self: @This(), bus_index: i32) bool {
+            return self.hasEventsForBus(bus_index);
+        }
+
         pub fn eventsForBusEmpty(self: @This(), bus_index: i32) bool {
             return self.events.busEmpty(bus_index);
+        }
+
+        pub fn inputEventsForBusEmpty(self: @This(), bus_index: i32) bool {
+            return self.eventsForBusEmpty(bus_index);
         }
 
         pub fn hasEventsForChannel(self: @This(), channel: i16) bool {
             return self.events.hasChannel(channel);
         }
 
+        pub fn hasInputEventsForChannel(self: @This(), channel: i16) bool {
+            return self.hasEventsForChannel(channel);
+        }
+
         pub fn hasEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) bool {
             return self.events.hasBusChannel(bus_index, channel);
+        }
+
+        pub fn hasInputEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) bool {
+            return self.hasEventsForBusChannel(bus_index, channel);
         }
 
         pub fn hasEventAtOffset(self: @This(), sample_offset: usize) bool {
             return self.events.hasAtOffset(sample_offset);
         }
 
+        pub fn hasInputEventAtOffset(self: @This(), sample_offset: usize) bool {
+            return self.hasEventAtOffset(sample_offset);
+        }
+
         pub fn hasEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
             return self.events.hasKindAtOffset(kind, sample_offset);
+        }
+
+        pub fn hasInputEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+            return self.hasEventOfKindAtOffset(kind, sample_offset);
         }
 
         pub fn hasNoteAttacks(self: @This()) bool {
             return self.events.hasNoteAttacks();
         }
 
+        pub fn hasInputNoteAttacks(self: @This()) bool {
+            return self.hasNoteAttacks();
+        }
+
         pub fn hasNoteReleases(self: @This()) bool {
             return self.events.hasNoteReleases();
+        }
+
+        pub fn hasInputNoteReleases(self: @This()) bool {
+            return self.hasNoteReleases();
         }
 
         pub fn eventsForChannelEmpty(self: @This(), channel: i16) bool {
             return self.events.channelEmpty(channel);
         }
 
+        pub fn inputEventsForChannelEmpty(self: @This(), channel: i16) bool {
+            return self.eventsForChannelEmpty(channel);
+        }
+
         pub fn eventsForBusChannelEmpty(self: @This(), bus_index: i32, channel: i16) bool {
             return self.events.busChannelEmpty(bus_index, channel);
+        }
+
+        pub fn inputEventsForBusChannelEmpty(self: @This(), bus_index: i32, channel: i16) bool {
+            return self.eventsForBusChannelEmpty(bus_index, channel);
         }
 
         pub fn eventsAtOffsetEmpty(self: @This(), sample_offset: usize) bool {
             return self.events.offsetEmpty(sample_offset);
         }
 
+        pub fn inputEventsAtOffsetEmpty(self: @This(), sample_offset: usize) bool {
+            return self.eventsAtOffsetEmpty(sample_offset);
+        }
+
         pub fn eventsOfKindAtOffsetEmpty(self: @This(), kind: EventKind, sample_offset: usize) bool {
             return self.events.kindAtOffsetEmpty(kind, sample_offset);
+        }
+
+        pub fn inputEventsOfKindAtOffsetEmpty(self: @This(), kind: EventKind, sample_offset: usize) bool {
+            return self.eventsOfKindAtOffsetEmpty(kind, sample_offset);
         }
 
         pub fn onlyInputEventsAtOffset(self: @This(), sample_offset: usize) bool {
@@ -2683,8 +2851,16 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.noteAttacksEmpty();
         }
 
+        pub fn inputNoteAttacksEmpty(self: @This()) bool {
+            return self.noteAttacksEmpty();
+        }
+
         pub fn noteReleasesEmpty(self: @This()) bool {
             return self.events.noteReleasesEmpty();
+        }
+
+        pub fn inputNoteReleasesEmpty(self: @This()) bool {
+            return self.noteReleasesEmpty();
         }
 
         pub fn onlyInputEventsOfKind(self: @This(), kind: EventKind) bool {
@@ -2715,20 +2891,40 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.events.nextSampleOffset(after_sample_offset);
         }
 
+        pub fn nextInputEventOffset(self: @This(), after_sample_offset: usize) ?usize {
+            return self.nextEventOffset(after_sample_offset);
+        }
+
         pub fn nextEventOffsetForKind(self: @This(), kind: EventKind, after_sample_offset: usize) ?usize {
             return self.events.nextSampleOffsetForKind(kind, after_sample_offset);
+        }
+
+        pub fn nextInputEventOffsetForKind(self: @This(), kind: EventKind, after_sample_offset: usize) ?usize {
+            return self.nextEventOffsetForKind(kind, after_sample_offset);
         }
 
         pub fn nextEventOffsetForBus(self: @This(), bus_index: i32, after_sample_offset: usize) ?usize {
             return self.events.nextSampleOffsetForBus(bus_index, after_sample_offset);
         }
 
+        pub fn nextInputEventOffsetForBus(self: @This(), bus_index: i32, after_sample_offset: usize) ?usize {
+            return self.nextEventOffsetForBus(bus_index, after_sample_offset);
+        }
+
         pub fn nextEventOffsetForChannel(self: @This(), channel: i16, after_sample_offset: usize) ?usize {
             return self.events.nextSampleOffsetForChannel(channel, after_sample_offset);
         }
 
+        pub fn nextInputEventOffsetForChannel(self: @This(), channel: i16, after_sample_offset: usize) ?usize {
+            return self.nextEventOffsetForChannel(channel, after_sample_offset);
+        }
+
         pub fn nextEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
             return self.events.nextSampleOffsetForBusChannel(bus_index, channel, after_sample_offset);
+        }
+
+        pub fn nextInputEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
+            return self.nextEventOffsetForBusChannel(bus_index, channel, after_sample_offset);
         }
 
         pub fn appendOutputEvent(self: *@This(), event: Event) !void {
@@ -3560,15 +3756,23 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(!context.inputEventsEmpty());
     try std.testing.expect(context.hasInputEvents());
     try std.testing.expectEqual(@as(usize, 1), context.countNoteAttacks());
+    try std.testing.expectEqual(@as(usize, 1), context.countInputNoteAttacks());
     try std.testing.expectEqual(@as(usize, 0), context.countNoteReleases());
+    try std.testing.expectEqual(@as(usize, 0), context.countInputNoteReleases());
     try std.testing.expect(context.hasNoteAttacks());
+    try std.testing.expect(context.hasInputNoteAttacks());
     try std.testing.expect(!context.hasNoteReleases());
+    try std.testing.expect(!context.hasInputNoteReleases());
     try std.testing.expect(!context.noteAttacksEmpty());
+    try std.testing.expect(!context.inputNoteAttacksEmpty());
     try std.testing.expect(context.noteReleasesEmpty());
+    try std.testing.expect(context.inputNoteReleasesEmpty());
     try std.testing.expect(context.onlyInputNoteAttacks());
     try std.testing.expect(!context.onlyInputNoteReleases());
     try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffset());
+    try std.testing.expectEqual(@as(?usize, 1), context.firstInputEventOffset());
     try std.testing.expectEqual(@as(?usize, 1), context.latestEventOffset());
+    try std.testing.expectEqual(@as(?usize, 1), context.latestInputEventOffset());
     try std.testing.expectEqual(@as(i16, 60), context.firstInputEvent().?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.latestInputEvent().?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.firstInputEventAtOffset(1).?.pitch);
@@ -3577,50 +3781,76 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expectEqual(@as(?Event, null), context.latestInputEventAtOffset(0));
     try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffsetForKind(.note_on));
     try std.testing.expectEqual(@as(?usize, 1), context.latestEventOffsetForKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, 1), context.firstInputEventOffsetForKind(.note_on));
+    try std.testing.expectEqual(@as(?usize, 1), context.latestInputEventOffsetForKind(.note_on));
     try std.testing.expectEqual(@as(?usize, null), context.firstEventOffsetForKind(.note_off));
     try std.testing.expectEqual(@as(?usize, null), context.latestEventOffsetForKind(.note_off));
     try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffsetForBus(0));
     try std.testing.expectEqual(@as(?usize, 1), context.latestEventOffsetForBus(0));
+    try std.testing.expectEqual(@as(?usize, 1), context.firstInputEventOffsetForBus(0));
+    try std.testing.expectEqual(@as(?usize, 1), context.latestInputEventOffsetForBus(0));
     try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffsetForChannel(0));
     try std.testing.expectEqual(@as(?usize, 1), context.latestEventOffsetForChannel(0));
+    try std.testing.expectEqual(@as(?usize, 1), context.firstInputEventOffsetForChannel(0));
+    try std.testing.expectEqual(@as(?usize, 1), context.latestInputEventOffsetForChannel(0));
     try std.testing.expectEqual(@as(?usize, 1), context.firstEventOffsetForBusChannel(0, 0));
     try std.testing.expectEqual(@as(?usize, 1), context.latestEventOffsetForBusChannel(0, 0));
+    try std.testing.expectEqual(@as(?usize, 1), context.firstInputEventOffsetForBusChannel(0, 0));
+    try std.testing.expectEqual(@as(?usize, 1), context.latestInputEventOffsetForBusChannel(0, 0));
     try std.testing.expectEqual(@as(?usize, null), context.firstEventOffsetForBus(1));
     try std.testing.expectEqual(@as(?usize, null), context.latestEventOffsetForChannel(1));
     try std.testing.expect(context.hasEvent(.note_on));
+    try std.testing.expect(context.hasInputEvent(.note_on));
     try std.testing.expect(!context.hasEvent(.note_off));
     try std.testing.expect(!context.eventsOfKindEmpty(.note_on));
+    try std.testing.expect(!context.inputEventsOfKindEmpty(.note_on));
     try std.testing.expect(context.eventsOfKindEmpty(.note_off));
     try std.testing.expectEqual(@as(usize, 1), context.countEvents(.note_on));
+    try std.testing.expectEqual(@as(usize, 1), context.countInputEvents(.note_on));
     try std.testing.expectEqual(@as(usize, 1), context.countEventsAtOffset(1));
+    try std.testing.expectEqual(@as(usize, 1), context.countInputEventsAtOffset(1));
     try std.testing.expectEqual(@as(usize, 0), context.countEventsAtOffset(0));
     try std.testing.expectEqual(@as(usize, 1), context.countEventsOfKindAtOffset(.note_on, 1));
+    try std.testing.expectEqual(@as(usize, 1), context.countInputEventsOfKindAtOffset(.note_on, 1));
     try std.testing.expectEqual(@as(usize, 0), context.countEventsOfKindAtOffset(.note_off, 1));
     try std.testing.expectEqual(@as(usize, 1), context.countEventsForBus(0));
+    try std.testing.expectEqual(@as(usize, 1), context.countInputEventsForBus(0));
     try std.testing.expectEqual(@as(usize, 0), context.countEventsForBus(1));
     try std.testing.expectEqual(@as(usize, 1), context.countEventsForChannel(0));
+    try std.testing.expectEqual(@as(usize, 1), context.countInputEventsForChannel(0));
     try std.testing.expectEqual(@as(usize, 0), context.countEventsForChannel(1));
     try std.testing.expectEqual(@as(usize, 1), context.countEventsForBusChannel(0, 0));
+    try std.testing.expectEqual(@as(usize, 1), context.countInputEventsForBusChannel(0, 0));
     try std.testing.expectEqual(@as(usize, 0), context.countEventsForBusChannel(1, 0));
     try std.testing.expect(context.hasEventsForBus(0));
+    try std.testing.expect(context.hasInputEventsForBus(0));
     try std.testing.expect(!context.hasEventsForBus(1));
     try std.testing.expect(!context.eventsForBusEmpty(0));
+    try std.testing.expect(!context.inputEventsForBusEmpty(0));
     try std.testing.expect(context.eventsForBusEmpty(1));
     try std.testing.expect(context.hasEventsForChannel(0));
+    try std.testing.expect(context.hasInputEventsForChannel(0));
     try std.testing.expect(!context.hasEventsForChannel(1));
     try std.testing.expect(context.hasEventsForBusChannel(0, 0));
+    try std.testing.expect(context.hasInputEventsForBusChannel(0, 0));
     try std.testing.expect(!context.hasEventsForBusChannel(0, 1));
     try std.testing.expect(context.hasEventAtOffset(1));
+    try std.testing.expect(context.hasInputEventAtOffset(1));
     try std.testing.expect(!context.hasEventAtOffset(0));
     try std.testing.expect(context.hasEventOfKindAtOffset(.note_on, 1));
+    try std.testing.expect(context.hasInputEventOfKindAtOffset(.note_on, 1));
     try std.testing.expect(!context.hasEventOfKindAtOffset(.note_off, 1));
     try std.testing.expect(!context.eventsForChannelEmpty(0));
+    try std.testing.expect(!context.inputEventsForChannelEmpty(0));
     try std.testing.expect(context.eventsForChannelEmpty(1));
     try std.testing.expect(!context.eventsForBusChannelEmpty(0, 0));
+    try std.testing.expect(!context.inputEventsForBusChannelEmpty(0, 0));
     try std.testing.expect(context.eventsForBusChannelEmpty(1, 0));
     try std.testing.expect(!context.eventsAtOffsetEmpty(1));
+    try std.testing.expect(!context.inputEventsAtOffsetEmpty(1));
     try std.testing.expect(context.eventsAtOffsetEmpty(0));
     try std.testing.expect(!context.eventsOfKindAtOffsetEmpty(.note_on, 1));
+    try std.testing.expect(!context.inputEventsOfKindAtOffsetEmpty(.note_on, 1));
     try std.testing.expect(context.eventsOfKindAtOffsetEmpty(.note_off, 1));
     try std.testing.expect(context.onlyInputEventsAtOffset(1));
     try std.testing.expect(!context.onlyInputEventsAtOffset(0));
@@ -3633,30 +3863,45 @@ test "process context validates attached parameter changes and events" {
     try std.testing.expect(!context.onlyInputEventsForBusChannel(0, 1));
     try std.testing.expect(!context.onlyInputEventsForChannel(1));
     try std.testing.expectEqual(@as(i16, 60), context.firstEvent(.note_on).?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.firstInputEventOfKind(.note_on).?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.latestEvent(.note_on).?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.latestInputEventOfKind(.note_on).?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.firstEventOfKindAtOffset(.note_on, 1).?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.firstInputEventOfKindAtOffset(.note_on, 1).?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.latestEventOfKindAtOffset(.note_on, 1).?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.latestInputEventOfKindAtOffset(.note_on, 1).?.pitch);
     try std.testing.expectEqual(@as(?Event, null), context.firstEventOfKindAtOffset(.note_off, 1));
     try std.testing.expectEqual(@as(?Event, null), context.latestEventOfKindAtOffset(.note_off, 1));
     try std.testing.expectEqual(@as(?Event, null), context.firstEvent(.note_off));
     try std.testing.expectEqual(@as(?Event, null), context.latestEvent(.note_off));
     try std.testing.expectEqual(@as(i16, 60), context.firstEventForBus(0).?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.firstInputEventForBus(0).?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.latestEventForBus(0).?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.latestInputEventForBus(0).?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.firstEventForChannel(0).?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.firstInputEventForChannel(0).?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.latestEventForChannel(0).?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.latestInputEventForChannel(0).?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.firstEventForBusChannel(0, 0).?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.firstInputEventForBusChannel(0, 0).?.pitch);
     try std.testing.expectEqual(@as(i16, 60), context.latestEventForBusChannel(0, 0).?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), context.latestInputEventForBusChannel(0, 0).?.pitch);
     try std.testing.expectEqual(@as(?Event, null), context.firstEventForBus(1));
     try std.testing.expectEqual(@as(?Event, null), context.latestEventForChannel(1));
     try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffset(0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextInputEventOffset(0));
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffset(1));
     try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffsetForKind(.note_on, 0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextInputEventOffsetForKind(.note_on, 0));
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffsetForKind(.note_off, 0));
     try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffsetForBus(0, 0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextInputEventOffsetForBus(0, 0));
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffsetForBus(1, 0));
     try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffsetForChannel(0, 0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextInputEventOffsetForChannel(0, 0));
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffsetForChannel(1, 0));
     try std.testing.expectEqual(@as(?usize, 1), context.nextEventOffsetForBusChannel(0, 0, 0));
+    try std.testing.expectEqual(@as(?usize, 1), context.nextInputEventOffsetForBusChannel(0, 0, 0));
     try std.testing.expectEqual(@as(?usize, null), context.nextEventOffsetForBusChannel(0, 1, 0));
     var note_events = context.inputEventsOfKind(.note_on);
     try std.testing.expectEqual(@as(i16, 60), note_events.next().?.pitch);
