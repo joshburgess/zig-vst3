@@ -230,6 +230,63 @@ test "gain component rejects unsupported process sample size" {
     try std.testing.expectEqual(types.kResultFalse, processor.vtable.process(processor, &data));
 }
 
+test "gain component applies host parameter changes through processor shell" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+    const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
+    const vst_parameter_changes = @import("vst_parameter_changes.zig");
+
+    gain_controller.setGain(1.0);
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &processor_out),
+    );
+    try std.testing.expect(processor_out != null);
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
+    defer _ = processor.vtable.release(processor);
+
+    const Changes = vst_parameter_changes.ParameterChanges(1, 1);
+    var changes = Changes{};
+    const gain_queue = changes.addQueue(gain_controller.gain_param_id).?;
+    try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(0, 0.5));
+
+    var input_samples = [_]f32{ 1.0, -0.5, 0.25 };
+    var output_samples = [_]f32{ 0.0, 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f32{&input_samples};
+    var output_channel_ptrs = [_][*]f32{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 48_000.0 };
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = input_samples.len,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .inputParameterChanges = changes.asInterface(),
+        .processContext = &process_context,
+    };
+
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqualSlices(f32, &.{ 0.5, -0.25, 0.125 }, &output_samples);
+    try std.testing.expectEqual(@as(f64, 0.5), gain_controller.gain());
+}
+
 test "gain component queries host application during initialize" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
