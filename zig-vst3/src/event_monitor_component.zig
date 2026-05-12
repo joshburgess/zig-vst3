@@ -118,3 +118,109 @@ test "event monitor processor summarizes input events without audio output" {
     try std.testing.expectEqual(@as(?usize, 3), local_monitor.latest_event_offset);
     try std.testing.expectEqual(@as(f64, 0.5), local_monitor.latest_midi_cc_value);
 }
+
+test "event monitor component summarizes host event list input through processor shell" {
+    const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstevents = @import("pluginterfaces/vst/ivstevents.zig");
+    const ivstmidicontrollers = @import("pluginterfaces/vst/ivstmidicontrollers.zig");
+    const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
+    const vsteventshelper = @import("pluginterfaces/vst/vsteventshelper.zig");
+    const vst_event_list = @import("vst_event_list.zig");
+
+    resetEventMonitorState();
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &processor_out),
+    );
+    try std.testing.expect(processor_out != null);
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
+    defer _ = processor.vtable.release(processor);
+
+    var input_samples = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f32{&input_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = @ptrCast(&input_channel_ptrs) },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 48_000.0 };
+
+    const InputEvents = vst_event_list.EventList(5);
+    var input_events = InputEvents{};
+    var note_on = ivstevents.Event{
+        .sampleOffset = 1,
+        .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+        .data = .{ .noteOn = .{
+            .channel = 0,
+            .pitch = 60,
+            .velocity = 0.75,
+        } },
+    };
+    var midi_cc = ivstevents.Event{
+        .sampleOffset = 2,
+        .type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent),
+        .data = .{ .midiCCOut = .{
+            .controlNumber = ivstmidicontrollers.kCtrlModWheel,
+            .channel = 0,
+            .value = 64,
+        } },
+    };
+    var pitch_bend = ivstevents.Event{
+        .sampleOffset = 3,
+        .type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent),
+        .data = .{ .midiCCOut = .{
+            .controlNumber = ivstmidicontrollers.kPitchBend,
+            .channel = 0,
+        } },
+    };
+    vsteventshelper.setPitchBendValue(&pitch_bend.data.midiCCOut, 0.25);
+    var aftertouch = ivstevents.Event{
+        .sampleOffset = 3,
+        .type = @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent),
+        .data = .{ .polyPressure = .{
+            .channel = 0,
+            .pitch = 60,
+            .pressure = 0.5,
+        } },
+    };
+    var note_off = ivstevents.Event{
+        .sampleOffset = 3,
+        .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+        .data = .{ .noteOff = .{
+            .channel = 0,
+            .pitch = 60,
+            .velocity = 0.0,
+        } },
+    };
+    try std.testing.expectEqual(types.kResultOk, input_events.asInterface().vtable.addEvent(input_events.asInterface(), &note_on));
+    try std.testing.expectEqual(types.kResultOk, input_events.asInterface().vtable.addEvent(input_events.asInterface(), &midi_cc));
+    try std.testing.expectEqual(types.kResultOk, input_events.asInterface().vtable.addEvent(input_events.asInterface(), &pitch_bend));
+    try std.testing.expectEqual(types.kResultOk, input_events.asInterface().vtable.addEvent(input_events.asInterface(), &aftertouch));
+    try std.testing.expectEqual(types.kResultOk, input_events.asInterface().vtable.addEvent(input_events.asInterface(), &note_off));
+
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 0,
+        .inputs = &inputs,
+        .numSamples = 4,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .inputEvents = input_events.asInterface(),
+        .processContext = &process_context,
+    };
+
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqual(@as(usize, 1), monitor.note_on_count);
+    try std.testing.expectEqual(@as(usize, 1), monitor.note_off_count);
+    try std.testing.expectEqual(@as(usize, 1), monitor.midi_cc_count);
+    try std.testing.expectEqual(@as(usize, 1), monitor.pitch_bend_count);
+    try std.testing.expectEqual(@as(usize, 1), monitor.aftertouch_count);
+    try std.testing.expectEqual(@as(?usize, 3), monitor.latest_event_offset);
+    try std.testing.expectApproxEqAbs(@as(f64, 64.0 / 127.0), monitor.latest_midi_cc_value, 0.000001);
+}
