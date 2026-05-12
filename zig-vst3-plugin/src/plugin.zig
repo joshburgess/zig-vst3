@@ -498,6 +498,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programByName(list_id, name);
         }
 
+        pub fn programByNameForListName(self: *const Self, list_name: []const u8, name: []const u8) ?units_api.Program {
+            return self.spec.units.programByNameForListName(list_name, name);
+        }
+
         pub fn programIndexOfName(self: *const Self, list_id: i32, name: []const u8) ?usize {
             return self.spec.units.programIndexOfName(list_id, name);
         }
@@ -518,12 +522,24 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.duplicateProgramName(list_id);
         }
 
+        pub fn duplicateProgramNameByListName(self: *const Self, list_name: []const u8) ?[]const u8 {
+            return self.spec.units.duplicateProgramNameByListName(list_name);
+        }
+
         pub fn duplicateProgramNameIndex(self: *const Self, list_id: i32) ?usize {
             return self.spec.units.duplicateProgramNameIndex(list_id);
         }
 
+        pub fn duplicateProgramNameIndexByListName(self: *const Self, list_name: []const u8) ?usize {
+            return self.spec.units.duplicateProgramNameIndexByListName(list_name);
+        }
+
         pub fn hasDuplicateProgramNames(self: *const Self, list_id: i32) bool {
             return self.spec.units.hasDuplicateProgramNames(list_id);
+        }
+
+        pub fn hasDuplicateProgramNamesByListName(self: *const Self, list_name: []const u8) bool {
+            return self.spec.units.hasDuplicateProgramNamesByListName(list_name);
         }
 
         pub fn programParameterCount(self: *const Self, list_id: i32, program_index: usize) ?usize {
