@@ -220,6 +220,91 @@ test "sine synth component renders host event list input through processor shell
     try std.testing.expectEqual(@as(f64, 1.0), sine_synth_controller.level());
 }
 
+test "sine synth component renders host event list input through double precision processor shell" {
+    const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstevents = @import("pluginterfaces/vst/ivstevents.zig");
+    const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
+    const vst_event_list = @import("vst_event_list.zig");
+    const vst_parameter_changes = @import("vst_parameter_changes.zig");
+
+    resetSineSynthState();
+    sine_synth_controller.setLevel(0.0);
+    defer sine_synth_controller.setLevel(sine_synth_spec.default_level);
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &processor_out),
+    );
+    try std.testing.expect(processor_out != null);
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
+    defer _ = processor.vtable.release(processor);
+
+    var left = [_]f64{ 1.0, 1.0, 1.0, 1.0 };
+    var right = [_]f64{ 1.0, 1.0, 1.0, 1.0 };
+    var output_channel_ptrs = [_][*]f64{ &left, &right };
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers64 = &output_channel_ptrs },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 48_000.0 };
+
+    const InputEvents = vst_event_list.EventList(2);
+    var input_events = InputEvents{};
+    var note_on = ivstevents.Event{
+        .sampleOffset = 0,
+        .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+        .data = .{ .noteOn = .{
+            .channel = 0,
+            .pitch = 69,
+            .velocity = 1.0,
+        } },
+    };
+    var note_off = ivstevents.Event{
+        .sampleOffset = 3,
+        .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+        .data = .{ .noteOff = .{
+            .channel = 0,
+            .pitch = 69,
+            .velocity = 0.0,
+        } },
+    };
+    try std.testing.expectEqual(types.kResultOk, input_events.asInterface().vtable.addEvent(input_events.asInterface(), &note_on));
+    try std.testing.expectEqual(types.kResultOk, input_events.asInterface().vtable.addEvent(input_events.asInterface(), &note_off));
+
+    const Changes = vst_parameter_changes.ParameterChanges(1, 1);
+    var changes = Changes{};
+    const level_queue = changes.addQueue(sine_synth_controller.level_param_id).?;
+    try std.testing.expectEqual(types.kResultOk, level_queue.appendPoint(0, 1.0));
+
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 0,
+        .numOutputs = 1,
+        .outputs = &outputs,
+        .numSamples = 4,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64),
+        .inputEvents = input_events.asInterface(),
+        .inputParameterChanges = changes.asInterface(),
+        .processContext = &process_context,
+    };
+
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqual(@as(f64, 0.0), left[0]);
+    try std.testing.expect(left[1] > 0.0);
+    try std.testing.expect(left[2] > left[1]);
+    try std.testing.expectEqual(@as(f64, 0.0), left[3]);
+    try std.testing.expectEqualSlices(f64, &left, &right);
+    try std.testing.expect(!synth.active);
+    try std.testing.expectEqual(@as(f64, 1.0), sine_synth_controller.level());
+}
+
 test "sine synth processor treats zero-velocity note-on as note-off" {
     var local_synth = SineSynthState{};
     var output = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
