@@ -1148,6 +1148,10 @@ test "gain core example edits reflected parameter values directly" {
 
     var editor = copied.editor(&parameter_set);
     const view = copied.view(&parameter_set);
+    var copied_from_view = Spec.ParameterValues.init(&parameter_set);
+    const copied_from_view_editor = copied_from_view.editor(&parameter_set);
+    copied_from_view_editor.copyFrom(view);
+    try std.testing.expectEqual(@as(f64, 0.5), copied_from_view_editor.loadNormalized("gain"));
     try std.testing.expectEqual(@as(usize, 1), view.parameterCount());
     try std.testing.expect(!view.parametersEmpty());
     try std.testing.expect(view.hasParameters());
