@@ -4,14 +4,14 @@
 
 Zig libraries for building VST3 audio plugins.
 
-This repository has two layers:
+This repository has two packages:
 
 - `zig-vst3`: raw Zig bindings and helper objects for the VST3 COM API.
 - `zig-vst3-plugin`: a higher-level framework for writing plugins with reflected parameters, state, automation, events, and reusable VST3 shells.
 
 The project currently builds and validates example VST3 bundles for effects, analyzers, event processors, and a MIDI-driven synth. It is still pre-release, but the core path is already covered by unit tests, ABI checks, Steinberg validator runs, and CI on Linux, macOS, and Windows.
 
-## Which Layer Should I Use?
+## Which Package Should I Use?
 
 Use `zig-vst3-plugin` if you want to write an audio plugin:
 
@@ -87,21 +87,21 @@ zig build validator
 zig build validate-examples
 ```
 
-The broader raw-layer gate is:
+The broader raw API gate is:
 
 ```sh
-zig build layer1-abi
+zig build raw-api-abi
 ```
 
-`layer1-abi` compares Zig declarations against SDK-backed C++ fixture programs and entry-symbol checks.
+`raw-api-abi` compares Zig declarations against SDK-backed C++ fixture programs and entry-symbol checks.
 
 ## Documentation
 
-- [docs/layer2/plugin-interface.md](docs/layer2/plugin-interface.md): framework plugin API.
-- [docs/layer2/parameters.md](docs/layer2/parameters.md): parameters, plain/normalized values, smoothing, metadata, and editors.
-- [docs/layer2/state.md](docs/layer2/state.md): binary state format, migration, restore reports, and debug JSON.
-- [docs/layer1-api.md](docs/layer1-api.md): raw VST3 API guide.
-- [docs/layer1-coverage.md](docs/layer1-coverage.md): raw-layer coverage map.
+- [docs/framework/plugin-interface.md](docs/framework/plugin-interface.md): framework plugin API.
+- [docs/framework/parameters.md](docs/framework/parameters.md): parameters, plain/normalized values, smoothing, metadata, and editors.
+- [docs/framework/state.md](docs/framework/state.md): binary state format, migration, restore reports, and debug JSON.
+- [docs/raw-api.md](docs/raw-api.md): raw VST3 API guide.
+- [docs/raw-api-coverage.md](docs/raw-api-coverage.md): raw API coverage map.
 - [docs/stability.md](docs/stability.md): current pre-release compatibility policy.
 - [docs/host-matrix.md](docs/host-matrix.md): real host smoke-test results.
 - [docs/roadmap.md](docs/roadmap.md): remaining work and validation tiers.
@@ -111,7 +111,7 @@ zig build layer1-abi
 The public CI workflow currently runs:
 
 - Linux, macOS, and Windows build and test jobs.
-- Linux and macOS Layer 1 ABI checks.
+- Linux and macOS raw API ABI checks.
 - Linux and macOS Steinberg validator checks for bundled examples.
 - Linux, macOS, and Windows cross-bundle smoke checks.
 - Repository prose hygiene checks.
@@ -121,9 +121,9 @@ The public CI workflow currently runs:
 - This is pre-release API. Expect some naming and organization changes before a public compatibility promise.
 - Manual host coverage is currently macOS REAPER-heavy. MIDI-heavy and analyzer/instrument host smoke rows are still being filled in.
 - Windows bundle generation is covered in CI, but Windows validator execution is not.
-- There is no bundled GUI toolkit. The raw layer exposes editor protocols and the framework can delegate editor creation, but plugin authors bring their own UI stack.
+- There is no bundled GUI toolkit. The raw API exposes editor protocols and the framework can delegate editor creation, but plugin authors bring their own UI stack.
 - This project builds plugins, not hosts.
 
 ## Release Status
 
-Before tagging `zig-vst3-0.1.0`, follow [docs/layer1-release.md](docs/layer1-release.md). The release checklist requires local gates, green CI, and fresh host smoke rows or explicit release-note deferrals for untested host scenarios.
+Before tagging `zig-vst3-0.1.0`, follow [docs/release-checklist.md](docs/release-checklist.md). The release checklist requires local gates, green CI, and fresh host smoke rows or explicit release-note deferrals for untested host scenarios.

@@ -8,15 +8,15 @@ The supported Zig version is the exact version in [docs/toolchain.md](toolchain.
 
 The pinned VST3 SDK version is also part of the tested surface. SDK upgrades should update the toolchain docs, release notes, ABI checks, and validator expectations together.
 
-## Layer 1
+## Raw VST3 API
 
-`zig-vst3` mirrors VST3 SDK ABI declarations and provides helper objects for tests and shell integration. ABI declarations are expected to track the SDK closely. When an SDK interface is covered by `zig build layer1-abi`, changes to layout, calling convention, entry symbols, TUID bytes, or result semantics should be treated as release-blocking unless they are intentional SDK-alignment fixes.
+`zig-vst3` mirrors VST3 SDK ABI declarations and provides helper objects for tests and shell integration. ABI declarations are expected to track the SDK closely. When an SDK interface is covered by `zig build raw-api-abi`, changes to layout, calling convention, entry symbols, TUID bytes, or result semantics should be treated as release-blocking unless they are intentional SDK-alignment fixes.
 
 Before `zig-vst3-0.1.0`, helper APIs can still change. After `zig-vst3-0.1.0`, raw ABI declarations and checked helper behavior should change only with clear release notes and passing ABI gates.
 
-## Layer 2
+## Plugin Framework
 
-`zig-vst3-plugin` is the framework layer. It is still experimental and may change names, helper organization, process hook shapes, or metadata access patterns before a stable compatibility promise.
+`zig-vst3-plugin` is the plugin framework package. It is still experimental and may change names, helper organization, process hook shapes, or metadata access patterns before a stable compatibility promise.
 
 The intended direction is stable plugin declarations, reflected parameter metadata, state, automation, events, units, programs, and reusable VST3 shells. Until that promise is made, plugin authors should expect to update code across minor pre-1.0 releases.
 
@@ -43,4 +43,4 @@ Breaking changes are acceptable before 1.0, but they should be visible:
 - Update the public docs in the same change.
 - Keep examples compiling against the new API.
 
-After `zig-vst3-0.1.0`, avoid casual churn in the raw layer. Framework churn is still allowed, but it should have a clear reason and migration path.
+After `zig-vst3-0.1.0`, avoid casual churn in the raw API. Framework churn is still allowed, but it should have a clear reason and migration path.

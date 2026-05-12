@@ -49,8 +49,8 @@ jobs:
       - name: Test
         run: zig build test
 
-  layer1-abi:
-    name: Layer 1 ABI (${{ matrix.os }})
+  raw-api-abi:
+    name: Raw API ABI (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: test
     strategy:
@@ -66,8 +66,8 @@ jobs:
           version: ${{ env.ZIG_VERSION }}
       - name: Fetch pinned VST3 SDK
         run: scripts/fetch_sdk.sh
-      - name: Run Layer 1 ABI checks
-        run: zig build layer1-abi
+      - name: Run raw API ABI checks
+        run: zig build raw-api-abi
 
   validator:
     name: Validator (${{ matrix.os }})

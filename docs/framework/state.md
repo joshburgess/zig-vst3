@@ -1,4 +1,4 @@
-# Layer 2 State
+# Framework State
 
 `zig-vst3-plugin` state stores reflected parameter values as normalized scalars. The VST3 bridge reads and writes the same format through `IBStream`, so plugin state does not depend on the current parameter count.
 

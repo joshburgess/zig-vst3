@@ -53,7 +53,7 @@ Pros:
 - ABI layout is visible in code review
 - Smallest viable starting point for Phase 1
 - C++ fixture tests can map directly to explicit fields
-- User-facing helpers can improve ergonomics later without hiding the raw layer
+- User-facing helpers can improve ergonomics later without hiding the raw API
 
 Cons:
 
@@ -68,7 +68,7 @@ ABI risks:
 
 ## Recommendation
 
-Start with Option 3 for Layer 1. The raw binding layer should make ABI layout obvious and testable, even if that means more boilerplate. Once P0/P1 interfaces are translated and tested, `zig-vst3-plugin` can build a more ergonomic API over the explicit raw layer.
+Start with explicit vtable structs for the raw API. The raw bindings should make ABI layout obvious and testable, even if that means more boilerplate. Once P0/P1 interfaces are translated and tested, `zig-vst3-plugin` can build a more ergonomic API over the explicit raw API.
 
 The initial implementation should:
 

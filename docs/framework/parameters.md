@@ -1,4 +1,4 @@
-# Layer 2 Parameters
+# Framework Parameters
 
 `zig-vst3-plugin` parameters expose normalized VST3 values to hosts and typed plain values to plugin code. Declare parameters as fields in `Plugin.Params`; the framework reflects that struct into metadata, storage, automation, state, and host parameter info.
 

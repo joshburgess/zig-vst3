@@ -2,7 +2,7 @@
 set -eu
 
 "${ZIG:-zig}" build test
-"${ZIG:-zig}" build layer1-abi
+"${ZIG:-zig}" build raw-api-abi
 
 case "$(uname -s)" in
     Darwin)

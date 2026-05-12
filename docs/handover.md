@@ -4,11 +4,11 @@ Last updated: 2026-05-12
 
 ## Current State
 
-The repository is `zig-vst3`. The core raw VST3 library is now consistently named `zig-vst3`; the higher-level plugin framework is `zig-vst3-plugin`, with `zig-vst3-plugin-core` as the pure framework module used by Layer 1 and tests.
+The repository is `zig-vst3`. The core raw VST3 library is now consistently named `zig-vst3`; the higher-level plugin framework is `zig-vst3-plugin`, with `zig-vst3-plugin-core` as the pure framework module used by raw API and tests.
 
-The immediate focus has been finishing `zig-vst3` and tightening `zig-vst3-plugin` enough to make it a practical Layer 2 API. Layer 1 is broadly usable: it has translated ABI coverage, reusable VST3 shells, bundled example plugins, validator integration, public CI across macOS, Linux, and Windows, and several host-tested examples. REAPER smoke testing confirmed all bundled examples except `note_gate`, which remains deferred because MIDI testing was not convenient in the old session.
+The immediate focus has been finishing `zig-vst3` and tightening `zig-vst3-plugin` enough to make it a practical plugin framework API. The raw API is broadly usable: it has translated ABI coverage, reusable VST3 shells, bundled example plugins, validator integration, public CI across macOS, Linux, and Windows, and several host-tested examples. REAPER smoke testing confirmed all bundled examples except `note_gate`, which remains deferred because MIDI testing was not convenient in the old session.
 
-Recent work has concentrated on Layer 2 API polish:
+Recent work has concentrated on plugin framework API polish:
 
 - State diagnostics and migration helpers are exposed through `PluginInstance`.
 - Parameter migration validation accepts linear old-id chains while still rejecting independently converging target ids.
@@ -41,9 +41,9 @@ Recent work has concentrated on Layer 2 API polish:
 - `event_echo_core` now uses validated output-event planning and exercises direct event-writer helpers plus append aliases, process-context output-event writer attachment and access, append planning, appends, written-output event views, output event bus/channel iterators, event-output topology metadata, unavailable-writer errors, no-writer fallback helpers, routing, capacity, next-offset, kind-offset, kind emptiness, first/latest, offset/kind predicates, and clearing helpers.
 - `event_monitor_core` now exercises direct event validation and classification, direct event-view count, emptiness, first/latest, routing, iterator, segment, next-offset, and only helpers, input-event count, emptiness, first/latest, exact kind-at-offset reads, bus/channel/bus-channel iterators, next-offset, only predicates, input-only analyzer topology metadata, input-only process-context channel predicates, empty input-event fallback helpers, typed event payload views including direct note-off payload access, event retargeting helpers, and bus, channel, and bus-channel routing offset helpers.
 - `sine_synth_core` now exercises direct `PluginSpec` output-only generator topology flags, output-only process-context channel predicates, process timing, block duration, sample-offset, remaining-frame helpers, and combined event plus automation process-block segments.
-- The C and C++ Layer 1 ABI harness executables now disable C sanitization so Zig 0.14.0 does not pull the Debug C sanitizer runtime into native macOS CI links.
+- The C and C++ raw API ABI harness executables now disable C sanitization so Zig 0.14.0 does not pull the Debug C sanitizer runtime into native macOS CI links.
 - `scripts/build_validator.sh` now supports local macOS Command Line Tools installs by passing Apple clang paths and the SDK-required `XCODE_VERSION` cache value when full Xcode is not active.
-- README and Layer 2 docs were updated to match the current public API.
+- README and plugin framework docs were updated to match the current public API.
 
 Before this handoff, local checks were repeatedly run and passing:
 
@@ -214,11 +214,11 @@ The worktree was clean before this handover refresh. The latest pushed commits b
 - `8cfc429` Exercise enum option helpers in mode example
 - `5a0e2e5` Exercise parameter utility helpers in gain example
 - `5605be1` Exercise state compatibility helpers in gain example
-- `7779a9f` Refresh handover after Layer 2 coverage pass
+- `7779a9f` Refresh handover after plugin framework coverage pass
 
 The recent workflow changed to avoid waiting for CI after every push. Use local checks for each coherent batch, push, and only inspect CI at larger checkpoints or after a likely failure.
 
-CI checkpoint: after pushing `a7e98bf`, GitHub Actions showed run `25710231748` in progress. The latest completed green checkpoint is `8c50c52` run `25710013746`. The `4e58579` run `25709785109`, `1966ace` run `25709649721`, `30663fb` run `25709156101`, and `09ae793` run `25708877691` also completed successfully. The intermediate `6308700`, `5ba657d`, `8beaecb`, `613c6ef`, `be54d4c`, `0152e7a`, `46d5999`, `e79b4a3`, `a4f8c22`, `a7cda5a`, `e9b647d`, `b3ffff0`, `f2b00d5`, `0d74831`, `ea6e6ed`, and `3b55ae8` runs were cancelled by newer pushes, which is expected for this workflow. The earlier macOS Layer 1 ABI failure on `bae332c` and `9d8fc4a` was the Zig 0.14.0 native C sanitizer link issue with `libubsan_rt.a`; `f808411` fixed it by disabling C sanitization for the ABI harness executables.
+CI checkpoint: after pushing `a7e98bf`, GitHub Actions showed run `25710231748` in progress. The latest completed green checkpoint is `8c50c52` run `25710013746`. The `4e58579` run `25709785109`, `1966ace` run `25709649721`, `30663fb` run `25709156101`, and `09ae793` run `25708877691` also completed successfully. The intermediate `6308700`, `5ba657d`, `8beaecb`, `613c6ef`, `be54d4c`, `0152e7a`, `46d5999`, `e79b4a3`, `a4f8c22`, `a7cda5a`, `e9b647d`, `b3ffff0`, `f2b00d5`, `0d74831`, `ea6e6ed`, and `3b55ae8` runs were cancelled by newer pushes, which is expected for this workflow. The earlier macOS raw API ABI failure on `bae332c` and `9d8fc4a` was the Zig 0.14.0 native C sanitizer link issue with `libubsan_rt.a`; `f808411` fixed it by disabling C sanitization for the ABI harness executables.
 
 ## What To Do Next
 
@@ -226,14 +226,14 @@ Keep prioritizing `zig-vst3` and `zig-vst3-plugin` completion before starting br
 
 Recommended next slices:
 
-1. Continue Layer 2 API symmetry checks in `zig-vst3-plugin/src/process.zig`, `parameters.zig`, `state.zig`, `units.zig`, and `plugin.zig`. Recent passes filled state header/report wrapper gaps, parameter validation wrapper gaps, plugin metadata accessors, parameter-change iterators, direct process audio view gaps, editor value copying, output-writer access, program count by list name, event routing iterators, counted parameter value copying, program name lookup, single-sample audio access, program-list-name lookup/application helpers, program snapshot application hardening, dynamic parameter-change constructors, unit-scoped program metadata and diagnostics, and list-name/unit-scoped program parameter/info metadata helpers. The next pass should look for real API gaps rather than blindly chasing constructor/type aliases.
+1. Continue plugin framework API symmetry checks in `zig-vst3-plugin/src/process.zig`, `parameters.zig`, `state.zig`, `units.zig`, and `plugin.zig`. Recent passes filled state header/report wrapper gaps, parameter validation wrapper gaps, plugin metadata accessors, parameter-change iterators, direct process audio view gaps, editor value copying, output-writer access, program count by list name, event routing iterators, counted parameter value copying, program name lookup, single-sample audio access, program-list-name lookup/application helpers, program snapshot application hardening, dynamic parameter-change constructors, unit-scoped program metadata and diagnostics, and list-name/unit-scoped program parameter/info metadata helpers. The next pass should look for real API gaps rather than blindly chasing constructor/type aliases.
 2. Add focused tests whenever a helper is added. Prefer extending nearby existing tests over creating broad new fixtures.
-3. Keep docs synchronized in `docs/layer2/plugin-interface.md`, `docs/layer2/parameters.md`, `docs/layer2/state.md`, and `README.md` when public surface changes.
+3. Keep docs synchronized in `docs/framework/plugin-interface.md`, `docs/framework/parameters.md`, `docs/framework/state.md`, and `README.md` when public surface changes.
 4. Revisit deferred host smoke coverage:
    - MIDI smoke for `note_gate`.
    - Event output observation for `event_echo`.
    - Windows and Linux host or validator smoke where practical.
-5. Start broader API docs for raw `zig-vst3` users after the Layer 2 cleanup pass is less active.
+5. Start broader API docs for raw `zig-vst3` users after the plugin framework cleanup pass is less active.
 
 Useful local gates:
 

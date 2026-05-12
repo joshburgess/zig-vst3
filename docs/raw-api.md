@@ -1,19 +1,19 @@
-# Layer 1 Raw API
+# Raw VST3 API
 
-`zig-vst3` is the raw VST3 binding layer. It exposes Zig translations of Steinberg's COM-style interfaces, helper objects for host-side tests, and reusable component/controller/processor shells used by the bundled examples.
+`zig-vst3` is the raw VST3 API package. It exposes Zig translations of Steinberg's COM-style interfaces, helper objects for host-side tests, and reusable component/controller/processor shells used by the bundled examples.
 
-The raw layer deliberately keeps ABI details visible:
+The raw API deliberately keeps ABI details visible:
 
 - Vtables are explicit `extern struct` values.
 - Interface methods use C calling convention function pointers.
 - `queryInterface`, `addRef`, and `release` behavior is implemented by small reusable helpers.
-- SDK layout assumptions are checked by `zig build layer1-abi`.
+- SDK layout assumptions are checked by `zig build raw-api-abi`.
 
 Use `zig-vst3-plugin` when you want a higher-level plugin framework. Use `zig-vst3` directly when you need access to VST3 interfaces, host callback objects, custom shell behavior, or ABI tests.
 
-## When To Use Layer 1 Directly
+## When To Use The Raw API
 
-The raw layer is useful when the framework layer is too opinionated for the job:
+The raw API is useful when the plugin framework is too opinionated for the job:
 
 - You need to expose or test a specific SDK interface directly.
 - You are building a custom component, controller, processor, editor, or host-side test object.
@@ -37,18 +37,18 @@ For normal audio effects, instruments, analyzers, parameters, state, automation,
 
 ```sh
 zig build test
-zig build layer1-abi
+zig build raw-api-abi
 zig build validator
 zig build validate-examples
 ```
 
-`zig build layer1-abi` compares Zig declarations against SDK-backed C++ fixture programs and entry-symbol checks. Public CI runs that gate on Linux and macOS.
+`zig build raw-api-abi` compares Zig declarations against SDK-backed C++ fixture programs and entry-symbol checks. Public CI runs that gate on Linux and macOS.
 
 `zig build validate-examples` runs the Steinberg validator for native macOS and Linux builds. Windows bundle generation is covered in CI, but Windows validator and real host coverage still need dedicated runners or manual hosts.
 
 ## Helper Objects
 
-The raw layer includes fixed-capacity helper objects for tests and shell integration:
+The raw API includes fixed-capacity helper objects for tests and shell integration:
 
 - `vst_stream.FixedBufferStream` for `IBStream` and `ISizeableStream`
 - `vst_parameter_changes.ParameterChanges` and `ParamValueQueue`
@@ -222,19 +222,19 @@ try std.testing.expectEqual(types.kResultOk, queue_iface.vtable.getPoint(queue_i
 
 ## Direct Raw Workflow
 
-Raw-layer code usually follows this shape:
+Raw API code usually follows this shape:
 
 1. Translate or import the relevant SDK interface from `zig-vst3/src/pluginterfaces`.
 2. Use `funknown.zig` and `interface_map.zig` helpers to implement reference counting and interface lookup.
 3. Expose the object through `factory.zig` and `entry.zig`, or attach it to one of the reusable shells.
 4. Add a Zig test for behavior and, when ABI layout is involved, an SDK-backed fixture under `tests/abi`.
-5. Run `zig build test` and `zig build layer1-abi`.
+5. Run `zig build test` and `zig build raw-api-abi`.
 
 Keep raw objects conservative around host-visible outputs. If a method fails, clear output buffers, counts, and pointers when stale values could be misread by a host.
 
 ## Bundle And Validator Flow
 
-Use the bundle steps when validating raw-layer changes against real VST3 loading:
+Use the bundle steps when validating raw API changes against real VST3 loading:
 
 ```sh
 zig build clean-bundles

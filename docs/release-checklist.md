@@ -1,6 +1,6 @@
-# Layer 1 Release Checklist
+# Release Checklist
 
-This checklist is for tagging `zig-vst3-0.1.0`. It tracks release gates for the raw VST3 layer only. `zig-vst3-plugin` can keep evolving after this tag.
+This checklist is for tagging `zig-vst3-0.1.0`. It tracks release gates for the raw VST3 API package only. `zig-vst3-plugin` can keep evolving after this tag.
 
 The current release pins are Zig 0.16.0 and VST3 SDK `v3.8.0_build_66`. Keep [toolchain.md](toolchain.md), [stability.md](stability.md), and `CHANGELOG.md` aligned with any release-candidate change.
 
@@ -9,7 +9,7 @@ The current release pins are Zig 0.16.0 and VST3 SDK `v3.8.0_build_66`. Keep [to
 Run the local release gate:
 
 ```sh
-scripts/layer1_release_check.sh
+scripts/raw_api_release_check.sh
 ```
 
 If the default `zig` on a machine is not the pinned compiler, run the script with `ZIG=/path/to/zig`.
@@ -17,7 +17,7 @@ If the default `zig` on a machine is not the pinned compiler, run the script wit
 That script runs:
 
 - `zig build test`
-- `zig build layer1-abi`
+- `zig build raw-api-abi`
 - `zig build validator` on macOS or Linux
 - `zig build validate-examples` on macOS or Linux
 
@@ -25,13 +25,13 @@ Also verify:
 
 - GitHub Actions `CI` passes on `main`
 - `CHANGELOG.md` contains the release notes for the tag
-- `docs/layer1-coverage.md` matches the release scope
+- `docs/raw-api-coverage.md` matches the release scope
 - `docs/stability.md` still describes the API promise accurately
 
 Public CI currently covers:
 
 - Linux, macOS, and Windows build and test jobs
-- Linux and macOS Layer 1 ABI checks
+- Linux and macOS raw API ABI checks
 - Linux and macOS Steinberg validator checks for bundled examples
 - Linux, macOS, and Windows cross-bundle smoke checks
 

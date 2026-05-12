@@ -1,8 +1,8 @@
-# Layer 2 Plugin Interface
+# Plugin Framework Interface
 
-`zig-vst3-plugin` is the framework layer for writing plugins without hand-writing VST3 COM objects. A plugin is a Zig type with host metadata, a `Params` declaration, and optional lifecycle hooks. The framework reflects that type into parameter metadata, state, automation, events, bus topology, units, programs, and the reusable Layer 1 VST3 shells.
+`zig-vst3-plugin` is the framework package for writing plugins without hand-writing VST3 COM objects. A plugin is a Zig type with host metadata, a `Params` declaration, and optional lifecycle hooks. The framework reflects that type into parameter metadata, state, automation, events, bus topology, units, programs, and the reusable raw VST3 shells.
 
-Use this layer for normal effects, instruments, analyzers, and event processors. Drop to `zig-vst3` only when you need direct SDK interface control.
+Use this package for normal effects, instruments, analyzers, and event processors. Drop to `zig-vst3` only when you need direct SDK interface control.
 
 ## Minimal Plugin
 
@@ -218,4 +218,4 @@ The checked examples in `examples/*_core.zig` cover the public framework API. Th
 
 - The API is pre-release. Names and helper organization can still change before a public compatibility promise.
 - Host smoke rows for Note Gate, Event Echo output observation, Event Monitor, and Sine Synth are still deferred.
-- There is no bundled GUI toolkit. The raw layer exposes editor protocols and the framework can delegate editor creation, but plugin authors bring their own UI stack.
+- There is no bundled GUI toolkit. The raw API exposes editor protocols and the framework can delegate editor creation, but plugin authors bring their own UI stack.
