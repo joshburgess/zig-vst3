@@ -160,3 +160,81 @@ test "event echo component writes output events through processor shell" {
     try std.testing.expectEqual(@as(types.int16, 60), written_event.data.noteOn.pitch);
     try std.testing.expectEqual(@as(f32, 0.75), written_event.data.noteOn.velocity);
 }
+
+test "event echo component writes output events through double precision processor shell" {
+    const std = @import("std");
+    const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstevents = @import("pluginterfaces/vst/ivstevents.zig");
+    const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
+    const vst_event_list = @import("vst_event_list.zig");
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &processor_out),
+    );
+    try std.testing.expect(processor_out != null);
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
+    defer _ = processor.vtable.release(processor);
+
+    var input_samples = [_]f64{ 0.25, -0.5 };
+    var output_samples = [_]f64{ 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f64{&input_samples};
+    var output_channel_ptrs = [_][*]f64{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers64 = &input_channel_ptrs },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers64 = &output_channel_ptrs },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 48_000.0 };
+
+    const InputEvents = vst_event_list.EventList(1);
+    var input_events = InputEvents{};
+    var input_event = ivstevents.Event{
+        .sampleOffset = 1,
+        .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+        .data = .{ .noteOn = .{
+            .channel = 0,
+            .pitch = 60,
+            .velocity = 0.75,
+        } },
+    };
+    try std.testing.expectEqual(types.kResultOk, input_events.asInterface().vtable.addEvent(input_events.asInterface(), &input_event));
+
+    const OutputEvents = vst_event_list.EventList(1);
+    var output_events = OutputEvents{};
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64),
+        .inputEvents = input_events.asInterface(),
+        .outputEvents = output_events.asInterface(),
+        .processContext = &process_context,
+    };
+
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqualSlices(f64, &input_samples, &output_samples);
+    try std.testing.expectEqual(@as(types.int32, 1), output_events.asInterface().vtable.getEventCount(output_events.asInterface()));
+
+    var written_event = ivstevents.Event{};
+    try std.testing.expectEqual(types.kResultOk, output_events.asInterface().vtable.getEvent(output_events.asInterface(), 0, &written_event));
+    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent), written_event.type);
+    try std.testing.expectEqual(@as(types.int32, 0), written_event.busIndex);
+    try std.testing.expectEqual(@as(types.int32, 1), written_event.sampleOffset);
+    try std.testing.expectEqual(@as(types.int16, 0), written_event.data.noteOn.channel);
+    try std.testing.expectEqual(@as(types.int16, 60), written_event.data.noteOn.pitch);
+    try std.testing.expectEqual(@as(f32, 0.75), written_event.data.noteOn.velocity);
+}
