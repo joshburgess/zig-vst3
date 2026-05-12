@@ -6,6 +6,7 @@
 
 - `zig-vst3-0.1.0` is intended as the first raw API preview release. The release target is ABI-checked raw VST3 declarations, reusable host/test helper objects, checked example bundles, and a documented pre-release plugin framework.
 - The local release gate is `scripts/raw_api_release_check.sh`. It runs `zig build test`, `zig build raw-api-abi`, `zig build validator`, and `zig build validate-examples`.
+- `zig build benchmark` runs local microbenchmarks for raw stream helpers, framework process blocks, parameter stores, and state save/load.
 - Zig 0.16.0 and VST3 SDK `v3.8.0_build_66` are the release toolchain pins.
 
 ### Added
@@ -15,6 +16,7 @@
 - macOS and Linux Steinberg validator coverage for bundled example plugins.
 - Cross-target bundle smoke checks for Linux, macOS, and Windows.
 - Release checklist and local raw API release gate script.
+- Local microbenchmark step for raw stream helpers, framework process blocks, parameter stores, and state save/load.
 - Raw API guide and protocol coverage map.
 - Advanced helpers for interface support, prefetch state, MIDI learn, MIDI 2 mapping, and physical UI mapping.
 - Fixed-capacity note-expression and keyswitch metadata helper for raw API tests.
