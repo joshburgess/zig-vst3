@@ -289,6 +289,10 @@ test "gain core example processes through zig-vst3-plugin context" {
 
     try std.testing.expectEqual(@as(usize, 1), context.inputChannelCount());
     try std.testing.expectEqual(@as(usize, 1), context.outputChannelCount());
+    const context_inputs = context.inputAudio();
+    const context_outputs = context.outputAudio();
+    try std.testing.expectEqual(@as(usize, 1), context_inputs.channelCount());
+    try std.testing.expectEqual(@as(usize, 1), context_outputs.channelCount());
     try std.testing.expectEqual(@as(usize, 3), context.inputFrameCount());
     try std.testing.expectEqual(@as(usize, 3), context.outputFrameCount());
     try std.testing.expectEqual(@as(usize, 3), context.frameCount());
@@ -320,8 +324,10 @@ test "gain core example processes through zig-vst3-plugin context" {
     try std.testing.expect(!context.outputChannelEmpty(0));
     try std.testing.expect(context.outputChannelEmpty(1));
     try std.testing.expectEqual(@as(f32, 0.25), context.inputChannel(0).?[0]);
+    try std.testing.expectEqual(@as(f32, 0.25), context_inputs.channel(0).?[0]);
     try std.testing.expectEqual(@as(?[]const f32, null), context.inputChannel(1));
     try std.testing.expectEqual(@as(f32, 0.0), context.outputChannel(0).?[0]);
+    try std.testing.expectEqual(@as(f32, 0.0), context_outputs.channel(0).?[0]);
     try std.testing.expectEqual(@as(?[]f32, null), context.outputChannel(1));
     context.fillOutputs(0.75);
     try std.testing.expectEqual(@as(f32, 0.75), output[0]);

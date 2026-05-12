@@ -2844,74 +2844,82 @@ pub fn ProcessContext(comptime Sample: type) type {
             return writer.isFull();
         }
 
+        pub fn inputAudio(self: @This()) AudioInputs(Sample) {
+            return self.inputs;
+        }
+
+        pub fn outputAudio(self: @This()) AudioOutputs(Sample) {
+            return self.outputs;
+        }
+
         pub fn fillOutputs(self: @This(), value: Sample) void {
-            self.outputs.fill(value);
+            self.outputAudio().fill(value);
         }
 
         pub fn clearOutputs(self: @This()) void {
-            self.outputs.clear();
+            self.outputAudio().clear();
         }
 
         pub fn inputChannel(self: @This(), index: usize) ?[]const Sample {
-            return self.inputs.channel(index);
+            return self.inputAudio().channel(index);
         }
 
         pub fn outputChannel(self: @This(), index: usize) ?[]Sample {
-            return self.outputs.channel(index);
+            return self.outputAudio().channel(index);
         }
 
         pub fn hasInputChannel(self: @This(), index: usize) bool {
-            return self.inputs.hasChannel(index);
+            return self.inputAudio().hasChannel(index);
         }
 
         pub fn inputChannelEmpty(self: @This(), index: usize) bool {
-            return self.inputs.channelEmpty(index);
+            return self.inputAudio().channelEmpty(index);
         }
 
         pub fn hasOutputChannel(self: @This(), index: usize) bool {
-            return self.outputs.hasChannel(index);
+            return self.outputAudio().hasChannel(index);
         }
 
         pub fn outputChannelEmpty(self: @This(), index: usize) bool {
-            return self.outputs.channelEmpty(index);
+            return self.outputAudio().channelEmpty(index);
         }
 
         pub fn inputChannelCount(self: @This()) usize {
-            return self.inputs.channelCount();
+            return self.inputAudio().channelCount();
         }
 
         pub fn outputChannelCount(self: @This()) usize {
-            return self.outputs.channelCount();
+            return self.outputAudio().channelCount();
         }
 
         pub fn inputChannelsEmpty(self: @This()) bool {
-            return self.inputs.isEmpty();
+            return self.inputAudio().isEmpty();
         }
 
         pub fn hasInputChannels(self: @This()) bool {
-            return self.inputs.hasChannels();
+            return self.inputAudio().hasChannels();
         }
 
         pub fn outputChannelsEmpty(self: @This()) bool {
-            return self.outputs.isEmpty();
+            return self.outputAudio().isEmpty();
         }
 
         pub fn hasOutputChannels(self: @This()) bool {
-            return self.outputs.hasChannels();
+            return self.outputAudio().hasChannels();
         }
 
         pub fn inputFrameCount(self: @This()) usize {
-            return self.inputs.frameCount();
+            return self.inputAudio().frameCount();
         }
 
         pub fn outputFrameCount(self: @This()) usize {
-            return self.outputs.frameCount();
+            return self.outputAudio().frameCount();
         }
 
         pub fn frameCount(self: @This()) usize {
-            if (self.inputs.channelCount() == 0) return self.outputs.frame_count;
-            if (self.outputs.channelCount() == 0) return self.inputs.frame_count;
-            return self.inputs.frame_count;
+            if (self.inputChannelCount() == 0) return self.outputFrameCount();
+            if (self.outputChannelCount() == 0) return self.inputFrameCount();
+            return self.inputFrameCount();
         }
     };
 }
@@ -3014,6 +3022,12 @@ test "process context reports usable frame count" {
     try std.testing.expectEqual(@as(f64, 0.0), context.remainingSecondsFromOffset(4));
     try std.testing.expectEqual(@as(usize, 2), context.inputChannelCount());
     try std.testing.expectEqual(@as(usize, 2), context.outputChannelCount());
+    const input_audio = context.inputAudio();
+    const output_audio = context.outputAudio();
+    try std.testing.expectEqual(@as(usize, 2), input_audio.channelCount());
+    try std.testing.expectEqual(@as(usize, 2), output_audio.channelCount());
+    try std.testing.expectEqual(@as(f64, 0.4), input_audio.channel(1).?[0]);
+    try std.testing.expectEqual(@as(f64, 0.0), output_audio.channel(1).?[0]);
     try std.testing.expect(!context.inputChannelsEmpty());
     try std.testing.expect(!context.outputChannelsEmpty());
     try std.testing.expect(context.hasInputChannels());
