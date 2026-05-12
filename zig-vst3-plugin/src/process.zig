@@ -129,15 +129,30 @@ pub const ParameterSegmentIterator = struct {
 pub const ParameterChangeIdIterator = struct {
     changes: ParameterChanges,
     id: u32,
-    next_index: usize = 0,
+    last_offset: ?usize = null,
+    last_index: usize = 0,
 
     pub fn next(self: *ParameterChangeIdIterator) ?ParameterChange {
-        while (self.next_index < self.changes.items.len) {
-            const item = self.changes.items[self.next_index];
-            self.next_index += 1;
-            if (item.isForId(self.id)) return item;
+        var result: ?ParameterChange = null;
+        var result_index: usize = 0;
+        for (self.changes.items, 0..) |item, index| {
+            if (!item.isForId(self.id)) continue;
+            if (self.last_offset) |offset| {
+                if (item.sample_offset < offset) continue;
+                if (item.sample_offset == offset and index <= self.last_index) continue;
+            }
+            if (result == null or item.sample_offset < result.?.sample_offset or
+                (item.sample_offset == result.?.sample_offset and index < result_index))
+            {
+                result = item;
+                result_index = index;
+            }
         }
-        return null;
+        if (result) |item| {
+            self.last_offset = item.sample_offset;
+            self.last_index = result_index;
+        }
+        return result;
     }
 };
 
@@ -3688,8 +3703,8 @@ test "parameter changes query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(ParameterSegment{ .start_offset = 1, .end_offset = 5, .normalized = 0.25 }, view.segmentAt(7, 1, 8, 0.0).?);
 
     var id_changes = view.forId(7);
-    try std.testing.expectEqual(changes[0], id_changes.next().?);
     try std.testing.expectEqual(changes[2], id_changes.next().?);
+    try std.testing.expectEqual(changes[0], id_changes.next().?);
     try std.testing.expectEqual(changes[3], id_changes.next().?);
     try std.testing.expectEqual(@as(?ParameterChange, null), id_changes.next());
 
