@@ -2014,6 +2014,12 @@ pub fn AudioInputs(comptime Sample: type) type {
             return self.channels[index];
         }
 
+        pub fn sample(self: Self, channel_index: usize, frame_index: usize) ?Sample {
+            const channel_samples = self.channel(channel_index) orelse return null;
+            if (frame_index >= channel_samples.len) return null;
+            return channel_samples[frame_index];
+        }
+
         pub fn hasChannel(self: Self, index: usize) bool {
             return self.channel(index) != null;
         }
@@ -2063,6 +2069,19 @@ pub fn AudioOutputs(comptime Sample: type) type {
         pub fn channel(self: Self, index: usize) ?[]Sample {
             if (index >= self.channels.len) return null;
             return self.channels[index];
+        }
+
+        pub fn sample(self: Self, channel_index: usize, frame_index: usize) ?Sample {
+            const channel_samples = self.channel(channel_index) orelse return null;
+            if (frame_index >= channel_samples.len) return null;
+            return channel_samples[frame_index];
+        }
+
+        pub fn setSample(self: Self, channel_index: usize, frame_index: usize, value: Sample) bool {
+            const channel_samples = self.channel(channel_index) orelse return false;
+            if (frame_index >= channel_samples.len) return false;
+            channel_samples[frame_index] = value;
+            return true;
         }
 
         pub fn hasChannel(self: Self, index: usize) bool {
@@ -3106,6 +3125,18 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.outputAudio().channel(index);
         }
 
+        pub fn inputSample(self: @This(), channel_index: usize, frame_index: usize) ?Sample {
+            return self.inputAudio().sample(channel_index, frame_index);
+        }
+
+        pub fn outputSample(self: @This(), channel_index: usize, frame_index: usize) ?Sample {
+            return self.outputAudio().sample(channel_index, frame_index);
+        }
+
+        pub fn setOutputSample(self: @This(), channel_index: usize, frame_index: usize, value: Sample) bool {
+            return self.outputAudio().setSample(channel_index, frame_index, value);
+        }
+
         pub fn hasInputChannel(self: @This(), index: usize) bool {
             return self.inputAudio().hasChannel(index);
         }
@@ -3175,6 +3206,9 @@ test "audio input view validates channel frame counts" {
     try std.testing.expectEqual(@as(usize, 2), inputs.frame_count);
     try std.testing.expectEqual(@as(usize, 2), inputs.frameCount());
     try std.testing.expectEqual(@as(f32, 0.3), inputs.channel(1).?[0]);
+    try std.testing.expectEqual(@as(?f32, 0.4), inputs.sample(1, 1));
+    try std.testing.expectEqual(@as(?f32, null), inputs.sample(1, 2));
+    try std.testing.expectEqual(@as(?f32, null), inputs.sample(2, 0));
     try std.testing.expect(inputs.hasChannel(1));
     try std.testing.expect(!inputs.channelEmpty(1));
     try std.testing.expectEqual(@as(?[]const f32, null), inputs.channel(2));
@@ -3205,6 +3239,12 @@ test "audio output view fills and clears channels" {
     try std.testing.expectEqual(@as(usize, 2), outputs.frameCount());
     try std.testing.expect(outputs.hasChannel(1));
     try std.testing.expect(!outputs.channelEmpty(1));
+    try std.testing.expectEqual(@as(?f32, 0.3), outputs.sample(1, 0));
+    try std.testing.expect(outputs.setSample(1, 0, 0.8));
+    try std.testing.expectEqual(@as(?f32, 0.8), outputs.sample(1, 0));
+    try std.testing.expectEqual(@as(f32, 0.8), right[0]);
+    try std.testing.expect(!outputs.setSample(1, 2, 0.9));
+    try std.testing.expect(!outputs.setSample(2, 0, 0.9));
     try std.testing.expect(!outputs.hasChannel(2));
     try std.testing.expect(outputs.channelEmpty(2));
     const empty_outputs = try AudioOutputs(f32).init(&[_][]f32{});
@@ -3265,18 +3305,29 @@ test "process context reports usable frame count" {
     try std.testing.expectEqual(@as(usize, 2), input_audio.channelCount());
     try std.testing.expectEqual(@as(usize, 2), output_audio.channelCount());
     try std.testing.expectEqual(@as(f64, 0.4), input_audio.channel(1).?[0]);
+    try std.testing.expectEqual(@as(?f64, 0.5), input_audio.sample(1, 1));
     try std.testing.expectEqual(@as(f64, 0.0), output_audio.channel(1).?[0]);
+    try std.testing.expectEqual(@as(?f64, 0.0), output_audio.sample(1, 1));
     try std.testing.expect(!context.inputChannelsEmpty());
     try std.testing.expect(!context.outputChannelsEmpty());
     try std.testing.expect(context.hasInputChannels());
     try std.testing.expect(context.hasOutputChannels());
     try std.testing.expectEqual(@as(f64, 0.4), context.inputChannel(1).?[0]);
+    try std.testing.expectEqual(@as(?f64, 0.5), context.inputSample(1, 1));
+    try std.testing.expectEqual(@as(?f64, null), context.inputSample(1, 3));
+    try std.testing.expectEqual(@as(?f64, null), context.inputSample(2, 0));
     try std.testing.expect(context.hasInputChannel(1));
     try std.testing.expect(!context.inputChannelEmpty(1));
     try std.testing.expectEqual(@as(?[]const f64, null), context.inputChannel(2));
     try std.testing.expect(!context.hasInputChannel(2));
     try std.testing.expect(context.inputChannelEmpty(2));
     try std.testing.expectEqual(@as(f64, 0.0), context.outputChannel(1).?[0]);
+    try std.testing.expectEqual(@as(?f64, 0.0), context.outputSample(1, 1));
+    try std.testing.expect(context.setOutputSample(1, 1, 0.25));
+    try std.testing.expectEqual(@as(?f64, 0.25), context.outputSample(1, 1));
+    try std.testing.expectEqual(@as(f64, 0.25), out_right[1]);
+    try std.testing.expect(!context.setOutputSample(1, 3, 0.5));
+    try std.testing.expect(!context.setOutputSample(2, 0, 0.5));
     try std.testing.expect(context.hasOutputChannel(1));
     try std.testing.expect(!context.outputChannelEmpty(1));
     try std.testing.expectEqual(@as(?[]f64, null), context.outputChannel(2));
