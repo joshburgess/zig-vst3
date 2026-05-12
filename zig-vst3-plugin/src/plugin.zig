@@ -184,6 +184,46 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return Spec.has_deinit;
         }
 
+        pub fn pluginName(self: *const Self) []const u8 {
+            _ = self;
+            return Spec.name;
+        }
+
+        pub fn pluginVendor(self: *const Self) []const u8 {
+            _ = self;
+            return Spec.vendor;
+        }
+
+        pub fn pluginUrl(self: *const Self) []const u8 {
+            _ = self;
+            return Spec.url;
+        }
+
+        pub fn pluginEmail(self: *const Self) []const u8 {
+            _ = self;
+            return Spec.email;
+        }
+
+        pub fn componentClassName(self: *const Self) []const u8 {
+            _ = self;
+            return Spec.component_class_name;
+        }
+
+        pub fn controllerClassName(self: *const Self) []const u8 {
+            _ = self;
+            return Spec.controller_class_name;
+        }
+
+        pub fn componentCategory(self: *const Self) []const u8 {
+            _ = self;
+            return Spec.component_category;
+        }
+
+        pub fn controllerCategory(self: *const Self) []const u8 {
+            _ = self;
+            return Spec.controller_category;
+        }
+
         pub fn parameterSet(self: *const Self) *const Spec.ParameterSet {
             return &self.spec.parameter_set;
         }
@@ -2058,7 +2098,16 @@ test "plugin spec exposes optional plugin metadata overrides" {
         pub const Params = struct {};
     };
     const Spec = PluginSpec(Custom);
+    var instance = try PluginInstance(Custom).init(std.testing.allocator, .{});
 
+    try std.testing.expectEqualStrings("Custom", instance.pluginName());
+    try std.testing.expectEqualStrings("Vendor", instance.pluginVendor());
+    try std.testing.expectEqualStrings("https://example.test/custom", instance.pluginUrl());
+    try std.testing.expectEqualStrings("plugins@example.test", instance.pluginEmail());
+    try std.testing.expectEqualStrings("Custom Processor", instance.componentClassName());
+    try std.testing.expectEqualStrings("Custom Editor", instance.controllerClassName());
+    try std.testing.expectEqualStrings("Custom Processor Category", instance.componentCategory());
+    try std.testing.expectEqualStrings("Custom Controller Category", instance.controllerCategory());
     try std.testing.expectEqualStrings("https://example.test/custom", Spec.url);
     try std.testing.expectEqualStrings("plugins@example.test", Spec.email);
     try std.testing.expectEqualStrings("Custom Processor", Spec.component_class_name);
