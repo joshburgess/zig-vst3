@@ -996,6 +996,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.programInfoEntryForUnitName(unit_name, program_index, info_index);
         }
 
+        pub fn programInfoEntryByKey(self: *const Self, list_id: i32, program_index: usize, key: []const u8) ?units_api.ProgramInfo {
+            return self.spec.units.programInfoEntryByKey(list_id, program_index, key);
+        }
+
+        pub fn programInfoEntryByKeyByListName(self: *const Self, list_name: []const u8, program_index: usize, key: []const u8) ?units_api.ProgramInfo {
+            return self.spec.units.programInfoEntryByKeyByListName(list_name, program_index, key);
+        }
+
+        pub fn programInfoEntryByKeyForUnit(self: *const Self, unit_id: i32, program_index: usize, key: []const u8) ?units_api.ProgramInfo {
+            return self.spec.units.programInfoEntryByKeyForUnit(unit_id, program_index, key);
+        }
+
+        pub fn programInfoEntryByKeyForUnitName(self: *const Self, unit_name: []const u8, program_index: usize, key: []const u8) ?units_api.ProgramInfo {
+            return self.spec.units.programInfoEntryByKeyForUnitName(unit_name, program_index, key);
+        }
+
         pub fn programInfoIndexOfKey(self: *const Self, list_id: i32, program_index: usize, key: []const u8) ?usize {
             return self.spec.units.programInfoIndexOfKey(list_id, program_index, key);
         }
@@ -1106,6 +1122,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn programInfoEntryByNameForUnitName(self: *const Self, unit_name: []const u8, program_name: []const u8, info_index: usize) ?units_api.ProgramInfo {
             return self.spec.units.programInfoEntryByNameForUnitName(unit_name, program_name, info_index);
+        }
+
+        pub fn programInfoEntryByNameAndKey(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) ?units_api.ProgramInfo {
+            return self.spec.units.programInfoEntryByNameAndKey(list_id, program_name, key);
+        }
+
+        pub fn programInfoEntryByNameAndKeyForListName(self: *const Self, list_name: []const u8, program_name: []const u8, key: []const u8) ?units_api.ProgramInfo {
+            return self.spec.units.programInfoEntryByNameAndKeyForListName(list_name, program_name, key);
+        }
+
+        pub fn programInfoEntryByNameAndKeyForUnit(self: *const Self, unit_id: i32, program_name: []const u8, key: []const u8) ?units_api.ProgramInfo {
+            return self.spec.units.programInfoEntryByNameAndKeyForUnit(unit_id, program_name, key);
+        }
+
+        pub fn programInfoEntryByNameAndKeyForUnitName(self: *const Self, unit_name: []const u8, program_name: []const u8, key: []const u8) ?units_api.ProgramInfo {
+            return self.spec.units.programInfoEntryByNameAndKeyForUnitName(unit_name, program_name, key);
         }
 
         pub fn programInfoIndexOfKeyByName(self: *const Self, list_id: i32, program_name: []const u8, key: []const u8) ?usize {
@@ -3137,8 +3169,12 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqualStrings("Clean", instance.programInfo(7, 0, "category").?);
     try std.testing.expectEqualStrings("category", instance.programInfoEntry(7, 0, 0).?.key);
     try std.testing.expectEqualStrings("Clean", instance.programInfoEntry(7, 0, 0).?.value);
+    try std.testing.expectEqualStrings("category", instance.programInfoEntryByKey(7, 0, "category").?.key);
+    try std.testing.expectEqualStrings("Clean", instance.programInfoEntryByKey(7, 0, "category").?.value);
     try std.testing.expectEqual(@as(?units_api.ProgramInfo, null), instance.programInfoEntry(7, 0, 1));
+    try std.testing.expectEqual(@as(?units_api.ProgramInfo, null), instance.programInfoEntryByKey(7, 0, "missing"));
     try std.testing.expectEqual(@as(?units_api.ProgramInfo, null), instance.programInfoEntry(7, 99, 0));
+    try std.testing.expectEqual(@as(?units_api.ProgramInfo, null), instance.programInfoEntryByKey(7, 99, "category"));
     try std.testing.expectEqual(@as(?usize, 0), instance.programInfoIndexOfKey(7, 0, "category"));
     try std.testing.expectEqual(@as(?usize, null), instance.programInfoIndexOfKey(7, 0, "missing"));
     try std.testing.expectEqual(@as(?usize, null), instance.programInfoIndexOfKey(7, 99, "category"));
@@ -3168,8 +3204,12 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqualStrings("Clean", instance.programInfoByName(7, "Clean", "category").?);
     try std.testing.expectEqualStrings("category", instance.programInfoEntryByName(7, "Clean", 0).?.key);
     try std.testing.expectEqualStrings("Clean", instance.programInfoEntryByName(7, "Clean", 0).?.value);
+    try std.testing.expectEqualStrings("category", instance.programInfoEntryByNameAndKey(7, "Clean", "category").?.key);
+    try std.testing.expectEqualStrings("Clean", instance.programInfoEntryByNameAndKey(7, "Clean", "category").?.value);
     try std.testing.expectEqual(@as(?units_api.ProgramInfo, null), instance.programInfoEntryByName(7, "Clean", 1));
+    try std.testing.expectEqual(@as(?units_api.ProgramInfo, null), instance.programInfoEntryByNameAndKey(7, "Clean", "missing"));
     try std.testing.expectEqual(@as(?units_api.ProgramInfo, null), instance.programInfoEntryByName(7, "Missing", 0));
+    try std.testing.expectEqual(@as(?units_api.ProgramInfo, null), instance.programInfoEntryByNameAndKey(7, "Missing", "category"));
     try std.testing.expectEqual(@as(?usize, 0), instance.programInfoIndexOfKeyByName(7, "Clean", "category"));
     try std.testing.expectEqual(@as(?usize, null), instance.programInfoIndexOfKeyByName(7, "Clean", "missing"));
     try std.testing.expectEqual(@as(?usize, null), instance.programInfoIndexOfKeyByName(7, "Missing", "category"));
