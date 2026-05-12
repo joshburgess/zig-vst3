@@ -24,6 +24,8 @@ Build Steinberg's validator:
 scripts/build_validator.sh
 ```
 
+On macOS, the shell script supports full Xcode and Command Line Tools installs with Apple clang.
+
 On Windows:
 
 ```powershell
