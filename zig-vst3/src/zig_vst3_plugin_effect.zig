@@ -1144,6 +1144,45 @@ test "reflected edit controller exposes program snapshot data" {
     try std.testing.expectEqual(types.kResultFalse, program_data.vtable.setProgramData(program_data, 7, 0, stream.asStream()));
 }
 
+test "reflected edit controller round-trips parameter state through host callbacks" {
+    const Fixture = struct {
+        const Params = struct {
+            gain: plug_core.parameters.FloatParam = plug_core.parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 0.25),
+        };
+        const ParameterSet = plug_core.parameters.ParameterSet(Params);
+        const parameter_set = ParameterSet.init(.{});
+    };
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "StateController";
+        pub const Params = Fixture.Params;
+        pub const parameter_set = &Fixture.parameter_set;
+    });
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setParamNormalized(controller_iface, 1, 0.75));
+
+    const Stream = vst_stream.FixedBufferStream(plug_core.state.encodedSize(Fixture.Params));
+    var stream = Stream{};
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.getState(controller_iface, stream.asStream()));
+    try std.testing.expectEqual(@as(usize, plug_core.state.encodedSize(Fixture.Params)), stream.data().len);
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setParamNormalized(controller_iface, 1, 0.0));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.0), controller_iface.vtable.getParamNormalized(controller_iface, 1));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentState(controller_iface, stream.asStream()));
+    try std.testing.expectApproxEqAbs(@as(vsttypes.ParamValue, 0.75), controller_iface.vtable.getParamNormalized(controller_iface, 1), 0.000001);
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setParamNormalized(controller_iface, 1, 0.25));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setState(controller_iface, stream.asStream()));
+    try std.testing.expectApproxEqAbs(@as(vsttypes.ParamValue, 0.75), controller_iface.vtable.getParamNormalized(controller_iface, 1), 0.000001);
+}
+
 fn queryHostApplication(context: ?*anyopaque) ?*ivsthostapplication.IHostApplication {
     const raw = context orelse return null;
     const unknown: *funknown.Header = @ptrCast(@alignCast(raw));
