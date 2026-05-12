@@ -2120,6 +2120,10 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.parameterChangePlainByName(wanted_name, sample_offset, plain);
         }
 
+        pub fn formatPlain(self: Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
+            return self.formatPlainIndex(index, normalized, buffer);
+        }
+
         pub fn formatPlainIndex(self: Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
             return self.set.formatPlain(index, normalized, buffer);
         }
@@ -2130,6 +2134,10 @@ pub fn ParameterView(comptime Params: type) type {
 
         pub fn formatPlainByName(self: Self, wanted_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
             return self.set.formatPlainByName(wanted_name, normalized, buffer);
+        }
+
+        pub fn parsePlain(self: Self, index: usize, text: []const u8) !f64 {
+            return self.parsePlainIndex(index, text);
         }
 
         pub fn parsePlainIndex(self: Self, index: usize, text: []const u8) !f64 {
@@ -2144,6 +2152,10 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.parsePlainByName(wanted_name, text);
         }
 
+        pub fn plainFromNormalized(self: Self, index: usize, normalized: f64) ?f64 {
+            return self.plainFromNormalizedIndex(index, normalized);
+        }
+
         pub fn plainFromNormalizedIndex(self: Self, index: usize, normalized: f64) ?f64 {
             return self.set.plainFromNormalized(index, normalized);
         }
@@ -2154,6 +2166,10 @@ pub fn ParameterView(comptime Params: type) type {
 
         pub fn plainFromNormalizedByName(self: Self, wanted_name: []const u8, normalized: f64) ?f64 {
             return self.set.plainFromNormalizedByName(wanted_name, normalized);
+        }
+
+        pub fn normalizedFromPlain(self: Self, index: usize, plain: f64) ?f64 {
+            return self.normalizedFromPlainIndex(index, plain);
         }
 
         pub fn normalizedFromPlainIndex(self: Self, index: usize, plain: f64) ?f64 {
@@ -2713,6 +2729,10 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.parameterChangePlainByName(wanted_name, sample_offset, plain);
         }
 
+        pub fn formatPlain(self: Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
+            return self.formatPlainIndex(index, normalized, buffer);
+        }
+
         pub fn formatPlainIndex(self: Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
             return self.set.formatPlain(index, normalized, buffer);
         }
@@ -2723,6 +2743,10 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn formatPlainByName(self: Self, wanted_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
             return self.set.formatPlainByName(wanted_name, normalized, buffer);
+        }
+
+        pub fn parsePlain(self: Self, index: usize, text: []const u8) !f64 {
+            return self.parsePlainIndex(index, text);
         }
 
         pub fn parsePlainIndex(self: Self, index: usize, text: []const u8) !f64 {
@@ -2737,6 +2761,10 @@ pub fn ParameterEditor(comptime Params: type) type {
             return self.set.parsePlainByName(wanted_name, text);
         }
 
+        pub fn plainFromNormalized(self: Self, index: usize, normalized: f64) ?f64 {
+            return self.plainFromNormalizedIndex(index, normalized);
+        }
+
         pub fn plainFromNormalizedIndex(self: Self, index: usize, normalized: f64) ?f64 {
             return self.set.plainFromNormalized(index, normalized);
         }
@@ -2747,6 +2775,10 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn plainFromNormalizedByName(self: Self, wanted_name: []const u8, normalized: f64) ?f64 {
             return self.set.plainFromNormalizedByName(wanted_name, normalized);
+        }
+
+        pub fn normalizedFromPlain(self: Self, index: usize, plain: f64) ?f64 {
+            return self.normalizedFromPlainIndex(index, plain);
         }
 
         pub fn normalizedFromPlainIndex(self: Self, index: usize, plain: f64) ?f64 {
@@ -3959,9 +3991,13 @@ test "parameter view binds reflected set and values" {
     try std.testing.expectEqual(@as(?process.ParameterChange, null), view.parameterChangeNormalizedByName("Missing", 0, 0.5));
     try std.testing.expectEqual(@as(?process.ParameterChange, null), view.parameterChangePlainById(99, 0, 6.0));
     try std.testing.expectEqualStrings("4", try view.formatPlainIndex(1, 1.0, &buffer));
+    try std.testing.expectEqualStrings("4", try view.formatPlain(1, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try view.parsePlainIndex(1, "4"));
+    try std.testing.expectEqual(@as(f64, 1.0), try view.parsePlain(1, "4"));
     try std.testing.expectEqual(@as(?f64, 2.0), view.plainFromNormalizedIndex(3, 1.0));
+    try std.testing.expectEqual(@as(?f64, 2.0), view.plainFromNormalized(3, 1.0));
     try std.testing.expectEqual(@as(?f64, 1.0), view.normalizedFromPlainIndex(3, 2.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), view.normalizedFromPlain(3, 2.0));
     try std.testing.expectEqualStrings("4", try view.formatPlainById(1, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try view.parsePlainById(1, "4"));
     try std.testing.expectEqual(@as(?f64, 2.0), view.plainFromNormalizedById(3, 1.0));
@@ -4177,9 +4213,13 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?process.ParameterChange, null), editor.parameterChangeNormalizedByName("Missing", 0, 0.5));
     try std.testing.expectEqual(@as(?process.ParameterChange, null), editor.parameterChangePlainById(99, 0, 6.0));
     try std.testing.expectEqualStrings("4", try editor.formatPlainIndex(1, 1.0, &buffer));
+    try std.testing.expectEqualStrings("4", try editor.formatPlain(1, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try editor.parsePlainIndex(1, "4"));
+    try std.testing.expectEqual(@as(f64, 1.0), try editor.parsePlain(1, "4"));
     try std.testing.expectEqual(@as(?f64, 2.0), editor.plainFromNormalizedIndex(3, 1.0));
+    try std.testing.expectEqual(@as(?f64, 2.0), editor.plainFromNormalized(3, 1.0));
     try std.testing.expectEqual(@as(?f64, 1.0), editor.normalizedFromPlainIndex(3, 2.0));
+    try std.testing.expectEqual(@as(?f64, 1.0), editor.normalizedFromPlain(3, 2.0));
     try std.testing.expectEqualStrings("4", try editor.formatPlainById(1, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try editor.parsePlainById(1, "4"));
     try std.testing.expectEqual(@as(?f64, 2.0), editor.plainFromNormalizedById(3, 1.0));

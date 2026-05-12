@@ -1258,10 +1258,14 @@ test "gain core example edits reflected parameter values directly" {
     }, view.parameterChangeNormalized("gain", 5, 0.25));
     try std.testing.expectEqualStrings("0.500", try view.formatPlainByName("Gain", 0.5, &format_buffer));
     try std.testing.expectEqualStrings("0.250", try view.formatPlainIndex(0, 0.25, &format_buffer));
+    try std.testing.expectEqualStrings("0.250", try view.formatPlain(0, 0.25, &format_buffer));
     try std.testing.expectEqual(@as(f64, 0.25), try view.parsePlainById(0, "0.25"));
     try std.testing.expectEqual(@as(f64, 0.75), try view.parsePlainIndex(0, "0.75"));
+    try std.testing.expectEqual(@as(f64, 0.75), try view.parsePlain(0, "0.75"));
     try std.testing.expectEqual(@as(?f64, 0.5), view.plainFromNormalizedIndex(0, 0.5));
+    try std.testing.expectEqual(@as(?f64, 0.5), view.plainFromNormalized(0, 0.5));
     try std.testing.expectEqual(@as(?f64, 0.25), view.normalizedFromPlainByName("Gain", 0.25));
+    try std.testing.expectEqual(@as(?f64, 0.25), view.normalizedFromPlain(0, 0.25));
     try std.testing.expectEqual(@as(f64, 0.5), view.loadNormalized("gain"));
     try std.testing.expectEqual(@as(f64, 0.5), view.load("gain"));
     try std.testing.expectEqual(@as(?f64, 0.5), view.loadIndex(0));
@@ -1312,10 +1316,14 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expect(editor.fieldOptionsEmpty("gain"));
     try std.testing.expectEqualStrings("0.750", try editor.formatFieldPlain("gain", 0.75, &format_buffer));
     try std.testing.expectEqualStrings("0.250", try editor.formatPlainIndex(0, 0.25, &format_buffer));
+    try std.testing.expectEqualStrings("0.250", try editor.formatPlain(0, 0.25, &format_buffer));
     try std.testing.expectEqual(@as(f64, 0.75), try editor.parsePlainByName("Gain", "0.75"));
     try std.testing.expectEqual(@as(f64, 0.25), try editor.parsePlainIndex(0, "0.25"));
+    try std.testing.expectEqual(@as(f64, 0.25), try editor.parsePlain(0, "0.25"));
     try std.testing.expectEqual(@as(?f64, 0.75), editor.plainFromNormalizedById(0, 0.75));
+    try std.testing.expectEqual(@as(?f64, 0.75), editor.plainFromNormalized(0, 0.75));
     try std.testing.expectEqual(@as(?f64, 0.75), editor.normalizedFromPlainIndex(0, 0.75));
+    try std.testing.expectEqual(@as(?f64, 0.75), editor.normalizedFromPlain(0, 0.75));
     try std.testing.expectEqual(plug.process.ParameterChange{
         .id = 0,
         .sample_offset = 6,
