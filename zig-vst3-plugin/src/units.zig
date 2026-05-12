@@ -546,8 +546,18 @@ pub fn UnitSet(comptime config: Config) type {
             return list.programName(program_index);
         }
 
+        pub fn programNameByListName(self: Self, list_name: []const u8, program_index: usize) ?[]const u8 {
+            const list = self.programListByName(list_name) orelse return null;
+            return list.programName(program_index);
+        }
+
         pub fn program(self: Self, list_id: i32, program_index: usize) ?Program {
             const list = self.programListById(list_id) orelse return null;
+            return list.program(program_index);
+        }
+
+        pub fn programByListName(self: Self, list_name: []const u8, program_index: usize) ?Program {
+            const list = self.programListByName(list_name) orelse return null;
             return list.program(program_index);
         }
 
@@ -561,8 +571,17 @@ pub fn UnitSet(comptime config: Config) type {
             return list.programIndexOfName(name);
         }
 
+        pub fn programIndexOfNameByListName(self: Self, list_name: []const u8, name: []const u8) ?usize {
+            const list = self.programListByName(list_name) orelse return null;
+            return list.programIndexOfName(name);
+        }
+
         pub fn hasProgramName(self: Self, list_id: i32, name: []const u8) bool {
             return self.programIndexOfName(list_id, name) != null;
+        }
+
+        pub fn hasProgramNameByListName(self: Self, list_name: []const u8, name: []const u8) bool {
+            return self.programIndexOfNameByListName(list_name, name) != null;
         }
 
         pub fn hasDuplicateProgramNames(self: Self, list_id: i32) bool {
@@ -958,9 +977,15 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqualStrings("Drive", set.programName(10, 1).?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programName(10, 2));
     try std.testing.expectEqual(@as(?[]const u8, null), set.programName(99, 0));
+    try std.testing.expectEqualStrings("Drive", set.programNameByListName("Oscillator Presets", 1).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), set.programNameByListName("Oscillator Presets", 2));
+    try std.testing.expectEqual(@as(?[]const u8, null), set.programNameByListName("Missing", 0));
     try std.testing.expectEqualStrings("Drive", set.program(10, 1).?.name);
     try std.testing.expectEqual(@as(?Program, null), set.program(10, 2));
     try std.testing.expectEqual(@as(?Program, null), set.program(99, 0));
+    try std.testing.expectEqualStrings("Drive", set.programByListName("Oscillator Presets", 1).?.name);
+    try std.testing.expectEqual(@as(?Program, null), set.programByListName("Oscillator Presets", 2));
+    try std.testing.expectEqual(@as(?Program, null), set.programByListName("Missing", 0));
     try std.testing.expectEqual(@as(usize, 1), set.program(10, 0).?.parameterCount());
     try std.testing.expectEqual(@as(usize, 1), set.program(10, 0).?.infoCount());
     try std.testing.expect(set.program(10, 0).?.hasParameters());
@@ -998,9 +1023,15 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?usize, 1), set.programIndexOfName(10, "Drive"));
     try std.testing.expectEqual(@as(?usize, null), set.programIndexOfName(10, "Missing"));
     try std.testing.expectEqual(@as(?usize, null), set.programIndexOfName(99, "Drive"));
+    try std.testing.expectEqual(@as(?usize, 1), set.programIndexOfNameByListName("Oscillator Presets", "Drive"));
+    try std.testing.expectEqual(@as(?usize, null), set.programIndexOfNameByListName("Oscillator Presets", "Missing"));
+    try std.testing.expectEqual(@as(?usize, null), set.programIndexOfNameByListName("Missing", "Drive"));
     try std.testing.expect(set.hasProgramName(10, "Drive"));
     try std.testing.expect(!set.hasProgramName(10, "Missing"));
     try std.testing.expect(!set.hasProgramName(99, "Drive"));
+    try std.testing.expect(set.hasProgramNameByListName("Oscillator Presets", "Drive"));
+    try std.testing.expect(!set.hasProgramNameByListName("Oscillator Presets", "Missing"));
+    try std.testing.expect(!set.hasProgramNameByListName("Missing", "Drive"));
     try std.testing.expectEqual(@as(?[]const u8, null), set.duplicateProgramName(10));
     try std.testing.expectEqual(@as(?usize, null), set.duplicateProgramNameIndex(10));
     try std.testing.expectEqual(@as(?[]const u8, null), set.duplicateProgramName(99));

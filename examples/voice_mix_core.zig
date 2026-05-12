@@ -273,10 +273,18 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expectEqual(@as(?usize, 2), instance.programCount(voice_program_list_id));
     try std.testing.expectEqual(@as(?usize, 2), instance.programCountByName("Voice Presets"));
     try std.testing.expectEqualStrings("Quad", instance.programName(voice_program_list_id, 1).?);
+    try std.testing.expectEqualStrings("Quad", instance.programNameByListName("Voice Presets", 1).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), instance.programNameByListName("Missing", 0));
     try std.testing.expectEqualStrings("Quad", instance.program(voice_program_list_id, 1).?.name);
+    try std.testing.expectEqualStrings("Quad", instance.programByListName("Voice Presets", 1).?.name);
+    try std.testing.expectEqual(@as(?plug.units.Program, null), instance.programByListName("Missing", 0));
     try std.testing.expectEqualStrings("Quad", instance.programByName(voice_program_list_id, "Quad").?.name);
     try std.testing.expectEqual(@as(?usize, 1), instance.programIndexOfName(voice_program_list_id, "Quad"));
+    try std.testing.expectEqual(@as(?usize, 1), instance.programIndexOfNameByListName("Voice Presets", "Quad"));
+    try std.testing.expectEqual(@as(?usize, null), instance.programIndexOfNameByListName("Missing", "Quad"));
     try std.testing.expect(instance.hasProgramName(voice_program_list_id, "Quad"));
+    try std.testing.expect(instance.hasProgramNameByListName("Voice Presets", "Quad"));
+    try std.testing.expect(!instance.hasProgramNameByListName("Missing", "Quad"));
     const quad_program = instance.programByName(voice_program_list_id, "Quad").?;
     try std.testing.expectEqual(@as(usize, 1), quad_program.parameterCount());
     try std.testing.expectEqual(@as(usize, 1), quad_program.infoCount());
