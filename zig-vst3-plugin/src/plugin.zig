@@ -2073,6 +2073,24 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.encodedParameterStateSize();
         }
 
+        pub fn encodedParameterStateSizeForCount(self: *const Self, count: usize) usize {
+            _ = self;
+            return state.encodedSizeForCount(count);
+        }
+
+        pub fn encodedParameterStateSizeForCountChecked(self: *const Self, count: usize) !usize {
+            _ = self;
+            return state.encodedSizeForCountChecked(count);
+        }
+
+        pub fn parameterStateEncodedSizeForCount(self: *const Self, count: usize) usize {
+            return self.encodedParameterStateSizeForCount(count);
+        }
+
+        pub fn parameterStateEncodedSizeForCountChecked(self: *const Self, count: usize) !usize {
+            return self.encodedParameterStateSizeForCountChecked(count);
+        }
+
         pub fn parameterStateEntryCount(self: *const Self) usize {
             return self.spec.parameter_set.parameterCount();
         }
@@ -2409,6 +2427,15 @@ pub fn PluginInstance(comptime Plugin: type) type {
 
         pub fn writeParameterState(self: *const Self, writer: anytype) !void {
             try state.writeParameterState(Plugin.Params, &self.spec.parameter_set, &self.spec.values, writer);
+        }
+
+        pub fn writeParameterStateHeader(self: *const Self, writer: anytype) !void {
+            try self.writeParameterStateHeaderForCount(self.parameterStateEntryCount(), writer);
+        }
+
+        pub fn writeParameterStateHeaderForCount(self: *const Self, count: usize, writer: anytype) !void {
+            _ = self;
+            try state.writeParameterStateHeaderForCount(count, writer);
         }
 
         pub fn writeParameterStateJson(self: *const Self, writer: anytype) !void {
@@ -4237,13 +4264,40 @@ test "plugin instance round-trips owned parameter state" {
     var instance = try Instance.init(std.testing.allocator, .{});
     var restored = try Instance.init(std.testing.allocator, .{});
     var bytes: [state.encodedSize(Gain.Params)]u8 = undefined;
+    var header_bytes: [state.encoded_header_size]u8 = undefined;
 
     try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), Instance.Spec.encoded_parameter_state_size);
     try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), instance.encodedParameterStateSize());
     try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), instance.parameterStateEncodedSize());
+    try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), instance.encodedParameterStateSizeForCount(2));
+    try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), instance.parameterStateEncodedSizeForCount(2));
+    try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), try instance.encodedParameterStateSizeForCountChecked(2));
+    try std.testing.expectEqual(@as(usize, state.encodedSize(Gain.Params)), try instance.parameterStateEncodedSizeForCountChecked(2));
+    try std.testing.expectEqual(std.math.maxInt(usize), instance.parameterStateEncodedSizeForCount(std.math.maxInt(usize)));
+    try std.testing.expectError(error.Overflow, instance.parameterStateEncodedSizeForCountChecked(std.math.maxInt(usize)));
     try std.testing.expectEqual(@as(usize, 2), instance.parameterStateEntryCount());
     try std.testing.expect(instance.storeParameterNormalized("gain", 0.25));
     try std.testing.expect(instance.storeParameterNormalized("mix", 0.75));
+
+    var header_out_stream = std.io.fixedBufferStream(&header_bytes);
+    try instance.writeParameterStateHeader(header_out_stream.writer());
+    var header_in_stream = std.io.fixedBufferStream(&header_bytes);
+    try std.testing.expectEqual(
+        state.ParameterStateHeader{ .version = state.format_version, .entry_count = 2 },
+        try instance.readParameterStateHeader(header_in_stream.reader()),
+    );
+
+    var counted_header_out_stream = std.io.fixedBufferStream(&header_bytes);
+    try instance.writeParameterStateHeaderForCount(1, counted_header_out_stream.writer());
+    var counted_header_in_stream = std.io.fixedBufferStream(&header_bytes);
+    try std.testing.expectEqual(
+        state.ParameterStateHeader{ .version = state.format_version, .entry_count = 1 },
+        try instance.readParameterStateHeader(counted_header_in_stream.reader()),
+    );
+    try std.testing.expectError(
+        error.ParameterStateTooLarge,
+        instance.writeParameterStateHeaderForCount(@as(usize, std.math.maxInt(u16)) + 1, counted_header_out_stream.writer()),
+    );
 
     var out_stream = std.io.fixedBufferStream(&bytes);
     try instance.writeParameterState(out_stream.writer());
