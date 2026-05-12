@@ -136,7 +136,8 @@ try std.testing.expectEqual(
     iface.vtable.queryInterface(iface, &ibstream.isizeable_stream_iid, &queried),
 );
 
-const sizeable: *ibstream.ISizeableStream = @ptrCast(@alignCast(queried.?));
+const queried_ptr = queried orelse return error.MissingSizeableStream;
+const sizeable: *ibstream.ISizeableStream = @ptrCast(@alignCast(queried_ptr));
 defer _ = sizeable.vtable.release(sizeable);
 
 var size: types.int64 = -1;
@@ -203,14 +204,14 @@ Out-of-range reads clear the output event before returning an error result. This
 const Changes = vst_parameter_changes.ParameterChanges(2, 8);
 var changes = Changes{};
 
-const queue = changes.addQueue(7).?;
+const queue = changes.addQueue(7) orelse return error.MissingParameterQueue;
 try std.testing.expectEqual(types.kResultOk, queue.appendPoint(0, 0.25));
 try std.testing.expectEqual(types.kResultOk, queue.appendPoint(32, 0.75));
 
 const iface = changes.asInterface();
 try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getParameterCount(iface));
 
-const queue_iface = iface.vtable.getParameterData(iface, 0).?;
+const queue_iface = iface.vtable.getParameterData(iface, 0) orelse return error.MissingParameterQueue;
 try std.testing.expectEqual(@as(vsttypes.ParamID, 7), queue_iface.vtable.getParameterId(queue_iface));
 
 var offset: types.int32 = -1;
