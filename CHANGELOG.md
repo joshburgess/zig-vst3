@@ -39,3 +39,4 @@
 ### Known Gaps
 
 - Fresh manual host smoke rows are still needed for note-gate, event-monitor, and sine-synth before tagging `zig-vst3-0.1.0`.
+- Event Echo still needs a host smoke pass that directly observes echoed output events.
