@@ -135,6 +135,84 @@ test "note gate processor follows event offsets inside a block" {
     try std.testing.expectEqual(@as(usize, 0), local_gate.held_note_count);
 }
 
+test "note gate component gates host event list input through processor shell" {
+    const std = @import("std");
+    const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstevents = @import("pluginterfaces/vst/ivstevents.zig");
+    const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
+    const vst_event_list = @import("vst_event_list.zig");
+
+    resetNoteGateState();
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &processor_out),
+    );
+    try std.testing.expect(processor_out != null);
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
+    defer _ = processor.vtable.release(processor);
+
+    var input_samples = [_]f32{ 0.25, -0.5, 1.0, -1.0 };
+    var output_samples = [_]f32{ 1.0, 1.0, 1.0, 1.0 };
+    var input_channel_ptrs = [_][*]f32{&input_samples};
+    var output_channel_ptrs = [_][*]f32{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 48_000.0 };
+
+    const InputEvents = vst_event_list.EventList(2);
+    var input_events = InputEvents{};
+    var note_on = ivstevents.Event{
+        .sampleOffset = 1,
+        .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+        .data = .{ .noteOn = .{
+            .channel = 0,
+            .pitch = 60,
+            .velocity = 0.75,
+        } },
+    };
+    var note_off = ivstevents.Event{
+        .sampleOffset = 3,
+        .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+        .data = .{ .noteOff = .{
+            .channel = 0,
+            .pitch = 60,
+            .velocity = 0.0,
+        } },
+    };
+    try std.testing.expectEqual(types.kResultOk, input_events.asInterface().vtable.addEvent(input_events.asInterface(), &note_on));
+    try std.testing.expectEqual(types.kResultOk, input_events.asInterface().vtable.addEvent(input_events.asInterface(), &note_off));
+
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 4,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .inputEvents = input_events.asInterface(),
+        .processContext = &process_context,
+    };
+
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqualSlices(f32, &.{ 0.0, -0.5, 1.0, 0.0 }, &output_samples);
+    try std.testing.expect(!gate.open);
+    try std.testing.expectEqual(@as(usize, 0), gate.held_note_count);
+}
+
 test "note gate processor stays open while overlapping notes are held" {
     const std = @import("std");
 
