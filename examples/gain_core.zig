@@ -1356,6 +1356,18 @@ test "gain core example applies reflected parameter changes directly" {
         .sample_offset = 2,
         .normalized = 0.25,
     }, instance.parameterChangeNormalized("gain", 2, 0.25));
+    try std.testing.expectEqual(plug.process.ParameterChange{
+        .id = 0,
+        .sample_offset = 3,
+        .normalized = 0.5,
+    }, instance.parameterChangeNormalizedById(0, 3, 0.5).?);
+    try std.testing.expectEqual(plug.process.ParameterChange{
+        .id = 0,
+        .sample_offset = 4,
+        .normalized = 1.0,
+    }, instance.parameterChangePlainByName("Gain", 4, 6.0).?);
+    try std.testing.expectEqual(@as(?plug.process.ParameterChange, null), instance.parameterChangeNormalizedByName("Missing", 0, 0.5));
+    try std.testing.expectEqual(@as(?plug.process.ParameterChange, null), instance.parameterChangePlainById(99, 0, 6.0));
     const raw_changes = [_]plug.process.ParameterChange{
         instance.parameterChange("gain", 0, 0.5),
     };

@@ -1292,6 +1292,22 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.parameter_set.parameterChange(field_name, sample_offset, plain);
         }
 
+        pub fn parameterChangeNormalizedById(self: *const Self, wanted_id: u32, sample_offset: usize, normalized: f64) ?process_api.ParameterChange {
+            return self.spec.parameter_set.parameterChangeNormalizedById(wanted_id, sample_offset, normalized);
+        }
+
+        pub fn parameterChangePlainById(self: *const Self, wanted_id: u32, sample_offset: usize, plain: f64) ?process_api.ParameterChange {
+            return self.spec.parameter_set.parameterChangePlainById(wanted_id, sample_offset, plain);
+        }
+
+        pub fn parameterChangeNormalizedByName(self: *const Self, wanted_name: []const u8, sample_offset: usize, normalized: f64) ?process_api.ParameterChange {
+            return self.spec.parameter_set.parameterChangeNormalizedByName(wanted_name, sample_offset, normalized);
+        }
+
+        pub fn parameterChangePlainByName(self: *const Self, wanted_name: []const u8, sample_offset: usize, plain: f64) ?process_api.ParameterChange {
+            return self.spec.parameter_set.parameterChangePlainByName(wanted_name, sample_offset, plain);
+        }
+
         pub fn loadParameterNormalized(self: *const Self, comptime field_name: []const u8) f64 {
             return self.parameterView().loadNormalized(field_name);
         }

@@ -1165,6 +1165,50 @@ pub fn ParameterSet(comptime Params: type) type {
             return self.parameterChangeNormalized(field_name, sample_offset, param.normalize(plain));
         }
 
+        pub fn parameterChangeNormalizedById(
+            self: *const Self,
+            wanted_id: u32,
+            sample_offset: usize,
+            normalized: f64,
+        ) ?process.ParameterChange {
+            if (!self.hasId(wanted_id)) return null;
+            return .{
+                .id = wanted_id,
+                .sample_offset = sample_offset,
+                .normalized = normalized,
+            };
+        }
+
+        pub fn parameterChangePlainById(
+            self: *const Self,
+            wanted_id: u32,
+            sample_offset: usize,
+            plain: f64,
+        ) ?process.ParameterChange {
+            const normalized = self.normalizedFromPlainById(wanted_id, plain) orelse return null;
+            return self.parameterChangeNormalizedById(wanted_id, sample_offset, normalized);
+        }
+
+        pub fn parameterChangeNormalizedByName(
+            self: *const Self,
+            wanted_name: []const u8,
+            sample_offset: usize,
+            normalized: f64,
+        ) ?process.ParameterChange {
+            const id_value = self.idByName(wanted_name) orelse return null;
+            return self.parameterChangeNormalizedById(id_value, sample_offset, normalized);
+        }
+
+        pub fn parameterChangePlainByName(
+            self: *const Self,
+            wanted_name: []const u8,
+            sample_offset: usize,
+            plain: f64,
+        ) ?process.ParameterChange {
+            const normalized = self.normalizedFromPlainByName(wanted_name, plain) orelse return null;
+            return self.parameterChangeNormalizedByName(wanted_name, sample_offset, normalized);
+        }
+
         pub fn formatFieldPlain(self: *const Self, comptime field_name: []const u8, normalized: f64, buffer: []u8) ![]const u8 {
             return self.descriptor(field_name).formatPlain(normalized, buffer);
         }
@@ -2060,6 +2104,22 @@ pub fn ParameterView(comptime Params: type) type {
             return self.set.parameterChange(field_name, sample_offset, plain);
         }
 
+        pub fn parameterChangeNormalizedById(self: Self, wanted_id: u32, sample_offset: usize, normalized: f64) ?process.ParameterChange {
+            return self.set.parameterChangeNormalizedById(wanted_id, sample_offset, normalized);
+        }
+
+        pub fn parameterChangePlainById(self: Self, wanted_id: u32, sample_offset: usize, plain: f64) ?process.ParameterChange {
+            return self.set.parameterChangePlainById(wanted_id, sample_offset, plain);
+        }
+
+        pub fn parameterChangeNormalizedByName(self: Self, wanted_name: []const u8, sample_offset: usize, normalized: f64) ?process.ParameterChange {
+            return self.set.parameterChangeNormalizedByName(wanted_name, sample_offset, normalized);
+        }
+
+        pub fn parameterChangePlainByName(self: Self, wanted_name: []const u8, sample_offset: usize, plain: f64) ?process.ParameterChange {
+            return self.set.parameterChangePlainByName(wanted_name, sample_offset, plain);
+        }
+
         pub fn formatPlainIndex(self: Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
             return self.set.formatPlain(index, normalized, buffer);
         }
@@ -2635,6 +2695,22 @@ pub fn ParameterEditor(comptime Params: type) type {
             plain: FieldPlainType(Params, field_name),
         ) process.ParameterChange {
             return self.set.parameterChange(field_name, sample_offset, plain);
+        }
+
+        pub fn parameterChangeNormalizedById(self: Self, wanted_id: u32, sample_offset: usize, normalized: f64) ?process.ParameterChange {
+            return self.set.parameterChangeNormalizedById(wanted_id, sample_offset, normalized);
+        }
+
+        pub fn parameterChangePlainById(self: Self, wanted_id: u32, sample_offset: usize, plain: f64) ?process.ParameterChange {
+            return self.set.parameterChangePlainById(wanted_id, sample_offset, plain);
+        }
+
+        pub fn parameterChangeNormalizedByName(self: Self, wanted_name: []const u8, sample_offset: usize, normalized: f64) ?process.ParameterChange {
+            return self.set.parameterChangeNormalizedByName(wanted_name, sample_offset, normalized);
+        }
+
+        pub fn parameterChangePlainByName(self: Self, wanted_name: []const u8, sample_offset: usize, plain: f64) ?process.ParameterChange {
+            return self.set.parameterChangePlainByName(wanted_name, sample_offset, plain);
         }
 
         pub fn formatPlainIndex(self: Self, index: usize, normalized: f64, buffer: []u8) ![]const u8 {
@@ -3304,6 +3380,18 @@ test "parameter set reflects descriptor fields" {
         .normalized = 0.25,
     }, set.parameterChangeNormalized("gain", 2, 0.25));
     try std.testing.expectEqual(process.ParameterChange{
+        .id = 0,
+        .sample_offset = 6,
+        .normalized = 0.5,
+    }, set.parameterChangeNormalizedById(0, 6, 0.5).?);
+    try std.testing.expectEqual(process.ParameterChange{
+        .id = 0,
+        .sample_offset = 7,
+        .normalized = 1.0,
+    }, set.parameterChangePlainByName("Gain", 7, 6.0).?);
+    try std.testing.expectEqual(@as(?process.ParameterChange, null), set.parameterChangeNormalizedById(99, 0, 0.5));
+    try std.testing.expectEqual(@as(?process.ParameterChange, null), set.parameterChangePlainByName("Missing", 0, 6.0));
+    try std.testing.expectEqual(process.ParameterChange{
         .id = 1,
         .sample_offset = 3,
         .normalized = 1.0,
@@ -3858,6 +3946,18 @@ test "parameter view binds reflected set and values" {
         .sample_offset = 5,
         .normalized = 0.25,
     }, view.parameterChangeNormalized("gain", 5, 0.25));
+    try std.testing.expectEqual(process.ParameterChange{
+        .id = 0,
+        .sample_offset = 6,
+        .normalized = 0.5,
+    }, view.parameterChangeNormalizedById(0, 6, 0.5).?);
+    try std.testing.expectEqual(process.ParameterChange{
+        .id = 0,
+        .sample_offset = 7,
+        .normalized = 1.0,
+    }, view.parameterChangePlainByName("Gain", 7, 6.0).?);
+    try std.testing.expectEqual(@as(?process.ParameterChange, null), view.parameterChangeNormalizedByName("Missing", 0, 0.5));
+    try std.testing.expectEqual(@as(?process.ParameterChange, null), view.parameterChangePlainById(99, 0, 6.0));
     try std.testing.expectEqualStrings("4", try view.formatPlainIndex(1, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try view.parsePlainIndex(1, "4"));
     try std.testing.expectEqual(@as(?f64, 2.0), view.plainFromNormalizedIndex(3, 1.0));
@@ -4064,6 +4164,18 @@ test "parameter editor binds reflected set and mutable values" {
         .sample_offset = 5,
         .normalized = 0.25,
     }, editor.parameterChangeNormalized("gain", 5, 0.25));
+    try std.testing.expectEqual(process.ParameterChange{
+        .id = 0,
+        .sample_offset = 6,
+        .normalized = 0.5,
+    }, editor.parameterChangeNormalizedById(0, 6, 0.5).?);
+    try std.testing.expectEqual(process.ParameterChange{
+        .id = 0,
+        .sample_offset = 7,
+        .normalized = 1.0,
+    }, editor.parameterChangePlainByName("Gain", 7, 6.0).?);
+    try std.testing.expectEqual(@as(?process.ParameterChange, null), editor.parameterChangeNormalizedByName("Missing", 0, 0.5));
+    try std.testing.expectEqual(@as(?process.ParameterChange, null), editor.parameterChangePlainById(99, 0, 6.0));
     try std.testing.expectEqualStrings("4", try editor.formatPlainIndex(1, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try editor.parsePlainIndex(1, "4"));
     try std.testing.expectEqual(@as(?f64, 2.0), editor.plainFromNormalizedIndex(3, 1.0));
