@@ -4148,6 +4148,38 @@ test "plugin instance passes input events to process hooks" {
     try std.testing.expectEqual(@as(i16, 64), instance.plugin.note_pitch);
 }
 
+test "plugin instance passes output event writers to process hooks" {
+    const Emitter = struct {
+        pub const name = "Instance Process Output Events";
+        pub const vendor = "zig-vst3";
+        pub const event_output = true;
+        pub const Params = struct {};
+
+        pub fn process(_: *@This(), context: *process_api.ProcessContext(f32)) void {
+            context.appendOutputEvent(process_api.Event.noteOff(1, 0, 64, 0.0)) catch {};
+        }
+    };
+    const Instance = PluginInstance(Emitter);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const input = [_]f32{ 0.0, 0.0 };
+    var output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    var output_event_storage: [1]process_api.Event = undefined;
+    var output_events = process_api.EventWriter.init(&output_event_storage, input.len);
+    var context = try process_api.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .output_events = &output_events,
+    });
+
+    instance.process(&context);
+
+    try std.testing.expect(instance.hasEventOutput());
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
+    try std.testing.expectEqual(process_api.EventKind.note_off, context.firstOutputEvent(.note_off).?.kind);
+    try std.testing.expectEqual(@as(usize, 1), context.firstOutputEvent(.note_off).?.sample_offset);
+    try std.testing.expectEqual(@as(i16, 64), context.firstOutputEvent(.note_off).?.pitch);
+}
+
 test "plugin instance passes reflected parameters to state-aware process hooks" {
     const Gain = struct {
         observed: ?f64 = null,
@@ -4283,6 +4315,50 @@ test "plugin instance applies process64 parameter changes before dispatch" {
 
     try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(?f64, 0.75), instance.plugin.observed);
+}
+
+test "plugin instance passes events to process64 hooks" {
+    const Echo = struct {
+        event_count: usize = 0,
+        note_pitch: i16 = -1,
+
+        pub const name = "Instance Process64 Events";
+        pub const vendor = "zig-vst3";
+        pub const event_output = true;
+        pub const Params = struct {};
+
+        pub fn process64(self: *@This(), context: *process_api.ProcessContext(f64)) void {
+            self.event_count = context.inputEventCount();
+            if (context.firstEvent(.note_on)) |event| {
+                self.note_pitch = event.pitch;
+                context.appendOutputEvent(process_api.Event.noteOff(event.sample_offset + 1, event.channel, event.pitch, 0.0)) catch {};
+            }
+        }
+    };
+    const Instance = PluginInstance(Echo);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const input = [_]f64{ 0.0, 0.0, 0.0 };
+    var output = [_]f64{ 0.0, 0.0, 0.0 };
+    const input_channels = [_][]const f64{&input};
+    const output_channels = [_][]f64{&output};
+    const events = [_]process_api.Event{
+        process_api.Event.noteOn(1, 0, 67, 0.5),
+    };
+    var output_event_storage: [1]process_api.Event = undefined;
+    var output_events = process_api.EventWriter.init(&output_event_storage, input.len);
+    var context = try process_api.ProcessContext(f64).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+        .output_events = &output_events,
+    });
+
+    instance.process64(&context);
+
+    try std.testing.expect(instance.hasEventOutput());
+    try std.testing.expectEqual(@as(usize, 1), instance.plugin.event_count);
+    try std.testing.expectEqual(@as(i16, 67), instance.plugin.note_pitch);
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
+    try std.testing.expectEqual(@as(usize, 2), context.firstOutputEvent(.note_off).?.sample_offset);
+    try std.testing.expectEqual(@as(i16, 67), context.firstOutputEvent(.note_off).?.pitch);
 }
 
 test "plugin instance passes reflected parameters to state-aware process64 hooks" {
