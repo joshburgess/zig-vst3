@@ -531,6 +531,11 @@ pub fn UnitSet(comptime config: Config) type {
             return list.programs.len;
         }
 
+        pub fn programCountByName(self: Self, list_name: []const u8) ?usize {
+            const list = self.programListByName(list_name) orelse return null;
+            return list.programs.len;
+        }
+
         pub fn programName(self: Self, list_id: i32, program_index: usize) ?[]const u8 {
             const list = self.programListById(list_id) orelse return null;
             if (program_index >= list.programs.len) return null;
@@ -941,7 +946,9 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?[]const u8, null), set.programListNameForUnit(root_unit_id));
     try std.testing.expectEqual(@as(?[]const u8, null), set.programListNameForUnitName("Missing"));
     try std.testing.expectEqual(@as(?usize, 2), set.programCount(10));
+    try std.testing.expectEqual(@as(?usize, 2), set.programCountByName("Oscillator Presets"));
     try std.testing.expectEqual(@as(?usize, null), set.programCount(99));
+    try std.testing.expectEqual(@as(?usize, null), set.programCountByName("Missing"));
     try std.testing.expectEqualStrings("Drive", set.programName(10, 1).?);
     try std.testing.expectEqual(@as(?[]const u8, null), set.programName(10, 2));
     try std.testing.expectEqual(@as(?[]const u8, null), set.programName(99, 0));

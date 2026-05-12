@@ -135,6 +135,7 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expect(!units.programListEmpty(voice_program_list_id));
     try std.testing.expect(!units.programListEmptyByName("Voice Presets"));
     try std.testing.expectEqual(@as(?usize, 2), units.programCount(voice_program_list_id));
+    try std.testing.expectEqual(@as(?usize, 2), units.programCountByName("Voice Presets"));
     try std.testing.expectEqualStrings("Quad", units.programName(voice_program_list_id, 1).?);
     try std.testing.expectEqualStrings("Quad", units.program(voice_program_list_id, 1).?.name);
     try std.testing.expectEqualStrings("Quad", units.programByName(voice_program_list_id, "Quad").?.name);
@@ -268,6 +269,7 @@ test "voice mix core example declares reflected unit and program metadata" {
     try std.testing.expect(!instance.programListEmpty(voice_program_list_id));
     try std.testing.expect(!instance.programListEmptyByName("Voice Presets"));
     try std.testing.expectEqual(@as(?usize, 2), instance.programCount(voice_program_list_id));
+    try std.testing.expectEqual(@as(?usize, 2), instance.programCountByName("Voice Presets"));
     try std.testing.expectEqualStrings("Quad", instance.programName(voice_program_list_id, 1).?);
     try std.testing.expectEqualStrings("Quad", instance.program(voice_program_list_id, 1).?.name);
     try std.testing.expectEqualStrings("Quad", instance.programByName(voice_program_list_id, "Quad").?.name);
