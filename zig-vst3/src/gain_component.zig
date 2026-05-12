@@ -1,13 +1,16 @@
 const gain_controller = @import("gain_controller.zig");
+const gain_spec = @import("gain_spec.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ivstattributes = @import("pluginterfaces/vst/ivstattributes.zig");
 const ivstautomationstate = @import("pluginterfaces/vst/ivstautomationstate.zig");
 const ivstdataexchange = @import("pluginterfaces/vst/ivstdataexchange.zig");
 const plug_process = @import("zig-vst3-plugin-core").process;
+const plug_state = @import("zig-vst3-plugin-core").state;
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_host_application = @import("vst_host_application.zig");
 const vst_host_context = @import("vst_host_context.zig");
+const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 
 pub const cid = tuid.inlineUid(0xA74E7A0D, 0x6B234163, 0xA0A83EBF, 0xD06F1401);
@@ -609,4 +612,29 @@ test "gain component stores data exchange handler" {
 
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
     try std.testing.expectEqual(@as(types.uint32, 2), host.release_count);
+}
+
+test "gain component round-trips gain state through host callbacks" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+
+    gain_controller.setGain(0.5);
+    defer gain_controller.setGain(1.0);
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    const Stream = vst_stream.FixedBufferStream(plug_state.encodedSize(gain_spec.Spec.Params));
+    var stream = Stream{};
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getState(component_iface, stream.asStream()));
+    try std.testing.expectEqual(@as(usize, plug_state.encodedSize(gain_spec.Spec.Params)), stream.data().len);
+
+    gain_controller.setGain(1.0);
+    try std.testing.expectEqual(@as(f64, 1.0), gain_controller.gain());
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setState(component_iface, stream.asStream()));
+    try std.testing.expectApproxEqAbs(@as(f64, 0.5), gain_controller.gain(), 0.000001);
 }

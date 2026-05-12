@@ -1,8 +1,11 @@
 const bypass_controller = @import("bypass_controller.zig");
+const bypass_spec = @import("bypass_spec.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const plug_process = @import("zig-vst3-plugin-core").process;
+const plug_state = @import("zig-vst3-plugin-core").state;
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 
 pub const cid = tuid.inlineUid(0x69B21F85, 0x804045F7, 0x9F452845, 0xC7B18EE0);
@@ -174,5 +177,42 @@ test "bypass component applies host parameter changes through double precision p
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqualSlices(f64, &input_samples, &output_samples);
+    try std.testing.expect(bypass_controller.bypassed());
+}
+
+test "bypass component round-trips bypass state through host callbacks" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+
+    bypass_controller.applyParameterChanges(.{ .items = &.{.{
+        .id = bypass_controller.bypass_param_id,
+        .sample_offset = 0,
+        .normalized = 1.0,
+    }} });
+    defer bypass_controller.applyParameterChanges(.{ .items = &.{.{
+        .id = bypass_controller.bypass_param_id,
+        .sample_offset = 0,
+        .normalized = 0.0,
+    }} });
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    const Stream = vst_stream.FixedBufferStream(plug_state.encodedSize(bypass_spec.Spec.Params));
+    var stream = Stream{};
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getState(component_iface, stream.asStream()));
+    try std.testing.expectEqual(@as(usize, plug_state.encodedSize(bypass_spec.Spec.Params)), stream.data().len);
+
+    bypass_controller.applyParameterChanges(.{ .items = &.{.{
+        .id = bypass_controller.bypass_param_id,
+        .sample_offset = 0,
+        .normalized = 0.0,
+    }} });
+    try std.testing.expect(!bypass_controller.bypassed());
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setState(component_iface, stream.asStream()));
     try std.testing.expect(bypass_controller.bypassed());
 }
