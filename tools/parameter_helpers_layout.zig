@@ -3,8 +3,11 @@ const function_name = @import("zig-vst3").pluginterfaces.vst.ivstparameterfuncti
 const parameter_finder = @import("zig-vst3").pluginterfaces.vst.ivstplugview;
 const remap = @import("zig-vst3").pluginterfaces.vst.ivstremapparamid;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("FunctionNameType.kCompGainReduction {s}\n", .{std.mem.span(function_name.FunctionNameType.kCompGainReduction)});
     try stdout.print("FunctionNameType.kCompGainReductionMax {s}\n", .{std.mem.span(function_name.FunctionNameType.kCompGainReductionMax)});
     try stdout.print("FunctionNameType.kCompGainReductionPeakHold {s}\n", .{std.mem.span(function_name.FunctionNameType.kCompGainReductionPeakHold)});

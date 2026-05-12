@@ -1,8 +1,11 @@
 const std = @import("std");
 const process_context = @import("zig-vst3").pluginterfaces.vst.ivstprocesscontext;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("FrameRate.kPullDownRate {}\n", .{process_context.FrameRateFlags.kPullDownRate});
     try stdout.print("FrameRate.kDropRate {}\n", .{process_context.FrameRateFlags.kDropRate});
     try stdout.print("Chord.kChordMask {}\n", .{process_context.ChordMasks.kChordMask});

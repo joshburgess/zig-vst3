@@ -1,6 +1,34 @@
 const std = @import("std");
 const plug = @import("zig-vst3-plugin");
 
+const FixedBufferStream = struct {
+    buffer: []u8,
+    reader_interface: std.Io.Reader,
+    writer_interface: std.Io.Writer,
+
+    fn init(buffer: []u8) FixedBufferStream {
+        return .{
+            .buffer = buffer,
+            .reader_interface = std.Io.Reader.fixed(buffer),
+            .writer_interface = std.Io.Writer.fixed(buffer),
+        };
+    }
+
+    fn reader(self: *FixedBufferStream) *std.Io.Reader {
+        self.reader_interface = std.Io.Reader.fixed(self.buffer);
+        return &self.reader_interface;
+    }
+
+    fn writer(self: *FixedBufferStream) *std.Io.Writer {
+        self.writer_interface = std.Io.Writer.fixed(self.buffer);
+        return &self.writer_interface;
+    }
+
+    fn getWritten(self: *const FixedBufferStream) []const u8 {
+        return self.writer_interface.buffered();
+    }
+};
+
 pub const Gain = struct {
     pub const name = "zig-vst3-plugin Core Gain";
     pub const vendor = "zig-vst3";
@@ -1527,9 +1555,9 @@ test "gain core example round-trips parameter state" {
     try std.testing.expectEqual(std.math.maxInt(usize), plug.state.encodedSizeForCount(std.math.maxInt(usize)));
     try std.testing.expectError(error.Overflow, plug.state.encodedSizeForCountChecked(std.math.maxInt(usize)));
 
-    var header_out_stream = std.io.fixedBufferStream(&header_bytes);
+    var header_out_stream = FixedBufferStream.init(&header_bytes);
     try plug.state.writeParameterStateHeaderForCount(1, header_out_stream.writer());
-    var header_in_stream = std.io.fixedBufferStream(&header_bytes);
+    var header_in_stream = FixedBufferStream.init(&header_bytes);
     try std.testing.expectEqual(
         plug.state.ParameterStateHeader{ .version = plug.state.format_version, .entry_count = 1 },
         try plug.state.readParameterStateHeader(header_in_stream.reader()),
@@ -1550,9 +1578,9 @@ test "gain core example round-trips parameter state" {
     try std.testing.expectError(error.Overflow, instance.parameterStateEncodedSizeForCountChecked(std.math.maxInt(usize)));
     try std.testing.expectEqual(@as(usize, 1), instance.parameterStateEntryCount());
 
-    var instance_header_out_stream = std.io.fixedBufferStream(&header_bytes);
+    var instance_header_out_stream = FixedBufferStream.init(&header_bytes);
     try instance.writeParameterStateHeader(instance_header_out_stream.writer());
-    var instance_header_in_stream = std.io.fixedBufferStream(&header_bytes);
+    var instance_header_in_stream = FixedBufferStream.init(&header_bytes);
     try std.testing.expectEqual(
         plug.state.ParameterStateHeader{ .version = plug.state.format_version, .entry_count = 1 },
         try instance.readParameterStateHeader(instance_header_in_stream.reader()),
@@ -1562,10 +1590,10 @@ test "gain core example round-trips parameter state" {
         instance.writeParameterStateHeaderForCount(@as(usize, std.math.maxInt(u16)) + 1, instance_header_out_stream.writer()),
     );
 
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     try instance.writeParameterState(out_stream.writer());
 
-    var header_stream = std.io.fixedBufferStream(&bytes);
+    var header_stream = FixedBufferStream.init(&bytes);
     const header = try restored.readParameterStateHeader(header_stream.reader());
     const empty_header = plug.state.ParameterStateHeader{ .version = plug.state.format_version, .entry_count = 0 };
     const newer_header = plug.state.ParameterStateHeader{ .version = plug.state.format_version, .entry_count = 2 };
@@ -1607,10 +1635,10 @@ test "gain core example round-trips parameter state" {
     try std.testing.expect(restored.parameterStateHeaderHasMoreEntries(newer_header));
     try std.testing.expectEqual(@as(usize, 1), restored.parameterStateHeaderExtraEntryCount(newer_header));
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     const report = try restored.readParameterStateReport(in_stream.reader());
     var directly_restored = try Instance.init(std.testing.allocator, .{});
-    var direct_in_stream = std.io.fixedBufferStream(&bytes);
+    var direct_in_stream = FixedBufferStream.init(&bytes);
     try directly_restored.readParameterState(direct_in_stream.reader());
     const empty_report = plug.state.ReadParameterStateReport{ .entry_count = 0, .restored_count = 0, .ignored_count = 0 };
     const newer_report = plug.state.ReadParameterStateReport{ .entry_count = 2, .restored_count = 1, .ignored_count = 1 };
@@ -1705,7 +1733,7 @@ test "gain core example round-trips parameter state" {
     try std.testing.expectEqual(@as(f64, 0.25), directly_restored.loadParameterNormalized("gain"));
 
     var json_bytes: [128]u8 = undefined;
-    var json_stream = std.io.fixedBufferStream(&json_bytes);
+    var json_stream = FixedBufferStream.init(&json_bytes);
     try restored.writeParameterStateJson(json_stream.writer());
     try std.testing.expectEqualStrings(
         "{\"version\":1,\"parameters\":[{\"id\":0,\"name\":\"Gain\",\"normalized\":0.25}]}",
@@ -1863,14 +1891,14 @@ test "gain core example reads migrated parameter state" {
     var bytes: [plug.state.encodedSize(LegacyGain.Params)]u8 = undefined;
 
     try std.testing.expect(legacy.storeParameterNormalized("gain", 0.25));
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     try legacy.writeParameterState(out_stream.writer());
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     try restored.readParameterStateWithMigrations(in_stream.reader(), &migrations);
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadParameterNormalized("gain"));
 
-    var report_stream = std.io.fixedBufferStream(&bytes);
+    var report_stream = FixedBufferStream.init(&bytes);
     const report = try reported.readParameterStateWithMigrationsReport(report_stream.reader(), &migrations);
     try std.testing.expectEqual(plug.state.ReadParameterStateReport{ .entry_count = 1, .restored_count = 1, .ignored_count = 0 }, report);
     try std.testing.expect(report.isRestoredAllClassification());

@@ -1,8 +1,11 @@
 const std = @import("std");
 const base = @import("zig-vst3").pluginterfaces.base;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("FVariant.kEmpty {}\n", .{base.fvariant.FVariant.kEmpty});
     try stdout.print("FVariant.kInteger {}\n", .{base.fvariant.FVariant.kInteger});
     try stdout.print("FVariant.kFloat {}\n", .{base.fvariant.FVariant.kFloat});

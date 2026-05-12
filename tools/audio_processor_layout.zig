@@ -6,8 +6,11 @@ const events = @import("zig-vst3").pluginterfaces.vst.ivstevents;
 const parameter_changes = @import("zig-vst3").pluginterfaces.vst.ivstparameterchanges;
 const vsttypes = @import("zig-vst3").pluginterfaces.vst.vsttypes;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("kVstAudioEffectClass {s}\n", .{audio_processor.kVstAudioEffectClass});
     try stdout.print("ComponentFlags.kDistributable {}\n", .{audio_processor.ComponentFlags.kDistributable});
     try stdout.print("ComponentFlags.kSimpleModeSupported {}\n", .{audio_processor.ComponentFlags.kSimpleModeSupported});

@@ -22,6 +22,34 @@ const empty_arrangement: vsttypes.SpeakerArrangement = 0;
 const stereo_arrangement: vsttypes.SpeakerArrangement = 3;
 const test_sample_rate: f64 = 48_000.0;
 
+const FixedBufferStream = struct {
+    buffer: []u8,
+    reader_interface: std.Io.Reader,
+    writer_interface: std.Io.Writer,
+
+    fn init(buffer: []u8) FixedBufferStream {
+        return .{
+            .buffer = buffer,
+            .reader_interface = std.Io.Reader.fixed(buffer),
+            .writer_interface = std.Io.Writer.fixed(buffer),
+        };
+    }
+
+    fn reader(self: *FixedBufferStream) *std.Io.Reader {
+        self.reader_interface = std.Io.Reader.fixed(self.buffer);
+        return &self.reader_interface;
+    }
+
+    fn writer(self: *FixedBufferStream) *std.Io.Writer {
+        self.writer_interface = std.Io.Writer.fixed(self.buffer);
+        return &self.writer_interface;
+    }
+
+    fn getWritten(self: *const FixedBufferStream) []const u8 {
+        return self.writer_interface.buffered();
+    }
+};
+
 pub const StereoAudioBuses = struct {
     pub const Config = struct {
         audio_input: bool = true,
@@ -551,7 +579,8 @@ pub fn readParameterState(
     values: *plug.parameters.ParameterValues(Params),
 ) types.tresult {
     const input = stream orelse return types.kInvalidArgument;
-    var input_reader = IBStreamReader{ .stream = input };
+    var input_reader: IBStreamReader = undefined;
+    input_reader.init(input);
     plug.state.readParameterState(Params, set, values, input_reader.reader()) catch return types.kResultFalse;
     return types.kResultOk;
 }
@@ -563,48 +592,112 @@ pub fn writeParameterState(
     values: *const plug.parameters.ParameterValues(Params),
 ) types.tresult {
     const output = stream orelse return types.kInvalidArgument;
-    var output_writer = IBStreamWriter{ .stream = output };
+    var output_writer: IBStreamWriter = undefined;
+    output_writer.init(output);
     plug.state.writeParameterState(Params, set, values, output_writer.writer()) catch return types.kResultFalse;
     return types.kResultOk;
 }
 
-const StreamError = error{ StreamReadFailed, StreamWriteFailed };
-
 const IBStreamReader = struct {
     stream: *ibstream.IBStream,
+    buffer: [4096]u8,
+    interface: std.Io.Reader,
 
-    const Reader = std.io.GenericReader(*IBStreamReader, StreamError, read);
-
-    fn reader(self: *IBStreamReader) Reader {
-        return .{ .context = self };
+    fn init(self: *IBStreamReader, stream: *ibstream.IBStream) void {
+        self.stream = stream;
+        self.buffer = undefined;
+        self.interface = .{
+            .vtable = &.{
+                .stream = streamImpl,
+                .readVec = readVec,
+            },
+            .buffer = &self.buffer,
+            .seek = 0,
+            .end = 0,
+        };
     }
 
-    fn read(self: *IBStreamReader, buffer: []u8) StreamError!usize {
+    fn reader(self: *IBStreamReader) *std.Io.Reader {
+        return &self.interface;
+    }
+
+    fn read(self: *IBStreamReader, buffer: []u8) std.Io.Reader.Error!usize {
         if (buffer.len == 0) return 0;
-        if (buffer.len > std.math.maxInt(types.int32)) return error.StreamReadFailed;
+        if (buffer.len > std.math.maxInt(types.int32)) return error.ReadFailed;
         var bytes_read: types.int32 = 0;
         const result = self.stream.vtable.read(self.stream, buffer.ptr, @intCast(buffer.len), &bytes_read);
-        if (result != types.kResultOk or bytes_read < 0) return error.StreamReadFailed;
+        if (bytes_read < 0) return error.ReadFailed;
+        if (bytes_read == 0) return error.EndOfStream;
+        if (result != types.kResultOk) return error.ReadFailed;
         return @intCast(bytes_read);
+    }
+
+    fn streamImpl(reader_interface: *std.Io.Reader, writer: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
+        const self: *IBStreamReader = @alignCast(@fieldParentPtr("interface", reader_interface));
+        var buffer: [4096]u8 = undefined;
+        const limit_count: usize = @intCast(@min(@intFromEnum(limit), buffer.len));
+        const read_count = try self.read(buffer[0..limit_count]);
+        try writer.writeAll(buffer[0..read_count]);
+        return read_count;
+    }
+
+    fn readVec(reader_interface: *std.Io.Reader, data: [][]u8) std.Io.Reader.Error!usize {
+        const self: *IBStreamReader = @alignCast(@fieldParentPtr("interface", reader_interface));
+        if (data.len > 0 and data[0].len == 0) {
+            const writable = reader_interface.buffer[reader_interface.end..];
+            if (writable.len == 0) return error.ReadFailed;
+            const read_count = try self.read(writable[0..1]);
+            reader_interface.end += read_count;
+            return 0;
+        }
+        var total: usize = 0;
+        for (data) |buffer| {
+            const read_count = try self.read(buffer);
+            total += read_count;
+            if (read_count < buffer.len) break;
+        }
+        return total;
     }
 };
 
 const IBStreamWriter = struct {
     stream: *ibstream.IBStream,
+    interface: std.Io.Writer,
 
-    const Writer = std.io.GenericWriter(*IBStreamWriter, StreamError, write);
-
-    fn writer(self: *IBStreamWriter) Writer {
-        return .{ .context = self };
+    fn init(self: *IBStreamWriter, stream: *ibstream.IBStream) void {
+        self.stream = stream;
+        self.interface = .{
+            .vtable = &.{
+                .drain = drain,
+            },
+            .buffer = &.{},
+        };
     }
 
-    fn write(self: *IBStreamWriter, bytes: []const u8) StreamError!usize {
+    fn writer(self: *IBStreamWriter) *std.Io.Writer {
+        return &self.interface;
+    }
+
+    fn write(self: *IBStreamWriter, bytes: []const u8) std.Io.Writer.Error!usize {
         if (bytes.len == 0) return 0;
-        if (bytes.len > std.math.maxInt(types.int32)) return error.StreamWriteFailed;
+        if (bytes.len > std.math.maxInt(types.int32)) return error.WriteFailed;
         var bytes_written: types.int32 = 0;
         const result = self.stream.vtable.write(self.stream, @constCast(bytes.ptr), @intCast(bytes.len), &bytes_written);
-        if (result != types.kResultOk or bytes_written < 0) return error.StreamWriteFailed;
+        if (result != types.kResultOk or bytes_written < 0) return error.WriteFailed;
         return @intCast(bytes_written);
+    }
+
+    fn drain(writer_interface: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+        const self: *IBStreamWriter = @alignCast(@fieldParentPtr("interface", writer_interface));
+        var total: usize = 0;
+        for (data[0 .. data.len - 1]) |bytes| {
+            total += try self.write(bytes);
+        }
+        const repeated = data[data.len - 1];
+        for (0..splat) |_| {
+            total += try self.write(repeated);
+        }
+        return total;
     }
 };
 
@@ -928,7 +1021,7 @@ test "zig-vst3-plugin bridge rejects invalid normalized IBStream state" {
 
     try std.testing.expectEqual(types.kResultOk, source.writeToStream(stream.asStream()));
     const second_value_offset = 8 + @sizeOf(u16) + @sizeOf(u16) + @sizeOf(u32) + @sizeOf(u64) + @sizeOf(u32);
-    var invalid_value = std.io.fixedBufferStream(stream.bytes[second_value_offset..][0..@sizeOf(u64)]);
+    var invalid_value = FixedBufferStream.init(stream.bytes[second_value_offset..][0..@sizeOf(u64)]);
     try invalid_value.writer().writeInt(u64, @bitCast(@as(f64, 1.5)), .little);
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultFalse, restored.readFromStream(stream.asStream()));

@@ -6,6 +6,34 @@ pub const format_version: u16 = 1;
 pub const encoded_header_size: usize = magic.len + @sizeOf(u16) + @sizeOf(u16);
 pub const encoded_entry_size: usize = @sizeOf(u32) + @sizeOf(u64);
 
+const FixedBufferStream = struct {
+    buffer: []u8,
+    reader_interface: std.Io.Reader,
+    writer_interface: std.Io.Writer,
+
+    fn init(buffer: []u8) FixedBufferStream {
+        return .{
+            .buffer = buffer,
+            .reader_interface = std.Io.Reader.fixed(buffer),
+            .writer_interface = std.Io.Writer.fixed(buffer),
+        };
+    }
+
+    fn reader(self: *FixedBufferStream) *std.Io.Reader {
+        self.reader_interface = std.Io.Reader.fixed(self.buffer);
+        return &self.reader_interface;
+    }
+
+    fn writer(self: *FixedBufferStream) *std.Io.Writer {
+        self.writer_interface = std.Io.Writer.fixed(self.buffer);
+        return &self.writer_interface;
+    }
+
+    fn getWritten(self: *const FixedBufferStream) []const u8 {
+        return self.writer_interface.buffered();
+    }
+};
+
 pub const ParameterStateHeader = struct {
     version: u16,
     entry_count: usize,
@@ -362,11 +390,11 @@ pub fn writeParameterStateHeaderForCount(count: usize, writer: anytype) !void {
 
 pub fn readParameterStateHeader(reader: anytype) !ParameterStateHeader {
     var header: [magic.len]u8 = undefined;
-    try reader.readNoEof(&header);
+    try reader.readSliceAll(&header);
     if (!std.mem.eql(u8, &header, magic)) return error.InvalidStateMagic;
     return .{
-        .version = try reader.readInt(u16, .little),
-        .entry_count = try reader.readInt(u16, .little),
+        .version = try reader.takeInt(u16, .little),
+        .entry_count = try reader.takeInt(u16, .little),
     };
 }
 
@@ -439,8 +467,8 @@ pub fn readParameterStateWithMigrationsReport(
     };
     var seen_restored = [_]bool{false} ** parameters.ParameterSet(Params).count;
     for (0..header.entry_count) |_| {
-        const id = try reader.readInt(u32, .little);
-        const normalized: f64 = @bitCast(try reader.readInt(u64, .little));
+        const id = try reader.takeInt(u32, .little);
+        const normalized: f64 = @bitCast(try reader.takeInt(u64, .little));
         if (!std.math.isFinite(normalized) or normalized < 0.0 or normalized > 1.0) return error.ParameterStateOutsideNormalizedRange;
         if (set.indexOfId(migratedParameterId(id, migrations))) |index| {
             if (comptime parameters.ParameterSet(Params).count > 0) {
@@ -588,10 +616,10 @@ test "parameter state round-trips normalized values" {
     try std.testing.expect(values.storeField(&set, "gain", 0.25));
     try std.testing.expect(values.storeField(&set, "mix", 0.75));
 
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     try writeParameterState(Params, &set, &values, out_stream.writer());
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     const header = try readParameterStateHeader(in_stream.reader());
     try std.testing.expectEqual(ParameterStateHeader{ .version = format_version, .entry_count = 2 }, header);
     try std.testing.expectEqual(@as(usize, 2), header.entryCount());
@@ -612,7 +640,7 @@ test "parameter state round-trips normalized values" {
     try std.testing.expectEqual(@as(usize, 36), header.encodedSize());
     try std.testing.expectEqual(@as(usize, 36), try header.encodedSizeChecked());
 
-    in_stream = std.io.fixedBufferStream(&bytes);
+    in_stream = FixedBufferStream.init(&bytes);
     const report = try readParameterStateReport(Params, &set, &restored, in_stream.reader());
 
     try std.testing.expectEqual(ReadParameterStateReport{ .entry_count = 2, .restored_count = 2, .ignored_count = 0 }, report);
@@ -688,11 +716,11 @@ test "parameter state round-trips normalized values" {
 
 test "parameter state header helpers validate magic and count range" {
     var bytes: [encoded_header_size]u8 = undefined;
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
 
     try writeParameterStateHeaderForCount(0, out_stream.writer());
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     const header = try readParameterStateHeader(in_stream.reader());
     try std.testing.expectEqual(ParameterStateHeader{ .version = format_version, .entry_count = 0 }, header);
     try std.testing.expect(!header.hasEntries());
@@ -707,7 +735,7 @@ test "parameter state header helpers validate magic and count range" {
 
     var bad_magic = bytes;
     bad_magic[0] = 'X';
-    var bad_magic_stream = std.io.fixedBufferStream(&bad_magic);
+    var bad_magic_stream = FixedBufferStream.init(&bad_magic);
     try std.testing.expectError(error.InvalidStateMagic, readParameterStateHeader(bad_magic_stream.reader()));
 }
 
@@ -725,7 +753,7 @@ test "parameter state writes debug json" {
     try std.testing.expect(values.storeField(&set, "gain", 0.25));
     try std.testing.expect(values.storeField(&set, "mix", 0.75));
 
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     try writeParameterStateJson(Params, &set, &values, out_stream.writer());
 
     try std.testing.expectEqualStrings(
@@ -746,7 +774,7 @@ test "parameter state debug json escapes names" {
 
     try std.testing.expect(values.storeField(&set, "quoted", 0.25));
 
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     try writeParameterStateJson(Params, &set, &values, out_stream.writer());
 
     try std.testing.expectEqualStrings(
@@ -764,7 +792,7 @@ test "parameter state ignores unknown parameter ids" {
     const set = Set.init(.{});
     var values = Values.init(&set);
     var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + 2 * (@sizeOf(u32) + @sizeOf(u64))]u8 = undefined;
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
     try writer.writeAll(magic);
@@ -775,7 +803,7 @@ test "parameter state ignores unknown parameter ids" {
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u64, @bitCast(@as(f64, 0.75)), .little);
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     const report = try readParameterStateReport(Params, &set, &values, in_stream.reader());
 
     try std.testing.expectEqual(ReadParameterStateReport{ .entry_count = 2, .restored_count = 1, .ignored_count = 1 }, report);
@@ -967,7 +995,7 @@ test "parameter state rejects duplicate restored parameter ids without partial u
     const set = Set.init(.{});
     var values = Values.init(&set);
     var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + 2 * (@sizeOf(u32) + @sizeOf(u64))]u8 = undefined;
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
     try std.testing.expect(values.storeField(&set, "gain", 0.8));
@@ -981,7 +1009,7 @@ test "parameter state rejects duplicate restored parameter ids without partial u
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u64, @bitCast(@as(f64, 0.75)), .little);
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectError(error.DuplicateParameterStateEntry, readParameterState(Params, &set, &values, in_stream.reader()));
     try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
     try std.testing.expectEqual(@as(f64, 0.6), values.loadField(&set, "mix"));
@@ -997,15 +1025,15 @@ test "parameter state rejects malformed headers and unsupported versions" {
     var values = Values.init(&set);
 
     var bad_magic = [_]u8{0} ** (magic.len + @sizeOf(u16) + @sizeOf(u16));
-    var bad_magic_stream = std.io.fixedBufferStream(&bad_magic);
+    var bad_magic_stream = FixedBufferStream.init(&bad_magic);
     try std.testing.expectError(error.InvalidStateMagic, readParameterState(Params, &set, &values, bad_magic_stream.reader()));
 
     var bad_version: [magic.len + @sizeOf(u16) + @sizeOf(u16)]u8 = undefined;
-    var out_stream = std.io.fixedBufferStream(&bad_version);
+    var out_stream = FixedBufferStream.init(&bad_version);
     try out_stream.writer().writeAll(magic);
     try out_stream.writer().writeInt(u16, format_version + 1, .little);
     try out_stream.writer().writeInt(u16, 0, .little);
-    var in_stream = std.io.fixedBufferStream(&bad_version);
+    var in_stream = FixedBufferStream.init(&bad_version);
     try std.testing.expectError(error.UnsupportedStateVersion, readParameterState(Params, &set, &values, in_stream.reader()));
 }
 
@@ -1018,14 +1046,14 @@ test "parameter state rejects truncated entries without changing defaults" {
     const set = Set.init(.{});
     var values = Values.init(&set);
     var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + @sizeOf(u32)]u8 = undefined;
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
 
     try out_stream.writer().writeAll(magic);
     try out_stream.writer().writeInt(u16, format_version, .little);
     try out_stream.writer().writeInt(u16, 1, .little);
     try out_stream.writer().writeInt(u32, 0, .little);
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectError(error.EndOfStream, readParameterState(Params, &set, &values, in_stream.reader()));
     try std.testing.expectEqual(@as(f64, 1.0), values.loadField(&set, "gain"));
 }
@@ -1040,7 +1068,7 @@ test "parameter state rejects later truncated entries without partial updates" {
     const set = Set.init(.{});
     var values = Values.init(&set);
     var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + (@sizeOf(u32) + @sizeOf(u64)) + @sizeOf(u32)]u8 = undefined;
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
     try std.testing.expect(values.storeField(&set, "gain", 0.8));
@@ -1053,7 +1081,7 @@ test "parameter state rejects later truncated entries without partial updates" {
     try writer.writeInt(u64, @bitCast(@as(f64, 0.25)), .little);
     try writer.writeInt(u32, 1, .little);
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectError(error.EndOfStream, readParameterState(Params, &set, &values, in_stream.reader()));
     try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
     try std.testing.expectEqual(@as(f64, 0.6), values.loadField(&set, "mix"));
@@ -1069,7 +1097,7 @@ test "parameter state rejects normalized values outside range without partial up
     const set = Set.init(.{});
     var values = Values.init(&set);
     var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + 2 * (@sizeOf(u32) + @sizeOf(u64))]u8 = undefined;
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
     try std.testing.expect(values.storeField(&set, "gain", 0.8));
@@ -1083,7 +1111,7 @@ test "parameter state rejects normalized values outside range without partial up
     try writer.writeInt(u32, 1, .little);
     try writer.writeInt(u64, @bitCast(@as(f64, 1.5)), .little);
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectError(error.ParameterStateOutsideNormalizedRange, readParameterState(Params, &set, &values, in_stream.reader()));
     try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
     try std.testing.expectEqual(@as(f64, 0.6), values.loadField(&set, "mix"));
@@ -1098,7 +1126,7 @@ test "parameter state rejects non-finite normalized values without partial updat
     const set = Set.init(.{});
     var values = Values.init(&set);
     var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + @sizeOf(u32) + @sizeOf(u64)]u8 = undefined;
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
     try std.testing.expect(values.storeField(&set, "gain", 0.8));
@@ -1109,19 +1137,19 @@ test "parameter state rejects non-finite normalized values without partial updat
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u64, @bitCast(std.math.nan(f64)), .little);
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectError(error.ParameterStateOutsideNormalizedRange, readParameterState(Params, &set, &values, in_stream.reader()));
     try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
 
     try std.testing.expect(values.storeField(&set, "gain", 0.8));
-    out_stream = std.io.fixedBufferStream(&bytes);
+    out_stream = FixedBufferStream.init(&bytes);
     try writer.writeAll(magic);
     try writer.writeInt(u16, format_version, .little);
     try writer.writeInt(u16, 1, .little);
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u64, @bitCast(std.math.inf(f64)), .little);
 
-    in_stream = std.io.fixedBufferStream(&bytes);
+    in_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectError(error.ParameterStateOutsideNormalizedRange, readParameterState(Params, &set, &values, in_stream.reader()));
     try std.testing.expectEqual(@as(f64, 0.8), values.loadField(&set, "gain"));
 }
@@ -1144,10 +1172,10 @@ test "parameter state migrates renamed parameter ids" {
     var bytes: [encodedSize(OldParams)]u8 = undefined;
 
     try std.testing.expect(old_values.storeField(&old_set, "gain", 0.25));
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     try writeParameterState(OldParams, &old_set, &old_values, out_stream.writer());
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     const report = try readParameterStateWithMigrationsReport(NewParams, &new_set, &new_values, in_stream.reader(), &.{
         .{ .old_id = 1, .new_id = 9 },
     });
@@ -1174,10 +1202,10 @@ test "parameter state migrates renamed parameter ids through chains" {
     var bytes: [encodedSize(OldParams)]u8 = undefined;
 
     try std.testing.expect(old_values.storeField(&old_set, "gain", 0.25));
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     try writeParameterState(OldParams, &old_set, &old_values, out_stream.writer());
 
-    var in_stream = std.io.fixedBufferStream(&bytes);
+    var in_stream = FixedBufferStream.init(&bytes);
     try readParameterStateWithMigrations(NewParams, &new_set, &new_values, in_stream.reader(), &.{
         .{ .old_id = 1, .new_id = 9 },
         .{ .old_id = 9, .new_id = 11 },
@@ -1262,10 +1290,10 @@ test "parameter state rejects ambiguous migrations before partial updates" {
 
     try std.testing.expect(old_values.storeField(&old_set, "gain", 0.25));
     try std.testing.expect(new_values.storeField(&new_set, "output", 0.8));
-    var out_stream = std.io.fixedBufferStream(&bytes);
+    var out_stream = FixedBufferStream.init(&bytes);
     try writeParameterState(OldParams, &old_set, &old_values, out_stream.writer());
 
-    var duplicate_stream = std.io.fixedBufferStream(&bytes);
+    var duplicate_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectEqual(@as(?usize, 1), duplicateParameterMigrationIndex(&.{
         .{ .old_id = 1, .new_id = 9 },
         .{ .old_id = 1, .new_id = 10 },
@@ -1276,7 +1304,7 @@ test "parameter state rejects ambiguous migrations before partial updates" {
     }));
     try std.testing.expectEqual(@as(f64, 0.8), new_values.loadField(&new_set, "output"));
 
-    var ambiguous_stream = std.io.fixedBufferStream(&bytes);
+    var ambiguous_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectEqual(@as(?usize, 1), ambiguousParameterMigrationIndex(&.{
         .{ .old_id = 1, .new_id = 9 },
         .{ .old_id = 2, .new_id = 9 },
@@ -1287,7 +1315,7 @@ test "parameter state rejects ambiguous migrations before partial updates" {
     }));
     try std.testing.expectEqual(@as(f64, 0.8), new_values.loadField(&new_set, "output"));
 
-    var identity_stream = std.io.fixedBufferStream(&bytes);
+    var identity_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectEqual(@as(?usize, 0), identityParameterMigrationIndex(&.{
         .{ .old_id = 1, .new_id = 1 },
     }));
@@ -1296,7 +1324,7 @@ test "parameter state rejects ambiguous migrations before partial updates" {
     }));
     try std.testing.expectEqual(@as(f64, 0.8), new_values.loadField(&new_set, "output"));
 
-    var cycle_stream = std.io.fixedBufferStream(&bytes);
+    var cycle_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectError(error.CyclicParameterMigration, readParameterStateWithMigrations(NewParams, &new_set, &new_values, cycle_stream.reader(), &.{
         .{ .old_id = 1, .new_id = 2 },
         .{ .old_id = 2, .new_id = 1 },

@@ -1,8 +1,11 @@
 const std = @import("std");
 const base = @import("zig-vst3").pluginterfaces.base;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("IDependent.kWillChange {}\n", .{@intFromEnum(base.iupdatehandler.ChangeMessage.kWillChange)});
     try stdout.print("IDependent.kChanged {}\n", .{@intFromEnum(base.iupdatehandler.ChangeMessage.kChanged)});
     try stdout.print("IDependent.kDestroyed {}\n", .{@intFromEnum(base.iupdatehandler.ChangeMessage.kDestroyed)});

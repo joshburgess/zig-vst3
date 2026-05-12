@@ -1,8 +1,11 @@
 const std = @import("std");
 const preset_keys = @import("zig-vst3").pluginterfaces.vst.vstpresetkeys;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try stdout.print("PresetAttributes.kPlugInName {s}\n", .{preset_keys.PresetAttributes.kPlugInName});
     try stdout.print("PresetAttributes.kPlugInCategory {s}\n", .{preset_keys.PresetAttributes.kPlugInCategory});
     try stdout.print("PresetAttributes.kInstrument {s}\n", .{preset_keys.PresetAttributes.kInstrument});

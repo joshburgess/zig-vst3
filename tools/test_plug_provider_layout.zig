@@ -1,8 +1,11 @@
 const std = @import("std");
 const test_provider = @import("zig-vst3").pluginterfaces.vst.ivsttestplugprovider;
 
-pub fn main() !void {
-    const stdout = std.fs.File.stdout().deprecatedWriter();
+pub fn main(init: std.process.Init) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     try printType(stdout, "ITestPlugProvider", test_provider.ITestPlugProvider);
     try printType(stdout, "ITestPlugProvider2", test_provider.ITestPlugProvider2);
 
