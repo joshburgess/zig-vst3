@@ -361,6 +361,16 @@ pub fn UnitSet(comptime config: Config) type {
             return list.duplicateProgramName();
         }
 
+        pub fn duplicateProgramNameForUnit(self: Self, unit_id: i32) ?[]const u8 {
+            const list = self.programListForUnit(unit_id) orelse return null;
+            return list.duplicateProgramName();
+        }
+
+        pub fn duplicateProgramNameForUnitName(self: Self, unit_name: []const u8) ?[]const u8 {
+            const list = self.programListForUnitName(unit_name) orelse return null;
+            return list.duplicateProgramName();
+        }
+
         pub fn duplicateProgramNameIndex(self: Self, list_id: i32) ?usize {
             const list = self.programListById(list_id) orelse return null;
             return list.duplicateProgramNameIndex();
@@ -368,6 +378,16 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateProgramNameIndexByListName(self: Self, list_name: []const u8) ?usize {
             const list = self.programListByName(list_name) orelse return null;
+            return list.duplicateProgramNameIndex();
+        }
+
+        pub fn duplicateProgramNameIndexForUnit(self: Self, unit_id: i32) ?usize {
+            const list = self.programListForUnit(unit_id) orelse return null;
+            return list.duplicateProgramNameIndex();
+        }
+
+        pub fn duplicateProgramNameIndexForUnitName(self: Self, unit_name: []const u8) ?usize {
+            const list = self.programListForUnitName(unit_name) orelse return null;
             return list.duplicateProgramNameIndex();
         }
 
@@ -663,6 +683,14 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn hasDuplicateProgramNamesByListName(self: Self, list_name: []const u8) bool {
             return self.duplicateProgramNameByListName(list_name) != null;
+        }
+
+        pub fn hasDuplicateProgramNamesForUnit(self: Self, unit_id: i32) bool {
+            return self.duplicateProgramNameForUnit(unit_id) != null;
+        }
+
+        pub fn hasDuplicateProgramNamesForUnitName(self: Self, unit_name: []const u8) bool {
+            return self.duplicateProgramNameForUnitName(unit_name) != null;
         }
 
         pub fn programParameterCount(self: Self, list_id: i32, program_index: usize) ?usize {
@@ -1276,6 +1304,10 @@ test "unit set validates ids names and links" {
     const DuplicateProgramNames = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{ .{ .name = "Clean" }, .{ .name = "Clean" } } }},
     });
+    const DuplicateProgramNamesForUnit = UnitSet(.{
+        .units = &.{ Unit.root("Root"), .{ .id = 1, .name = "Oscillator", .parent_id = root_unit_id, .program_list_id = 1 } },
+        .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{ .{ .name = "Clean" }, .{ .name = "Clean" } } }},
+    });
     const DuplicateProgramParameters = UnitSet(.{
         .program_lists = &.{.{ .id = 1, .name = "Programs", .programs = &.{.{ .name = "Clean", .parameters = &.{ .{ .parameter_id = 1, .normalized = 0.25 }, .{ .parameter_id = 1, .normalized = 0.75 } } }} }},
     });
@@ -1328,6 +1360,12 @@ test "unit set validates ids names and links" {
     try std.testing.expectEqualStrings("Clean", (DuplicateProgramNames{}).duplicateProgramName(1).?);
     try std.testing.expectEqual(@as(?usize, 1), (DuplicateProgramNames{}).duplicateProgramNameIndex(1));
     try std.testing.expect((DuplicateProgramNames{}).hasDuplicateProgramNames(1));
+    try std.testing.expectEqualStrings("Clean", (DuplicateProgramNamesForUnit{}).duplicateProgramNameForUnit(1).?);
+    try std.testing.expectEqualStrings("Clean", (DuplicateProgramNamesForUnit{}).duplicateProgramNameForUnitName("Oscillator").?);
+    try std.testing.expectEqual(@as(?usize, 1), (DuplicateProgramNamesForUnit{}).duplicateProgramNameIndexForUnit(1));
+    try std.testing.expectEqual(@as(?usize, 1), (DuplicateProgramNamesForUnit{}).duplicateProgramNameIndexForUnitName("Oscillator"));
+    try std.testing.expect((DuplicateProgramNamesForUnit{}).hasDuplicateProgramNamesForUnit(1));
+    try std.testing.expect((DuplicateProgramNamesForUnit{}).hasDuplicateProgramNamesForUnitName("Oscillator"));
     try std.testing.expectEqual(@as(u32, 1), (DuplicateProgramParameters{}).duplicateProgramParameterId(1, 0).?);
     try std.testing.expectEqual(@as(?usize, 1), (DuplicateProgramParameters{}).duplicateProgramParameterIdIndex(1, 0));
     try std.testing.expectEqual(@as(u32, 1), (DuplicateProgramParameters{}).duplicateProgramParameterIdByName(1, "Clean").?);

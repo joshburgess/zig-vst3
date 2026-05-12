@@ -574,6 +574,14 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.duplicateProgramNameByListName(list_name);
         }
 
+        pub fn duplicateProgramNameForUnit(self: *const Self, unit_id: i32) ?[]const u8 {
+            return self.spec.units.duplicateProgramNameForUnit(unit_id);
+        }
+
+        pub fn duplicateProgramNameForUnitName(self: *const Self, unit_name: []const u8) ?[]const u8 {
+            return self.spec.units.duplicateProgramNameForUnitName(unit_name);
+        }
+
         pub fn duplicateProgramNameIndex(self: *const Self, list_id: i32) ?usize {
             return self.spec.units.duplicateProgramNameIndex(list_id);
         }
@@ -582,12 +590,28 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.duplicateProgramNameIndexByListName(list_name);
         }
 
+        pub fn duplicateProgramNameIndexForUnit(self: *const Self, unit_id: i32) ?usize {
+            return self.spec.units.duplicateProgramNameIndexForUnit(unit_id);
+        }
+
+        pub fn duplicateProgramNameIndexForUnitName(self: *const Self, unit_name: []const u8) ?usize {
+            return self.spec.units.duplicateProgramNameIndexForUnitName(unit_name);
+        }
+
         pub fn hasDuplicateProgramNames(self: *const Self, list_id: i32) bool {
             return self.spec.units.hasDuplicateProgramNames(list_id);
         }
 
         pub fn hasDuplicateProgramNamesByListName(self: *const Self, list_name: []const u8) bool {
             return self.spec.units.hasDuplicateProgramNamesByListName(list_name);
+        }
+
+        pub fn hasDuplicateProgramNamesForUnit(self: *const Self, unit_id: i32) bool {
+            return self.spec.units.hasDuplicateProgramNamesForUnit(unit_id);
+        }
+
+        pub fn hasDuplicateProgramNamesForUnitName(self: *const Self, unit_name: []const u8) bool {
+            return self.spec.units.hasDuplicateProgramNamesForUnitName(unit_name);
         }
 
         pub fn programParameterCount(self: *const Self, list_id: i32, program_index: usize) ?usize {
