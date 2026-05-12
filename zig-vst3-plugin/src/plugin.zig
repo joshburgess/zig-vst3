@@ -4113,6 +4113,41 @@ test "plugin instance applies process parameter changes before dispatch" {
     try std.testing.expectEqual(@as(?f64, 0.25), instance.plugin.observed);
 }
 
+test "plugin instance passes input events to process hooks" {
+    const Monitor = struct {
+        event_count: usize = 0,
+        note_offset: ?usize = null,
+        note_pitch: i16 = -1,
+
+        pub const name = "Instance Process Events";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {};
+
+        pub fn process(self: *@This(), context: *process_api.ProcessContext(f32)) void {
+            self.event_count = context.inputEventCount();
+            if (context.firstEvent(.note_on)) |event| {
+                self.note_offset = event.sample_offset;
+                self.note_pitch = event.pitch;
+            }
+        }
+    };
+    const Instance = PluginInstance(Monitor);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const events = [_]process_api.Event{
+        process_api.Event.noteOn(2, 0, 64, 0.5),
+    };
+    var context = process_api.ProcessContext(f32){
+        .sample_rate = 48_000.0,
+        .events = try process_api.Events.init(&events, 4),
+    };
+
+    instance.process(&context);
+
+    try std.testing.expectEqual(@as(usize, 1), instance.plugin.event_count);
+    try std.testing.expectEqual(@as(?usize, 2), instance.plugin.note_offset);
+    try std.testing.expectEqual(@as(i16, 64), instance.plugin.note_pitch);
+}
+
 test "plugin instance passes reflected parameters to state-aware process hooks" {
     const Gain = struct {
         observed: ?f64 = null,
