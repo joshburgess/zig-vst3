@@ -114,3 +114,65 @@ test "bypass component applies host parameter changes through processor shell" {
     try std.testing.expectEqualSlices(f32, &input_samples, &output_samples);
     try std.testing.expect(bypass_controller.bypassed());
 }
+
+test "bypass component applies host parameter changes through double precision processor shell" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+    const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
+    const vst_parameter_changes = @import("vst_parameter_changes.zig");
+
+    defer bypass_controller.applyParameterChanges(.{ .items = &.{.{
+        .id = bypass_controller.bypass_param_id,
+        .sample_offset = 0,
+        .normalized = 0.0,
+    }} });
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &processor_out),
+    );
+    try std.testing.expect(processor_out != null);
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
+    defer _ = processor.vtable.release(processor);
+
+    const Changes = vst_parameter_changes.ParameterChanges(1, 1);
+    var changes = Changes{};
+    const bypass_queue = changes.addQueue(bypass_controller.bypass_param_id).?;
+    try std.testing.expectEqual(types.kResultOk, bypass_queue.appendPoint(0, 1.0));
+
+    var input_samples = [_]f64{ 0.75, -0.25, 0.125 };
+    var output_samples = [_]f64{ 0.0, 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f64{&input_samples};
+    var output_channel_ptrs = [_][*]f64{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers64 = &input_channel_ptrs },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers64 = &output_channel_ptrs },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 48_000.0 };
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = input_samples.len,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64),
+        .inputParameterChanges = changes.asInterface(),
+        .processContext = &process_context,
+    };
+
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqualSlices(f64, &input_samples, &output_samples);
+    try std.testing.expect(bypass_controller.bypassed());
+}
