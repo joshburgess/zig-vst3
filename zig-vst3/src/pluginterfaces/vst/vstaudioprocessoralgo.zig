@@ -286,11 +286,11 @@ test "audio processor buffer helpers ignore invalid ranges" {
     var output_channels = [_][*]vsttypes.Sample32{&output_samples};
     var input = audio_processor.AudioBusBuffers{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &input_channels },
+        .channelBuffers = .{ .channelBuffers32 = input_channels[0..].ptr },
     };
     var output = audio_processor.AudioBusBuffers{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &output_channels },
+        .channelBuffers = .{ .channelBuffers32 = output_channels[0..].ptr },
     };
 
     copy32(&input, &output, 1, -1);
@@ -349,24 +349,24 @@ const TestEventList = struct {
         return @fieldParentPtr("iface", iface);
     }
 
-    fn queryInterface(_: *anyopaque, _: *const @import("../../tuid.zig").TUID, out: *?*anyopaque) callconv(.C) base.tresult {
+    fn queryInterface(_: *anyopaque, _: *const @import("../../tuid.zig").TUID, out: *?*anyopaque) callconv(.c) base.tresult {
         out.* = null;
         return base.kNoInterface;
     }
 
-    fn addRef(_: *anyopaque) callconv(.C) base.uint32 {
+    fn addRef(_: *anyopaque) callconv(.c) base.uint32 {
         return 1;
     }
 
-    fn release(_: *anyopaque) callconv(.C) base.uint32 {
+    fn release(_: *anyopaque) callconv(.c) base.uint32 {
         return 1;
     }
 
-    fn getEventCount(ptr: *anyopaque) callconv(.C) base.int32 {
+    fn getEventCount(ptr: *anyopaque) callconv(.c) base.int32 {
         return @intCast(owner(ptr).items.len);
     }
 
-    fn getEvent(ptr: *anyopaque, index: base.int32, event: *events.Event) callconv(.C) base.tresult {
+    fn getEvent(ptr: *anyopaque, index: base.int32, event: *events.Event) callconv(.c) base.tresult {
         if (index < 0) return base.kInvalidArgument;
         const self = owner(ptr);
         if (self.fail_index != null and index == self.fail_index.?) return base.kResultFalse;
@@ -376,7 +376,7 @@ const TestEventList = struct {
         return base.kResultOk;
     }
 
-    fn addEvent(_: *anyopaque, _: *events.Event) callconv(.C) base.tresult {
+    fn addEvent(_: *anyopaque, _: *events.Event) callconv(.c) base.tresult {
         return base.kResultFalse;
     }
 };

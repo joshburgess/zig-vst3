@@ -30,7 +30,7 @@ pub fn ConnectionPoint(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstmessage.iconnection_point_iid, .ptr = ptr },
@@ -38,19 +38,19 @@ pub fn ConnectionPoint(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
             self.add_ref_count += 1;
             return self.ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
             self.release_count += 1;
             return funknown.decrementRefCount(&self.ref_count, "IConnectionPoint");
         }
 
-        fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
+        fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.connect_count += 1;
             if (@hasDecl(Config, "connect")) {
@@ -61,7 +61,7 @@ pub fn ConnectionPoint(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn disconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.C) types.tresult {
+        fn disconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.disconnect_count += 1;
             if (@hasDecl(Config, "disconnect")) {
@@ -72,7 +72,7 @@ pub fn ConnectionPoint(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn notify(ptr: *anyopaque, message: ?*ivstmessage.IMessage) callconv(.C) types.tresult {
+        fn notify(ptr: *anyopaque, message: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.notify_count += 1;
             self.last_message = message;
@@ -152,7 +152,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstattributes.iattribute_list_iid, .ptr = ptr },
@@ -160,11 +160,11 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return interface_map.queryWithAddRef(ptr, addRef, &entries_for_query, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IAttributeList");
         }
 
@@ -189,14 +189,14 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return null;
         }
 
-        fn setInt(ptr: *anyopaque, id: ivstattributes.AttrID, value: types.int64) callconv(.C) types.tresult {
+        fn setInt(ptr: *anyopaque, id: ivstattributes.AttrID, value: types.int64) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
             entry.kind = @intFromEnum(Kind.int);
             entry.int_value = value;
             return types.kResultOk;
         }
 
-        fn getInt(ptr: *anyopaque, id: ivstattributes.AttrID, out: *types.int64) callconv(.C) types.tresult {
+        fn getInt(ptr: *anyopaque, id: ivstattributes.AttrID, out: *types.int64) callconv(.c) types.tresult {
             const entry = owner(ptr).findEntry(id) orelse {
                 out.* = 0;
                 return types.kResultFalse;
@@ -209,14 +209,14 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return types.kResultOk;
         }
 
-        fn setFloat(ptr: *anyopaque, id: ivstattributes.AttrID, value: f64) callconv(.C) types.tresult {
+        fn setFloat(ptr: *anyopaque, id: ivstattributes.AttrID, value: f64) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
             entry.kind = @intFromEnum(Kind.float);
             entry.float_value = value;
             return types.kResultOk;
         }
 
-        fn getFloat(ptr: *anyopaque, id: ivstattributes.AttrID, out: *f64) callconv(.C) types.tresult {
+        fn getFloat(ptr: *anyopaque, id: ivstattributes.AttrID, out: *f64) callconv(.c) types.tresult {
             const entry = owner(ptr).findEntry(id) orelse {
                 out.* = 0;
                 return types.kResultFalse;
@@ -229,7 +229,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return types.kResultOk;
         }
 
-        fn setString(ptr: *anyopaque, id: ivstattributes.AttrID, value: [*:0]const vsttypes.TChar) callconv(.C) types.tresult {
+        fn setString(ptr: *anyopaque, id: ivstattributes.AttrID, value: [*:0]const vsttypes.TChar) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
             entry.kind = @intFromEnum(Kind.string);
             @memset(&entry.string_value, 0);
@@ -238,7 +238,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return types.kResultOk;
         }
 
-        fn getString(ptr: *anyopaque, id: ivstattributes.AttrID, out: [*]vsttypes.TChar, size: types.uint32) callconv(.C) types.tresult {
+        fn getString(ptr: *anyopaque, id: ivstattributes.AttrID, out: [*]vsttypes.TChar, size: types.uint32) callconv(.c) types.tresult {
             if (size == 0) return types.kInvalidArgument;
             @memset(out[0..size], 0);
             const entry = owner(ptr).findEntry(id) orelse {
@@ -252,7 +252,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return types.kResultOk;
         }
 
-        fn setBinary(ptr: *anyopaque, id: ivstattributes.AttrID, value: ?*const anyopaque, size: types.uint32) callconv(.C) types.tresult {
+        fn setBinary(ptr: *anyopaque, id: ivstattributes.AttrID, value: ?*const anyopaque, size: types.uint32) callconv(.c) types.tresult {
             if (size > max_binary_bytes) return types.kResultFalse;
             if (size > 0 and value == null) return types.kInvalidArgument;
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
@@ -266,7 +266,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return types.kResultOk;
         }
 
-        fn getBinary(ptr: *anyopaque, id: ivstattributes.AttrID, out: *?*const anyopaque, size: *types.uint32) callconv(.C) types.tresult {
+        fn getBinary(ptr: *anyopaque, id: ivstattributes.AttrID, out: *?*const anyopaque, size: *types.uint32) callconv(.c) types.tresult {
             const entry = owner(ptr).findEntry(id) orelse {
                 out.* = null;
                 size.* = 0;
@@ -325,7 +325,7 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstattributes.istream_attributes_iid, .ptr = ptr },
@@ -333,15 +333,15 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
             return interface_map.queryWithAddRef(ptr, addRef, &entries_for_query, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IStreamAttributes");
         }
 
-        fn getFileName(ptr: *anyopaque, out: [*]vsttypes.TChar) callconv(.C) types.tresult {
+        fn getFileName(ptr: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = owner(ptr);
             @memset(out[0..128], 0);
             const len = std.mem.len(@as([*:0]const vsttypes.TChar, @ptrCast(&self.file_name)));
@@ -349,7 +349,7 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
             return types.kResultOk;
         }
 
-        fn getAttributes(ptr: *anyopaque) callconv(.C) ?*ivstattributes.IAttributeList {
+        fn getAttributes(ptr: *anyopaque) callconv(.c) ?*ivstattributes.IAttributeList {
             return owner(ptr).attributes.asInterface();
         }
 
@@ -384,7 +384,7 @@ pub fn Message(comptime max_message_id_bytes: usize, comptime max_attributes: us
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstmessage.imessage_iid, .ptr = ptr },
@@ -392,26 +392,26 @@ pub fn Message(comptime max_message_id_bytes: usize, comptime max_attributes: us
             return interface_map.queryWithAddRef(ptr, addRef, &entries_for_query, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IMessage");
         }
 
-        fn getMessageID(ptr: *anyopaque) callconv(.C) types.FIDString {
+        fn getMessageID(ptr: *anyopaque) callconv(.c) types.FIDString {
             return @ptrCast(&owner(ptr).message_id);
         }
 
-        fn setMessageID(ptr: *anyopaque, value: types.FIDString) callconv(.C) void {
+        fn setMessageID(ptr: *anyopaque, value: types.FIDString) callconv(.c) void {
             const self = owner(ptr);
             @memset(&self.message_id, 0);
             const len = @min(std.mem.len(value), max_message_id_bytes - 1);
             @memcpy(self.message_id[0..len], value[0..len]);
         }
 
-        fn getAttributes(ptr: *anyopaque) callconv(.C) ?*ivstattributes.IAttributeList {
+        fn getAttributes(ptr: *anyopaque) callconv(.c) ?*ivstattributes.IAttributeList {
             return owner(ptr).attributes.asInterface();
         }
 

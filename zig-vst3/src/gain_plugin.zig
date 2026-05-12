@@ -26,7 +26,9 @@ const GainFactory = factory.StaticFactory3(.{
     },
 });
 
-pub usingnamespace entry.Exports(GainFactory);
+comptime {
+    entry.exportPlugin(GainFactory);
+}
 
 test "gain export returns enumerable factory" {
     const plugin_factory = GainFactory.getPluginFactory().?;

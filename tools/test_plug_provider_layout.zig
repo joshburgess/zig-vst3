@@ -2,7 +2,7 @@ const std = @import("std");
 const test_provider = @import("zig-vst3").pluginterfaces.vst.ivsttestplugprovider;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try printType(stdout, "ITestPlugProvider", test_provider.ITestPlugProvider);
     try printType(stdout, "ITestPlugProvider2", test_provider.ITestPlugProvider2);
 

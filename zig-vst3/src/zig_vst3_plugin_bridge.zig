@@ -573,7 +573,7 @@ const StreamError = error{ StreamReadFailed, StreamWriteFailed };
 const IBStreamReader = struct {
     stream: *ibstream.IBStream,
 
-    const Reader = std.io.Reader(*IBStreamReader, StreamError, read);
+    const Reader = std.io.GenericReader(*IBStreamReader, StreamError, read);
 
     fn reader(self: *IBStreamReader) Reader {
         return .{ .context = self };
@@ -592,7 +592,7 @@ const IBStreamReader = struct {
 const IBStreamWriter = struct {
     stream: *ibstream.IBStream,
 
-    const Writer = std.io.Writer(*IBStreamWriter, StreamError, write);
+    const Writer = std.io.GenericWriter(*IBStreamWriter, StreamError, write);
 
     fn writer(self: *IBStreamWriter) Writer {
         return .{ .context = self };
@@ -1727,11 +1727,11 @@ test "zig-vst3-plugin bridge builds process context from VST3 buffers" {
     var output_channel_ptrs = [_][*]f32{ &out_left, &out_right };
     const input = ivstaudioprocessor.AudioBusBuffers{
         .numChannels = 2,
-        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
     };
     const output = ivstaudioprocessor.AudioBusBuffers{
         .numChannels = 2,
-        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
     };
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
@@ -1763,11 +1763,11 @@ test "zig-vst3-plugin bridge rejects invalid process context sample rates" {
     var output_channel_ptrs = [_][*]f32{&out_left};
     const input = ivstaudioprocessor.AudioBusBuffers{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
     };
     const output = ivstaudioprocessor.AudioBusBuffers{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
     };
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 0.0 };
     const data = ivstaudioprocessor.ProcessData{
@@ -1787,11 +1787,11 @@ test "zig-vst3-plugin bridge builds process context from main VST3 buses" {
     var output_channel_ptrs = [_][*]f32{ &out_left, &out_right };
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 2,
-        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
     }};
     var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 2,
-        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
@@ -1827,7 +1827,7 @@ test "zig-vst3-plugin bridge builds output-only main process context" {
     var output_channel_ptrs = [_][*]f32{ &out_left, &out_right };
     var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 2,
-        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
@@ -1853,7 +1853,7 @@ test "zig-vst3-plugin bridge builds input-only main process context" {
     var input_channel_ptrs = [_][*]f32{ &in_left, &in_right };
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 2,
-        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
@@ -1891,11 +1891,11 @@ test "zig-vst3-plugin bridge dispatches main audio processing by sample size" {
     var output_channel_ptrs = [_][*]f32{&output_samples};
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
     }};
     var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
@@ -1932,11 +1932,11 @@ test "zig-vst3-plugin bridge dispatches double precision main audio" {
     var output_channel_ptrs = [_][*]f64{&output_samples};
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers64 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers64 = input_channel_ptrs[0..].ptr },
     }};
     var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers64 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers64 = output_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
@@ -1982,11 +1982,11 @@ test "zig-vst3-plugin bridge passes double precision process context inputs" {
     var output_channel_ptrs = [_][*]f64{&output_samples};
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers64 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers64 = input_channel_ptrs[0..].ptr },
     }};
     var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers64 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers64 = output_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
@@ -2062,11 +2062,11 @@ test "zig-vst3-plugin bridge passes automation and events to main audio processo
     var output_channel_ptrs = [_][*]f32{&output_samples};
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
     }};
     var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
@@ -2122,11 +2122,11 @@ test "zig-vst3-plugin bridge reports malformed main process data" {
     var output_channel_ptrs = [_][*]f32{&output_samples};
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
     }};
     var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     var data = ivstaudioprocessor.ProcessData{
@@ -2172,7 +2172,7 @@ test "zig-vst3-plugin bridge processes output-only main audio" {
     var output_channel_ptrs = [_][*]f32{ &left, &right };
     var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 2,
-        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
@@ -2208,7 +2208,7 @@ test "zig-vst3-plugin bridge processes input-only main audio" {
     var input_channel_ptrs = [_][*]f32{ &left, &right };
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 2,
-        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{
@@ -2238,11 +2238,11 @@ test "zig-vst3-plugin bridge exposes output event writer to processors" {
     var output_channel_ptrs = [_][*]f32{&output_samples};
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
     }};
     var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = &output_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
     const data = ivstaudioprocessor.ProcessData{

@@ -29,7 +29,7 @@ pub fn Persistent(comptime Config: type) type {
             return Config.class_id;
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ipersistent.ipersistent_iid, .ptr = ptr },
@@ -37,27 +37,27 @@ pub fn Persistent(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPersistent");
         }
 
-        fn getClassID(_: *anyopaque, out: [*]types.char8) callconv(.C) types.tresult {
+        fn getClassID(_: *anyopaque, out: [*]types.char8) callconv(.c) types.tresult {
             @memcpy(out[0..16], &classId());
             return types.kResultOk;
         }
 
-        fn saveAttributes(ptr: *anyopaque, attributes: ?*ipersistent.IAttributes) callconv(.C) types.tresult {
+        fn saveAttributes(ptr: *anyopaque, attributes: ?*ipersistent.IAttributes) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.save_count += 1;
             if (@hasDecl(Config, "saveAttributes")) return Config.saveAttributes(self, attributes);
             return types.kResultOk;
         }
 
-        fn loadAttributes(ptr: *anyopaque, attributes: ?*ipersistent.IAttributes) callconv(.C) types.tresult {
+        fn loadAttributes(ptr: *anyopaque, attributes: ?*ipersistent.IAttributes) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.load_count += 1;
             if (@hasDecl(Config, "loadAttributes")) return Config.loadAttributes(self, attributes);
@@ -145,32 +145,32 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return interface_map.queryWithAddRef(add_ref_ptr, attributesAddRef, &entries_for_query, requested_iid, out);
         }
 
-        fn attributesQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn attributesQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             return ownerFromAttributes(ptr).queryCanonical(ptr, requested_iid, out);
         }
 
-        fn attributes2Query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn attributes2Query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromAttributes2(ptr);
             return self.queryCanonical(&self.iface, requested_iid, out);
         }
 
-        fn attributesAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn attributesAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromAttributes(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn attributes2AddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn attributes2AddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromAttributes2(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn attributesRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn attributesRelease(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromAttributes(ptr).ref_count, "IAttributes");
         }
 
-        fn attributes2Release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn attributes2Release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromAttributes2(ptr).ref_count, "IAttributes2");
         }
 
-        fn set(ptr: *anyopaque, id: ipersistent.IAttrID, value: *const fvariant.FVariant) callconv(.C) types.tresult {
+        fn set(ptr: *anyopaque, id: ipersistent.IAttrID, value: *const fvariant.FVariant) callconv(.c) types.tresult {
             const entry = ownerFromAttributes(ptr).slotFor(id) orelse return types.kResultFalse;
             entry.value = value.*;
             entry.owns_binary = false;
@@ -178,14 +178,14 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return types.kResultOk;
         }
 
-        fn queue(ptr: *anyopaque, id: ipersistent.IAttrID, value: *const fvariant.FVariant) callconv(.C) types.tresult {
+        fn queue(ptr: *anyopaque, id: ipersistent.IAttrID, value: *const fvariant.FVariant) callconv(.c) types.tresult {
             const result = set(ptr, id, value);
             if (result != types.kResultOk) return result;
             ownerFromAttributes(ptr).findEntry(id).?.queued = true;
             return types.kResultOk;
         }
 
-        fn setBinaryData(ptr: *anyopaque, id: ipersistent.IAttrID, data: ?*anyopaque, size: types.uint32, copy: bool) callconv(.C) types.tresult {
+        fn setBinaryData(ptr: *anyopaque, id: ipersistent.IAttrID, data: ?*anyopaque, size: types.uint32, copy: bool) callconv(.c) types.tresult {
             if (size > 0 and data == null) return types.kInvalidArgument;
             if (copy and size > max_binary_bytes) return types.kResultFalse;
             const entry = ownerFromAttributes(ptr).slotFor(id) orelse return types.kResultFalse;
@@ -205,7 +205,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return types.kResultOk;
         }
 
-        fn get(ptr: *anyopaque, id: ipersistent.IAttrID, out: *fvariant.FVariant) callconv(.C) types.tresult {
+        fn get(ptr: *anyopaque, id: ipersistent.IAttrID, out: *fvariant.FVariant) callconv(.c) types.tresult {
             const entry = ownerFromAttributes(ptr).findEntry(id) orelse {
                 out.* = .{};
                 return types.kResultFalse;
@@ -214,7 +214,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return types.kResultOk;
         }
 
-        fn unqueue(ptr: *anyopaque, id: ipersistent.IAttrID, out: *fvariant.FVariant) callconv(.C) types.tresult {
+        fn unqueue(ptr: *anyopaque, id: ipersistent.IAttrID, out: *fvariant.FVariant) callconv(.c) types.tresult {
             const entry = ownerFromAttributes(ptr).findEntry(id) orelse {
                 out.* = .{};
                 return types.kResultFalse;
@@ -228,25 +228,25 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return types.kResultOk;
         }
 
-        fn getQueueItemCount(ptr: *anyopaque, id: ipersistent.IAttrID) callconv(.C) types.int32 {
+        fn getQueueItemCount(ptr: *anyopaque, id: ipersistent.IAttrID) callconv(.c) types.int32 {
             const entry = ownerFromAttributes(ptr).findEntry(id) orelse return 0;
             return if (entry.queued) 1 else 0;
         }
 
-        fn resetQueue(ptr: *anyopaque, id: ipersistent.IAttrID) callconv(.C) types.tresult {
+        fn resetQueue(ptr: *anyopaque, id: ipersistent.IAttrID) callconv(.c) types.tresult {
             const entry = ownerFromAttributes(ptr).findEntry(id) orelse return types.kResultFalse;
             entry.queued = false;
             return types.kResultOk;
         }
 
-        fn resetAllQueues(ptr: *anyopaque) callconv(.C) types.tresult {
+        fn resetAllQueues(ptr: *anyopaque) callconv(.c) types.tresult {
             for (&ownerFromAttributes(ptr).entries) |*entry| {
                 entry.queued = false;
             }
             return types.kResultOk;
         }
 
-        fn getBinaryData(ptr: *anyopaque, id: ipersistent.IAttrID, out: ?*anyopaque, size: types.uint32) callconv(.C) types.tresult {
+        fn getBinaryData(ptr: *anyopaque, id: ipersistent.IAttrID, out: ?*anyopaque, size: types.uint32) callconv(.c) types.tresult {
             if (out) |buffer| {
                 if (size > 0) {
                     const bytes: [*]u8 = @ptrCast(buffer);
@@ -270,12 +270,12 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return types.kResultOk;
         }
 
-        fn getBinaryDataSize(ptr: *anyopaque, id: ipersistent.IAttrID) callconv(.C) types.uint32 {
+        fn getBinaryDataSize(ptr: *anyopaque, id: ipersistent.IAttrID) callconv(.c) types.uint32 {
             const entry = ownerFromAttributes(ptr).findEntry(id) orelse return 0;
             return entry.binary_size;
         }
 
-        fn countAttributes(ptr: *anyopaque) callconv(.C) types.int32 {
+        fn countAttributes(ptr: *anyopaque) callconv(.c) types.int32 {
             var count: types.int32 = 0;
             for (&ownerFromAttributes2(ptr).entries) |*entry| {
                 if (entry.id != null) count += 1;
@@ -283,7 +283,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return count;
         }
 
-        fn getAttributeID(ptr: *anyopaque, index: types.int32) callconv(.C) ipersistent.IAttrID {
+        fn getAttributeID(ptr: *anyopaque, index: types.int32) callconv(.c) ipersistent.IAttrID {
             if (index < 0) return "";
             var current: types.int32 = 0;
             for (&ownerFromAttributes2(ptr).entries) |*entry| {

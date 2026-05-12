@@ -41,7 +41,7 @@ Implemented pieces include:
 
 Required toolchain:
 
-- Zig 0.14.0
+- Zig 0.15.2
 
 Run the local checks:
 

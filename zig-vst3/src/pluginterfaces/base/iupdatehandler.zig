@@ -5,13 +5,13 @@ pub const iupdate_handler_iid = tuid.inlineUid(0xF5246D56, 0x86544D60, 0xB026AFB
 pub const idependent_iid = tuid.inlineUid(0xF52B7AAE, 0xDE72416D, 0x8AF18ACE, 0x9DD7BD5E);
 
 pub const IUpdateHandlerVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    addDependent: *const fn (*anyopaque, ?*anyopaque, ?*IDependent) callconv(.C) base_types.tresult,
-    removeDependent: *const fn (*anyopaque, ?*anyopaque, ?*IDependent) callconv(.C) base_types.tresult,
-    triggerUpdates: *const fn (*anyopaque, ?*anyopaque, base_types.int32) callconv(.C) base_types.tresult,
-    deferUpdates: *const fn (*anyopaque, ?*anyopaque, base_types.int32) callconv(.C) base_types.tresult,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    addDependent: *const fn (*anyopaque, ?*anyopaque, ?*IDependent) callconv(.c) base_types.tresult,
+    removeDependent: *const fn (*anyopaque, ?*anyopaque, ?*IDependent) callconv(.c) base_types.tresult,
+    triggerUpdates: *const fn (*anyopaque, ?*anyopaque, base_types.int32) callconv(.c) base_types.tresult,
+    deferUpdates: *const fn (*anyopaque, ?*anyopaque, base_types.int32) callconv(.c) base_types.tresult,
 };
 
 pub const ChangeMessage = enum(base_types.int32) {
@@ -24,10 +24,10 @@ pub const ChangeMessage = enum(base_types.int32) {
 pub const kStdChangeMessageLast = ChangeMessage.kWillDestroy;
 
 pub const IDependentVTable = extern struct {
-    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.C) base_types.tresult,
-    addRef: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    release: *const fn (*anyopaque) callconv(.C) base_types.uint32,
-    update: *const fn (*anyopaque, ?*anyopaque, base_types.int32) callconv(.C) void,
+    queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
+    addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    release: *const fn (*anyopaque) callconv(.c) base_types.uint32,
+    update: *const fn (*anyopaque, ?*anyopaque, base_types.int32) callconv(.c) void,
 };
 
 pub const IUpdateHandler = extern struct {

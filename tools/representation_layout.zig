@@ -2,7 +2,7 @@ const std = @import("std");
 const representation = @import("zig-vst3").pluginterfaces.vst.ivstrepresentation;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("RepresentationInfo.kNameSize {}\n", .{representation.RepresentationInfo.kNameSize});
     try printType(stdout, "RepresentationInfo", representation.RepresentationInfo);
     try printOffset(stdout, "RepresentationInfo", "vendor", representation.RepresentationInfo, "vendor");

@@ -150,7 +150,7 @@ test "event monitor component summarizes host event list input through processor
     var input_channel_ptrs = [_][*]f32{&input_samples};
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers32 = @ptrCast(&input_channel_ptrs) },
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 48_000.0 };
 
@@ -256,7 +256,7 @@ test "event monitor component summarizes host event list input through double pr
     var input_channel_ptrs = [_][*]f64{&input_samples};
     var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 1,
-        .channelBuffers = .{ .channelBuffers64 = &input_channel_ptrs },
+        .channelBuffers = .{ .channelBuffers64 = input_channel_ptrs[0..].ptr },
     }};
     var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 48_000.0 };
 

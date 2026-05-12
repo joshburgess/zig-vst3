@@ -25,7 +25,7 @@ pub fn EventHandler(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.ievent_handler_iid, .ptr = ptr },
@@ -33,15 +33,15 @@ pub fn EventHandler(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IEventHandler");
         }
 
-        fn onFDIsSet(ptr: *anyopaque, fd: Linux.FileDescriptor) callconv(.C) void {
+        fn onFDIsSet(ptr: *anyopaque, fd: Linux.FileDescriptor) callconv(.c) void {
             const self = owner(ptr);
             self.last_fd = fd;
             self.event_count += 1;
@@ -76,7 +76,7 @@ pub fn TimerHandler(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.itimer_handler_iid, .ptr = ptr },
@@ -84,15 +84,15 @@ pub fn TimerHandler(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "ITimerHandler");
         }
 
-        fn onTimer(ptr: *anyopaque) callconv(.C) void {
+        fn onTimer(ptr: *anyopaque) callconv(.c) void {
             const self = owner(ptr);
             self.timer_count += 1;
             if (@hasDecl(Config, "onTimer")) {
@@ -160,7 +160,7 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.irun_loop_iid, .ptr = ptr },
@@ -168,15 +168,15 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IRunLoop");
         }
 
-        fn registerEventHandler(ptr: *anyopaque, handler: ?*Linux.IEventHandler, fd: Linux.FileDescriptor) callconv(.C) types.tresult {
+        fn registerEventHandler(ptr: *anyopaque, handler: ?*Linux.IEventHandler, fd: Linux.FileDescriptor) callconv(.c) types.tresult {
             const event_handler = handler orelse return types.kInvalidArgument;
             if (fd < 0) return types.kInvalidArgument;
             const self = owner(ptr);
@@ -197,7 +197,7 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
             return types.kResultFalse;
         }
 
-        fn unregisterEventHandler(ptr: *anyopaque, handler: ?*Linux.IEventHandler) callconv(.C) types.tresult {
+        fn unregisterEventHandler(ptr: *anyopaque, handler: ?*Linux.IEventHandler) callconv(.c) types.tresult {
             const event_handler = handler orelse return types.kInvalidArgument;
             for (&owner(ptr).event_handlers) |*entry| {
                 if (entry.handler == event_handler) {
@@ -209,7 +209,7 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
             return types.kResultFalse;
         }
 
-        fn registerTimer(ptr: *anyopaque, handler: ?*Linux.ITimerHandler, interval: Linux.TimerInterval) callconv(.C) types.tresult {
+        fn registerTimer(ptr: *anyopaque, handler: ?*Linux.ITimerHandler, interval: Linux.TimerInterval) callconv(.c) types.tresult {
             const timer_handler = handler orelse return types.kInvalidArgument;
             const self = owner(ptr);
             for (&self.timer_handlers) |*entry| {
@@ -229,7 +229,7 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
             return types.kResultFalse;
         }
 
-        fn unregisterTimer(ptr: *anyopaque, handler: ?*Linux.ITimerHandler) callconv(.C) types.tresult {
+        fn unregisterTimer(ptr: *anyopaque, handler: ?*Linux.ITimerHandler) callconv(.c) types.tresult {
             const timer_handler = handler orelse return types.kInvalidArgument;
             for (&owner(ptr).timer_handlers) |*entry| {
                 if (entry.handler == timer_handler) {

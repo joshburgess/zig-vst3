@@ -43,7 +43,7 @@ pub fn EventList(comptime max_events: usize) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivstevents.ievent_list_iid, .ptr = ptr },
@@ -51,19 +51,19 @@ pub fn EventList(comptime max_events: usize) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IEventList");
         }
 
-        fn getEventCount(ptr: *anyopaque) callconv(.C) types.int32 {
+        fn getEventCount(ptr: *anyopaque) callconv(.c) types.int32 {
             return @intCast(owner(ptr).safeCount());
         }
 
-        fn getEvent(ptr: *anyopaque, index: types.int32, event: *ivstevents.Event) callconv(.C) types.tresult {
+        fn getEvent(ptr: *anyopaque, index: types.int32, event: *ivstevents.Event) callconv(.c) types.tresult {
             if (index < 0) {
                 event.* = .{};
                 return types.kInvalidArgument;
@@ -81,7 +81,7 @@ pub fn EventList(comptime max_events: usize) type {
             return types.kResultOk;
         }
 
-        fn addEvent(ptr: *anyopaque, event: *ivstevents.Event) callconv(.C) types.tresult {
+        fn addEvent(ptr: *anyopaque, event: *ivstevents.Event) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (self.count == self.fail_add_index) return types.kResultFalse;
             return self.append(event.*);

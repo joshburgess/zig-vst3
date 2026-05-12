@@ -72,54 +72,54 @@ pub fn StringResult(comptime max_text8_bytes: usize, comptime max_text16_units: 
             return interface_map.queryWithAddRef(add_ref_ptr, resultAddRef, &entries, requested_iid, out);
         }
 
-        fn resultQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn resultQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             return ownerFromResult(ptr).queryCanonical(ptr, requested_iid, out);
         }
 
-        fn stringQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn stringQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromString(ptr);
             return self.queryCanonical(&self.result_iface, requested_iid, out);
         }
 
-        fn resultAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn resultAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromResult(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn stringAddRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn stringAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return ownerFromString(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn resultRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn resultRelease(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromResult(ptr).ref_count, "IStringResult");
         }
 
-        fn stringRelease(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn stringRelease(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&ownerFromString(ptr).ref_count, "IString");
         }
 
-        fn resultSetText(ptr: *anyopaque, value: ?[*:0]const types.char8) callconv(.C) void {
+        fn resultSetText(ptr: *anyopaque, value: ?[*:0]const types.char8) callconv(.c) void {
             ownerFromResult(ptr).copyText8(value);
         }
 
-        fn stringSetText8(ptr: *anyopaque, value: ?[*:0]const types.char8) callconv(.C) void {
+        fn stringSetText8(ptr: *anyopaque, value: ?[*:0]const types.char8) callconv(.c) void {
             ownerFromString(ptr).copyText8(value);
         }
 
-        fn stringSetText16(ptr: *anyopaque, value: ?[*:0]const types.char16) callconv(.C) void {
+        fn stringSetText16(ptr: *anyopaque, value: ?[*:0]const types.char16) callconv(.c) void {
             ownerFromString(ptr).copyText16(value);
         }
 
-        fn stringGetText8(ptr: *anyopaque) callconv(.C) ?[*:0]const types.char8 {
+        fn stringGetText8(ptr: *anyopaque) callconv(.c) ?[*:0]const types.char8 {
             return @ptrCast(&ownerFromString(ptr).text8);
         }
 
-        fn stringGetText16(ptr: *anyopaque) callconv(.C) ?[*:0]const types.char16 {
+        fn stringGetText16(ptr: *anyopaque) callconv(.c) ?[*:0]const types.char16 {
             return @ptrCast(&ownerFromString(ptr).text16);
         }
 
-        fn stringTake(_: *anyopaque, _: ?*anyopaque, _: bool) callconv(.C) void {}
+        fn stringTake(_: *anyopaque, _: ?*anyopaque, _: bool) callconv(.c) void {}
 
-        fn stringIsWideString(ptr: *anyopaque) callconv(.C) bool {
+        fn stringIsWideString(ptr: *anyopaque) callconv(.c) bool {
             return ownerFromString(ptr).wide;
         }
 

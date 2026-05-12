@@ -47,7 +47,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.iplug_view_iid, .ptr = ptr },
@@ -55,15 +55,15 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPlugView");
         }
 
-        fn isPlatformTypeSupported(ptr: *anyopaque, platform: types.FIDString) callconv(.C) types.tresult {
+        fn isPlatformTypeSupported(ptr: *anyopaque, platform: types.FIDString) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (@hasDecl(Config, "isPlatformTypeSupported")) return Config.isPlatformTypeSupported(self, platform);
             const count = @min(self.platform_count, max_platforms);
@@ -73,7 +73,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultFalse;
         }
 
-        fn attached(ptr: *anyopaque, parent: ?*anyopaque, platform: types.FIDString) callconv(.C) types.tresult {
+        fn attached(ptr: *anyopaque, parent: ?*anyopaque, platform: types.FIDString) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (isPlatformTypeSupported(ptr, platform) != types.kResultOk) return types.kInvalidArgument;
             if (@hasDecl(Config, "attached")) {
@@ -86,7 +86,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn removed(ptr: *anyopaque) callconv(.C) types.tresult {
+        fn removed(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (@hasDecl(Config, "removed")) {
                 const result = Config.removed(self);
@@ -98,7 +98,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn onWheel(ptr: *anyopaque, distance: f32) callconv(.C) types.tresult {
+        fn onWheel(ptr: *anyopaque, distance: f32) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.wheel_count += 1;
             self.last_wheel_distance = distance;
@@ -106,7 +106,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn onKeyDown(ptr: *anyopaque, key: types.char16, key_code: types.int16, modifiers: types.int16) callconv(.C) types.tresult {
+        fn onKeyDown(ptr: *anyopaque, key: types.char16, key_code: types.int16, modifiers: types.int16) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.key_down_count += 1;
             self.last_key = key;
@@ -116,7 +116,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn onKeyUp(ptr: *anyopaque, key: types.char16, key_code: types.int16, modifiers: types.int16) callconv(.C) types.tresult {
+        fn onKeyUp(ptr: *anyopaque, key: types.char16, key_code: types.int16, modifiers: types.int16) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.key_up_count += 1;
             self.last_key = key;
@@ -126,12 +126,12 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getSize(ptr: *anyopaque, out: *iplugview.ViewRect) callconv(.C) types.tresult {
+        fn getSize(ptr: *anyopaque, out: *iplugview.ViewRect) callconv(.c) types.tresult {
             out.* = owner(ptr).rect;
             return types.kResultOk;
         }
 
-        fn onSize(ptr: *anyopaque, rect: *iplugview.ViewRect) callconv(.C) types.tresult {
+        fn onSize(ptr: *anyopaque, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
             if (@hasDecl(Config, "onSize")) {
                 const result = Config.onSize(owner(ptr), rect);
                 if (result != types.kResultOk) return result;
@@ -140,7 +140,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn onFocus(ptr: *anyopaque, state: types.TBool) callconv(.C) types.tresult {
+        fn onFocus(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.focus_count += 1;
             if (@hasDecl(Config, "onFocus")) {
@@ -151,7 +151,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn setFrame(ptr: *anyopaque, frame: ?*iplugview.IPlugFrame) callconv(.C) types.tresult {
+        fn setFrame(ptr: *anyopaque, frame: ?*iplugview.IPlugFrame) callconv(.c) types.tresult {
             if (@hasDecl(Config, "setFrame")) {
                 const result = Config.setFrame(owner(ptr), frame);
                 if (result != types.kResultOk) return result;
@@ -160,12 +160,12 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn canResize(_: *anyopaque) callconv(.C) types.tresult {
+        fn canResize(_: *anyopaque) callconv(.c) types.tresult {
             if (@hasDecl(Config, "canResize")) return Config.canResize();
             return types.kResultOk;
         }
 
-        fn checkSizeConstraint(ptr: *anyopaque, rect: *iplugview.ViewRect) callconv(.C) types.tresult {
+        fn checkSizeConstraint(ptr: *anyopaque, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
             if (@hasDecl(Config, "checkSizeConstraint")) return Config.checkSizeConstraint(owner(ptr), rect);
             return types.kResultOk;
         }

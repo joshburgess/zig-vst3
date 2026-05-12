@@ -2,7 +2,7 @@ const std = @import("std");
 const wayland = @import("zig-vst3").pluginterfaces.gui.iwaylandframe;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try printType(stdout, "IWaylandHost", wayland.IWaylandHost);
     try printType(stdout, "IWaylandFrame", wayland.IWaylandFrame);
 

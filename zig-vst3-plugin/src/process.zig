@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const max_audio_channels = 64;
+
 pub const ParameterChange = struct {
     id: u32,
     sample_offset: usize,
@@ -1993,54 +1995,58 @@ pub fn AudioInputs(comptime Sample: type) type {
     return struct {
         const Self = @This();
 
-        channels: []const []const Sample,
-        frame_count: usize,
+        channels: [max_audio_channels][]const Sample = undefined,
+        channel_count: usize = 0,
+        frame_count: usize = 0,
 
         pub fn init(channels: []const []const Sample) !Self {
+            if (channels.len > max_audio_channels) return error.TooManyChannels;
             const frame_count = if (channels.len == 0) 0 else channels[0].len;
             for (channels) |channel_samples| {
                 if (channel_samples.len != frame_count) {
                     return error.MismatchedFrameCount;
                 }
             }
-            return .{
-                .channels = channels,
+            var self = Self{
+                .channel_count = channels.len,
                 .frame_count = frame_count,
             };
+            @memcpy(self.channels[0..channels.len], channels);
+            return self;
         }
 
-        pub fn channel(self: Self, index: usize) ?[]const Sample {
-            if (index >= self.channels.len) return null;
+        pub fn channel(self: *const Self, index: usize) ?[]const Sample {
+            if (index >= self.channel_count) return null;
             return self.channels[index];
         }
 
-        pub fn sample(self: Self, channel_index: usize, frame_index: usize) ?Sample {
+        pub fn sample(self: *const Self, channel_index: usize, frame_index: usize) ?Sample {
             const channel_samples = self.channel(channel_index) orelse return null;
             if (frame_index >= channel_samples.len) return null;
             return channel_samples[frame_index];
         }
 
-        pub fn hasChannel(self: Self, index: usize) bool {
+        pub fn hasChannel(self: *const Self, index: usize) bool {
             return self.channel(index) != null;
         }
 
-        pub fn channelEmpty(self: Self, index: usize) bool {
+        pub fn channelEmpty(self: *const Self, index: usize) bool {
             return !self.hasChannel(index);
         }
 
-        pub fn channelCount(self: Self) usize {
-            return self.channels.len;
+        pub fn channelCount(self: *const Self) usize {
+            return self.channel_count;
         }
 
-        pub fn isEmpty(self: Self) bool {
-            return self.channels.len == 0;
+        pub fn isEmpty(self: *const Self) bool {
+            return self.channel_count == 0;
         }
 
-        pub fn hasChannels(self: Self) bool {
-            return self.channels.len != 0;
+        pub fn hasChannels(self: *const Self) bool {
+            return self.channel_count != 0;
         }
 
-        pub fn frameCount(self: Self) usize {
+        pub fn frameCount(self: *const Self) usize {
             return self.frame_count;
         }
     };
@@ -2050,71 +2056,75 @@ pub fn AudioOutputs(comptime Sample: type) type {
     return struct {
         const Self = @This();
 
-        channels: []const []Sample,
-        frame_count: usize,
+        channels: [max_audio_channels][]Sample = undefined,
+        channel_count: usize = 0,
+        frame_count: usize = 0,
 
         pub fn init(channels: []const []Sample) !Self {
+            if (channels.len > max_audio_channels) return error.TooManyChannels;
             const frame_count = if (channels.len == 0) 0 else channels[0].len;
             for (channels) |channel_samples| {
                 if (channel_samples.len != frame_count) {
                     return error.MismatchedFrameCount;
                 }
             }
-            return .{
-                .channels = channels,
+            var self = Self{
+                .channel_count = channels.len,
                 .frame_count = frame_count,
             };
+            @memcpy(self.channels[0..channels.len], channels);
+            return self;
         }
 
-        pub fn channel(self: Self, index: usize) ?[]Sample {
-            if (index >= self.channels.len) return null;
+        pub fn channel(self: *const Self, index: usize) ?[]Sample {
+            if (index >= self.channel_count) return null;
             return self.channels[index];
         }
 
-        pub fn sample(self: Self, channel_index: usize, frame_index: usize) ?Sample {
+        pub fn sample(self: *const Self, channel_index: usize, frame_index: usize) ?Sample {
             const channel_samples = self.channel(channel_index) orelse return null;
             if (frame_index >= channel_samples.len) return null;
             return channel_samples[frame_index];
         }
 
-        pub fn setSample(self: Self, channel_index: usize, frame_index: usize, value: Sample) bool {
+        pub fn setSample(self: *const Self, channel_index: usize, frame_index: usize, value: Sample) bool {
             const channel_samples = self.channel(channel_index) orelse return false;
             if (frame_index >= channel_samples.len) return false;
             channel_samples[frame_index] = value;
             return true;
         }
 
-        pub fn hasChannel(self: Self, index: usize) bool {
+        pub fn hasChannel(self: *const Self, index: usize) bool {
             return self.channel(index) != null;
         }
 
-        pub fn channelEmpty(self: Self, index: usize) bool {
+        pub fn channelEmpty(self: *const Self, index: usize) bool {
             return !self.hasChannel(index);
         }
 
-        pub fn channelCount(self: Self) usize {
-            return self.channels.len;
+        pub fn channelCount(self: *const Self) usize {
+            return self.channel_count;
         }
 
-        pub fn isEmpty(self: Self) bool {
-            return self.channels.len == 0;
+        pub fn isEmpty(self: *const Self) bool {
+            return self.channel_count == 0;
         }
 
-        pub fn hasChannels(self: Self) bool {
-            return self.channels.len != 0;
+        pub fn hasChannels(self: *const Self) bool {
+            return self.channel_count != 0;
         }
 
-        pub fn frameCount(self: Self) usize {
+        pub fn frameCount(self: *const Self) usize {
             return self.frame_count;
         }
 
-        pub fn fill(self: Self, value: Sample) void {
-            for (self.channels) |channel_samples| {
+        pub fn fill(self: *const Self, value: Sample) void {
+            for (self.channels[0..self.channel_count]) |channel_samples| {
                 @memset(channel_samples, value);
             }
         }
 
-        pub fn clear(self: Self) void {
+        pub fn clear(self: *const Self) void {
             self.fill(0);
         }
     };
@@ -2129,8 +2139,8 @@ pub const ProcessAttachments = struct {
 pub fn ProcessContext(comptime Sample: type) type {
     return struct {
         sample_rate: f64,
-        inputs: AudioInputs(Sample),
-        outputs: AudioOutputs(Sample),
+        inputs: AudioInputs(Sample) = .{},
+        outputs: AudioOutputs(Sample) = .{},
         parameter_changes: ParameterChanges = .{},
         events: Events = .{},
         output_events: ?*EventWriter = null,
@@ -2175,271 +2185,271 @@ pub fn ProcessContext(comptime Sample: type) type {
             self.output_events = writer;
         }
 
-        pub fn outputEventWriter(self: @This()) ?*EventWriter {
+        pub fn outputEventWriter(self: *const @This()) ?*EventWriter {
             return self.output_events;
         }
 
-        pub fn sampleRate(self: @This()) f64 {
+        pub fn sampleRate(self: *const @This()) f64 {
             return self.sample_rate;
         }
 
-        pub fn sampleDurationSeconds(self: @This()) f64 {
+        pub fn sampleDurationSeconds(self: *const @This()) f64 {
             return 1.0 / self.sample_rate;
         }
 
-        pub fn blockDurationSeconds(self: @This()) f64 {
+        pub fn blockDurationSeconds(self: *const @This()) f64 {
             return @as(f64, @floatFromInt(self.frameCount())) / self.sample_rate;
         }
 
-        pub fn blockSegment(self: @This()) BlockSegment {
+        pub fn blockSegment(self: *const @This()) BlockSegment {
             return .{ .start_offset = 0, .end_offset = self.frameCount() };
         }
 
-        pub fn sampleOffsetSeconds(self: @This(), sample_offset: usize) f64 {
+        pub fn sampleOffsetSeconds(self: *const @This(), sample_offset: usize) f64 {
             return @as(f64, @floatFromInt(sample_offset)) / self.sample_rate;
         }
 
-        pub fn containsSampleOffset(self: @This(), sample_offset: usize) bool {
+        pub fn containsSampleOffset(self: *const @This(), sample_offset: usize) bool {
             return sample_offset < self.frameCount();
         }
 
-        pub fn isEndOffset(self: @This(), sample_offset: usize) bool {
+        pub fn isEndOffset(self: *const @This(), sample_offset: usize) bool {
             return sample_offset == self.frameCount();
         }
 
-        pub fn isPastEndOffset(self: @This(), sample_offset: usize) bool {
+        pub fn isPastEndOffset(self: *const @This(), sample_offset: usize) bool {
             return sample_offset > self.frameCount();
         }
 
-        pub fn remainingFramesFromOffset(self: @This(), sample_offset: usize) usize {
+        pub fn remainingFramesFromOffset(self: *const @This(), sample_offset: usize) usize {
             return self.frameCount() -| sample_offset;
         }
 
-        pub fn remainingSecondsFromOffset(self: @This(), sample_offset: usize) f64 {
+        pub fn remainingSecondsFromOffset(self: *const @This(), sample_offset: usize) f64 {
             return @as(f64, @floatFromInt(self.remainingFramesFromOffset(sample_offset))) / self.sample_rate;
         }
 
-        pub fn parameterChanges(self: @This()) ParameterChanges {
+        pub fn parameterChanges(self: *const @This()) ParameterChanges {
             return self.parameter_changes;
         }
 
-        pub fn parameterChangesForId(self: @This(), id: u32) ParameterChangeIdIterator {
+        pub fn parameterChangesForId(self: *const @This(), id: u32) ParameterChangeIdIterator {
             return self.parameter_changes.forId(id);
         }
 
-        pub fn parameterChangesAtOffset(self: @This(), sample_offset: usize) ParameterChangeOffsetIterator {
+        pub fn parameterChangesAtOffset(self: *const @This(), sample_offset: usize) ParameterChangeOffsetIterator {
             return self.parameter_changes.atOffset(sample_offset);
         }
 
-        pub fn parameterChangesForIdAtOffset(self: @This(), id: u32, sample_offset: usize) ParameterChangeIdOffsetIterator {
+        pub fn parameterChangesForIdAtOffset(self: *const @This(), id: u32, sample_offset: usize) ParameterChangeIdOffsetIterator {
             return self.parameter_changes.forIdAtOffset(id, sample_offset);
         }
 
-        pub fn parameterChangeCount(self: @This()) usize {
+        pub fn parameterChangeCount(self: *const @This()) usize {
             return self.parameter_changes.changeCount();
         }
 
-        pub fn parameterChangesEmpty(self: @This()) bool {
+        pub fn parameterChangesEmpty(self: *const @This()) bool {
             return self.parameter_changes.isEmpty();
         }
 
-        pub fn hasParameterChanges(self: @This()) bool {
+        pub fn hasParameterChanges(self: *const @This()) bool {
             return self.parameter_changes.hasChanges();
         }
 
-        pub fn firstParameterChangeOffset(self: @This()) ?usize {
+        pub fn firstParameterChangeOffset(self: *const @This()) ?usize {
             return self.parameter_changes.firstSampleOffset();
         }
 
-        pub fn latestParameterChangeOffset(self: @This()) ?usize {
+        pub fn latestParameterChangeOffset(self: *const @This()) ?usize {
             return self.parameter_changes.latestSampleOffset();
         }
 
-        pub fn firstParameterChangeOffsetForId(self: @This(), id: u32) ?usize {
+        pub fn firstParameterChangeOffsetForId(self: *const @This(), id: u32) ?usize {
             return self.parameter_changes.firstSampleOffsetForId(id);
         }
 
-        pub fn latestParameterChangeOffsetForId(self: @This(), id: u32) ?usize {
+        pub fn latestParameterChangeOffsetForId(self: *const @This(), id: u32) ?usize {
             return self.parameter_changes.latestSampleOffsetForId(id);
         }
 
-        pub fn firstAnyParameterChange(self: @This()) ?ParameterChange {
+        pub fn firstAnyParameterChange(self: *const @This()) ?ParameterChange {
             return self.parameter_changes.firstChange();
         }
 
-        pub fn latestAnyParameterChange(self: @This()) ?ParameterChange {
+        pub fn latestAnyParameterChange(self: *const @This()) ?ParameterChange {
             return self.parameter_changes.latestChange();
         }
 
-        pub fn firstAnyParameterNormalized(self: @This()) ?f64 {
+        pub fn firstAnyParameterNormalized(self: *const @This()) ?f64 {
             return self.parameter_changes.firstAnyNormalized();
         }
 
-        pub fn latestAnyParameterNormalized(self: @This()) ?f64 {
+        pub fn latestAnyParameterNormalized(self: *const @This()) ?f64 {
             return self.parameter_changes.latestAnyNormalized();
         }
 
-        pub fn firstAnyParameterNormalizedOr(self: @This(), default: f64) f64 {
+        pub fn firstAnyParameterNormalizedOr(self: *const @This(), default: f64) f64 {
             return self.parameter_changes.firstAnyNormalizedOr(default);
         }
 
-        pub fn latestAnyParameterNormalizedOr(self: @This(), default: f64) f64 {
+        pub fn latestAnyParameterNormalizedOr(self: *const @This(), default: f64) f64 {
             return self.parameter_changes.latestAnyNormalizedOr(default);
         }
 
-        pub fn latestParameterChange(self: @This(), id: u32) ?ParameterChange {
+        pub fn latestParameterChange(self: *const @This(), id: u32) ?ParameterChange {
             return self.parameter_changes.latest(id);
         }
 
-        pub fn firstParameterChange(self: @This(), id: u32) ?ParameterChange {
+        pub fn firstParameterChange(self: *const @This(), id: u32) ?ParameterChange {
             return self.parameter_changes.first(id);
         }
 
-        pub fn firstParameterChangeAtOffset(self: @This(), sample_offset: usize) ?ParameterChange {
+        pub fn firstParameterChangeAtOffset(self: *const @This(), sample_offset: usize) ?ParameterChange {
             return self.parameter_changes.firstAtOffset(sample_offset);
         }
 
-        pub fn latestParameterChangeAtOffset(self: @This(), sample_offset: usize) ?ParameterChange {
+        pub fn latestParameterChangeAtOffset(self: *const @This(), sample_offset: usize) ?ParameterChange {
             return self.parameter_changes.latestAtOffset(sample_offset);
         }
 
-        pub fn firstParameterChangeForIdAtOffset(self: @This(), id: u32, sample_offset: usize) ?ParameterChange {
+        pub fn firstParameterChangeForIdAtOffset(self: *const @This(), id: u32, sample_offset: usize) ?ParameterChange {
             return self.parameter_changes.firstForIdAtOffset(id, sample_offset);
         }
 
-        pub fn latestParameterChangeForIdAtOffset(self: @This(), id: u32, sample_offset: usize) ?ParameterChange {
+        pub fn latestParameterChangeForIdAtOffset(self: *const @This(), id: u32, sample_offset: usize) ?ParameterChange {
             return self.parameter_changes.latestForIdAtOffset(id, sample_offset);
         }
 
-        pub fn countParameterChanges(self: @This(), id: u32) usize {
+        pub fn countParameterChanges(self: *const @This(), id: u32) usize {
             return self.parameter_changes.count(id);
         }
 
-        pub fn countParameterChangesAtOffset(self: @This(), sample_offset: usize) usize {
+        pub fn countParameterChangesAtOffset(self: *const @This(), sample_offset: usize) usize {
             return self.parameter_changes.countAtOffset(sample_offset);
         }
 
-        pub fn countParameterChangesForIdAtOffset(self: @This(), id: u32, sample_offset: usize) usize {
+        pub fn countParameterChangesForIdAtOffset(self: *const @This(), id: u32, sample_offset: usize) usize {
             return self.parameter_changes.countForIdAtOffset(id, sample_offset);
         }
 
-        pub fn hasParameterChange(self: @This(), id: u32) bool {
+        pub fn hasParameterChange(self: *const @This(), id: u32) bool {
             return self.parameter_changes.has(id);
         }
 
-        pub fn hasParameterChangeAtOffset(self: @This(), sample_offset: usize) bool {
+        pub fn hasParameterChangeAtOffset(self: *const @This(), sample_offset: usize) bool {
             return self.parameter_changes.hasAtOffset(sample_offset);
         }
 
-        pub fn hasParameterChangeForIdAtOffset(self: @This(), id: u32, sample_offset: usize) bool {
+        pub fn hasParameterChangeForIdAtOffset(self: *const @This(), id: u32, sample_offset: usize) bool {
             return self.parameter_changes.hasForIdAtOffset(id, sample_offset);
         }
 
-        pub fn parameterChangesForIdEmpty(self: @This(), id: u32) bool {
+        pub fn parameterChangesForIdEmpty(self: *const @This(), id: u32) bool {
             return self.parameter_changes.empty(id);
         }
 
-        pub fn parameterChangesAtOffsetEmpty(self: @This(), sample_offset: usize) bool {
+        pub fn parameterChangesAtOffsetEmpty(self: *const @This(), sample_offset: usize) bool {
             return self.parameter_changes.offsetEmpty(sample_offset);
         }
 
-        pub fn parameterChangesForIdAtOffsetEmpty(self: @This(), id: u32, sample_offset: usize) bool {
+        pub fn parameterChangesForIdAtOffsetEmpty(self: *const @This(), id: u32, sample_offset: usize) bool {
             return self.parameter_changes.idAtOffsetEmpty(id, sample_offset);
         }
 
-        pub fn onlyParameterChangesForId(self: @This(), id: u32) bool {
+        pub fn onlyParameterChangesForId(self: *const @This(), id: u32) bool {
             return self.parameter_changes.only(id);
         }
 
-        pub fn onlyParameterChangesAtOffset(self: @This(), sample_offset: usize) bool {
+        pub fn onlyParameterChangesAtOffset(self: *const @This(), sample_offset: usize) bool {
             return self.parameter_changes.onlyAtOffset(sample_offset);
         }
 
-        pub fn onlyParameterChangesForIdAtOffset(self: @This(), id: u32, sample_offset: usize) bool {
+        pub fn onlyParameterChangesForIdAtOffset(self: *const @This(), id: u32, sample_offset: usize) bool {
             return self.parameter_changes.onlyForIdAtOffset(id, sample_offset);
         }
 
-        pub fn latestParameterNormalized(self: @This(), id: u32) ?f64 {
+        pub fn latestParameterNormalized(self: *const @This(), id: u32) ?f64 {
             return self.parameter_changes.latestNormalized(id);
         }
 
-        pub fn firstParameterNormalized(self: @This(), id: u32) ?f64 {
+        pub fn firstParameterNormalized(self: *const @This(), id: u32) ?f64 {
             return self.parameter_changes.firstNormalized(id);
         }
 
-        pub fn firstParameterNormalizedAtOffset(self: @This(), sample_offset: usize) ?f64 {
+        pub fn firstParameterNormalizedAtOffset(self: *const @This(), sample_offset: usize) ?f64 {
             return self.parameter_changes.firstNormalizedAtOffset(sample_offset);
         }
 
-        pub fn latestParameterNormalizedAtOffset(self: @This(), sample_offset: usize) ?f64 {
+        pub fn latestParameterNormalizedAtOffset(self: *const @This(), sample_offset: usize) ?f64 {
             return self.parameter_changes.latestNormalizedAtOffset(sample_offset);
         }
 
-        pub fn firstParameterNormalizedForIdAtOffset(self: @This(), id: u32, sample_offset: usize) ?f64 {
+        pub fn firstParameterNormalizedForIdAtOffset(self: *const @This(), id: u32, sample_offset: usize) ?f64 {
             return self.parameter_changes.firstNormalizedForIdAtOffset(id, sample_offset);
         }
 
-        pub fn latestParameterNormalizedForIdAtOffset(self: @This(), id: u32, sample_offset: usize) ?f64 {
+        pub fn latestParameterNormalizedForIdAtOffset(self: *const @This(), id: u32, sample_offset: usize) ?f64 {
             return self.parameter_changes.latestNormalizedForIdAtOffset(id, sample_offset);
         }
 
-        pub fn firstParameterNormalizedAtOffsetOr(self: @This(), sample_offset: usize, default: f64) f64 {
+        pub fn firstParameterNormalizedAtOffsetOr(self: *const @This(), sample_offset: usize, default: f64) f64 {
             return self.parameter_changes.firstNormalizedAtOffsetOr(sample_offset, default);
         }
 
-        pub fn latestParameterNormalizedAtOffsetOr(self: @This(), sample_offset: usize, default: f64) f64 {
+        pub fn latestParameterNormalizedAtOffsetOr(self: *const @This(), sample_offset: usize, default: f64) f64 {
             return self.parameter_changes.latestNormalizedAtOffsetOr(sample_offset, default);
         }
 
-        pub fn firstParameterNormalizedForIdAtOffsetOr(self: @This(), id: u32, sample_offset: usize, default: f64) f64 {
+        pub fn firstParameterNormalizedForIdAtOffsetOr(self: *const @This(), id: u32, sample_offset: usize, default: f64) f64 {
             return self.parameter_changes.firstNormalizedForIdAtOffsetOr(id, sample_offset, default);
         }
 
-        pub fn latestParameterNormalizedForIdAtOffsetOr(self: @This(), id: u32, sample_offset: usize, default: f64) f64 {
+        pub fn latestParameterNormalizedForIdAtOffsetOr(self: *const @This(), id: u32, sample_offset: usize, default: f64) f64 {
             return self.parameter_changes.latestNormalizedForIdAtOffsetOr(id, sample_offset, default);
         }
 
-        pub fn firstParameterNormalizedOr(self: @This(), id: u32, default: f64) f64 {
+        pub fn firstParameterNormalizedOr(self: *const @This(), id: u32, default: f64) f64 {
             return self.parameter_changes.firstNormalizedOr(id, default);
         }
 
-        pub fn latestParameterNormalizedOr(self: @This(), id: u32, default: f64) f64 {
+        pub fn latestParameterNormalizedOr(self: *const @This(), id: u32, default: f64) f64 {
             return self.parameter_changes.latestNormalizedOr(id, default);
         }
 
-        pub fn latestParameterChangeAtOrBefore(self: @This(), id: u32, sample_offset: usize) ?ParameterChange {
+        pub fn latestParameterChangeAtOrBefore(self: *const @This(), id: u32, sample_offset: usize) ?ParameterChange {
             return self.parameter_changes.latestAtOrBefore(id, sample_offset);
         }
 
-        pub fn latestParameterNormalizedAtOrBefore(self: @This(), id: u32, sample_offset: usize) ?f64 {
+        pub fn latestParameterNormalizedAtOrBefore(self: *const @This(), id: u32, sample_offset: usize) ?f64 {
             return self.parameter_changes.latestNormalizedAtOrBefore(id, sample_offset);
         }
 
-        pub fn parameterNormalizedAtOrBeforeOr(self: @This(), id: u32, sample_offset: usize, default: f64) f64 {
+        pub fn parameterNormalizedAtOrBeforeOr(self: *const @This(), id: u32, sample_offset: usize, default: f64) f64 {
             return self.parameter_changes.normalizedAtOrBeforeOr(id, sample_offset, default);
         }
 
-        pub fn nextParameterChangeOffset(self: @This(), after_sample_offset: usize) ?usize {
+        pub fn nextParameterChangeOffset(self: *const @This(), after_sample_offset: usize) ?usize {
             return self.parameter_changes.nextSampleOffset(after_sample_offset);
         }
 
-        pub fn nextParameterChangeOffsetForId(self: @This(), id: u32, after_sample_offset: usize) ?usize {
+        pub fn nextParameterChangeOffsetForId(self: *const @This(), id: u32, after_sample_offset: usize) ?usize {
             return self.parameter_changes.nextSampleOffsetForId(id, after_sample_offset);
         }
 
-        pub fn parameterSegmentAt(self: @This(), id: u32, start_offset: usize, default: f64) ?ParameterSegment {
+        pub fn parameterSegmentAt(self: *const @This(), id: u32, start_offset: usize, default: f64) ?ParameterSegment {
             return self.parameter_changes.segmentAt(id, start_offset, self.frameCount(), default);
         }
 
-        pub fn parameterSegments(self: @This(), id: u32, default: f64) ParameterSegmentIterator {
+        pub fn parameterSegments(self: *const @This(), id: u32, default: f64) ParameterSegmentIterator {
             return self.parameter_changes.segments(id, self.frameCount(), default);
         }
 
-        pub fn parameterBlockSegments(self: @This()) BlockSegmentIterator {
+        pub fn parameterBlockSegments(self: *const @This()) BlockSegmentIterator {
             return self.parameter_changes.blockSegments(self.frameCount());
         }
 
-        pub fn processBlockSegments(self: @This()) ProcessBlockSegmentIterator {
+        pub fn processBlockSegments(self: *const @This()) ProcessBlockSegmentIterator {
             return .{
                 .parameter_changes = self.parameter_changes,
                 .events = self.events,
@@ -2447,539 +2457,539 @@ pub fn ProcessContext(comptime Sample: type) type {
             };
         }
 
-        pub fn inputEvents(self: @This()) Events {
+        pub fn inputEvents(self: *const @This()) Events {
             return self.events;
         }
 
-        pub fn inputEventsOfKind(self: @This(), kind: EventKind) EventKindIterator {
+        pub fn inputEventsOfKind(self: *const @This(), kind: EventKind) EventKindIterator {
             return self.events.ofKind(kind);
         }
 
-        pub fn inputEventsAtOffset(self: @This(), sample_offset: usize) EventOffsetIterator {
+        pub fn inputEventsAtOffset(self: *const @This(), sample_offset: usize) EventOffsetIterator {
             return self.events.atOffset(sample_offset);
         }
 
-        pub fn inputEventsForBus(self: @This(), bus_index: i32) EventBusIterator {
+        pub fn inputEventsForBus(self: *const @This(), bus_index: i32) EventBusIterator {
             return self.events.forBus(bus_index);
         }
 
-        pub fn inputEventsForChannel(self: @This(), channel: i16) EventChannelIterator {
+        pub fn inputEventsForChannel(self: *const @This(), channel: i16) EventChannelIterator {
             return self.events.forChannel(channel);
         }
 
-        pub fn inputEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) EventBusChannelIterator {
+        pub fn inputEventsForBusChannel(self: *const @This(), bus_index: i32, channel: i16) EventBusChannelIterator {
             return self.events.forBusChannel(bus_index, channel);
         }
 
-        pub fn inputEventBlockSegments(self: @This()) EventBlockSegmentIterator {
+        pub fn inputEventBlockSegments(self: *const @This()) EventBlockSegmentIterator {
             return self.events.blockSegments(self.frameCount());
         }
 
-        pub fn eventBlockSegments(self: @This()) EventBlockSegmentIterator {
+        pub fn eventBlockSegments(self: *const @This()) EventBlockSegmentIterator {
             return self.inputEventBlockSegments();
         }
 
-        pub fn inputEventCount(self: @This()) usize {
+        pub fn inputEventCount(self: *const @This()) usize {
             return self.events.eventCount();
         }
 
-        pub fn eventCount(self: @This()) usize {
+        pub fn eventCount(self: *const @This()) usize {
             return self.inputEventCount();
         }
 
-        pub fn inputEventsEmpty(self: @This()) bool {
+        pub fn inputEventsEmpty(self: *const @This()) bool {
             return self.events.isEmpty();
         }
 
-        pub fn eventsEmpty(self: @This()) bool {
+        pub fn eventsEmpty(self: *const @This()) bool {
             return self.inputEventsEmpty();
         }
 
-        pub fn hasInputEvents(self: @This()) bool {
+        pub fn hasInputEvents(self: *const @This()) bool {
             return self.events.hasEvents();
         }
 
-        pub fn hasEvents(self: @This()) bool {
+        pub fn hasEvents(self: *const @This()) bool {
             return self.hasInputEvents();
         }
 
-        pub fn firstEventOffset(self: @This()) ?usize {
+        pub fn firstEventOffset(self: *const @This()) ?usize {
             return self.events.firstSampleOffset();
         }
 
-        pub fn firstInputEventOffset(self: @This()) ?usize {
+        pub fn firstInputEventOffset(self: *const @This()) ?usize {
             return self.firstEventOffset();
         }
 
-        pub fn latestEventOffset(self: @This()) ?usize {
+        pub fn latestEventOffset(self: *const @This()) ?usize {
             return self.events.latestSampleOffset();
         }
 
-        pub fn latestInputEventOffset(self: @This()) ?usize {
+        pub fn latestInputEventOffset(self: *const @This()) ?usize {
             return self.latestEventOffset();
         }
 
-        pub fn firstInputEvent(self: @This()) ?Event {
+        pub fn firstInputEvent(self: *const @This()) ?Event {
             return self.events.first();
         }
 
-        pub fn latestInputEvent(self: @This()) ?Event {
+        pub fn latestInputEvent(self: *const @This()) ?Event {
             return self.events.latest();
         }
 
-        pub fn firstEventAtOffset(self: @This(), sample_offset: usize) ?Event {
+        pub fn firstEventAtOffset(self: *const @This(), sample_offset: usize) ?Event {
             return self.events.firstAtOffset(sample_offset);
         }
 
-        pub fn firstInputEventAtOffset(self: @This(), sample_offset: usize) ?Event {
+        pub fn firstInputEventAtOffset(self: *const @This(), sample_offset: usize) ?Event {
             return self.firstEventAtOffset(sample_offset);
         }
 
-        pub fn latestEventAtOffset(self: @This(), sample_offset: usize) ?Event {
+        pub fn latestEventAtOffset(self: *const @This(), sample_offset: usize) ?Event {
             return self.events.latestAtOffset(sample_offset);
         }
 
-        pub fn latestInputEventAtOffset(self: @This(), sample_offset: usize) ?Event {
+        pub fn latestInputEventAtOffset(self: *const @This(), sample_offset: usize) ?Event {
             return self.latestEventAtOffset(sample_offset);
         }
 
-        pub fn firstEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
+        pub fn firstEventOffsetForKind(self: *const @This(), kind: EventKind) ?usize {
             return self.events.firstSampleOffsetForKind(kind);
         }
 
-        pub fn firstInputEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
+        pub fn firstInputEventOffsetForKind(self: *const @This(), kind: EventKind) ?usize {
             return self.firstEventOffsetForKind(kind);
         }
 
-        pub fn latestEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
+        pub fn latestEventOffsetForKind(self: *const @This(), kind: EventKind) ?usize {
             return self.events.latestSampleOffsetForKind(kind);
         }
 
-        pub fn latestInputEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
+        pub fn latestInputEventOffsetForKind(self: *const @This(), kind: EventKind) ?usize {
             return self.latestEventOffsetForKind(kind);
         }
 
-        pub fn firstEventOffsetForBus(self: @This(), bus_index: i32) ?usize {
+        pub fn firstEventOffsetForBus(self: *const @This(), bus_index: i32) ?usize {
             return self.events.firstSampleOffsetForBus(bus_index);
         }
 
-        pub fn firstInputEventOffsetForBus(self: @This(), bus_index: i32) ?usize {
+        pub fn firstInputEventOffsetForBus(self: *const @This(), bus_index: i32) ?usize {
             return self.firstEventOffsetForBus(bus_index);
         }
 
-        pub fn latestEventOffsetForBus(self: @This(), bus_index: i32) ?usize {
+        pub fn latestEventOffsetForBus(self: *const @This(), bus_index: i32) ?usize {
             return self.events.latestSampleOffsetForBus(bus_index);
         }
 
-        pub fn latestInputEventOffsetForBus(self: @This(), bus_index: i32) ?usize {
+        pub fn latestInputEventOffsetForBus(self: *const @This(), bus_index: i32) ?usize {
             return self.latestEventOffsetForBus(bus_index);
         }
 
-        pub fn firstEventOffsetForChannel(self: @This(), channel: i16) ?usize {
+        pub fn firstEventOffsetForChannel(self: *const @This(), channel: i16) ?usize {
             return self.events.firstSampleOffsetForChannel(channel);
         }
 
-        pub fn firstInputEventOffsetForChannel(self: @This(), channel: i16) ?usize {
+        pub fn firstInputEventOffsetForChannel(self: *const @This(), channel: i16) ?usize {
             return self.firstEventOffsetForChannel(channel);
         }
 
-        pub fn latestEventOffsetForChannel(self: @This(), channel: i16) ?usize {
+        pub fn latestEventOffsetForChannel(self: *const @This(), channel: i16) ?usize {
             return self.events.latestSampleOffsetForChannel(channel);
         }
 
-        pub fn latestInputEventOffsetForChannel(self: @This(), channel: i16) ?usize {
+        pub fn latestInputEventOffsetForChannel(self: *const @This(), channel: i16) ?usize {
             return self.latestEventOffsetForChannel(channel);
         }
 
-        pub fn firstEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16) ?usize {
+        pub fn firstEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?usize {
             return self.events.firstSampleOffsetForBusChannel(bus_index, channel);
         }
 
-        pub fn firstInputEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16) ?usize {
+        pub fn firstInputEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?usize {
             return self.firstEventOffsetForBusChannel(bus_index, channel);
         }
 
-        pub fn latestEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16) ?usize {
+        pub fn latestEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?usize {
             return self.events.latestSampleOffsetForBusChannel(bus_index, channel);
         }
 
-        pub fn latestInputEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16) ?usize {
+        pub fn latestInputEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?usize {
             return self.latestEventOffsetForBusChannel(bus_index, channel);
         }
 
-        pub fn firstEvent(self: @This(), kind: EventKind) ?Event {
+        pub fn firstEvent(self: *const @This(), kind: EventKind) ?Event {
             return self.events.firstKind(kind);
         }
 
-        pub fn firstInputEventOfKind(self: @This(), kind: EventKind) ?Event {
+        pub fn firstInputEventOfKind(self: *const @This(), kind: EventKind) ?Event {
             return self.firstEvent(kind);
         }
 
-        pub fn latestEvent(self: @This(), kind: EventKind) ?Event {
+        pub fn latestEvent(self: *const @This(), kind: EventKind) ?Event {
             return self.events.latestKind(kind);
         }
 
-        pub fn latestInputEventOfKind(self: @This(), kind: EventKind) ?Event {
+        pub fn latestInputEventOfKind(self: *const @This(), kind: EventKind) ?Event {
             return self.latestEvent(kind);
         }
 
-        pub fn firstEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) ?Event {
+        pub fn firstEventOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) ?Event {
             return self.events.firstKindAtOffset(kind, sample_offset);
         }
 
-        pub fn firstInputEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) ?Event {
+        pub fn firstInputEventOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) ?Event {
             return self.firstEventOfKindAtOffset(kind, sample_offset);
         }
 
-        pub fn latestEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) ?Event {
+        pub fn latestEventOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) ?Event {
             return self.events.latestKindAtOffset(kind, sample_offset);
         }
 
-        pub fn latestInputEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) ?Event {
+        pub fn latestInputEventOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) ?Event {
             return self.latestEventOfKindAtOffset(kind, sample_offset);
         }
 
-        pub fn firstEventForBus(self: @This(), bus_index: i32) ?Event {
+        pub fn firstEventForBus(self: *const @This(), bus_index: i32) ?Event {
             return self.events.firstBus(bus_index);
         }
 
-        pub fn firstInputEventForBus(self: @This(), bus_index: i32) ?Event {
+        pub fn firstInputEventForBus(self: *const @This(), bus_index: i32) ?Event {
             return self.firstEventForBus(bus_index);
         }
 
-        pub fn latestEventForBus(self: @This(), bus_index: i32) ?Event {
+        pub fn latestEventForBus(self: *const @This(), bus_index: i32) ?Event {
             return self.events.latestBus(bus_index);
         }
 
-        pub fn latestInputEventForBus(self: @This(), bus_index: i32) ?Event {
+        pub fn latestInputEventForBus(self: *const @This(), bus_index: i32) ?Event {
             return self.latestEventForBus(bus_index);
         }
 
-        pub fn firstEventForChannel(self: @This(), channel: i16) ?Event {
+        pub fn firstEventForChannel(self: *const @This(), channel: i16) ?Event {
             return self.events.firstChannel(channel);
         }
 
-        pub fn firstInputEventForChannel(self: @This(), channel: i16) ?Event {
+        pub fn firstInputEventForChannel(self: *const @This(), channel: i16) ?Event {
             return self.firstEventForChannel(channel);
         }
 
-        pub fn latestEventForChannel(self: @This(), channel: i16) ?Event {
+        pub fn latestEventForChannel(self: *const @This(), channel: i16) ?Event {
             return self.events.latestChannel(channel);
         }
 
-        pub fn latestInputEventForChannel(self: @This(), channel: i16) ?Event {
+        pub fn latestInputEventForChannel(self: *const @This(), channel: i16) ?Event {
             return self.latestEventForChannel(channel);
         }
 
-        pub fn firstEventForBusChannel(self: @This(), bus_index: i32, channel: i16) ?Event {
+        pub fn firstEventForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?Event {
             return self.events.firstBusChannel(bus_index, channel);
         }
 
-        pub fn firstInputEventForBusChannel(self: @This(), bus_index: i32, channel: i16) ?Event {
+        pub fn firstInputEventForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?Event {
             return self.firstEventForBusChannel(bus_index, channel);
         }
 
-        pub fn latestEventForBusChannel(self: @This(), bus_index: i32, channel: i16) ?Event {
+        pub fn latestEventForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?Event {
             return self.events.latestBusChannel(bus_index, channel);
         }
 
-        pub fn latestInputEventForBusChannel(self: @This(), bus_index: i32, channel: i16) ?Event {
+        pub fn latestInputEventForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?Event {
             return self.latestEventForBusChannel(bus_index, channel);
         }
 
-        pub fn hasEvent(self: @This(), kind: EventKind) bool {
+        pub fn hasEvent(self: *const @This(), kind: EventKind) bool {
             return self.events.hasKind(kind);
         }
 
-        pub fn hasInputEvent(self: @This(), kind: EventKind) bool {
+        pub fn hasInputEvent(self: *const @This(), kind: EventKind) bool {
             return self.hasEvent(kind);
         }
 
-        pub fn eventsOfKindEmpty(self: @This(), kind: EventKind) bool {
+        pub fn eventsOfKindEmpty(self: *const @This(), kind: EventKind) bool {
             return self.events.kindEmpty(kind);
         }
 
-        pub fn inputEventsOfKindEmpty(self: @This(), kind: EventKind) bool {
+        pub fn inputEventsOfKindEmpty(self: *const @This(), kind: EventKind) bool {
             return self.eventsOfKindEmpty(kind);
         }
 
-        pub fn countEvents(self: @This(), kind: EventKind) usize {
+        pub fn countEvents(self: *const @This(), kind: EventKind) usize {
             return self.events.countKind(kind);
         }
 
-        pub fn countInputEvents(self: @This(), kind: EventKind) usize {
+        pub fn countInputEvents(self: *const @This(), kind: EventKind) usize {
             return self.countEvents(kind);
         }
 
-        pub fn countNoteAttacks(self: @This()) usize {
+        pub fn countNoteAttacks(self: *const @This()) usize {
             return self.events.countNoteAttacks();
         }
 
-        pub fn countInputNoteAttacks(self: @This()) usize {
+        pub fn countInputNoteAttacks(self: *const @This()) usize {
             return self.countNoteAttacks();
         }
 
-        pub fn countNoteReleases(self: @This()) usize {
+        pub fn countNoteReleases(self: *const @This()) usize {
             return self.events.countNoteReleases();
         }
 
-        pub fn countInputNoteReleases(self: @This()) usize {
+        pub fn countInputNoteReleases(self: *const @This()) usize {
             return self.countNoteReleases();
         }
 
-        pub fn countEventsAtOffset(self: @This(), sample_offset: usize) usize {
+        pub fn countEventsAtOffset(self: *const @This(), sample_offset: usize) usize {
             return self.events.countAtOffset(sample_offset);
         }
 
-        pub fn countInputEventsAtOffset(self: @This(), sample_offset: usize) usize {
+        pub fn countInputEventsAtOffset(self: *const @This(), sample_offset: usize) usize {
             return self.countEventsAtOffset(sample_offset);
         }
 
-        pub fn countEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) usize {
+        pub fn countEventsOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) usize {
             return self.events.countKindAtOffset(kind, sample_offset);
         }
 
-        pub fn countInputEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) usize {
+        pub fn countInputEventsOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) usize {
             return self.countEventsOfKindAtOffset(kind, sample_offset);
         }
 
-        pub fn countEventsForBus(self: @This(), bus_index: i32) usize {
+        pub fn countEventsForBus(self: *const @This(), bus_index: i32) usize {
             return self.events.countBus(bus_index);
         }
 
-        pub fn countInputEventsForBus(self: @This(), bus_index: i32) usize {
+        pub fn countInputEventsForBus(self: *const @This(), bus_index: i32) usize {
             return self.countEventsForBus(bus_index);
         }
 
-        pub fn countEventsForChannel(self: @This(), channel: i16) usize {
+        pub fn countEventsForChannel(self: *const @This(), channel: i16) usize {
             return self.events.countChannel(channel);
         }
 
-        pub fn countInputEventsForChannel(self: @This(), channel: i16) usize {
+        pub fn countInputEventsForChannel(self: *const @This(), channel: i16) usize {
             return self.countEventsForChannel(channel);
         }
 
-        pub fn countEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) usize {
+        pub fn countEventsForBusChannel(self: *const @This(), bus_index: i32, channel: i16) usize {
             return self.events.countBusChannel(bus_index, channel);
         }
 
-        pub fn countInputEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) usize {
+        pub fn countInputEventsForBusChannel(self: *const @This(), bus_index: i32, channel: i16) usize {
             return self.countEventsForBusChannel(bus_index, channel);
         }
 
-        pub fn hasEventsForBus(self: @This(), bus_index: i32) bool {
+        pub fn hasEventsForBus(self: *const @This(), bus_index: i32) bool {
             return self.events.hasBus(bus_index);
         }
 
-        pub fn hasInputEventsForBus(self: @This(), bus_index: i32) bool {
+        pub fn hasInputEventsForBus(self: *const @This(), bus_index: i32) bool {
             return self.hasEventsForBus(bus_index);
         }
 
-        pub fn eventsForBusEmpty(self: @This(), bus_index: i32) bool {
+        pub fn eventsForBusEmpty(self: *const @This(), bus_index: i32) bool {
             return self.events.busEmpty(bus_index);
         }
 
-        pub fn inputEventsForBusEmpty(self: @This(), bus_index: i32) bool {
+        pub fn inputEventsForBusEmpty(self: *const @This(), bus_index: i32) bool {
             return self.eventsForBusEmpty(bus_index);
         }
 
-        pub fn hasEventsForChannel(self: @This(), channel: i16) bool {
+        pub fn hasEventsForChannel(self: *const @This(), channel: i16) bool {
             return self.events.hasChannel(channel);
         }
 
-        pub fn hasInputEventsForChannel(self: @This(), channel: i16) bool {
+        pub fn hasInputEventsForChannel(self: *const @This(), channel: i16) bool {
             return self.hasEventsForChannel(channel);
         }
 
-        pub fn hasEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) bool {
+        pub fn hasEventsForBusChannel(self: *const @This(), bus_index: i32, channel: i16) bool {
             return self.events.hasBusChannel(bus_index, channel);
         }
 
-        pub fn hasInputEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) bool {
+        pub fn hasInputEventsForBusChannel(self: *const @This(), bus_index: i32, channel: i16) bool {
             return self.hasEventsForBusChannel(bus_index, channel);
         }
 
-        pub fn hasEventAtOffset(self: @This(), sample_offset: usize) bool {
+        pub fn hasEventAtOffset(self: *const @This(), sample_offset: usize) bool {
             return self.events.hasAtOffset(sample_offset);
         }
 
-        pub fn hasInputEventAtOffset(self: @This(), sample_offset: usize) bool {
+        pub fn hasInputEventAtOffset(self: *const @This(), sample_offset: usize) bool {
             return self.hasEventAtOffset(sample_offset);
         }
 
-        pub fn hasEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+        pub fn hasEventOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) bool {
             return self.events.hasKindAtOffset(kind, sample_offset);
         }
 
-        pub fn hasInputEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+        pub fn hasInputEventOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) bool {
             return self.hasEventOfKindAtOffset(kind, sample_offset);
         }
 
-        pub fn hasNoteAttacks(self: @This()) bool {
+        pub fn hasNoteAttacks(self: *const @This()) bool {
             return self.events.hasNoteAttacks();
         }
 
-        pub fn hasInputNoteAttacks(self: @This()) bool {
+        pub fn hasInputNoteAttacks(self: *const @This()) bool {
             return self.hasNoteAttacks();
         }
 
-        pub fn hasNoteReleases(self: @This()) bool {
+        pub fn hasNoteReleases(self: *const @This()) bool {
             return self.events.hasNoteReleases();
         }
 
-        pub fn hasInputNoteReleases(self: @This()) bool {
+        pub fn hasInputNoteReleases(self: *const @This()) bool {
             return self.hasNoteReleases();
         }
 
-        pub fn eventsForChannelEmpty(self: @This(), channel: i16) bool {
+        pub fn eventsForChannelEmpty(self: *const @This(), channel: i16) bool {
             return self.events.channelEmpty(channel);
         }
 
-        pub fn inputEventsForChannelEmpty(self: @This(), channel: i16) bool {
+        pub fn inputEventsForChannelEmpty(self: *const @This(), channel: i16) bool {
             return self.eventsForChannelEmpty(channel);
         }
 
-        pub fn eventsForBusChannelEmpty(self: @This(), bus_index: i32, channel: i16) bool {
+        pub fn eventsForBusChannelEmpty(self: *const @This(), bus_index: i32, channel: i16) bool {
             return self.events.busChannelEmpty(bus_index, channel);
         }
 
-        pub fn inputEventsForBusChannelEmpty(self: @This(), bus_index: i32, channel: i16) bool {
+        pub fn inputEventsForBusChannelEmpty(self: *const @This(), bus_index: i32, channel: i16) bool {
             return self.eventsForBusChannelEmpty(bus_index, channel);
         }
 
-        pub fn eventsAtOffsetEmpty(self: @This(), sample_offset: usize) bool {
+        pub fn eventsAtOffsetEmpty(self: *const @This(), sample_offset: usize) bool {
             return self.events.offsetEmpty(sample_offset);
         }
 
-        pub fn inputEventsAtOffsetEmpty(self: @This(), sample_offset: usize) bool {
+        pub fn inputEventsAtOffsetEmpty(self: *const @This(), sample_offset: usize) bool {
             return self.eventsAtOffsetEmpty(sample_offset);
         }
 
-        pub fn eventsOfKindAtOffsetEmpty(self: @This(), kind: EventKind, sample_offset: usize) bool {
+        pub fn eventsOfKindAtOffsetEmpty(self: *const @This(), kind: EventKind, sample_offset: usize) bool {
             return self.events.kindAtOffsetEmpty(kind, sample_offset);
         }
 
-        pub fn inputEventsOfKindAtOffsetEmpty(self: @This(), kind: EventKind, sample_offset: usize) bool {
+        pub fn inputEventsOfKindAtOffsetEmpty(self: *const @This(), kind: EventKind, sample_offset: usize) bool {
             return self.eventsOfKindAtOffsetEmpty(kind, sample_offset);
         }
 
-        pub fn onlyEventsAtOffset(self: @This(), sample_offset: usize) bool {
+        pub fn onlyEventsAtOffset(self: *const @This(), sample_offset: usize) bool {
             return self.events.onlyAtOffset(sample_offset);
         }
 
-        pub fn onlyInputEventsAtOffset(self: @This(), sample_offset: usize) bool {
+        pub fn onlyInputEventsAtOffset(self: *const @This(), sample_offset: usize) bool {
             return self.onlyEventsAtOffset(sample_offset);
         }
 
-        pub fn onlyEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+        pub fn onlyEventsOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) bool {
             return self.events.onlyKindAtOffset(kind, sample_offset);
         }
 
-        pub fn onlyInputEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+        pub fn onlyInputEventsOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) bool {
             return self.onlyEventsOfKindAtOffset(kind, sample_offset);
         }
 
-        pub fn noteAttacksEmpty(self: @This()) bool {
+        pub fn noteAttacksEmpty(self: *const @This()) bool {
             return self.events.noteAttacksEmpty();
         }
 
-        pub fn inputNoteAttacksEmpty(self: @This()) bool {
+        pub fn inputNoteAttacksEmpty(self: *const @This()) bool {
             return self.noteAttacksEmpty();
         }
 
-        pub fn noteReleasesEmpty(self: @This()) bool {
+        pub fn noteReleasesEmpty(self: *const @This()) bool {
             return self.events.noteReleasesEmpty();
         }
 
-        pub fn inputNoteReleasesEmpty(self: @This()) bool {
+        pub fn inputNoteReleasesEmpty(self: *const @This()) bool {
             return self.noteReleasesEmpty();
         }
 
-        pub fn onlyEventsOfKind(self: @This(), kind: EventKind) bool {
+        pub fn onlyEventsOfKind(self: *const @This(), kind: EventKind) bool {
             return self.events.onlyKind(kind);
         }
 
-        pub fn onlyInputEventsOfKind(self: @This(), kind: EventKind) bool {
+        pub fn onlyInputEventsOfKind(self: *const @This(), kind: EventKind) bool {
             return self.onlyEventsOfKind(kind);
         }
 
-        pub fn onlyNoteAttacks(self: @This()) bool {
+        pub fn onlyNoteAttacks(self: *const @This()) bool {
             return self.events.onlyNoteAttacks();
         }
 
-        pub fn onlyInputNoteAttacks(self: @This()) bool {
+        pub fn onlyInputNoteAttacks(self: *const @This()) bool {
             return self.onlyNoteAttacks();
         }
 
-        pub fn onlyNoteReleases(self: @This()) bool {
+        pub fn onlyNoteReleases(self: *const @This()) bool {
             return self.events.onlyNoteReleases();
         }
 
-        pub fn onlyInputNoteReleases(self: @This()) bool {
+        pub fn onlyInputNoteReleases(self: *const @This()) bool {
             return self.onlyNoteReleases();
         }
 
-        pub fn onlyEventsForBus(self: @This(), bus_index: i32) bool {
+        pub fn onlyEventsForBus(self: *const @This(), bus_index: i32) bool {
             return self.events.onlyBus(bus_index);
         }
 
-        pub fn onlyInputEventsForBus(self: @This(), bus_index: i32) bool {
+        pub fn onlyInputEventsForBus(self: *const @This(), bus_index: i32) bool {
             return self.onlyEventsForBus(bus_index);
         }
 
-        pub fn onlyEventsForChannel(self: @This(), channel: i16) bool {
+        pub fn onlyEventsForChannel(self: *const @This(), channel: i16) bool {
             return self.events.onlyChannel(channel);
         }
 
-        pub fn onlyInputEventsForChannel(self: @This(), channel: i16) bool {
+        pub fn onlyInputEventsForChannel(self: *const @This(), channel: i16) bool {
             return self.onlyEventsForChannel(channel);
         }
 
-        pub fn onlyEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) bool {
+        pub fn onlyEventsForBusChannel(self: *const @This(), bus_index: i32, channel: i16) bool {
             return self.events.onlyBusChannel(bus_index, channel);
         }
 
-        pub fn onlyInputEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) bool {
+        pub fn onlyInputEventsForBusChannel(self: *const @This(), bus_index: i32, channel: i16) bool {
             return self.onlyEventsForBusChannel(bus_index, channel);
         }
 
-        pub fn nextEventOffset(self: @This(), after_sample_offset: usize) ?usize {
+        pub fn nextEventOffset(self: *const @This(), after_sample_offset: usize) ?usize {
             return self.events.nextSampleOffset(after_sample_offset);
         }
 
-        pub fn nextInputEventOffset(self: @This(), after_sample_offset: usize) ?usize {
+        pub fn nextInputEventOffset(self: *const @This(), after_sample_offset: usize) ?usize {
             return self.nextEventOffset(after_sample_offset);
         }
 
-        pub fn nextEventOffsetForKind(self: @This(), kind: EventKind, after_sample_offset: usize) ?usize {
+        pub fn nextEventOffsetForKind(self: *const @This(), kind: EventKind, after_sample_offset: usize) ?usize {
             return self.events.nextSampleOffsetForKind(kind, after_sample_offset);
         }
 
-        pub fn nextInputEventOffsetForKind(self: @This(), kind: EventKind, after_sample_offset: usize) ?usize {
+        pub fn nextInputEventOffsetForKind(self: *const @This(), kind: EventKind, after_sample_offset: usize) ?usize {
             return self.nextEventOffsetForKind(kind, after_sample_offset);
         }
 
-        pub fn nextEventOffsetForBus(self: @This(), bus_index: i32, after_sample_offset: usize) ?usize {
+        pub fn nextEventOffsetForBus(self: *const @This(), bus_index: i32, after_sample_offset: usize) ?usize {
             return self.events.nextSampleOffsetForBus(bus_index, after_sample_offset);
         }
 
-        pub fn nextInputEventOffsetForBus(self: @This(), bus_index: i32, after_sample_offset: usize) ?usize {
+        pub fn nextInputEventOffsetForBus(self: *const @This(), bus_index: i32, after_sample_offset: usize) ?usize {
             return self.nextEventOffsetForBus(bus_index, after_sample_offset);
         }
 
-        pub fn nextEventOffsetForChannel(self: @This(), channel: i16, after_sample_offset: usize) ?usize {
+        pub fn nextEventOffsetForChannel(self: *const @This(), channel: i16, after_sample_offset: usize) ?usize {
             return self.events.nextSampleOffsetForChannel(channel, after_sample_offset);
         }
 
-        pub fn nextInputEventOffsetForChannel(self: @This(), channel: i16, after_sample_offset: usize) ?usize {
+        pub fn nextInputEventOffsetForChannel(self: *const @This(), channel: i16, after_sample_offset: usize) ?usize {
             return self.nextEventOffsetForChannel(channel, after_sample_offset);
         }
 
-        pub fn nextEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
+        pub fn nextEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
             return self.events.nextSampleOffsetForBusChannel(bus_index, channel, after_sample_offset);
         }
 
-        pub fn nextInputEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
+        pub fn nextInputEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
             return self.nextEventOffsetForBusChannel(bus_index, channel, after_sample_offset);
         }
 
@@ -3001,455 +3011,455 @@ pub fn ProcessContext(comptime Sample: type) type {
             return writer.appendAllCount(events);
         }
 
-        pub fn canAppendOutputEvent(self: @This()) bool {
+        pub fn canAppendOutputEvent(self: *const @This()) bool {
             const writer = self.output_events orelse return false;
             return writer.canAppend(1);
         }
 
-        pub fn canAppendOutputEvents(self: @This(), event_count: usize) bool {
+        pub fn canAppendOutputEvents(self: *const @This(), event_count: usize) bool {
             const writer = self.output_events orelse return false;
             return writer.canAppend(event_count);
         }
 
-        pub fn canAppendOutputEventValue(self: @This(), event: Event) bool {
+        pub fn canAppendOutputEventValue(self: *const @This(), event: Event) bool {
             const writer = self.output_events orelse return false;
             return writer.canAppendEvent(event);
         }
 
-        pub fn canAppendOutputEventValues(self: @This(), events: Events) bool {
+        pub fn canAppendOutputEventValues(self: *const @This(), events: Events) bool {
             const writer = self.output_events orelse return false;
             return writer.canAppendEvents(events);
         }
 
-        pub fn writtenOutputEvents(self: @This()) Events {
+        pub fn writtenOutputEvents(self: *const @This()) Events {
             const writer = self.output_events orelse return .{};
             return writer.events();
         }
 
-        pub fn outputEvents(self: @This()) Events {
+        pub fn outputEvents(self: *const @This()) Events {
             return self.writtenOutputEvents();
         }
 
-        pub fn outputEventBlockSegments(self: @This()) EventBlockSegmentIterator {
+        pub fn outputEventBlockSegments(self: *const @This()) EventBlockSegmentIterator {
             const writer = self.output_events orelse return (Events{}).blockSegments(self.frameCount());
             return writer.blockSegments();
         }
 
-        pub fn outputEventsAtOffset(self: @This(), sample_offset: usize) EventOffsetIterator {
+        pub fn outputEventsAtOffset(self: *const @This(), sample_offset: usize) EventOffsetIterator {
             return self.writtenOutputEvents().atOffset(sample_offset);
         }
 
-        pub fn outputEventsOfKind(self: @This(), kind: EventKind) EventKindIterator {
+        pub fn outputEventsOfKind(self: *const @This(), kind: EventKind) EventKindIterator {
             return self.writtenOutputEvents().ofKind(kind);
         }
 
-        pub fn outputEventsForBus(self: @This(), bus_index: i32) EventBusIterator {
+        pub fn outputEventsForBus(self: *const @This(), bus_index: i32) EventBusIterator {
             return self.writtenOutputEvents().forBus(bus_index);
         }
 
-        pub fn outputEventsForChannel(self: @This(), channel: i16) EventChannelIterator {
+        pub fn outputEventsForChannel(self: *const @This(), channel: i16) EventChannelIterator {
             return self.writtenOutputEvents().forChannel(channel);
         }
 
-        pub fn outputEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) EventBusChannelIterator {
+        pub fn outputEventsForBusChannel(self: *const @This(), bus_index: i32, channel: i16) EventBusChannelIterator {
             return self.writtenOutputEvents().forBusChannel(bus_index, channel);
         }
 
-        pub fn firstOutputEventOffset(self: @This()) ?usize {
+        pub fn firstOutputEventOffset(self: *const @This()) ?usize {
             const writer = self.output_events orelse return null;
             return writer.firstSampleOffset();
         }
 
-        pub fn latestOutputEventOffset(self: @This()) ?usize {
+        pub fn latestOutputEventOffset(self: *const @This()) ?usize {
             const writer = self.output_events orelse return null;
             return writer.latestSampleOffset();
         }
 
-        pub fn firstWrittenOutputEvent(self: @This()) ?Event {
+        pub fn firstWrittenOutputEvent(self: *const @This()) ?Event {
             return self.writtenOutputEvents().first();
         }
 
-        pub fn latestWrittenOutputEvent(self: @This()) ?Event {
+        pub fn latestWrittenOutputEvent(self: *const @This()) ?Event {
             return self.writtenOutputEvents().latest();
         }
 
-        pub fn firstOutputEventAtOffset(self: @This(), sample_offset: usize) ?Event {
+        pub fn firstOutputEventAtOffset(self: *const @This(), sample_offset: usize) ?Event {
             return self.writtenOutputEvents().firstAtOffset(sample_offset);
         }
 
-        pub fn latestOutputEventAtOffset(self: @This(), sample_offset: usize) ?Event {
+        pub fn latestOutputEventAtOffset(self: *const @This(), sample_offset: usize) ?Event {
             return self.writtenOutputEvents().latestAtOffset(sample_offset);
         }
 
-        pub fn firstOutputEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
+        pub fn firstOutputEventOffsetForKind(self: *const @This(), kind: EventKind) ?usize {
             const writer = self.output_events orelse return null;
             return writer.firstSampleOffsetForKind(kind);
         }
 
-        pub fn latestOutputEventOffsetForKind(self: @This(), kind: EventKind) ?usize {
+        pub fn latestOutputEventOffsetForKind(self: *const @This(), kind: EventKind) ?usize {
             const writer = self.output_events orelse return null;
             return writer.latestSampleOffsetForKind(kind);
         }
 
-        pub fn firstOutputEventOffsetForBus(self: @This(), bus_index: i32) ?usize {
+        pub fn firstOutputEventOffsetForBus(self: *const @This(), bus_index: i32) ?usize {
             const writer = self.output_events orelse return null;
             return writer.firstSampleOffsetForBus(bus_index);
         }
 
-        pub fn latestOutputEventOffsetForBus(self: @This(), bus_index: i32) ?usize {
+        pub fn latestOutputEventOffsetForBus(self: *const @This(), bus_index: i32) ?usize {
             const writer = self.output_events orelse return null;
             return writer.latestSampleOffsetForBus(bus_index);
         }
 
-        pub fn firstOutputEventOffsetForChannel(self: @This(), channel: i16) ?usize {
+        pub fn firstOutputEventOffsetForChannel(self: *const @This(), channel: i16) ?usize {
             const writer = self.output_events orelse return null;
             return writer.firstSampleOffsetForChannel(channel);
         }
 
-        pub fn latestOutputEventOffsetForChannel(self: @This(), channel: i16) ?usize {
+        pub fn latestOutputEventOffsetForChannel(self: *const @This(), channel: i16) ?usize {
             const writer = self.output_events orelse return null;
             return writer.latestSampleOffsetForChannel(channel);
         }
 
-        pub fn firstOutputEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16) ?usize {
+        pub fn firstOutputEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?usize {
             const writer = self.output_events orelse return null;
             return writer.firstSampleOffsetForBusChannel(bus_index, channel);
         }
 
-        pub fn latestOutputEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16) ?usize {
+        pub fn latestOutputEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?usize {
             const writer = self.output_events orelse return null;
             return writer.latestSampleOffsetForBusChannel(bus_index, channel);
         }
 
-        pub fn firstOutputEvent(self: @This(), kind: EventKind) ?Event {
+        pub fn firstOutputEvent(self: *const @This(), kind: EventKind) ?Event {
             return self.writtenOutputEvents().firstKind(kind);
         }
 
-        pub fn firstOutputEventOfKind(self: @This(), kind: EventKind) ?Event {
+        pub fn firstOutputEventOfKind(self: *const @This(), kind: EventKind) ?Event {
             return self.firstOutputEvent(kind);
         }
 
-        pub fn latestOutputEvent(self: @This(), kind: EventKind) ?Event {
+        pub fn latestOutputEvent(self: *const @This(), kind: EventKind) ?Event {
             return self.writtenOutputEvents().latestKind(kind);
         }
 
-        pub fn latestOutputEventOfKind(self: @This(), kind: EventKind) ?Event {
+        pub fn latestOutputEventOfKind(self: *const @This(), kind: EventKind) ?Event {
             return self.latestOutputEvent(kind);
         }
 
-        pub fn firstOutputEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) ?Event {
+        pub fn firstOutputEventOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) ?Event {
             return self.writtenOutputEvents().firstKindAtOffset(kind, sample_offset);
         }
 
-        pub fn latestOutputEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) ?Event {
+        pub fn latestOutputEventOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) ?Event {
             return self.writtenOutputEvents().latestKindAtOffset(kind, sample_offset);
         }
 
-        pub fn firstOutputEventForBus(self: @This(), bus_index: i32) ?Event {
+        pub fn firstOutputEventForBus(self: *const @This(), bus_index: i32) ?Event {
             return self.writtenOutputEvents().firstBus(bus_index);
         }
 
-        pub fn latestOutputEventForBus(self: @This(), bus_index: i32) ?Event {
+        pub fn latestOutputEventForBus(self: *const @This(), bus_index: i32) ?Event {
             return self.writtenOutputEvents().latestBus(bus_index);
         }
 
-        pub fn firstOutputEventForChannel(self: @This(), channel: i16) ?Event {
+        pub fn firstOutputEventForChannel(self: *const @This(), channel: i16) ?Event {
             return self.writtenOutputEvents().firstChannel(channel);
         }
 
-        pub fn latestOutputEventForChannel(self: @This(), channel: i16) ?Event {
+        pub fn latestOutputEventForChannel(self: *const @This(), channel: i16) ?Event {
             return self.writtenOutputEvents().latestChannel(channel);
         }
 
-        pub fn firstOutputEventForBusChannel(self: @This(), bus_index: i32, channel: i16) ?Event {
+        pub fn firstOutputEventForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?Event {
             return self.writtenOutputEvents().firstBusChannel(bus_index, channel);
         }
 
-        pub fn latestOutputEventForBusChannel(self: @This(), bus_index: i32, channel: i16) ?Event {
+        pub fn latestOutputEventForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?Event {
             return self.writtenOutputEvents().latestBusChannel(bus_index, channel);
         }
 
-        pub fn hasOutputEvent(self: @This(), kind: EventKind) bool {
+        pub fn hasOutputEvent(self: *const @This(), kind: EventKind) bool {
             return self.writtenOutputEvents().hasKind(kind);
         }
 
-        pub fn outputEventsOfKindEmpty(self: @This(), kind: EventKind) bool {
+        pub fn outputEventsOfKindEmpty(self: *const @This(), kind: EventKind) bool {
             return self.writtenOutputEvents().kindEmpty(kind);
         }
 
-        pub fn countOutputEvents(self: @This(), kind: EventKind) usize {
+        pub fn countOutputEvents(self: *const @This(), kind: EventKind) usize {
             return self.writtenOutputEvents().countKind(kind);
         }
 
-        pub fn countOutputNoteAttacks(self: @This()) usize {
+        pub fn countOutputNoteAttacks(self: *const @This()) usize {
             return self.writtenOutputEvents().countNoteAttacks();
         }
 
-        pub fn countOutputNoteReleases(self: @This()) usize {
+        pub fn countOutputNoteReleases(self: *const @This()) usize {
             return self.writtenOutputEvents().countNoteReleases();
         }
 
-        pub fn countOutputEventsAtOffset(self: @This(), sample_offset: usize) usize {
+        pub fn countOutputEventsAtOffset(self: *const @This(), sample_offset: usize) usize {
             return self.writtenOutputEvents().countAtOffset(sample_offset);
         }
 
-        pub fn countOutputEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) usize {
+        pub fn countOutputEventsOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) usize {
             return self.writtenOutputEvents().countKindAtOffset(kind, sample_offset);
         }
 
-        pub fn countOutputEventsForBus(self: @This(), bus_index: i32) usize {
+        pub fn countOutputEventsForBus(self: *const @This(), bus_index: i32) usize {
             return self.writtenOutputEvents().countBus(bus_index);
         }
 
-        pub fn countOutputEventsForChannel(self: @This(), channel: i16) usize {
+        pub fn countOutputEventsForChannel(self: *const @This(), channel: i16) usize {
             return self.writtenOutputEvents().countChannel(channel);
         }
 
-        pub fn countOutputEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) usize {
+        pub fn countOutputEventsForBusChannel(self: *const @This(), bus_index: i32, channel: i16) usize {
             return self.writtenOutputEvents().countBusChannel(bus_index, channel);
         }
 
-        pub fn hasOutputEventsForBus(self: @This(), bus_index: i32) bool {
+        pub fn hasOutputEventsForBus(self: *const @This(), bus_index: i32) bool {
             return self.writtenOutputEvents().hasBus(bus_index);
         }
 
-        pub fn outputEventsForBusEmpty(self: @This(), bus_index: i32) bool {
+        pub fn outputEventsForBusEmpty(self: *const @This(), bus_index: i32) bool {
             return self.writtenOutputEvents().busEmpty(bus_index);
         }
 
-        pub fn hasOutputEventsForChannel(self: @This(), channel: i16) bool {
+        pub fn hasOutputEventsForChannel(self: *const @This(), channel: i16) bool {
             return self.writtenOutputEvents().hasChannel(channel);
         }
 
-        pub fn hasOutputEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) bool {
+        pub fn hasOutputEventsForBusChannel(self: *const @This(), bus_index: i32, channel: i16) bool {
             return self.writtenOutputEvents().hasBusChannel(bus_index, channel);
         }
 
-        pub fn hasOutputEventAtOffset(self: @This(), sample_offset: usize) bool {
+        pub fn hasOutputEventAtOffset(self: *const @This(), sample_offset: usize) bool {
             return self.writtenOutputEvents().hasAtOffset(sample_offset);
         }
 
-        pub fn hasOutputEventOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+        pub fn hasOutputEventOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) bool {
             return self.writtenOutputEvents().hasKindAtOffset(kind, sample_offset);
         }
 
-        pub fn hasOutputNoteAttacks(self: @This()) bool {
+        pub fn hasOutputNoteAttacks(self: *const @This()) bool {
             return self.writtenOutputEvents().hasNoteAttacks();
         }
 
-        pub fn hasOutputNoteReleases(self: @This()) bool {
+        pub fn hasOutputNoteReleases(self: *const @This()) bool {
             return self.writtenOutputEvents().hasNoteReleases();
         }
 
-        pub fn outputEventsForChannelEmpty(self: @This(), channel: i16) bool {
+        pub fn outputEventsForChannelEmpty(self: *const @This(), channel: i16) bool {
             return self.writtenOutputEvents().channelEmpty(channel);
         }
 
-        pub fn outputEventsForBusChannelEmpty(self: @This(), bus_index: i32, channel: i16) bool {
+        pub fn outputEventsForBusChannelEmpty(self: *const @This(), bus_index: i32, channel: i16) bool {
             return self.writtenOutputEvents().busChannelEmpty(bus_index, channel);
         }
 
-        pub fn outputEventsAtOffsetEmpty(self: @This(), sample_offset: usize) bool {
+        pub fn outputEventsAtOffsetEmpty(self: *const @This(), sample_offset: usize) bool {
             return self.writtenOutputEvents().offsetEmpty(sample_offset);
         }
 
-        pub fn outputEventsOfKindAtOffsetEmpty(self: @This(), kind: EventKind, sample_offset: usize) bool {
+        pub fn outputEventsOfKindAtOffsetEmpty(self: *const @This(), kind: EventKind, sample_offset: usize) bool {
             return self.writtenOutputEvents().kindAtOffsetEmpty(kind, sample_offset);
         }
 
-        pub fn onlyOutputEventsAtOffset(self: @This(), sample_offset: usize) bool {
+        pub fn onlyOutputEventsAtOffset(self: *const @This(), sample_offset: usize) bool {
             return self.writtenOutputEvents().onlyAtOffset(sample_offset);
         }
 
-        pub fn onlyOutputEventsOfKindAtOffset(self: @This(), kind: EventKind, sample_offset: usize) bool {
+        pub fn onlyOutputEventsOfKindAtOffset(self: *const @This(), kind: EventKind, sample_offset: usize) bool {
             return self.writtenOutputEvents().onlyKindAtOffset(kind, sample_offset);
         }
 
-        pub fn outputNoteAttacksEmpty(self: @This()) bool {
+        pub fn outputNoteAttacksEmpty(self: *const @This()) bool {
             return self.writtenOutputEvents().noteAttacksEmpty();
         }
 
-        pub fn outputNoteReleasesEmpty(self: @This()) bool {
+        pub fn outputNoteReleasesEmpty(self: *const @This()) bool {
             return self.writtenOutputEvents().noteReleasesEmpty();
         }
 
-        pub fn onlyOutputEventsOfKind(self: @This(), kind: EventKind) bool {
+        pub fn onlyOutputEventsOfKind(self: *const @This(), kind: EventKind) bool {
             return self.writtenOutputEvents().onlyKind(kind);
         }
 
-        pub fn onlyOutputNoteAttacks(self: @This()) bool {
+        pub fn onlyOutputNoteAttacks(self: *const @This()) bool {
             return self.writtenOutputEvents().onlyNoteAttacks();
         }
 
-        pub fn onlyOutputNoteReleases(self: @This()) bool {
+        pub fn onlyOutputNoteReleases(self: *const @This()) bool {
             return self.writtenOutputEvents().onlyNoteReleases();
         }
 
-        pub fn onlyOutputEventsForBus(self: @This(), bus_index: i32) bool {
+        pub fn onlyOutputEventsForBus(self: *const @This(), bus_index: i32) bool {
             return self.writtenOutputEvents().onlyBus(bus_index);
         }
 
-        pub fn onlyOutputEventsForChannel(self: @This(), channel: i16) bool {
+        pub fn onlyOutputEventsForChannel(self: *const @This(), channel: i16) bool {
             return self.writtenOutputEvents().onlyChannel(channel);
         }
 
-        pub fn onlyOutputEventsForBusChannel(self: @This(), bus_index: i32, channel: i16) bool {
+        pub fn onlyOutputEventsForBusChannel(self: *const @This(), bus_index: i32, channel: i16) bool {
             return self.writtenOutputEvents().onlyBusChannel(bus_index, channel);
         }
 
-        pub fn nextOutputEventOffset(self: @This(), after_sample_offset: usize) ?usize {
+        pub fn nextOutputEventOffset(self: *const @This(), after_sample_offset: usize) ?usize {
             return self.writtenOutputEvents().nextSampleOffset(after_sample_offset);
         }
 
-        pub fn nextOutputEventOffsetForKind(self: @This(), kind: EventKind, after_sample_offset: usize) ?usize {
+        pub fn nextOutputEventOffsetForKind(self: *const @This(), kind: EventKind, after_sample_offset: usize) ?usize {
             return self.writtenOutputEvents().nextSampleOffsetForKind(kind, after_sample_offset);
         }
 
-        pub fn nextOutputEventOffsetForBus(self: @This(), bus_index: i32, after_sample_offset: usize) ?usize {
+        pub fn nextOutputEventOffsetForBus(self: *const @This(), bus_index: i32, after_sample_offset: usize) ?usize {
             return self.writtenOutputEvents().nextSampleOffsetForBus(bus_index, after_sample_offset);
         }
 
-        pub fn nextOutputEventOffsetForChannel(self: @This(), channel: i16, after_sample_offset: usize) ?usize {
+        pub fn nextOutputEventOffsetForChannel(self: *const @This(), channel: i16, after_sample_offset: usize) ?usize {
             return self.writtenOutputEvents().nextSampleOffsetForChannel(channel, after_sample_offset);
         }
 
-        pub fn nextOutputEventOffsetForBusChannel(self: @This(), bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
+        pub fn nextOutputEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
             return self.writtenOutputEvents().nextSampleOffsetForBusChannel(bus_index, channel, after_sample_offset);
         }
 
-        pub fn clearOutputEvents(self: @This()) void {
+        pub fn clearOutputEvents(self: *const @This()) void {
             _ = self.clearOutputEventsCount();
         }
 
-        pub fn clearOutputEventsCount(self: @This()) usize {
+        pub fn clearOutputEventsCount(self: *const @This()) usize {
             const writer = self.output_events orelse return 0;
             return writer.clearCount();
         }
 
-        pub fn hasOutputEventWriter(self: @This()) bool {
+        pub fn hasOutputEventWriter(self: *const @This()) bool {
             return self.output_events != null;
         }
 
-        pub fn outputEventCount(self: @This()) usize {
+        pub fn outputEventCount(self: *const @This()) usize {
             const writer = self.output_events orelse return 0;
             return writer.eventCount();
         }
 
-        pub fn outputEventCapacity(self: @This()) usize {
+        pub fn outputEventCapacity(self: *const @This()) usize {
             const writer = self.output_events orelse return 0;
             return writer.capacity();
         }
 
-        pub fn outputEventRemainingCapacity(self: @This()) usize {
+        pub fn outputEventRemainingCapacity(self: *const @This()) usize {
             const writer = self.output_events orelse return 0;
             return writer.remainingCapacity();
         }
 
-        pub fn outputEventFrameCount(self: @This()) usize {
+        pub fn outputEventFrameCount(self: *const @This()) usize {
             const writer = self.output_events orelse return 0;
             return writer.frameCount();
         }
 
-        pub fn outputEventsEmpty(self: @This()) bool {
+        pub fn outputEventsEmpty(self: *const @This()) bool {
             const writer = self.output_events orelse return true;
             return writer.isEmpty();
         }
 
-        pub fn hasOutputEvents(self: @This()) bool {
+        pub fn hasOutputEvents(self: *const @This()) bool {
             const writer = self.output_events orelse return false;
             return writer.hasEvents();
         }
 
-        pub fn outputEventsFull(self: @This()) bool {
+        pub fn outputEventsFull(self: *const @This()) bool {
             const writer = self.output_events orelse return true;
             return writer.isFull();
         }
 
-        pub fn inputAudio(self: @This()) AudioInputs(Sample) {
+        pub fn inputAudio(self: *const @This()) AudioInputs(Sample) {
             return self.inputs;
         }
 
-        pub fn outputAudio(self: @This()) AudioOutputs(Sample) {
+        pub fn outputAudio(self: *const @This()) AudioOutputs(Sample) {
             return self.outputs;
         }
 
-        pub fn fillOutputs(self: @This(), value: Sample) void {
-            self.outputAudio().fill(value);
+        pub fn fillOutputs(self: *const @This(), value: Sample) void {
+            self.outputs.fill(value);
         }
 
-        pub fn clearOutputs(self: @This()) void {
-            self.outputAudio().clear();
+        pub fn clearOutputs(self: *const @This()) void {
+            self.outputs.clear();
         }
 
-        pub fn inputChannel(self: @This(), index: usize) ?[]const Sample {
-            return self.inputAudio().channel(index);
+        pub fn inputChannel(self: *const @This(), index: usize) ?[]const Sample {
+            return self.inputs.channel(index);
         }
 
-        pub fn outputChannel(self: @This(), index: usize) ?[]Sample {
-            return self.outputAudio().channel(index);
+        pub fn outputChannel(self: *const @This(), index: usize) ?[]Sample {
+            return self.outputs.channel(index);
         }
 
-        pub fn inputSample(self: @This(), channel_index: usize, frame_index: usize) ?Sample {
-            return self.inputAudio().sample(channel_index, frame_index);
+        pub fn inputSample(self: *const @This(), channel_index: usize, frame_index: usize) ?Sample {
+            return self.inputs.sample(channel_index, frame_index);
         }
 
-        pub fn outputSample(self: @This(), channel_index: usize, frame_index: usize) ?Sample {
-            return self.outputAudio().sample(channel_index, frame_index);
+        pub fn outputSample(self: *const @This(), channel_index: usize, frame_index: usize) ?Sample {
+            return self.outputs.sample(channel_index, frame_index);
         }
 
-        pub fn setOutputSample(self: @This(), channel_index: usize, frame_index: usize, value: Sample) bool {
-            return self.outputAudio().setSample(channel_index, frame_index, value);
+        pub fn setOutputSample(self: *const @This(), channel_index: usize, frame_index: usize, value: Sample) bool {
+            return self.outputs.setSample(channel_index, frame_index, value);
         }
 
-        pub fn hasInputChannel(self: @This(), index: usize) bool {
-            return self.inputAudio().hasChannel(index);
+        pub fn hasInputChannel(self: *const @This(), index: usize) bool {
+            return self.inputs.hasChannel(index);
         }
 
-        pub fn inputChannelEmpty(self: @This(), index: usize) bool {
-            return self.inputAudio().channelEmpty(index);
+        pub fn inputChannelEmpty(self: *const @This(), index: usize) bool {
+            return self.inputs.channelEmpty(index);
         }
 
-        pub fn hasOutputChannel(self: @This(), index: usize) bool {
-            return self.outputAudio().hasChannel(index);
+        pub fn hasOutputChannel(self: *const @This(), index: usize) bool {
+            return self.outputs.hasChannel(index);
         }
 
-        pub fn outputChannelEmpty(self: @This(), index: usize) bool {
-            return self.outputAudio().channelEmpty(index);
+        pub fn outputChannelEmpty(self: *const @This(), index: usize) bool {
+            return self.outputs.channelEmpty(index);
         }
 
-        pub fn inputChannelCount(self: @This()) usize {
-            return self.inputAudio().channelCount();
+        pub fn inputChannelCount(self: *const @This()) usize {
+            return self.inputs.channelCount();
         }
 
-        pub fn outputChannelCount(self: @This()) usize {
-            return self.outputAudio().channelCount();
+        pub fn outputChannelCount(self: *const @This()) usize {
+            return self.outputs.channelCount();
         }
 
-        pub fn inputChannelsEmpty(self: @This()) bool {
-            return self.inputAudio().isEmpty();
+        pub fn inputChannelsEmpty(self: *const @This()) bool {
+            return self.inputs.isEmpty();
         }
 
-        pub fn hasInputChannels(self: @This()) bool {
-            return self.inputAudio().hasChannels();
+        pub fn hasInputChannels(self: *const @This()) bool {
+            return self.inputs.hasChannels();
         }
 
-        pub fn outputChannelsEmpty(self: @This()) bool {
-            return self.outputAudio().isEmpty();
+        pub fn outputChannelsEmpty(self: *const @This()) bool {
+            return self.outputs.isEmpty();
         }
 
-        pub fn hasOutputChannels(self: @This()) bool {
-            return self.outputAudio().hasChannels();
+        pub fn hasOutputChannels(self: *const @This()) bool {
+            return self.outputs.hasChannels();
         }
 
-        pub fn inputFrameCount(self: @This()) usize {
-            return self.inputAudio().frameCount();
+        pub fn inputFrameCount(self: *const @This()) usize {
+            return self.inputs.frameCount();
         }
 
-        pub fn outputFrameCount(self: @This()) usize {
-            return self.outputAudio().frameCount();
+        pub fn outputFrameCount(self: *const @This()) usize {
+            return self.outputs.frameCount();
         }
 
-        pub fn frameCount(self: @This()) usize {
+        pub fn frameCount(self: *const @This()) usize {
             if (self.inputChannelCount() == 0) return self.outputFrameCount();
             if (self.outputChannelCount() == 0) return self.inputFrameCount();
             return self.inputFrameCount();
@@ -3463,7 +3473,6 @@ test "audio input view validates channel frame counts" {
     const channels = [_][]const f32{ &left, &right };
     const inputs = try AudioInputs(f32).init(&channels);
 
-    try std.testing.expectEqual(@as(usize, 2), inputs.channels.len);
     try std.testing.expectEqual(@as(usize, 2), inputs.channelCount());
     try std.testing.expect(!inputs.isEmpty());
     try std.testing.expect(inputs.hasChannels());
@@ -3482,6 +3491,18 @@ test "audio input view validates channel frame counts" {
     try std.testing.expect(empty_inputs.isEmpty());
     try std.testing.expect(!empty_inputs.hasChannels());
     try std.testing.expect(empty_inputs.channelEmpty(0));
+}
+
+test "audio input view keeps its own channel slice headers" {
+    const left = [_]f32{ 0.1, 0.2 };
+    const right = [_]f32{ 0.3, 0.4 };
+    const replacement = [_]f32{ 9.0, 9.0 };
+    var channels = [_][]const f32{ &left, &right };
+    const inputs = try AudioInputs(f32).init(&channels);
+
+    channels[1] = &replacement;
+
+    try std.testing.expectEqual(@as(f32, 0.3), inputs.channel(1).?[0]);
 }
 
 test "audio output view rejects mismatched channel frame counts" {
@@ -3527,6 +3548,20 @@ test "audio output view fills and clears channels" {
     try std.testing.expectEqual(@as(f32, 0.0), left[1]);
     try std.testing.expectEqual(@as(f32, 0.0), right[0]);
     try std.testing.expectEqual(@as(f32, 0.0), right[1]);
+}
+
+test "audio output view keeps its own channel slice headers" {
+    var left = [_]f32{ 0.1, 0.2 };
+    var right = [_]f32{ 0.3, 0.4 };
+    var replacement = [_]f32{ 9.0, 9.0 };
+    var channels = [_][]f32{ &left, &right };
+    const outputs = try AudioOutputs(f32).init(&channels);
+
+    channels[1] = &replacement;
+    try std.testing.expect(outputs.setSample(1, 0, 0.8));
+
+    try std.testing.expectEqual(@as(f32, 0.8), right[0]);
+    try std.testing.expectEqual(@as(f32, 9.0), replacement[0]);
 }
 
 test "process context reports usable frame count" {
@@ -4412,7 +4447,7 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(?usize, 0), view.firstSampleOffsetForKind(.note_on));
     try std.testing.expectEqual(@as(?usize, 3), view.firstSampleOffsetForKind(.note_off));
     try std.testing.expectEqual(@as(?usize, 0), view.latestSampleOffsetForKind(.note_on));
-    try std.testing.expectEqual(@as(?usize, null), view.firstSampleOffsetForKind(.other));
+    try std.testing.expectEqual(@as(?usize, 3), view.firstSampleOffsetForKind(.other));
     try std.testing.expectEqual(EventKind.note_off, view.firstAtOffset(3).?.kind);
     try std.testing.expectEqual(EventKind.other, view.latestAtOffset(3).?.kind);
     try std.testing.expectEqual(@as(?Event, null), view.firstAtOffset(2));
@@ -4449,7 +4484,7 @@ test "events validate block offsets and count kinds" {
     try std.testing.expectEqual(@as(?Event, null), view.latestKindAtOffset(.note_on, 3));
     try std.testing.expect(view.hasKind(.data));
     try std.testing.expect(!view.onlyKind(.note_on));
-    try std.testing.expect(!view.onlyBus(0));
+    try std.testing.expect(view.onlyBus(0));
     try std.testing.expect(!view.onlyChannel(0));
     const note_only_items = [_]Event{
         Event.noteOn(0, 0, 60, 0.75),
@@ -4617,10 +4652,10 @@ test "events query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(?Event, null), view.latestKindAtOffset(.note_off, 5));
     try std.testing.expect(!view.onlyAtOffset(5));
     try std.testing.expect(!view.onlyKindAtOffset(.note_on, 5));
-    try std.testing.expectEqual(@as(?usize, 3), view.nextSampleOffset(1));
+    try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffset(1));
     try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffset(3));
-    try std.testing.expectEqual(@as(?usize, 5), view.nextSampleOffsetForKind(.note_on, 1));
-    try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForKind(.note_off, 3));
+    try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffsetForKind(.note_on, 1));
+    try std.testing.expectEqual(@as(?usize, 6), view.nextSampleOffsetForKind(.note_off, 3));
     try std.testing.expectEqual(@as(?usize, 2), view.nextSampleOffsetForBus(1, 1));
     try std.testing.expectEqual(@as(?usize, 6), view.nextSampleOffsetForBus(1, 2));
     try std.testing.expectEqual(@as(?usize, null), view.nextSampleOffsetForBus(1, 6));

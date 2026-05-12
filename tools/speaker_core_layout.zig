@@ -2,7 +2,7 @@ const std = @import("std");
 const speaker = @import("zig-vst3").pluginterfaces.vst.vstspeaker;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("kSpeakerL {}\n", .{speaker.kSpeakerL});
     try stdout.print("kSpeakerR {}\n", .{speaker.kSpeakerR});
     try stdout.print("kSpeakerLfe {}\n", .{speaker.kSpeakerLfe});

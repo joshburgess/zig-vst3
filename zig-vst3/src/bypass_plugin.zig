@@ -26,7 +26,9 @@ const BypassFactory = factory.StaticFactory3(.{
     },
 });
 
-pub usingnamespace entry.Exports(BypassFactory);
+comptime {
+    entry.exportPlugin(BypassFactory);
+}
 
 test "bypass export returns enumerable factory" {
     const plugin_factory = BypassFactory.getPluginFactory().?;

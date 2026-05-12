@@ -4,7 +4,7 @@ const helpers = @import("zig-vst3").pluginterfaces.vst.vsteventshelper;
 const noteexpression = @import("zig-vst3").pluginterfaces.vst.ivstnoteexpression;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("NoteIDUserRange.kNoteIDUserRangeLowerBound {}\n", .{@intFromEnum(events.NoteIDUserRange.kNoteIDUserRangeLowerBound)});
     try stdout.print("NoteIDUserRange.kNoteIDUserRangeUpperBound {}\n", .{@intFromEnum(events.NoteIDUserRange.kNoteIDUserRangeUpperBound)});
     try stdout.print("DataEvent.kMidiSysEx {}\n", .{@intFromEnum(events.DataEvent.DataTypes.kMidiSysEx)});

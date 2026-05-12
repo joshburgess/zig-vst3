@@ -2,7 +2,7 @@ const std = @import("std");
 const base = @import("zig-vst3").pluginterfaces.base;
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout().deprecatedWriter();
     try stdout.print("IDependent.kWillChange {}\n", .{@intFromEnum(base.iupdatehandler.ChangeMessage.kWillChange)});
     try stdout.print("IDependent.kChanged {}\n", .{@intFromEnum(base.iupdatehandler.ChangeMessage.kChanged)});
     try stdout.print("IDependent.kDestroyed {}\n", .{@intFromEnum(base.iupdatehandler.ChangeMessage.kDestroyed)});

@@ -24,7 +24,7 @@ pub fn PlugFrame(comptime Config: type) type {
             return @fieldParentPtr("iface", iface);
         }
 
-        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.C) types.tresult {
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &iplugview.iplug_frame_iid, .ptr = ptr },
@@ -32,15 +32,15 @@ pub fn PlugFrame(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn addRef(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
         }
 
-        fn release(ptr: *anyopaque) callconv(.C) types.uint32 {
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPlugFrame");
         }
 
-        fn resizeView(ptr: *anyopaque, view: ?*iplugview.IPlugView, rect: *iplugview.ViewRect) callconv(.C) types.tresult {
+        fn resizeView(ptr: *anyopaque, view: ?*iplugview.IPlugView, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.resize_count += 1;
             if (@hasDecl(Config, "resizeView")) {
