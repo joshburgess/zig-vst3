@@ -1494,6 +1494,161 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return report.extraUnaccountedEntryCount(self.parameterStateEntryCount());
         }
 
+        pub fn parameterStateReportDecodedCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            _ = self;
+            return report.decodedCount();
+        }
+
+        pub fn parameterStateReportRestoredCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            _ = self;
+            return report.restoredCount();
+        }
+
+        pub fn parameterStateReportIgnoredCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            _ = self;
+            return report.ignoredCount();
+        }
+
+        pub fn parameterStateReportAccountedCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            _ = self;
+            return report.accountedCount();
+        }
+
+        pub fn parameterStateReportUnaccountedCount(self: *const Self, report: state.ReadParameterStateReport) usize {
+            _ = self;
+            return report.unaccountedCount();
+        }
+
+        pub fn parameterStateReportHasDecodedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.hasDecodedEntries();
+        }
+
+        pub fn parameterStateReportHasNoDecodedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.hasNoDecodedEntries();
+        }
+
+        pub fn parameterStateReportDecodedEntriesEmpty(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.decodedEntriesEmpty();
+        }
+
+        pub fn parameterStateReportHasRestoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.hasRestoredEntries();
+        }
+
+        pub fn parameterStateReportHasNoRestoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.hasNoRestoredEntries();
+        }
+
+        pub fn parameterStateReportRestoredEntriesEmpty(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.restoredEntriesEmpty();
+        }
+
+        pub fn parameterStateReportHasIgnoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.hasIgnoredEntries();
+        }
+
+        pub fn parameterStateReportHasNoIgnoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.hasNoIgnoredEntries();
+        }
+
+        pub fn parameterStateReportIgnoredEntriesEmpty(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.ignoredEntriesEmpty();
+        }
+
+        pub fn parameterStateReportHasUnaccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.hasUnaccountedEntries();
+        }
+
+        pub fn parameterStateReportHasNoUnaccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.hasNoUnaccountedEntries();
+        }
+
+        pub fn parameterStateReportUnaccountedEntriesEmpty(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.unaccountedEntriesEmpty();
+        }
+
+        pub fn parameterStateReportAccountedAllEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.accountedAllEntries();
+        }
+
+        pub fn parameterStateReportAccountedPartialEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.accountedPartialEntries();
+        }
+
+        pub fn parameterStateReportRestoredAllEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.restoredAllEntries();
+        }
+
+        pub fn parameterStateReportRestoredPartialEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.restoredPartialEntries();
+        }
+
+        pub fn parameterStateReportIgnoredAllEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.ignoredAllEntries();
+        }
+
+        pub fn parameterStateReportIgnoredPartialEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.ignoredPartialEntries();
+        }
+
+        pub fn parameterStateReportRestoredAndIgnoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.restoredAndIgnoredEntries();
+        }
+
+        pub fn parameterStateReportFullyHandled(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.fullyHandled();
+        }
+
+        pub fn parameterStateReportClassification(self: *const Self, report: state.ReadParameterStateReport) state.ReadParameterStateClassification {
+            _ = self;
+            return report.classification();
+        }
+
+        pub fn parameterStateReportIsEmptyClassification(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.isEmptyClassification();
+        }
+
+        pub fn parameterStateReportIsRestoredAllClassification(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.isRestoredAllClassification();
+        }
+
+        pub fn parameterStateReportIsIgnoredAllClassification(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.isIgnoredAllClassification();
+        }
+
+        pub fn parameterStateReportIsRestoredAndIgnoredClassification(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.isRestoredAndIgnoredClassification();
+        }
+
+        pub fn parameterStateReportIsPartialClassification(self: *const Self, report: state.ReadParameterStateReport) bool {
+            _ = self;
+            return report.isPartialClassification();
+        }
+
         pub fn readParameterStateHeader(self: *const Self, reader: anytype) !state.ParameterStateHeader {
             _ = self;
             return state.readParameterStateHeader(reader);
