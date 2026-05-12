@@ -1405,13 +1405,25 @@ pub fn ParameterValues(comptime Params: type) type {
             return self.values[index].load();
         }
 
+        pub fn loadIndex(self: *const Self, index: usize) ?f64 {
+            return self.load(index);
+        }
+
         pub fn loadPlain(self: *const Self, set: *const Set, index: usize) ?f64 {
             const normalized = self.load(index) orelse return null;
             return set.plainFromNormalized(index, normalized);
         }
 
+        pub fn loadPlainIndex(self: *const Self, set: *const Set, index: usize) ?f64 {
+            return self.loadPlain(set, index);
+        }
+
         pub fn store(self: *Self, index: usize, value: f64) bool {
             return self.storeCount(index, value) != null;
+        }
+
+        pub fn storeIndex(self: *Self, index: usize, value: f64) bool {
+            return self.store(index, value);
         }
 
         pub fn storeCount(self: *Self, index: usize, value: f64) ?usize {
@@ -1423,13 +1435,25 @@ pub fn ParameterValues(comptime Params: type) type {
             return changed;
         }
 
+        pub fn storeIndexCount(self: *Self, index: usize, value: f64) ?usize {
+            return self.storeCount(index, value);
+        }
+
         pub fn storePlain(self: *Self, set: *const Set, index: usize, plain: f64) bool {
             return self.storePlainCount(set, index, plain) != null;
+        }
+
+        pub fn storePlainIndex(self: *Self, set: *const Set, index: usize, plain: f64) bool {
+            return self.storePlain(set, index, plain);
         }
 
         pub fn storePlainCount(self: *Self, set: *const Set, index: usize, plain: f64) ?usize {
             const normalized = set.normalizedFromPlain(index, plain) orelse return null;
             return self.storeCount(index, normalized);
+        }
+
+        pub fn storePlainIndexCount(self: *Self, set: *const Set, index: usize, plain: f64) ?usize {
+            return self.storePlainCount(set, index, plain);
         }
 
         pub fn copyFrom(self: *Self, source: *const Self) void {
@@ -1464,11 +1488,19 @@ pub fn ParameterValues(comptime Params: type) type {
             return self.resetToDefaultCount(set, index) != null;
         }
 
+        pub fn resetToDefaultIndex(self: *Self, set: *const Set, index: usize) bool {
+            return self.resetToDefault(set, index);
+        }
+
         pub fn resetToDefaultCount(self: *Self, set: *const Set, index: usize) ?usize {
             const default = set.defaultNormalized(index) orelse return null;
             const changed: usize = if (self.values[index].load() != default) 1 else 0;
             self.values[index].store(default);
             return changed;
+        }
+
+        pub fn resetToDefaultIndexCount(self: *Self, set: *const Set, index: usize) ?usize {
+            return self.resetToDefaultCount(set, index);
         }
 
         pub fn loadById(self: *const Self, set: *const Set, id: u32) ?f64 {
@@ -1504,6 +1536,10 @@ pub fn ParameterValues(comptime Params: type) type {
             const current = self.load(index) orelse return null;
             const default = set.defaultNormalized(index) orelse return null;
             return current == default;
+        }
+
+        pub fn isDefaultIndex(self: *const Self, set: *const Set, index: usize) ?bool {
+            return self.isDefault(set, index);
         }
 
         pub fn isDefaultById(self: *const Self, set: *const Set, id: u32) ?bool {
@@ -3637,9 +3673,12 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expectEqual(@as(?f64, 0.75), values.load(0));
     try std.testing.expect(!values.store(0, std.math.nan(f64)));
     try std.testing.expectEqual(@as(?f64, 0.75), values.load(0));
+    try std.testing.expectEqual(@as(?f64, 0.75), values.loadIndex(0));
     try std.testing.expect(!values.storeById(&set, 0, std.math.inf(f64)));
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
     try std.testing.expect(!values.store(2, 0.5));
+    try std.testing.expect(!values.storeIndex(2, 0.5));
+    try std.testing.expectEqual(@as(?usize, null), values.storeIndexCount(2, 0.5));
     try std.testing.expectEqual(@as(?usize, 0), values.storeByIdCount(&set, 0, 0.75));
     try std.testing.expect(values.storeById(&set, 0, 0.75));
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
@@ -3647,13 +3686,18 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expect(!values.storeById(&set, 99, 0.5));
     try std.testing.expectEqual(@as(?f64, null), values.loadById(&set, 99));
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadPlain(&set, 0));
+    try std.testing.expectEqual(@as(?f64, 0.75), values.loadPlainIndex(&set, 0));
     try std.testing.expectEqual(@as(?usize, 1), values.storePlainCount(&set, 0, 0.5));
+    try std.testing.expectEqual(@as(?usize, 0), values.storePlainIndexCount(&set, 0, 0.5));
     try std.testing.expectEqual(@as(?usize, 0), values.storePlainCount(&set, 0, 0.5));
     try std.testing.expect(values.storePlain(&set, 0, 0.5));
+    try std.testing.expect(values.storePlainIndex(&set, 0, 0.5));
     try std.testing.expectEqual(@as(?f64, 0.5), values.loadPlain(&set, 0));
     try std.testing.expectEqual(@as(?f64, null), values.loadPlain(&set, 99));
     try std.testing.expectEqual(@as(?usize, null), values.storePlainCount(&set, 99, 0.5));
+    try std.testing.expectEqual(@as(?usize, null), values.storePlainIndexCount(&set, 99, 0.5));
     try std.testing.expect(!values.storePlain(&set, 99, 0.5));
+    try std.testing.expect(!values.storePlainIndex(&set, 99, 0.5));
 
     var copied = Values.init(&set);
     try std.testing.expectEqual(@as(usize, 1), copied.copyFromCount(&values));
@@ -3672,9 +3716,10 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expect(values.store(0, 1.0));
     try std.testing.expect(values.store(1, 0.0));
     try std.testing.expectEqual(@as(?usize, 1), values.resetToDefaultCount(&set, 0));
+    try std.testing.expectEqual(@as(?usize, 0), values.resetToDefaultIndexCount(&set, 0));
     try std.testing.expectEqual(@as(?usize, 0), values.resetToDefaultCount(&set, 0));
-    try std.testing.expect(values.store(0, 1.0));
-    try std.testing.expect(values.resetToDefault(&set, 0));
+    try std.testing.expect(values.storeIndex(0, 1.0));
+    try std.testing.expect(values.resetToDefaultIndex(&set, 0));
     try std.testing.expectEqual(@as(?f64, 0.25), values.load(0));
     try std.testing.expectEqual(@as(?f64, 0.0), values.load(1));
     try std.testing.expectEqual(@as(?usize, 1), values.resetToDefaultByIdCount(&set, 1));
@@ -3683,8 +3728,10 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expect(values.resetToDefaultById(&set, 1));
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(1));
     try std.testing.expectEqual(@as(?usize, null), values.resetToDefaultCount(&set, 99));
+    try std.testing.expectEqual(@as(?usize, null), values.resetToDefaultIndexCount(&set, 99));
     try std.testing.expectEqual(@as(?usize, null), values.resetToDefaultByIdCount(&set, 99));
     try std.testing.expect(!values.resetToDefault(&set, 99));
+    try std.testing.expect(!values.resetToDefaultIndex(&set, 99));
     try std.testing.expect(!values.resetToDefaultById(&set, 99));
 }
 
@@ -3767,6 +3814,7 @@ test "parameter values expose typed field access" {
     try std.testing.expect(!values.hasNonDefaults(&set));
     try std.testing.expectEqual(@as(usize, 0), values.nonDefaultCount(&set));
     try std.testing.expectEqual(@as(?bool, true), values.isDefault(&set, 0));
+    try std.testing.expectEqual(@as(?bool, true), values.isDefaultIndex(&set, 0));
     try std.testing.expectEqual(@as(?bool, true), values.isDefaultById(&set, 3));
     try std.testing.expectEqual(@as(?bool, true), values.isDefaultByName(&set, "Mode"));
     try std.testing.expect(values.fieldIsDefault(&set, "mode"));
@@ -3785,6 +3833,7 @@ test "parameter values expose typed field access" {
     try std.testing.expect(values.hasNonDefaults(&set));
     try std.testing.expectEqual(@as(usize, 4), values.nonDefaultCount(&set));
     try std.testing.expectEqual(@as(?bool, false), values.isDefault(&set, 0));
+    try std.testing.expectEqual(@as(?bool, false), values.isDefaultIndex(&set, 0));
     try std.testing.expectEqual(@as(?bool, false), values.isDefaultById(&set, 3));
     try std.testing.expectEqual(@as(?bool, false), values.isDefaultByName(&set, "Mode"));
     try std.testing.expect(!values.fieldIsDefault(&set, "mode"));
