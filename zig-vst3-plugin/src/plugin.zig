@@ -240,6 +240,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             self.spec.values.copyFrom(&source.spec.values);
         }
 
+        pub fn copyParameterValuesFromCount(self: *Self, source: *const Self) usize {
+            return self.spec.values.copyFromCount(&source.spec.values);
+        }
+
         pub fn unitSet(self: *const Self) *const Spec.Units {
             return &self.spec.units;
         }
@@ -3252,6 +3256,9 @@ test "plugin instance copies parameter values from another instance" {
     try std.testing.expect(source.storeParameter("bypass", true));
     try std.testing.expect(source.storeParameter("mode", .mute));
 
+    try std.testing.expectEqual(@as(usize, 3), target.copyParameterValuesFromCount(&source));
+    try std.testing.expectEqual(@as(usize, 0), target.copyParameterValuesFromCount(&source));
+    target.resetParametersToDefaults();
     target.copyParameterValuesFrom(&source);
     try std.testing.expectEqual(@as(f64, 6.0), target.loadParameter("gain"));
     try std.testing.expectEqual(true, target.loadParameter("bypass"));

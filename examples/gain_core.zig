@@ -1139,6 +1139,9 @@ test "gain core example edits reflected parameter values directly" {
     try std.testing.expect(copied.store(0, 0.5));
     copied.resetToDefaults(&parameter_set);
     try std.testing.expect(copied.allDefaults(&parameter_set));
+    try std.testing.expectEqual(@as(usize, 1), copied.copyFromCount(&values));
+    try std.testing.expectEqual(@as(usize, 0), copied.copyFromCount(&values));
+    copied.resetToDefaults(&parameter_set);
     copied.copyFrom(&values);
     try std.testing.expectEqual(@as(f64, 0.5), copied.loadFieldNormalized(&parameter_set, "gain"));
     try std.testing.expect(copied.storeField(&parameter_set, "gain", 0.75));
@@ -1151,6 +1154,9 @@ test "gain core example edits reflected parameter values directly" {
     const view = copied.view(&parameter_set);
     var copied_from_view = Spec.ParameterValues.init(&parameter_set);
     const copied_from_view_editor = copied_from_view.editor(&parameter_set);
+    try std.testing.expectEqual(@as(usize, 1), copied_from_view_editor.copyFromCount(view));
+    try std.testing.expectEqual(@as(usize, 0), copied_from_view_editor.copyFromCount(view));
+    copied_from_view.resetToDefaults(&parameter_set);
     copied_from_view_editor.copyFrom(view);
     try std.testing.expectEqual(@as(f64, 0.5), copied_from_view_editor.loadNormalized("gain"));
     try std.testing.expectEqual(@as(usize, 1), view.parameterCount());
