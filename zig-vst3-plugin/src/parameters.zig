@@ -1389,9 +1389,17 @@ pub fn ParameterValues(comptime Params: type) type {
         }
 
         pub fn copyFrom(self: *Self, source: *const Self) void {
+            _ = self.copyFromCount(source);
+        }
+
+        pub fn copyFromCount(self: *Self, source: *const Self) usize {
+            var changed: usize = 0;
             inline for (0..Set.count) |index| {
-                self.values[index].store(source.values[index].load());
+                const value = source.values[index].load();
+                if (self.values[index].load() != value) changed += 1;
+                self.values[index].store(value);
             }
+            return changed;
         }
 
         pub fn resetToDefaults(self: *Self, set: *const Set) void {
@@ -2185,6 +2193,10 @@ pub fn ParameterEditor(comptime Params: type) type {
 
         pub fn copyFrom(self: Self, source: ParameterView(Params)) void {
             self.values.copyFrom(source.values);
+        }
+
+        pub fn copyFromCount(self: Self, source: ParameterView(Params)) usize {
+            return self.values.copyFromCount(source.values);
         }
 
         pub fn parameterCount(_: Self) usize {
@@ -3524,6 +3536,9 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expect(!values.storePlain(&set, 99, 0.5));
 
     var copied = Values.init(&set);
+    try std.testing.expectEqual(@as(usize, 1), copied.copyFromCount(&values));
+    try std.testing.expectEqual(@as(usize, 0), copied.copyFromCount(&values));
+    copied.resetToDefaults(&set);
     copied.copyFrom(&values);
     try std.testing.expectEqual(@as(?f64, 0.5), copied.load(0));
     try std.testing.expectEqual(@as(?f64, 1.0), copied.load(1));
@@ -4158,6 +4173,9 @@ test "parameter editor binds reflected set and mutable values" {
 
     var copied_values = Values.init(&set);
     const copied_editor = copied_values.editor(&set);
+    try std.testing.expectEqual(@as(usize, 3), copied_editor.copyFromCount(view));
+    try std.testing.expectEqual(@as(usize, 0), copied_editor.copyFromCount(view));
+    copied_values.resetToDefaults(&set);
     copied_editor.copyFrom(view);
     try std.testing.expectEqual(@as(f64, 1.5), copied_editor.load("gain"));
     try std.testing.expectEqual(@as(i64, 4), copied_editor.load("voices"));
