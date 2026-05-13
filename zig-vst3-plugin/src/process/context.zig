@@ -1051,7 +1051,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn appendOutputEventCount(self: *@This(), event: Event) !usize {
-            const writer = self.output_events orelse return error.OutputEventsUnavailable;
+            const writer = self.outputEventWriter() orelse return error.OutputEventsUnavailable;
             return writer.appendCount(event);
         }
 
@@ -1060,32 +1060,32 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn appendOutputEventsCount(self: *@This(), events: Events) !usize {
-            const writer = self.output_events orelse return error.OutputEventsUnavailable;
+            const writer = self.outputEventWriter() orelse return error.OutputEventsUnavailable;
             return writer.appendAllCount(events);
         }
 
         pub fn canAppendOutputEvent(self: *const @This()) bool {
-            const writer = self.output_events orelse return false;
+            const writer = self.outputEventWriter() orelse return false;
             return writer.canAppend(1);
         }
 
         pub fn canAppendOutputEvents(self: *const @This(), event_count: usize) bool {
-            const writer = self.output_events orelse return false;
+            const writer = self.outputEventWriter() orelse return false;
             return writer.canAppend(event_count);
         }
 
         pub fn canAppendOutputEventValue(self: *const @This(), event: Event) bool {
-            const writer = self.output_events orelse return false;
+            const writer = self.outputEventWriter() orelse return false;
             return writer.canAppendEvent(event);
         }
 
         pub fn canAppendOutputEventValues(self: *const @This(), events: Events) bool {
-            const writer = self.output_events orelse return false;
+            const writer = self.outputEventWriter() orelse return false;
             return writer.canAppendEvents(events);
         }
 
         pub fn writtenOutputEvents(self: *const @This()) Events {
-            const writer = self.output_events orelse return .{};
+            const writer = self.outputEventWriter() orelse return .{};
             return writer.events();
         }
 
@@ -1094,7 +1094,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn outputEventBlockSegments(self: *const @This()) EventBlockSegmentIterator {
-            const writer = self.output_events orelse return (Events{}).blockSegments(self.frameCount());
+            const writer = self.outputEventWriter() orelse return (Events{}).blockSegments(self.frameCount());
             return writer.blockSegments();
         }
 
@@ -1119,12 +1119,12 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn firstOutputEventOffset(self: *const @This()) ?usize {
-            const writer = self.output_events orelse return null;
+            const writer = self.outputEventWriter() orelse return null;
             return writer.firstSampleOffset();
         }
 
         pub fn latestOutputEventOffset(self: *const @This()) ?usize {
-            const writer = self.output_events orelse return null;
+            const writer = self.outputEventWriter() orelse return null;
             return writer.latestSampleOffset();
         }
 
@@ -1145,42 +1145,42 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn firstOutputEventOffsetForKind(self: *const @This(), kind: EventKind) ?usize {
-            const writer = self.output_events orelse return null;
+            const writer = self.outputEventWriter() orelse return null;
             return writer.firstSampleOffsetForKind(kind);
         }
 
         pub fn latestOutputEventOffsetForKind(self: *const @This(), kind: EventKind) ?usize {
-            const writer = self.output_events orelse return null;
+            const writer = self.outputEventWriter() orelse return null;
             return writer.latestSampleOffsetForKind(kind);
         }
 
         pub fn firstOutputEventOffsetForBus(self: *const @This(), bus_index: i32) ?usize {
-            const writer = self.output_events orelse return null;
+            const writer = self.outputEventWriter() orelse return null;
             return writer.firstSampleOffsetForBus(bus_index);
         }
 
         pub fn latestOutputEventOffsetForBus(self: *const @This(), bus_index: i32) ?usize {
-            const writer = self.output_events orelse return null;
+            const writer = self.outputEventWriter() orelse return null;
             return writer.latestSampleOffsetForBus(bus_index);
         }
 
         pub fn firstOutputEventOffsetForChannel(self: *const @This(), channel: i16) ?usize {
-            const writer = self.output_events orelse return null;
+            const writer = self.outputEventWriter() orelse return null;
             return writer.firstSampleOffsetForChannel(channel);
         }
 
         pub fn latestOutputEventOffsetForChannel(self: *const @This(), channel: i16) ?usize {
-            const writer = self.output_events orelse return null;
+            const writer = self.outputEventWriter() orelse return null;
             return writer.latestSampleOffsetForChannel(channel);
         }
 
         pub fn firstOutputEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?usize {
-            const writer = self.output_events orelse return null;
+            const writer = self.outputEventWriter() orelse return null;
             return writer.firstSampleOffsetForBusChannel(bus_index, channel);
         }
 
         pub fn latestOutputEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?usize {
-            const writer = self.output_events orelse return null;
+            const writer = self.outputEventWriter() orelse return null;
             return writer.latestSampleOffsetForBusChannel(bus_index, channel);
         }
 
@@ -1385,46 +1385,46 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn clearOutputEventsCount(self: *const @This()) usize {
-            const writer = self.output_events orelse return 0;
+            const writer = self.outputEventWriter() orelse return 0;
             return writer.clearCount();
         }
 
         pub fn hasOutputEventWriter(self: *const @This()) bool {
-            return self.output_events != null;
+            return self.outputEventWriter() != null;
         }
 
         pub fn outputEventCount(self: *const @This()) usize {
-            const writer = self.output_events orelse return 0;
+            const writer = self.outputEventWriter() orelse return 0;
             return writer.eventCount();
         }
 
         pub fn outputEventCapacity(self: *const @This()) usize {
-            const writer = self.output_events orelse return 0;
+            const writer = self.outputEventWriter() orelse return 0;
             return writer.capacity();
         }
 
         pub fn outputEventRemainingCapacity(self: *const @This()) usize {
-            const writer = self.output_events orelse return 0;
+            const writer = self.outputEventWriter() orelse return 0;
             return writer.remainingCapacity();
         }
 
         pub fn outputEventFrameCount(self: *const @This()) usize {
-            const writer = self.output_events orelse return 0;
+            const writer = self.outputEventWriter() orelse return 0;
             return writer.frameCount();
         }
 
         pub fn outputEventsEmpty(self: *const @This()) bool {
-            const writer = self.output_events orelse return true;
+            const writer = self.outputEventWriter() orelse return true;
             return writer.isEmpty();
         }
 
         pub fn hasOutputEvents(self: *const @This()) bool {
-            const writer = self.output_events orelse return false;
+            const writer = self.outputEventWriter() orelse return false;
             return writer.hasEvents();
         }
 
         pub fn outputEventsFull(self: *const @This()) bool {
-            const writer = self.output_events orelse return true;
+            const writer = self.outputEventWriter() orelse return true;
             return writer.isFull();
         }
 
