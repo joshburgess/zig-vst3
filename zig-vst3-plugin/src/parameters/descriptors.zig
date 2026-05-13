@@ -1,0 +1,439 @@
+const std = @import("std");
+const common = @import("common.zig");
+
+const clampNormalized = common.clampNormalized;
+
+pub const FloatParam = struct {
+    id: u32,
+    name: []const u8,
+    short_name: []const u8 = "",
+    units: []const u8 = "",
+    min: f64 = 0.0,
+    max: f64 = 1.0,
+    default: f64 = 0.0,
+    is_bypass: bool = false,
+    can_automate: bool = true,
+    is_read_only: bool = false,
+    unit_id: i32 = 0,
+
+    pub fn init(id: u32, name: []const u8, min: f64, max: f64, default: f64) FloatParam {
+        std.debug.assert(max > min);
+        return .{
+            .id = id,
+            .name = name,
+            .min = min,
+            .max = max,
+            .default = (FloatParam{ .id = id, .name = name, .min = min, .max = max, .default = min }).clampPlain(default),
+        };
+    }
+
+    pub fn containsPlain(self: FloatParam, plain: f64) bool {
+        return std.math.isFinite(plain) and plain >= self.min and plain <= self.max;
+    }
+
+    pub fn clampPlain(self: FloatParam, plain: f64) f64 {
+        if (std.math.isNan(plain)) return self.min;
+        return std.math.clamp(plain, self.min, self.max);
+    }
+
+    pub fn normalize(self: FloatParam, plain: f64) f64 {
+        const clamped = self.clampPlain(plain);
+        return (clamped - self.min) / (self.max - self.min);
+    }
+
+    pub fn denormalize(self: FloatParam, normalized: f64) f64 {
+        const clamped = clampNormalized(normalized);
+        return self.min + clamped * (self.max - self.min);
+    }
+
+    pub fn defaultNormalized(self: FloatParam) f64 {
+        return self.normalize(self.default);
+    }
+
+    pub fn formatPercent(self: FloatParam, normalized: f64, buffer: []u8) ![]const u8 {
+        const percent = @as(u32, @intFromFloat(@round(self.normalize(self.denormalize(normalized)) * 100.0)));
+        return std.fmt.bufPrint(buffer, "{d}%", .{percent});
+    }
+
+    pub fn formatPlain(self: FloatParam, normalized: f64, buffer: []u8) ![]const u8 {
+        return std.fmt.bufPrint(buffer, "{d:.3}", .{self.denormalize(normalized)});
+    }
+
+    pub fn plainFromNormalized(self: FloatParam, normalized: f64) f64 {
+        return self.denormalize(normalized);
+    }
+
+    pub fn normalizedFromPlain(self: FloatParam, plain: f64) f64 {
+        return self.normalize(plain);
+    }
+
+    pub fn parsePlain(self: FloatParam, text: []const u8) !f64 {
+        const value = try std.fmt.parseFloat(f64, std.mem.trim(u8, text, " \t\r\n"));
+        return self.normalize(value);
+    }
+};
+
+pub const IntParam = struct {
+    id: u32,
+    name: []const u8,
+    short_name: []const u8 = "",
+    units: []const u8 = "",
+    min: i64,
+    max: i64,
+    default: i64,
+    is_bypass: bool = false,
+    can_automate: bool = true,
+    is_read_only: bool = false,
+    unit_id: i32 = 0,
+
+    pub fn init(id: u32, name: []const u8, min: i64, max: i64, default: i64) IntParam {
+        std.debug.assert(max > min);
+        return .{
+            .id = id,
+            .name = name,
+            .min = min,
+            .max = max,
+            .default = (IntParam{ .id = id, .name = name, .min = min, .max = max, .default = min }).clampPlain(default),
+        };
+    }
+
+    pub fn containsPlain(self: IntParam, plain: i64) bool {
+        return plain >= self.min and plain <= self.max;
+    }
+
+    pub fn clampPlain(self: IntParam, plain: i64) i64 {
+        return std.math.clamp(plain, self.min, self.max);
+    }
+
+    pub fn normalize(self: IntParam, plain: i64) f64 {
+        const clamped = self.clampPlain(plain);
+        const range = @as(f64, @floatFromInt(self.max)) - @as(f64, @floatFromInt(self.min));
+        const offset = @as(f64, @floatFromInt(clamped)) - @as(f64, @floatFromInt(self.min));
+        return offset / range;
+    }
+
+    pub fn denormalize(self: IntParam, normalized: f64) i64 {
+        const clamped = clampNormalized(normalized);
+        const min = @as(f64, @floatFromInt(self.min));
+        const max = @as(f64, @floatFromInt(self.max));
+        const plain = @round(min + clamped * (max - min));
+        if (plain <= min) return self.min;
+        if (plain >= max) return self.max;
+        return @intFromFloat(plain);
+    }
+
+    pub fn defaultNormalized(self: IntParam) f64 {
+        return self.normalize(self.default);
+    }
+
+    pub fn formatPlain(self: IntParam, normalized: f64, buffer: []u8) ![]const u8 {
+        return std.fmt.bufPrint(buffer, "{d}", .{self.denormalize(normalized)});
+    }
+
+    pub fn plainFromNormalized(self: IntParam, normalized: f64) f64 {
+        return @floatFromInt(self.denormalize(normalized));
+    }
+
+    pub fn normalizedFromPlain(self: IntParam, plain: f64) f64 {
+        if (std.math.isNan(plain)) return self.normalize(self.min);
+        if (plain <= @as(f64, @floatFromInt(self.min))) return self.normalize(self.min);
+        if (plain >= @as(f64, @floatFromInt(self.max))) return self.normalize(self.max);
+        return self.normalize(@intFromFloat(@round(plain)));
+    }
+
+    pub fn parsePlain(self: IntParam, text: []const u8) !f64 {
+        const value = try std.fmt.parseInt(i64, std.mem.trim(u8, text, " \t\r\n"), 10);
+        return self.normalize(value);
+    }
+};
+
+pub const BoolParam = struct {
+    id: u32,
+    name: []const u8,
+    short_name: []const u8 = "",
+    units: []const u8 = "",
+    default: bool = false,
+    is_bypass: bool = false,
+    can_automate: bool = true,
+    is_read_only: bool = false,
+    unit_id: i32 = 0,
+
+    pub fn normalize(_: BoolParam, plain: bool) f64 {
+        return if (plain) 1.0 else 0.0;
+    }
+
+    pub fn denormalize(_: BoolParam, normalized: f64) bool {
+        return normalized >= 0.5;
+    }
+
+    pub fn defaultNormalized(self: BoolParam) f64 {
+        return self.normalize(self.default);
+    }
+
+    pub fn formatPlain(self: BoolParam, normalized: f64, _: []u8) ![]const u8 {
+        return if (self.denormalize(normalized)) "On" else "Off";
+    }
+
+    pub fn plainFromNormalized(self: BoolParam, normalized: f64) f64 {
+        return if (self.denormalize(normalized)) 1.0 else 0.0;
+    }
+
+    pub fn normalizedFromPlain(self: BoolParam, plain: f64) f64 {
+        return self.normalize(plain >= 0.5);
+    }
+
+    pub fn parsePlain(self: BoolParam, text: []const u8) !f64 {
+        const trimmed = std.mem.trim(u8, text, " \t\r\n");
+        if (std.ascii.eqlIgnoreCase(trimmed, "on") or
+            std.ascii.eqlIgnoreCase(trimmed, "true") or
+            std.mem.eql(u8, trimmed, "1"))
+        {
+            return self.normalize(true);
+        }
+        if (std.ascii.eqlIgnoreCase(trimmed, "off") or
+            std.ascii.eqlIgnoreCase(trimmed, "false") or
+            std.mem.eql(u8, trimmed, "0"))
+        {
+            return self.normalize(false);
+        }
+        return error.InvalidBool;
+    }
+};
+
+pub fn EnumParam(comptime Enum: type) type {
+    const info = @typeInfo(Enum).@"enum";
+    std.debug.assert(info.fields.len > 0);
+
+    return struct {
+        const Self = @This();
+
+        id: u32,
+        name: []const u8,
+        short_name: []const u8 = "",
+        units: []const u8 = "",
+        default: Enum,
+        is_bypass: bool = false,
+        can_automate: bool = true,
+        is_read_only: bool = false,
+        unit_id: i32 = 0,
+
+        pub fn normalize(_: Self, value: Enum) f64 {
+            if (info.fields.len == 1) return 0.0;
+            return normalizedFromIndex(indexOf(value));
+        }
+
+        pub fn denormalize(_: Self, normalized: f64) Enum {
+            const clamped = clampNormalized(normalized);
+            const max_index = info.fields.len - 1;
+            const index = @as(usize, @intFromFloat(@round(clamped * @as(f64, @floatFromInt(max_index)))));
+            return valueAtIndex(index);
+        }
+
+        pub fn defaultNormalized(self: Self) f64 {
+            return self.normalize(self.default);
+        }
+
+        pub fn label(_: Self, value: Enum) []const u8 {
+            return @tagName(value);
+        }
+
+        pub fn optionCount(_: Self) usize {
+            return info.fields.len;
+        }
+
+        pub fn indexOfValue(_: Self, value: Enum) usize {
+            return indexOf(value);
+        }
+
+        pub fn valueAtOptionIndex(_: Self, wanted_index: usize) ?Enum {
+            if (wanted_index >= info.fields.len) return null;
+            return valueAtIndex(wanted_index);
+        }
+
+        pub fn labelAtOptionIndex(_: Self, wanted_index: usize) ?[]const u8 {
+            inline for (info.fields, 0..) |field, index| {
+                if (index == wanted_index) return field.name;
+            }
+            return null;
+        }
+
+        pub fn normalizedFromOptionIndex(_: Self, wanted_index: usize) ?f64 {
+            if (wanted_index >= info.fields.len) return null;
+            return normalizedFromIndex(wanted_index);
+        }
+
+        pub fn formatPlain(self: Self, normalized: f64, _: []u8) ![]const u8 {
+            return self.label(self.denormalize(normalized));
+        }
+
+        pub fn plainFromNormalized(self: Self, normalized: f64) f64 {
+            return @floatFromInt(indexOf(self.denormalize(normalized)));
+        }
+
+        pub fn normalizedFromPlain(_: Self, plain: f64) f64 {
+            const max_index = info.fields.len - 1;
+            const index = if (std.math.isNan(plain) or plain <= 0)
+                0
+            else if (plain >= @as(f64, @floatFromInt(max_index)))
+                max_index
+            else
+                @as(usize, @intFromFloat(@round(plain)));
+            return normalizedFromIndex(index);
+        }
+
+        pub fn parsePlain(_: Self, text: []const u8) !f64 {
+            const trimmed = std.mem.trim(u8, text, " \t\r\n");
+            inline for (info.fields, 0..) |field, index| {
+                if (std.mem.eql(u8, trimmed, field.name)) {
+                    return normalizedFromIndex(index);
+                }
+            }
+            return error.InvalidEnumTag;
+        }
+
+        fn indexOf(value: Enum) usize {
+            inline for (info.fields, 0..) |field, index| {
+                if (field.value == @intFromEnum(value)) return index;
+            }
+            unreachable;
+        }
+
+        fn valueAtIndex(wanted_index: usize) Enum {
+            inline for (info.fields, 0..) |field, index| {
+                if (index == wanted_index) return @enumFromInt(field.value);
+            }
+            unreachable;
+        }
+
+        fn normalizedFromIndex(index: usize) f64 {
+            if (info.fields.len == 1) return 0.0;
+            return @as(f64, @floatFromInt(index)) / @as(f64, @floatFromInt(info.fields.len - 1));
+        }
+    };
+}
+test "float parameter clamps defaults and values" {
+    const param = FloatParam.init(7, "Gain", -12.0, 6.0, 12.0);
+    const nan_default = FloatParam.init(8, "Safe", -12.0, 6.0, std.math.nan(f64));
+
+    try std.testing.expectEqual(@as(u32, 7), param.id);
+    try std.testing.expectEqualStrings("Gain", param.name);
+    try std.testing.expectEqual(@as(f64, 6.0), param.default);
+    try std.testing.expectEqual(@as(f64, -12.0), nan_default.default);
+    try std.testing.expectEqual(@as(f64, 0.0), param.normalize(-24.0));
+    try std.testing.expectEqual(@as(f64, 1.0), param.normalize(12.0));
+    try std.testing.expectEqual(@as(f64, 0.0), param.normalize(std.math.nan(f64)));
+    try std.testing.expect(param.containsPlain(0.0));
+    try std.testing.expect(!param.containsPlain(-24.0));
+    try std.testing.expect(!param.containsPlain(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, -12.0), param.clampPlain(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 6.0), param.clampPlain(12.0));
+    try std.testing.expectEqual(@as(f64, -12.0), param.denormalize(-1.0));
+    try std.testing.expectEqual(@as(f64, 6.0), param.denormalize(2.0));
+    try std.testing.expectEqual(@as(f64, -12.0), param.denormalize(std.math.nan(f64)));
+}
+
+test "int parameter clamps and rounds normalized values" {
+    const param = IntParam.init(2, "Voices", 1, 16, 64);
+
+    try std.testing.expectEqual(@as(u32, 2), param.id);
+    try std.testing.expectEqualStrings("Voices", param.name);
+    try std.testing.expectEqual(@as(i64, 16), param.default);
+    try std.testing.expectEqual(@as(f64, 0.0), param.normalize(-2));
+    try std.testing.expectEqual(@as(f64, 1.0), param.normalize(20));
+    try std.testing.expect(param.containsPlain(8));
+    try std.testing.expect(!param.containsPlain(0));
+    try std.testing.expectEqual(@as(i64, 1), param.clampPlain(-2));
+    try std.testing.expectEqual(@as(i64, 16), param.clampPlain(20));
+    try std.testing.expectEqual(@as(i64, 1), param.denormalize(-1.0));
+    try std.testing.expectEqual(@as(i64, 16), param.denormalize(2.0));
+    try std.testing.expectEqual(@as(i64, 9), param.denormalize(0.5));
+    try std.testing.expectEqual(@as(i64, 1), param.denormalize(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 0.0), param.normalizedFromPlain(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 0.0), param.normalizedFromPlain(-1.0e30));
+    try std.testing.expectEqual(@as(f64, 1.0), param.normalizedFromPlain(1.0e30));
+}
+
+test "int parameter handles full-width ranges without overflow" {
+    const param = IntParam.init(9, "Wide", std.math.minInt(i64), std.math.maxInt(i64), 0);
+
+    try std.testing.expectEqual(@as(f64, 0.0), param.normalize(std.math.minInt(i64)));
+    try std.testing.expectEqual(@as(f64, 1.0), param.normalize(std.math.maxInt(i64)));
+    try std.testing.expectEqual(std.math.minInt(i64), param.denormalize(0.0));
+    try std.testing.expectEqual(std.math.maxInt(i64), param.denormalize(1.0));
+    try std.testing.expect(param.defaultNormalized() > 0.49);
+    try std.testing.expect(param.defaultNormalized() < 0.51);
+}
+
+test "bool parameter maps around midpoint" {
+    const bypass = BoolParam{ .id = 3, .name = "Bypass", .default = true, .is_bypass = true };
+
+    try std.testing.expectEqual(@as(u32, 3), bypass.id);
+    try std.testing.expectEqualStrings("Bypass", bypass.name);
+    try std.testing.expect(bypass.is_bypass);
+    try std.testing.expectEqual(@as(f64, 1.0), bypass.defaultNormalized());
+    try std.testing.expectEqual(@as(f64, 0.0), bypass.normalize(false));
+    try std.testing.expectEqual(@as(f64, 1.0), bypass.normalize(true));
+    try std.testing.expect(!bypass.denormalize(0.49));
+    try std.testing.expect(bypass.denormalize(0.5));
+}
+
+test "enum parameter maps tags to normalized positions" {
+    const Mode = enum { clean, crunch, lead };
+    const ModeParam = EnumParam(Mode);
+    const mode = ModeParam{ .id = 4, .name = "Mode", .default = .crunch };
+
+    try std.testing.expectEqual(@as(u32, 4), mode.id);
+    try std.testing.expectEqualStrings("Mode", mode.name);
+    try std.testing.expectEqual(@as(f64, 0.5), mode.defaultNormalized());
+    try std.testing.expectEqual(@as(f64, 0.0), mode.normalize(.clean));
+    try std.testing.expectEqual(@as(f64, 1.0), mode.normalize(.lead));
+    try std.testing.expectEqual(Mode.clean, mode.denormalize(-1.0));
+    try std.testing.expectEqual(Mode.clean, mode.denormalize(std.math.nan(f64)));
+    try std.testing.expectEqual(Mode.crunch, mode.denormalize(0.5));
+    try std.testing.expectEqual(Mode.lead, mode.denormalize(2.0));
+    try std.testing.expectEqual(@as(f64, 0.0), mode.normalizedFromPlain(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 0.0), mode.normalizedFromPlain(-100.0));
+    try std.testing.expectEqual(@as(f64, 1.0), mode.normalizedFromPlain(100.0));
+    try std.testing.expectEqualStrings("lead", mode.label(.lead));
+    try std.testing.expectEqual(@as(usize, 3), mode.optionCount());
+    try std.testing.expectEqual(@as(usize, 1), mode.indexOfValue(.crunch));
+    try std.testing.expectEqual(Mode.lead, mode.valueAtOptionIndex(2).?);
+    try std.testing.expectEqual(@as(?Mode, null), mode.valueAtOptionIndex(3));
+    try std.testing.expectEqualStrings("clean", mode.labelAtOptionIndex(0).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), mode.labelAtOptionIndex(3));
+    try std.testing.expectEqual(@as(?f64, 0.5), mode.normalizedFromOptionIndex(1));
+    try std.testing.expectEqual(@as(?f64, null), mode.normalizedFromOptionIndex(3));
+}
+
+test "enum parameter supports sparse tag values" {
+    const Mode = enum(u8) { clean = 2, crunch = 7, lead = 42 };
+    const ModeParam = EnumParam(Mode);
+    const mode = ModeParam{ .id = 4, .name = "Mode", .default = .crunch };
+
+    try std.testing.expectEqual(@as(f64, 0.5), mode.defaultNormalized());
+    try std.testing.expectEqual(@as(f64, 0.0), mode.normalize(.clean));
+    try std.testing.expectEqual(@as(f64, 0.5), mode.normalize(.crunch));
+    try std.testing.expectEqual(@as(f64, 1.0), mode.normalize(.lead));
+    try std.testing.expectEqual(Mode.clean, mode.denormalize(0.0));
+    try std.testing.expectEqual(Mode.crunch, mode.denormalize(0.5));
+    try std.testing.expectEqual(Mode.lead, mode.denormalize(1.0));
+    try std.testing.expectEqual(@as(f64, 1.0), mode.plainFromNormalized(0.5));
+    try std.testing.expectEqual(@as(f64, 1.0), mode.normalizedFromPlain(2.0));
+    try std.testing.expectEqual(@as(f64, 1.0), try mode.parsePlain("lead"));
+    try std.testing.expectEqual(@as(usize, 2), mode.indexOfValue(.lead));
+    try std.testing.expectEqual(Mode.crunch, mode.valueAtOptionIndex(1).?);
+    try std.testing.expectEqualStrings("lead", mode.labelAtOptionIndex(2).?);
+    try std.testing.expectEqual(@as(?f64, 1.0), mode.normalizedFromOptionIndex(2));
+}
+
+test "single-value enum parameter stays at zero" {
+    const Only = enum { value };
+    const OnlyParam = EnumParam(Only);
+    const only = OnlyParam{ .id = 5, .name = "Only", .default = .value };
+
+    try std.testing.expectEqual(@as(f64, 0.0), only.defaultNormalized());
+    try std.testing.expectEqual(@as(f64, 0.0), only.normalize(.value));
+    try std.testing.expectEqual(Only.value, only.denormalize(1.0));
+    try std.testing.expectEqual(@as(usize, 1), only.optionCount());
+    try std.testing.expectEqual(@as(?f64, 0.0), only.normalizedFromOptionIndex(0));
+}
