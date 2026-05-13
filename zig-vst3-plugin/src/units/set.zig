@@ -48,8 +48,8 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateUnitId(_: Self) ?i32 {
             for (config.units, 0..) |left, left_index| {
-                for (config.units, 0..) |right, right_index| {
-                    if (right_index > left_index and right.id == left.id) return left.id;
+                for (config.units[left_index + 1 ..]) |right| {
+                    if (right.id == left.id) return left.id;
                 }
             }
             return null;
@@ -57,8 +57,8 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateUnitIdIndex(_: Self) ?usize {
             for (config.units, 0..) |left, left_index| {
-                for (config.units, 0..) |right, right_index| {
-                    if (right_index > left_index and right.id == left.id) return right_index;
+                for (config.units[left_index + 1 ..], left_index + 1..) |right, right_index| {
+                    if (right.id == left.id) return right_index;
                 }
             }
             return null;
@@ -70,8 +70,8 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateUnitName(_: Self) ?[]const u8 {
             for (config.units, 0..) |left, left_index| {
-                for (config.units, 0..) |right, right_index| {
-                    if (right_index > left_index and std.mem.eql(u8, right.name, left.name)) return left.name;
+                for (config.units[left_index + 1 ..]) |right| {
+                    if (std.mem.eql(u8, right.name, left.name)) return left.name;
                 }
             }
             return null;
@@ -79,8 +79,8 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateUnitNameIndex(_: Self) ?usize {
             for (config.units, 0..) |left, left_index| {
-                for (config.units, 0..) |right, right_index| {
-                    if (right_index > left_index and std.mem.eql(u8, right.name, left.name)) return right_index;
+                for (config.units[left_index + 1 ..], left_index + 1..) |right, right_index| {
+                    if (std.mem.eql(u8, right.name, left.name)) return right_index;
                 }
             }
             return null;
@@ -92,8 +92,8 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateProgramListId(_: Self) ?i32 {
             for (config.program_lists, 0..) |left, left_index| {
-                for (config.program_lists, 0..) |right, right_index| {
-                    if (right_index > left_index and right.id == left.id) return left.id;
+                for (config.program_lists[left_index + 1 ..]) |right| {
+                    if (right.id == left.id) return left.id;
                 }
             }
             return null;
@@ -101,8 +101,8 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateProgramListIdIndex(_: Self) ?usize {
             for (config.program_lists, 0..) |left, left_index| {
-                for (config.program_lists, 0..) |right, right_index| {
-                    if (right_index > left_index and right.id == left.id) return right_index;
+                for (config.program_lists[left_index + 1 ..], left_index + 1..) |right, right_index| {
+                    if (right.id == left.id) return right_index;
                 }
             }
             return null;
@@ -114,8 +114,8 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateProgramListName(_: Self) ?[]const u8 {
             for (config.program_lists, 0..) |left, left_index| {
-                for (config.program_lists, 0..) |right, right_index| {
-                    if (right_index > left_index and std.mem.eql(u8, right.name, left.name)) return left.name;
+                for (config.program_lists[left_index + 1 ..]) |right| {
+                    if (std.mem.eql(u8, right.name, left.name)) return left.name;
                 }
             }
             return null;
@@ -123,8 +123,8 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn duplicateProgramListNameIndex(_: Self) ?usize {
             for (config.program_lists, 0..) |left, left_index| {
-                for (config.program_lists, 0..) |right, right_index| {
-                    if (right_index > left_index and std.mem.eql(u8, right.name, left.name)) return right_index;
+                for (config.program_lists[left_index + 1 ..], left_index + 1..) |right, right_index| {
+                    if (std.mem.eql(u8, right.name, left.name)) return right_index;
                 }
             }
             return null;

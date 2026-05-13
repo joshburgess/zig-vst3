@@ -62,8 +62,8 @@ pub const Program = struct {
 
     pub fn duplicateParameterId(self: Program) ?u32 {
         for (self.parameters, 0..) |left, left_index| {
-            for (self.parameters, 0..) |right, right_index| {
-                if (right_index > left_index and right.parameter_id == left.parameter_id) return left.parameter_id;
+            for (self.parameters[left_index + 1 ..]) |right| {
+                if (right.parameter_id == left.parameter_id) return left.parameter_id;
             }
         }
         return null;
@@ -71,8 +71,8 @@ pub const Program = struct {
 
     pub fn duplicateParameterIdIndex(self: Program) ?usize {
         for (self.parameters, 0..) |left, left_index| {
-            for (self.parameters, 0..) |right, right_index| {
-                if (right_index > left_index and right.parameter_id == left.parameter_id) return right_index;
+            for (self.parameters[left_index + 1 ..], left_index + 1..) |right, right_index| {
+                if (right.parameter_id == left.parameter_id) return right_index;
             }
         }
         return null;
@@ -84,8 +84,8 @@ pub const Program = struct {
 
     pub fn duplicateInfoKey(self: Program) ?[]const u8 {
         for (self.info, 0..) |left, left_index| {
-            for (self.info, 0..) |right, right_index| {
-                if (right_index > left_index and std.mem.eql(u8, right.key, left.key)) return left.key;
+            for (self.info[left_index + 1 ..]) |right| {
+                if (std.mem.eql(u8, right.key, left.key)) return left.key;
             }
         }
         return null;
@@ -93,8 +93,8 @@ pub const Program = struct {
 
     pub fn duplicateInfoKeyIndex(self: Program) ?usize {
         for (self.info, 0..) |left, left_index| {
-            for (self.info, 0..) |right, right_index| {
-                if (right_index > left_index and std.mem.eql(u8, right.key, left.key)) return right_index;
+            for (self.info[left_index + 1 ..], left_index + 1..) |right, right_index| {
+                if (std.mem.eql(u8, right.key, left.key)) return right_index;
             }
         }
         return null;
@@ -181,8 +181,8 @@ pub const ProgramList = struct {
 
     pub fn duplicateProgramName(self: ProgramList) ?[]const u8 {
         for (self.programs, 0..) |left, left_index| {
-            for (self.programs, 0..) |right, right_index| {
-                if (right_index > left_index and std.mem.eql(u8, right.name, left.name)) return left.name;
+            for (self.programs[left_index + 1 ..]) |right| {
+                if (std.mem.eql(u8, right.name, left.name)) return left.name;
             }
         }
         return null;
@@ -190,8 +190,8 @@ pub const ProgramList = struct {
 
     pub fn duplicateProgramNameIndex(self: ProgramList) ?usize {
         for (self.programs, 0..) |left, left_index| {
-            for (self.programs, 0..) |right, right_index| {
-                if (right_index > left_index and std.mem.eql(u8, right.name, left.name)) return right_index;
+            for (self.programs[left_index + 1 ..], left_index + 1..) |right, right_index| {
+                if (std.mem.eql(u8, right.name, left.name)) return right_index;
             }
         }
         return null;

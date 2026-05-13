@@ -38,8 +38,8 @@ pub fn ParameterSet(comptime Params: type) type {
         pub fn duplicateId(self: *const Self) ?u32 {
             inline for (fields, 0..) |left_field, left_index| {
                 const left_id = @field(self.params, left_field.name).id;
-                inline for (fields, 0..) |right_field, right_index| {
-                    if (right_index > left_index and @field(self.params, right_field.name).id == left_id) {
+                inline for (fields[left_index + 1 ..]) |right_field| {
+                    if (@field(self.params, right_field.name).id == left_id) {
                         return left_id;
                     }
                 }
@@ -50,8 +50,8 @@ pub fn ParameterSet(comptime Params: type) type {
         pub fn duplicateIdIndex(self: *const Self) ?usize {
             inline for (fields, 0..) |left_field, left_index| {
                 const left_id = @field(self.params, left_field.name).id;
-                inline for (fields, 0..) |right_field, right_index| {
-                    if (right_index > left_index and @field(self.params, right_field.name).id == left_id) {
+                inline for (fields[left_index + 1 ..], left_index + 1..) |right_field, right_index| {
+                    if (@field(self.params, right_field.name).id == left_id) {
                         return right_index;
                     }
                 }
@@ -70,8 +70,8 @@ pub fn ParameterSet(comptime Params: type) type {
         pub fn duplicateName(self: *const Self) ?[]const u8 {
             inline for (fields, 0..) |left_field, left_index| {
                 const left_name = @field(self.params, left_field.name).name;
-                inline for (fields, 0..) |right_field, right_index| {
-                    if (right_index > left_index and std.mem.eql(u8, @field(self.params, right_field.name).name, left_name)) {
+                inline for (fields[left_index + 1 ..]) |right_field| {
+                    if (std.mem.eql(u8, @field(self.params, right_field.name).name, left_name)) {
                         return left_name;
                     }
                 }
@@ -82,8 +82,8 @@ pub fn ParameterSet(comptime Params: type) type {
         pub fn duplicateNameIndex(self: *const Self) ?usize {
             inline for (fields, 0..) |left_field, left_index| {
                 const left_name = @field(self.params, left_field.name).name;
-                inline for (fields, 0..) |right_field, right_index| {
-                    if (right_index > left_index and std.mem.eql(u8, @field(self.params, right_field.name).name, left_name)) {
+                inline for (fields[left_index + 1 ..], left_index + 1..) |right_field, right_index| {
+                    if (std.mem.eql(u8, @field(self.params, right_field.name).name, left_name)) {
                         return right_index;
                     }
                 }
