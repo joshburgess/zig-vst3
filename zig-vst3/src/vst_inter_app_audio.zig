@@ -427,11 +427,12 @@ test "inter-app audio connection notification delegates state changes" {
     const Notification = InterAppAudioConnectionNotification(struct {
         var callback_count: types.uint32 = 0;
         var last_connected = false;
+        var last_change_count: types.uint32 = 0;
 
         pub fn onInterAppAudioConnectionStateChange(self: anytype, connected: bool) void {
             callback_count += 1;
             last_connected = connected;
-            std.testing.expectEqual(callback_count, self.change_count) catch @panic("change count mismatch");
+            last_change_count = self.change_count;
         }
     });
     var notification = Notification{};
@@ -439,10 +440,12 @@ test "inter-app audio connection notification delegates state changes" {
 
     iface.vtable.onInterAppAudioConnectionStateChange(iface, 1);
     try std.testing.expectEqual(@as(types.uint32, 1), Notification.callback_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), Notification.last_change_count);
     try std.testing.expect(Notification.last_connected);
 
     iface.vtable.onInterAppAudioConnectionStateChange(iface, 0);
     try std.testing.expectEqual(@as(types.uint32, 2), Notification.callback_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), Notification.last_change_count);
     try std.testing.expect(!Notification.last_connected);
 }
 
