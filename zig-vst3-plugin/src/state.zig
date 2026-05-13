@@ -985,6 +985,48 @@ test "parameter state report classifies empty and ignored loads" {
     try std.testing.expect(incomplete.restoredAndIgnoredEntries());
 }
 
+test "parameter state round-trips generated normalized values" {
+    const Params = struct {
+        gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", -24.0, 24.0, 0.0),
+        mix: parameters.FloatParam = parameters.FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
+        tone: parameters.FloatParam = parameters.FloatParam.init(2, "Tone", 20.0, 20_000.0, 1_000.0),
+        width: parameters.FloatParam = parameters.FloatParam.init(3, "Width", -1.0, 1.0, 0.0),
+    };
+    const Set = parameters.ParameterSet(Params);
+    const Values = parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+
+    var prng = std.Random.DefaultPrng.init(0x7a67_7673_7433_0001);
+    const random = prng.random();
+    var bytes: [encodedSize(Params)]u8 = undefined;
+
+    for (0..256) |_| {
+        var values = Values.init(&set);
+        var restored = Values.init(&set);
+        var expected: [Set.count]f64 = undefined;
+
+        for (&expected, 0..) |*normalized, index| {
+            normalized.* = random.float(f64);
+            try std.testing.expect(values.store(index, normalized.*));
+        }
+
+        var out_stream = FixedBufferStream.init(&bytes);
+        try writeParameterState(Params, &set, &values, out_stream.writer());
+
+        var in_stream = FixedBufferStream.init(&bytes);
+        const report = try readParameterStateReport(Params, &set, &restored, in_stream.reader());
+        try std.testing.expectEqual(ReadParameterStateReport{
+            .entry_count = Set.count,
+            .restored_count = Set.count,
+            .ignored_count = 0,
+        }, report);
+
+        for (expected, 0..) |normalized, index| {
+            try std.testing.expectEqual(normalized, restored.load(index).?);
+        }
+    }
+}
+
 test "parameter state rejects duplicate restored parameter ids without partial updates" {
     const Params = struct {
         gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),

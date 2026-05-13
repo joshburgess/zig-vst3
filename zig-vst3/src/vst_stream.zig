@@ -202,6 +202,52 @@ test "fixed buffer stream reads writes seeks and reports size" {
     try std.testing.expectEqual(@as(types.int64, 3), size);
 }
 
+test "fixed buffer stream round-trips generated chunked IO" {
+    const Stream = FixedBufferStream(64);
+    var stream = Stream{};
+    const iface = stream.asStream();
+    const sizeable = stream.asSizeableStream();
+    var prng = std.Random.DefaultPrng.init(0x1b57_4330_5a17_0001);
+    const random = prng.random();
+    var input: [64]u8 = undefined;
+    var output: [64]u8 = [_]u8{0} ** 64;
+    random.bytes(&input);
+
+    var offset: usize = 0;
+    while (offset < input.len) {
+        const chunk = @min(input.len - offset, 1 + random.uintLessThan(usize, 8));
+        var written: types.int32 = -1;
+        try std.testing.expectEqual(
+            types.kResultOk,
+            iface.vtable.write(iface, &input[offset], @intCast(chunk), &written),
+        );
+        try std.testing.expectEqual(@as(types.int32, @intCast(chunk)), written);
+        offset += chunk;
+    }
+
+    var size: types.int64 = -1;
+    try std.testing.expectEqual(types.kResultOk, sizeable.vtable.getStreamSize(sizeable, &size));
+    try std.testing.expectEqual(@as(types.int64, input.len), size);
+
+    var pos: types.int64 = -1;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), &pos));
+    try std.testing.expectEqual(@as(types.int64, 0), pos);
+
+    offset = 0;
+    while (offset < output.len) {
+        const chunk = @min(output.len - offset, 1 + random.uintLessThan(usize, 11));
+        var read_count: types.int32 = -1;
+        try std.testing.expectEqual(
+            types.kResultOk,
+            iface.vtable.read(iface, &output[offset], @intCast(chunk), &read_count),
+        );
+        try std.testing.expectEqual(@as(types.int32, @intCast(chunk)), read_count);
+        offset += chunk;
+    }
+
+    try std.testing.expectEqualSlices(u8, &input, &output);
+}
+
 test "fixed buffer stream enforces bounds and supports query interface" {
     const Stream = FixedBufferStream(4);
     var stream = Stream{ .write_limit = 2 };
