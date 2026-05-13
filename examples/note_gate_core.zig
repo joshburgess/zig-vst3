@@ -33,12 +33,14 @@ pub const NoteGate = struct {
         while (events.next()) |event| {
             switch (event.noteLifecycle()) {
                 .attack => {
-                    const note = event.asNoteAttack().?;
-                    self.holdNote(note.channel, note.pitch);
+                    if (event.asNoteAttack()) |note| {
+                        self.holdNote(note.channel, note.pitch);
+                    }
                 },
                 .release => {
-                    const note = event.asNoteRelease().?;
-                    self.releaseNote(note.channel, note.pitch);
+                    if (event.asNoteRelease()) |note| {
+                        self.releaseNote(note.channel, note.pitch);
+                    }
                 },
                 .none => {},
             }
