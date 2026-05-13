@@ -148,6 +148,22 @@ test "event list enforces bounds and supports query interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_events.vtable.release(queried_events));
 }
 
+test "event list preserves count when add event is configured to fail" {
+    const List = EventList(2);
+    var list = List{ .fail_add_index = 1 };
+    const iface = list.asInterface();
+    var first_event = ivstevents.Event{ .sampleOffset = 1 };
+    var second_event = ivstevents.Event{ .sampleOffset = 2 };
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addEvent(iface, &first_event));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addEvent(iface, &second_event));
+    try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getEventCount(iface));
+
+    var read_event = ivstevents.Event{};
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getEvent(iface, 0, &read_event));
+    try std.testing.expectEqual(@as(types.int32, 1), read_event.sampleOffset);
+}
+
 test "event list clamps corrupted counts" {
     const List = EventList(1);
     var list = List{};

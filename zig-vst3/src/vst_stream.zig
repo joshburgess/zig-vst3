@@ -270,6 +270,18 @@ test "fixed buffer stream resizes with zero fill and clamps cursor" {
     try std.testing.expectEqual(@as(types.int64, 2), pos);
 }
 
+test "fixed buffer stream sizeable interface can query stream interface" {
+    const Stream = FixedBufferStream(4);
+    var stream = Stream{};
+    const sizeable = stream.asSizeableStream();
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, sizeable.vtable.queryInterface(sizeable, &ibstream.ibstream_iid, &queried));
+    try std.testing.expect(queried != null);
+    const queried_stream: *ibstream.IBStream = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_stream.vtable.release(queried_stream));
+}
+
 test "fixed buffer stream enforces bounds and supports query interface" {
     const Stream = FixedBufferStream(4);
     var stream = Stream{ .write_limit = 2 };
