@@ -45,73 +45,59 @@ pub fn PluginInstance(comptime Plugin: type) type {
             self.prepareChecked(config) catch @panic("invalid prepare config");
         }
 
-        pub fn hasAudioInput(self: *const Self) bool {
-            _ = self;
+        pub fn hasAudioInput(_: *const Self) bool {
             return Spec.audio_input;
         }
 
-        pub fn hasAudioOutput(self: *const Self) bool {
-            _ = self;
+        pub fn hasAudioOutput(_: *const Self) bool {
             return Spec.audio_output;
         }
 
-        pub fn hasEventInput(self: *const Self) bool {
-            _ = self;
+        pub fn hasEventInput(_: *const Self) bool {
             return Spec.event_input;
         }
 
-        pub fn hasEventOutput(self: *const Self) bool {
-            _ = self;
+        pub fn hasEventOutput(_: *const Self) bool {
             return Spec.event_output;
         }
 
-        pub fn hasInitHook(self: *const Self) bool {
-            _ = self;
+        pub fn hasInitHook(_: *const Self) bool {
             return Spec.has_init;
         }
 
-        pub fn hasPrepareHook(self: *const Self) bool {
-            _ = self;
+        pub fn hasPrepareHook(_: *const Self) bool {
             return Spec.has_prepare;
         }
 
-        pub fn hasProcessHook(self: *const Self) bool {
-            _ = self;
+        pub fn hasProcessHook(_: *const Self) bool {
             return Spec.has_process or Spec.has_process_with_parameter_view or Spec.has_process_with_parameters;
         }
 
-        pub fn hasProcessFunctionHook(self: *const Self) bool {
-            _ = self;
+        pub fn hasProcessFunctionHook(_: *const Self) bool {
             return Spec.has_process;
         }
 
-        pub fn hasProcessWithParameterViewHook(self: *const Self) bool {
-            _ = self;
+        pub fn hasProcessWithParameterViewHook(_: *const Self) bool {
             return Spec.has_process_with_parameter_view;
         }
 
-        pub fn hasProcessWithParametersHook(self: *const Self) bool {
-            _ = self;
+        pub fn hasProcessWithParametersHook(_: *const Self) bool {
             return Spec.has_process_with_parameters;
         }
 
-        pub fn hasProcess64Hook(self: *const Self) bool {
-            _ = self;
+        pub fn hasProcess64Hook(_: *const Self) bool {
             return Spec.has_process64 or Spec.has_process64_with_parameter_view or Spec.has_process64_with_parameters;
         }
 
-        pub fn hasProcess64FunctionHook(self: *const Self) bool {
-            _ = self;
+        pub fn hasProcess64FunctionHook(_: *const Self) bool {
             return Spec.has_process64;
         }
 
-        pub fn hasProcess64WithParameterViewHook(self: *const Self) bool {
-            _ = self;
+        pub fn hasProcess64WithParameterViewHook(_: *const Self) bool {
             return Spec.has_process64_with_parameter_view;
         }
 
-        pub fn hasProcess64WithParametersHook(self: *const Self) bool {
-            _ = self;
+        pub fn hasProcess64WithParametersHook(_: *const Self) bool {
             return Spec.has_process64_with_parameters;
         }
 
@@ -119,48 +105,39 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.hasProcessHook() or self.hasProcess64Hook();
         }
 
-        pub fn hasDeinitHook(self: *const Self) bool {
-            _ = self;
+        pub fn hasDeinitHook(_: *const Self) bool {
             return Spec.has_deinit;
         }
 
-        pub fn pluginName(self: *const Self) []const u8 {
-            _ = self;
+        pub fn pluginName(_: *const Self) []const u8 {
             return Spec.name;
         }
 
-        pub fn pluginVendor(self: *const Self) []const u8 {
-            _ = self;
+        pub fn pluginVendor(_: *const Self) []const u8 {
             return Spec.vendor;
         }
 
-        pub fn pluginUrl(self: *const Self) []const u8 {
-            _ = self;
+        pub fn pluginUrl(_: *const Self) []const u8 {
             return Spec.url;
         }
 
-        pub fn pluginEmail(self: *const Self) []const u8 {
-            _ = self;
+        pub fn pluginEmail(_: *const Self) []const u8 {
             return Spec.email;
         }
 
-        pub fn componentClassName(self: *const Self) []const u8 {
-            _ = self;
+        pub fn componentClassName(_: *const Self) []const u8 {
             return Spec.component_class_name;
         }
 
-        pub fn controllerClassName(self: *const Self) []const u8 {
-            _ = self;
+        pub fn controllerClassName(_: *const Self) []const u8 {
             return Spec.controller_class_name;
         }
 
-        pub fn componentCategory(self: *const Self) []const u8 {
-            _ = self;
+        pub fn componentCategory(_: *const Self) []const u8 {
             return Spec.component_category;
         }
 
-        pub fn controllerCategory(self: *const Self) []const u8 {
-            _ = self;
+        pub fn controllerCategory(_: *const Self) []const u8 {
             return Spec.controller_category;
         }
 
@@ -2056,8 +2033,7 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.values.applyChangesChangedCount(&self.spec.parameter_set, changes);
         }
 
-        pub fn encodedParameterStateSize(self: *const Self) usize {
-            _ = self;
+        pub fn encodedParameterStateSize(_: *const Self) usize {
             return Spec.encoded_parameter_state_size;
         }
 
@@ -2065,13 +2041,11 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.encodedParameterStateSize();
         }
 
-        pub fn encodedParameterStateSizeForCount(self: *const Self, count: usize) usize {
-            _ = self;
+        pub fn encodedParameterStateSizeForCount(_: *const Self, count: usize) usize {
             return state.encodedSizeForCount(count);
         }
 
-        pub fn encodedParameterStateSizeForCountChecked(self: *const Self, count: usize) !usize {
-            _ = self;
+        pub fn encodedParameterStateSizeForCountChecked(_: *const Self, count: usize) !usize {
             return state.encodedSizeForCountChecked(count);
         }
 
@@ -2087,38 +2061,31 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.parameter_set.parameterCount();
         }
 
-        pub fn parameterStateHeaderEntryCount(self: *const Self, header: state.ParameterStateHeader) usize {
-            _ = self;
+        pub fn parameterStateHeaderEntryCount(_: *const Self, header: state.ParameterStateHeader) usize {
             return header.entryCount();
         }
 
-        pub fn parameterStateHeaderHasEntries(self: *const Self, header: state.ParameterStateHeader) bool {
-            _ = self;
+        pub fn parameterStateHeaderHasEntries(_: *const Self, header: state.ParameterStateHeader) bool {
             return header.hasEntries();
         }
 
-        pub fn parameterStateHeaderHasNoEntries(self: *const Self, header: state.ParameterStateHeader) bool {
-            _ = self;
+        pub fn parameterStateHeaderHasNoEntries(_: *const Self, header: state.ParameterStateHeader) bool {
             return header.hasNoEntries();
         }
 
-        pub fn parameterStateHeaderEntriesEmpty(self: *const Self, header: state.ParameterStateHeader) bool {
-            _ = self;
+        pub fn parameterStateHeaderEntriesEmpty(_: *const Self, header: state.ParameterStateHeader) bool {
             return header.entriesEmpty();
         }
 
-        pub fn parameterStateHeaderIsCurrentVersion(self: *const Self, header: state.ParameterStateHeader) bool {
-            _ = self;
+        pub fn parameterStateHeaderIsCurrentVersion(_: *const Self, header: state.ParameterStateHeader) bool {
             return header.isCurrentVersion();
         }
 
-        pub fn parameterStateHeaderEncodedSize(self: *const Self, header: state.ParameterStateHeader) usize {
-            _ = self;
+        pub fn parameterStateHeaderEncodedSize(_: *const Self, header: state.ParameterStateHeader) usize {
             return header.encodedSize();
         }
 
-        pub fn parameterStateHeaderEncodedSizeChecked(self: *const Self, header: state.ParameterStateHeader) !usize {
-            _ = self;
+        pub fn parameterStateHeaderEncodedSizeChecked(_: *const Self, header: state.ParameterStateHeader) !usize {
             return header.encodedSizeChecked();
         }
 
@@ -2242,178 +2209,143 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return report.extraUnaccountedEntryCount(self.parameterStateEntryCount());
         }
 
-        pub fn parameterStateReportDecodedCount(self: *const Self, report: state.ReadParameterStateReport) usize {
-            _ = self;
+        pub fn parameterStateReportDecodedCount(_: *const Self, report: state.ReadParameterStateReport) usize {
             return report.decodedCount();
         }
 
-        pub fn parameterStateReportRestoredCount(self: *const Self, report: state.ReadParameterStateReport) usize {
-            _ = self;
+        pub fn parameterStateReportRestoredCount(_: *const Self, report: state.ReadParameterStateReport) usize {
             return report.restoredCount();
         }
 
-        pub fn parameterStateReportIgnoredCount(self: *const Self, report: state.ReadParameterStateReport) usize {
-            _ = self;
+        pub fn parameterStateReportIgnoredCount(_: *const Self, report: state.ReadParameterStateReport) usize {
             return report.ignoredCount();
         }
 
-        pub fn parameterStateReportAccountedCount(self: *const Self, report: state.ReadParameterStateReport) usize {
-            _ = self;
+        pub fn parameterStateReportAccountedCount(_: *const Self, report: state.ReadParameterStateReport) usize {
             return report.accountedCount();
         }
 
-        pub fn parameterStateReportUnaccountedCount(self: *const Self, report: state.ReadParameterStateReport) usize {
-            _ = self;
+        pub fn parameterStateReportUnaccountedCount(_: *const Self, report: state.ReadParameterStateReport) usize {
             return report.unaccountedCount();
         }
 
-        pub fn parameterStateReportHasDecodedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportHasDecodedEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.hasDecodedEntries();
         }
 
-        pub fn parameterStateReportHasNoDecodedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportHasNoDecodedEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.hasNoDecodedEntries();
         }
 
-        pub fn parameterStateReportDecodedEntriesEmpty(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportDecodedEntriesEmpty(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.decodedEntriesEmpty();
         }
 
-        pub fn parameterStateReportHasRestoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportHasRestoredEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.hasRestoredEntries();
         }
 
-        pub fn parameterStateReportHasNoRestoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportHasNoRestoredEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.hasNoRestoredEntries();
         }
 
-        pub fn parameterStateReportRestoredEntriesEmpty(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportRestoredEntriesEmpty(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.restoredEntriesEmpty();
         }
 
-        pub fn parameterStateReportHasIgnoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportHasIgnoredEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.hasIgnoredEntries();
         }
 
-        pub fn parameterStateReportHasNoIgnoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportHasNoIgnoredEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.hasNoIgnoredEntries();
         }
 
-        pub fn parameterStateReportIgnoredEntriesEmpty(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportIgnoredEntriesEmpty(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.ignoredEntriesEmpty();
         }
 
-        pub fn parameterStateReportHasAccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportHasAccountedEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.hasAccountedEntries();
         }
 
-        pub fn parameterStateReportHasNoAccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportHasNoAccountedEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.hasNoAccountedEntries();
         }
 
-        pub fn parameterStateReportAccountedEntriesEmpty(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportAccountedEntriesEmpty(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.accountedEntriesEmpty();
         }
 
-        pub fn parameterStateReportHasUnaccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportHasUnaccountedEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.hasUnaccountedEntries();
         }
 
-        pub fn parameterStateReportHasNoUnaccountedEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportHasNoUnaccountedEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.hasNoUnaccountedEntries();
         }
 
-        pub fn parameterStateReportUnaccountedEntriesEmpty(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportUnaccountedEntriesEmpty(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.unaccountedEntriesEmpty();
         }
 
-        pub fn parameterStateReportAccountedAllEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportAccountedAllEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.accountedAllEntries();
         }
 
-        pub fn parameterStateReportAccountedPartialEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportAccountedPartialEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.accountedPartialEntries();
         }
 
-        pub fn parameterStateReportRestoredAllEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportRestoredAllEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.restoredAllEntries();
         }
 
-        pub fn parameterStateReportRestoredPartialEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportRestoredPartialEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.restoredPartialEntries();
         }
 
-        pub fn parameterStateReportIgnoredAllEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportIgnoredAllEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.ignoredAllEntries();
         }
 
-        pub fn parameterStateReportIgnoredPartialEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportIgnoredPartialEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.ignoredPartialEntries();
         }
 
-        pub fn parameterStateReportRestoredAndIgnoredEntries(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportRestoredAndIgnoredEntries(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.restoredAndIgnoredEntries();
         }
 
-        pub fn parameterStateReportFullyHandled(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportFullyHandled(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.fullyHandled();
         }
 
-        pub fn parameterStateReportClassification(self: *const Self, report: state.ReadParameterStateReport) state.ReadParameterStateClassification {
-            _ = self;
+        pub fn parameterStateReportClassification(_: *const Self, report: state.ReadParameterStateReport) state.ReadParameterStateClassification {
             return report.classification();
         }
 
-        pub fn parameterStateReportIsEmptyClassification(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportIsEmptyClassification(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.isEmptyClassification();
         }
 
-        pub fn parameterStateReportIsRestoredAllClassification(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportIsRestoredAllClassification(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.isRestoredAllClassification();
         }
 
-        pub fn parameterStateReportIsIgnoredAllClassification(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportIsIgnoredAllClassification(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.isIgnoredAllClassification();
         }
 
-        pub fn parameterStateReportIsRestoredAndIgnoredClassification(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportIsRestoredAndIgnoredClassification(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.isRestoredAndIgnoredClassification();
         }
 
-        pub fn parameterStateReportIsPartialClassification(self: *const Self, report: state.ReadParameterStateReport) bool {
-            _ = self;
+        pub fn parameterStateReportIsPartialClassification(_: *const Self, report: state.ReadParameterStateReport) bool {
             return report.isPartialClassification();
         }
 
-        pub fn readParameterStateHeader(self: *const Self, reader: anytype) !state.ParameterStateHeader {
-            _ = self;
+        pub fn readParameterStateHeader(_: *const Self, reader: anytype) !state.ParameterStateHeader {
             return state.readParameterStateHeader(reader);
         }
 
@@ -2425,8 +2357,7 @@ pub fn PluginInstance(comptime Plugin: type) type {
             try self.writeParameterStateHeaderForCount(self.parameterStateEntryCount(), writer);
         }
 
-        pub fn writeParameterStateHeaderForCount(self: *const Self, count: usize, writer: anytype) !void {
-            _ = self;
+        pub fn writeParameterStateHeaderForCount(_: *const Self, count: usize, writer: anytype) !void {
             try state.writeParameterStateHeaderForCount(count, writer);
         }
 
@@ -2458,28 +2389,23 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return state.readParameterStateWithMigrationsReport(Plugin.Params, &self.spec.parameter_set, &self.spec.values, reader, migrations);
         }
 
-        pub fn validateParameterIdMigrations(self: *const Self, migrations: []const state.ParameterIdMigration) !void {
-            _ = self;
+        pub fn validateParameterIdMigrations(_: *const Self, migrations: []const state.ParameterIdMigration) !void {
             try state.validateParameterIdMigrations(migrations);
         }
 
-        pub fn identityParameterMigrationIndex(self: *const Self, migrations: []const state.ParameterIdMigration) ?usize {
-            _ = self;
+        pub fn identityParameterMigrationIndex(_: *const Self, migrations: []const state.ParameterIdMigration) ?usize {
             return state.identityParameterMigrationIndex(migrations);
         }
 
-        pub fn duplicateParameterMigrationIndex(self: *const Self, migrations: []const state.ParameterIdMigration) ?usize {
-            _ = self;
+        pub fn duplicateParameterMigrationIndex(_: *const Self, migrations: []const state.ParameterIdMigration) ?usize {
             return state.duplicateParameterMigrationIndex(migrations);
         }
 
-        pub fn ambiguousParameterMigrationIndex(self: *const Self, migrations: []const state.ParameterIdMigration) ?usize {
-            _ = self;
+        pub fn ambiguousParameterMigrationIndex(_: *const Self, migrations: []const state.ParameterIdMigration) ?usize {
             return state.ambiguousParameterMigrationIndex(migrations);
         }
 
-        pub fn migratedParameterId(self: *const Self, id: u32, migrations: []const state.ParameterIdMigration) u32 {
-            _ = self;
+        pub fn migratedParameterId(_: *const Self, id: u32, migrations: []const state.ParameterIdMigration) u32 {
             return state.migratedParameterId(id, migrations);
         }
 
