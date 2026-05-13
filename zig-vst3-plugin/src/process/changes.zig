@@ -20,6 +20,99 @@ pub const ParameterChange = struct {
     }
 };
 
+const IndexedParameterChange = struct {
+    item: ParameterChange,
+    index: usize,
+};
+
+const IdOffset = struct {
+    id: u32,
+    sample_offset: usize,
+};
+
+fn matchesAny(_: ParameterChange, _: void) bool {
+    return true;
+}
+
+fn matchesId(item: ParameterChange, id: u32) bool {
+    return item.isForId(id);
+}
+
+fn matchesOffset(item: ParameterChange, sample_offset: usize) bool {
+    return item.isAtOffset(sample_offset);
+}
+
+fn matchesIdOffset(item: ParameterChange, context: IdOffset) bool {
+    return item.isForIdAtOffset(context.id, context.sample_offset);
+}
+
+fn firstMatchingChange(items: []const ParameterChange, context: anytype, comptime matches: anytype) ?ParameterChange {
+    var result: ?ParameterChange = null;
+    for (items) |item| {
+        if (!matches(item, context)) continue;
+        if (result == null or item.sample_offset < result.?.sample_offset) result = item;
+    }
+    return result;
+}
+
+fn latestMatchingChange(items: []const ParameterChange, context: anytype, comptime matches: anytype) ?ParameterChange {
+    var result: ?ParameterChange = null;
+    for (items) |item| {
+        if (!matches(item, context)) continue;
+        if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
+    }
+    return result;
+}
+
+fn firstStoredMatchingChange(items: []const ParameterChange, context: anytype, comptime matches: anytype) ?ParameterChange {
+    for (items) |item| {
+        if (matches(item, context)) return item;
+    }
+    return null;
+}
+
+fn latestStoredMatchingChange(items: []const ParameterChange, context: anytype, comptime matches: anytype) ?ParameterChange {
+    var result: ?ParameterChange = null;
+    for (items) |item| {
+        if (matches(item, context)) result = item;
+    }
+    return result;
+}
+
+fn countMatchingChanges(items: []const ParameterChange, context: anytype, comptime matches: anytype) usize {
+    var result: usize = 0;
+    for (items) |item| {
+        if (matches(item, context)) result += 1;
+    }
+    return result;
+}
+
+fn nextMatchingChange(items: []const ParameterChange, last_offset: ?usize, last_index: usize, context: anytype, comptime matches: anytype) ?IndexedParameterChange {
+    var result: ?IndexedParameterChange = null;
+    for (items, 0..) |item, index| {
+        if (!matches(item, context)) continue;
+        if (last_offset) |offset| {
+            if (item.sample_offset < offset) continue;
+            if (item.sample_offset == offset and index <= last_index) continue;
+        }
+        if (result == null or item.sample_offset < result.?.item.sample_offset or
+            (item.sample_offset == result.?.item.sample_offset and index < result.?.index))
+        {
+            result = .{ .item = item, .index = index };
+        }
+    }
+    return result;
+}
+
+fn nextMatchingSampleOffset(items: []const ParameterChange, after_sample_offset: usize, context: anytype, comptime matches: anytype) ?usize {
+    var result: ?usize = null;
+    for (items) |item| {
+        if (!matches(item, context) or item.sample_offset <= after_sample_offset) continue;
+        if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+    }
+    return result;
+}
+
 pub const ParameterSegment = struct {
     start_offset: usize,
     end_offset: usize,
@@ -115,26 +208,12 @@ pub const ParameterChangeIdIterator = struct {
     last_index: usize = 0,
 
     pub fn next(self: *ParameterChangeIdIterator) ?ParameterChange {
-        var result: ?ParameterChange = null;
-        var result_index: usize = 0;
-        for (self.changes.items, 0..) |item, index| {
-            if (!item.isForId(self.id)) continue;
-            if (self.last_offset) |offset| {
-                if (item.sample_offset < offset) continue;
-                if (item.sample_offset == offset and index <= self.last_index) continue;
-            }
-            if (result == null or item.sample_offset < result.?.sample_offset or
-                (item.sample_offset == result.?.sample_offset and index < result_index))
-            {
-                result = item;
-                result_index = index;
-            }
+        if (nextMatchingChange(self.changes.items, self.last_offset, self.last_index, self.id, matchesId)) |result| {
+            self.last_offset = result.item.sample_offset;
+            self.last_index = result.index;
+            return result.item;
         }
-        if (result) |item| {
-            self.last_offset = item.sample_offset;
-            self.last_index = result_index;
-        }
-        return result;
+        return null;
     }
 };
 
@@ -197,35 +276,21 @@ pub const ParameterChanges = struct {
     }
 
     pub fn firstSampleOffset(self: ParameterChanges) ?usize {
-        var result: ?usize = null;
-        for (self.items) |item| {
-            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
-        }
-        return result;
+        const change = self.firstChange() orelse return null;
+        return change.sample_offset;
     }
 
     pub fn latestSampleOffset(self: ParameterChanges) ?usize {
-        var result: ?usize = null;
-        for (self.items) |item| {
-            if (result == null or item.sample_offset > result.?) result = item.sample_offset;
-        }
-        return result;
+        const change = latestMatchingChange(self.items, {}, matchesAny) orelse return null;
+        return change.sample_offset;
     }
 
     pub fn firstChange(self: ParameterChanges) ?ParameterChange {
-        var result: ?ParameterChange = null;
-        for (self.items) |item| {
-            if (result == null or item.sample_offset < result.?.sample_offset) result = item;
-        }
-        return result;
+        return firstMatchingChange(self.items, {}, matchesAny);
     }
 
     pub fn latestChange(self: ParameterChanges) ?ParameterChange {
-        var result: ?ParameterChange = null;
-        for (self.items) |item| {
-            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
-        }
-        return result;
+        return latestMatchingChange(self.items, {}, matchesAny);
     }
 
     pub fn firstSampleOffsetForId(self: ParameterChanges, id: u32) ?usize {
@@ -239,75 +304,42 @@ pub const ParameterChanges = struct {
     }
 
     pub fn latest(self: ParameterChanges, id: u32) ?ParameterChange {
-        var result: ?ParameterChange = null;
-        for (self.items) |item| {
-            if (!item.isForId(id)) continue;
-            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
-        }
-        return result;
+        return latestMatchingChange(self.items, id, matchesId);
     }
 
     pub fn first(self: ParameterChanges, id: u32) ?ParameterChange {
-        var result: ?ParameterChange = null;
-        for (self.items) |item| {
-            if (!item.isForId(id)) continue;
-            if (result == null or item.sample_offset < result.?.sample_offset) result = item;
-        }
-        return result;
+        return firstMatchingChange(self.items, id, matchesId);
     }
 
     pub fn firstAtOffset(self: ParameterChanges, sample_offset: usize) ?ParameterChange {
-        for (self.items) |item| {
-            if (item.isAtOffset(sample_offset)) return item;
-        }
-        return null;
+        return firstStoredMatchingChange(self.items, sample_offset, matchesOffset);
     }
 
     pub fn latestAtOffset(self: ParameterChanges, sample_offset: usize) ?ParameterChange {
-        var result: ?ParameterChange = null;
-        for (self.items) |item| {
-            if (item.isAtOffset(sample_offset)) result = item;
-        }
-        return result;
+        return latestStoredMatchingChange(self.items, sample_offset, matchesOffset);
     }
 
     pub fn firstForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) ?ParameterChange {
-        for (self.items) |item| {
-            if (item.isForIdAtOffset(id, sample_offset)) return item;
-        }
-        return null;
+        const context = IdOffset{ .id = id, .sample_offset = sample_offset };
+        return firstStoredMatchingChange(self.items, context, matchesIdOffset);
     }
 
     pub fn latestForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) ?ParameterChange {
-        var result: ?ParameterChange = null;
-        for (self.items) |item| {
-            if (item.isForIdAtOffset(id, sample_offset)) result = item;
-        }
-        return result;
+        const context = IdOffset{ .id = id, .sample_offset = sample_offset };
+        return latestStoredMatchingChange(self.items, context, matchesIdOffset);
     }
 
     pub fn count(self: ParameterChanges, id: u32) usize {
-        var result: usize = 0;
-        for (self.items) |item| {
-            if (item.isForId(id)) result += 1;
-        }
-        return result;
+        return countMatchingChanges(self.items, id, matchesId);
     }
 
     pub fn countAtOffset(self: ParameterChanges, sample_offset: usize) usize {
-        var result: usize = 0;
-        for (self.items) |item| {
-            if (item.isAtOffset(sample_offset)) result += 1;
-        }
-        return result;
+        return countMatchingChanges(self.items, sample_offset, matchesOffset);
     }
 
     pub fn countForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) usize {
-        var result: usize = 0;
-        for (self.items) |item| {
-            if (item.isForIdAtOffset(id, sample_offset)) result += 1;
-        }
-        return result;
+        const context = IdOffset{ .id = id, .sample_offset = sample_offset };
+        return countMatchingChanges(self.items, context, matchesIdOffset);
     }
 
     pub fn has(self: ParameterChanges, id: u32) bool {
@@ -437,21 +469,11 @@ pub const ParameterChanges = struct {
     }
 
     pub fn nextSampleOffset(self: ParameterChanges, after_sample_offset: usize) ?usize {
-        var result: ?usize = null;
-        for (self.items) |item| {
-            if (item.sample_offset <= after_sample_offset) continue;
-            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
-        }
-        return result;
+        return nextMatchingSampleOffset(self.items, after_sample_offset, {}, matchesAny);
     }
 
     pub fn nextSampleOffsetForId(self: ParameterChanges, id: u32, after_sample_offset: usize) ?usize {
-        var result: ?usize = null;
-        for (self.items) |item| {
-            if (!item.isForId(id) or item.sample_offset <= after_sample_offset) continue;
-            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
-        }
-        return result;
+        return nextMatchingSampleOffset(self.items, after_sample_offset, id, matchesId);
     }
 
     pub fn segmentAt(self: ParameterChanges, id: u32, start_offset: usize, frame_count: usize, default: f64) ?ParameterSegment {
@@ -581,6 +603,10 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expect(!same_offset.onlyAtOffset(3));
     try std.testing.expect(same_offset.onlyForIdAtOffset(7, 2));
     try std.testing.expect(!same_offset.onlyForIdAtOffset(8, 2));
+    try std.testing.expectEqual(@as(f64, 0.25), same_offset.first(7).?.normalized);
+    try std.testing.expectEqual(@as(f64, 0.75), same_offset.latest(7).?.normalized);
+    try std.testing.expectEqual(@as(f64, 0.25), same_offset.firstAtOffset(2).?.normalized);
+    try std.testing.expectEqual(@as(f64, 0.75), same_offset.latestAtOffset(2).?.normalized);
     try std.testing.expectEqual(@as(f64, 0.25), view.first(7).?.normalized);
     try std.testing.expectEqual(@as(?f64, 0.25), view.firstNormalized(7));
     try std.testing.expectEqual(@as(f64, 0.25), view.firstNormalizedOr(7, 0.0));

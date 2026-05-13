@@ -102,26 +102,12 @@ pub const EventKindIterator = struct {
     last_index: usize = 0,
 
     pub fn next(self: *EventKindIterator) ?Event {
-        var result: ?Event = null;
-        var result_index: usize = 0;
-        for (self.events.items, 0..) |item, index| {
-            if (!item.isKind(self.kind)) continue;
-            if (self.last_offset) |offset| {
-                if (item.sample_offset < offset) continue;
-                if (item.sample_offset == offset and index <= self.last_index) continue;
-            }
-            if (result == null or item.sample_offset < result.?.sample_offset or
-                (item.sample_offset == result.?.sample_offset and index < result_index))
-            {
-                result = item;
-                result_index = index;
-            }
+        if (nextMatchingEvent(self.events.items, self.last_offset, self.last_index, self.kind, matchesKind)) |result| {
+            self.last_offset = result.item.sample_offset;
+            self.last_index = result.index;
+            return result.item;
         }
-        if (result) |item| {
-            self.last_offset = item.sample_offset;
-            self.last_index = result_index;
-        }
-        return result;
+        return null;
     }
 };
 
@@ -149,26 +135,12 @@ pub const EventBusIterator = struct {
     last_index: usize = 0,
 
     pub fn next(self: *EventBusIterator) ?Event {
-        var result: ?Event = null;
-        var result_index: usize = 0;
-        for (self.events.items, 0..) |item, index| {
-            if (!item.isForBus(self.bus_index)) continue;
-            if (self.last_offset) |offset| {
-                if (item.sample_offset < offset) continue;
-                if (item.sample_offset == offset and index <= self.last_index) continue;
-            }
-            if (result == null or item.sample_offset < result.?.sample_offset or
-                (item.sample_offset == result.?.sample_offset and index < result_index))
-            {
-                result = item;
-                result_index = index;
-            }
+        if (nextMatchingEvent(self.events.items, self.last_offset, self.last_index, self.bus_index, matchesBus)) |result| {
+            self.last_offset = result.item.sample_offset;
+            self.last_index = result.index;
+            return result.item;
         }
-        if (result) |item| {
-            self.last_offset = item.sample_offset;
-            self.last_index = result_index;
-        }
-        return result;
+        return null;
     }
 };
 
@@ -179,26 +151,12 @@ pub const EventChannelIterator = struct {
     last_index: usize = 0,
 
     pub fn next(self: *EventChannelIterator) ?Event {
-        var result: ?Event = null;
-        var result_index: usize = 0;
-        for (self.events.items, 0..) |item, index| {
-            if (!item.isForChannel(self.channel)) continue;
-            if (self.last_offset) |offset| {
-                if (item.sample_offset < offset) continue;
-                if (item.sample_offset == offset and index <= self.last_index) continue;
-            }
-            if (result == null or item.sample_offset < result.?.sample_offset or
-                (item.sample_offset == result.?.sample_offset and index < result_index))
-            {
-                result = item;
-                result_index = index;
-            }
+        if (nextMatchingEvent(self.events.items, self.last_offset, self.last_index, self.channel, matchesChannel)) |result| {
+            self.last_offset = result.item.sample_offset;
+            self.last_index = result.index;
+            return result.item;
         }
-        if (result) |item| {
-            self.last_offset = item.sample_offset;
-            self.last_index = result_index;
-        }
-        return result;
+        return null;
     }
 };
 
@@ -210,28 +168,140 @@ pub const EventBusChannelIterator = struct {
     last_index: usize = 0,
 
     pub fn next(self: *EventBusChannelIterator) ?Event {
-        var result: ?Event = null;
-        var result_index: usize = 0;
-        for (self.events.items, 0..) |item, index| {
-            if (!item.isForBusChannel(self.bus_index, self.channel)) continue;
-            if (self.last_offset) |offset| {
-                if (item.sample_offset < offset) continue;
-                if (item.sample_offset == offset and index <= self.last_index) continue;
-            }
-            if (result == null or item.sample_offset < result.?.sample_offset or
-                (item.sample_offset == result.?.sample_offset and index < result_index))
-            {
-                result = item;
-                result_index = index;
-            }
+        const context = BusChannel{ .bus_index = self.bus_index, .channel = self.channel };
+        if (nextMatchingEvent(self.events.items, self.last_offset, self.last_index, context, matchesBusChannel)) |result| {
+            self.last_offset = result.item.sample_offset;
+            self.last_index = result.index;
+            return result.item;
         }
-        if (result) |item| {
-            self.last_offset = item.sample_offset;
-            self.last_index = result_index;
-        }
-        return result;
+        return null;
     }
 };
+
+const IndexedEvent = struct {
+    item: Event,
+    index: usize,
+};
+
+const BusChannel = struct {
+    bus_index: i32,
+    channel: i16,
+};
+
+const KindOffset = struct {
+    kind: EventKind,
+    sample_offset: usize,
+};
+
+fn matchesAny(_: Event, _: void) bool {
+    return true;
+}
+
+fn matchesKind(item: Event, kind: EventKind) bool {
+    return item.isKind(kind);
+}
+
+fn matchesOffset(item: Event, sample_offset: usize) bool {
+    return item.isAtOffset(sample_offset);
+}
+
+fn matchesKindOffset(item: Event, context: KindOffset) bool {
+    return item.isKindAtOffset(context.kind, context.sample_offset);
+}
+
+fn matchesBus(item: Event, bus_index: i32) bool {
+    return item.isForBus(bus_index);
+}
+
+fn matchesChannel(item: Event, channel: i16) bool {
+    return item.isForChannel(channel);
+}
+
+fn matchesBusChannel(item: Event, context: BusChannel) bool {
+    return item.isForBusChannel(context.bus_index, context.channel);
+}
+
+fn matchesNoteAttack(item: Event, _: void) bool {
+    return item.isNoteAttack();
+}
+
+fn matchesNoteRelease(item: Event, _: void) bool {
+    return item.isNoteRelease();
+}
+
+fn firstMatchingEvent(items: []const Event, context: anytype, comptime matches: anytype) ?Event {
+    var result: ?Event = null;
+    for (items) |item| {
+        if (!matches(item, context)) continue;
+        if (result == null or item.sample_offset < result.?.sample_offset) result = item;
+    }
+    return result;
+}
+
+fn latestMatchingEvent(items: []const Event, context: anytype, comptime matches: anytype) ?Event {
+    var result: ?Event = null;
+    for (items) |item| {
+        if (!matches(item, context)) continue;
+        if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
+    }
+    return result;
+}
+
+fn firstStoredMatchingEvent(items: []const Event, context: anytype, comptime matches: anytype) ?Event {
+    for (items) |item| {
+        if (matches(item, context)) return item;
+    }
+    return null;
+}
+
+fn latestStoredMatchingEvent(items: []const Event, context: anytype, comptime matches: anytype) ?Event {
+    var result: ?Event = null;
+    for (items) |item| {
+        if (matches(item, context)) result = item;
+    }
+    return result;
+}
+
+fn countMatchingEvents(items: []const Event, context: anytype, comptime matches: anytype) usize {
+    var count: usize = 0;
+    for (items) |item| {
+        if (matches(item, context)) count += 1;
+    }
+    return count;
+}
+
+fn hasMatchingEvent(items: []const Event, context: anytype, comptime matches: anytype) bool {
+    for (items) |item| {
+        if (matches(item, context)) return true;
+    }
+    return false;
+}
+
+fn nextMatchingEvent(items: []const Event, last_offset: ?usize, last_index: usize, context: anytype, comptime matches: anytype) ?IndexedEvent {
+    var result: ?IndexedEvent = null;
+    for (items, 0..) |item, index| {
+        if (!matches(item, context)) continue;
+        if (last_offset) |offset| {
+            if (item.sample_offset < offset) continue;
+            if (item.sample_offset == offset and index <= last_index) continue;
+        }
+        if (result == null or item.sample_offset < result.?.item.sample_offset or
+            (item.sample_offset == result.?.item.sample_offset and index < result.?.index))
+        {
+            result = .{ .item = item, .index = index };
+        }
+    }
+    return result;
+}
+
+fn nextMatchingSampleOffset(items: []const Event, after_sample_offset: usize, context: anytype, comptime matches: anytype) ?usize {
+    var result: ?usize = null;
+    for (items) |item| {
+        if (!matches(item, context) or item.sample_offset <= after_sample_offset) continue;
+        if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+    }
+    return result;
+}
 
 pub const EventBlockSegmentIterator = struct {
     events: Events,
@@ -693,19 +763,13 @@ pub const Events = struct {
     }
 
     pub fn firstSampleOffset(self: Events) ?usize {
-        var result: ?usize = null;
-        for (self.items) |item| {
-            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
-        }
-        return result;
+        const event = self.first() orelse return null;
+        return event.sample_offset;
     }
 
     pub fn latestSampleOffset(self: Events) ?usize {
-        var result: ?usize = null;
-        for (self.items) |item| {
-            if (result == null or item.sample_offset > result.?) result = item.sample_offset;
-        }
-        return result;
+        const event = latestMatchingEvent(self.items, {}, matchesAny) orelse return null;
+        return event.sample_offset;
     }
 
     pub fn firstSampleOffsetForKind(self: Events, kind: EventKind) ?usize {
@@ -749,105 +813,57 @@ pub const Events = struct {
     }
 
     pub fn first(self: Events) ?Event {
-        var result: ?Event = null;
-        for (self.items) |item| {
-            if (result == null or item.sample_offset < result.?.sample_offset) result = item;
-        }
-        return result;
+        return firstMatchingEvent(self.items, {}, matchesAny);
     }
 
     pub fn latest(self: Events) ?Event {
-        var result: ?Event = null;
-        for (self.items) |item| {
-            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
-        }
-        return result;
+        return latestMatchingEvent(self.items, {}, matchesAny);
     }
 
     pub fn firstAtOffset(self: Events, sample_offset: usize) ?Event {
-        for (self.items) |item| {
-            if (item.isAtOffset(sample_offset)) return item;
-        }
-        return null;
+        return firstStoredMatchingEvent(self.items, sample_offset, matchesOffset);
     }
 
     pub fn latestAtOffset(self: Events, sample_offset: usize) ?Event {
-        var result: ?Event = null;
-        for (self.items) |item| {
-            if (item.isAtOffset(sample_offset)) result = item;
-        }
-        return result;
+        return latestStoredMatchingEvent(self.items, sample_offset, matchesOffset);
     }
 
     pub fn countKind(self: Events, kind: EventKind) usize {
-        var count: usize = 0;
-        for (self.items) |item| {
-            if (item.isKind(kind)) count += 1;
-        }
-        return count;
+        return countMatchingEvents(self.items, kind, matchesKind);
     }
 
     pub fn countNoteAttacks(self: Events) usize {
-        var count: usize = 0;
-        for (self.items) |item| {
-            if (item.isNoteAttack()) count += 1;
-        }
-        return count;
+        return countMatchingEvents(self.items, {}, matchesNoteAttack);
     }
 
     pub fn countNoteReleases(self: Events) usize {
-        var count: usize = 0;
-        for (self.items) |item| {
-            if (item.isNoteRelease()) count += 1;
-        }
-        return count;
+        return countMatchingEvents(self.items, {}, matchesNoteRelease);
     }
 
     pub fn countAtOffset(self: Events, sample_offset: usize) usize {
-        var count: usize = 0;
-        for (self.items) |item| {
-            if (item.isAtOffset(sample_offset)) count += 1;
-        }
-        return count;
+        return countMatchingEvents(self.items, sample_offset, matchesOffset);
     }
 
     pub fn countKindAtOffset(self: Events, kind: EventKind, sample_offset: usize) usize {
-        var count: usize = 0;
-        for (self.items) |item| {
-            if (item.isKindAtOffset(kind, sample_offset)) count += 1;
-        }
-        return count;
+        const context = KindOffset{ .kind = kind, .sample_offset = sample_offset };
+        return countMatchingEvents(self.items, context, matchesKindOffset);
     }
 
     pub fn countBus(self: Events, bus_index: i32) usize {
-        var count: usize = 0;
-        for (self.items) |item| {
-            if (item.isForBus(bus_index)) count += 1;
-        }
-        return count;
+        return countMatchingEvents(self.items, bus_index, matchesBus);
     }
 
     pub fn countChannel(self: Events, channel: i16) usize {
-        var count: usize = 0;
-        for (self.items) |item| {
-            if (item.isForChannel(channel)) count += 1;
-        }
-        return count;
+        return countMatchingEvents(self.items, channel, matchesChannel);
     }
 
     pub fn countBusChannel(self: Events, bus_index: i32, channel: i16) usize {
-        var count: usize = 0;
-        for (self.items) |item| {
-            if (item.isForBusChannel(bus_index, channel)) count += 1;
-        }
-        return count;
+        const context = BusChannel{ .bus_index = bus_index, .channel = channel };
+        return countMatchingEvents(self.items, context, matchesBusChannel);
     }
 
     pub fn hasBus(self: Events, bus_index: i32) bool {
-        for (self.items) |item| {
-            if (item.isForBus(bus_index)) return true;
-        }
-        return false;
+        return hasMatchingEvent(self.items, bus_index, matchesBus);
     }
 
     pub fn busEmpty(self: Events, bus_index: i32) bool {
@@ -855,10 +871,7 @@ pub const Events = struct {
     }
 
     pub fn hasChannel(self: Events, channel: i16) bool {
-        for (self.items) |item| {
-            if (item.isForChannel(channel)) return true;
-        }
-        return false;
+        return hasMatchingEvent(self.items, channel, matchesChannel);
     }
 
     pub fn channelEmpty(self: Events, channel: i16) bool {
@@ -866,10 +879,8 @@ pub const Events = struct {
     }
 
     pub fn hasBusChannel(self: Events, bus_index: i32, channel: i16) bool {
-        for (self.items) |item| {
-            if (item.isForBusChannel(bus_index, channel)) return true;
-        }
-        return false;
+        const context = BusChannel{ .bus_index = bus_index, .channel = channel };
+        return hasMatchingEvent(self.items, context, matchesBusChannel);
     }
 
     pub fn busChannelEmpty(self: Events, bus_index: i32, channel: i16) bool {
@@ -877,90 +888,47 @@ pub const Events = struct {
     }
 
     pub fn firstKind(self: Events, kind: EventKind) ?Event {
-        var result: ?Event = null;
-        for (self.items) |item| {
-            if (!item.isKind(kind)) continue;
-            if (result == null or item.sample_offset < result.?.sample_offset) result = item;
-        }
-        return result;
+        return firstMatchingEvent(self.items, kind, matchesKind);
     }
 
     pub fn latestKind(self: Events, kind: EventKind) ?Event {
-        var result: ?Event = null;
-        for (self.items) |item| {
-            if (!item.isKind(kind)) continue;
-            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
-        }
-        return result;
+        return latestMatchingEvent(self.items, kind, matchesKind);
     }
 
     pub fn firstKindAtOffset(self: Events, kind: EventKind, sample_offset: usize) ?Event {
-        for (self.items) |item| {
-            if (item.isKindAtOffset(kind, sample_offset)) return item;
-        }
-        return null;
+        const context = KindOffset{ .kind = kind, .sample_offset = sample_offset };
+        return firstStoredMatchingEvent(self.items, context, matchesKindOffset);
     }
 
     pub fn latestKindAtOffset(self: Events, kind: EventKind, sample_offset: usize) ?Event {
-        var result: ?Event = null;
-        for (self.items) |item| {
-            if (item.isKindAtOffset(kind, sample_offset)) result = item;
-        }
-        return result;
+        const context = KindOffset{ .kind = kind, .sample_offset = sample_offset };
+        return latestStoredMatchingEvent(self.items, context, matchesKindOffset);
     }
 
     pub fn firstBus(self: Events, bus_index: i32) ?Event {
-        var result: ?Event = null;
-        for (self.items) |item| {
-            if (!item.isForBus(bus_index)) continue;
-            if (result == null or item.sample_offset < result.?.sample_offset) result = item;
-        }
-        return result;
+        return firstMatchingEvent(self.items, bus_index, matchesBus);
     }
 
     pub fn latestBus(self: Events, bus_index: i32) ?Event {
-        var result: ?Event = null;
-        for (self.items) |item| {
-            if (!item.isForBus(bus_index)) continue;
-            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
-        }
-        return result;
+        return latestMatchingEvent(self.items, bus_index, matchesBus);
     }
 
     pub fn firstChannel(self: Events, channel: i16) ?Event {
-        var result: ?Event = null;
-        for (self.items) |item| {
-            if (!item.isForChannel(channel)) continue;
-            if (result == null or item.sample_offset < result.?.sample_offset) result = item;
-        }
-        return result;
+        return firstMatchingEvent(self.items, channel, matchesChannel);
     }
 
     pub fn latestChannel(self: Events, channel: i16) ?Event {
-        var result: ?Event = null;
-        for (self.items) |item| {
-            if (!item.isForChannel(channel)) continue;
-            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
-        }
-        return result;
+        return latestMatchingEvent(self.items, channel, matchesChannel);
     }
 
     pub fn firstBusChannel(self: Events, bus_index: i32, channel: i16) ?Event {
-        var result: ?Event = null;
-        for (self.items) |item| {
-            if (!item.isForBusChannel(bus_index, channel)) continue;
-            if (result == null or item.sample_offset < result.?.sample_offset) result = item;
-        }
-        return result;
+        const context = BusChannel{ .bus_index = bus_index, .channel = channel };
+        return firstMatchingEvent(self.items, context, matchesBusChannel);
     }
 
     pub fn latestBusChannel(self: Events, bus_index: i32, channel: i16) ?Event {
-        var result: ?Event = null;
-        for (self.items) |item| {
-            if (!item.isForBusChannel(bus_index, channel)) continue;
-            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
-        }
-        return result;
+        const context = BusChannel{ .bus_index = bus_index, .channel = channel };
+        return latestMatchingEvent(self.items, context, matchesBusChannel);
     }
 
     pub fn hasKind(self: Events, kind: EventKind) bool {
@@ -1036,48 +1004,24 @@ pub const Events = struct {
     }
 
     pub fn nextSampleOffset(self: Events, after_sample_offset: usize) ?usize {
-        var result: ?usize = null;
-        for (self.items) |item| {
-            if (item.sample_offset <= after_sample_offset) continue;
-            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
-        }
-        return result;
+        return nextMatchingSampleOffset(self.items, after_sample_offset, {}, matchesAny);
     }
 
     pub fn nextSampleOffsetForKind(self: Events, kind: EventKind, after_sample_offset: usize) ?usize {
-        var result: ?usize = null;
-        for (self.items) |item| {
-            if (!item.isKind(kind) or item.sample_offset <= after_sample_offset) continue;
-            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
-        }
-        return result;
+        return nextMatchingSampleOffset(self.items, after_sample_offset, kind, matchesKind);
     }
 
     pub fn nextSampleOffsetForBus(self: Events, bus_index: i32, after_sample_offset: usize) ?usize {
-        var result: ?usize = null;
-        for (self.items) |item| {
-            if (!item.isForBus(bus_index) or item.sample_offset <= after_sample_offset) continue;
-            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
-        }
-        return result;
+        return nextMatchingSampleOffset(self.items, after_sample_offset, bus_index, matchesBus);
     }
 
     pub fn nextSampleOffsetForChannel(self: Events, channel: i16, after_sample_offset: usize) ?usize {
-        var result: ?usize = null;
-        for (self.items) |item| {
-            if (!item.isForChannel(channel) or item.sample_offset <= after_sample_offset) continue;
-            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
-        }
-        return result;
+        return nextMatchingSampleOffset(self.items, after_sample_offset, channel, matchesChannel);
     }
 
     pub fn nextSampleOffsetForBusChannel(self: Events, bus_index: i32, channel: i16, after_sample_offset: usize) ?usize {
-        var result: ?usize = null;
-        for (self.items) |item| {
-            if (!item.isForBusChannel(bus_index, channel) or item.sample_offset <= after_sample_offset) continue;
-            if (result == null or item.sample_offset < result.?) result = item.sample_offset;
-        }
-        return result;
+        const context = BusChannel{ .bus_index = bus_index, .channel = channel };
+        return nextMatchingSampleOffset(self.items, after_sample_offset, context, matchesBusChannel);
     }
 
     pub fn ofKind(self: Events, kind: EventKind) EventKindIterator {
@@ -1718,6 +1662,10 @@ test "events query by sample offset without requiring sorted input" {
     try std.testing.expect(!same_offset_view.onlyAtOffset(3));
     try std.testing.expect(same_offset_view.onlyKindAtOffset(.note_on, 2));
     try std.testing.expect(!same_offset_view.onlyKindAtOffset(.note_off, 2));
+    try std.testing.expectEqual(@as(i16, 60), same_offset_view.first().?.pitch);
+    try std.testing.expectEqual(@as(i16, 64), same_offset_view.latest().?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), same_offset_view.firstAtOffset(2).?.pitch);
+    try std.testing.expectEqual(@as(i16, 64), same_offset_view.latestAtOffset(2).?.pitch);
 }
 
 test "event constructors can target non-main buses" {
@@ -2295,6 +2243,10 @@ test "event writer queries written events by offset" {
     try std.testing.expect(!same_offset_writer.onlyAtOffset(3));
     try std.testing.expect(same_offset_writer.onlyKindAtOffset(.note_on, 2));
     try std.testing.expect(!same_offset_writer.onlyKindAtOffset(.note_off, 2));
+    try std.testing.expectEqual(@as(i16, 60), same_offset_writer.first().?.pitch);
+    try std.testing.expectEqual(@as(i16, 64), same_offset_writer.latest().?.pitch);
+    try std.testing.expectEqual(@as(i16, 60), same_offset_writer.firstAtOffset(2).?.pitch);
+    try std.testing.expectEqual(@as(i16, 64), same_offset_writer.latestAtOffset(2).?.pitch);
 }
 
 test "event writer appends event views atomically" {
