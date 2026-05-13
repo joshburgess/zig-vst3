@@ -257,6 +257,28 @@ test "parameter changes add parameter data and support query interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_changes.vtable.release(queried_changes));
 }
 
+test "parameter changes reuse existing queues by id" {
+    const Changes = ParameterChanges(2, 2);
+    var changes = Changes{};
+    const iface = changes.asInterface();
+    var id: vsttypes.ParamID = 9;
+    var first_index: types.int32 = -1;
+    var second_index: types.int32 = -1;
+
+    const first_queue = iface.vtable.addParameterData(iface, &id, &first_index).?;
+    const second_queue = iface.vtable.addParameterData(iface, &id, &second_index).?;
+    try std.testing.expectEqual(@as(types.int32, 0), first_index);
+    try std.testing.expectEqual(@as(types.int32, 0), second_index);
+    try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getParameterCount(iface));
+    try std.testing.expect(first_queue == second_queue);
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, first_queue.vtable.queryInterface(first_queue, &ivstparameterchanges.iparam_value_queue_iid, &queried));
+    try std.testing.expect(queried != null);
+    const queried_queue: *ivstparameterchanges.IParamValueQueue = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_queue.vtable.release(queried_queue));
+}
+
 test "parameter changes clamp corrupted counts" {
     const Changes = ParameterChanges(1, 1);
     var changes = Changes{};

@@ -248,6 +248,28 @@ test "fixed buffer stream round-trips generated chunked IO" {
     try std.testing.expectEqualSlices(u8, &input, &output);
 }
 
+test "fixed buffer stream resizes with zero fill and clamps cursor" {
+    const Stream = FixedBufferStream(8);
+    var stream = Stream{};
+    const iface = stream.asStream();
+    const sizeable = stream.asSizeableStream();
+    var input = [_]u8{ 1, 2, 3, 4 };
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.write(iface, &input, input.len, null));
+    try std.testing.expectEqual(types.kResultOk, sizeable.vtable.setStreamSize(sizeable, 6));
+    try std.testing.expectEqual(@as(usize, 6), stream.len);
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 1, 2, 3, 4, 0, 0 }, stream.data());
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd), null));
+    try std.testing.expectEqual(types.kResultOk, sizeable.vtable.setStreamSize(sizeable, 2));
+    try std.testing.expectEqual(@as(usize, 2), stream.len);
+    try std.testing.expectEqual(@as(usize, 2), stream.pos);
+
+    var pos: types.int64 = -1;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.tell(iface, &pos));
+    try std.testing.expectEqual(@as(types.int64, 2), pos);
+}
+
 test "fixed buffer stream enforces bounds and supports query interface" {
     const Stream = FixedBufferStream(4);
     var stream = Stream{ .write_limit = 2 };
