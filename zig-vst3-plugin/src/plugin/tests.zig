@@ -662,6 +662,11 @@ test "plugin instance applies program parameter snapshots" {
     try std.testing.expect(!try instance.applyProgramByNameForUnit(1, "Missing"));
     try std.testing.expect(!try instance.applyProgramForUnitName("Root", 0));
     try std.testing.expect(!try instance.applyProgramByNameForUnitName("Missing", "High"));
+    try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(?usize, null), try instance.applyProgramCount(99, 0));
+    try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
+    try std.testing.expect(!try instance.applyProgramByName(7, "Missing"));
+    try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
 }
 
 test "plugin spec rejects invalid program parameter snapshots" {

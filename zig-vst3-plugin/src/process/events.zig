@@ -2332,6 +2332,14 @@ test "event writer appends event views atomically" {
     try std.testing.expectError(error.EventStorageFull, full_writer.appendAllCount(try Events.init(&items, 4)));
     try std.testing.expectEqual(@as(usize, 0), full_writer.eventCount());
 
+    var existing_storage: [2]Event = undefined;
+    var existing_writer = EventWriter.init(&existing_storage, 4);
+    try existing_writer.append(items[0]);
+    try std.testing.expectError(error.EventStorageFull, existing_writer.appendAllCount(try Events.init(&items, 4)));
+    try std.testing.expectEqual(@as(usize, 1), existing_writer.eventCount());
+    try std.testing.expectEqual(EventKind.note_on, existing_writer.events().items[0].kind);
+    try std.testing.expectEqual(@as(i16, 60), existing_writer.events().items[0].pitch);
+
     const invalid_and_too_large = [_]Event{
         Event.noteOn(0, 0, 60, 1.0),
         Event.noteOn(0, 0, 128, 1.0),
