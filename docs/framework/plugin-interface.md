@@ -105,6 +105,21 @@ Use `processWithParameterView` for most plugins. Use the plain `process` hook wh
 
 `process.ProcessContext(Sample)` carries typed audio buffers, parameter changes, input events, optional output-event storage, and sample-rate timing helpers.
 
+Use `ProcessContext(Sample).initWithOptions` in tests and host adapters when constructing contexts directly. The named fields keep input channels, output channels, and optional attachments clear at the call site:
+
+```zig
+var context = try plug.process.ProcessContext(f32).initWithOptions(.{
+    .sample_rate = 48_000.0,
+    .input_channels = &input_channels,
+    .output_channels = &output_channels,
+    .attachments = .{
+        .parameter_changes = &parameter_changes,
+        .events = &events,
+        .output_events = &output_events,
+    },
+});
+```
+
 For sample-accurate automation, split the block at automation points:
 
 ```zig

@@ -198,18 +198,39 @@ pub fn ProcessContext(comptime Sample: type) type {
         events: Events = .{},
         output_events: ?*EventWriter = null,
 
+        pub const InitOptions = struct {
+            sample_rate: f64,
+            input_channels: []const []const Sample = &.{},
+            output_channels: []const []Sample = &.{},
+            attachments: ProcessAttachments = .{},
+        };
+
         pub fn init(sample_rate: f64, input_channels: []const []const Sample, output_channels: []const []Sample) !@This() {
-            if (sample_rate <= 0.0 or !std.math.isFinite(sample_rate)) return error.InvalidSampleRate;
-            const inputs = try AudioInputs(Sample).init(input_channels);
-            const outputs = try AudioOutputs(Sample).init(output_channels);
+            return @This().initWithOptions(.{
+                .sample_rate = sample_rate,
+                .input_channels = input_channels,
+                .output_channels = output_channels,
+            });
+        }
+
+        pub fn initWithOptions(options: InitOptions) !@This() {
+            if (options.sample_rate <= 0.0 or !std.math.isFinite(options.sample_rate)) {
+                return error.InvalidSampleRate;
+            }
+            const inputs = try AudioInputs(Sample).init(options.input_channels);
+            const outputs = try AudioOutputs(Sample).init(options.output_channels);
             if (!inputs.isEmpty() and !outputs.isEmpty() and inputs.frameCount() != outputs.frameCount()) {
                 return error.MismatchedFrameCount;
             }
-            return .{
-                .sample_rate = sample_rate,
+            var context = @This(){
+                .sample_rate = options.sample_rate,
                 .inputs = inputs,
                 .outputs = outputs,
             };
+            try context.setParameterChanges(options.attachments.parameter_changes);
+            try context.setEvents(options.attachments.events);
+            if (options.attachments.output_events) |writer| try context.setOutputEvents(writer);
+            return context;
         }
 
         pub fn initWith(
@@ -218,11 +239,12 @@ pub fn ProcessContext(comptime Sample: type) type {
             output_channels: []const []Sample,
             attachments: ProcessAttachments,
         ) !@This() {
-            var context = try @This().init(sample_rate, input_channels, output_channels);
-            try context.setParameterChanges(attachments.parameter_changes);
-            try context.setEvents(attachments.events);
-            if (attachments.output_events) |writer| try context.setOutputEvents(writer);
-            return context;
+            return @This().initWithOptions(.{
+                .sample_rate = sample_rate,
+                .input_channels = input_channels,
+                .output_channels = output_channels,
+                .attachments = attachments,
+            });
         }
 
         pub fn setParameterChanges(self: *@This(), changes: []const ParameterChange) !void {
@@ -1705,6 +1727,33 @@ test "process context rejects side-to-side frame count mismatch" {
     const output_channels = [_][]f32{&output};
 
     try std.testing.expectError(error.MismatchedFrameCount, ProcessContext(f32).init(48_000.0, &input_channels, &output_channels));
+}
+
+test "process context supports named init options" {
+    const input = [_]f32{ 0.1, 0.2, 0.3 };
+    var output = [_]f32{ 0.0, 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const parameter_changes = [_]ParameterChange{.{ .id = 7, .sample_offset = 1, .normalized = 0.25 }};
+    const events = [_]Event{Event.noteOn(2, 0, 60, 0.5)};
+    var output_events = EventWriter.init(&.{});
+
+    const context = try ProcessContext(f32).initWithOptions(.{
+        .sample_rate = 44_100.0,
+        .input_channels = &input_channels,
+        .output_channels = &output_channels,
+        .attachments = .{
+            .parameter_changes = &parameter_changes,
+            .events = &events,
+            .output_events = &output_events,
+        },
+    });
+
+    try std.testing.expectEqual(@as(f64, 44_100.0), context.sampleRate());
+    try std.testing.expectEqual(@as(usize, 3), context.frameCount());
+    try std.testing.expectEqual(@as(usize, 1), context.parameterChangeCount());
+    try std.testing.expectEqual(@as(usize, 1), context.inputEventCount());
+    try std.testing.expect(context.hasOutputEvents());
 }
 
 test "process context reports frame count for input-only and output-only processors" {
