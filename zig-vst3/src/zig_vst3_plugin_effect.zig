@@ -83,6 +83,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
             .state = &parameter_state,
         };
 
+        fn indexFromHost(index: types.int32) ?usize {
+            return if (index < 0) null else @intCast(index);
+        }
+
         pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
             return query(&controller.iface, @ptrCast(requested_iid), out);
         }
@@ -703,11 +707,11 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getUnitInfo(_: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.c) types.tresult {
-            if (index < 0) {
+            const unit_index = indexFromHost(index) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
-            }
-            const reflected = units.unit(@intCast(index)) orelse {
+            };
+            const reflected = units.unit(unit_index) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
             };
@@ -725,11 +729,11 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getProgramListInfo(_: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.c) types.tresult {
-            if (index < 0) {
+            const list_index = indexFromHost(index) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
-            }
-            const reflected = units.programList(@intCast(index)) orelse {
+            };
+            const reflected = units.programList(list_index) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
             };
@@ -743,16 +747,16 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn getProgramName(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             string128.clearPtr(out);
-            if (program_index < 0) return types.kInvalidArgument;
-            const name = units.programName(list_id, @intCast(program_index)) orelse return types.kInvalidArgument;
+            const index = indexFromHost(program_index) orelse return types.kInvalidArgument;
+            const name = units.programName(list_id, index) orelse return types.kInvalidArgument;
             string128.copyPtr(out, name);
             return types.kResultOk;
         }
 
         fn getProgramInfo(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             string128.clearPtr(out);
-            if (program_index < 0) return types.kInvalidArgument;
-            const value = units.programInfo(list_id, @intCast(program_index), std.mem.span(attribute_id)) orelse return types.kInvalidArgument;
+            const index = indexFromHost(program_index) orelse return types.kInvalidArgument;
+            const value = units.programInfo(list_id, index, std.mem.span(attribute_id)) orelse return types.kInvalidArgument;
             string128.copyPtr(out, value);
             return types.kResultOk;
         }
@@ -802,10 +806,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getProgramData(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
-            if (program_index < 0) return types.kInvalidArgument;
+            const index = indexFromHost(program_index) orelse return types.kInvalidArgument;
             const count = units.programCount(list_id) orelse return types.kResultFalse;
-            if (@as(usize, @intCast(program_index)) >= count) return types.kInvalidArgument;
-            const reflected = units.program(list_id, @intCast(program_index)) orelse return types.kInvalidArgument;
+            if (index >= count) return types.kInvalidArgument;
+            const reflected = units.program(list_id, index) orelse return types.kInvalidArgument;
             if (reflected.parameters.len == 0) return types.kResultFalse;
 
             var values = plug_core.parameters.ParameterValues(Params).init(Config.parameter_set);
@@ -1046,6 +1050,7 @@ test "reflected edit controller exposes configured units and programs" {
 
     try std.testing.expectEqual(@as(types.int32, 2), unit_info.vtable.getUnitCount(unit_info));
     var unit: ivstunits.UnitInfo = .{};
+    try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getUnitInfo(unit_info, -1, &unit));
     try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getUnitInfo(unit_info, 1, &unit));
     try std.testing.expectEqual(@as(vsttypes.UnitID, 1), unit.id);
     try std.testing.expectEqual(@as(vsttypes.ProgramListID, 7), unit.programListId);
@@ -1053,6 +1058,7 @@ test "reflected edit controller exposes configured units and programs" {
 
     try std.testing.expectEqual(@as(types.int32, 1), unit_info.vtable.getProgramListCount(unit_info));
     var list: ivstunits.ProgramListInfo = .{};
+    try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramListInfo(unit_info, -1, &list));
     try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getProgramListInfo(unit_info, 0, &list));
     try std.testing.expectEqual(@as(vsttypes.ProgramListID, 7), list.id);
     try std.testing.expectEqual(@as(types.int32, 2), list.programCount);
@@ -1061,12 +1067,14 @@ test "reflected edit controller exposes configured units and programs" {
     var program_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
     try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getProgramName(unit_info, 7, 1, &program_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'L'), program_name[0]);
+    try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramName(unit_info, 7, -1, &program_name));
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramName(unit_info, 7, 2, &program_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[0]);
 
     var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
     try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getProgramInfo(unit_info, 7, 0, "category", &program_info));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'C'), program_info[0]);
+    try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramInfo(unit_info, 7, -1, "category", &program_info));
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramInfo(unit_info, 7, 0, "missing", &program_info));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[0]);
 
@@ -1124,6 +1132,7 @@ test "reflected edit controller exposes program snapshot data" {
     try std.testing.expectEqual(types.kResultOk, zig_vst3_plugin_bridge.readParameterState(Fixture.Params, stream.asStream(), &Fixture.parameter_set, &restored));
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadById(&Fixture.parameter_set, 1).?);
     try std.testing.expectEqual(types.kResultFalse, program_data.vtable.getProgramData(program_data, 7, 1, stream.asStream()));
+    try std.testing.expectEqual(types.kInvalidArgument, program_data.vtable.getProgramData(program_data, 7, -1, stream.asStream()));
     try std.testing.expectEqual(types.kInvalidArgument, program_data.vtable.getProgramData(program_data, 7, 2, stream.asStream()));
     try std.testing.expectEqual(types.kResultFalse, program_data.vtable.programDataSupported(program_data, 99));
     try std.testing.expectEqual(types.kResultFalse, program_data.vtable.setProgramData(program_data, 7, 0, stream.asStream()));
