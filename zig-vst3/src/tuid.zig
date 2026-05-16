@@ -228,3 +228,53 @@ test "FUID string round-trips" {
     try std.testing.expect(original.equals(parsed));
     try std.testing.expectError(error.InvalidFuidString, FUID.fromString("not-a-fuid"));
 }
+
+test "FUID strings generated round-trips and validation" {
+    const cases = [_]struct {
+        l1: u32,
+        l2: u32,
+        l3: u32,
+        l4: u32,
+    }{
+        .{ .l1 = 0x00000000, .l2 = 0x00000000, .l3 = 0x00000000, .l4 = 0x00000000 },
+        .{ .l1 = 0xFFFFFFFF, .l2 = 0xFFFFFFFF, .l3 = 0xFFFFFFFF, .l4 = 0xFFFFFFFF },
+        .{ .l1 = 0x01234567, .l2 = 0x89ABCDEF, .l3 = 0xFEDCBA98, .l4 = 0x76543210 },
+        .{ .l1 = 0xDCD7BBE3, .l2 = 0x7742448D, .l3 = 0xA874AACC, .l4 = 0x979C759E },
+        .{ .l1 = 0x42043F99, .l2 = 0xB7DA453C, .l3 = 0xA569E79D, .l4 = 0x9AAEC33D },
+    };
+
+    for (cases) |case| {
+        const original = FUID.fromTuid(inlineUid(case.l1, case.l2, case.l3, case.l4));
+        const upper = original.toString();
+        var lower = upper;
+        for (&lower) |*ch| {
+            if (ch.* >= 'A' and ch.* <= 'F') ch.* += 'a' - 'A';
+        }
+
+        const parsed_upper = try FUID.fromString(&upper);
+        const parsed_lower = try FUID.fromString(&lower);
+        try std.testing.expect(original.equals(parsed_upper));
+        try std.testing.expect(original.equals(parsed_lower));
+        try std.testing.expectEqualSlices(u8, &upper, &parsed_upper.toString());
+    }
+
+    const invalid_lengths = [_][]const u8{
+        "",
+        "0",
+        "00112233445566778899AABBCCDDEEF",
+        "00112233445566778899AABBCCDDEEFF0",
+    };
+    for (invalid_lengths) |text| {
+        try std.testing.expectError(error.InvalidFuidString, FUID.fromString(text));
+    }
+
+    const invalid_chars = [_][]const u8{
+        "00112233445566778899AABBCCDDEEGG",
+        "00112233445566778899AABBCCDDEE-0",
+        "00112233445566778899AABBCCDDEE 0",
+        "00112233445566778899AABBCCDDEE\n0",
+    };
+    for (invalid_chars) |text| {
+        try std.testing.expectError(error.InvalidFuidString, FUID.fromString(text));
+    }
+}
