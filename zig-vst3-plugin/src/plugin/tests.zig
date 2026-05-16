@@ -396,6 +396,7 @@ test "plugin instance exposes custom unit and program metadata" {
     try std.testing.expectEqual(@as(?[]const u8, null), instance.duplicateUnitName());
     try std.testing.expectEqual(@as(?usize, null), instance.duplicateUnitNameIndex());
     try std.testing.expect(!instance.hasDuplicateUnitNames());
+    try std.testing.expectEqual(@as(?usize, null), instance.cyclicUnitParentIndex());
     try std.testing.expectEqualStrings("Main", instance.rootUnit().name);
     try std.testing.expectEqual(units_api.root_unit_id, instance.rootUnitId());
     try std.testing.expectEqualStrings("Main", instance.rootUnitName());

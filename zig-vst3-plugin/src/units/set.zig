@@ -87,6 +87,13 @@ pub fn UnitSet(comptime config: Config) type {
             return self.duplicateUnitName() != null;
         }
 
+        pub fn cyclicUnitParentIndex(self: Self) ?usize {
+            for (config.units, 0..) |item, index| {
+                if (self.unitParentIsCyclic(item)) return index;
+            }
+            return null;
+        }
+
         pub fn duplicateProgramListId(_: Self) ?i32 {
             for (config.program_lists, 0..) |left, left_index| {
                 for (config.program_lists[left_index + 1 ..]) |right| {
@@ -1270,17 +1277,7 @@ pub fn UnitSet(comptime config: Config) type {
                 if (item.program_list_id != no_program_list_id and self.programListById(item.program_list_id) == null) {
                     return error.InvalidUnitProgramList;
                 }
-                if (item.id != root_unit_id) {
-                    var parent_id = item.parent_id;
-                    var depth: usize = 0;
-                    while (parent_id != root_unit_id) {
-                        if (depth >= config.units.len) return error.CyclicUnitParent;
-                        const parent = self.unitById(parent_id) orelse return error.InvalidUnitParent;
-                        if (parent.parent_id == no_parent_unit_id) return error.InvalidUnitParent;
-                        parent_id = parent.parent_id;
-                        depth += 1;
-                    }
-                }
+                if (self.unitParentIsCyclic(item)) return error.CyclicUnitParent;
             }
         }
 
@@ -1323,6 +1320,20 @@ pub fn UnitSet(comptime config: Config) type {
                     }
                 }
             }
+        }
+
+        fn unitParentIsCyclic(self: Self, item: Unit) bool {
+            if (item.id == root_unit_id) return false;
+            var parent_id = item.parent_id;
+            var depth: usize = 0;
+            while (parent_id != root_unit_id) {
+                if (depth >= config.units.len) return true;
+                const parent = self.unitById(parent_id) orelse return false;
+                if (parent.parent_id == no_parent_unit_id) return false;
+                parent_id = parent.parent_id;
+                depth += 1;
+            }
+            return false;
         }
     };
 }

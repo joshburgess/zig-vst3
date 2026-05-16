@@ -202,6 +202,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.units.hasDuplicateUnitNames();
         }
 
+        pub fn cyclicUnitParentIndex(self: *const Self) ?usize {
+            return self.spec.units.cyclicUnitParentIndex();
+        }
+
         pub fn unit(self: *const Self, index: usize) ?units_api.Unit {
             return self.spec.units.unit(index);
         }

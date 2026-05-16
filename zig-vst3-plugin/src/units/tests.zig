@@ -27,6 +27,7 @@ test "default unit set exposes root unit only" {
     try std.testing.expectEqual(@as(?[]const u8, null), set.duplicateUnitName());
     try std.testing.expectEqual(@as(?usize, null), set.duplicateUnitNameIndex());
     try std.testing.expect(!set.hasDuplicateUnitNames());
+    try std.testing.expectEqual(@as(?usize, null), set.cyclicUnitParentIndex());
     try std.testing.expectEqual(@as(?i32, null), set.duplicateProgramListId());
     try std.testing.expectEqual(@as(?usize, null), set.duplicateProgramListIdIndex());
     try std.testing.expect(!set.hasDuplicateProgramListIds());
@@ -86,6 +87,7 @@ test "unit set exposes custom units and programs" {
     try std.testing.expectEqual(@as(?[]const u8, null), set.duplicateUnitName());
     try std.testing.expectEqual(@as(?usize, null), set.duplicateUnitNameIndex());
     try std.testing.expect(!set.hasDuplicateUnitNames());
+    try std.testing.expectEqual(@as(?usize, null), set.cyclicUnitParentIndex());
     try std.testing.expectEqual(@as(?i32, null), set.duplicateProgramListId());
     try std.testing.expectEqual(@as(?usize, null), set.duplicateProgramListIdIndex());
     try std.testing.expect(!set.hasDuplicateProgramListIds());
@@ -431,6 +433,7 @@ test "unit set validates ids names and links" {
     try std.testing.expectEqualStrings("Root", (DuplicateUnitNames{}).duplicateUnitName().?);
     try std.testing.expectEqual(@as(?usize, 1), (DuplicateUnitNames{}).duplicateUnitNameIndex());
     try std.testing.expect((DuplicateUnitNames{}).hasDuplicateUnitNames());
+    try std.testing.expectEqual(@as(?usize, 1), (CyclicParent{}).cyclicUnitParentIndex());
     try std.testing.expectEqual(@as(?i32, 1), (DuplicateProgramLists{}).duplicateProgramListId());
     try std.testing.expectEqual(@as(?usize, 1), (DuplicateProgramLists{}).duplicateProgramListIdIndex());
     try std.testing.expect((DuplicateProgramLists{}).hasDuplicateProgramListIds());
