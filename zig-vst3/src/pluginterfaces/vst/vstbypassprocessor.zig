@@ -148,10 +148,13 @@ pub fn Delay(comptime T: type) type {
                 @min(requested_samples[0], storage_samples)
             else
                 storage_samples;
+            const actual_delay = @min(@max(delay_samples, 0), buffer_samples);
             return .{
                 .buffer = storage[0..@intCast(buffer_samples)],
                 .buffer_samples = buffer_samples,
-                .delay_samples = @min(@max(delay_samples, 0), buffer_samples),
+                .delay_samples = actual_delay,
+                .in_pos = 0,
+                .out_pos = if (actual_delay > 0) buffer_samples - actual_delay else 0,
             };
         }
 
@@ -231,6 +234,23 @@ test "delay helper copies through circular buffer" {
     try @import("std").testing.expectEqual(@as(f32, 0), audio_buffer.buffer[0]);
     try audio_buffer.resize(0);
     try @import("std").testing.expectEqual(@as(base.int32, 0), audio_buffer.getMaxSamples());
+}
+
+test "delay processor starts with valid ring positions" {
+    var input = [_]f32{ 1, 2 };
+    var output = [_]f32{ 9, 9 };
+    var storage = [_]f32{0} ** 8;
+    var processor_delay = Delay(f32).init(&storage, 5, 3);
+
+    try std.testing.expectEqual(@as(base.int32, 0), processor_delay.in_pos);
+    try std.testing.expectEqual(@as(base.int32, 5), processor_delay.out_pos);
+
+    const silent = processor_delay.process(&input, &output, 2, false);
+    try std.testing.expect(!silent);
+    try std.testing.expectEqual(@as(f32, 0), output[0]);
+    try std.testing.expectEqual(@as(f32, 0), output[1]);
+    try std.testing.expectEqual(@as(base.int32, 2), processor_delay.in_pos);
+    try std.testing.expectEqual(@as(base.int32, 7), processor_delay.out_pos);
 }
 
 test "bypass helpers reject invalid sizes and positions" {
