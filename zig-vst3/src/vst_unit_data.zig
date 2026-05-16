@@ -8,6 +8,12 @@ const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
 
+fn boundedIndex(index: types.int32, count: usize) ?usize {
+    if (index < 0) return null;
+    const value: usize = @intCast(index);
+    return if (value < count) value else null;
+}
+
 pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, comptime Config: type) type {
     if (max_units == 0) @compileError("UnitInfo requires at least one unit slot");
 
@@ -106,11 +112,11 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn getUnitInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.c) types.tresult {
             const self = owner(ptr);
-            if (index < 0 or @as(usize, @intCast(index)) >= self.safeUnitCount()) {
+            const unit_index = boundedIndex(index, self.safeUnitCount()) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
-            }
-            out.* = self.units[@intCast(index)];
+            };
+            out.* = self.units[unit_index];
             return types.kResultOk;
         }
 
@@ -120,11 +126,11 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn getProgramListInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.c) types.tresult {
             const self = owner(ptr);
-            if (index < 0 or @as(usize, @intCast(index)) >= self.safeProgramListCount()) {
+            const list_index = boundedIndex(index, self.safeProgramListCount()) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
-            }
-            out.* = self.program_lists[@intCast(index)];
+            };
+            out.* = self.program_lists[list_index];
             return types.kResultOk;
         }
 

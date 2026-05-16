@@ -6,6 +6,12 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
+fn boundedIndex(index: types.int32, count: usize) ?usize {
+    if (index < 0) return null;
+    const value: usize = @intCast(index);
+    return if (value < count) value else null;
+}
+
 pub const ParamPoint = extern struct {
     sample_offset: types.int32 = 0,
     value: vsttypes.ParamValue = 0,
@@ -73,10 +79,9 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
         }
 
         fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.c) types.tresult {
-            if (index < 0) return types.kInvalidArgument;
             const self = owner(ptr);
-            if (@as(usize, @intCast(index)) >= self.safePointCount()) return types.kInvalidArgument;
-            const point = self.points[@intCast(index)];
+            const point_index = boundedIndex(index, self.safePointCount()) orelse return types.kInvalidArgument;
+            const point = self.points[point_index];
             sample_offset.* = point.sample_offset;
             value.* = point.value;
             return types.kResultOk;
@@ -166,10 +171,9 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
         }
 
         fn getParameterData(ptr: *anyopaque, index: types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
-            if (index < 0) return null;
             const self = owner(ptr);
-            if (@as(usize, @intCast(index)) >= self.safeQueueCount()) return null;
-            return self.queues[@intCast(index)].asInterface();
+            const queue_index = boundedIndex(index, self.safeQueueCount()) orelse return null;
+            return self.queues[queue_index].asInterface();
         }
 
         fn addParameterData(ptr: *anyopaque, id: *const vsttypes.ParamID, index: *types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {

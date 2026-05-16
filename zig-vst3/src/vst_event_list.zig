@@ -5,6 +5,12 @@ const ivstevents = @import("pluginterfaces/vst/ivstevents.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 
+fn boundedIndex(index: types.int32, count: usize) ?usize {
+    if (index < 0) return null;
+    const value: usize = @intCast(index);
+    return if (value < count) value else null;
+}
+
 pub fn EventList(comptime max_events: usize) type {
     if (max_events == 0) @compileError("EventList requires at least one event slot");
 
@@ -73,11 +79,11 @@ pub fn EventList(comptime max_events: usize) type {
                 event.* = .{};
                 return types.kResultFalse;
             }
-            if (@as(usize, @intCast(index)) >= self.safeCount()) {
+            const event_index = boundedIndex(index, self.safeCount()) orelse {
                 event.* = .{};
                 return types.kInvalidArgument;
-            }
-            event.* = self.events[@intCast(index)];
+            };
+            event.* = self.events[event_index];
             return types.kResultOk;
         }
 
