@@ -1590,6 +1590,7 @@ test "zig-vst3-plugin bridge writes output events to VST3 event lists" {
 test "zig-vst3-plugin bridge drops output MIDI events with invalid legacy fields" {
     const large_payload = [_]u8{0xF0} ** (max_data_event_bytes + 1);
     const items = [_]plug.process.Event{
+        plug.process.Event.noteOn(0, 1, 60, 0.5).withBusIndex(-1),
         plug.process.Event.dataEvent(0, @intFromEnum(ivstevents.DataEvent.DataTypes.kMidiSysEx), &large_payload),
         .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = -1, .value = 0.5 },
         .{ .kind = .midi_cc, .bus_index = 0, .sample_offset = 0, .channel = 1, .control_number = 256, .value = 0.5 },
