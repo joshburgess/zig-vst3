@@ -4,6 +4,17 @@ const changes = @import("changes.zig");
 
 pub const BlockSegment = changes.BlockSegment;
 
+pub const midi_channel_min: i16 = 0;
+pub const midi_channel_max: i16 = 15;
+pub const midi_pitch_min: i16 = 0;
+pub const midi_pitch_max: i16 = 127;
+pub const midi_control_number_min: i16 = 0;
+pub const midi_control_number_max: i16 = 127;
+pub const event_value_min: f32 = 0.0;
+pub const event_value_max: f32 = 1.0;
+pub const bipolar_event_value_min: f32 = -1.0;
+pub const bipolar_event_value_max: f32 = 1.0;
+
 pub const EventKind = enum {
     note_on,
     note_off,
@@ -718,23 +729,23 @@ pub const Event = struct {
 };
 
 fn validateMidiChannel(channel: i16) !void {
-    if (channel < 0 or channel > 15) return error.InvalidEventChannel;
+    if (channel < midi_channel_min or channel > midi_channel_max) return error.InvalidEventChannel;
 }
 
 fn validateMidiPitch(pitch: i16) !void {
-    if (pitch < 0 or pitch > 127) return error.InvalidEventPitch;
+    if (pitch < midi_pitch_min or pitch > midi_pitch_max) return error.InvalidEventPitch;
 }
 
 fn validateMidiControlNumber(control_number: i16) !void {
-    if (control_number < 0 or control_number > 127) return error.InvalidEventControlNumber;
+    if (control_number < midi_control_number_min or control_number > midi_control_number_max) return error.InvalidEventControlNumber;
 }
 
 fn validateUnitEventValue(value: f32) !void {
-    if (!common.isFiniteInRange(f32, value, 0.0, 1.0)) return error.EventValueOutsideNormalizedRange;
+    if (!common.isFiniteInRange(f32, value, event_value_min, event_value_max)) return error.EventValueOutsideNormalizedRange;
 }
 
 fn validateBipolarEventValue(value: f32) !void {
-    if (!common.isFiniteInRange(f32, value, -1.0, 1.0)) return error.EventValueOutsideNormalizedRange;
+    if (!common.isFiniteInRange(f32, value, bipolar_event_value_min, bipolar_event_value_max)) return error.EventValueOutsideNormalizedRange;
 }
 
 pub const Events = struct {
@@ -2091,13 +2102,13 @@ test "events reject invalid normalized values" {
 
 test "events reject invalid MIDI metadata" {
     const bad_channel = [_]Event{
-        Event.noteOn(0, 16, 60, 1.0),
+        Event.noteOn(0, midi_channel_max + 1, 60, 1.0),
     };
     const bad_pitch = [_]Event{
-        Event.noteOff(0, 0, 128, 0.0),
+        Event.noteOff(0, 0, midi_pitch_max + 1, 0.0),
     };
     const bad_control = [_]Event{
-        Event.midiCc(0, 0, 128, 0.5),
+        Event.midiCc(0, 0, midi_control_number_max + 1, 0.5),
     };
     const bad_bus = [_]Event{
         Event.pitchBend(0, 0, 0.0).withBusIndex(-1),
@@ -2113,18 +2124,18 @@ test "events validate generated boundary cases" {
     const valid_offsets = [_]usize{ 0, 1, 3 };
     for (valid_offsets) |offset| {
         const events = [_]Event{
-            Event.noteOn(offset, 0, 0, 0.0),
-            Event.noteOn(offset, 15, 127, 1.0),
-            Event.noteOff(offset, 0, 0, 0.0),
-            Event.noteOff(offset, 15, 127, 1.0),
-            Event.midiCc(offset, 0, 0, 0.0),
-            Event.midiCc(offset, 15, 127, 1.0),
-            Event.pitchBend(offset, 0, -1.0),
-            Event.pitchBend(offset, 15, 1.0),
-            Event.aftertouch(offset, 0, 0, 0.0),
-            Event.aftertouch(offset, 15, 127, 1.0),
-            Event.noteExpressionValue(offset, -1, 0, 0.0),
-            Event.noteExpressionValue(offset, 7, std.math.maxInt(u32), 1.0),
+            Event.noteOn(offset, midi_channel_min, midi_pitch_min, event_value_min),
+            Event.noteOn(offset, midi_channel_max, midi_pitch_max, event_value_max),
+            Event.noteOff(offset, midi_channel_min, midi_pitch_min, event_value_min),
+            Event.noteOff(offset, midi_channel_max, midi_pitch_max, event_value_max),
+            Event.midiCc(offset, midi_channel_min, midi_control_number_min, event_value_min),
+            Event.midiCc(offset, midi_channel_max, midi_control_number_max, event_value_max),
+            Event.pitchBend(offset, midi_channel_min, bipolar_event_value_min),
+            Event.pitchBend(offset, midi_channel_max, bipolar_event_value_max),
+            Event.aftertouch(offset, midi_channel_min, midi_pitch_min, event_value_min),
+            Event.aftertouch(offset, midi_channel_max, midi_pitch_max, event_value_max),
+            Event.noteExpressionValue(offset, -1, 0, event_value_min),
+            Event.noteExpressionValue(offset, 7, std.math.maxInt(u32), event_value_max),
             Event.noteExpressionInt(offset, -1, 0, 0),
             Event.noteExpressionText(offset, -1, 0),
             Event.dataEvent(offset, std.math.maxInt(u32), &.{ 1, 2, 3 }),
@@ -2150,50 +2161,50 @@ test "events validate generated boundary cases" {
     }
 
     const invalid_channel_events = [_]Event{
-        Event.noteOn(0, -1, 60, 1.0),
-        Event.noteOn(0, 16, 60, 1.0),
-        Event.noteOff(0, -1, 60, 0.0),
-        Event.noteOff(0, 16, 60, 0.0),
-        Event.midiCc(0, -1, 1, 0.5),
-        Event.midiCc(0, 16, 1, 0.5),
-        Event.pitchBend(0, -1, 0.0),
-        Event.pitchBend(0, 16, 0.0),
-        Event.aftertouch(0, -1, 60, 0.5),
-        Event.aftertouch(0, 16, 60, 0.5),
+        Event.noteOn(0, midi_channel_min - 1, 60, 1.0),
+        Event.noteOn(0, midi_channel_max + 1, 60, 1.0),
+        Event.noteOff(0, midi_channel_min - 1, 60, 0.0),
+        Event.noteOff(0, midi_channel_max + 1, 60, 0.0),
+        Event.midiCc(0, midi_channel_min - 1, 1, 0.5),
+        Event.midiCc(0, midi_channel_max + 1, 1, 0.5),
+        Event.pitchBend(0, midi_channel_min - 1, 0.0),
+        Event.pitchBend(0, midi_channel_max + 1, 0.0),
+        Event.aftertouch(0, midi_channel_min - 1, 60, 0.5),
+        Event.aftertouch(0, midi_channel_max + 1, 60, 0.5),
     };
     for (invalid_channel_events) |event| {
         try std.testing.expectError(error.InvalidEventChannel, event.validate(4));
     }
 
     const invalid_pitch_events = [_]Event{
-        Event.noteOn(0, 0, -1, 1.0),
-        Event.noteOn(0, 0, 128, 1.0),
-        Event.noteOff(0, 0, -1, 0.0),
-        Event.noteOff(0, 0, 128, 0.0),
-        Event.aftertouch(0, 0, -1, 0.5),
-        Event.aftertouch(0, 0, 128, 0.5),
+        Event.noteOn(0, 0, midi_pitch_min - 1, 1.0),
+        Event.noteOn(0, 0, midi_pitch_max + 1, 1.0),
+        Event.noteOff(0, 0, midi_pitch_min - 1, 0.0),
+        Event.noteOff(0, 0, midi_pitch_max + 1, 0.0),
+        Event.aftertouch(0, 0, midi_pitch_min - 1, 0.5),
+        Event.aftertouch(0, 0, midi_pitch_max + 1, 0.5),
     };
     for (invalid_pitch_events) |event| {
         try std.testing.expectError(error.InvalidEventPitch, event.validate(4));
     }
 
     const invalid_control_events = [_]Event{
-        Event.midiCc(0, 0, -1, 0.5),
-        Event.midiCc(0, 0, 128, 0.5),
+        Event.midiCc(0, 0, midi_control_number_min - 1, 0.5),
+        Event.midiCc(0, 0, midi_control_number_max + 1, 0.5),
     };
     for (invalid_control_events) |event| {
         try std.testing.expectError(error.InvalidEventControlNumber, event.validate(4));
     }
 
     const invalid_value_events = [_]Event{
-        Event.noteOn(0, 0, 60, -0.01),
-        Event.noteOn(0, 0, 60, 1.01),
+        Event.noteOn(0, 0, 60, event_value_min - 0.01),
+        Event.noteOn(0, 0, 60, event_value_max + 0.01),
         Event.noteOff(0, 0, 60, std.math.nan(f32)),
         Event.midiCc(0, 0, 1, std.math.inf(f32)),
-        Event.pitchBend(0, 0, -1.01),
-        Event.pitchBend(0, 0, 1.01),
-        Event.aftertouch(0, 0, 60, -0.01),
-        Event.noteExpressionValue(0, 42, 7, 1.01),
+        Event.pitchBend(0, 0, bipolar_event_value_min - 0.01),
+        Event.pitchBend(0, 0, bipolar_event_value_max + 0.01),
+        Event.aftertouch(0, 0, 60, event_value_min - 0.01),
+        Event.noteExpressionValue(0, 42, 7, event_value_max + 0.01),
     };
     for (invalid_value_events) |event| {
         try std.testing.expectError(error.EventValueOutsideNormalizedRange, event.validate(4));

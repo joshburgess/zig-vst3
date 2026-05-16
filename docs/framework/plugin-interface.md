@@ -170,7 +170,7 @@ pub const EventEcho = struct {
 
 Constructors include `Event.noteOn`, `Event.noteOff`, `Event.midiCc`, `Event.pitchBend`, `Event.aftertouch`, `Event.noteExpressionValue`, `Event.dataEvent`, and `Event.other`. `Event.asNoteOn`, `asNoteOff`, `asMidiCC`, and related helpers expose typed views without switching on the whole event struct.
 
-The VST3 bridge validates event offsets, channels, pitches, normalized values, and bounded data-event payloads before exposing events to plugin code.
+The VST3 bridge validates event offsets, channels, pitches, normalized values, and bounded data-event payloads before exposing events to plugin code. The accepted MIDI and event-value bounds are exported from `plug.process` as `midi_channel_min`, `midi_channel_max`, `midi_pitch_min`, `midi_pitch_max`, `midi_control_number_min`, `midi_control_number_max`, `event_value_min`, `event_value_max`, `bipolar_event_value_min`, and `bipolar_event_value_max`.
 
 ## Units And Programs
 

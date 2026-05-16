@@ -4,6 +4,16 @@ const events_mod = @import("process/events.zig");
 const context_mod = @import("process/context.zig");
 
 pub const max_audio_channels = context_mod.max_audio_channels;
+pub const midi_channel_min = events_mod.midi_channel_min;
+pub const midi_channel_max = events_mod.midi_channel_max;
+pub const midi_pitch_min = events_mod.midi_pitch_min;
+pub const midi_pitch_max = events_mod.midi_pitch_max;
+pub const midi_control_number_min = events_mod.midi_control_number_min;
+pub const midi_control_number_max = events_mod.midi_control_number_max;
+pub const event_value_min = events_mod.event_value_min;
+pub const event_value_max = events_mod.event_value_max;
+pub const bipolar_event_value_min = events_mod.bipolar_event_value_min;
+pub const bipolar_event_value_max = events_mod.bipolar_event_value_max;
 
 pub const ParameterChange = changes_mod.ParameterChange;
 pub const ParameterSegment = changes_mod.ParameterSegment;
