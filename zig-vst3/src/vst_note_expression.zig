@@ -14,6 +14,8 @@ fn boundedIndex(index: types.int32, count: usize) ?usize {
 
 pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_keyswitches: usize, comptime Config: type) type {
     if (max_expressions == 0 and max_keyswitches == 0) @compileError("NoteExpressionController requires at least one expression or keyswitch slot");
+    if (max_expressions > std.math.maxInt(types.int32)) @compileError("NoteExpressionController expression capacity must fit in VST int32 counts");
+    if (max_keyswitches > std.math.maxInt(types.int32)) @compileError("NoteExpressionController keyswitch capacity must fit in VST int32 counts");
 
     return extern struct {
         const Self = @This();

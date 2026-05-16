@@ -16,6 +16,8 @@ fn boundedIndex(index: types.int32, count: usize) ?usize {
 
 pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, comptime Config: type) type {
     if (max_units == 0) @compileError("UnitInfo requires at least one unit slot");
+    if (max_units > std.math.maxInt(types.int32)) @compileError("UnitInfo unit capacity must fit in VST int32 counts");
+    if (max_program_lists > std.math.maxInt(types.int32)) @compileError("UnitInfo program list capacity must fit in VST int32 counts");
 
     return extern struct {
         const Self = @This();

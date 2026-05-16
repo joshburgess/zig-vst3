@@ -19,6 +19,7 @@ pub const ParamPoint = extern struct {
 
 pub fn ParamValueQueue(comptime max_points: usize) type {
     if (max_points == 0) @compileError("ParamValueQueue requires at least one point slot");
+    if (max_points > std.math.maxInt(types.int32)) @compileError("ParamValueQueue capacity must fit in VST int32 counts");
 
     return extern struct {
         const Self = @This();
@@ -111,6 +112,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
 
 pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queue: usize) type {
     if (max_queues == 0) @compileError("ParameterChanges requires at least one parameter queue slot");
+    if (max_queues > std.math.maxInt(types.int32)) @compileError("ParameterChanges capacity must fit in VST int32 counts");
 
     return extern struct {
         const Self = @This();
