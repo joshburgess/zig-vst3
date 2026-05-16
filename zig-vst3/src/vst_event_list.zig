@@ -37,7 +37,7 @@ pub fn EventList(comptime max_events: usize) type {
         pub fn append(self: *Self, event: ivstevents.Event) types.tresult {
             if (self.count < 0 or self.count >= max_events) return types.kResultFalse;
             self.events[@intCast(self.count)] = event;
-            self.count += 1;
+            self.count +|= 1;
             return types.kResultOk;
         }
 

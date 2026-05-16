@@ -1081,7 +1081,7 @@ pub const EventWriter = struct {
         try event.validate(self.frame_count);
         if (self.count >= self.storage.len) return error.EventStorageFull;
         self.storage[self.count] = event;
-        self.count += 1;
+        self.count +|= 1;
         return 1;
     }
 
@@ -1096,7 +1096,7 @@ pub const EventWriter = struct {
         if (source.items.len > self.remainingCapacity()) return error.EventStorageFull;
         for (source.items) |event| {
             self.storage[self.count] = event;
-            self.count += 1;
+            self.count +|= 1;
         }
         return source.items.len;
     }

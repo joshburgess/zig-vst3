@@ -34,7 +34,7 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
         pub fn addSupported(self: *Self, iid: *const tuid.TUID) types.tresult {
             if (self.count >= max_iids) return types.kResultFalse;
             self.supported[self.count] = iid.*;
-            self.count += 1;
+            self.count +|= 1;
             return types.kResultOk;
         }
 
