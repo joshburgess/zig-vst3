@@ -1852,6 +1852,10 @@ test "gain core example resolves migrated state parameter ids" {
         .{ .old_id = 7, .new_id = 0 },
         .{ .old_id = 7, .new_id = 1 },
     };
+    const cycle = [_]plug.state.ParameterIdMigration{
+        .{ .old_id = 7, .new_id = 11 },
+        .{ .old_id = 11, .new_id = 7 },
+    };
     const ambiguous = [_]plug.state.ParameterIdMigration{
         .{ .old_id = 7, .new_id = 0 },
         .{ .old_id = 8, .new_id = 0 },
@@ -1860,6 +1864,7 @@ test "gain core example resolves migrated state parameter ids" {
     try instance.validateParameterIdMigrations(&migrations);
     try std.testing.expectEqual(@as(?usize, null), instance.identityParameterMigrationIndex(&migrations));
     try std.testing.expectEqual(@as(?usize, null), instance.duplicateParameterMigrationIndex(&migrations));
+    try std.testing.expectEqual(@as(?usize, null), instance.cyclicParameterMigrationIndex(&migrations));
     try std.testing.expectEqual(@as(?usize, null), instance.ambiguousParameterMigrationIndex(&migrations));
     try std.testing.expectEqual(@as(u32, 0), instance.migratedParameterId(7, &migrations));
     try std.testing.expectEqual(@as(u32, 0), instance.migratedParameterId(11, &migrations));
@@ -1868,6 +1873,8 @@ test "gain core example resolves migrated state parameter ids" {
     try std.testing.expectError(error.IdentityParameterMigration, instance.validateParameterIdMigrations(&identity));
     try std.testing.expectEqual(@as(?usize, 1), instance.duplicateParameterMigrationIndex(&duplicate));
     try std.testing.expectError(error.DuplicateParameterMigration, instance.validateParameterIdMigrations(&duplicate));
+    try std.testing.expectEqual(@as(?usize, 0), instance.cyclicParameterMigrationIndex(&cycle));
+    try std.testing.expectError(error.CyclicParameterMigration, instance.validateParameterIdMigrations(&cycle));
     try std.testing.expectEqual(@as(?usize, 1), instance.ambiguousParameterMigrationIndex(&ambiguous));
     try std.testing.expectError(error.AmbiguousParameterMigration, instance.validateParameterIdMigrations(&ambiguous));
 }

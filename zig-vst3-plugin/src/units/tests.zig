@@ -488,3 +488,46 @@ test "unit set validates ids names and links" {
     try std.testing.expectError(error.InvalidProgramInfoMetadata, (InvalidProgramInfoValue{}).validate());
     try std.testing.expectError(error.DuplicateProgramInfoKey, (DuplicateProgramInfoKeys{}).validate());
 }
+
+test "unit set reports cyclic parent indexes across graph shapes" {
+    const DirectCycle = UnitSet(.{
+        .units = &.{
+            Unit.root("Root"),
+            .{ .id = 1, .name = "Oscillator", .parent_id = 2 },
+            .{ .id = 2, .name = "Filter", .parent_id = 1 },
+        },
+    });
+    const NestedCycle = UnitSet(.{
+        .units = &.{
+            Unit.root("Root"),
+            .{ .id = 1, .name = "Oscillator", .parent_id = root_unit_id },
+            .{ .id = 2, .name = "Filter", .parent_id = 3 },
+            .{ .id = 3, .name = "Envelope", .parent_id = 4 },
+            .{ .id = 4, .name = "Modulator", .parent_id = 2 },
+        },
+    });
+    const SelfCycle = UnitSet(.{
+        .units = &.{
+            Unit.root("Root"),
+            .{ .id = 1, .name = "Oscillator", .parent_id = root_unit_id },
+            .{ .id = 2, .name = "Filter", .parent_id = 2 },
+        },
+    });
+    const Acyclic = UnitSet(.{
+        .units = &.{
+            Unit.root("Root"),
+            .{ .id = 1, .name = "Oscillator", .parent_id = root_unit_id },
+            .{ .id = 2, .name = "Filter", .parent_id = 1 },
+            .{ .id = 3, .name = "Envelope", .parent_id = 2 },
+        },
+    });
+
+    try std.testing.expectEqual(@as(?usize, 1), (DirectCycle{}).cyclicUnitParentIndex());
+    try std.testing.expectError(error.CyclicUnitParent, (DirectCycle{}).validate());
+    try std.testing.expectEqual(@as(?usize, 2), (NestedCycle{}).cyclicUnitParentIndex());
+    try std.testing.expectError(error.CyclicUnitParent, (NestedCycle{}).validate());
+    try std.testing.expectEqual(@as(?usize, 2), (SelfCycle{}).cyclicUnitParentIndex());
+    try std.testing.expectError(error.CyclicUnitParent, (SelfCycle{}).validate());
+    try std.testing.expectEqual(@as(?usize, null), (Acyclic{}).cyclicUnitParentIndex());
+    try (Acyclic{}).validate();
+}
