@@ -140,11 +140,6 @@ pub const ParameterSegment = struct {
     }
 };
 
-fn clampNormalized(value: f64) f64 {
-    if (std.math.isNan(value)) return 0.0;
-    return std.math.clamp(value, 0.0, 1.0);
-}
-
 pub const BlockSegment = struct {
     start_offset: usize,
     end_offset: usize,
@@ -391,11 +386,11 @@ pub const ParameterChanges = struct {
     }
 
     pub fn firstAnyNormalizedOr(self: ParameterChanges, default: f64) f64 {
-        return self.firstAnyNormalized() orelse clampNormalized(default);
+        return self.firstAnyNormalized() orelse common.clampNormalized(default);
     }
 
     pub fn latestAnyNormalizedOr(self: ParameterChanges, default: f64) f64 {
-        return self.latestAnyNormalized() orelse clampNormalized(default);
+        return self.latestAnyNormalized() orelse common.clampNormalized(default);
     }
 
     pub fn firstNormalized(self: ParameterChanges, id: u32) ?f64 {
@@ -414,11 +409,11 @@ pub const ParameterChanges = struct {
     }
 
     pub fn firstNormalizedAtOffsetOr(self: ParameterChanges, sample_offset: usize, default: f64) f64 {
-        return self.firstNormalizedAtOffset(sample_offset) orelse clampNormalized(default);
+        return self.firstNormalizedAtOffset(sample_offset) orelse common.clampNormalized(default);
     }
 
     pub fn latestNormalizedAtOffsetOr(self: ParameterChanges, sample_offset: usize, default: f64) f64 {
-        return self.latestNormalizedAtOffset(sample_offset) orelse clampNormalized(default);
+        return self.latestNormalizedAtOffset(sample_offset) orelse common.clampNormalized(default);
     }
 
     pub fn firstNormalizedForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) ?f64 {
@@ -432,19 +427,19 @@ pub const ParameterChanges = struct {
     }
 
     pub fn firstNormalizedForIdAtOffsetOr(self: ParameterChanges, id: u32, sample_offset: usize, default: f64) f64 {
-        return self.firstNormalizedForIdAtOffset(id, sample_offset) orelse clampNormalized(default);
+        return self.firstNormalizedForIdAtOffset(id, sample_offset) orelse common.clampNormalized(default);
     }
 
     pub fn latestNormalizedForIdAtOffsetOr(self: ParameterChanges, id: u32, sample_offset: usize, default: f64) f64 {
-        return self.latestNormalizedForIdAtOffset(id, sample_offset) orelse clampNormalized(default);
+        return self.latestNormalizedForIdAtOffset(id, sample_offset) orelse common.clampNormalized(default);
     }
 
     pub fn latestNormalizedOr(self: ParameterChanges, id: u32, default: f64) f64 {
-        return self.latestNormalized(id) orelse clampNormalized(default);
+        return self.latestNormalized(id) orelse common.clampNormalized(default);
     }
 
     pub fn firstNormalizedOr(self: ParameterChanges, id: u32, default: f64) f64 {
-        return self.firstNormalized(id) orelse clampNormalized(default);
+        return self.firstNormalized(id) orelse common.clampNormalized(default);
     }
 
     pub fn latestAtOrBefore(self: ParameterChanges, id: u32, sample_offset: usize) ?ParameterChange {
@@ -462,7 +457,7 @@ pub const ParameterChanges = struct {
     }
 
     pub fn normalizedAtOrBeforeOr(self: ParameterChanges, id: u32, sample_offset: usize, default: f64) f64 {
-        return self.latestNormalizedAtOrBefore(id, sample_offset) orelse clampNormalized(default);
+        return self.latestNormalizedAtOrBefore(id, sample_offset) orelse common.clampNormalized(default);
     }
 
     pub fn nextSampleOffset(self: ParameterChanges, after_sample_offset: usize) ?usize {
