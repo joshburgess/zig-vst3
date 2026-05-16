@@ -181,6 +181,19 @@ pub const RealtimeProcessorDefaults = struct {
         return types.kResultFalse;
     }
 
+    pub fn validateProcessSetup(setup: *const ivstaudioprocessor.ProcessSetup) types.tresult {
+        const sample_size_result = canProcessSampleSize(setup.symbolicSampleSize);
+        if (sample_size_result != types.kResultOk) return sample_size_result;
+
+        if (setup.maxSamplesPerBlock <= 0) return types.kInvalidArgument;
+        const prepare_config = plug.plugin.PrepareConfig{
+            .sample_rate = setup.sampleRate,
+            .max_block_size = @intCast(setup.maxSamplesPerBlock),
+        };
+        prepare_config.validate() catch return types.kInvalidArgument;
+        return types.kResultOk;
+    }
+
     pub fn latencySamples() types.uint32 {
         return 0;
     }
@@ -1729,6 +1742,28 @@ test "zig-vst3-plugin bridge realtime processor defaults accept 32 and 64 bit sa
     try std.testing.expectEqual(types.kResultFalse, RealtimeProcessorDefaults.canProcessSampleSize(99));
     try std.testing.expectEqual(@as(types.uint32, 0), RealtimeProcessorDefaults.latencySamples());
     try std.testing.expectEqual(@as(types.uint32, ivstaudioprocessor.kNoTail), RealtimeProcessorDefaults.tailSamples());
+}
+
+test "zig-vst3-plugin bridge realtime processor defaults validate process setup" {
+    var setup = ivstaudioprocessor.ProcessSetup{
+        .processMode = @intFromEnum(ivstaudioprocessor.ProcessModes.kRealtime),
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .maxSamplesPerBlock = 64,
+        .sampleRate = 48_000.0,
+    };
+
+    try std.testing.expectEqual(types.kResultOk, RealtimeProcessorDefaults.validateProcessSetup(&setup));
+
+    setup.symbolicSampleSize = 99;
+    try std.testing.expectEqual(types.kResultFalse, RealtimeProcessorDefaults.validateProcessSetup(&setup));
+
+    setup.symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32);
+    setup.maxSamplesPerBlock = 0;
+    try std.testing.expectEqual(types.kInvalidArgument, RealtimeProcessorDefaults.validateProcessSetup(&setup));
+
+    setup.maxSamplesPerBlock = 64;
+    setup.sampleRate = 0.0;
+    try std.testing.expectEqual(types.kInvalidArgument, RealtimeProcessorDefaults.validateProcessSetup(&setup));
 }
 
 test "zig-vst3-plugin bridge fills VST3 parameter info from reflected set" {
