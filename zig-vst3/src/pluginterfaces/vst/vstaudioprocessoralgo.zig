@@ -221,7 +221,9 @@ pub fn forEachEvent(event_list: ?*events.IEventList, context: anytype, comptime 
     var event_index: base.int32 = 0;
     while (event_index < event_count) : (event_index += 1) {
         var event = events.Event{};
-        if (list.vtable.getEvent(list, event_index, &event) != base.kResultOk) continue;
+        const result = list.vtable.getEvent(list, event_index, &event);
+        if (result == base.kInvalidArgument) break;
+        if (result != base.kResultOk) continue;
         callback(context, &event);
     }
 }
@@ -233,7 +235,9 @@ pub fn forEachParamValueQueue(param_queue: *parameter_changes.IParamValueQueue, 
     while (point_index < num_points) : (point_index += 1) {
         var sample_offset: base.int32 = 0;
         var value: vsttypes.ParamValue = 0;
-        if (param_queue.vtable.getPoint(param_queue, point_index, &sample_offset, &value) != base.kResultOk) continue;
+        const result = param_queue.vtable.getPoint(param_queue, point_index, &sample_offset, &value);
+        if (result == base.kInvalidArgument) break;
+        if (result != base.kResultOk) continue;
         callback(context, param_id, sample_offset, value);
     }
 }
@@ -254,7 +258,7 @@ pub fn forEachParameterChanges(changes: ?*parameter_changes.IParameterChanges, c
     const param_count = parameter_changes_list.vtable.getParameterCount(parameter_changes_list);
     var param_index: base.int32 = 0;
     while (param_index < param_count) : (param_index += 1) {
-        const param_queue = parameter_changes_list.vtable.getParameterData(parameter_changes_list, param_index) orelse continue;
+        const param_queue = parameter_changes_list.vtable.getParameterData(parameter_changes_list, param_index) orelse break;
         callback(context, param_queue);
     }
 }
@@ -265,6 +269,7 @@ const EventCollector = struct {
     last_sample_offset: base.int32 = 0,
     last_param_id: vsttypes.ParamID = 0,
     last_param_value: vsttypes.ParamValue = 0,
+    queue_read_count: usize = 0,
 };
 
 fn collectEvent(collector: *EventCollector, event: *const events.Event) void {
@@ -280,6 +285,11 @@ fn collectParamValue(collector: *EventCollector, param_id: vsttypes.ParamID, sam
     collector.last_param_id = param_id;
     collector.last_sample_offset = sample_offset;
     collector.last_param_value = value;
+}
+
+fn collectLastParamValueQueue(collector: *EventCollector, param_queue: *parameter_changes.IParamValueQueue) void {
+    collector.queue_read_count += 1;
+    forEachLastParamValueQueue(param_queue, collector, collectParamValue);
 }
 
 test "audio processor helpers match expected core behavior" {
@@ -376,6 +386,64 @@ test "audio processor helper iterates event lists and skips failed reads" {
     try std.testing.expectEqual(@as(base.int32, 1), collector.last_sample_offset);
 }
 
+test "audio processor helper stops event iteration at invalid reported boundary" {
+    const event_items = [_]events.Event{
+        .{
+            .sampleOffset = 7,
+            .type = @intFromEnum(events.Event.EventTypes.kNoteOnEvent),
+            .data = .{ .noteOn = .{ .pitch = 64, .velocity = 0.5 } },
+        },
+    };
+    var list = TestEventList.init(&event_items, null);
+    list.reported_count = 1000;
+    var collector = EventCollector{};
+
+    forEachEvent(&list.iface, &collector, collectEvent);
+
+    try std.testing.expectEqual(@as(usize, 1), collector.count);
+    try std.testing.expectEqual(@as(base.int32, 7), collector.last_sample_offset);
+    try std.testing.expectEqual(@as(usize, 2), list.read_count);
+}
+
+test "audio processor helper stops parameter point iteration at invalid reported boundary" {
+    const points = [_]TestParamPoint{
+        .{ .sample_offset = 2, .value = 0.25 },
+        .{ .sample_offset = 6, .value = 0.75 },
+    };
+    var queue = TestParamValueQueue.init(11, &points);
+    queue.reported_count = 1000;
+    var collector = EventCollector{};
+
+    forEachParamValueQueue(&queue.iface, &collector, collectParamValue);
+
+    try std.testing.expectEqual(@as(usize, 2), collector.count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 11), collector.last_param_id);
+    try std.testing.expectEqual(@as(base.int32, 6), collector.last_sample_offset);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), collector.last_param_value);
+    try std.testing.expectEqual(@as(usize, 3), queue.read_count);
+}
+
+test "audio processor helper stops parameter change iteration at invalid reported boundary" {
+    const points = [_]TestParamPoint{
+        .{ .sample_offset = 3, .value = 0.125 },
+        .{ .sample_offset = 9, .value = 0.875 },
+    };
+    var queue = TestParamValueQueue.init(13, &points);
+    var queue_ptrs = [_]*parameter_changes.IParamValueQueue{&queue.iface};
+    var changes = TestParameterChanges.init(queue_ptrs[0..]);
+    changes.reported_count = 1000;
+    var collector = EventCollector{};
+
+    forEachParameterChanges(&changes.iface, &collector, collectLastParamValueQueue);
+
+    try std.testing.expectEqual(@as(usize, 1), collector.queue_read_count);
+    try std.testing.expectEqual(@as(usize, 1), collector.count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 13), collector.last_param_id);
+    try std.testing.expectEqual(@as(base.int32, 9), collector.last_sample_offset);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.875), collector.last_param_value);
+    try std.testing.expectEqual(@as(usize, 2), changes.read_count);
+}
+
 test "audio processor helper skips empty last parameter queues" {
     var empty_queue = TestParamValueQueue.init(7, &.{});
     var collector = EventCollector{};
@@ -399,7 +467,9 @@ test "audio processor helper skips empty last parameter queues" {
 const TestEventList = struct {
     iface: events.IEventList = .{ .vtable = &vtable },
     items: []const events.Event,
+    reported_count: ?base.int32 = null,
     fail_index: ?base.int32 = null,
+    read_count: usize = 0,
 
     const vtable = events.IEventListVTable{
         .queryInterface = queryInterface,
@@ -433,12 +503,14 @@ const TestEventList = struct {
     }
 
     fn getEventCount(ptr: *anyopaque) callconv(.c) base.int32 {
-        return @intCast(owner(ptr).items.len);
+        const self = owner(ptr);
+        return self.reported_count orelse @intCast(self.items.len);
     }
 
     fn getEvent(ptr: *anyopaque, index: base.int32, event: *events.Event) callconv(.c) base.tresult {
         if (index < 0) return base.kInvalidArgument;
         const self = owner(ptr);
+        self.read_count += 1;
         if (self.fail_index != null and index == self.fail_index.?) return base.kResultFalse;
         const event_index: usize = @intCast(index);
         if (event_index >= self.items.len) return base.kInvalidArgument;
@@ -460,6 +532,8 @@ const TestParamValueQueue = struct {
     iface: parameter_changes.IParamValueQueue = .{ .vtable = &vtable },
     param_id: vsttypes.ParamID,
     points: []const TestParamPoint,
+    reported_count: ?base.int32 = null,
+    read_count: usize = 0,
 
     const vtable = parameter_changes.IParamValueQueueVTable{
         .queryInterface = queryInterface,
@@ -498,13 +572,16 @@ const TestParamValueQueue = struct {
     }
 
     fn getPointCount(ptr: *anyopaque) callconv(.c) base.int32 {
-        return @intCast(owner(ptr).points.len);
+        const self = owner(ptr);
+        return self.reported_count orelse @intCast(self.points.len);
     }
 
     fn getPoint(ptr: *anyopaque, index: base.int32, sample_offset: *base.int32, value: *vsttypes.ParamValue) callconv(.c) base.tresult {
         if (index < 0) return base.kInvalidArgument;
+        const self = owner(ptr);
+        self.read_count += 1;
         const point_index: usize = @intCast(index);
-        const points = owner(ptr).points;
+        const points = self.points;
         if (point_index >= points.len) return base.kInvalidArgument;
         sample_offset.* = points[point_index].sample_offset;
         value.* = points[point_index].value;
@@ -514,5 +591,62 @@ const TestParamValueQueue = struct {
     fn addPoint(_: *anyopaque, _: base.int32, _: vsttypes.ParamValue, index: *base.int32) callconv(.c) base.tresult {
         index.* = -1;
         return base.kResultFalse;
+    }
+};
+
+const TestParameterChanges = struct {
+    iface: parameter_changes.IParameterChanges = .{ .vtable = &vtable },
+    queues: []const *parameter_changes.IParamValueQueue,
+    reported_count: ?base.int32 = null,
+    read_count: usize = 0,
+
+    const vtable = parameter_changes.IParameterChangesVTable{
+        .queryInterface = queryInterface,
+        .addRef = addRef,
+        .release = release,
+        .getParameterCount = getParameterCount,
+        .getParameterData = getParameterData,
+        .addParameterData = addParameterData,
+    };
+
+    fn init(queues: []const *parameter_changes.IParamValueQueue) TestParameterChanges {
+        return .{ .queues = queues };
+    }
+
+    fn owner(ptr: *anyopaque) *TestParameterChanges {
+        const iface: *parameter_changes.IParameterChanges = @ptrCast(@alignCast(ptr));
+        return @fieldParentPtr("iface", iface);
+    }
+
+    fn queryInterface(_: *anyopaque, _: *const @import("../../tuid.zig").TUID, out: *?*anyopaque) callconv(.c) base.tresult {
+        out.* = null;
+        return base.kNoInterface;
+    }
+
+    fn addRef(_: *anyopaque) callconv(.c) base.uint32 {
+        return 1;
+    }
+
+    fn release(_: *anyopaque) callconv(.c) base.uint32 {
+        return 1;
+    }
+
+    fn getParameterCount(ptr: *anyopaque) callconv(.c) base.int32 {
+        const self = owner(ptr);
+        return self.reported_count orelse @intCast(self.queues.len);
+    }
+
+    fn getParameterData(ptr: *anyopaque, index: base.int32) callconv(.c) ?*parameter_changes.IParamValueQueue {
+        if (index < 0) return null;
+        const self = owner(ptr);
+        self.read_count += 1;
+        const queue_index: usize = @intCast(index);
+        if (queue_index >= self.queues.len) return null;
+        return self.queues[queue_index];
+    }
+
+    fn addParameterData(_: *anyopaque, _: *const vsttypes.ParamID, index: *base.int32) callconv(.c) ?*parameter_changes.IParamValueQueue {
+        index.* = -1;
+        return null;
     }
 };
