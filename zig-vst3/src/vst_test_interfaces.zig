@@ -7,6 +7,7 @@ const types = @import("pluginterfaces/base/types.zig");
 
 pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type {
     if (max_messages == 0) @compileError("TestResult requires at least one message slot");
+    if (max_messages > std.math.maxInt(types.uint32)) @compileError("TestResult message capacity must fit in VST uint32 counts");
     if (max_chars == 0) @compileError("TestResult requires at least one char per message");
 
     return extern struct {
@@ -63,7 +64,7 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
                 }
             }
             _ = self;
-            count.* += 1;
+            count.* +|= 1;
         }
 
         pub fn errorMessage(self: *const Self, index: usize) []const types.char16 {
@@ -162,6 +163,8 @@ pub fn Test(comptime Config: type) type {
 pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
     if (max_tests == 0) @compileError("TestSuite requires at least one test slot");
     if (max_suites == 0) @compileError("TestSuite requires at least one nested suite slot");
+    if (max_tests > std.math.maxInt(types.uint32)) @compileError("TestSuite test capacity must fit in VST uint32 counts");
+    if (max_suites > std.math.maxInt(types.uint32)) @compileError("TestSuite nested suite capacity must fit in VST uint32 counts");
 
     return extern struct {
         const Self = @This();
@@ -212,7 +215,7 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
         fn addTest(ptr: *anyopaque, name: types.FIDString, test_iface: ?*itest.ITest) callconv(.c) types.tresult {
             const self = owner(ptr);
             const index = self.test_count;
-            self.test_count += 1;
+            self.test_count +|= 1;
             if (index >= max_tests) return types.kResultFalse;
             if (test_iface) |value| _ = value.vtable.addRef(value);
             self.tests[index] = .{ .name = name, .test_iface = test_iface };
@@ -222,7 +225,7 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
         fn addTestSuite(ptr: *anyopaque, name: types.FIDString, suite_iface: ?*itest.ITestSuite) callconv(.c) types.tresult {
             const self = owner(ptr);
             const index = self.suite_count;
-            self.suite_count += 1;
+            self.suite_count +|= 1;
             if (index >= max_suites) return types.kResultFalse;
             if (suite_iface) |value| _ = value.vtable.addRef(value);
             self.suites[index] = .{ .name = name, .suite = suite_iface };
