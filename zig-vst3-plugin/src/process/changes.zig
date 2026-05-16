@@ -1,4 +1,5 @@
 const std = @import("std");
+const common = @import("../common.zig");
 
 pub const max_audio_channels = 64;
 
@@ -144,10 +145,6 @@ fn clampNormalized(value: f64) f64 {
     return std.math.clamp(value, 0.0, 1.0);
 }
 
-fn isFiniteInRange(comptime T: type, value: T, min: T, max: T) bool {
-    return std.math.isFinite(value) and value >= min and value <= max;
-}
-
 pub const BlockSegment = struct {
     start_offset: usize,
     end_offset: usize,
@@ -256,7 +253,7 @@ pub const ParameterChanges = struct {
             if (item.sample_offset >= frame_count) {
                 return error.ParameterChangeOutsideBlock;
             }
-            if (!isFiniteInRange(f64, item.normalized, 0.0, 1.0)) {
+            if (!common.isNormalized(item.normalized)) {
                 return error.ParameterChangeOutsideNormalizedRange;
             }
         }

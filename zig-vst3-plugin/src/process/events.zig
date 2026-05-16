@@ -1,11 +1,8 @@
 const std = @import("std");
+const common = @import("../common.zig");
 const changes = @import("changes.zig");
 
 pub const BlockSegment = changes.BlockSegment;
-
-fn isFiniteInRange(comptime T: type, value: T, min: T, max: T) bool {
-    return std.math.isFinite(value) and value >= min and value <= max;
-}
 
 pub const EventKind = enum {
     note_on,
@@ -733,11 +730,11 @@ fn validateMidiControlNumber(control_number: i16) !void {
 }
 
 fn validateUnitEventValue(value: f32) !void {
-    if (!isFiniteInRange(f32, value, 0.0, 1.0)) return error.EventValueOutsideNormalizedRange;
+    if (!common.isFiniteInRange(f32, value, 0.0, 1.0)) return error.EventValueOutsideNormalizedRange;
 }
 
 fn validateBipolarEventValue(value: f32) !void {
-    if (!isFiniteInRange(f32, value, -1.0, 1.0)) return error.EventValueOutsideNormalizedRange;
+    if (!common.isFiniteInRange(f32, value, -1.0, 1.0)) return error.EventValueOutsideNormalizedRange;
 }
 
 pub const Events = struct {

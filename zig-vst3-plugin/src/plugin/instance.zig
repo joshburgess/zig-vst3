@@ -1,4 +1,5 @@
 const std = @import("std");
+const common = @import("../common.zig");
 const parameters = @import("../parameters.zig");
 const process_api = @import("../process.zig");
 const state = @import("../state.zig");
@@ -1210,7 +1211,7 @@ pub fn PluginInstance(comptime Plugin: type) type {
         pub fn applyProgramCount(self: *Self, list_id: i32, program_index: usize) !?usize {
             const item = self.program(list_id, program_index) orelse return null;
             for (item.parameters) |parameter| {
-                if (!std.math.isFinite(parameter.normalized) or parameter.normalized < 0.0 or parameter.normalized > 1.0) {
+                if (!common.isNormalized(parameter.normalized)) {
                     return error.ProgramParameterOutsideNormalizedRange;
                 }
                 if (self.parameterIndexOfId(parameter.parameter_id) == null) return error.UnknownProgramParameter;

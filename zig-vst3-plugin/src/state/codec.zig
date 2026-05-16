@@ -1,4 +1,5 @@
 const std = @import("std");
+const common = @import("../common.zig");
 const parameters = @import("../parameters.zig");
 const format = @import("format.zig");
 const migrations_mod = @import("migrations.zig");
@@ -115,7 +116,7 @@ pub fn readParameterStateWithMigrationsReport(
     for (0..header.entry_count) |_| {
         const id = try reader.takeInt(u32, .little);
         const normalized: f64 = @bitCast(try reader.takeInt(u64, .little));
-        if (!std.math.isFinite(normalized) or normalized < 0.0 or normalized > 1.0) return error.ParameterStateOutsideNormalizedRange;
+        if (!common.isNormalized(normalized)) return error.ParameterStateOutsideNormalizedRange;
         if (set.indexOfId(migrations_mod.migratedParameterId(id, migrations))) |index| {
             if (comptime parameters.ParameterSet(Params).count > 0) {
                 if (seen_restored[index]) return error.DuplicateParameterStateEntry;

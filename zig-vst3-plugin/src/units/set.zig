@@ -1,4 +1,5 @@
 const std = @import("std");
+const common = @import("../common.zig");
 const descriptors = @import("descriptors.zig");
 
 pub const root_unit_id = descriptors.root_unit_id;
@@ -1301,7 +1302,7 @@ pub fn UnitSet(comptime config: Config) type {
                     if (self.duplicateProgramParameterId(list.id, item_index) != null) return error.DuplicateProgramParameter;
                     if (self.duplicateProgramInfoKey(list.id, item_index) != null) return error.DuplicateProgramInfoKey;
                     for (item.parameters) |parameter| {
-                        if (!std.math.isFinite(parameter.normalized) or parameter.normalized < 0.0 or parameter.normalized > 1.0) {
+                        if (!common.isNormalized(parameter.normalized)) {
                             return error.ProgramParameterOutsideNormalizedRange;
                         }
                     }
