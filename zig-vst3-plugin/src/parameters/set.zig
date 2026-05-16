@@ -1,4 +1,5 @@
 const std = @import("std");
+const shared = @import("../common.zig");
 const process = @import("../process.zig");
 const descriptors = @import("descriptors.zig");
 const access = @import("access.zig");
@@ -802,9 +803,9 @@ pub fn parameterOptionNormalized(param: anytype, option_index: usize) ?f64 {
 pub fn parameterDescriptorError(param: anytype) ?anyerror {
     const Param = @TypeOf(param);
     if (param.name.len == 0) return error.EmptyParameterName;
-    if (std.mem.indexOfScalar(u8, param.name, 0) != null or
-        std.mem.indexOfScalar(u8, param.short_name, 0) != null or
-        std.mem.indexOfScalar(u8, param.units, 0) != null)
+    if (shared.containsNul(param.name) or
+        shared.containsNul(param.short_name) or
+        shared.containsNul(param.units))
     {
         return error.InvalidParameterMetadata;
     }

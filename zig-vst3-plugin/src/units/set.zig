@@ -12,10 +12,6 @@ pub const ProgramInfo = descriptors.ProgramInfo;
 pub const ProgramList = descriptors.ProgramList;
 pub const Config = descriptors.Config;
 
-fn containsNul(value: []const u8) bool {
-    return std.mem.indexOfScalar(u8, value, 0) != null;
-}
-
 pub fn UnitSet(comptime config: Config) type {
     return struct {
         const Self = @This();
@@ -1264,12 +1260,12 @@ pub fn UnitSet(comptime config: Config) type {
             if (self.duplicateUnitName() != null) return error.DuplicateUnitName;
             const root = self.unitById(root_unit_id) orelse return error.MissingRootUnit;
             if (root.name.len == 0) return error.EmptyUnitName;
-            if (containsNul(root.name)) return error.InvalidUnitMetadata;
+            if (common.containsNul(root.name)) return error.InvalidUnitMetadata;
             if (root.parent_id != no_parent_unit_id) return error.InvalidUnitParent;
             for (config.units) |item| {
                 if (item.id == no_parent_unit_id) return error.ReservedUnitId;
                 if (item.name.len == 0) return error.EmptyUnitName;
-                if (containsNul(item.name)) return error.InvalidUnitMetadata;
+                if (common.containsNul(item.name)) return error.InvalidUnitMetadata;
                 if (item.id != root_unit_id and self.unitById(item.parent_id) == null) return error.InvalidUnitParent;
                 if (item.program_list_id != no_program_list_id and self.programListById(item.program_list_id) == null) {
                     return error.InvalidUnitProgramList;
@@ -1294,11 +1290,11 @@ pub fn UnitSet(comptime config: Config) type {
             for (config.program_lists) |list| {
                 if (list.id == no_program_list_id) return error.ReservedProgramListId;
                 if (list.name.len == 0) return error.EmptyProgramListName;
-                if (containsNul(list.name)) return error.InvalidProgramListMetadata;
+                if (common.containsNul(list.name)) return error.InvalidProgramListMetadata;
                 if (self.duplicateProgramName(list.id) != null) return error.DuplicateProgramName;
                 for (list.programs, 0..) |item, item_index| {
                     if (item.name.len == 0) return error.EmptyProgramName;
-                    if (containsNul(item.name)) return error.InvalidProgramMetadata;
+                    if (common.containsNul(item.name)) return error.InvalidProgramMetadata;
                     if (self.duplicateProgramParameterId(list.id, item_index) != null) return error.DuplicateProgramParameter;
                     if (self.duplicateProgramInfoKey(list.id, item_index) != null) return error.DuplicateProgramInfoKey;
                     for (item.parameters) |parameter| {
@@ -1308,7 +1304,7 @@ pub fn UnitSet(comptime config: Config) type {
                     }
                     for (item.info) |info| {
                         if (info.key.len == 0) return error.EmptyProgramInfoKey;
-                        if (containsNul(info.key) or containsNul(info.value)) return error.InvalidProgramInfoMetadata;
+                        if (common.containsNul(info.key) or common.containsNul(info.value)) return error.InvalidProgramInfoMetadata;
                     }
                 }
             }

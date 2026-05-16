@@ -18,6 +18,10 @@ pub fn clampNormalizedNonZero(value: f64) f64 {
     return std.math.clamp(value, std.math.floatEps(f64), 1.0);
 }
 
+pub fn containsNul(value: []const u8) bool {
+    return std.mem.indexOfScalar(u8, value, 0) != null;
+}
+
 test "isFiniteInRange accepts inclusive finite bounds" {
     try std.testing.expect(isFiniteInRange(f32, -1.0, -1.0, 1.0));
     try std.testing.expect(isFiniteInRange(f32, 0.0, -1.0, 1.0));
@@ -53,4 +57,10 @@ test "clampNormalizedNonZero keeps values above zero" {
     try std.testing.expectEqual(std.math.floatEps(f64), clampNormalizedNonZero(-0.25));
     try std.testing.expectEqual(@as(f64, 0.5), clampNormalizedNonZero(0.5));
     try std.testing.expectEqual(@as(f64, 1.0), clampNormalizedNonZero(1.25));
+}
+
+test "containsNul reports interior NUL bytes" {
+    try std.testing.expect(!containsNul(""));
+    try std.testing.expect(!containsNul("Gain"));
+    try std.testing.expect(containsNul("Gain\x00Trim"));
 }
