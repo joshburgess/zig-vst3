@@ -1577,6 +1577,19 @@ test "audio input view keeps its own channel slice headers" {
     try std.testing.expectEqual(@as(f32, 0.3), inputs.channel(1).?[0]);
 }
 
+test "audio views reject too many channels" {
+    const input_samples = [_]f32{};
+    var input_channels: [max_audio_channels + 1][]const f32 = undefined;
+    for (&input_channels) |*channel| channel.* = &input_samples;
+
+    var output_samples = [_]f32{};
+    var output_channels: [max_audio_channels + 1][]f32 = undefined;
+    for (&output_channels) |*channel| channel.* = &output_samples;
+
+    try std.testing.expectError(error.TooManyChannels, AudioInputs(f32).init(&input_channels));
+    try std.testing.expectError(error.TooManyChannels, AudioOutputs(f32).init(&output_channels));
+}
+
 test "audio output view rejects mismatched channel frame counts" {
     var left = [_]f32{ 0.1, 0.2 };
     var right = [_]f32{0.3};
