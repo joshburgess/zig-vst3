@@ -1,8 +1,6 @@
 const std = @import("std");
 const common = @import("../common.zig");
 
-pub const max_audio_channels = 64;
-
 pub const ParameterChange = struct {
     id: u32,
     sample_offset: usize,
