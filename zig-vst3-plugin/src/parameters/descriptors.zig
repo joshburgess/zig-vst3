@@ -32,7 +32,7 @@ pub const FloatParam = struct {
     }
 
     pub fn containsPlain(self: FloatParam, plain: f64) bool {
-        return std.math.isFinite(plain) and plain >= self.min and plain <= self.max;
+        return common.isFiniteInRange(f64, plain, self.min, self.max);
     }
 
     pub fn clampPlain(self: FloatParam, plain: f64) f64 {

@@ -4,6 +4,10 @@ pub fn isFiniteInRange(comptime T: type, value: T, min: T, max: T) bool {
     return std.math.isFinite(value) and value >= min and value <= max;
 }
 
+pub fn isPositiveFinite(value: f64) bool {
+    return std.math.isFinite(value) and value > 0.0;
+}
+
 pub fn isNormalized(value: f64) bool {
     return isFiniteInRange(f64, value, 0.0, 1.0);
 }
@@ -33,6 +37,14 @@ test "isFiniteInRange rejects non-finite and out-of-range values" {
     try std.testing.expect(!isFiniteInRange(f32, 1.1, -1.0, 1.0));
     try std.testing.expect(!isFiniteInRange(f32, std.math.nan(f32), -1.0, 1.0));
     try std.testing.expect(!isFiniteInRange(f32, std.math.inf(f32), -1.0, 1.0));
+}
+
+test "isPositiveFinite accepts only finite values greater than zero" {
+    try std.testing.expect(isPositiveFinite(44_100.0));
+    try std.testing.expect(!isPositiveFinite(0.0));
+    try std.testing.expect(!isPositiveFinite(-1.0));
+    try std.testing.expect(!isPositiveFinite(std.math.nan(f64)));
+    try std.testing.expect(!isPositiveFinite(std.math.inf(f64)));
 }
 
 test "isNormalized accepts only finite zero-to-one values" {

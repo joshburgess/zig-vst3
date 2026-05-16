@@ -1,4 +1,5 @@
 const std = @import("std");
+const common = @import("../common.zig");
 const changes_mod = @import("changes.zig");
 const events_mod = @import("events.zig");
 
@@ -214,7 +215,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn initWithOptions(options: InitOptions) !@This() {
-            if (options.sample_rate <= 0.0 or !std.math.isFinite(options.sample_rate)) {
+            if (!common.isPositiveFinite(options.sample_rate)) {
                 return error.InvalidSampleRate;
             }
             const inputs = try AudioInputs(Sample).init(options.input_channels);

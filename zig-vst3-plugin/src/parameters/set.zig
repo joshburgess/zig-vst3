@@ -813,8 +813,7 @@ pub fn parameterDescriptorError(param: anytype) ?anyerror {
         if (!std.math.isFinite(param.min) or !std.math.isFinite(param.max) or param.max <= param.min) {
             return error.InvalidParameterRange;
         }
-        if (!std.math.isFinite(param.default)) return error.InvalidParameterDefault;
-        if (param.default < param.min or param.default > param.max) return error.InvalidParameterDefault;
+        if (!shared.isFiniteInRange(f64, param.default, param.min, param.max)) return error.InvalidParameterDefault;
     } else if (Param == IntParam) {
         if (param.max <= param.min) return error.InvalidParameterRange;
         if (param.default < param.min or param.default > param.max) return error.InvalidParameterDefault;
