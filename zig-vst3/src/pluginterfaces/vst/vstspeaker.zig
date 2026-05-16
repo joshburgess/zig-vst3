@@ -812,9 +812,16 @@ pub const SpeakerArray = struct {
         return self.count;
     }
 
+    fn safeCount(self: *const SpeakerArray) usize {
+        if (self.count <= 0) return 0;
+        return @min(@as(usize, @intCast(self.count)), kMaxSpeakers);
+    }
+
     pub fn at(self: *const SpeakerArray, index: base.int32) SpeakerType {
-        if (index < 0 or index >= self.count or index >= kMaxSpeakers) return 0;
-        return self.speaker[@intCast(index)];
+        if (index < 0) return 0;
+        const speaker_index: usize = @intCast(index);
+        if (speaker_index >= self.safeCount()) return 0;
+        return self.speaker[speaker_index];
     }
 
     pub fn setArrangement(self: *SpeakerArray, arrangement: vsttypes.SpeakerArrangement) void {
@@ -835,17 +842,15 @@ pub const SpeakerArray = struct {
 
     pub fn getArrangement(self: *const SpeakerArray) vsttypes.SpeakerArrangement {
         var arrangement: vsttypes.SpeakerArrangement = 0;
-        var index: base.int32 = 0;
-        while (index < self.count and index < kMaxSpeakers) : (index += 1) {
-            arrangement |= self.speaker[@intCast(index)];
+        for (self.speaker[0..self.safeCount()]) |speaker| {
+            arrangement |= speaker;
         }
         return arrangement;
     }
 
     pub fn getSpeakerIndex(self: *const SpeakerArray, which: SpeakerType) base.int32 {
-        var index: base.int32 = 0;
-        while (index < self.count and index < kMaxSpeakers) : (index += 1) {
-            if (self.speaker[@intCast(index)] == which) return index;
+        for (self.speaker[0..self.safeCount()], 0..) |speaker, index| {
+            if (speaker == which) return @intCast(index);
         }
         return -1;
     }
