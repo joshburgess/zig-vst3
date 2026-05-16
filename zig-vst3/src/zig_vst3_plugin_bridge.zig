@@ -440,6 +440,7 @@ pub fn writeOutputEvents(data: *ivstaudioprocessor.ProcessData, events: plug.pro
     const frame_count = validFrameCount(data) catch return types.kInvalidArgument;
     for (events.items) |event| {
         if (event.sample_offset >= frame_count) return types.kInvalidArgument;
+        event.validate(frame_count) catch continue;
         var vst_event = toVstEvent(event) orelse continue;
         if (output_events.vtable.addEvent(output_events, &vst_event) != types.kResultOk) return types.kResultFalse;
     }
@@ -1600,11 +1601,15 @@ test "zig-vst3-plugin bridge drops output MIDI events with invalid legacy fields
         .{ .kind = .pitch_bend, .bus_index = 0, .sample_offset = 0, .channel = 1, .value = std.math.nan(f32) },
         .{ .kind = .pitch_bend, .bus_index = 0, .sample_offset = 1, .channel = 1, .control_number = 512, .value = 0.5 },
         .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = 60, .velocity = std.math.nan(f32) },
+        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 16, .pitch = 60, .velocity = 0.5 },
+        .{ .kind = .note_on, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = 128, .velocity = 0.5 },
         .{ .kind = .note_off, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = 60, .velocity = -0.1 },
+        .{ .kind = .note_off, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = 61, .velocity = 0.25 },
         .{ .kind = .aftertouch, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = 60, .value = 1.1 },
+        .{ .kind = .aftertouch, .bus_index = 0, .sample_offset = 0, .channel = 1, .pitch = -1, .value = 0.5 },
         .{ .kind = .note_expression_value, .bus_index = 0, .sample_offset = 0, .note_id = 42, .expression_type_id = 5, .value = std.math.inf(f32) },
     };
-    const List = vst_event_list.EventList(1);
+    const List = vst_event_list.EventList(2);
     var list = List{};
     var data = ivstaudioprocessor.ProcessData{
         .numSamples = 2,
@@ -1614,10 +1619,12 @@ test "zig-vst3-plugin bridge drops output MIDI events with invalid legacy fields
     try std.testing.expectEqual(types.kResultOk, writeOutputEvents(&data, .{ .items = &items }));
 
     const written = list.items();
-    try std.testing.expectEqual(@as(usize, 1), written.len);
+    try std.testing.expectEqual(@as(usize, 2), written.len);
     try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent), written[0].type);
     try std.testing.expectEqual(@as(u8, ivstmidicontrollers.kPitchBend), written[0].data.midiCCOut.controlNumber);
     try std.testing.expectEqual(@as(types.int8, 1), written[0].data.midiCCOut.channel);
+    try std.testing.expectEqual(@intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent), written[1].type);
+    try std.testing.expectEqual(@as(types.int16, 61), written[1].data.noteOff.pitch);
 }
 
 test "zig-vst3-plugin bridge reports output event write failures" {
