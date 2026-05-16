@@ -2070,7 +2070,10 @@ test "zig-vst3-plugin bridge dispatches main audio processing by sample size" {
 
 test "zig-vst3-plugin bridge dispatches double precision main audio" {
     const Doubler = struct {
-        pub fn process(_: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
+        calls: *usize,
+
+        pub fn process(self: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
+            self.calls.* += 1;
             for (0..context.outputChannelCount()) |channel| {
                 const input = context.inputChannel(channel) orelse continue;
                 const output = context.outputChannel(channel) orelse continue;
@@ -2104,7 +2107,9 @@ test "zig-vst3-plugin bridge dispatches double precision main audio" {
         .processContext = &process_context,
     };
 
-    try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, null, Doubler{}));
+    var calls: usize = 0;
+    try std.testing.expectEqual(types.kResultOk, processMainAudio(&data, .{}, .{}, null, Doubler{ .calls = &calls }));
+    try std.testing.expectEqual(@as(usize, 1), calls);
     try std.testing.expectEqual(@as(f64, 3.0), output_samples[0]);
     try std.testing.expectEqual(@as(f64, 5.0), output_samples[1]);
 }
