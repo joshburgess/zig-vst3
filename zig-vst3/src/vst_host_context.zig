@@ -10,14 +10,7 @@ const ivsthostapplication = @import("pluginterfaces/vst/ivsthostapplication.zig"
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
-
-fn copyString128(dest: [*]vsttypes.TChar, source: []const u8) void {
-    @memset(dest[0..128], 0);
-    const len = @min(source.len, 127);
-    for (source[0..len], 0..) |char, index| {
-        dest[index] = char;
-    }
-}
+const string128 = @import("string128.zig");
 
 pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type {
     return extern struct {
@@ -93,7 +86,7 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
         }
 
         fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            copyString128(out, name);
+            string128.copyPtr(out, name);
             return types.kResultOk;
         }
 
@@ -206,7 +199,7 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
         }
 
         fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            copyString128(out, name);
+            string128.copyPtr(out, name);
             return types.kResultOk;
         }
 
@@ -321,7 +314,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
         }
 
         fn getName(_: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            copyString128(out, name);
+            string128.copyPtr(out, name);
             return types.kResultOk;
         }
 

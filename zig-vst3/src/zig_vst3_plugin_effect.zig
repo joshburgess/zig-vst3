@@ -29,6 +29,7 @@ const plug_core = @import("zig-vst3-plugin-core");
 const plug_process = plug_core.process;
 const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+const string128 = @import("string128.zig");
 const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_bridge = @import("zig_vst3_plugin_bridge.zig");
 
@@ -711,7 +712,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 .parentUnitId = reflected.parent_id,
                 .programListId = reflected.program_list_id,
             };
-            copyString128(&out.name, reflected.name);
+            string128.copy(&out.name, reflected.name);
             return types.kResultOk;
         }
 
@@ -732,23 +733,23 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 .id = reflected.id,
                 .programCount = countToInt32(reflected.programs.len),
             };
-            copyString128(&out.name, reflected.name);
+            string128.copy(&out.name, reflected.name);
             return types.kResultOk;
         }
 
         fn getProgramName(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            clearString128Ptr(out);
+            string128.clearPtr(out);
             if (program_index < 0) return types.kInvalidArgument;
             const name = units.programName(list_id, @intCast(program_index)) orelse return types.kInvalidArgument;
-            copyString128Ptr(out, name);
+            string128.copyPtr(out, name);
             return types.kResultOk;
         }
 
         fn getProgramInfo(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            clearString128Ptr(out);
+            string128.clearPtr(out);
             if (program_index < 0) return types.kInvalidArgument;
             const value = units.programInfo(list_id, @intCast(program_index), std.mem.span(attribute_id)) orelse return types.kInvalidArgument;
-            copyString128Ptr(out, value);
+            string128.copyPtr(out, value);
             return types.kResultOk;
         }
 
@@ -757,7 +758,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getProgramPitchName(_: *anyopaque, _: vsttypes.ProgramListID, _: types.int32, _: types.int16, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            clearString128Ptr(out);
+            string128.clearPtr(out);
             return types.kInvalidArgument;
         }
 
@@ -923,7 +924,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getNoteExpressionStringByValue(_: *anyopaque, _: types.int32, _: types.int16, _: ivstnoteexpression.NoteExpressionTypeID, _: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            clearString128Ptr(out);
+            string128.clearPtr(out);
             return types.kInvalidArgument;
         }
 
@@ -999,26 +1000,6 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return types.kResultFalse;
         }
     };
-}
-
-fn copyString128(dest: *vsttypes.String128, source: []const u8) void {
-    @memset(dest, 0);
-    const len = @min(source.len, dest.len - 1);
-    for (source[0..len], 0..) |char, index| {
-        dest[index] = char;
-    }
-}
-
-fn copyString128Ptr(dest: [*]vsttypes.TChar, source: []const u8) void {
-    clearString128Ptr(dest);
-    const len = @min(source.len, 127);
-    for (source[0..len], 0..) |char, index| {
-        dest[index] = char;
-    }
-}
-
-fn clearString128Ptr(dest: [*]vsttypes.TChar) void {
-    @memset(dest[0..128], 0);
 }
 
 fn countToInt32(count: usize) types.int32 {

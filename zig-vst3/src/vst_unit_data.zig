@@ -6,18 +6,7 @@ const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
-
-fn copyString128(dest: *vsttypes.String128, source: []const u8) void {
-    @memset(dest, 0);
-    const len = @min(source.len, dest.len - 1);
-    for (source[0..len], 0..) |char, index| {
-        dest[index] = char;
-    }
-}
-
-fn clearString128Ptr(dest: [*]vsttypes.TChar) void {
-    @memset(dest[0..128], 0);
-}
+const string128 = @import("string128.zig");
 
 pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, comptime Config: type) type {
     if (max_units == 0) @compileError("UnitInfo requires at least one unit slot");
@@ -41,7 +30,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         }
 
         pub fn setRootName(self: *Self, name: []const u8) void {
-            copyString128(&self.units[0].name, name);
+            string128.copy(&self.units[0].name, name);
         }
 
         pub fn addUnit(self: *Self, id: vsttypes.UnitID, parent_id: vsttypes.UnitID, name: []const u8, program_list_id: vsttypes.ProgramListID) types.tresult {
@@ -52,7 +41,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
                 .parentUnitId = parent_id,
                 .programListId = program_list_id,
             };
-            copyString128(&self.units[index].name, name);
+            string128.copy(&self.units[index].name, name);
             self.unit_count = @intCast(index + 1);
             return types.kResultOk;
         }
@@ -64,7 +53,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
                 .id = id,
                 .programCount = program_count,
             };
-            copyString128(&self.program_lists[index].name, name);
+            string128.copy(&self.program_lists[index].name, name);
             self.program_list_count = @intCast(index + 1);
             return types.kResultOk;
         }
@@ -86,7 +75,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
                 .parentUnitId = ivstunits.kNoParentUnitId,
                 .programListId = ivstunits.kNoProgramListId,
             };
-            copyString128(&values[0].name, "Root");
+            string128.copy(&values[0].name, "Root");
             return values;
         }
 
@@ -141,10 +130,10 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn getProgramName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = owner(ptr);
-            clearString128Ptr(out);
+            string128.clearPtr(out);
             if (@hasDecl(Config, "getProgramName")) {
                 const result = Config.getProgramName(self, list_id, program_index, out);
-                if (result != types.kResultOk) clearString128Ptr(out);
+                if (result != types.kResultOk) string128.clearPtr(out);
                 return result;
             }
             return types.kInvalidArgument;
@@ -152,10 +141,10 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn getProgramInfo(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = owner(ptr);
-            clearString128Ptr(out);
+            string128.clearPtr(out);
             if (@hasDecl(Config, "getProgramInfo")) {
                 const result = Config.getProgramInfo(self, list_id, program_index, attribute_id, out);
-                if (result != types.kResultOk) clearString128Ptr(out);
+                if (result != types.kResultOk) string128.clearPtr(out);
                 return result;
             }
             return types.kInvalidArgument;
@@ -169,10 +158,10 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn getProgramPitchName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, pitch: types.int16, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = owner(ptr);
-            clearString128Ptr(out);
+            string128.clearPtr(out);
             if (@hasDecl(Config, "getProgramPitchName")) {
                 const result = Config.getProgramPitchName(self, list_id, program_index, pitch, out);
-                if (result != types.kResultOk) clearString128Ptr(out);
+                if (result != types.kResultOk) string128.clearPtr(out);
                 return result;
             }
             return types.kInvalidArgument;

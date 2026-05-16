@@ -12,6 +12,7 @@ const plug = @import("zig-vst3-plugin-core");
 const audio_processor_algo = @import("pluginterfaces/vst/vstaudioprocessoralgo.zig");
 const events_helper = @import("pluginterfaces/vst/vsteventshelper.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+const string128 = @import("string128.zig");
 const vst_event_list = @import("vst_event_list.zig");
 const vst_parameter_changes = @import("vst_parameter_changes.zig");
 const vst_stream = @import("vst_stream.zig");
@@ -107,7 +108,7 @@ pub const StereoAudioBuses = struct {
                 .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
                 .flags = ivstcomponent.BusFlags.kDefaultActive,
             };
-            copyAscii16(&out.name, if (direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) "Stereo In" else "Stereo Out");
+            string128.copy(&out.name, if (direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) "Stereo In" else "Stereo Out");
             return types.kResultOk;
         }
 
@@ -122,7 +123,7 @@ pub const StereoAudioBuses = struct {
                 .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
                 .flags = ivstcomponent.BusFlags.kDefaultActive,
             };
-            copyAscii16(&out.name, if (direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) "Event In" else "Event Out");
+            string128.copy(&out.name, if (direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) "Event In" else "Event Out");
             return types.kResultOk;
         }
 
@@ -308,9 +309,9 @@ pub fn fillParameterInfo(
         .unitId = set.unitId(parameter_index).?,
         .flags = parameterInfoFlags(Params, set, parameter_index),
     };
-    copyAscii16(&out.title, set.name(parameter_index).?);
-    copyAscii16(&out.shortTitle, set.shortName(parameter_index).?);
-    copyAscii16(&out.units, set.units(parameter_index).?);
+    string128.copy(&out.title, set.name(parameter_index).?);
+    string128.copy(&out.shortTitle, set.shortName(parameter_index).?);
+    string128.copy(&out.units, set.units(parameter_index).?);
     return types.kResultOk;
 }
 
@@ -342,11 +343,11 @@ pub fn getParamStringByValue(
     value: vsttypes.ParamValue,
     out: [*]vsttypes.TChar,
 ) types.tresult {
-    copyAscii16Ptr(out, "");
+    string128.copyPtr(out, "");
     const index = set.indexOfId(id) orelse return types.kInvalidArgument;
     var buffer: [64]u8 = undefined;
     const text = set.formatPlain(index, value, &buffer) catch return types.kResultFalse;
-    copyAscii16Ptr(out, text);
+    string128.copyPtr(out, text);
     return types.kResultOk;
 }
 
@@ -700,22 +701,6 @@ const IBStreamWriter = struct {
         return total;
     }
 };
-
-fn copyAscii16(dest: *vsttypes.String128, source: []const u8) void {
-    @memset(dest, 0);
-    const len = @min(source.len, dest.len - 1);
-    for (source[0..len], 0..) |char, index| {
-        dest[index] = char;
-    }
-}
-
-fn copyAscii16Ptr(dest: [*]vsttypes.TChar, source: []const u8) void {
-    @memset(dest[0..128], 0);
-    const len = @min(source.len, 127);
-    for (source[0..len], 0..) |char, index| {
-        dest[index] = char;
-    }
-}
 
 fn readAscii16Ptr(source: [*]vsttypes.TChar, buffer: []u8) []const u8 {
     var len: usize = 0;
