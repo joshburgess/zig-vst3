@@ -81,3 +81,41 @@ test "modulated value combines base and bipolar offset" {
     try std.testing.expectEqual(@as(f64, 0.0), value.loadModulation());
     try std.testing.expectEqual(@as(f64, 0.25), value.load());
 }
+
+test "normalized and modulated values clamp generated inputs" {
+    const inputs = [_]f64{
+        -std.math.inf(f64),
+        -1.0,
+        -0.001,
+        0.0,
+        0.25,
+        1.0,
+        1.001,
+        2.0,
+        std.math.inf(f64),
+        std.math.nan(f64),
+    };
+
+    for (inputs) |input| {
+        var normalized = NormalizedValue.init(input);
+        const expected = if (std.math.isNan(input) or input < 0.0) 0.0 else if (input > 1.0) 1.0 else input;
+        try std.testing.expectEqual(expected, normalized.load());
+
+        normalized.store(1.0 - expected);
+        try std.testing.expectEqual(1.0 - expected, normalized.load());
+    }
+
+    for (inputs) |base| {
+        for (inputs) |modulation| {
+            var value = ModulatedValue.init(base);
+            const expected_base = if (std.math.isNan(base) or base < 0.0) 0.0 else if (base > 1.0) 1.0 else base;
+            const expected_modulation = if (std.math.isNan(modulation)) 0.0 else std.math.clamp(modulation, -1.0, 1.0);
+
+            value.storeModulation(modulation);
+
+            try std.testing.expectEqual(expected_base, value.loadBase());
+            try std.testing.expectEqual(expected_modulation, value.loadModulation());
+            try std.testing.expectEqual(std.math.clamp(expected_base + expected_modulation, 0.0, 1.0), value.load());
+        }
+    }
+}

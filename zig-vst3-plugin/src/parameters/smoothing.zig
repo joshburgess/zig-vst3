@@ -317,3 +317,66 @@ test "log smoother clamps zero and handles immediate target" {
     try std.testing.expect(!smoother.active());
     try std.testing.expect(smoother.finished());
 }
+
+test "smoothers clamp generated inputs and preserve endpoint invariants" {
+    const inputs = [_]f64{
+        -std.math.inf(f64),
+        -1.0,
+        0.0,
+        0.125,
+        0.5,
+        1.0,
+        2.0,
+        std.math.inf(f64),
+        std.math.nan(f64),
+    };
+    const sample_counts = [_]usize{ 0, 1, 2, 5 };
+
+    for (inputs) |initial| {
+        for (inputs) |target| {
+            for (sample_counts) |samples| {
+                var linear = LinearSmoother.init(initial);
+                linear.setTarget(target, samples);
+                const expected_target = clampNormalized(target);
+                try std.testing.expect(linear.currentValue() >= 0.0 and linear.currentValue() <= 1.0);
+                try std.testing.expectEqual(expected_target, linear.targetValue());
+                try std.testing.expectEqual(samples != 0, linear.active());
+                try std.testing.expectEqual(samples == 0, linear.finished());
+                for (0..samples) |_| {
+                    const next_value = linear.next();
+                    try std.testing.expect(next_value >= 0.0 and next_value <= 1.0);
+                }
+                try std.testing.expectEqual(expected_target, linear.currentValue());
+                try std.testing.expect(linear.finished());
+
+                var logarithmic = LogSmoother.init(initial);
+                logarithmic.setTarget(target, samples);
+                const expected_log_target = clampNormalizedNonZero(target);
+                try std.testing.expect(logarithmic.currentValue() > 0.0 and logarithmic.currentValue() <= 1.0);
+                try std.testing.expectEqual(expected_log_target, logarithmic.targetValue());
+                try std.testing.expectEqual(samples != 0, logarithmic.active());
+                try std.testing.expectEqual(samples == 0, logarithmic.finished());
+                for (0..samples) |_| {
+                    const next_value = logarithmic.next();
+                    try std.testing.expect(next_value > 0.0 and next_value <= 1.0);
+                }
+                try std.testing.expectEqual(expected_log_target, logarithmic.currentValue());
+                try std.testing.expect(logarithmic.finished());
+            }
+
+            var exponential = ExponentialSmoother.init(initial, target);
+            try std.testing.expect(exponential.currentValue() >= 0.0 and exponential.currentValue() <= 1.0);
+            try std.testing.expect(exponential.coefficientValue() >= 0.0 and exponential.coefficientValue() <= 1.0);
+            exponential.setTarget(target);
+            exponential.setCoefficient(initial);
+            const expected_target = clampNormalized(target);
+            const expected_coefficient = clampNormalized(initial);
+            try std.testing.expectEqual(expected_target, exponential.targetValue());
+            try std.testing.expectEqual(expected_coefficient, exponential.coefficientValue());
+            for (0..8) |_| {
+                const next_value = exponential.next();
+                try std.testing.expect(next_value >= 0.0 and next_value <= 1.0);
+            }
+        }
+    }
+}
