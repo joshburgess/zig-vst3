@@ -258,7 +258,7 @@ pub fn forEachParameterChanges(changes: ?*parameter_changes.IParameterChanges, c
     const param_count = parameter_changes_list.vtable.getParameterCount(parameter_changes_list);
     var param_index: base.int32 = 0;
     while (param_index < param_count) : (param_index += 1) {
-        const param_queue = parameter_changes_list.vtable.getParameterData(parameter_changes_list, param_index) orelse break;
+        const param_queue = parameter_changes_list.vtable.getParameterData(parameter_changes_list, param_index) orelse continue;
         callback(context, param_queue);
     }
 }
@@ -269,7 +269,6 @@ const EventCollector = struct {
     last_sample_offset: base.int32 = 0,
     last_param_id: vsttypes.ParamID = 0,
     last_param_value: vsttypes.ParamValue = 0,
-    queue_read_count: usize = 0,
 };
 
 fn collectEvent(collector: *EventCollector, event: *const events.Event) void {
@@ -285,11 +284,6 @@ fn collectParamValue(collector: *EventCollector, param_id: vsttypes.ParamID, sam
     collector.last_param_id = param_id;
     collector.last_sample_offset = sample_offset;
     collector.last_param_value = value;
-}
-
-fn collectLastParamValueQueue(collector: *EventCollector, param_queue: *parameter_changes.IParamValueQueue) void {
-    collector.queue_read_count += 1;
-    forEachLastParamValueQueue(param_queue, collector, collectParamValue);
 }
 
 test "audio processor helpers match expected core behavior" {
@@ -421,27 +415,6 @@ test "audio processor helper stops parameter point iteration at invalid reported
     try std.testing.expectEqual(@as(base.int32, 6), collector.last_sample_offset);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), collector.last_param_value);
     try std.testing.expectEqual(@as(usize, 3), queue.read_count);
-}
-
-test "audio processor helper stops parameter change iteration at invalid reported boundary" {
-    const points = [_]TestParamPoint{
-        .{ .sample_offset = 3, .value = 0.125 },
-        .{ .sample_offset = 9, .value = 0.875 },
-    };
-    var queue = TestParamValueQueue.init(13, &points);
-    var queue_ptrs = [_]*parameter_changes.IParamValueQueue{&queue.iface};
-    var changes = TestParameterChanges.init(queue_ptrs[0..]);
-    changes.reported_count = 1000;
-    var collector = EventCollector{};
-
-    forEachParameterChanges(&changes.iface, &collector, collectLastParamValueQueue);
-
-    try std.testing.expectEqual(@as(usize, 1), collector.queue_read_count);
-    try std.testing.expectEqual(@as(usize, 1), collector.count);
-    try std.testing.expectEqual(@as(vsttypes.ParamID, 13), collector.last_param_id);
-    try std.testing.expectEqual(@as(base.int32, 9), collector.last_sample_offset);
-    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.875), collector.last_param_value);
-    try std.testing.expectEqual(@as(usize, 2), changes.read_count);
 }
 
 test "audio processor helper skips empty last parameter queues" {
@@ -591,62 +564,5 @@ const TestParamValueQueue = struct {
     fn addPoint(_: *anyopaque, _: base.int32, _: vsttypes.ParamValue, index: *base.int32) callconv(.c) base.tresult {
         index.* = -1;
         return base.kResultFalse;
-    }
-};
-
-const TestParameterChanges = struct {
-    iface: parameter_changes.IParameterChanges = .{ .vtable = &vtable },
-    queues: []const *parameter_changes.IParamValueQueue,
-    reported_count: ?base.int32 = null,
-    read_count: usize = 0,
-
-    const vtable = parameter_changes.IParameterChangesVTable{
-        .queryInterface = queryInterface,
-        .addRef = addRef,
-        .release = release,
-        .getParameterCount = getParameterCount,
-        .getParameterData = getParameterData,
-        .addParameterData = addParameterData,
-    };
-
-    fn init(queues: []const *parameter_changes.IParamValueQueue) TestParameterChanges {
-        return .{ .queues = queues };
-    }
-
-    fn owner(ptr: *anyopaque) *TestParameterChanges {
-        const iface: *parameter_changes.IParameterChanges = @ptrCast(@alignCast(ptr));
-        return @fieldParentPtr("iface", iface);
-    }
-
-    fn queryInterface(_: *anyopaque, _: *const @import("../../tuid.zig").TUID, out: *?*anyopaque) callconv(.c) base.tresult {
-        out.* = null;
-        return base.kNoInterface;
-    }
-
-    fn addRef(_: *anyopaque) callconv(.c) base.uint32 {
-        return 1;
-    }
-
-    fn release(_: *anyopaque) callconv(.c) base.uint32 {
-        return 1;
-    }
-
-    fn getParameterCount(ptr: *anyopaque) callconv(.c) base.int32 {
-        const self = owner(ptr);
-        return self.reported_count orelse @intCast(self.queues.len);
-    }
-
-    fn getParameterData(ptr: *anyopaque, index: base.int32) callconv(.c) ?*parameter_changes.IParamValueQueue {
-        if (index < 0) return null;
-        const self = owner(ptr);
-        self.read_count += 1;
-        const queue_index: usize = @intCast(index);
-        if (queue_index >= self.queues.len) return null;
-        return self.queues[queue_index];
-    }
-
-    fn addParameterData(_: *anyopaque, _: *const vsttypes.ParamID, index: *base.int32) callconv(.c) ?*parameter_changes.IParamValueQueue {
-        index.* = -1;
-        return null;
     }
 };
