@@ -14,6 +14,7 @@ pub const event_value_min = events_mod.event_value_min;
 pub const event_value_max = events_mod.event_value_max;
 pub const bipolar_event_value_min = events_mod.bipolar_event_value_min;
 pub const bipolar_event_value_max = events_mod.bipolar_event_value_max;
+pub const max_data_event_bytes = events_mod.max_data_event_bytes;
 
 pub const ParameterChange = changes_mod.ParameterChange;
 pub const ParameterSegment = changes_mod.ParameterSegment;

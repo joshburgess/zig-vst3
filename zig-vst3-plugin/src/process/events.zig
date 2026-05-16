@@ -14,6 +14,7 @@ pub const event_value_min: f32 = 0.0;
 pub const event_value_max: f32 = 1.0;
 pub const bipolar_event_value_min: f32 = -1.0;
 pub const bipolar_event_value_max: f32 = 1.0;
+pub const max_data_event_bytes: usize = 4096;
 
 pub const EventKind = enum {
     note_on,

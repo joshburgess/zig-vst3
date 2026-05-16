@@ -861,8 +861,8 @@ test "speaker helpers match expected core behavior" {
     try @import("std").testing.expect(is3D(SpeakerArr.k50_4));
     try @import("std").testing.expect(isAuro(SpeakerArr.k51_5));
     try @import("std").testing.expect(isAmbisonics(SpeakerArr.kAmbi1stOrderACN));
-    try @import("std").testing.expectEqual(kSpeakerACN4, convertSpeakerAmbi1234OrderToAmbi567Order(kSpeakerACN4));
-    try @import("std").testing.expectEqual(kSpeakerACN4, convertSpeakerAmbi567OrderToAmbi1234Order(kSpeakerACN4));
+    try @import("std").testing.expectEqual(@as(vsttypes.Speaker, 1) << 4, convertSpeakerAmbi1234OrderToAmbi567Order(kSpeakerACN4));
+    try @import("std").testing.expectEqual(kSpeakerACN4, convertSpeakerAmbi567OrderToAmbi1234Order(@as(vsttypes.Speaker, 1) << 4));
     try @import("std").testing.expectEqual(SpeakerArr.k71Cine, getSpeakerArrangementFromString(SpeakerArrStrings.kString71CineOld));
     try @import("std").testing.expectEqual(SpeakerArr.kEmpty, getSpeakerArrangementFromString("unknown"));
     try @import("std").testing.expectEqualStrings("LFE", std.mem.span(getSpeakerShortName(SpeakerArr.k51, 3)));
@@ -881,9 +881,9 @@ test "speaker helpers match expected core behavior" {
 
 test "speaker arrangement strings cover named and unknown arrangements" {
     try std.testing.expectEqualStrings("Stereo", std.mem.span(getSpeakerArrangementString(SpeakerArr.kStereo, false)));
-    try std.testing.expectEqualStrings("Stereo (L R)", std.mem.span(getSpeakerArrangementString(SpeakerArr.kStereo, true)));
+    try std.testing.expectEqualStrings("L R", std.mem.span(getSpeakerArrangementString(SpeakerArr.kStereo, true)));
     try std.testing.expectEqualStrings("5.1.4", std.mem.span(getSpeakerArrangementString(SpeakerArr.k51_4, false)));
-    try std.testing.expectEqualStrings("Ambi 4th order", std.mem.span(getSpeakerArrangementString(SpeakerArr.kAmbi4thOrderACN, false)));
+    try std.testing.expectEqualStrings("4OA", std.mem.span(getSpeakerArrangementString(SpeakerArr.kAmbi4thOrderACN, false)));
     try std.testing.expectEqualStrings("", std.mem.span(getSpeakerArrangementString(kSpeakerL | kSpeakerTfl, false)));
 }
 

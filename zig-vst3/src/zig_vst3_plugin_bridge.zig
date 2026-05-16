@@ -11,16 +11,17 @@ const types = @import("pluginterfaces/base/types.zig");
 const plug = @import("zig-vst3-plugin-core");
 const audio_processor_algo = @import("pluginterfaces/vst/vstaudioprocessoralgo.zig");
 const events_helper = @import("pluginterfaces/vst/vsteventshelper.zig");
+const vstspeaker = @import("pluginterfaces/vst/vstspeaker.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
 const vst_event_list = @import("vst_event_list.zig");
 const vst_parameter_changes = @import("vst_parameter_changes.zig");
 const vst_stream = @import("vst_stream.zig");
 
-const max_audio_channels = 64;
-const max_data_event_bytes = 4096;
-const empty_arrangement: vsttypes.SpeakerArrangement = 0;
-const stereo_arrangement: vsttypes.SpeakerArrangement = 3;
+const max_audio_channels = plug.process.max_audio_channels;
+const max_data_event_bytes = plug.process.max_data_event_bytes;
+const empty_arrangement = vstspeaker.SpeakerArr.kEmpty;
+const stereo_arrangement = vstspeaker.SpeakerArr.kStereo;
 const test_sample_rate: f64 = 48_000.0;
 
 const FixedBufferStream = struct {
