@@ -25,6 +25,15 @@ pub const EventKind = events_mod.EventKind;
 pub const EventKindIterator = events_mod.EventKindIterator;
 pub const EventOffsetIterator = events_mod.EventOffsetIterator;
 
+fn validateAudioChannels(channels: anytype) !usize {
+    if (channels.len > max_audio_channels) return error.TooManyChannels;
+    const frame_count = if (channels.len == 0) 0 else channels[0].len;
+    for (channels) |channel_samples| {
+        if (channel_samples.len != frame_count) return error.MismatchedFrameCount;
+    }
+    return frame_count;
+}
+
 pub const ProcessBlockSegmentIterator = struct {
     parameter_changes: ParameterChanges,
     events: Events,
@@ -54,13 +63,7 @@ pub fn AudioInputs(comptime Sample: type) type {
         frame_count: usize = 0,
 
         pub fn init(channels: []const []const Sample) !Self {
-            if (channels.len > max_audio_channels) return error.TooManyChannels;
-            const frame_count = if (channels.len == 0) 0 else channels[0].len;
-            for (channels) |channel_samples| {
-                if (channel_samples.len != frame_count) {
-                    return error.MismatchedFrameCount;
-                }
-            }
+            const frame_count = try validateAudioChannels(channels);
             var self = Self{
                 .channel_count = channels.len,
                 .frame_count = frame_count,
@@ -115,13 +118,7 @@ pub fn AudioOutputs(comptime Sample: type) type {
         frame_count: usize = 0,
 
         pub fn init(channels: []const []Sample) !Self {
-            if (channels.len > max_audio_channels) return error.TooManyChannels;
-            const frame_count = if (channels.len == 0) 0 else channels[0].len;
-            for (channels) |channel_samples| {
-                if (channel_samples.len != frame_count) {
-                    return error.MismatchedFrameCount;
-                }
-            }
+            const frame_count = try validateAudioChannels(channels);
             var self = Self{
                 .channel_count = channels.len,
                 .frame_count = frame_count,
