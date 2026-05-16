@@ -274,7 +274,7 @@ fn latestStoredMatchingEvent(items: []const Event, context: anytype, comptime ma
 fn countMatchingEvents(items: []const Event, context: anytype, comptime matches: anytype) usize {
     var count: usize = 0;
     for (items) |item| {
-        if (matches(item, context)) count += 1;
+        if (matches(item, context)) count +|= 1;
     }
     return count;
 }

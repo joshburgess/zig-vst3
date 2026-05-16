@@ -123,9 +123,9 @@ pub fn readParameterStateWithMigrationsReport(
                 seen_restored[index] = true;
             }
             _ = restored.store(index, normalized);
-            report.restored_count += 1;
+            report.restored_count +|= 1;
         } else {
-            report.ignored_count += 1;
+            report.ignored_count +|= 1;
         }
     }
     values.copyFrom(&restored);

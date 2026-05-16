@@ -96,7 +96,7 @@ pub fn ParameterValues(comptime Params: type) type {
             var changed: usize = 0;
             inline for (0..Set.count) |index| {
                 const value = source.values[index].load();
-                if (self.values[index].load() != value) changed += 1;
+                if (self.values[index].load() != value) changed +|= 1;
                 self.values[index].store(value);
             }
             return changed;
@@ -110,7 +110,7 @@ pub fn ParameterValues(comptime Params: type) type {
             var changed: usize = 0;
             inline for (0..Set.count) |index| {
                 const default = set.defaultNormalized(index).?;
-                if (self.values[index].load() != default) changed += 1;
+                if (self.values[index].load() != default) changed +|= 1;
                 self.values[index].store(default);
             }
             return changed;
@@ -191,7 +191,7 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn nonDefaultCount(self: *const Self, set: *const Set) usize {
             var count: usize = 0;
             inline for (0..Set.count) |index| {
-                if (!self.isDefault(set, index).?) count += 1;
+                if (!self.isDefault(set, index).?) count +|= 1;
             }
             return count;
         }
@@ -288,7 +288,7 @@ pub fn ParameterValues(comptime Params: type) type {
             for (changes.items) |change| {
                 if (!(set.canAutomateById(change.id) orelse false)) continue;
                 if (set.isReadOnlyById(change.id) orelse true) continue;
-                if (self.storeById(set, change.id, change.normalized)) applied += 1;
+                if (self.storeById(set, change.id, change.normalized)) applied +|= 1;
             }
             return applied;
         }
@@ -298,7 +298,7 @@ pub fn ParameterValues(comptime Params: type) type {
             for (changes.items) |change| {
                 if (!(set.canAutomateById(change.id) orelse false)) continue;
                 if (set.isReadOnlyById(change.id) orelse true) continue;
-                changed += self.storeByIdCount(set, change.id, change.normalized) orelse 0;
+                changed +|= self.storeByIdCount(set, change.id, change.normalized) orelse 0;
             }
             return changed;
         }
