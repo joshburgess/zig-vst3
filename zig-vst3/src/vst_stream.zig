@@ -39,6 +39,12 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return @min(capacity, self.write_limit) - self.pos;
         }
 
+        fn seekTarget(base: usize, offset: types.int64) ?types.int64 {
+            const start = std.math.cast(types.int64, base) orelse return null;
+            const next = @addWithOverflow(start, offset);
+            return if (next[1] == 0) next[0] else null;
+        }
+
         fn ownerFromStream(ptr: *anyopaque) *Self {
             const iface: *ibstream.IBStream = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -126,8 +132,14 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             const self = ownerFromStream(ptr);
             const next = switch (mode) {
                 @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet) => offset,
-                @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur) => @as(types.int64, @intCast(self.pos)) + offset,
-                @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd) => @as(types.int64, @intCast(self.len)) + offset,
+                @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur) => seekTarget(self.pos, offset) orelse {
+                    if (result) |out| out.* = -1;
+                    return types.kResultFalse;
+                },
+                @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd) => seekTarget(self.len, offset) orelse {
+                    if (result) |out| out.* = -1;
+                    return types.kResultFalse;
+                },
                 else => {
                     if (result) |out| out.* = -1;
                     return types.kInvalidArgument;
@@ -304,6 +316,30 @@ test "fixed buffer stream handles generated seek positions" {
             try std.testing.expectEqual(expected, reported);
         }
     }
+}
+
+test "fixed buffer stream rejects overflowing relative seeks" {
+    const Stream = FixedBufferStream(16);
+    var stream = Stream{};
+    const iface = stream.asStream();
+    var input = [_]u8{0} ** 8;
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.write(iface, &input, input.len, null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 4, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+
+    var reported: types.int64 = 99;
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        iface.vtable.seek(iface, std.math.maxInt(types.int64), @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur), &reported),
+    );
+    try std.testing.expectEqual(@as(types.int64, -1), reported);
+
+    reported = 99;
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        iface.vtable.seek(iface, std.math.maxInt(types.int64), @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd), &reported),
+    );
+    try std.testing.expectEqual(@as(types.int64, -1), reported);
 }
 
 test "fixed buffer stream resizes with zero fill and clamps cursor" {
