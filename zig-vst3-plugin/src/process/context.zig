@@ -2251,6 +2251,61 @@ test "process block segments ignore duplicate parameter and event offsets" {
     try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
 }
 
+test "process block segments generated offsets match reference union" {
+    const Reference = struct {
+        fn nextOffset(changes: []const ParameterChange, events: []const Event, start: usize, frame_count: usize) usize {
+            var result = frame_count;
+            for (changes) |change| {
+                if (change.sample_offset > start and change.sample_offset < result) {
+                    result = change.sample_offset;
+                }
+            }
+            for (events) |event| {
+                if (event.sample_offset > start and event.sample_offset < result) {
+                    result = event.sample_offset;
+                }
+            }
+            return result;
+        }
+    };
+
+    const frame_count = 7;
+    for (0..32) |seed| {
+        var change_storage: [4]ParameterChange = undefined;
+        var event_storage: [4]Event = undefined;
+        for (&change_storage, 0..) |*change, index| {
+            change.* = .{
+                .id = @intCast(7 + index % 2),
+                .sample_offset = (seed + index * 2) % frame_count,
+                .normalized = @as(f64, @floatFromInt((seed + index) % 5)) / 4.0,
+            };
+        }
+        for (&event_storage, 0..) |*event, index| {
+            event.* = Event.noteOn((seed * 2 + index * 3) % frame_count, @intCast(index % 2), @intCast(60 + index), 0.5);
+        }
+
+        for (0..change_storage.len + 1) |change_count| {
+            for (0..event_storage.len + 1) |event_count| {
+                const changes = change_storage[0..change_count];
+                const events = event_storage[0..event_count];
+                var iterator = ProcessBlockSegmentIterator{
+                    .parameter_changes = try ParameterChanges.init(changes, frame_count),
+                    .events = try Events.init(events, frame_count),
+                    .frame_count = frame_count,
+                };
+
+                var start: usize = 0;
+                while (start < frame_count) {
+                    const end = Reference.nextOffset(changes, events, start, frame_count);
+                    try std.testing.expectEqual(BlockSegment{ .start_offset = start, .end_offset = end }, iterator.next().?);
+                    start = end;
+                }
+                try std.testing.expectEqual(@as(?BlockSegment, null), iterator.next());
+            }
+        }
+    }
+}
+
 test "process context exposes output event helpers" {
     const input = [_]f32{ 0.0, 0.0 };
     var output = [_]f32{ 0.0, 0.0 };

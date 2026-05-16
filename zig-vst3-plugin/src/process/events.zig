@@ -1668,6 +1668,95 @@ test "events query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(i16, 64), same_offset_view.latestAtOffset(2).?.pitch);
 }
 
+test "events generated queries match reference scans" {
+    const Reference = struct {
+        fn itemMatchesKind(item: Event, kind: EventKind) bool {
+            return item.kind == kind;
+        }
+
+        fn countKind(items: []const Event, kind: EventKind) usize {
+            var result: usize = 0;
+            for (items) |item| {
+                if (itemMatchesKind(item, kind)) result += 1;
+            }
+            return result;
+        }
+
+        fn firstKind(items: []const Event, kind: EventKind) ?Event {
+            var result: ?Event = null;
+            for (items) |item| {
+                if (!itemMatchesKind(item, kind)) continue;
+                if (result == null or item.sample_offset < result.?.sample_offset) result = item;
+            }
+            return result;
+        }
+
+        fn latestKind(items: []const Event, kind: EventKind) ?Event {
+            var result: ?Event = null;
+            for (items) |item| {
+                if (!itemMatchesKind(item, kind)) continue;
+                if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
+            }
+            return result;
+        }
+
+        fn nextOffsetForKind(items: []const Event, kind: EventKind, after_sample_offset: usize) ?usize {
+            var result: ?usize = null;
+            for (items) |item| {
+                if (!itemMatchesKind(item, kind) or item.sample_offset <= after_sample_offset) continue;
+                if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+            }
+            return result;
+        }
+
+        fn countAtOffset(items: []const Event, sample_offset: usize) usize {
+            var result: usize = 0;
+            for (items) |item| {
+                if (item.sample_offset == sample_offset) result += 1;
+            }
+            return result;
+        }
+    };
+
+    const kinds = [_]EventKind{ .note_on, .note_off, .midi_cc, .pitch_bend };
+    const frame_count = 6;
+
+    for (0..32) |seed| {
+        var storage: [4]Event = undefined;
+        for (&storage, 0..) |*item, index| {
+            const sample_offset = (seed * 3 + index * 2) % frame_count;
+            item.* = switch (kinds[(seed + index * 2) % kinds.len]) {
+                .note_on => Event.noteOn(sample_offset, @intCast(index % 2), @intCast(60 + index), 0.25),
+                .note_off => Event.noteOff(sample_offset, @intCast(index % 2), @intCast(60 + index), 0.0),
+                .midi_cc => Event.midiCc(sample_offset, @intCast(index % 2), @intCast(1 + index), 0.5),
+                .pitch_bend => Event.pitchBend(sample_offset, @intCast(index % 2), 0.75),
+                else => unreachable,
+            };
+        }
+
+        for (0..storage.len + 1) |len| {
+            const items = storage[0..len];
+            const view = try Events.init(items, frame_count);
+
+            for (kinds) |kind| {
+                try std.testing.expectEqual(Reference.countKind(items, kind), view.countKind(kind));
+                try std.testing.expectEqual(Reference.firstKind(items, kind), view.firstKind(kind));
+                try std.testing.expectEqual(Reference.latestKind(items, kind), view.latestKind(kind));
+                for (0..frame_count) |sample_offset| {
+                    try std.testing.expectEqual(
+                        Reference.nextOffsetForKind(items, kind, sample_offset),
+                        view.nextSampleOffsetForKind(kind, sample_offset),
+                    );
+                }
+            }
+
+            for (0..frame_count) |sample_offset| {
+                try std.testing.expectEqual(Reference.countAtOffset(items, sample_offset), view.countAtOffset(sample_offset));
+            }
+        }
+    }
+}
+
 test "event constructors can target non-main buses" {
     const event = Event.noteOn(1, 0, 60, 0.75).withBusIndex(2);
 

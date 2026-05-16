@@ -732,6 +732,92 @@ test "parameter changes query by sample offset without requiring sorted input" {
     try std.testing.expectEqual(@as(?ParameterChange, null), missing_changes.next());
 }
 
+test "parameter changes generated queries match reference scans" {
+    const Reference = struct {
+        fn itemMatchesId(item: ParameterChange, id: u32) bool {
+            return item.id == id;
+        }
+
+        fn count(items: []const ParameterChange, id: u32) usize {
+            var result: usize = 0;
+            for (items) |item| {
+                if (itemMatchesId(item, id)) result += 1;
+            }
+            return result;
+        }
+
+        fn first(items: []const ParameterChange, id: u32) ?ParameterChange {
+            var result: ?ParameterChange = null;
+            for (items) |item| {
+                if (!itemMatchesId(item, id)) continue;
+                if (result == null or item.sample_offset < result.?.sample_offset) result = item;
+            }
+            return result;
+        }
+
+        fn latest(items: []const ParameterChange, id: u32) ?ParameterChange {
+            var result: ?ParameterChange = null;
+            for (items) |item| {
+                if (!itemMatchesId(item, id)) continue;
+                if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
+            }
+            return result;
+        }
+
+        fn nextOffset(items: []const ParameterChange, id: u32, after_sample_offset: usize) ?usize {
+            var result: ?usize = null;
+            for (items) |item| {
+                if (!itemMatchesId(item, id) or item.sample_offset <= after_sample_offset) continue;
+                if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+            }
+            return result;
+        }
+
+        fn countAtOffset(items: []const ParameterChange, sample_offset: usize) usize {
+            var result: usize = 0;
+            for (items) |item| {
+                if (item.sample_offset == sample_offset) result += 1;
+            }
+            return result;
+        }
+    };
+
+    const ids = [_]u32{ 7, 8, 9 };
+    const frame_count = 6;
+
+    for (0..32) |seed| {
+        var storage: [4]ParameterChange = undefined;
+        for (&storage, 0..) |*item, index| {
+            item.* = .{
+                .id = ids[(seed + index * 2) % ids.len],
+                .sample_offset = (seed * 3 + index * 2) % frame_count,
+                .normalized = @as(f64, @floatFromInt((seed + index) % 5)) / 4.0,
+            };
+        }
+
+        for (0..storage.len + 1) |len| {
+            const items = storage[0..len];
+            const view = try ParameterChanges.init(items, frame_count);
+
+            for (ids) |id| {
+                try std.testing.expectEqual(Reference.count(items, id), view.count(id));
+                try std.testing.expectEqual(Reference.first(items, id), view.first(id));
+                try std.testing.expectEqual(Reference.latest(items, id), view.latest(id));
+                for (0..frame_count) |sample_offset| {
+                    try std.testing.expectEqual(
+                        Reference.nextOffset(items, id, sample_offset),
+                        view.nextSampleOffsetForId(id, sample_offset),
+                    );
+                }
+            }
+
+            for (0..frame_count) |sample_offset| {
+                try std.testing.expectEqual(Reference.countAtOffset(items, sample_offset), view.countAtOffset(sample_offset));
+            }
+        }
+    }
+}
+
 test "parameter changes iterate stable automation segments without allocation" {
     const changes = [_]ParameterChange{
         .{ .id = 7, .sample_offset = 5, .normalized = 0.75 },
