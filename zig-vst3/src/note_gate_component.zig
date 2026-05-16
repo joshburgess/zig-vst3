@@ -11,8 +11,10 @@ const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 pub const cid = tuid.inlineUid(0x70E3A630, 0x5EE54F09, 0x94C968A8, 0x22947A9F);
 
 const NoteGateState = struct {
+    const midi_pitch_count = @as(usize, @intCast(plug_process.midi_pitch_max + 1));
+
     open: bool = false,
-    held_notes: [128]bool = [_]bool{false} ** 128,
+    held_notes: [midi_pitch_count]bool = [_]bool{false} ** midi_pitch_count,
     held_note_count: usize = 0,
 
     fn process(self: *NoteGateState, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
