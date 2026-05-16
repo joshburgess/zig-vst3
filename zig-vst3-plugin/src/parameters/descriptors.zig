@@ -17,7 +17,11 @@ pub const FloatParam = struct {
     unit_id: i32 = 0,
 
     pub fn init(id: u32, name: []const u8, min: f64, max: f64, default: f64) FloatParam {
-        std.debug.assert(max > min);
+        return initChecked(id, name, min, max, default) catch @panic("invalid float parameter range");
+    }
+
+    pub fn initChecked(id: u32, name: []const u8, min: f64, max: f64, default: f64) !FloatParam {
+        if (!std.math.isFinite(min) or !std.math.isFinite(max) or max <= min) return error.InvalidParameterRange;
         return .{
             .id = id,
             .name = name,
@@ -87,7 +91,11 @@ pub const IntParam = struct {
     unit_id: i32 = 0,
 
     pub fn init(id: u32, name: []const u8, min: i64, max: i64, default: i64) IntParam {
-        std.debug.assert(max > min);
+        return initChecked(id, name, min, max, default) catch @panic("invalid integer parameter range");
+    }
+
+    pub fn initChecked(id: u32, name: []const u8, min: i64, max: i64, default: i64) !IntParam {
+        if (max <= min) return error.InvalidParameterRange;
         return .{
             .id = id,
             .name = name,
@@ -314,11 +322,13 @@ pub fn EnumParam(comptime Enum: type) type {
 test "float parameter clamps defaults and values" {
     const param = FloatParam.init(7, "Gain", -12.0, 6.0, 12.0);
     const nan_default = FloatParam.init(8, "Safe", -12.0, 6.0, std.math.nan(f64));
+    const checked = try FloatParam.initChecked(9, "Checked", -1.0, 1.0, 3.0);
 
     try std.testing.expectEqual(@as(u32, 7), param.id);
     try std.testing.expectEqualStrings("Gain", param.name);
     try std.testing.expectEqual(@as(f64, 6.0), param.default);
     try std.testing.expectEqual(@as(f64, -12.0), nan_default.default);
+    try std.testing.expectEqual(@as(f64, 1.0), checked.default);
     try std.testing.expectEqual(@as(f64, 0.0), param.normalize(-24.0));
     try std.testing.expectEqual(@as(f64, 1.0), param.normalize(12.0));
     try std.testing.expectEqual(@as(f64, 0.0), param.normalize(std.math.nan(f64)));
@@ -330,14 +340,19 @@ test "float parameter clamps defaults and values" {
     try std.testing.expectEqual(@as(f64, -12.0), param.denormalize(-1.0));
     try std.testing.expectEqual(@as(f64, 6.0), param.denormalize(2.0));
     try std.testing.expectEqual(@as(f64, -12.0), param.denormalize(std.math.nan(f64)));
+    try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "Flat", 1.0, 1.0, 1.0));
+    try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "Inf", 0.0, std.math.inf(f64), 1.0));
+    try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "NaN", std.math.nan(f64), 1.0, 1.0));
 }
 
 test "int parameter clamps and rounds normalized values" {
     const param = IntParam.init(2, "Voices", 1, 16, 64);
+    const checked = try IntParam.initChecked(3, "Checked", 1, 4, -2);
 
     try std.testing.expectEqual(@as(u32, 2), param.id);
     try std.testing.expectEqualStrings("Voices", param.name);
     try std.testing.expectEqual(@as(i64, 16), param.default);
+    try std.testing.expectEqual(@as(i64, 1), checked.default);
     try std.testing.expectEqual(@as(f64, 0.0), param.normalize(-2));
     try std.testing.expectEqual(@as(f64, 1.0), param.normalize(20));
     try std.testing.expect(param.containsPlain(8));
@@ -351,6 +366,8 @@ test "int parameter clamps and rounds normalized values" {
     try std.testing.expectEqual(@as(f64, 0.0), param.normalizedFromPlain(std.math.nan(f64)));
     try std.testing.expectEqual(@as(f64, 0.0), param.normalizedFromPlain(-1.0e30));
     try std.testing.expectEqual(@as(f64, 1.0), param.normalizedFromPlain(1.0e30));
+    try std.testing.expectError(error.InvalidParameterRange, IntParam.initChecked(1, "Flat", 4, 4, 4));
+    try std.testing.expectError(error.InvalidParameterRange, IntParam.initChecked(1, "Reverse", 4, 1, 1));
 }
 
 test "int parameter handles full-width ranges without overflow" {

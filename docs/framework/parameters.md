@@ -58,6 +58,8 @@ Descriptors can also set `can_automate`, `is_read_only`, and `unit_id`. `unit_id
 
 Float parameters are continuous. Bool parameters report one step. Int parameters report their integer range as discrete steps. Enum parameters report one step per enum transition and set the VST3 list flag.
 
+`FloatParam.initChecked` and `IntParam.initChecked` are available when descriptor ranges come from dynamic input and should return an error instead of panicking. The shorter `init` constructors are still convenient for compile-time declarations.
+
 ## Read Parameters In Process
 
 Most processors should accept a `ParameterView`:
