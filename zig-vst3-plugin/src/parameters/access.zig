@@ -2493,6 +2493,73 @@ test "parameter values apply reflected parameter changes by id" {
     try std.testing.expectEqual(@as(?f64, 1.0), values.loadById(&set, 1));
 }
 
+test "parameter values generated process changes match reference application" {
+    const Params = struct {
+        gain: FloatParam = FloatParam.init(0, "Gain", 0.0, 1.0, 0.25),
+        mix: FloatParam = FloatParam.init(1, "Mix", 0.0, 1.0, 0.5),
+        manual: FloatParam = .{ .id = 2, .name = "Manual", .min = 0.0, .max = 1.0, .default = 0.25, .can_automate = false },
+        meter: FloatParam = .{ .id = 3, .name = "Meter", .min = 0.0, .max = 1.0, .default = 0.5, .is_read_only = true },
+    };
+    const Set = ParameterSet(Params);
+    const Values = ParameterValues(Params);
+    const set = Set.init(.{});
+    const Reference = struct {
+        fn writableIndex(id: u32) ?usize {
+            return switch (id) {
+                0 => 0,
+                1 => 1,
+                else => null,
+            };
+        }
+
+        fn apply(changes: []const process.ParameterChange, values: *[2]f64) struct { applied: usize, changed: usize } {
+            var applied: usize = 0;
+            var changed: usize = 0;
+            for (changes) |change| {
+                const index = writableIndex(change.id) orelse continue;
+                applied += 1;
+                if (values[index] != change.normalized) changed += 1;
+                values[index] = change.normalized;
+            }
+            return .{ .applied = applied, .changed = changed };
+        }
+    };
+
+    const ids = [_]u32{ 0, 1, 2, 3, 99 };
+    const normalized_values = [_]f64{ 0.0, 0.25, 0.5, 0.75, 1.0 };
+
+    for (0..32) |seed| {
+        var items: [5]process.ParameterChange = undefined;
+        for (&items, 0..) |*item, index| {
+            item.* = .{
+                .id = ids[(seed + index * 2) % ids.len],
+                .sample_offset = (seed * 2 + index) % 8,
+                .normalized = normalized_values[(seed + index * 3) % normalized_values.len],
+            };
+        }
+
+        for (0..items.len + 1) |len| {
+            const changes = try process.ParameterChanges.init(items[0..len], 8);
+            var reference_values = [_]f64{ 0.25, 0.5 };
+            const reference = Reference.apply(items[0..len], &reference_values);
+
+            var applied_values = Values.init(&set);
+            try std.testing.expectEqual(reference.applied, applied_values.applyChangesCount(&set, changes));
+            try std.testing.expectEqual(@as(?f64, reference_values[0]), applied_values.loadById(&set, 0));
+            try std.testing.expectEqual(@as(?f64, reference_values[1]), applied_values.loadById(&set, 1));
+            try std.testing.expectEqual(@as(?f64, 0.25), applied_values.loadById(&set, 2));
+            try std.testing.expectEqual(@as(?f64, 0.5), applied_values.loadById(&set, 3));
+
+            var changed_values = Values.init(&set);
+            try std.testing.expectEqual(reference.changed, changed_values.applyChangesChangedCount(&set, changes));
+            try std.testing.expectEqual(@as(?f64, reference_values[0]), changed_values.loadById(&set, 0));
+            try std.testing.expectEqual(@as(?f64, reference_values[1]), changed_values.loadById(&set, 1));
+            try std.testing.expectEqual(@as(?f64, 0.25), changed_values.loadById(&set, 2));
+            try std.testing.expectEqual(@as(?f64, 0.5), changed_values.loadById(&set, 3));
+        }
+    }
+}
+
 test "float parameter round-trips normalized values" {
     const param = FloatParam.init(0, "Gain", 0.0, 1.0, 0.5);
     const values = [_]f64{ 0.0, 0.25, 0.5, 0.75, 1.0 };

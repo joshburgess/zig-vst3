@@ -774,6 +774,47 @@ test "parameter state exposes migration resolution" {
     try std.testing.expectError(error.AmbiguousParameterMigration, validateParameterIdMigrations(&branching_converging));
 }
 
+test "parameter state generated migration chains match reference resolution" {
+    const Reference = struct {
+        fn next(id: u32, migrations: []const ParameterIdMigration) ?u32 {
+            for (migrations) |migration| {
+                if (migration.old_id == id) return migration.new_id;
+            }
+            return null;
+        }
+
+        fn resolve(id: u32, migrations: []const ParameterIdMigration) u32 {
+            var current = id;
+            for (0..migrations.len + 1) |_| {
+                current = next(current, migrations) orelse return current;
+            }
+            return id;
+        }
+    };
+
+    for (0..24) |seed| {
+        const base: u32 = @intCast(10 + seed * 10);
+        var migrations = [_]ParameterIdMigration{
+            .{ .old_id = base + 2, .new_id = base + 3 },
+            .{ .old_id = base + 0, .new_id = base + 1 },
+            .{ .old_id = base + 3, .new_id = base + 4 },
+            .{ .old_id = base + 1, .new_id = base + 2 },
+        };
+        if (seed % 2 == 1) {
+            std.mem.swap(ParameterIdMigration, &migrations[0], &migrations[3]);
+        }
+        if (seed % 3 == 1) {
+            std.mem.swap(ParameterIdMigration, &migrations[1], &migrations[2]);
+        }
+
+        try validateParameterIdMigrations(&migrations);
+        for (0..6) |offset| {
+            const id: u32 = @intCast(base + offset);
+            try std.testing.expectEqual(Reference.resolve(id, &migrations), migratedParameterId(id, &migrations));
+        }
+    }
+}
+
 test "parameter state rejects ambiguous migrations before partial updates" {
     const OldParams = struct {
         gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
