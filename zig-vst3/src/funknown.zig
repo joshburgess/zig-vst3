@@ -206,6 +206,20 @@ test "addRef and release update the atomic refcount" {
     try std.testing.expectEqual(@as(uint32, 1), unknown.vtable.release(unknown));
 }
 
+test "incrementRefCount updates atomic refcount" {
+    var ref_count = std.atomic.Value(uint32).init(41);
+
+    try std.testing.expectEqual(@as(uint32, 42), incrementRefCount(&ref_count, "Test"));
+    try std.testing.expectEqual(@as(uint32, 42), ref_count.load(.monotonic));
+}
+
+test "decrementRefCount updates atomic refcount" {
+    var ref_count = std.atomic.Value(uint32).init(42);
+
+    try std.testing.expectEqual(@as(uint32, 41), decrementRefCount(&ref_count, "Test"));
+    try std.testing.expectEqual(@as(uint32, 41), ref_count.load(.monotonic));
+}
+
 test "release calls destroy when refcount reaches zero" {
     var object = TestObject{
         .unknown = Header.init(&test_vtable, testDestroy),

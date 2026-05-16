@@ -232,6 +232,23 @@ test "host application clears failed delegated create-instance output" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.create_instance_count);
 }
 
+test "host application zero-fills and truncates String128 names" {
+    const long_name =
+        "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz" ++
+        "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz" ++
+        "abcdefghijklmnopqrstuvwxyz";
+    const Host = HostApplication(long_name, struct {});
+    var host = Host{};
+    const iface = host.asInterface();
+    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getName(iface, &name));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[127]);
+    for (name[0..127], 0..) |char, index| {
+        try std.testing.expectEqual(@as(vsttypes.TChar, long_name[index]), char);
+    }
+}
+
 test "wrapper marker supports query interface" {
     var wrapper = Vst3ToVst2Wrapper{};
     const iface = wrapper.asInterface();
