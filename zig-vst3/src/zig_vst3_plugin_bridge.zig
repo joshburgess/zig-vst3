@@ -23,6 +23,9 @@ const max_data_event_bytes = plug.process.max_data_event_bytes;
 const empty_arrangement = vstspeaker.SpeakerArr.kEmpty;
 const stereo_arrangement = vstspeaker.SpeakerArr.kStereo;
 const test_sample_rate: f64 = 48_000.0;
+const formatted_parameter_value_bytes = 64;
+const parsed_parameter_value_bytes = 128;
+const ibstream_buffer_bytes = 4096;
 
 const FixedBufferStream = struct {
     buffer: []u8,
@@ -346,7 +349,7 @@ pub fn getParamStringByValue(
 ) types.tresult {
     string128.copyPtr(out, "");
     const index = set.indexOfId(id) orelse return types.kInvalidArgument;
-    var buffer: [64]u8 = undefined;
+    var buffer: [formatted_parameter_value_bytes]u8 = undefined;
     const text = set.formatPlain(index, value, &buffer) catch return types.kResultFalse;
     string128.copyPtr(out, text);
     return types.kResultOk;
@@ -361,7 +364,7 @@ pub fn getParamValueByString(
 ) types.tresult {
     out.* = 0;
     const index = set.indexOfId(id) orelse return types.kInvalidArgument;
-    var buffer: [128]u8 = undefined;
+    var buffer: [parsed_parameter_value_bytes]u8 = undefined;
     const parsed_text = readAscii16Ptr(text, &buffer);
     out.* = set.parsePlain(index, parsed_text) catch return types.kResultFalse;
     return types.kResultOk;
@@ -602,7 +605,7 @@ pub fn writeParameterState(
 
 const IBStreamReader = struct {
     stream: *ibstream.IBStream,
-    buffer: [4096]u8,
+    buffer: [ibstream_buffer_bytes]u8,
     interface: std.Io.Reader,
 
     fn init(self: *IBStreamReader, stream: *ibstream.IBStream) void {
@@ -636,7 +639,7 @@ const IBStreamReader = struct {
 
     fn streamImpl(reader_interface: *std.Io.Reader, writer: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
         const self: *IBStreamReader = @alignCast(@fieldParentPtr("interface", reader_interface));
-        var buffer: [4096]u8 = undefined;
+        var buffer: [ibstream_buffer_bytes]u8 = undefined;
         const limit_count: usize = @intCast(@min(@intFromEnum(limit), buffer.len));
         const read_count = try self.read(buffer[0..limit_count]);
         try writer.writeAll(buffer[0..read_count]);

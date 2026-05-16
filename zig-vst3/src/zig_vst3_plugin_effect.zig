@@ -33,6 +33,10 @@ const string128 = @import("string128.zig");
 const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_bridge = @import("zig_vst3_plugin_bridge.zig");
 
+const process_parameter_change_capacity = 64;
+const process_event_capacity = 64;
+const process_output_event_capacity = 64;
+
 pub fn ReflectedEditController(comptime Config: type) type {
     return struct {
         const Self = @This();
@@ -1837,9 +1841,9 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.c) types.tresult {
-            var parameter_change_storage: [64]plug_process.ParameterChange = undefined;
-            var event_storage: [64]plug_process.Event = undefined;
-            var output_event_storage: [64]plug_process.Event = undefined;
+            var parameter_change_storage: [process_parameter_change_capacity]plug_process.ParameterChange = undefined;
+            var event_storage: [process_event_capacity]plug_process.Event = undefined;
+            var output_event_storage: [process_output_event_capacity]plug_process.Event = undefined;
             const parameter_changes = zig_vst3_plugin_bridge.collectInputParameterChanges(data, &parameter_change_storage);
             const events = zig_vst3_plugin_bridge.collectInputEvents(data, &event_storage);
             var output_events = plug_process.EventWriter.init(&output_event_storage, if (data.numSamples <= 0) 0 else @intCast(data.numSamples));
