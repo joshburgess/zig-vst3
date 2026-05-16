@@ -778,7 +778,7 @@ fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.Para
         .sample_offset = offset,
         .normalized = value,
     };
-    collector.count += 1;
+    collector.count +|= 1;
 }
 
 fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void {
