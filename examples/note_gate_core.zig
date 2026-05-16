@@ -5,9 +5,11 @@ pub const NoteGate = struct {
     pub const name = "zig-vst3-plugin Core Note Gate";
     pub const vendor = "zig-vst3";
     pub const Params = struct {};
+    const midi_channel_count = @as(usize, @intCast(plug.process.midi_channel_max + 1));
+    const midi_pitch_count = @as(usize, @intCast(plug.process.midi_pitch_max + 1));
 
     open: bool = false,
-    held_notes: [16][128]bool = [_][128]bool{[_]bool{false} ** 128} ** 16,
+    held_notes: [midi_channel_count][midi_pitch_count]bool = [_][midi_pitch_count]bool{[_]bool{false} ** midi_pitch_count} ** midi_channel_count,
     held_note_count: usize = 0,
 
     pub fn process(self: *NoteGate, context: *plug.process.ProcessContext(f32)) void {

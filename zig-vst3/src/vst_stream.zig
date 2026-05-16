@@ -31,6 +31,14 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return self.bytes[0..self.len];
         }
 
+        fn readableBytes(self: *const Self) usize {
+            return self.len - self.pos;
+        }
+
+        fn writableBytes(self: *const Self) usize {
+            return @min(capacity, self.write_limit) - self.pos;
+        }
+
         fn ownerFromStream(ptr: *anyopaque) *Self {
             const iface: *ibstream.IBStream = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -83,7 +91,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             const requested: usize = @intCast(byte_count);
             if (requested > 0 and buffer == null) return types.kInvalidArgument;
             const self = ownerFromStream(ptr);
-            if (requested > self.len - self.pos) {
+            if (requested > self.readableBytes()) {
                 return types.kResultFalse;
             }
             if (requested > 0) {
@@ -101,10 +109,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             const requested: usize = @intCast(byte_count);
             if (requested > 0 and buffer == null) return types.kInvalidArgument;
             const self = ownerFromStream(ptr);
-            if (requested > capacity - self.pos) {
-                return types.kResultFalse;
-            }
-            if (self.pos > self.write_limit or requested > self.write_limit - self.pos) {
+            if (self.pos > capacity or self.pos > self.write_limit or requested > self.writableBytes()) {
                 return types.kResultFalse;
             }
             if (requested > 0) {
