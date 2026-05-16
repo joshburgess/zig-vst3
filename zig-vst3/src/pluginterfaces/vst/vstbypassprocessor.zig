@@ -7,6 +7,11 @@ fn cappedStorageLen(len: usize) base.int32 {
     return @intCast(@min(len, @as(usize, @intCast(std.math.maxInt(base.int32)))));
 }
 
+fn advancedRingPosition(position: base.int32, frames: base.int32, buffer_size: base.int32) base.int32 {
+    if (position < 0 or frames <= 0 or buffer_size <= 0) return position;
+    return @intCast(@mod(@as(base.int64, position) + @as(base.int64, frames), @as(base.int64, buffer_size)));
+}
+
 pub fn AudioBuffer(comptime T: type) type {
     return struct {
         allocator: std.mem.Allocator,
@@ -172,10 +177,8 @@ pub fn Delay(comptime T: type) type {
             if (self.hasDelay() and src != null) {
                 const buffer_size = self.getBufferSamples();
                 _ = delay(T, num_samples, src.?, dst, self.buffer.ptr, buffer_size, self.in_pos, self.out_pos);
-                self.in_pos += num_samples;
-                if (self.in_pos >= buffer_size) self.in_pos -= buffer_size;
-                self.out_pos += num_samples;
-                if (self.out_pos >= buffer_size) self.out_pos -= buffer_size;
+                self.in_pos = advancedRingPosition(self.in_pos, num_samples, buffer_size);
+                self.out_pos = advancedRingPosition(self.out_pos, num_samples, buffer_size);
             } else {
                 if (src) |source| {
                     if (!silent_in) {
@@ -251,6 +254,18 @@ test "delay processor starts with valid ring positions" {
     try std.testing.expectEqual(@as(f32, 0), output[1]);
     try std.testing.expectEqual(@as(base.int32, 2), processor_delay.in_pos);
     try std.testing.expectEqual(@as(base.int32, 7), processor_delay.out_pos);
+}
+
+test "delay processor wraps ring positions for oversized blocks" {
+    var input = [_]f32{ 1, 2, 3, 4, 5, 6 };
+    var output = [_]f32{0} ** 6;
+    var storage = [_]f32{0} ** 4;
+    var processor_delay = Delay(f32).init(&storage, 2, 2);
+
+    const silent = processor_delay.process(&input, &output, input.len, false);
+    try std.testing.expect(!silent);
+    try std.testing.expectEqual(@as(base.int32, 2), processor_delay.in_pos);
+    try std.testing.expectEqual(@as(base.int32, 0), processor_delay.out_pos);
 }
 
 test "bypass helpers reject invalid sizes and positions" {
