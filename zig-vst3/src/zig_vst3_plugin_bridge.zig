@@ -648,9 +648,9 @@ const IBStreamReader = struct {
 
     fn read(self: *IBStreamReader, buffer: []u8) std.Io.Reader.Error!usize {
         if (buffer.len == 0) return 0;
-        if (buffer.len > std.math.maxInt(types.int32)) return error.ReadFailed;
+        const byte_count = streamByteCount(buffer.len) orelse return error.ReadFailed;
         var bytes_read: types.int32 = 0;
-        const result = self.stream.vtable.read(self.stream, buffer.ptr, @intCast(buffer.len), &bytes_read);
+        const result = self.stream.vtable.read(self.stream, buffer.ptr, byte_count, &bytes_read);
         if (bytes_read < 0) return error.ReadFailed;
         if (bytes_read == 0) return error.EndOfStream;
         if (result != types.kResultOk) return error.ReadFailed;
@@ -705,9 +705,9 @@ const IBStreamWriter = struct {
 
     fn write(self: *IBStreamWriter, bytes: []const u8) std.Io.Writer.Error!usize {
         if (bytes.len == 0) return 0;
-        if (bytes.len > std.math.maxInt(types.int32)) return error.WriteFailed;
+        const byte_count = streamByteCount(bytes.len) orelse return error.WriteFailed;
         var bytes_written: types.int32 = 0;
-        const result = self.stream.vtable.write(self.stream, @constCast(bytes.ptr), @intCast(bytes.len), &bytes_written);
+        const result = self.stream.vtable.write(self.stream, @constCast(bytes.ptr), byte_count, &bytes_written);
         if (result != types.kResultOk or bytes_written < 0) return error.WriteFailed;
         return @intCast(bytes_written);
     }
@@ -725,6 +725,10 @@ const IBStreamWriter = struct {
         return total;
     }
 };
+
+fn streamByteCount(len: usize) ?types.int32 {
+    return std.math.cast(types.int32, len);
+}
 
 fn readAscii16Ptr(source: [*]vsttypes.TChar, buffer: []u8) []const u8 {
     var len: usize = 0;
@@ -1785,6 +1789,12 @@ test "zig-vst3-plugin bridge process data frame counts are explicit" {
     data.numSamples = -1;
     try std.testing.expectEqual(@as(usize, 0), frameCountOrZero(&data));
     try std.testing.expectError(error.InvalidFrameCount, validFrameCount(&data));
+}
+
+test "zig-vst3-plugin bridge stream byte counts fit VST int32" {
+    try std.testing.expectEqual(@as(types.int32, 0), streamByteCount(0).?);
+    try std.testing.expectEqual(std.math.maxInt(types.int32), streamByteCount(std.math.maxInt(types.int32)).?);
+    try std.testing.expectEqual(null, streamByteCount(@as(usize, std.math.maxInt(types.int32)) + 1));
 }
 
 test "zig-vst3-plugin bridge fills VST3 parameter info from reflected set" {
