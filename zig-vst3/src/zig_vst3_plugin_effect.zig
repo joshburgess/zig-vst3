@@ -1839,7 +1839,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             var output_event_storage: [process_output_event_capacity]plug_process.Event = undefined;
             const parameter_changes = zig_vst3_plugin_bridge.collectInputParameterChanges(data, &parameter_change_storage);
             const events = zig_vst3_plugin_bridge.collectInputEvents(data, &event_storage);
-            var output_events = plug_process.EventWriter.init(&output_event_storage, if (data.numSamples <= 0) 0 else @intCast(data.numSamples));
+            var output_events = plug_process.EventWriter.init(&output_event_storage, zig_vst3_plugin_bridge.frameCountOrZero(data));
             Config.applyParameterChanges(parameter_changes);
             const result = zig_vst3_plugin_bridge.processMainAudioConfigured(data, parameter_changes, events, &output_events, Config.Processor{}, bus_config);
             if (result != types.kResultOk) return result;

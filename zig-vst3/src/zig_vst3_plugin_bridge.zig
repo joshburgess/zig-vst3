@@ -403,10 +403,19 @@ pub fn plainParamToNormalized(
     return set.normalizedFromPlain(index, plain) orelse 0;
 }
 
+pub fn frameCountOrZero(data: *const ivstaudioprocessor.ProcessData) usize {
+    return if (data.numSamples <= 0) 0 else @intCast(data.numSamples);
+}
+
+fn validFrameCount(data: *const ivstaudioprocessor.ProcessData) !usize {
+    if (data.numSamples < 0) return error.InvalidFrameCount;
+    return @intCast(data.numSamples);
+}
+
 pub fn collectInputParameterChanges(data: *ivstaudioprocessor.ProcessData, storage: []plug.process.ParameterChange) plug.process.ParameterChanges {
     var collector = ParameterChangeCollector{
         .storage = storage,
-        .frame_count = if (data.numSamples <= 0) 0 else @intCast(data.numSamples),
+        .frame_count = frameCountOrZero(data),
     };
     audio_processor_algo.forEachParameterChanges(data.inputParameterChanges, &collector, collectParameterQueue);
     return plug.process.ParameterChanges.init(storage[0..collector.count], collector.frame_count) catch .{};
@@ -415,7 +424,7 @@ pub fn collectInputParameterChanges(data: *ivstaudioprocessor.ProcessData, stora
 pub fn collectInputEvents(data: *ivstaudioprocessor.ProcessData, storage: []plug.process.Event) plug.process.Events {
     var collector = EventCollector{
         .storage = storage,
-        .frame_count = if (data.numSamples <= 0) 0 else @intCast(data.numSamples),
+        .frame_count = frameCountOrZero(data),
     };
     audio_processor_algo.forEachEvent(data.inputEvents, &collector, collectEvent);
     return plug.process.Events.init(storage[0..collector.count], collector.frame_count) catch .{};
@@ -423,9 +432,9 @@ pub fn collectInputEvents(data: *ivstaudioprocessor.ProcessData, storage: []plug
 
 pub fn writeOutputEvents(data: *ivstaudioprocessor.ProcessData, events: plug.process.Events) types.tresult {
     const output_events = data.outputEvents orelse return types.kResultOk;
-    if (data.numSamples < 0) return types.kInvalidArgument;
+    const frame_count = validFrameCount(data) catch return types.kInvalidArgument;
     for (events.items) |event| {
-        if (event.sample_offset >= @as(usize, @intCast(data.numSamples))) return types.kInvalidArgument;
+        if (event.sample_offset >= frame_count) return types.kInvalidArgument;
         var vst_event = toVstEvent(event) orelse continue;
         if (output_events.vtable.addEvent(output_events, &vst_event) != types.kResultOk) return types.kResultFalse;
     }
@@ -441,9 +450,8 @@ pub fn makeProcessContext(
     events: plug.process.Events,
     output_events: ?*plug.process.EventWriter,
 ) !plug.process.ProcessContext(Sample) {
-    if (data.numSamples < 0) return error.InvalidFrameCount;
+    const frame_count = try validFrameCount(data);
     if (input.numChannels < 0 or output.numChannels < 0) return error.InvalidChannelCount;
-    const frame_count: usize = @intCast(data.numSamples);
     const channel_count: usize = @intCast(@min(@min(input.numChannels, output.numChannels), max_audio_channels));
     var input_channels: [max_audio_channels][]const Sample = undefined;
     var output_channels: [max_audio_channels][]Sample = undefined;
@@ -507,14 +515,13 @@ pub fn makeMainAudioProcessContextConfigured(
     output_events: ?*plug.process.EventWriter,
     bus_config: StereoAudioBuses.Config,
 ) !plug.process.ProcessContext(Sample) {
-    if (data.numSamples < 0) return error.InvalidFrameCount;
+    const frame_count = try validFrameCount(data);
     if (bus_config.audio_input and (data.numInputs <= 0 or data.inputs == null)) {
         return error.MissingMainAudioBus;
     }
     if (bus_config.audio_output and (data.numOutputs <= 0 or data.outputs == null)) {
         return error.MissingMainAudioBus;
     }
-    const frame_count: usize = @intCast(data.numSamples);
     var input_channels: [max_audio_channels][]const Sample = undefined;
     var output_channels: [max_audio_channels][]Sample = undefined;
     const input_count = if (bus_config.audio_input) try fillInputChannels(Sample, data.inputs.?[0], frame_count, &input_channels) else 0;
@@ -1764,6 +1771,20 @@ test "zig-vst3-plugin bridge realtime processor defaults validate process setup"
     setup.maxSamplesPerBlock = 64;
     setup.sampleRate = 0.0;
     try std.testing.expectEqual(types.kInvalidArgument, RealtimeProcessorDefaults.validateProcessSetup(&setup));
+}
+
+test "zig-vst3-plugin bridge process data frame counts are explicit" {
+    var data = ivstaudioprocessor.ProcessData{ .numSamples = 16 };
+    try std.testing.expectEqual(@as(usize, 16), frameCountOrZero(&data));
+    try std.testing.expectEqual(@as(usize, 16), try validFrameCount(&data));
+
+    data.numSamples = 0;
+    try std.testing.expectEqual(@as(usize, 0), frameCountOrZero(&data));
+    try std.testing.expectEqual(@as(usize, 0), try validFrameCount(&data));
+
+    data.numSamples = -1;
+    try std.testing.expectEqual(@as(usize, 0), frameCountOrZero(&data));
+    try std.testing.expectError(error.InvalidFrameCount, validFrameCount(&data));
 }
 
 test "zig-vst3-plugin bridge fills VST3 parameter info from reflected set" {
