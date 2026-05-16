@@ -852,31 +852,31 @@ pub const SpeakerArray = struct {
 };
 
 test "speaker helpers match expected core behavior" {
-    try @import("std").testing.expectEqual(@as(base.int32, 2), getChannelCount(SpeakerArr.kStereo));
-    try @import("std").testing.expectEqual(@as(base.int32, 1), getSpeakerIndex(kSpeakerR, SpeakerArr.kStereo));
-    try @import("std").testing.expectEqual(kSpeakerC, getSpeaker(SpeakerArr.k51, 2));
-    try @import("std").testing.expect(isSubsetOf(SpeakerArr.kStereo, SpeakerArr.k51));
-    try @import("std").testing.expect(hasTopSpeakers(SpeakerArr.k50_4));
-    try @import("std").testing.expect(hasLfe(SpeakerArr.k51));
-    try @import("std").testing.expect(is3D(SpeakerArr.k50_4));
-    try @import("std").testing.expect(isAuro(SpeakerArr.k51_5));
-    try @import("std").testing.expect(isAmbisonics(SpeakerArr.kAmbi1stOrderACN));
-    try @import("std").testing.expectEqual(@as(vsttypes.Speaker, 1) << 4, convertSpeakerAmbi1234OrderToAmbi567Order(kSpeakerACN4));
-    try @import("std").testing.expectEqual(kSpeakerACN4, convertSpeakerAmbi567OrderToAmbi1234Order(@as(vsttypes.Speaker, 1) << 4));
-    try @import("std").testing.expectEqual(SpeakerArr.k71Cine, getSpeakerArrangementFromString(SpeakerArrStrings.kString71CineOld));
-    try @import("std").testing.expectEqual(SpeakerArr.kEmpty, getSpeakerArrangementFromString("unknown"));
-    try @import("std").testing.expectEqualStrings("LFE", std.mem.span(getSpeakerShortName(SpeakerArr.k51, 3)));
-    try @import("std").testing.expectEqualStrings("", std.mem.span(getSpeakerShortName(SpeakerArr.k51, 99)));
+    try std.testing.expectEqual(@as(base.int32, 2), getChannelCount(SpeakerArr.kStereo));
+    try std.testing.expectEqual(@as(base.int32, 1), getSpeakerIndex(kSpeakerR, SpeakerArr.kStereo));
+    try std.testing.expectEqual(kSpeakerC, getSpeaker(SpeakerArr.k51, 2));
+    try std.testing.expect(isSubsetOf(SpeakerArr.kStereo, SpeakerArr.k51));
+    try std.testing.expect(hasTopSpeakers(SpeakerArr.k50_4));
+    try std.testing.expect(hasLfe(SpeakerArr.k51));
+    try std.testing.expect(is3D(SpeakerArr.k50_4));
+    try std.testing.expect(isAuro(SpeakerArr.k51_5));
+    try std.testing.expect(isAmbisonics(SpeakerArr.kAmbi1stOrderACN));
+    try std.testing.expectEqual(@as(vsttypes.Speaker, 1) << 4, convertSpeakerAmbi1234OrderToAmbi567Order(kSpeakerACN4));
+    try std.testing.expectEqual(kSpeakerACN4, convertSpeakerAmbi567OrderToAmbi1234Order(@as(vsttypes.Speaker, 1) << 4));
+    try std.testing.expectEqual(SpeakerArr.k71Cine, getSpeakerArrangementFromString(SpeakerArrStrings.kString71CineOld));
+    try std.testing.expectEqual(SpeakerArr.kEmpty, getSpeakerArrangementFromString("unknown"));
+    try std.testing.expectEqualStrings("LFE", std.mem.span(getSpeakerShortName(SpeakerArr.k51, 3)));
+    try std.testing.expectEqualStrings("", std.mem.span(getSpeakerShortName(SpeakerArr.k51, 99)));
     const speakers = SpeakerArray.init(SpeakerArr.k51);
-    try @import("std").testing.expectEqual(@as(base.int32, 6), speakers.total());
-    try @import("std").testing.expectEqual(SpeakerArr.k51, speakers.getArrangement());
-    try @import("std").testing.expectEqual(@as(base.int32, 3), speakers.getSpeakerIndex(kSpeakerLfe));
-    try @import("std").testing.expectEqual(@as(base.uint64, 0), speakers.at(-1));
-    try @import("std").testing.expectEqual(@as(base.uint64, 0), speakers.at(64));
+    try std.testing.expectEqual(@as(base.int32, 6), speakers.total());
+    try std.testing.expectEqual(SpeakerArr.k51, speakers.getArrangement());
+    try std.testing.expectEqual(@as(base.int32, 3), speakers.getSpeakerIndex(kSpeakerLfe));
+    try std.testing.expectEqual(@as(base.uint64, 0), speakers.at(-1));
+    try std.testing.expectEqual(@as(base.uint64, 0), speakers.at(64));
     var corrupted = SpeakerArray.init(SpeakerArr.kStereo);
     corrupted.count = SpeakerArray.kMaxSpeakers + 1;
-    try @import("std").testing.expectEqual(@as(base.uint64, 0), corrupted.at(SpeakerArray.kMaxSpeakers));
-    try @import("std").testing.expectEqual(SpeakerArr.kStereo, corrupted.getArrangement());
+    try std.testing.expectEqual(@as(base.uint64, 0), corrupted.at(SpeakerArray.kMaxSpeakers));
+    try std.testing.expectEqual(SpeakerArr.kStereo, corrupted.getArrangement());
 }
 
 test "speaker arrangement strings cover named and unknown arrangements" {
