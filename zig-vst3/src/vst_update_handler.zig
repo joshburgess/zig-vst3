@@ -215,6 +215,64 @@ test "update handler records deferred updates" {
     try std.testing.expectEqual(@as(types.int32, 123), handler.entries[0].deferred_message);
 }
 
+test "update handler keeps subscriptions for distinct changed objects separate" {
+    const Handler = UpdateHandler(2);
+    const Dep = Dependent(struct {});
+    var handler = Handler{};
+    var dependent = Dep{};
+    var first_changed: u32 = 1;
+    var second_changed: u32 = 2;
+    const iface = handler.asInterface();
+    const dep_iface = dependent.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addDependent(iface, &first_changed, dep_iface));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addDependent(iface, &second_changed, dep_iface));
+    try std.testing.expectEqual(@as(usize, 2), handler.dependentCount());
+    try std.testing.expectEqual(@as(types.uint32, 3), dependent.ref_count.load(.monotonic));
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.triggerUpdates(iface, &first_changed, 10));
+    try std.testing.expectEqual(@as(types.uint32, 1), dependent.update_count);
+    try std.testing.expectEqual(@as(?*anyopaque, @ptrCast(&first_changed)), dependent.last_changed);
+    try std.testing.expectEqual(@as(types.int32, 10), dependent.last_message);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.removeDependent(iface, &first_changed, dep_iface));
+    try std.testing.expectEqual(@as(usize, 1), handler.dependentCount());
+    try std.testing.expectEqual(@as(types.uint32, 2), dependent.ref_count.load(.monotonic));
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.triggerUpdates(iface, &first_changed, 20));
+    try std.testing.expectEqual(@as(types.uint32, 1), dependent.update_count);
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.triggerUpdates(iface, &second_changed, 30));
+    try std.testing.expectEqual(@as(types.uint32, 2), dependent.update_count);
+    try std.testing.expectEqual(@as(?*anyopaque, @ptrCast(&second_changed)), dependent.last_changed);
+    try std.testing.expectEqual(@as(types.int32, 30), dependent.last_message);
+}
+
+test "update handler clears deferred state when matching updates trigger" {
+    const Handler = UpdateHandler(2);
+    const Dep = Dependent(struct {});
+    var handler = Handler{};
+    var first = Dep{};
+    var second = Dep{};
+    var first_changed: u32 = 1;
+    var second_changed: u32 = 2;
+    const iface = handler.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addDependent(iface, &first_changed, first.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addDependent(iface, &second_changed, second.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.deferUpdates(iface, &first_changed, 11));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.deferUpdates(iface, &second_changed, 22));
+    try std.testing.expect(handler.entries[0].deferred);
+    try std.testing.expect(handler.entries[1].deferred);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.triggerUpdates(iface, &first_changed, 33));
+    try std.testing.expect(!handler.entries[0].deferred);
+    try std.testing.expectEqual(@as(types.int32, 0), handler.entries[0].deferred_message);
+    try std.testing.expect(handler.entries[1].deferred);
+    try std.testing.expectEqual(@as(types.int32, 22), handler.entries[1].deferred_message);
+    try std.testing.expectEqual(@as(types.uint32, 1), first.update_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), second.update_count);
+}
+
 test "update handler rejects invalid dependents and full storage without retaining" {
     const Handler = UpdateHandler(1);
     const Dep = Dependent(struct {});
