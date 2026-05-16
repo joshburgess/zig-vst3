@@ -447,6 +447,72 @@ test "parameter state report classifies empty and ignored loads" {
     try std.testing.expect(incomplete.restoredAndIgnoredEntries());
 }
 
+test "parameter state report generated helper invariants" {
+    const Reference = struct {
+        fn classification(entry_count: usize, restored_count: usize, ignored_count: usize) ReadParameterStateClassification {
+            const accounted = restored_count + ignored_count;
+            if (entry_count == 0) return .empty;
+            if (accounted != entry_count) return .partial;
+            if (restored_count == entry_count and ignored_count == 0) return .restored_all;
+            if (ignored_count == entry_count and restored_count == 0) return .ignored_all;
+            return .restored_and_ignored;
+        }
+    };
+
+    for (0..7) |entry_count| {
+        for (0..7) |restored_count| {
+            for (0..7) |ignored_count| {
+                const report = ReadParameterStateReport{
+                    .entry_count = entry_count,
+                    .restored_count = restored_count,
+                    .ignored_count = ignored_count,
+                };
+                const accounted = restored_count + ignored_count;
+                const unaccounted = entry_count -| accounted;
+
+                try std.testing.expectEqual(entry_count, report.decodedCount());
+                try std.testing.expectEqual(restored_count, report.restoredCount());
+                try std.testing.expectEqual(ignored_count, report.ignoredCount());
+                try std.testing.expectEqual(accounted, report.accountedCount());
+                try std.testing.expectEqual(unaccounted, report.unaccountedCount());
+
+                try std.testing.expectEqual(entry_count == 0, report.hasNoDecodedEntries());
+                try std.testing.expectEqual(entry_count == 0, report.decodedEntriesEmpty());
+                try std.testing.expectEqual(entry_count != 0, report.hasDecodedEntries());
+                try std.testing.expectEqual(restored_count == 0, report.hasNoRestoredEntries());
+                try std.testing.expectEqual(restored_count == 0, report.restoredEntriesEmpty());
+                try std.testing.expectEqual(restored_count != 0, report.hasRestoredEntries());
+                try std.testing.expectEqual(ignored_count == 0, report.hasNoIgnoredEntries());
+                try std.testing.expectEqual(ignored_count == 0, report.ignoredEntriesEmpty());
+                try std.testing.expectEqual(ignored_count != 0, report.hasIgnoredEntries());
+                try std.testing.expectEqual(accounted == 0, report.hasNoAccountedEntries());
+                try std.testing.expectEqual(accounted == 0, report.accountedEntriesEmpty());
+                try std.testing.expectEqual(accounted != 0, report.hasAccountedEntries());
+                try std.testing.expectEqual(unaccounted == 0, report.hasNoUnaccountedEntries());
+                try std.testing.expectEqual(unaccounted == 0, report.unaccountedEntriesEmpty());
+                try std.testing.expectEqual(unaccounted != 0, report.hasUnaccountedEntries());
+
+                try std.testing.expectEqual(accounted == entry_count, report.accountedAllEntries());
+                try std.testing.expectEqual(accounted != 0 and accounted < entry_count, report.accountedPartialEntries());
+                try std.testing.expectEqual(restored_count == entry_count and ignored_count == 0, report.restoredAllEntries());
+                try std.testing.expectEqual(restored_count != 0 and restored_count < entry_count, report.restoredPartialEntries());
+                try std.testing.expectEqual(entry_count != 0 and ignored_count == entry_count and restored_count == 0, report.ignoredAllEntries());
+                try std.testing.expectEqual(ignored_count != 0 and ignored_count < entry_count, report.ignoredPartialEntries());
+                try std.testing.expectEqual(restored_count != 0 and ignored_count != 0, report.restoredAndIgnoredEntries());
+                try std.testing.expectEqual(accounted == entry_count, report.fullyHandled());
+
+                const classification = Reference.classification(entry_count, restored_count, ignored_count);
+                try std.testing.expectEqual(classification, report.classification());
+                try std.testing.expectEqual(classification == .empty, report.isEmptyClassification());
+                try std.testing.expectEqual(classification == .restored_all, report.isRestoredAllClassification());
+                try std.testing.expectEqual(classification == .ignored_all, report.isIgnoredAllClassification());
+                try std.testing.expectEqual(classification == .restored_and_ignored, report.isRestoredAndIgnoredClassification());
+                try std.testing.expectEqual(classification == .partial, report.isPartialClassification());
+            }
+        }
+    }
+}
+
 test "parameter state round-trips generated normalized values" {
     const Params = struct {
         gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", -24.0, 24.0, 0.0),
