@@ -28,15 +28,29 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         }
 
         pub fn data(self: *const Self) []const u8 {
-            return self.bytes[0..self.len];
+            return self.bytes[0..self.boundedLen()];
+        }
+
+        fn boundedLen(self: *const Self) usize {
+            return @min(self.len, capacity);
+        }
+
+        fn boundedPos(self: *const Self) usize {
+            return @min(self.pos, capacity);
+        }
+
+        fn boundedWriteLimit(self: *const Self) usize {
+            return @min(self.write_limit, capacity);
         }
 
         fn readableBytes(self: *const Self) usize {
-            return self.len - self.pos;
+            const len = self.boundedLen();
+            const pos = @min(self.pos, len);
+            return len - pos;
         }
 
         fn writableBytes(self: *const Self) usize {
-            return @min(capacity, self.write_limit) - self.pos;
+            return self.boundedWriteLimit() -| self.boundedPos();
         }
 
         fn seekTarget(base: usize, offset: types.int64) ?types.int64 {
@@ -100,6 +114,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             if (requested > self.readableBytes()) {
                 return types.kResultFalse;
             }
+            if (self.pos > self.boundedLen()) return types.kResultFalse;
             if (requested > 0) {
                 const output = @as([*]u8, @ptrCast(buffer.?))[0..requested];
                 @memcpy(output, self.bytes[self.pos..][0..requested]);
@@ -115,7 +130,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             const requested: usize = @intCast(byte_count);
             if (requested > 0 and buffer == null) return types.kInvalidArgument;
             const self = ownerFromStream(ptr);
-            if (self.pos > capacity or self.pos > self.write_limit or requested > self.writableBytes()) {
+            if (self.pos > capacity or self.pos > self.boundedWriteLimit() or requested > self.writableBytes()) {
                 return types.kResultFalse;
             }
             if (requested > 0) {
@@ -136,7 +151,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
                     if (result) |out| out.* = -1;
                     return types.kResultFalse;
                 },
-                @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd) => seekTarget(self.len, offset) orelse {
+                @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd) => seekTarget(self.boundedLen(), offset) orelse {
                     if (result) |out| out.* = -1;
                     return types.kResultFalse;
                 },
@@ -145,7 +160,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
                     return types.kInvalidArgument;
                 },
             };
-            if (next < 0 or next > self.len) {
+            if (next < 0 or next > self.boundedLen()) {
                 if (result) |out| out.* = -1;
                 return types.kResultFalse;
             }
@@ -155,12 +170,18 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         }
 
         fn tell(ptr: *anyopaque, pos: *types.int64) callconv(.c) types.tresult {
-            pos.* = @intCast(ownerFromStream(ptr).pos);
+            pos.* = std.math.cast(types.int64, ownerFromStream(ptr).pos) orelse {
+                pos.* = -1;
+                return types.kResultFalse;
+            };
             return types.kResultOk;
         }
 
         fn getStreamSize(ptr: *anyopaque, size: *types.int64) callconv(.c) types.tresult {
-            size.* = @intCast(ownerFromSizeable(ptr).len);
+            size.* = std.math.cast(types.int64, ownerFromSizeable(ptr).boundedLen()) orelse {
+                size.* = -1;
+                return types.kResultFalse;
+            };
             return types.kResultOk;
         }
 
@@ -429,5 +450,39 @@ test "fixed buffer stream rejects writes when position is past write limit" {
     try std.testing.expectEqual(types.kResultOk, sizeable.vtable.setStreamSize(sizeable, 8));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 6, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.write(iface, &input, input.len, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
+}
+
+test "fixed buffer stream clamps corrupted cursors and sizes" {
+    const Stream = FixedBufferStream(8);
+    var stream = Stream{};
+    const iface = stream.asStream();
+    const sizeable = stream.asSizeableStream();
+    var input = [_]u8{ 1, 2, 3, 4 };
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.write(iface, &input, input.len, null));
+
+    stream.len = 99;
+    stream.pos = 7;
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 1, 2, 3, 4, 0, 0, 0, 0 }, stream.data());
+
+    var output = [_]u8{0} ** 2;
+    var count: types.int32 = 99;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.read(iface, &output, output.len, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
+
+    var size: types.int64 = -1;
+    try std.testing.expectEqual(types.kResultOk, sizeable.vtable.getStreamSize(sizeable, &size));
+    try std.testing.expectEqual(@as(types.int64, 8), size);
+
+    stream.pos = std.math.maxInt(usize);
+    var pos: types.int64 = 99;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.tell(iface, &pos));
+    try std.testing.expectEqual(@as(types.int64, -1), pos);
+
+    stream.pos = 2;
+    stream.write_limit = 1;
+    count = 99;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.write(iface, &input, 1, &count));
     try std.testing.expectEqual(@as(types.int32, 0), count);
 }
