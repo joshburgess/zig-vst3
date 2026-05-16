@@ -43,14 +43,14 @@ pub fn WaylandHost(comptime Config: type) type {
 
         fn openWaylandConnection(ptr: *anyopaque) callconv(.c) ?*iwaylandframe.wl_display {
             const self = owner(ptr);
-            self.open_count += 1;
+            self.open_count +|= 1;
             if (@hasDecl(Config, "openWaylandConnection")) return Config.openWaylandConnection(self);
             return null;
         }
 
         fn closeWaylandConnection(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.close_count += 1;
+            self.close_count +|= 1;
             self.last_closed_display = display;
             if (@hasDecl(Config, "closeWaylandConnection")) return Config.closeWaylandConnection(self, display);
             return types.kResultOk;
@@ -105,7 +105,7 @@ pub fn WaylandFrame(comptime Config: type) type {
 
         fn getWaylandSurface(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.wl_surface {
             const self = owner(ptr);
-            self.surface_count += 1;
+            self.surface_count +|= 1;
             self.last_display = display;
             if (@hasDecl(Config, "getWaylandSurface")) {
                 return Config.getWaylandSurface(display);
@@ -115,7 +115,7 @@ pub fn WaylandFrame(comptime Config: type) type {
 
         fn getParentSurface(ptr: *anyopaque, rect: *iplugview.ViewRect, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.xdg_surface {
             const self = owner(ptr);
-            self.parent_surface_count += 1;
+            self.parent_surface_count +|= 1;
             self.last_display = display;
             if (@hasDecl(Config, "getParentSurface")) {
                 const surface = Config.getParentSurface(rect, display);
@@ -130,7 +130,7 @@ pub fn WaylandFrame(comptime Config: type) type {
 
         fn getParentToplevel(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.xdg_toplevel {
             const self = owner(ptr);
-            self.parent_toplevel_count += 1;
+            self.parent_toplevel_count +|= 1;
             self.last_display = display;
             if (@hasDecl(Config, "getParentToplevel")) {
                 return Config.getParentToplevel(display);

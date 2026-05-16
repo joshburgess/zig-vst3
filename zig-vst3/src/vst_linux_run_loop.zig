@@ -44,7 +44,7 @@ pub fn EventHandler(comptime Config: type) type {
         fn onFDIsSet(ptr: *anyopaque, fd: Linux.FileDescriptor) callconv(.c) void {
             const self = owner(ptr);
             self.last_fd = fd;
-            self.event_count += 1;
+            self.event_count +|= 1;
             if (@hasDecl(Config, "onFDIsSet")) {
                 Config.onFDIsSet(fd);
             }
@@ -94,7 +94,7 @@ pub fn TimerHandler(comptime Config: type) type {
 
         fn onTimer(ptr: *anyopaque) callconv(.c) void {
             const self = owner(ptr);
-            self.timer_count += 1;
+            self.timer_count +|= 1;
             if (@hasDecl(Config, "onTimer")) {
                 Config.onTimer();
             }

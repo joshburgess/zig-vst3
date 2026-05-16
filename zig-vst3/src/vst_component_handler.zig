@@ -45,19 +45,19 @@ pub fn ComponentHandler(comptime Config: type) type {
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
-            self.add_ref_count += 1;
+            self.add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
-            self.release_count += 1;
+            self.release_count +|= 1;
             return funknown.decrementRefCount(&self.ref_count, "IComponentHandler");
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.begin_count += 1;
+            self.begin_count +|= 1;
             self.last_param_id = id;
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
             return types.kResultOk;
@@ -65,7 +65,7 @@ pub fn ComponentHandler(comptime Config: type) type {
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.perform_count += 1;
+            self.perform_count +|= 1;
             self.last_param_id = id;
             self.last_value = value;
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -74,7 +74,7 @@ pub fn ComponentHandler(comptime Config: type) type {
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.end_count += 1;
+            self.end_count +|= 1;
             self.last_param_id = id;
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
             return types.kResultOk;
@@ -82,7 +82,7 @@ pub fn ComponentHandler(comptime Config: type) type {
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.restart_count += 1;
+            self.restart_count +|= 1;
             self.last_restart_flags = flags;
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
             return types.kResultOk;
@@ -167,13 +167,13 @@ pub fn ComponentHandler2(comptime Config: type) type {
 
         fn addRefFromHandler2(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromHandler2(ptr);
-            self.handler2_add_ref_count += 1;
+            self.handler2_add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.handler2_ref_count, "FUnknown");
         }
 
         fn releaseFromHandler2(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromHandler2(ptr);
-            self.handler2_release_count += 1;
+            self.handler2_release_count +|= 1;
             return funknown.decrementRefCount(&self.handler2_ref_count, "IComponentHandler2");
         }
 
@@ -203,7 +203,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
 
         fn setDirty(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
-            self.dirty_count += 1;
+            self.dirty_count +|= 1;
             self.last_dirty_state = state;
             if (@hasDecl(Config, "setDirty")) return Config.setDirty(self, state);
             return types.kResultOk;
@@ -211,7 +211,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
 
         fn requestOpenEditor(ptr: *anyopaque, name: types.FIDString) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
-            self.open_editor_count += 1;
+            self.open_editor_count +|= 1;
             self.last_editor_name = name;
             if (@hasDecl(Config, "requestOpenEditor")) return Config.requestOpenEditor(self, name);
             return types.kResultOk;
@@ -219,14 +219,14 @@ pub fn ComponentHandler2(comptime Config: type) type {
 
         fn startGroupEdit(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
-            self.start_group_count += 1;
+            self.start_group_count +|= 1;
             if (@hasDecl(Config, "startGroupEdit")) return Config.startGroupEdit(self);
             return types.kResultOk;
         }
 
         fn finishGroupEdit(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
-            self.finish_group_count += 1;
+            self.finish_group_count +|= 1;
             if (@hasDecl(Config, "finishGroupEdit")) return Config.finishGroupEdit(self);
             return types.kResultOk;
         }
@@ -316,13 +316,13 @@ pub fn ComponentHandler3(comptime Config: type) type {
 
         fn addRefFromHandler3(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromHandler3(ptr);
-            self.handler3_add_ref_count += 1;
+            self.handler3_add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.handler3_ref_count, "FUnknown");
         }
 
         fn releaseFromHandler3(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromHandler3(ptr);
-            self.handler3_release_count += 1;
+            self.handler3_release_count +|= 1;
             return funknown.decrementRefCount(&self.handler3_ref_count, "IComponentHandler3");
         }
 
@@ -352,7 +352,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
 
         fn createContextMenu(ptr: *anyopaque, view: ?*iplugview.IPlugView, param_id: ?*const vsttypes.ParamID) callconv(.c) ?*ivstcontextmenu.IContextMenu {
             const self = ownerFromHandler3(ptr);
-            self.context_menu_count += 1;
+            self.context_menu_count +|= 1;
             if (param_id) |id| self.last_param_id = id.*;
             if (@hasDecl(Config, "createContextMenu")) return Config.createContextMenu(self, view, param_id);
             return null;
@@ -471,25 +471,25 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
 
         fn addRefFromBus(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromBus(ptr);
-            self.bus_add_ref_count += 1;
+            self.bus_add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.bus_ref_count, "FUnknown");
         }
 
         fn releaseFromBus(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromBus(ptr);
-            self.bus_release_count += 1;
+            self.bus_release_count +|= 1;
             return funknown.decrementRefCount(&self.bus_ref_count, "IComponentHandlerBusActivation");
         }
 
         fn addRefFromTime(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromTime(ptr);
-            self.time_add_ref_count += 1;
+            self.time_add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.time_ref_count, "FUnknown");
         }
 
         fn releaseFromTime(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromTime(ptr);
-            self.time_release_count += 1;
+            self.time_release_count +|= 1;
             return funknown.decrementRefCount(&self.time_ref_count, "IComponentHandlerSystemTime");
         }
 
@@ -519,7 +519,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
 
         fn requestBusActivation(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, state: types.TBool) callconv(.c) types.tresult {
             const self = ownerFromBus(ptr);
-            self.bus_activation_count += 1;
+            self.bus_activation_count +|= 1;
             self.last_media_type = media_type;
             self.last_direction = direction;
             self.last_bus_index = bus_index;
@@ -530,7 +530,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
 
         fn getSystemTime(ptr: *anyopaque, out: *types.int64) callconv(.c) types.tresult {
             const self = ownerFromTime(ptr);
-            self.system_time_count += 1;
+            self.system_time_count +|= 1;
             const value = if (@hasDecl(Config, "system_time")) Config.system_time else 0;
             self.last_system_time = value;
             out.* = value;
@@ -635,13 +635,13 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
 
         fn addRefFromProgress(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromProgress(ptr);
-            self.progress_add_ref_count += 1;
+            self.progress_add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.progress_ref_count, "FUnknown");
         }
 
         fn releaseFromProgress(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromProgress(ptr);
-            self.progress_release_count += 1;
+            self.progress_release_count +|= 1;
             return funknown.decrementRefCount(&self.progress_ref_count, "IProgress");
         }
 
@@ -671,7 +671,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
 
         fn start(ptr: *anyopaque, progress_type: types.uint32, description: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
-            self.start_count += 1;
+            self.start_count +|= 1;
             self.last_type = progress_type;
             const id = if (@hasDecl(Config, "progress_id")) Config.progress_id else 1;
             out.* = id;
@@ -686,7 +686,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
 
         fn update(ptr: *anyopaque, id: ivsteditcontroller.ProgressID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
-            self.update_count += 1;
+            self.update_count +|= 1;
             self.last_id = id;
             self.last_value = value;
             if (@hasDecl(Config, "update")) return Config.update(self, id, value);
@@ -695,7 +695,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
 
         fn finish(ptr: *anyopaque, id: ivsteditcontroller.ProgressID) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
-            self.finish_count += 1;
+            self.finish_count +|= 1;
             self.last_id = id;
             if (@hasDecl(Config, "finish")) return Config.finish(self, id);
             return types.kResultOk;
@@ -815,25 +815,25 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
 
         fn addRefFromUnit(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromUnit(ptr);
-            self.unit_add_ref_count += 1;
+            self.unit_add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.unit_ref_count, "FUnknown");
         }
 
         fn releaseFromUnit(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromUnit(ptr);
-            self.unit_release_count += 1;
+            self.unit_release_count +|= 1;
             return funknown.decrementRefCount(&self.unit_ref_count, "IUnitHandler");
         }
 
         fn addRefFromUnit2(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromUnit2(ptr);
-            self.unit2_add_ref_count += 1;
+            self.unit2_add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.unit2_ref_count, "FUnknown");
         }
 
         fn releaseFromUnit2(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromUnit2(ptr);
-            self.unit2_release_count += 1;
+            self.unit2_release_count +|= 1;
             return funknown.decrementRefCount(&self.unit2_ref_count, "IUnitHandler2");
         }
 
@@ -863,7 +863,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
 
         fn notifyUnitSelection(ptr: *anyopaque, unit_id: vsttypes.UnitID) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
-            self.unit_selection_count += 1;
+            self.unit_selection_count +|= 1;
             self.last_unit_id = unit_id;
             if (@hasDecl(Config, "notifyUnitSelection")) return Config.notifyUnitSelection(self, unit_id);
             return types.kResultOk;
@@ -871,7 +871,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
 
         fn notifyProgramListChange(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
-            self.program_list_count += 1;
+            self.program_list_count +|= 1;
             self.last_program_list_id = list_id;
             self.last_program_index = program_index;
             if (@hasDecl(Config, "notifyProgramListChange")) return Config.notifyProgramListChange(self, list_id, program_index);
@@ -880,7 +880,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
 
         fn notifyUnitByBusChange(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = ownerFromUnit2(ptr);
-            self.unit_by_bus_count += 1;
+            self.unit_by_bus_count +|= 1;
             if (@hasDecl(Config, "notifyUnitByBusChange")) return Config.notifyUnitByBusChange(self);
             return types.kResultOk;
         }

@@ -114,7 +114,7 @@ pub fn TestPlugProvider(comptime Config: type) type {
         }
 
         fn releasePlugInFor(self: *Self, component: ?*ivstcomponent.IComponent, controller: ?*ivsteditcontroller.IEditController) types.tresult {
-            self.release_count += 1;
+            self.release_count +|= 1;
             self.last_released_component = component;
             self.last_released_controller = controller;
             if (@hasDecl(Config, "releasePlugIn")) return Config.releasePlugIn(self, component, controller);

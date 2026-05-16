@@ -42,7 +42,7 @@ pub fn ContextMenuTarget(comptime Config: type) type {
         fn executeMenuItem(ptr: *anyopaque, tag: types.int32) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.last_tag = tag;
-            self.execute_count += 1;
+            self.execute_count +|= 1;
             if (@hasDecl(Config, "executeMenuItem")) {
                 return Config.executeMenuItem(tag);
             }
@@ -161,7 +161,7 @@ pub fn ContextMenu(comptime max_items: usize) type {
 
         fn popup(ptr: *anyopaque, x: types.UCoord, y: types.UCoord) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.popup_count += 1;
+            self.popup_count +|= 1;
             self.last_x = x;
             self.last_y = y;
             return types.kResultOk;

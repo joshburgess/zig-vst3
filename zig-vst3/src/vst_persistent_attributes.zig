@@ -52,14 +52,14 @@ pub fn Persistent(comptime Config: type) type {
 
         fn saveAttributes(ptr: *anyopaque, attributes: ?*ipersistent.IAttributes) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.save_count += 1;
+            self.save_count +|= 1;
             if (@hasDecl(Config, "saveAttributes")) return Config.saveAttributes(self, attributes);
             return types.kResultOk;
         }
 
         fn loadAttributes(ptr: *anyopaque, attributes: ?*ipersistent.IAttributes) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.load_count += 1;
+            self.load_count +|= 1;
             if (@hasDecl(Config, "loadAttributes")) return Config.loadAttributes(self, attributes);
             return types.kResultOk;
         }

@@ -45,7 +45,7 @@ pub fn XmlRepresentation(comptime xml: []const u8) type {
 
         fn getXmlRepresentationStream(ptr: *anyopaque, info: *ivstrepresentation.RepresentationInfo, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.request_count += 1;
+            self.request_count +|= 1;
             self.last_info = info.*;
             const out = stream orelse return types.kInvalidArgument;
             var bytes_written: types.int32 = 0;

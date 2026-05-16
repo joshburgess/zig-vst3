@@ -42,7 +42,7 @@ pub fn PlugFrame(comptime Config: type) type {
 
         fn resizeView(ptr: *anyopaque, view: ?*iplugview.IPlugView, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.resize_count += 1;
+            self.resize_count +|= 1;
             if (@hasDecl(Config, "resizeView")) {
                 const result = Config.resizeView(view, rect);
                 if (result != types.kResultOk) return result;

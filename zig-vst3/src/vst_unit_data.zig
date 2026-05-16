@@ -203,7 +203,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn setUnitProgramData(ptr: *anyopaque, list_id: types.int32, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.unit_program_data_count += 1;
+            self.unit_program_data_count +|= 1;
             self.last_unit_program_list_id = list_id;
             self.last_unit_program_index = program_index;
             if (@hasDecl(Config, "setUnitProgramData")) return Config.setUnitProgramData(self, list_id, program_index, stream);
@@ -306,7 +306,7 @@ pub fn UnitProgramData(comptime Config: type) type {
 
         fn getProgramData(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = ownerFromProgram(ptr);
-            self.program_get_count += 1;
+            self.program_get_count +|= 1;
             self.last_program_list_id = list_id;
             self.last_program_index = program_index;
             if (@hasDecl(Config, "getProgramData")) return Config.getProgramData(self, list_id, program_index, stream);
@@ -315,7 +315,7 @@ pub fn UnitProgramData(comptime Config: type) type {
 
         fn setProgramData(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = ownerFromProgram(ptr);
-            self.program_set_count += 1;
+            self.program_set_count +|= 1;
             self.last_program_list_id = list_id;
             self.last_program_index = program_index;
             if (@hasDecl(Config, "setProgramData")) return Config.setProgramData(self, list_id, program_index, stream);
@@ -331,7 +331,7 @@ pub fn UnitProgramData(comptime Config: type) type {
 
         fn getUnitData(ptr: *anyopaque, unit_id: vsttypes.UnitID, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
-            self.unit_get_count += 1;
+            self.unit_get_count +|= 1;
             self.last_unit_id = unit_id;
             if (@hasDecl(Config, "getUnitData")) return Config.getUnitData(self, unit_id, stream);
             return types.kResultFalse;
@@ -339,7 +339,7 @@ pub fn UnitProgramData(comptime Config: type) type {
 
         fn setUnitData(ptr: *anyopaque, unit_id: vsttypes.UnitID, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
-            self.unit_set_count += 1;
+            self.unit_set_count +|= 1;
             self.last_unit_id = unit_id;
             if (@hasDecl(Config, "setUnitData")) return Config.setUnitData(self, unit_id, stream);
             return types.kResultFalse;

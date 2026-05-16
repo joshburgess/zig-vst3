@@ -40,19 +40,19 @@ pub fn ConnectionPoint(comptime Config: type) type {
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
-            self.add_ref_count += 1;
+            self.add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
-            self.release_count += 1;
+            self.release_count +|= 1;
             return funknown.decrementRefCount(&self.ref_count, "IConnectionPoint");
         }
 
         fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.connect_count += 1;
+            self.connect_count +|= 1;
             if (@hasDecl(Config, "connect")) {
                 const result = Config.connect(self, peer);
                 if (result != types.kResultOk) return result;
@@ -63,7 +63,7 @@ pub fn ConnectionPoint(comptime Config: type) type {
 
         fn disconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.disconnect_count += 1;
+            self.disconnect_count +|= 1;
             if (@hasDecl(Config, "disconnect")) {
                 const result = Config.disconnect(self, peer);
                 if (result != types.kResultOk) return result;
@@ -74,7 +74,7 @@ pub fn ConnectionPoint(comptime Config: type) type {
 
         fn notify(ptr: *anyopaque, message: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.notify_count += 1;
+            self.notify_count +|= 1;
             self.last_message = message;
             if (@hasDecl(Config, "notify")) return Config.notify(self, message);
             return types.kResultOk;

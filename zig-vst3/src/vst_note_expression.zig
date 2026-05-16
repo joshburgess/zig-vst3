@@ -49,14 +49,14 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
         pub fn addExpression(self: *Self, info: ivstnoteexpression.NoteExpressionTypeInfo) types.tresult {
             if (self.expression_count >= max_expressions) return types.kResultFalse;
             self.expressions[self.expression_count] = info;
-            self.expression_count += 1;
+            self.expression_count +|= 1;
             return types.kResultOk;
         }
 
         pub fn addKeyswitch(self: *Self, info: ivstnoteexpression.KeyswitchInfo) types.tresult {
             if (self.keyswitch_count >= max_keyswitches) return types.kResultFalse;
             self.keyswitches[self.keyswitch_count] = info;
-            self.keyswitch_count += 1;
+            self.keyswitch_count +|= 1;
             return types.kResultOk;
         }
 

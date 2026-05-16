@@ -75,13 +75,13 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
 
         fn addRefInfo(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromInfo(ptr);
-            self.info_add_ref_count += 1;
+            self.info_add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.info_ref_count, "FUnknown");
         }
 
         fn releaseInfo(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromInfo(ptr);
-            self.info_release_count += 1;
+            self.info_release_count +|= 1;
             return funknown.decrementRefCount(&self.info_ref_count, "IInfoListener");
         }
 
@@ -103,7 +103,7 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
 
         fn setChannelContextInfos(ptr: *anyopaque, attributes: ?*ivstattributes.IAttributeList) callconv(.c) types.tresult {
             const self = ownerFromInfo(ptr);
-            self.channel_context_count += 1;
+            self.channel_context_count +|= 1;
             self.last_channel_context = attributes;
             if (@hasDecl(Config, "setChannelContextInfos")) return Config.setChannelContextInfos(self, attributes);
             return types.kResultOk;
@@ -188,13 +188,13 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
 
         fn addRefAutomation(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromAutomation(ptr);
-            self.automation_add_ref_count += 1;
+            self.automation_add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.automation_ref_count, "FUnknown");
         }
 
         fn releaseAutomation(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromAutomation(ptr);
-            self.automation_release_count += 1;
+            self.automation_release_count +|= 1;
             return funknown.decrementRefCount(&self.automation_ref_count, "IAutomationState");
         }
 
@@ -303,13 +303,13 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
 
         fn addRefDataExchange(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromDataExchange(ptr);
-            self.add_ref_count += 1;
+            self.add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.data_exchange_ref_count, "FUnknown");
         }
 
         fn releaseDataExchange(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromDataExchange(ptr);
-            self.release_count += 1;
+            self.release_count +|= 1;
             return funknown.decrementRefCount(&self.data_exchange_ref_count, "IDataExchangeHandler");
         }
 
@@ -331,7 +331,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
 
         fn openQueue(ptr: *anyopaque, processor: ?*ivstaudioprocessor.IAudioProcessor, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
-            self.open_count += 1;
+            self.open_count +|= 1;
             self.last_user_context_id = user_context_id;
             out.* = ivstdataexchange.InvalidDataExchangeQueueID;
             if (@hasDecl(Config, "openQueue")) {
@@ -344,7 +344,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
 
         fn closeQueue(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
-            self.close_count += 1;
+            self.close_count +|= 1;
             self.last_queue_id = queue_id;
             if (@hasDecl(Config, "closeQueue")) return Config.closeQueue(self, queue_id);
             return types.kResultOk;

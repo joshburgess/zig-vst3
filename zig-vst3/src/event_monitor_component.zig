@@ -36,7 +36,7 @@ const EventMonitorState = struct {
         var cc_events = context.inputEventsOfKind(.midi_cc);
         while (cc_events.next()) |event| {
             const cc = event.asMidiCC() orelse continue;
-            self.midi_cc_count += 1;
+            self.midi_cc_count +|= 1;
             self.latest_midi_cc_value = cc.value;
         }
     }

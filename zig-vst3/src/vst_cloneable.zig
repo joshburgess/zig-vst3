@@ -40,7 +40,7 @@ pub fn Cloneable(comptime Config: type) type {
 
         fn clone(ptr: *anyopaque) callconv(.c) ?*anyopaque {
             const self = owner(ptr);
-            self.clone_count += 1;
+            self.clone_count +|= 1;
             if (@hasDecl(Config, "clone")) {
                 return Config.clone(@ptrCast(self));
             }

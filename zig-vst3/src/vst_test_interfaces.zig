@@ -123,14 +123,14 @@ pub fn Test(comptime Config: type) type {
 
         fn setup(ptr: *anyopaque) callconv(.c) bool {
             const self = owner(ptr);
-            self.setup_count += 1;
+            self.setup_count +|= 1;
             if (@hasDecl(Config, "setup")) return Config.setup(self);
             return true;
         }
 
         fn run(ptr: *anyopaque, result: ?*itest.ITestResult) callconv(.c) bool {
             const self = owner(ptr);
-            self.run_count += 1;
+            self.run_count +|= 1;
             self.last_result = result;
             if (@hasDecl(Config, "run")) return Config.run(self, result);
             return true;
@@ -138,7 +138,7 @@ pub fn Test(comptime Config: type) type {
 
         fn teardown(ptr: *anyopaque) callconv(.c) bool {
             const self = owner(ptr);
-            self.teardown_count += 1;
+            self.teardown_count +|= 1;
             if (@hasDecl(Config, "teardown")) return Config.teardown(self);
             return true;
         }
@@ -288,7 +288,7 @@ pub fn TestFactory(comptime Config: type) type {
 
         fn createTests(ptr: *anyopaque, context: ?*anyopaque, suite: ?*itest.ITestSuite) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.create_count += 1;
+            self.create_count +|= 1;
             self.last_context = context;
             self.last_suite = suite;
             if (@hasDecl(Config, "createTests")) return Config.createTests(self, context, suite);

@@ -44,7 +44,7 @@ pub fn Dependent(comptime Config: type) type {
             const self = owner(ptr);
             self.last_changed = changed;
             self.last_message = message;
-            self.update_count += 1;
+            self.update_count +|= 1;
             if (@hasDecl(Config, "update")) {
                 Config.update(changed, message);
             }

@@ -67,21 +67,21 @@ pub fn InterAppAudioHost(comptime Config: type) type {
 
         fn connectedToHost(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.connected_count += 1;
+            self.connected_count +|= 1;
             if (@hasDecl(Config, "connectedToHost")) return Config.connectedToHost(self);
             return types.kResultOk;
         }
 
         fn switchToHost(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.switch_count += 1;
+            self.switch_count +|= 1;
             if (@hasDecl(Config, "switchToHost")) return Config.switchToHost(self);
             return types.kResultOk;
         }
 
         fn sendRemoteControlEvent(ptr: *anyopaque, event_id: types.uint32) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.remote_control_count += 1;
+            self.remote_control_count +|= 1;
             self.last_remote_control_event = event_id;
             if (@hasDecl(Config, "sendRemoteControlEvent")) return Config.sendRemoteControlEvent(self, event_id);
             return types.kResultOk;
@@ -100,7 +100,7 @@ pub fn InterAppAudioHost(comptime Config: type) type {
 
         fn scheduleEventFromUI(ptr: *anyopaque, event: *events.Event) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.scheduled_event_count += 1;
+            self.scheduled_event_count +|= 1;
             if (@hasDecl(Config, "scheduleEventFromUI")) return Config.scheduleEventFromUI(self, event);
             return types.kResultOk;
         }
@@ -114,7 +114,7 @@ pub fn InterAppAudioHost(comptime Config: type) type {
 
         fn showSettingsView(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.settings_count += 1;
+            self.settings_count +|= 1;
             if (@hasDecl(Config, "showSettingsView")) return Config.showSettingsView(self);
             return types.kResultOk;
         }
@@ -172,7 +172,7 @@ pub fn InterAppAudioConnectionNotification(comptime Config: type) type {
         fn onInterAppAudioConnectionStateChange(ptr: *anyopaque, state: types.TBool) callconv(.c) void {
             const self = owner(ptr);
             self.connected = state != 0;
-            self.change_count += 1;
+            self.change_count +|= 1;
             if (@hasDecl(Config, "onInterAppAudioConnectionStateChange")) {
                 Config.onInterAppAudioConnectionStateChange(self, self.connected);
             }
@@ -225,28 +225,28 @@ pub fn InterAppAudioPresetManager(comptime Config: type) type {
 
         fn runLoadPresetBrowser(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.load_browser_count += 1;
+            self.load_browser_count +|= 1;
             if (@hasDecl(Config, "runLoadPresetBrowser")) return Config.runLoadPresetBrowser(self);
             return types.kResultOk;
         }
 
         fn runSavePresetBrowser(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.save_browser_count += 1;
+            self.save_browser_count +|= 1;
             if (@hasDecl(Config, "runSavePresetBrowser")) return Config.runSavePresetBrowser(self);
             return types.kResultOk;
         }
 
         fn loadNextPreset(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.next_count += 1;
+            self.next_count +|= 1;
             if (@hasDecl(Config, "loadNextPreset")) return Config.loadNextPreset(self);
             return types.kResultOk;
         }
 
         fn loadPreviousPreset(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.previous_count += 1;
+            self.previous_count +|= 1;
             if (@hasDecl(Config, "loadPreviousPreset")) return Config.loadPreviousPreset(self);
             return types.kResultOk;
         }

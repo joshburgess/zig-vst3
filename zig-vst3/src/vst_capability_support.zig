@@ -112,7 +112,7 @@ pub fn PrefetchableSupport(comptime Config: type) type {
 
         fn getPrefetchableSupport(ptr: *anyopaque, out: *ivstprefetchablesupport.PrefetchableSupport) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.get_count += 1;
+            self.get_count +|= 1;
             out.* = self.state;
             if (@hasDecl(Config, "getPrefetchableSupport")) {
                 const result = Config.getPrefetchableSupport(self, out);
@@ -169,7 +169,7 @@ pub fn MidiLearn(comptime Config: type) type {
 
         fn onLiveMIDIControllerInput(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, controller: vsttypes.CtrlNumber) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.input_count += 1;
+            self.input_count +|= 1;
             self.last_bus = bus_index;
             self.last_channel = channel;
             self.last_controller = controller;
@@ -229,14 +229,14 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
         pub fn addMidi2(self: *Self, assignment: ivstmidimapping2.Midi2ControllerParamIDAssignment) types.tresult {
             if (self.midi2_count >= max_midi2) return types.kResultFalse;
             self.midi2[self.midi2_count] = assignment;
-            self.midi2_count += 1;
+            self.midi2_count +|= 1;
             return types.kResultOk;
         }
 
         pub fn addMidi1(self: *Self, assignment: ivstmidimapping2.Midi1ControllerParamIDAssignment) types.tresult {
             if (self.midi1_count >= max_midi1) return types.kResultFalse;
             self.midi1[self.midi1_count] = assignment;
-            self.midi1_count += 1;
+            self.midi1_count +|= 1;
             return types.kResultOk;
         }
 
@@ -323,7 +323,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         fn onLiveMidi2ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) callconv(.c) types.tresult {
             const self = ownerFromLearn(ptr);
-            self.midi2_input_count += 1;
+            self.midi2_input_count +|= 1;
             self.last_bus = bus_index;
             self.last_channel = channel;
             self.last_midi2_controller = controller;
@@ -333,7 +333,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         fn onLiveMidi1ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: vsttypes.CtrlNumber) callconv(.c) types.tresult {
             const self = ownerFromLearn(ptr);
-            self.midi1_input_count += 1;
+            self.midi1_input_count +|= 1;
             self.last_bus = bus_index;
             self.last_channel = channel;
             self.last_midi1_controller = controller;
@@ -387,7 +387,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
         pub fn addMap(self: *Self, map: ivstphysicalui.PhysicalUIMap) types.tresult {
             if (self.map_count >= max_maps) return types.kResultFalse;
             self.maps[self.map_count] = map;
-            self.map_count += 1;
+            self.map_count +|= 1;
             return types.kResultOk;
         }
 
@@ -414,7 +414,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
 
         fn getPhysicalUIMapping(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, out: *ivstphysicalui.PhysicalUIMapList) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.request_count += 1;
+            self.request_count +|= 1;
             self.last_bus = bus_index;
             self.last_channel = channel;
             out.* = .{

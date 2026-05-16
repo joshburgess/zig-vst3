@@ -46,7 +46,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
         pub fn appendPoint(self: *Self, sample_offset: types.int32, value: vsttypes.ParamValue) types.tresult {
             if (self.point_count < 0 or self.point_count >= max_points) return types.kResultFalse;
             self.points[@intCast(self.point_count)] = .{ .sample_offset = sample_offset, .value = value };
-            self.point_count += 1;
+            self.point_count +|= 1;
             return types.kResultOk;
         }
 
@@ -136,7 +136,7 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
             if (self.queue_count < 0 or self.queue_count >= max_queues) return null;
             const index: usize = @intCast(self.queue_count);
             self.queues[index] = Queue.init(id);
-            self.queue_count += 1;
+            self.queue_count +|= 1;
             return &self.queues[index];
         }
 

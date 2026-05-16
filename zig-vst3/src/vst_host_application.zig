@@ -28,7 +28,7 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
         }
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            owner(ptr).query_count += 1;
+            owner(ptr).query_count +|= 1;
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
                 .{ .iid = &ivsthostapplication.ihost_application_iid, .ptr = ptr },
@@ -38,13 +38,13 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
-            self.add_ref_count += 1;
+            self.add_ref_count +|= 1;
             return funknown.incrementRefCount(&self.ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
-            self.release_count += 1;
+            self.release_count +|= 1;
             return funknown.decrementRefCount(&self.ref_count, "IHostApplication");
         }
 
@@ -55,7 +55,7 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
 
         fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.create_instance_count += 1;
+            self.create_instance_count +|= 1;
             out.* = null;
             if (@hasDecl(Config, "createInstance")) {
                 const result = Config.createInstance(self, cid, iid, out);

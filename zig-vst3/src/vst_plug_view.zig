@@ -42,7 +42,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         pub fn addPlatform(self: *Self, platform: types.FIDString) types.tresult {
             if (self.platform_count >= max_platforms) return types.kResultFalse;
             self.platforms[self.platform_count] = platform;
-            self.platform_count += 1;
+            self.platform_count +|= 1;
             return types.kResultOk;
         }
 
@@ -83,7 +83,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
                 const result = Config.attached(self, parent, platform);
                 if (result != types.kResultOk) return result;
             }
-            self.attached_count += 1;
+            self.attached_count +|= 1;
             self.attached_parent = parent;
             self.attached_platform = platform;
             return types.kResultOk;
@@ -95,7 +95,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
                 const result = Config.removed(self);
                 if (result != types.kResultOk) return result;
             }
-            self.removed_count += 1;
+            self.removed_count +|= 1;
             self.attached_parent = null;
             self.attached_platform = null;
             return types.kResultOk;
@@ -103,7 +103,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
 
         fn onWheel(ptr: *anyopaque, distance: f32) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.wheel_count += 1;
+            self.wheel_count +|= 1;
             self.last_wheel_distance = distance;
             if (@hasDecl(Config, "onWheel")) return Config.onWheel(self, distance);
             return types.kResultOk;
@@ -111,7 +111,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
 
         fn onKeyDown(ptr: *anyopaque, key: types.char16, key_code: types.int16, modifiers: types.int16) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.key_down_count += 1;
+            self.key_down_count +|= 1;
             self.last_key = key;
             self.last_key_code = key_code;
             self.last_key_modifiers = modifiers;
@@ -121,7 +121,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
 
         fn onKeyUp(ptr: *anyopaque, key: types.char16, key_code: types.int16, modifiers: types.int16) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.key_up_count += 1;
+            self.key_up_count +|= 1;
             self.last_key = key;
             self.last_key_code = key_code;
             self.last_key_modifiers = modifiers;
@@ -145,7 +145,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
 
         fn onFocus(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.focus_count += 1;
+            self.focus_count +|= 1;
             if (@hasDecl(Config, "onFocus")) {
                 const result = Config.onFocus(self, state);
                 if (result != types.kResultOk) return result;

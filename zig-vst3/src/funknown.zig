@@ -56,7 +56,7 @@ fn ownerFromUnknown(ptr: *anyopaque) *TestObject {
 
 fn testQueryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) tresult {
     const self = ownerFromUnknown(ptr);
-    self.query_count += 1;
+    self.query_count +|= 1;
 
     if (std.mem.eql(u8, requested_iid, &iid)) {
         _ = addRef(ptr);

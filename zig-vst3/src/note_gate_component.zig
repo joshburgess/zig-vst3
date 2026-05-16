@@ -50,7 +50,7 @@ const NoteGateState = struct {
         const index = @as(usize, @intCast(pitch));
         if (!self.held_notes[index]) {
             self.held_notes[index] = true;
-            self.held_note_count += 1;
+            self.held_note_count +|= 1;
         }
         self.open = true;
     }
