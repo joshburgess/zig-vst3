@@ -216,7 +216,7 @@ pub const VoiceMix = struct {
 };
 ```
 
-`PluginInstance.unitSet()` and the direct `plug.units.UnitSet` helpers expose unit, program-list, program, parameter snapshot, and metadata lookups by index, id, name, unit, or list.
+`PluginInstance.unitSet()` and the direct `plug.units.UnitSet` helpers expose unit, program-list, program, parameter snapshot, and metadata lookups by index, id, name, unit, or list. They also report duplicate ids, duplicate names, and cyclic unit-parent links before validation fails.
 
 ## Local Checks
 
