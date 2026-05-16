@@ -35,6 +35,10 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return &self.iface;
         }
 
+        fn safePlatformCount(self: *const Self) usize {
+            return @min(self.platform_count, max_platforms);
+        }
+
         pub fn addPlatform(self: *Self, platform: types.FIDString) types.tresult {
             if (self.platform_count >= max_platforms) return types.kResultFalse;
             self.platforms[self.platform_count] = platform;
@@ -66,8 +70,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         fn isPlatformTypeSupported(ptr: *anyopaque, platform: types.FIDString) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (@hasDecl(Config, "isPlatformTypeSupported")) return Config.isPlatformTypeSupported(self, platform);
-            const count = @min(self.platform_count, max_platforms);
-            for (self.platforms[0..count]) |supported| {
+            for (self.platforms[0..self.safePlatformCount()]) |supported| {
                 if (std.mem.eql(u8, std.mem.span(supported), std.mem.span(platform))) return types.kResultOk;
             }
             return types.kResultFalse;
@@ -207,6 +210,17 @@ test "plug view stores platform attachment and removal" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.removed(iface));
     try std.testing.expectEqual(@as(types.uint32, 1), view.removed_count);
     try std.testing.expectEqual(@as(?*anyopaque, null), view.attached_parent);
+}
+
+test "plug view clamps inflated platform counts" {
+    const View = PlugView(1, struct {});
+    var view = View{};
+    const iface = view.asInterface();
+    view.platforms[0] = iplugview.PlatformType.kPlatformTypeNSView;
+    view.platform_count = 99;
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.isPlatformTypeSupported(iface, iplugview.PlatformType.kPlatformTypeNSView));
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.isPlatformTypeSupported(iface, iplugview.PlatformType.kPlatformTypeWaylandSurfaceID));
 }
 
 test "plug view tracks input size focus and frame state" {
