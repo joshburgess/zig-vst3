@@ -90,24 +90,17 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
         }
 
         fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.c) types.tresult {
-            if (comptime classes.len == 0) {
+            const class = classAt(index) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
-            } else {
-                if (index < 0 or index >= classes.len) {
-                    out.* = .{};
-                    return types.kInvalidArgument;
-                }
-
-                const class = classes[@intCast(index)];
-                out.* = .{
-                    .cid = class.cid,
-                    .cardinality = class.cardinality,
-                };
-                copyZ(&out.category, class.category);
-                copyZ(&out.name, class.name);
-                return types.kResultOk;
-            }
+            };
+            out.* = .{
+                .cid = class.cid,
+                .cardinality = class.cardinality,
+            };
+            copyZ(&out.category, class.category);
+            copyZ(&out.name, class.name);
+            return types.kResultOk;
         }
 
         fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
@@ -124,6 +117,13 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
 
             out.* = null;
             return types.kNoInterface;
+        }
+
+        fn classAt(index: types.int32) ?ClassInfo {
+            if (comptime classes.len == 0) return null;
+            if (index < 0) return null;
+            const class_index: usize = @intCast(index);
+            return if (class_index < classes.len) classes[class_index] else null;
         }
 
         comptime {
@@ -282,12 +282,10 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
         }
 
         fn classAt(index: types.int32) ?ClassInfo {
-            if (comptime classes.len == 0) {
-                return null;
-            } else {
-                if (index < 0 or index >= classes.len) return null;
-                return classes[@intCast(index)];
-            }
+            if (comptime classes.len == 0) return null;
+            if (index < 0) return null;
+            const class_index: usize = @intCast(index);
+            return if (class_index < classes.len) classes[class_index] else null;
         }
 
         comptime {

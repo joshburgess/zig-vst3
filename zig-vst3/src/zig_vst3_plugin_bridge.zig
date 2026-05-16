@@ -314,11 +314,10 @@ pub fn fillParameterInfo(
     index: types.int32,
     out: *ivsteditcontroller.ParameterInfo,
 ) types.tresult {
-    if (index < 0 or index >= plug.parameters.ParameterSet(Params).count) {
+    const parameter_index = parameterIndex(Params, index) orelse {
         out.* = .{};
         return types.kInvalidArgument;
-    }
-    const parameter_index: usize = @intCast(index);
+    };
     out.* = .{
         .id = set.id(parameter_index).?,
         .stepCount = set.stepCount(parameter_index).?,
@@ -330,6 +329,12 @@ pub fn fillParameterInfo(
     string128.copy(&out.shortTitle, set.shortName(parameter_index).?);
     string128.copy(&out.units, set.units(parameter_index).?);
     return types.kResultOk;
+}
+
+fn parameterIndex(comptime Params: type, index: types.int32) ?usize {
+    if (index < 0) return null;
+    const value: usize = @intCast(index);
+    return if (value < plug.parameters.ParameterSet(Params).count) value else null;
 }
 
 fn parameterInfoFlags(
@@ -1621,6 +1626,8 @@ test "zig-vst3-plugin bridge parameter controller exposes reflected edit operati
     try expectString128("Gain", &info.title);
     try expectString128("Gn", &info.shortTitle);
     try expectString128("dB", &info.units);
+    try std.testing.expectEqual(types.kInvalidArgument, controller.parameterInfo(-1, &info));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.parameterInfo(3, &info));
 
     try std.testing.expectEqual(types.kResultOk, controller.stringByValue(7, 0.5, &text));
     try expectString128("1.000", &text);
