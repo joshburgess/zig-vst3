@@ -70,7 +70,7 @@ fn testQueryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*
 
 pub fn addRef(ptr: *anyopaque) callconv(.c) uint32 {
     const header: *Header = @ptrCast(@alignCast(ptr));
-    return header.ref_count.fetchAdd(1, .monotonic) + 1;
+    return incrementRefCount(&header.ref_count, "FUnknown");
 }
 
 pub fn release(ptr: *anyopaque) callconv(.c) uint32 {
@@ -82,6 +82,22 @@ pub fn release(ptr: *anyopaque) callconv(.c) uint32 {
     }
 
     return next;
+}
+
+pub fn incrementRefCount(ref_count: *std.atomic.Value(uint32), comptime owner_name: []const u8) uint32 {
+    while (true) {
+        const previous = ref_count.load(.monotonic);
+        if (previous == std.math.maxInt(uint32)) {
+            @panic(owner_name ++ ".addRef would overflow refcount");
+        }
+
+        const next = previous + 1;
+        if (ref_count.cmpxchgWeak(previous, next, .monotonic, .monotonic)) |_| {
+            continue;
+        }
+
+        return next;
+    }
 }
 
 pub fn decrementRefCount(ref_count: *std.atomic.Value(uint32), comptime owner_name: []const u8) uint32 {

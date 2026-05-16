@@ -38,7 +38,7 @@ pub fn Persistent(comptime Config: type) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -155,11 +155,11 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
         }
 
         fn attributesAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromAttributes(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromAttributes(ptr).ref_count, "FUnknown");
         }
 
         fn attributes2AddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromAttributes2(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromAttributes2(ptr).ref_count, "FUnknown");
         }
 
         fn attributesRelease(ptr: *anyopaque) callconv(.c) types.uint32 {

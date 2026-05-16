@@ -46,7 +46,7 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
             self.add_ref_count += 1;
-            return self.ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -107,7 +107,7 @@ pub fn WrapperMarker(comptime Interface: type, comptime VTable: type, comptime i
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -155,7 +155,7 @@ pub fn WrapperMPESupport(comptime Config: type) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {

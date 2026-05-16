@@ -60,11 +60,11 @@ pub fn TestPlugProvider(comptime Config: type) type {
         }
 
         fn providerAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromProvider(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromProvider(ptr).ref_count, "FUnknown");
         }
 
         fn provider2AddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromProvider2(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromProvider2(ptr).ref_count, "FUnknown");
         }
 
         fn providerRelease(ptr: *anyopaque) callconv(.c) types.uint32 {

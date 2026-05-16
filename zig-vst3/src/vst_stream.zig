@@ -62,11 +62,11 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         }
 
         fn addRefStream(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromStream(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromStream(ptr).ref_count, "FUnknown");
         }
 
         fn addRefSizeable(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromSizeable(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromSizeable(ptr).ref_count, "FUnknown");
         }
 
         fn releaseStream(ptr: *anyopaque) callconv(.c) types.uint32 {

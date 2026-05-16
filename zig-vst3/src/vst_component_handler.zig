@@ -46,7 +46,7 @@ pub fn ComponentHandler(comptime Config: type) type {
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
             self.add_ref_count += 1;
-            return self.ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -158,7 +158,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
         }
 
         fn addRefFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "FUnknown");
         }
 
         fn releaseFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -168,7 +168,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
         fn addRefFromHandler2(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromHandler2(ptr);
             self.handler2_add_ref_count += 1;
-            return self.handler2_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.handler2_ref_count, "FUnknown");
         }
 
         fn releaseFromHandler2(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -307,7 +307,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
         }
 
         fn addRefFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "FUnknown");
         }
 
         fn releaseFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -317,7 +317,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
         fn addRefFromHandler3(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromHandler3(ptr);
             self.handler3_add_ref_count += 1;
-            return self.handler3_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.handler3_ref_count, "FUnknown");
         }
 
         fn releaseFromHandler3(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -462,7 +462,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         }
 
         fn addRefFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "FUnknown");
         }
 
         fn releaseFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -472,7 +472,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         fn addRefFromBus(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromBus(ptr);
             self.bus_add_ref_count += 1;
-            return self.bus_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.bus_ref_count, "FUnknown");
         }
 
         fn releaseFromBus(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -484,7 +484,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         fn addRefFromTime(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromTime(ptr);
             self.time_add_ref_count += 1;
-            return self.time_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.time_ref_count, "FUnknown");
         }
 
         fn releaseFromTime(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -626,7 +626,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn addRefFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "FUnknown");
         }
 
         fn releaseFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -636,7 +636,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         fn addRefFromProgress(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromProgress(ptr);
             self.progress_add_ref_count += 1;
-            return self.progress_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.progress_ref_count, "FUnknown");
         }
 
         fn releaseFromProgress(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -806,7 +806,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         }
 
         fn addRefFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromHandler(ptr).handler_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromHandler(ptr).handler_ref_count, "FUnknown");
         }
 
         fn releaseFromHandler(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -816,7 +816,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         fn addRefFromUnit(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromUnit(ptr);
             self.unit_add_ref_count += 1;
-            return self.unit_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.unit_ref_count, "FUnknown");
         }
 
         fn releaseFromUnit(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -828,7 +828,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         fn addRefFromUnit2(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromUnit2(ptr);
             self.unit2_add_ref_count += 1;
-            return self.unit2_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.unit2_ref_count, "FUnknown");
         }
 
         fn releaseFromUnit2(ptr: *anyopaque) callconv(.c) types.uint32 {

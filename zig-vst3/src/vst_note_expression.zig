@@ -73,11 +73,11 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
         }
 
         fn noteExpressionAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromNoteExpression(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromNoteExpression(ptr).ref_count, "FUnknown");
         }
 
         fn keyswitchAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromKeyswitch(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromKeyswitch(ptr).ref_count, "FUnknown");
         }
 
         fn noteExpressionRelease(ptr: *anyopaque) callconv(.c) types.uint32 {

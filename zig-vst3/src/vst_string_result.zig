@@ -82,11 +82,11 @@ pub fn StringResult(comptime max_text8_bytes: usize, comptime max_text16_units: 
         }
 
         fn resultAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromResult(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromResult(ptr).ref_count, "FUnknown");
         }
 
         fn stringAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromString(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromString(ptr).ref_count, "FUnknown");
         }
 
         fn resultRelease(ptr: *anyopaque) callconv(.c) types.uint32 {

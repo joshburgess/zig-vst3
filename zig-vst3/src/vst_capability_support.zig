@@ -47,7 +47,7 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -99,7 +99,7 @@ pub fn PrefetchableSupport(comptime Config: type) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -156,7 +156,7 @@ pub fn MidiLearn(comptime Config: type) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -255,11 +255,11 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
         }
 
         fn mappingAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromMapping(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromMapping(ptr).ref_count, "FUnknown");
         }
 
         fn learnAddRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromLearn(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromLearn(ptr).ref_count, "FUnknown");
         }
 
         fn mappingRelease(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -386,7 +386,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {

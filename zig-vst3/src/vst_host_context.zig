@@ -73,7 +73,7 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
         }
 
         fn addRefHost(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromHost(ptr).host_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromHost(ptr).host_ref_count, "FUnknown");
         }
 
         fn releaseHost(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -83,7 +83,7 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
         fn addRefInfo(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromInfo(ptr);
             self.info_add_ref_count += 1;
-            return self.info_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.info_ref_count, "FUnknown");
         }
 
         fn releaseInfo(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -186,7 +186,7 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
         }
 
         fn addRefHost(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromHost(ptr).host_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromHost(ptr).host_ref_count, "FUnknown");
         }
 
         fn releaseHost(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -196,7 +196,7 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
         fn addRefAutomation(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromAutomation(ptr);
             self.automation_add_ref_count += 1;
-            return self.automation_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.automation_ref_count, "FUnknown");
         }
 
         fn releaseAutomation(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -301,7 +301,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
         }
 
         fn addRefHost(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return ownerFromHost(ptr).host_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&ownerFromHost(ptr).host_ref_count, "FUnknown");
         }
 
         fn releaseHost(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -311,7 +311,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
         fn addRefDataExchange(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = ownerFromDataExchange(ptr);
             self.add_ref_count += 1;
-            return self.data_exchange_ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.data_exchange_ref_count, "FUnknown");
         }
 
         fn releaseDataExchange(ptr: *anyopaque) callconv(.c) types.uint32 {

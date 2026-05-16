@@ -37,7 +37,7 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -113,7 +113,7 @@ pub fn Test(comptime Config: type) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -202,7 +202,7 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -276,7 +276,7 @@ pub fn TestFactory(comptime Config: type) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {

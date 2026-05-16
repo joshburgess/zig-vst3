@@ -34,7 +34,7 @@ pub fn WaylandHost(comptime Config: type) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -96,7 +96,7 @@ pub fn WaylandFrame(comptime Config: type) type {
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {

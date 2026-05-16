@@ -41,7 +41,7 @@ pub fn ConnectionPoint(comptime Config: type) type {
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             const self = owner(ptr);
             self.add_ref_count += 1;
-            return self.ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&self.ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -161,7 +161,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -334,7 +334,7 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -393,7 +393,7 @@ pub fn Message(comptime max_message_id_bytes: usize, comptime max_attributes: us
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return owner(ptr).ref_count.fetchAdd(1, .monotonic) + 1;
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
