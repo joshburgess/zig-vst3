@@ -35,13 +35,19 @@ pub fn getChannelMask(num_channels: base.int32) base.uint64 {
     return (@as(base.uint64, 1) << @intCast(num_channels)) - 1;
 }
 
+fn sampleRangeEnd(sample_count: base.int32, start_index: base.int32) ?base.int32 {
+    if (sample_count <= 0 or start_index < 0) return null;
+    const end = @addWithOverflow(start_index, sample_count);
+    return if (end[1] == 0) end[0] else null;
+}
+
 pub fn copy32(
     src: ?*audio_processor.AudioBusBuffers,
     dest: ?*audio_processor.AudioBusBuffers,
     slice_size: base.int32,
     start_index: base.int32,
 ) void {
-    if (slice_size <= 0 or start_index < 0) return;
+    _ = sampleRangeEnd(slice_size, start_index) orelse return;
     const src_buffer = src orelse return;
     const dest_buffer = dest orelse return;
     const src_channels = src_buffer.channelBuffers.channelBuffers32 orelse return;
@@ -64,7 +70,7 @@ pub fn copy64(
     slice_size: base.int32,
     start_index: base.int32,
 ) void {
-    if (slice_size <= 0 or start_index < 0) return;
+    _ = sampleRangeEnd(slice_size, start_index) orelse return;
     const src_buffer = src orelse return;
     const dest_buffer = dest orelse return;
     const src_channels = src_buffer.channelBuffers.channelBuffers64 orelse return;
@@ -182,9 +188,8 @@ pub fn multiply64(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.
 }
 
 pub fn isSilent32(audio_buffer: *audio_processor.AudioBusBuffers, sample_count: base.int32, start_index: base.int32) bool {
-    if (sample_count <= 0 or start_index < 0) return true;
+    const end = sampleRangeEnd(sample_count, start_index) orelse return true;
     const channels = audio_buffer.channelBuffers.channelBuffers32 orelse return true;
-    const end = sample_count + start_index;
     var channel: base.int32 = 0;
     while (channel < audio_buffer.numChannels) : (channel += 1) {
         const channel_buffer = channels[@intCast(channel)];
@@ -197,9 +202,8 @@ pub fn isSilent32(audio_buffer: *audio_processor.AudioBusBuffers, sample_count: 
 }
 
 pub fn isSilent64(audio_buffer: *audio_processor.AudioBusBuffers, sample_count: base.int32, start_index: base.int32) bool {
-    if (sample_count <= 0 or start_index < 0) return true;
+    const end = sampleRangeEnd(sample_count, start_index) orelse return true;
     const channels = audio_buffer.channelBuffers.channelBuffers64 orelse return true;
-    const end = sample_count + start_index;
     var channel: base.int32 = 0;
     while (channel < audio_buffer.numChannels) : (channel += 1) {
         const channel_buffer = channels[@intCast(channel)];
@@ -237,6 +241,7 @@ pub fn forEachParamValueQueue(param_queue: *parameter_changes.IParamValueQueue, 
 pub fn forEachLastParamValueQueue(param_queue: *parameter_changes.IParamValueQueue, context: anytype, comptime callback: anytype) void {
     const param_id = param_queue.vtable.getParameterId(param_queue);
     const num_points = param_queue.vtable.getPointCount(param_queue);
+    if (num_points <= 0) return;
     var sample_offset: base.int32 = 0;
     var value: vsttypes.ParamValue = 0;
     if (param_queue.vtable.getPoint(param_queue, num_points - 1, &sample_offset, &value) == base.kResultOk) {
@@ -258,6 +263,8 @@ const EventCollector = struct {
     count: usize = 0,
     note_on_count: usize = 0,
     last_sample_offset: base.int32 = 0,
+    last_param_id: vsttypes.ParamID = 0,
+    last_param_value: vsttypes.ParamValue = 0,
 };
 
 fn collectEvent(collector: *EventCollector, event: *const events.Event) void {
@@ -266,6 +273,13 @@ fn collectEvent(collector: *EventCollector, event: *const events.Event) void {
     if (event.type == @intFromEnum(events.Event.EventTypes.kNoteOnEvent)) {
         collector.note_on_count += 1;
     }
+}
+
+fn collectParamValue(collector: *EventCollector, param_id: vsttypes.ParamID, sample_offset: base.int32, value: vsttypes.ParamValue) void {
+    collector.count += 1;
+    collector.last_param_id = param_id;
+    collector.last_sample_offset = sample_offset;
+    collector.last_param_value = value;
 }
 
 test "audio processor helpers match expected core behavior" {
@@ -303,6 +317,42 @@ test "audio processor buffer helpers ignore invalid ranges" {
     try std.testing.expect(isSilent32(&output, 1, -1));
 }
 
+test "audio processor buffer helpers reject overflowing ranges" {
+    var input_samples32 = [_]vsttypes.Sample32{1};
+    var output_samples32 = [_]vsttypes.Sample32{3};
+    var input_channels32 = [_][*]vsttypes.Sample32{&input_samples32};
+    var output_channels32 = [_][*]vsttypes.Sample32{&output_samples32};
+    var input32 = audio_processor.AudioBusBuffers{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = input_channels32[0..].ptr },
+    };
+    var output32 = audio_processor.AudioBusBuffers{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = output_channels32[0..].ptr },
+    };
+
+    copy32(&input32, &output32, 1, std.math.maxInt(base.int32));
+    try std.testing.expectEqual(@as(vsttypes.Sample32, 3), output_samples32[0]);
+    try std.testing.expect(isSilent32(&output32, 1, std.math.maxInt(base.int32)));
+
+    var input_samples64 = [_]vsttypes.Sample64{1};
+    var output_samples64 = [_]vsttypes.Sample64{3};
+    var input_channels64 = [_][*]vsttypes.Sample64{&input_samples64};
+    var output_channels64 = [_][*]vsttypes.Sample64{&output_samples64};
+    var input64 = audio_processor.AudioBusBuffers{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers64 = input_channels64[0..].ptr },
+    };
+    var output64 = audio_processor.AudioBusBuffers{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers64 = output_channels64[0..].ptr },
+    };
+
+    copy64(&input64, &output64, 1, std.math.maxInt(base.int32));
+    try std.testing.expectEqual(@as(vsttypes.Sample64, 3), output_samples64[0]);
+    try std.testing.expect(isSilent64(&output64, 1, std.math.maxInt(base.int32)));
+}
+
 test "audio processor helper iterates event lists and skips failed reads" {
     const event_items = [_]events.Event{
         .{
@@ -324,6 +374,26 @@ test "audio processor helper iterates event lists and skips failed reads" {
     try std.testing.expectEqual(@as(usize, 1), collector.count);
     try std.testing.expectEqual(@as(usize, 1), collector.note_on_count);
     try std.testing.expectEqual(@as(base.int32, 1), collector.last_sample_offset);
+}
+
+test "audio processor helper skips empty last parameter queues" {
+    var empty_queue = TestParamValueQueue.init(7, &.{});
+    var collector = EventCollector{};
+
+    forEachLastParamValueQueue(&empty_queue.iface, &collector, collectParamValue);
+    try std.testing.expectEqual(@as(usize, 0), collector.count);
+
+    const points = [_]TestParamPoint{
+        .{ .sample_offset = 4, .value = 0.25 },
+        .{ .sample_offset = 8, .value = 0.75 },
+    };
+    var queue = TestParamValueQueue.init(9, &points);
+
+    forEachLastParamValueQueue(&queue.iface, &collector, collectParamValue);
+    try std.testing.expectEqual(@as(usize, 1), collector.count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 9), collector.last_param_id);
+    try std.testing.expectEqual(@as(base.int32, 8), collector.last_sample_offset);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), collector.last_param_value);
 }
 
 const TestEventList = struct {
@@ -377,6 +447,72 @@ const TestEventList = struct {
     }
 
     fn addEvent(_: *anyopaque, _: *events.Event) callconv(.c) base.tresult {
+        return base.kResultFalse;
+    }
+};
+
+const TestParamPoint = struct {
+    sample_offset: base.int32,
+    value: vsttypes.ParamValue,
+};
+
+const TestParamValueQueue = struct {
+    iface: parameter_changes.IParamValueQueue = .{ .vtable = &vtable },
+    param_id: vsttypes.ParamID,
+    points: []const TestParamPoint,
+
+    const vtable = parameter_changes.IParamValueQueueVTable{
+        .queryInterface = queryInterface,
+        .addRef = addRef,
+        .release = release,
+        .getParameterId = getParameterId,
+        .getPointCount = getPointCount,
+        .getPoint = getPoint,
+        .addPoint = addPoint,
+    };
+
+    fn init(param_id: vsttypes.ParamID, points: []const TestParamPoint) TestParamValueQueue {
+        return .{ .param_id = param_id, .points = points };
+    }
+
+    fn owner(ptr: *anyopaque) *TestParamValueQueue {
+        const iface: *parameter_changes.IParamValueQueue = @ptrCast(@alignCast(ptr));
+        return @fieldParentPtr("iface", iface);
+    }
+
+    fn queryInterface(_: *anyopaque, _: *const @import("../../tuid.zig").TUID, out: *?*anyopaque) callconv(.c) base.tresult {
+        out.* = null;
+        return base.kNoInterface;
+    }
+
+    fn addRef(_: *anyopaque) callconv(.c) base.uint32 {
+        return 1;
+    }
+
+    fn release(_: *anyopaque) callconv(.c) base.uint32 {
+        return 1;
+    }
+
+    fn getParameterId(ptr: *anyopaque) callconv(.c) vsttypes.ParamID {
+        return owner(ptr).param_id;
+    }
+
+    fn getPointCount(ptr: *anyopaque) callconv(.c) base.int32 {
+        return @intCast(owner(ptr).points.len);
+    }
+
+    fn getPoint(ptr: *anyopaque, index: base.int32, sample_offset: *base.int32, value: *vsttypes.ParamValue) callconv(.c) base.tresult {
+        if (index < 0) return base.kInvalidArgument;
+        const point_index: usize = @intCast(index);
+        const points = owner(ptr).points;
+        if (point_index >= points.len) return base.kInvalidArgument;
+        sample_offset.* = points[point_index].sample_offset;
+        value.* = points[point_index].value;
+        return base.kResultOk;
+    }
+
+    fn addPoint(_: *anyopaque, _: base.int32, _: vsttypes.ParamValue, index: *base.int32) callconv(.c) base.tresult {
+        index.* = -1;
         return base.kResultFalse;
     }
 };
