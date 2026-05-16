@@ -2112,6 +2112,97 @@ test "events reject invalid MIDI metadata" {
     try std.testing.expectError(error.InvalidEventBusIndex, Events.init(&bad_bus, 4));
 }
 
+test "events validate generated boundary cases" {
+    const valid_offsets = [_]usize{ 0, 1, 3 };
+    for (valid_offsets) |offset| {
+        const events = [_]Event{
+            Event.noteOn(offset, 0, 0, 0.0),
+            Event.noteOn(offset, 15, 127, 1.0),
+            Event.noteOff(offset, 0, 0, 0.0),
+            Event.noteOff(offset, 15, 127, 1.0),
+            Event.midiCc(offset, 0, 0, 0.0),
+            Event.midiCc(offset, 15, 127, 1.0),
+            Event.pitchBend(offset, 0, -1.0),
+            Event.pitchBend(offset, 15, 1.0),
+            Event.aftertouch(offset, 0, 0, 0.0),
+            Event.aftertouch(offset, 15, 127, 1.0),
+            Event.noteExpressionValue(offset, -1, 0, 0.0),
+            Event.noteExpressionValue(offset, 7, std.math.maxInt(u32), 1.0),
+            Event.noteExpressionInt(offset, -1, 0, 0),
+            Event.noteExpressionText(offset, -1, 0),
+            Event.dataEvent(offset, std.math.maxInt(u32), &.{ 1, 2, 3 }),
+            Event.other(offset),
+        };
+        for (events) |event| try event.validate(4);
+        _ = try Events.init(&events, 4);
+    }
+
+    const invalid_offsets = [_]usize{ 4, 5, std.math.maxInt(usize) };
+    for (invalid_offsets) |offset| {
+        try std.testing.expectError(error.EventOutsideBlock, Event.other(offset).validate(4));
+    }
+
+    const invalid_bus_events = [_]Event{
+        Event.noteOn(0, 0, 60, 1.0).withBusIndex(-1),
+        Event.noteExpressionInt(0, 42, 7, 11).withBusIndex(-1),
+        Event.dataEvent(0, 1, &.{}).withBusIndex(-1),
+        Event.other(0).withBusIndex(-1),
+    };
+    for (invalid_bus_events) |event| {
+        try std.testing.expectError(error.InvalidEventBusIndex, event.validate(4));
+    }
+
+    const invalid_channel_events = [_]Event{
+        Event.noteOn(0, -1, 60, 1.0),
+        Event.noteOn(0, 16, 60, 1.0),
+        Event.noteOff(0, -1, 60, 0.0),
+        Event.noteOff(0, 16, 60, 0.0),
+        Event.midiCc(0, -1, 1, 0.5),
+        Event.midiCc(0, 16, 1, 0.5),
+        Event.pitchBend(0, -1, 0.0),
+        Event.pitchBend(0, 16, 0.0),
+        Event.aftertouch(0, -1, 60, 0.5),
+        Event.aftertouch(0, 16, 60, 0.5),
+    };
+    for (invalid_channel_events) |event| {
+        try std.testing.expectError(error.InvalidEventChannel, event.validate(4));
+    }
+
+    const invalid_pitch_events = [_]Event{
+        Event.noteOn(0, 0, -1, 1.0),
+        Event.noteOn(0, 0, 128, 1.0),
+        Event.noteOff(0, 0, -1, 0.0),
+        Event.noteOff(0, 0, 128, 0.0),
+        Event.aftertouch(0, 0, -1, 0.5),
+        Event.aftertouch(0, 0, 128, 0.5),
+    };
+    for (invalid_pitch_events) |event| {
+        try std.testing.expectError(error.InvalidEventPitch, event.validate(4));
+    }
+
+    const invalid_control_events = [_]Event{
+        Event.midiCc(0, 0, -1, 0.5),
+        Event.midiCc(0, 0, 128, 0.5),
+    };
+    for (invalid_control_events) |event| {
+        try std.testing.expectError(error.InvalidEventControlNumber, event.validate(4));
+    }
+
+    const invalid_value_events = [_]Event{
+        Event.noteOn(0, 0, 60, -0.01),
+        Event.noteOn(0, 0, 60, 1.01),
+        Event.noteOff(0, 0, 60, std.math.nan(f32)),
+        Event.midiCc(0, 0, 1, std.math.inf(f32)),
+        Event.pitchBend(0, 0, -1.01),
+        Event.pitchBend(0, 0, 1.01),
+        Event.aftertouch(0, 0, 60, -0.01),
+        Event.noteExpressionValue(0, 42, 7, 1.01),
+    };
+    for (invalid_value_events) |event| {
+        try std.testing.expectError(error.EventValueOutsideNormalizedRange, event.validate(4));
+    }
+}
+
 test "event writer validates offsets and capacity" {
     var storage: [1]Event = undefined;
     var writer = EventWriter.init(&storage, 4);

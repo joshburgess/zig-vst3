@@ -688,6 +688,47 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(?f64, null), (ParameterChanges{}).latestNormalizedForIdAtOffset(7, 0));
 }
 
+test "parameter changes validate generated boundary cases" {
+    const valid_offsets = [_]usize{ 0, 1, 3 };
+    const valid_values = [_]f64{ 0.0, 0.25, 1.0 };
+    for (valid_offsets) |sample_offset| {
+        for (valid_values) |normalized| {
+            const changes = [_]ParameterChange{
+                .{
+                    .id = std.math.maxInt(u32),
+                    .sample_offset = sample_offset,
+                    .normalized = normalized,
+                },
+            };
+            const view = try ParameterChanges.init(&changes, 4);
+            try std.testing.expectEqual(@as(usize, 1), view.changeCount());
+            try std.testing.expectEqual(changes[0], view.firstChange().?);
+        }
+    }
+
+    const invalid_offsets = [_]usize{ 4, 5, std.math.maxInt(usize) };
+    for (invalid_offsets) |sample_offset| {
+        const changes = [_]ParameterChange{
+            .{ .id = 7, .sample_offset = sample_offset, .normalized = 0.5 },
+        };
+        try std.testing.expectError(error.ParameterChangeOutsideBlock, ParameterChanges.init(&changes, 4));
+    }
+
+    const invalid_values = [_]f64{
+        -0.001,
+        1.001,
+        std.math.nan(f64),
+        std.math.inf(f64),
+        -std.math.inf(f64),
+    };
+    for (invalid_values) |normalized| {
+        const changes = [_]ParameterChange{
+            .{ .id = 7, .sample_offset = 0, .normalized = normalized },
+        };
+        try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, ParameterChanges.init(&changes, 4));
+    }
+}
+
 test "parameter changes query by sample offset without requiring sorted input" {
     const changes = [_]ParameterChange{
         .{ .id = 7, .sample_offset = 5, .normalized = 0.75 },
