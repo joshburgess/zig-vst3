@@ -514,6 +514,23 @@ test "parameter state report generated helper invariants" {
     }
 }
 
+test "parameter state report saturates overflowing accounted counts" {
+    const report = ReadParameterStateReport{
+        .entry_count = 3,
+        .restored_count = std.math.maxInt(usize),
+        .ignored_count = 1,
+    };
+
+    try std.testing.expectEqual(std.math.maxInt(usize), report.accountedCount());
+    try std.testing.expectEqual(@as(usize, 0), report.unaccountedCount());
+    try std.testing.expect(report.hasAccountedEntries());
+    try std.testing.expect(report.hasMoreAccountedEntriesThan(3));
+    try std.testing.expectEqual(std.math.maxInt(usize) - 3, report.extraAccountedEntryCount(3));
+    try std.testing.expect(!report.accountedAllEntries());
+    try std.testing.expect(!report.fullyHandled());
+    try std.testing.expectEqual(ReadParameterStateClassification.partial, report.classification());
+}
+
 test "parameter state round-trips generated normalized values" {
     const Params = struct {
         gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", -24.0, 24.0, 0.0),

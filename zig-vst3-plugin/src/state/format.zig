@@ -110,7 +110,7 @@ pub const ReadParameterStateReport = struct {
     }
 
     pub fn accountedCount(self: ReadParameterStateReport) usize {
-        return self.restored_count + self.ignored_count;
+        return self.restored_count +| self.ignored_count;
     }
 
     pub fn unaccountedCount(self: ReadParameterStateReport) usize {
