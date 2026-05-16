@@ -248,6 +248,59 @@ test "fixed buffer stream round-trips generated chunked IO" {
     try std.testing.expectEqualSlices(u8, &input, &output);
 }
 
+test "fixed buffer stream handles generated seek positions" {
+    const Stream = FixedBufferStream(16);
+    var stream = Stream{};
+    const iface = stream.asStream();
+    var input = [_]u8{0} ** 16;
+    for (&input, 0..) |*byte, index| byte.* = @intCast(index);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.write(iface, &input, input.len, null));
+
+    const set_offsets = [_]types.int64{ -1, 0, 1, 7, 15, 16, 17 };
+    for (set_offsets) |offset| {
+        var reported: types.int64 = -99;
+        const result = iface.vtable.seek(iface, offset, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), &reported);
+        if (offset < 0 or offset > input.len) {
+            try std.testing.expectEqual(types.kResultFalse, result);
+            try std.testing.expectEqual(@as(types.int64, -1), reported);
+        } else {
+            try std.testing.expectEqual(types.kResultOk, result);
+            try std.testing.expectEqual(offset, reported);
+        }
+    }
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 8, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    const current_offsets = [_]types.int64{ -9, -8, -1, 0, 1, 8, 9 };
+    for (current_offsets) |offset| {
+        try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 8, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+        var reported: types.int64 = -99;
+        const result = iface.vtable.seek(iface, offset, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur), &reported);
+        const expected = 8 + offset;
+        if (expected < 0 or expected > input.len) {
+            try std.testing.expectEqual(types.kResultFalse, result);
+            try std.testing.expectEqual(@as(types.int64, -1), reported);
+        } else {
+            try std.testing.expectEqual(types.kResultOk, result);
+            try std.testing.expectEqual(expected, reported);
+        }
+    }
+
+    const end_offsets = [_]types.int64{ -17, -16, -1, 0, 1 };
+    for (end_offsets) |offset| {
+        var reported: types.int64 = -99;
+        const result = iface.vtable.seek(iface, offset, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd), &reported);
+        const expected = @as(types.int64, input.len) + offset;
+        if (expected < 0 or expected > input.len) {
+            try std.testing.expectEqual(types.kResultFalse, result);
+            try std.testing.expectEqual(@as(types.int64, -1), reported);
+        } else {
+            try std.testing.expectEqual(types.kResultOk, result);
+            try std.testing.expectEqual(expected, reported);
+        }
+    }
+}
+
 test "fixed buffer stream resizes with zero fill and clamps cursor" {
     const Stream = FixedBufferStream(8);
     var stream = Stream{};

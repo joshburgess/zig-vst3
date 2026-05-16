@@ -454,3 +454,112 @@ test "single-value enum parameter stays at zero" {
     try std.testing.expectEqual(@as(usize, 1), only.optionCount());
     try std.testing.expectEqual(@as(?f64, 0.0), only.normalizedFromOptionIndex(0));
 }
+
+test "float and integer descriptors normalize generated values within bounds" {
+    const float = FloatParam.init(10, "Float", -24.0, 12.0, 0.0);
+    const int = IntParam.init(11, "Int", -7, 9, 0);
+    const float_inputs = [_]f64{
+        -std.math.inf(f64),
+        -1.0e12,
+        -24.0,
+        -6.0,
+        0.0,
+        12.0,
+        1.0e12,
+        std.math.inf(f64),
+        std.math.nan(f64),
+    };
+    const int_inputs = [_]i64{
+        std.math.minInt(i64),
+        -128,
+        -7,
+        -1,
+        0,
+        1,
+        9,
+        128,
+        std.math.maxInt(i64),
+    };
+    const normalized_inputs = [_]f64{
+        -std.math.inf(f64),
+        -100.0,
+        -0.25,
+        0.0,
+        0.25,
+        0.5,
+        0.75,
+        1.0,
+        1.25,
+        100.0,
+        std.math.inf(f64),
+        std.math.nan(f64),
+    };
+
+    for (float_inputs) |plain| {
+        const normalized = float.normalize(plain);
+        try std.testing.expect(normalized >= 0.0);
+        try std.testing.expect(normalized <= 1.0);
+        try std.testing.expect(float.containsPlain(float.denormalize(normalized)));
+    }
+
+    for (int_inputs) |plain| {
+        const normalized = int.normalize(plain);
+        try std.testing.expect(normalized >= 0.0);
+        try std.testing.expect(normalized <= 1.0);
+        try std.testing.expect(int.containsPlain(int.denormalize(normalized)));
+    }
+
+    for (normalized_inputs) |normalized| {
+        try std.testing.expect(float.containsPlain(float.denormalize(normalized)));
+        try std.testing.expect(int.containsPlain(int.denormalize(normalized)));
+    }
+}
+
+test "enum descriptors map generated normalized values to valid options" {
+    const Mode = enum(u8) { clean = 2, crunch = 7, lead = 42, fuzz = 99 };
+    const ModeParam = EnumParam(Mode);
+    const mode = ModeParam{ .id = 12, .name = "Mode", .default = .clean };
+    const normalized_inputs = [_]f64{
+        -std.math.inf(f64),
+        -100.0,
+        -0.25,
+        0.0,
+        0.1,
+        0.34,
+        0.5,
+        0.66,
+        0.9,
+        1.0,
+        1.25,
+        100.0,
+        std.math.inf(f64),
+        std.math.nan(f64),
+    };
+    const plain_inputs = [_]f64{
+        -std.math.inf(f64),
+        -100.0,
+        -0.25,
+        0.0,
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        100.0,
+        std.math.inf(f64),
+        std.math.nan(f64),
+    };
+
+    for (normalized_inputs) |normalized| {
+        const value = mode.denormalize(normalized);
+        const index = mode.indexOfValue(value);
+        try std.testing.expect(index < mode.optionCount());
+        try std.testing.expectEqual(value, mode.valueAtOptionIndex(index).?);
+        try std.testing.expectEqual(mode.normalize(value), mode.normalizedFromOptionIndex(index).?);
+    }
+
+    for (plain_inputs) |plain| {
+        const normalized = mode.normalizedFromPlain(plain);
+        try std.testing.expect(normalized >= 0.0);
+        try std.testing.expect(normalized <= 1.0);
+    }
+}
