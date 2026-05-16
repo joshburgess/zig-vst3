@@ -28,6 +28,7 @@ pub const readParameterStateWithMigrationsReport = codec.readParameterStateWithM
 pub const validateParameterIdMigrations = migrations.validateParameterIdMigrations;
 pub const identityParameterMigrationIndex = migrations.identityParameterMigrationIndex;
 pub const duplicateParameterMigrationIndex = migrations.duplicateParameterMigrationIndex;
+pub const cyclicParameterMigrationIndex = migrations.cyclicParameterMigrationIndex;
 pub const ambiguousParameterMigrationIndex = migrations.ambiguousParameterMigrationIndex;
 pub const migratedParameterId = migrations.migratedParameterId;
 

@@ -25,6 +25,7 @@ const readParameterStateWithMigrationsReport = state.readParameterStateWithMigra
 const validateParameterIdMigrations = state.validateParameterIdMigrations;
 const identityParameterMigrationIndex = state.identityParameterMigrationIndex;
 const duplicateParameterMigrationIndex = state.duplicateParameterMigrationIndex;
+const cyclicParameterMigrationIndex = state.cyclicParameterMigrationIndex;
 const ambiguousParameterMigrationIndex = state.ambiguousParameterMigrationIndex;
 const migratedParameterId = state.migratedParameterId;
 
@@ -824,8 +825,11 @@ test "parameter state exposes migration resolution" {
     try std.testing.expectEqual(@as(u32, 1), migratedParameterId(1, &longer_cycle));
     try std.testing.expectEqual(@as(?usize, null), identityParameterMigrationIndex(&migrations));
     try std.testing.expectEqual(@as(?usize, null), duplicateParameterMigrationIndex(&migrations));
+    try std.testing.expectEqual(@as(?usize, null), cyclicParameterMigrationIndex(&migrations));
     try std.testing.expectEqual(@as(?usize, null), ambiguousParameterMigrationIndex(&migrations));
     try std.testing.expectEqual(@as(?usize, 0), identityParameterMigrationIndex(&identity));
+    try std.testing.expectEqual(@as(?usize, 0), cyclicParameterMigrationIndex(&cycle));
+    try std.testing.expectEqual(@as(?usize, 1), cyclicParameterMigrationIndex(&longer_cycle));
     try std.testing.expectEqual(@as(?usize, null), ambiguousParameterMigrationIndex(&cycle));
     try std.testing.expectEqual(@as(?usize, null), ambiguousParameterMigrationIndex(&longer_cycle));
     try std.testing.expectEqual(@as(?usize, 1), ambiguousParameterMigrationIndex(&converging));

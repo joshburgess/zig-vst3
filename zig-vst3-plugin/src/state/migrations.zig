@@ -3,23 +3,10 @@ const format = @import("format.zig");
 pub const ParameterIdMigration = format.ParameterIdMigration;
 
 pub fn validateParameterIdMigrations(migrations: []const ParameterIdMigration) !void {
-    for (migrations, 0..) |left, left_index| {
-        if (left.old_id == left.new_id) return error.IdentityParameterMigration;
-        for (migrations[left_index + 1 ..]) |right| {
-            if (left.old_id == right.old_id) return error.DuplicateParameterMigration;
-        }
-    }
-    for (migrations) |migration| {
-        if (migrationPathIsCyclic(migration.old_id, migrations)) return error.CyclicParameterMigration;
-    }
-    for (migrations, 0..) |left, left_index| {
-        const left_target = migratedParameterId(left.old_id, migrations);
-        for (migrations[left_index + 1 ..]) |right| {
-            if (migrationTargetsAreAmbiguous(left.old_id, left_target, right.old_id, migrations)) {
-                return error.AmbiguousParameterMigration;
-            }
-        }
-    }
+    if (identityParameterMigrationIndex(migrations) != null) return error.IdentityParameterMigration;
+    if (duplicateParameterMigrationIndex(migrations) != null) return error.DuplicateParameterMigration;
+    if (cyclicParameterMigrationIndex(migrations) != null) return error.CyclicParameterMigration;
+    if (ambiguousParameterMigrationIndex(migrations) != null) return error.AmbiguousParameterMigration;
 }
 
 pub fn identityParameterMigrationIndex(migrations: []const ParameterIdMigration) ?usize {
@@ -34,6 +21,13 @@ pub fn duplicateParameterMigrationIndex(migrations: []const ParameterIdMigration
         for (migrations[left_index + 1 ..], left_index + 1..) |right, right_index| {
             if (left.old_id == right.old_id) return right_index;
         }
+    }
+    return null;
+}
+
+pub fn cyclicParameterMigrationIndex(migrations: []const ParameterIdMigration) ?usize {
+    for (migrations, 0..) |migration, index| {
+        if (migrationPathIsCyclic(migration.old_id, migrations)) return index;
     }
     return null;
 }

@@ -105,6 +105,6 @@ The JSON uses the same format version and reflected parameter values as the bina
 - `state.readParameterStateHeader(reader)`: header-only inspection.
 - `state.writeParameterState`, `readParameterState`, and migration/report variants.
 - `state.writeParameterStateJson`: debug JSON output.
-- `state.validateParameterIdMigrations` and migration diagnostic helpers.
+- `state.validateParameterIdMigrations` and migration diagnostic helpers for identity, duplicate, cyclic, and ambiguous entries.
 
 Program lists can also carry finite normalized parameter snapshots through `plug.units.ProgramParameter`. `PluginInstance.applyProgram` and related helpers validate the complete snapshot, then apply matching parameter ids.

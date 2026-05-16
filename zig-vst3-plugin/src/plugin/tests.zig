@@ -2055,10 +2055,15 @@ test "plugin instance exposes parameter migration diagnostics" {
         .{ .old_id = 7, .new_id = 1 },
         .{ .old_id = 9, .new_id = 1 },
     };
+    const cycle = [_]state.ParameterIdMigration{
+        .{ .old_id = 7, .new_id = 9 },
+        .{ .old_id = 9, .new_id = 7 },
+    };
 
     try instance.validateParameterIdMigrations(&valid);
     try std.testing.expectEqual(@as(?usize, null), instance.identityParameterMigrationIndex(&valid));
     try std.testing.expectEqual(@as(?usize, null), instance.duplicateParameterMigrationIndex(&valid));
+    try std.testing.expectEqual(@as(?usize, null), instance.cyclicParameterMigrationIndex(&valid));
     try std.testing.expectEqual(@as(?usize, null), instance.ambiguousParameterMigrationIndex(&valid));
     try std.testing.expectEqual(@as(u32, 1), instance.migratedParameterId(7, &valid));
     try std.testing.expectEqual(@as(u32, 1), instance.migratedParameterId(9, &valid));
@@ -2067,6 +2072,8 @@ test "plugin instance exposes parameter migration diagnostics" {
     try std.testing.expectError(error.IdentityParameterMigration, instance.validateParameterIdMigrations(&identity));
     try std.testing.expectEqual(@as(?usize, 1), instance.duplicateParameterMigrationIndex(&duplicate));
     try std.testing.expectError(error.DuplicateParameterMigration, instance.validateParameterIdMigrations(&duplicate));
+    try std.testing.expectEqual(@as(?usize, 0), instance.cyclicParameterMigrationIndex(&cycle));
+    try std.testing.expectError(error.CyclicParameterMigration, instance.validateParameterIdMigrations(&cycle));
     try std.testing.expectEqual(@as(?usize, 1), instance.ambiguousParameterMigrationIndex(&ambiguous));
     try std.testing.expectError(error.AmbiguousParameterMigration, instance.validateParameterIdMigrations(&ambiguous));
 }

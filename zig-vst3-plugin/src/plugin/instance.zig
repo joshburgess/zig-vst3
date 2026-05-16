@@ -2402,6 +2402,10 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return state.duplicateParameterMigrationIndex(migrations);
         }
 
+        pub fn cyclicParameterMigrationIndex(_: *const Self, migrations: []const state.ParameterIdMigration) ?usize {
+            return state.cyclicParameterMigrationIndex(migrations);
+        }
+
         pub fn ambiguousParameterMigrationIndex(_: *const Self, migrations: []const state.ParameterIdMigration) ?usize {
             return state.ambiguousParameterMigrationIndex(migrations);
         }
