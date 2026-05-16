@@ -812,8 +812,10 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
         @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent) => plug.process.Event.noteExpressionText(offset, event.data.noteExpressionText.noteId, event.data.noteExpressionText.typeId).withBusIndex(event.busIndex),
         else => plug.process.Event.other(offset).withBusIndex(event.busIndex),
     };
-    collector.storage[collector.count] = converted orelse return;
-    collector.count += 1;
+    const output = converted orelse return;
+    output.validate(collector.frame_count) catch return;
+    collector.storage[collector.count] = output;
+    collector.count +|= 1;
 }
 
 fn collectLegacyMidiCcEvent(event: *const ivstevents.Event, offset: usize) plug.process.Event {
@@ -1275,6 +1277,51 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 input events" {
     try std.testing.expectEqual(plug.process.EventKind.aftertouch, collected.items[1].kind);
     try std.testing.expectEqual(@as(i32, 1), collected.items[1].bus_index);
     try std.testing.expectEqual(@as(usize, 2), collected.items[1].sample_offset);
+}
+
+test "zig-vst3-plugin bridge keeps valid events around malformed MIDI metadata" {
+    const items = [_]ivstevents.Event{
+        .{
+            .busIndex = 0,
+            .sampleOffset = 0,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .data = .{ .noteOn = .{ .channel = 0, .pitch = 60, .velocity = 0.75 } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 1,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent),
+            .data = .{ .noteOn = .{ .channel = 16, .pitch = 61, .velocity = 0.75 } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 2,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+            .data = .{ .noteOff = .{ .channel = 0, .pitch = 128, .velocity = 0.25 } },
+        },
+        .{
+            .busIndex = 0,
+            .sampleOffset = 3,
+            .type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent),
+            .data = .{ .noteOff = .{ .channel = 0, .pitch = 60, .velocity = 0.25 } },
+        },
+    };
+    const List = vst_event_list.EventList(items.len);
+    var list = List{};
+    for (&items) |event| try std.testing.expectEqual(types.kResultOk, list.append(event));
+    var storage: [items.len]plug.process.Event = undefined;
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 4,
+        .inputEvents = list.asInterface(),
+    };
+
+    const collected = collectInputEvents(&data, &storage);
+
+    try std.testing.expectEqual(@as(usize, 2), collected.eventCount());
+    try std.testing.expectEqual(plug.process.EventKind.note_on, collected.items[0].kind);
+    try std.testing.expectEqual(@as(usize, 0), collected.items[0].sample_offset);
+    try std.testing.expectEqual(plug.process.EventKind.note_off, collected.items[1].kind);
+    try std.testing.expectEqual(@as(usize, 3), collected.items[1].sample_offset);
 }
 
 test "zig-vst3-plugin bridge preserves unknown VST3 input events as other" {
