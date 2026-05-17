@@ -46,7 +46,7 @@ pub fn Persistent(comptime Config: type) type {
         }
 
         fn getClassID(_: *anyopaque, out: [*]types.char8) callconv(.c) types.tresult {
-            @memcpy(out[0..16], &classId());
+            @memcpy(out[0..tuid.byte_count], &classId());
             return types.kResultOk;
         }
 

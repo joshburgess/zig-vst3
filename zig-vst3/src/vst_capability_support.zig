@@ -21,7 +21,7 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
         iface: ivstpluginterfacesupport.IPlugInterfaceSupport = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         count: types.uint32 = 0,
-        supported: [max_iids]tuid.TUID = [_]tuid.TUID{[_]u8{0} ** 16} ** max_iids,
+        supported: [max_iids]tuid.TUID = [_]tuid.TUID{tuid.zero} ** max_iids,
 
         pub fn asInterface(self: *Self) *ivstpluginterfacesupport.IPlugInterfaceSupport {
             return &self.iface;

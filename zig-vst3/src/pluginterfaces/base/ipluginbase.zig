@@ -83,7 +83,7 @@ pub const PClassInfo = extern struct {
     pub const kCategorySize = 32;
     pub const kNameSize = 64;
 
-    cid: tuid.TUID = [_]u8{0} ** 16,
+    cid: tuid.TUID = tuid.zero,
     cardinality: types.int32 = 0,
     category: [kCategorySize]types.char8 = [_]types.char8{0} ** kCategorySize,
     name: [kNameSize]types.char8 = [_]types.char8{0} ** kNameSize,
@@ -94,7 +94,7 @@ pub const PClassInfo2 = extern struct {
     pub const kVersionSize = 64;
     pub const kSubCategoriesSize = 128;
 
-    cid: tuid.TUID = [_]u8{0} ** 16,
+    cid: tuid.TUID = tuid.zero,
     cardinality: types.int32 = 0,
     category: [PClassInfo.kCategorySize]types.char8 = [_]types.char8{0} ** PClassInfo.kCategorySize,
     name: [PClassInfo.kNameSize]types.char8 = [_]types.char8{0} ** PClassInfo.kNameSize,
@@ -110,7 +110,7 @@ pub const PClassInfoW = extern struct {
     pub const kVersionSize = 64;
     pub const kSubCategoriesSize = 128;
 
-    cid: tuid.TUID = [_]u8{0} ** 16,
+    cid: tuid.TUID = tuid.zero,
     cardinality: types.int32 = 0,
     category: [PClassInfo.kCategorySize]types.char8 = [_]types.char8{0} ** PClassInfo.kCategorySize,
     name: [PClassInfo.kNameSize]types.char16 = [_]types.char16{0} ** PClassInfo.kNameSize,

@@ -289,7 +289,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
 }
 
 fn matchesClassId(cid: types.FIDString, class: ClassInfo) bool {
-    return std.mem.eql(u8, cid[0..16], &class.cid);
+    return std.mem.eql(u8, cid[0..tuid.byte_count], &class.cid);
 }
 
 fn copyZ(dest: anytype, source: []const u8) void {
@@ -394,7 +394,7 @@ test "static factory clears invalid class info outputs" {
 test "static factory dispatches createInstance by class id" {
     const Create = struct {
         fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
-            if (!std.mem.eql(u8, requested_iid[0..16], &funknown.iid)) return types.kNoInterface;
+            if (!std.mem.eql(u8, requested_iid[0..tuid.byte_count], &funknown.iid)) return types.kNoInterface;
             out.* = @ptrFromInt(0x1);
             return types.kResultOk;
         }

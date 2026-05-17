@@ -1,7 +1,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-pub const TUID = [16]u8;
+pub const byte_count = 16;
+pub const TUID = [byte_count]u8;
+pub const zero: TUID = [_]u8{0} ** byte_count;
 
 pub const FUID = struct {
     bytes: TUID,
