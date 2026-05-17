@@ -776,12 +776,26 @@ const ParameterChangeCollector = struct {
     storage: []plug.process.ParameterChange,
     count: usize = 0,
     frame_count: usize,
+
+    fn append(self: *ParameterChangeCollector, change: plug.process.ParameterChange) bool {
+        if (self.count >= self.storage.len) return false;
+        self.storage[self.count] = change;
+        self.count +|= 1;
+        return true;
+    }
 };
 
 const EventCollector = struct {
     storage: []plug.process.Event,
     count: usize = 0,
     frame_count: usize,
+
+    fn append(self: *EventCollector, event: plug.process.Event) bool {
+        if (self.count >= self.storage.len) return false;
+        self.storage[self.count] = event;
+        self.count +|= 1;
+        return true;
+    }
 };
 
 fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *ivstparameterchanges.IParamValueQueue) void {
@@ -789,21 +803,18 @@ fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *ivstparam
 }
 
 fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.ParamID, sample_offset: types.int32, value: vsttypes.ParamValue) void {
-    if (collector.count >= collector.storage.len) return;
     if (sample_offset < 0) return;
     const offset: usize = @intCast(sample_offset);
     if (offset >= collector.frame_count) return;
     if (!isNormalizedValue(value)) return;
-    collector.storage[collector.count] = .{
+    _ = collector.append(.{
         .id = id,
         .sample_offset = offset,
         .normalized = value,
-    };
-    collector.count +|= 1;
+    });
 }
 
 fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void {
-    if (collector.count >= collector.storage.len) return;
     if (event.sampleOffset < 0) return;
     const offset: usize = @intCast(event.sampleOffset);
     if (offset >= collector.frame_count) return;
@@ -835,8 +846,7 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
     };
     const output = converted orelse return;
     output.validate(collector.frame_count) catch return;
-    collector.storage[collector.count] = output;
-    collector.count +|= 1;
+    _ = collector.append(output);
 }
 
 fn collectLegacyMidiCcEvent(event: *const ivstevents.Event, offset: usize) plug.process.Event {

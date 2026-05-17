@@ -5,6 +5,10 @@ const scale_support = @import("pluginterfaces/gui/iplugviewcontentscalesupport.z
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 
+fn isValidScaleFactor(factor: scale_support.ScaleFactor) bool {
+    return std.math.isFinite(factor) and factor > 0;
+}
+
 pub fn ContentScaleSupport(comptime Config: type) type {
     return extern struct {
         const Self = @This();
@@ -43,7 +47,7 @@ pub fn ContentScaleSupport(comptime Config: type) type {
         }
 
         fn setContentScaleFactor(ptr: *anyopaque, factor: scale_support.ScaleFactor) callconv(.c) types.tresult {
-            if (factor <= 0 or !std.math.isFinite(factor)) return types.kInvalidArgument;
+            if (!isValidScaleFactor(factor)) return types.kInvalidArgument;
             if (@hasDecl(Config, "setContentScaleFactor")) {
                 const result = Config.setContentScaleFactor(factor);
                 if (result != types.kResultOk) return result;
@@ -74,6 +78,15 @@ test "content scale support stores positive scale factors" {
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setContentScaleFactor(iface, std.math.nan(scale_support.ScaleFactor)));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setContentScaleFactor(iface, std.math.inf(scale_support.ScaleFactor)));
     try std.testing.expectEqual(@as(scale_support.ScaleFactor, 2.0), support.currentScaleFactor());
+}
+
+test "content scale support recognizes finite positive factors" {
+    try std.testing.expect(isValidScaleFactor(1.0));
+    try std.testing.expect(isValidScaleFactor(2.5));
+    try std.testing.expect(!isValidScaleFactor(0.0));
+    try std.testing.expect(!isValidScaleFactor(-1.0));
+    try std.testing.expect(!isValidScaleFactor(std.math.nan(scale_support.ScaleFactor)));
+    try std.testing.expect(!isValidScaleFactor(std.math.inf(scale_support.ScaleFactor)));
 }
 
 test "content scale support preserves previous factor when config rejects changes" {
