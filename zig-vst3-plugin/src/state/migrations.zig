@@ -2,6 +2,11 @@ const format = @import("format.zig");
 
 pub const ParameterIdMigration = format.ParameterIdMigration;
 
+const MigrationResolution = union(enum) {
+    resolved: u32,
+    cyclic,
+};
+
 pub fn validateParameterIdMigrations(migrations: []const ParameterIdMigration) !void {
     if (identityParameterMigrationIndex(migrations) != null) return error.IdentityParameterMigration;
     if (duplicateParameterMigrationIndex(migrations) != null) return error.DuplicateParameterMigration;
@@ -61,11 +66,7 @@ fn migrationIdsShareChain(left_id: u32, right_id: u32, migrations: []const Param
 }
 
 fn migrationPathIsCyclic(start_id: u32, migrations: []const ParameterIdMigration) bool {
-    var current = start_id;
-    for (0..migrationStepLimit(migrations)) |_| {
-        current = nextParameterMigrationId(current, migrations) orelse return false;
-    }
-    return true;
+    return migrationResolution(start_id, migrations) == .cyclic;
 }
 
 fn migrationPathContains(start_id: u32, target_id: u32, migrations: []const ParameterIdMigration) bool {
@@ -80,11 +81,18 @@ fn migrationPathContains(start_id: u32, target_id: u32, migrations: []const Para
 }
 
 pub fn migratedParameterId(id: u32, migrations: []const ParameterIdMigration) u32 {
+    return switch (migrationResolution(id, migrations)) {
+        .resolved => |resolved| resolved,
+        .cyclic => id,
+    };
+}
+
+fn migrationResolution(id: u32, migrations: []const ParameterIdMigration) MigrationResolution {
     var current = id;
     for (0..migrationStepLimit(migrations)) |_| {
-        current = nextParameterMigrationId(current, migrations) orelse return current;
+        current = nextParameterMigrationId(current, migrations) orelse return .{ .resolved = current };
     }
-    return id;
+    return .cyclic;
 }
 
 fn migrationStepLimit(migrations: []const ParameterIdMigration) usize {
