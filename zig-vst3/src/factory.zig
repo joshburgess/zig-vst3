@@ -1,4 +1,5 @@
 const std = @import("std");
+const fixed_string = @import("fixed_string.zig");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
@@ -76,9 +77,9 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
 
         fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.c) types.tresult {
             out.* = .{ .flags = info.flags };
-            copyZ(&out.vendor, info.vendor);
-            copyZ(&out.url, info.url);
-            copyZ(&out.email, info.email);
+            fixed_string.copyAsciiZ(&out.vendor, info.vendor);
+            fixed_string.copyAsciiZ(&out.url, info.url);
+            fixed_string.copyAsciiZ(&out.email, info.email);
             return types.kResultOk;
         }
 
@@ -95,8 +96,8 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
                 .cid = class.cid,
                 .cardinality = class.cardinality,
             };
-            copyZ(&out.category, class.category);
-            copyZ(&out.name, class.name);
+            fixed_string.copyAsciiZ(&out.category, class.category);
+            fixed_string.copyAsciiZ(&out.name, class.name);
             return types.kResultOk;
         }
 
@@ -188,9 +189,9 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
 
         fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.c) types.tresult {
             out.* = .{ .flags = info.flags };
-            copyZ(&out.vendor, info.vendor);
-            copyZ(&out.url, info.url);
-            copyZ(&out.email, info.email);
+            fixed_string.copyAsciiZ(&out.vendor, info.vendor);
+            fixed_string.copyAsciiZ(&out.url, info.url);
+            fixed_string.copyAsciiZ(&out.email, info.email);
             return types.kResultOk;
         }
 
@@ -207,8 +208,8 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
                 .cid = class.cid,
                 .cardinality = class.cardinality,
             };
-            copyZ(&out.category, class.category);
-            copyZ(&out.name, class.name);
+            fixed_string.copyAsciiZ(&out.category, class.category);
+            fixed_string.copyAsciiZ(&out.name, class.name);
             return types.kResultOk;
         }
 
@@ -238,12 +239,12 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
                 .cardinality = class.cardinality,
                 .classFlags = class.class_flags,
             };
-            copyZ(&out.category, class.category);
-            copyZ(&out.name, class.name);
-            copyZ(&out.subCategories, class.sub_categories);
-            copyZ(&out.vendor, if (class.vendor.len == 0) info.vendor else class.vendor);
-            copyZ(&out.version, class.version);
-            copyZ(&out.sdkVersion, class.sdk_version);
+            fixed_string.copyAsciiZ(&out.category, class.category);
+            fixed_string.copyAsciiZ(&out.name, class.name);
+            fixed_string.copyAsciiZ(&out.subCategories, class.sub_categories);
+            fixed_string.copyAsciiZ(&out.vendor, if (class.vendor.len == 0) info.vendor else class.vendor);
+            fixed_string.copyAsciiZ(&out.version, class.version);
+            fixed_string.copyAsciiZ(&out.sdkVersion, class.sdk_version);
             return types.kResultOk;
         }
 
@@ -257,12 +258,12 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
                 .cardinality = class.cardinality,
                 .classFlags = class.class_flags,
             };
-            copyZ(&out.category, class.category);
-            copyZ16(&out.name, class.name);
-            copyZ(&out.subCategories, class.sub_categories);
-            copyZ16(&out.vendor, if (class.vendor.len == 0) info.vendor else class.vendor);
-            copyZ16(&out.version, class.version);
-            copyZ16(&out.sdkVersion, class.sdk_version);
+            fixed_string.copyAsciiZ(&out.category, class.category);
+            fixed_string.copyAsciiToUtf16Z(&out.name, class.name);
+            fixed_string.copyAsciiZ(&out.subCategories, class.sub_categories);
+            fixed_string.copyAsciiToUtf16Z(&out.vendor, if (class.vendor.len == 0) info.vendor else class.vendor);
+            fixed_string.copyAsciiToUtf16Z(&out.version, class.version);
+            fixed_string.copyAsciiToUtf16Z(&out.sdkVersion, class.sdk_version);
             return types.kResultOk;
         }
 
@@ -287,22 +288,6 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
 
 fn matchesClassId(cid: types.FIDString, class: ClassInfo) bool {
     return std.mem.eql(u8, cid[0..tuid.byte_count], &class.cid);
-}
-
-fn copyZ(dest: anytype, source: []const u8) void {
-    const N = @typeInfo(@TypeOf(dest.*)).array.len;
-    @memset(dest, 0);
-    const len = @min(source.len, N - 1);
-    @memcpy(dest[0..len], source[0..len]);
-}
-
-fn copyZ16(dest: anytype, source: []const u8) void {
-    const N = @typeInfo(@TypeOf(dest.*)).array.len;
-    @memset(dest, 0);
-    const len = @min(source.len, N - 1);
-    for (source[0..len], 0..) |char, index| {
-        dest[index] = char;
-    }
 }
 
 test "static factory exposes metadata and class count" {
