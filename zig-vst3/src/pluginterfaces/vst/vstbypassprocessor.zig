@@ -38,8 +38,9 @@ pub fn AudioBuffer(comptime T: type) type {
                 return;
             }
 
+            const resized = try self.allocator.realloc(self.buffer, @intCast(max_samples));
+            self.buffer = resized;
             self.max_samples = max_samples;
-            self.buffer = try self.allocator.realloc(self.buffer, @intCast(self.max_samples));
         }
 
         pub fn clear(self: *Self, num_samples: base.int32) void {
@@ -289,4 +290,20 @@ test "bypass helpers reject invalid sizes and positions" {
     try audio_buffer.resize(-1);
     try std.testing.expectEqual(@as(base.int32, 0), audio_buffer.getMaxSamples());
     try std.testing.expectEqual(@as(usize, 0), audio_buffer.buffer.len);
+}
+
+test "audio buffer keeps size invariant when resize fails" {
+    var failing_allocator = std.testing.FailingAllocator.init(std.testing.allocator, .{
+        .fail_index = 1,
+        .resize_fail_index = 0,
+    });
+    var audio_buffer = AudioBuffer(f32).init(failing_allocator.allocator());
+    defer audio_buffer.deinit();
+
+    try audio_buffer.resize(2);
+    audio_buffer.buffer[0] = 3;
+    try std.testing.expectError(error.OutOfMemory, audio_buffer.resize(4));
+    try std.testing.expectEqual(@as(base.int32, 2), audio_buffer.getMaxSamples());
+    try std.testing.expectEqual(@as(usize, 2), audio_buffer.buffer.len);
+    try std.testing.expectEqual(@as(f32, 3), audio_buffer.buffer[0]);
 }
