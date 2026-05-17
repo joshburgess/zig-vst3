@@ -87,7 +87,7 @@ test "gain component can be created as IComponent" {
     try std.testing.expectEqual(types.kNoInterface, component_iface.vtable.queryInterface(component_iface, &missing_iid, &missing_out));
     try std.testing.expectEqual(@as(?*anyopaque, null), missing_out);
 
-    var controller_cid = [_]u8{0} ** 16;
+    var controller_cid: tuid.TUID = tuid.zero;
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getControllerClassId(component_iface, &controller_cid));
     try std.testing.expectEqualSlices(u8, &gain_controller.cid, &controller_cid);
     _ = component_iface.vtable.release(component_iface);

@@ -528,7 +528,7 @@ test "stream attributes expose filename and attribute list" {
     const file_name: [11:0]vsttypes.TChar = .{ 'p', 'r', 'e', 's', 'e', 't', '.', 'v', 's', 't', 0 };
     stream_attributes.setFileName(&file_name);
 
-    var file_name_out: [128]vsttypes.TChar = [_]vsttypes.TChar{'x'} ** 128;
+    var file_name_out: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getFileName(iface, &file_name_out));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'p'), file_name_out[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 't'), file_name_out[9]);
