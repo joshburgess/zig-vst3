@@ -17,6 +17,11 @@ pub const ParameterChange = struct {
     pub fn isForIdAtOffset(self: ParameterChange, wanted_id: u32, wanted_offset: usize) bool {
         return self.isForId(wanted_id) and self.isAtOffset(wanted_offset);
     }
+
+    pub fn validate(self: ParameterChange, frame_count: usize) !void {
+        if (self.sample_offset >= frame_count) return error.ParameterChangeOutsideBlock;
+        if (!common.isNormalized(self.normalized)) return error.ParameterChangeOutsideNormalizedRange;
+    }
 };
 
 const IndexedParameterChange = struct {
@@ -258,12 +263,7 @@ pub const ParameterChanges = struct {
 
     pub fn init(items: []const ParameterChange, frame_count: usize) !ParameterChanges {
         for (items) |item| {
-            if (item.sample_offset >= frame_count) {
-                return error.ParameterChangeOutsideBlock;
-            }
-            if (!common.isNormalized(item.normalized)) {
-                return error.ParameterChangeOutsideNormalizedRange;
-            }
+            try item.validate(frame_count);
         }
         return .{ .items = items };
     }
@@ -972,6 +972,7 @@ test "parameter changes reject values outside the process block" {
         .{ .id = 7, .sample_offset = 4, .normalized = 0.25 },
     };
 
+    try std.testing.expectError(error.ParameterChangeOutsideBlock, changes[0].validate(4));
     try std.testing.expectError(error.ParameterChangeOutsideBlock, ParameterChanges.init(&changes, 4));
 }
 
@@ -983,6 +984,8 @@ test "parameter changes reject denormalized values" {
         .{ .id = 7, .sample_offset = 0, .normalized = std.math.inf(f64) },
     };
 
+    try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, changes[0].validate(4));
+    try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, infinite[0].validate(4));
     try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, ParameterChanges.init(&changes, 4));
     try std.testing.expectError(error.ParameterChangeOutsideNormalizedRange, ParameterChanges.init(&infinite, 4));
 }

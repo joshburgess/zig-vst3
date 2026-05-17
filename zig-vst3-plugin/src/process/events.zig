@@ -1097,9 +1097,7 @@ pub const EventWriter = struct {
 
     pub fn appendCount(self: *EventWriter, event: Event) !usize {
         try event.validate(self.frame_count);
-        if (self.count >= self.storage.len) return error.EventStorageFull;
-        self.storage[self.count] = event;
-        self.count +|= 1;
+        try self.appendValidated(event);
         return 1;
     }
 
@@ -1113,10 +1111,15 @@ pub const EventWriter = struct {
         }
         if (source.items.len > self.remainingCapacity()) return error.EventStorageFull;
         for (source.items) |event| {
-            self.storage[self.count] = event;
-            self.count +|= 1;
+            try self.appendValidated(event);
         }
         return source.items.len;
+    }
+
+    fn appendValidated(self: *EventWriter, event: Event) !void {
+        if (self.count >= self.storage.len) return error.EventStorageFull;
+        self.storage[self.count] = event;
+        self.count +|= 1;
     }
 
     pub fn canAppend(self: *const EventWriter, event_count: usize) bool {
