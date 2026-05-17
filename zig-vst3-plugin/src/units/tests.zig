@@ -513,6 +513,16 @@ test "unit set reports cyclic parent indexes across graph shapes" {
             .{ .id = 2, .name = "Filter", .parent_id = 2 },
         },
     });
+    const LongCycle = UnitSet(.{
+        .units = &.{
+            Unit.root("Root"),
+            .{ .id = 1, .name = "Oscillator", .parent_id = 2 },
+            .{ .id = 2, .name = "Filter", .parent_id = 3 },
+            .{ .id = 3, .name = "Envelope", .parent_id = 4 },
+            .{ .id = 4, .name = "Modulator", .parent_id = 5 },
+            .{ .id = 5, .name = "Output", .parent_id = 1 },
+        },
+    });
     const Acyclic = UnitSet(.{
         .units = &.{
             Unit.root("Root"),
@@ -528,6 +538,8 @@ test "unit set reports cyclic parent indexes across graph shapes" {
     try std.testing.expectError(error.CyclicUnitParent, (NestedCycle{}).validate());
     try std.testing.expectEqual(@as(?usize, 2), (SelfCycle{}).cyclicUnitParentIndex());
     try std.testing.expectError(error.CyclicUnitParent, (SelfCycle{}).validate());
+    try std.testing.expectEqual(@as(?usize, 1), (LongCycle{}).cyclicUnitParentIndex());
+    try std.testing.expectError(error.CyclicUnitParent, (LongCycle{}).validate());
     try std.testing.expectEqual(@as(?usize, null), (Acyclic{}).cyclicUnitParentIndex());
     try (Acyclic{}).validate();
 }

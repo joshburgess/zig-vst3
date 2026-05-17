@@ -1327,13 +1327,17 @@ pub fn UnitSet(comptime config: Config) type {
             var parent_id = item.parent_id;
             var depth: usize = 0;
             while (parent_id != root_unit_id) {
-                if (depth >= config.units.len) return true;
+                if (depth >= unitParentTraversalLimit()) return true;
                 const parent = self.unitById(parent_id) orelse return false;
                 if (parent.parent_id == no_parent_unit_id) return false;
                 parent_id = parent.parent_id;
                 depth += 1;
             }
             return false;
+        }
+
+        fn unitParentTraversalLimit() usize {
+            return config.units.len;
         }
     };
 }
