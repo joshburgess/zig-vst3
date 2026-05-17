@@ -23,7 +23,7 @@ pub fn writeParameterState(
     comptime format.assertEncodableParameterCount(Params);
     try writeParameterStateHeaderForCount(parameters.ParameterSet(Params).count, writer);
     inline for (0..parameters.ParameterSet(Params).count) |index| {
-        const id = set.id(index) orelse return error.InvalidParameterState;
+        const id = set.idAt(index);
         const normalized = values.load(index) orelse return error.InvalidParameterState;
         try writer.writeInt(u32, id, .little);
         try writer.writeInt(u64, @bitCast(normalized), .little);
@@ -58,8 +58,8 @@ pub fn writeParameterStateJson(
     try writer.writeAll(",\"parameters\":[");
     inline for (0..parameters.ParameterSet(Params).count) |index| {
         if (index != 0) try writer.writeByte(',');
-        const id = set.id(index) orelse return error.InvalidParameterState;
-        const name = set.name(index) orelse return error.InvalidParameterState;
+        const id = set.idAt(index);
+        const name = set.nameAt(index);
         const normalized = values.load(index) orelse return error.InvalidParameterState;
         try writer.writeAll("{\"id\":");
         try writer.print("{}", .{id});

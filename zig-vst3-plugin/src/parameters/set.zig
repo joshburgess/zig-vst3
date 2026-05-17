@@ -499,6 +499,14 @@ pub fn ParameterSet(comptime Params: type) type {
             return @field(self.params, fields[index].name);
         }
 
+        pub fn idAt(self: *const Self, comptime index: usize) u32 {
+            return self.descriptorAt(index).id;
+        }
+
+        pub fn nameAt(self: *const Self, comptime index: usize) []const u8 {
+            return self.descriptorAt(index).name;
+        }
+
         pub fn defaultNormalizedAt(self: *const Self, comptime index: usize) f64 {
             return self.descriptorAt(index).defaultNormalized();
         }
@@ -899,6 +907,8 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expect(set.hasName("Voices"));
     try std.testing.expect(!set.hasName("Missing"));
     try std.testing.expectEqual(@as(usize, 0), set.indexOfField("gain"));
+    try std.testing.expectEqual(@as(u32, 0), set.idAt(0));
+    try std.testing.expectEqualStrings("Gain", set.nameAt(0));
     try std.testing.expectEqual(@as(u32, 3), set.descriptor("mode").id);
     try std.testing.expectEqual(@as(u32, 0), set.fieldId("gain"));
     try std.testing.expectEqualStrings("Mode", set.fieldName("mode"));
