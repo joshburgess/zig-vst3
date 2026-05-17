@@ -116,13 +116,18 @@ pub fn PrefetchableSupport(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IPrefetchableSupport");
         }
 
+        fn failPrefetchableSupport(out: *ivstprefetchablesupport.PrefetchableSupport, fallback: ivstprefetchablesupport.PrefetchableSupport, result: types.tresult) types.tresult {
+            out.* = fallback;
+            return result;
+        }
+
         fn getPrefetchableSupport(ptr: *anyopaque, out: *ivstprefetchablesupport.PrefetchableSupport) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.get_count +|= 1;
             out.* = self.state;
             if (@hasDecl(Config, "getPrefetchableSupport")) {
                 const result = Config.getPrefetchableSupport(self, out);
-                if (result != types.kResultOk) out.* = self.state;
+                if (result != types.kResultOk) return failPrefetchableSupport(out, self.state, result);
                 return result;
             }
             return types.kResultOk;
@@ -433,6 +438,11 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "INoteExpressionPhysicalUIMapping");
         }
 
+        fn failPhysicalUIMapping(out: *ivstphysicalui.PhysicalUIMapList, result: types.tresult) types.tresult {
+            out.* = .{};
+            return result;
+        }
+
         fn getPhysicalUIMapping(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, out: *ivstphysicalui.PhysicalUIMapList) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.request_count +|= 1;
@@ -444,7 +454,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
             };
             if (@hasDecl(Config, "getPhysicalUIMapping")) {
                 const result = Config.getPhysicalUIMapping(self, bus_index, channel, out);
-                if (result != types.kResultOk) out.* = .{};
+                if (result != types.kResultOk) return failPhysicalUIMapping(out, result);
                 return result;
             }
             return if (out.count == 0) types.kResultFalse else types.kResultOk;
