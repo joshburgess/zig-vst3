@@ -803,9 +803,7 @@ fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *ivstparam
 }
 
 fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.ParamID, sample_offset: types.int32, value: vsttypes.ParamValue) void {
-    if (sample_offset < 0) return;
-    const offset: usize = @intCast(sample_offset);
-    if (offset >= collector.frame_count) return;
+    const offset = sampleOffsetInBlock(sample_offset, collector.frame_count) orelse return;
     if (!isNormalizedValue(value)) return;
     _ = collector.append(.{
         .id = id,
@@ -815,9 +813,7 @@ fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.Para
 }
 
 fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void {
-    if (event.sampleOffset < 0) return;
-    const offset: usize = @intCast(event.sampleOffset);
-    if (offset >= collector.frame_count) return;
+    const offset = sampleOffsetInBlock(event.sampleOffset, collector.frame_count) orelse return;
     const converted: ?plug.process.Event = switch (event.type) {
         @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent) => if (isNormalizedValue(event.data.noteOn.velocity))
             plug.process.Event.noteOn(offset, event.data.noteOn.channel, event.data.noteOn.pitch, event.data.noteOn.velocity).withBusIndex(event.busIndex)
@@ -864,6 +860,17 @@ fn collectLegacyMidiCcEvent(event: *const ivstevents.Event, offset: usize) plug.
     };
 }
 
+fn sampleOffsetInBlock(sample_offset: types.int32, frame_count: usize) ?usize {
+    if (sample_offset < 0) return null;
+    const offset: usize = @intCast(sample_offset);
+    if (offset >= frame_count) return null;
+    return offset;
+}
+
+fn vstSampleOffset(sample_offset: usize) ?types.int32 {
+    return std.math.cast(types.int32, sample_offset);
+}
+
 pub fn isNormalizedValue(value: anytype) bool {
     return std.math.isFinite(value) and value >= 0.0 and value <= 1.0;
 }
@@ -873,8 +880,7 @@ fn isFiniteValue(value: anytype) bool {
 }
 
 fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
-    if (event.sample_offset > std.math.maxInt(types.int32)) return null;
-    const offset: types.int32 = @intCast(event.sample_offset);
+    const offset = vstSampleOffset(event.sample_offset) orelse return null;
     var result = ivstevents.Event{
         .busIndex = event.bus_index,
         .sampleOffset = offset,
@@ -1887,6 +1893,20 @@ test "zig-vst3-plugin bridge normalized values are finite unit range" {
     try std.testing.expect(!isNormalizedValue(@as(f64, 1.01)));
     try std.testing.expect(!isNormalizedValue(std.math.nan(f32)));
     try std.testing.expect(!isNormalizedValue(std.math.inf(f64)));
+}
+
+test "zig-vst3-plugin bridge VST sample offsets are explicit" {
+    try std.testing.expectEqual(@as(usize, 0), sampleOffsetInBlock(0, 4).?);
+    try std.testing.expectEqual(@as(usize, 3), sampleOffsetInBlock(3, 4).?);
+    try std.testing.expectEqual(null, sampleOffsetInBlock(-1, 4));
+    try std.testing.expectEqual(null, sampleOffsetInBlock(4, 4));
+    try std.testing.expectEqual(null, sampleOffsetInBlock(0, 0));
+}
+
+test "zig-vst3-plugin bridge plugin sample offsets fit VST int32" {
+    try std.testing.expectEqual(@as(types.int32, 0), vstSampleOffset(0).?);
+    try std.testing.expectEqual(std.math.maxInt(types.int32), vstSampleOffset(std.math.maxInt(types.int32)).?);
+    try std.testing.expectEqual(null, vstSampleOffset(@as(usize, std.math.maxInt(types.int32)) + 1));
 }
 
 test "zig-vst3-plugin bridge stream byte counts fit VST int32" {
