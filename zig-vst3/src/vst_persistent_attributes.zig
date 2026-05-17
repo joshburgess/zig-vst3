@@ -181,7 +181,8 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
         fn queue(ptr: *anyopaque, id: ipersistent.IAttrID, value: *const fvariant.FVariant) callconv(.c) types.tresult {
             const result = set(ptr, id, value);
             if (result != types.kResultOk) return result;
-            ownerFromAttributes(ptr).findEntry(id).?.queued = true;
+            const entry = ownerFromAttributes(ptr).findEntry(id) orelse return types.kResultFalse;
+            entry.queued = true;
             return types.kResultOk;
         }
 
@@ -191,7 +192,8 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             const entry = ownerFromAttributes(ptr).slotFor(id) orelse return types.kResultFalse;
             if (copy) {
                 if (size > 0) {
-                    const bytes: [*]const u8 = @ptrCast(data.?);
+                    const source = data orelse return types.kInvalidArgument;
+                    const bytes: [*]const u8 = @ptrCast(source);
                     @memcpy(entry.binary[0..size], bytes[0..size]);
                 }
                 entry.value = .{ .type = fvariant.kObject, .value = .{ .object = &entry.binary } };
@@ -257,7 +259,8 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             if (entry.binary_size > size) return types.kResultFalse;
             if (entry.binary_size > 0 and out == null) return types.kInvalidArgument;
             if (entry.binary_size > 0) {
-                const bytes: [*]u8 = @ptrCast(out.?);
+                const buffer = out orelse return types.kInvalidArgument;
+                const bytes: [*]u8 = @ptrCast(buffer);
                 if (entry.owns_binary) {
                     @memcpy(bytes[0..entry.binary_size], entry.binary[0..entry.binary_size]);
                 } else if (entry.value.value.object) |object| {
