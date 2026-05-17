@@ -299,9 +299,9 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             if (!acceptsDirection(direction)) return types.kResultFalse;
             const count = self.safeMidi2Count();
             if (count == 0) return types.kResultFalse;
-            if (list.map == null) return types.kInvalidArgument;
+            const assignments = list.map orelse return types.kInvalidArgument;
             if (list.count < count) return types.kResultFalse;
-            @memcpy(list.map.?[0..count], self.midi2[0..count]);
+            @memcpy(assignments[0..count], self.midi2[0..count]);
             return types.kResultOk;
         }
 
@@ -315,9 +315,9 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             if (!acceptsDirection(direction)) return types.kResultFalse;
             const count = self.safeMidi1Count();
             if (count == 0) return types.kResultFalse;
-            if (list.map == null) return types.kInvalidArgument;
+            const assignments = list.map orelse return types.kInvalidArgument;
             if (list.count < count) return types.kResultFalse;
-            @memcpy(list.map.?[0..count], self.midi1[0..count]);
+            @memcpy(assignments[0..count], self.midi1[0..count]);
             return types.kResultOk;
         }
 

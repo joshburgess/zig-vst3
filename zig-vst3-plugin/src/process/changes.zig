@@ -804,7 +804,11 @@ test "parameter changes generated queries match reference scans" {
             var result: ?ParameterChange = null;
             for (items) |item| {
                 if (!itemMatchesId(item, id)) continue;
-                if (result == null or item.sample_offset < result.?.sample_offset) result = item;
+                if (result) |current| {
+                    if (item.sample_offset < current.sample_offset) result = item;
+                } else {
+                    result = item;
+                }
             }
             return result;
         }
@@ -813,7 +817,11 @@ test "parameter changes generated queries match reference scans" {
             var result: ?ParameterChange = null;
             for (items) |item| {
                 if (!itemMatchesId(item, id)) continue;
-                if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
+                if (result) |current| {
+                    if (item.sample_offset >= current.sample_offset) result = item;
+                } else {
+                    result = item;
+                }
             }
             return result;
         }
@@ -822,7 +830,11 @@ test "parameter changes generated queries match reference scans" {
             var result: ?usize = null;
             for (items) |item| {
                 if (!itemMatchesId(item, id) or item.sample_offset <= after_sample_offset) continue;
-                if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+                if (result) |current| {
+                    if (item.sample_offset < current) result = item.sample_offset;
+                } else {
+                    result = item.sample_offset;
+                }
             }
             return result;
         }
