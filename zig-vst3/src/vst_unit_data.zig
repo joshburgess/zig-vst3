@@ -11,8 +11,8 @@ const string128 = @import("string128.zig");
 
 pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, comptime Config: type) type {
     if (max_units == 0) @compileError("UnitInfo requires at least one unit slot");
-    if (max_units > std.math.maxInt(types.int32)) @compileError("UnitInfo unit capacity must fit in VST int32 counts");
-    if (max_program_lists > std.math.maxInt(types.int32)) @compileError("UnitInfo program list capacity must fit in VST int32 counts");
+    vst_index.requireInt32Capacity(max_units, "UnitInfo unit capacity");
+    vst_index.requireInt32Capacity(max_program_lists, "UnitInfo program list capacity");
 
     return extern struct {
         const Self = @This();

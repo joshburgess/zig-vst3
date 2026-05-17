@@ -4,6 +4,7 @@ const interface_map = @import("interface_map.zig");
 const ivstcontextmenu = @import("pluginterfaces/vst/ivstcontextmenu.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_index = @import("vst_index.zig");
 
 pub fn ContextMenuTarget(comptime Config: type) type {
     return extern struct {
@@ -60,7 +61,7 @@ pub fn ContextMenuTarget(comptime Config: type) type {
 
 pub fn ContextMenu(comptime max_items: usize) type {
     if (max_items == 0) @compileError("ContextMenu requires at least one item slot");
-    if (max_items > std.math.maxInt(types.int32)) @compileError("ContextMenu item count exceeds int32 range");
+    vst_index.requireInt32Capacity(max_items, "ContextMenu item count");
 
     return extern struct {
         const Self = @This();

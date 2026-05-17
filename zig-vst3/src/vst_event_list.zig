@@ -8,7 +8,7 @@ const vst_index = @import("vst_index.zig");
 
 pub fn EventList(comptime max_events: usize) type {
     if (max_events == 0) @compileError("EventList requires at least one event slot");
-    if (max_events > std.math.maxInt(types.int32)) @compileError("EventList capacity must fit in VST int32 counts");
+    vst_index.requireInt32Capacity(max_events, "EventList capacity");
 
     return extern struct {
         const Self = @This();

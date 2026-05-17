@@ -4,10 +4,11 @@ const interface_map = @import("interface_map.zig");
 const itest = @import("pluginterfaces/test/itest.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_index = @import("vst_index.zig");
 
 pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type {
     if (max_messages == 0) @compileError("TestResult requires at least one message slot");
-    if (max_messages > std.math.maxInt(types.uint32)) @compileError("TestResult message capacity must fit in VST uint32 counts");
+    vst_index.requireUint32Capacity(max_messages, "TestResult message capacity");
     if (max_chars == 0) @compileError("TestResult requires at least one char per message");
 
     return extern struct {
@@ -164,8 +165,8 @@ pub fn Test(comptime Config: type) type {
 pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
     if (max_tests == 0) @compileError("TestSuite requires at least one test slot");
     if (max_suites == 0) @compileError("TestSuite requires at least one nested suite slot");
-    if (max_tests > std.math.maxInt(types.uint32)) @compileError("TestSuite test capacity must fit in VST uint32 counts");
-    if (max_suites > std.math.maxInt(types.uint32)) @compileError("TestSuite nested suite capacity must fit in VST uint32 counts");
+    vst_index.requireUint32Capacity(max_tests, "TestSuite test capacity");
+    vst_index.requireUint32Capacity(max_suites, "TestSuite nested suite capacity");
 
     return extern struct {
         const Self = @This();

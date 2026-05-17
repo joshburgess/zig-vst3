@@ -14,7 +14,7 @@ const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
     if (max_iids == 0) @compileError("PlugInterfaceSupport requires at least one IID slot");
-    if (max_iids > std.math.maxInt(types.uint32)) @compileError("PlugInterfaceSupport capacity must fit in VST uint32 counts");
+    vst_index.requireUint32Capacity(max_iids, "PlugInterfaceSupport capacity");
 
     return extern struct {
         const Self = @This();
@@ -191,8 +191,8 @@ pub fn MidiLearn(comptime Config: type) type {
 
 pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, comptime Config: type) type {
     if (max_midi2 == 0 and max_midi1 == 0) @compileError("Midi2Mapping requires at least one assignment slot");
-    if (max_midi2 > std.math.maxInt(types.uint32)) @compileError("Midi2Mapping MIDI 2 capacity must fit in VST uint32 counts");
-    if (max_midi1 > std.math.maxInt(types.uint32)) @compileError("Midi2Mapping MIDI 1 capacity must fit in VST uint32 counts");
+    vst_index.requireUint32Capacity(max_midi2, "Midi2Mapping MIDI 2 capacity");
+    vst_index.requireUint32Capacity(max_midi1, "Midi2Mapping MIDI 1 capacity");
 
     return extern struct {
         const Self = @This();
@@ -364,7 +364,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
 pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
     if (max_maps == 0) @compileError("PhysicalUIMapping requires at least one map slot");
-    if (max_maps > std.math.maxInt(types.uint32)) @compileError("PhysicalUIMapping capacity must fit in VST uint32 counts");
+    vst_index.requireUint32Capacity(max_maps, "PhysicalUIMapping capacity");
 
     return extern struct {
         const Self = @This();

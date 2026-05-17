@@ -10,8 +10,8 @@ const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_keyswitches: usize, comptime Config: type) type {
     if (max_expressions == 0 and max_keyswitches == 0) @compileError("NoteExpressionController requires at least one expression or keyswitch slot");
-    if (max_expressions > std.math.maxInt(types.int32)) @compileError("NoteExpressionController expression capacity must fit in VST int32 counts");
-    if (max_keyswitches > std.math.maxInt(types.int32)) @compileError("NoteExpressionController keyswitch capacity must fit in VST int32 counts");
+    vst_index.requireInt32Capacity(max_expressions, "NoteExpressionController expression capacity");
+    vst_index.requireInt32Capacity(max_keyswitches, "NoteExpressionController keyswitch capacity");
 
     return extern struct {
         const Self = @This();

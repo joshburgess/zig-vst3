@@ -16,6 +16,18 @@ pub fn clampedCountU32(count: types.uint32, capacity: usize) usize {
     return @min(@as(usize, @intCast(count)), capacity);
 }
 
+pub fn requireInt32Capacity(comptime capacity: usize, comptime name: []const u8) void {
+    if (capacity > std.math.maxInt(types.int32)) {
+        @compileError(name ++ " must fit in VST int32 counts");
+    }
+}
+
+pub fn requireUint32Capacity(comptime capacity: usize, comptime name: []const u8) void {
+    if (capacity > std.math.maxInt(types.uint32)) {
+        @compileError(name ++ " must fit in VST uint32 counts");
+    }
+}
+
 test "bounded converts valid host indexes" {
     try std.testing.expectEqual(@as(?usize, 0), bounded(0, 2));
     try std.testing.expectEqual(@as(?usize, 1), bounded(1, 2));
