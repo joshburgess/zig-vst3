@@ -93,7 +93,7 @@ pub fn clear32(audio_bus_buffers: ?[*]audio_processor.AudioBusBuffers, sample_co
     var bus: base.int32 = 0;
     while (bus < bus_count) : (bus += 1) {
         const audio_buffer = &buses[@intCast(bus)];
-        const channels = audio_buffer.channelBuffers.channelBuffers32 orelse return;
+        const channels = audio_buffer.channelBuffers.channelBuffers32 orelse continue;
         var channel: base.int32 = 0;
         while (channel < audio_buffer.numChannels) : (channel += 1) {
             const channel_buffer = channels[@intCast(channel)];
@@ -111,7 +111,7 @@ pub fn clear64(audio_bus_buffers: ?[*]audio_processor.AudioBusBuffers, sample_co
     var bus: base.int32 = 0;
     while (bus < bus_count) : (bus += 1) {
         const audio_buffer = &buses[@intCast(bus)];
-        const channels = audio_buffer.channelBuffers.channelBuffers64 orelse return;
+        const channels = audio_buffer.channelBuffers.channelBuffers64 orelse continue;
         var channel: base.int32 = 0;
         while (channel < audio_buffer.numChannels) : (channel += 1) {
             const channel_buffer = channels[@intCast(channel)];
@@ -355,6 +355,54 @@ test "audio processor buffer helpers reject overflowing ranges" {
     copy64(&input64, &output64, 1, std.math.maxInt(base.int32));
     try std.testing.expectEqual(@as(vsttypes.Sample64, 3), output_samples64[0]);
     try std.testing.expect(isSilent64(&output64, 1, std.math.maxInt(base.int32)));
+}
+
+test "audio processor clear helpers skip malformed buses" {
+    var first_samples32 = [_]vsttypes.Sample32{ 1, 2 };
+    var second_samples32 = [_]vsttypes.Sample32{ 3, 4 };
+    var first_channels32 = [_][*]vsttypes.Sample32{&first_samples32};
+    var second_channels32 = [_][*]vsttypes.Sample32{&second_samples32};
+    var buses32 = [_]audio_processor.AudioBusBuffers{
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers32 = first_channels32[0..].ptr },
+        },
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers32 = null },
+        },
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers32 = second_channels32[0..].ptr },
+        },
+    };
+
+    clear32(&buses32, 2, @intCast(buses32.len));
+    try std.testing.expectEqualSlices(vsttypes.Sample32, &.{ 0, 0 }, &first_samples32);
+    try std.testing.expectEqualSlices(vsttypes.Sample32, &.{ 0, 0 }, &second_samples32);
+
+    var first_samples64 = [_]vsttypes.Sample64{ 1, 2 };
+    var second_samples64 = [_]vsttypes.Sample64{ 3, 4 };
+    var first_channels64 = [_][*]vsttypes.Sample64{&first_samples64};
+    var second_channels64 = [_][*]vsttypes.Sample64{&second_samples64};
+    var buses64 = [_]audio_processor.AudioBusBuffers{
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers64 = first_channels64[0..].ptr },
+        },
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers64 = null },
+        },
+        .{
+            .numChannels = 1,
+            .channelBuffers = .{ .channelBuffers64 = second_channels64[0..].ptr },
+        },
+    };
+
+    clear64(&buses64, 2, @intCast(buses64.len));
+    try std.testing.expectEqualSlices(vsttypes.Sample64, &.{ 0, 0 }, &first_samples64);
+    try std.testing.expectEqualSlices(vsttypes.Sample64, &.{ 0, 0 }, &second_samples64);
 }
 
 test "audio processor helper iterates event lists and skips failed reads" {
