@@ -124,29 +124,36 @@ pub fn ContextMenu(comptime max_items: usize) type {
             return null;
         }
 
+        fn failItemLookup(out: *ivstcontextmenu.IContextMenuItem, target_out: *?*ivstcontextmenu.IContextMenuTarget) types.tresult {
+            out.* = .{};
+            target_out.* = null;
+            return types.kInvalidArgument;
+        }
+
         fn getItem(ptr: *anyopaque, index: types.int32, out: *ivstcontextmenu.IContextMenuItem, target_out: *?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
-            const entry = owner(ptr).occupiedByIndex(index) orelse {
-                out.* = .{};
-                target_out.* = null;
-                return types.kInvalidArgument;
-            };
+            const entry = owner(ptr).occupiedByIndex(index) orelse return failItemLookup(out, target_out);
             out.* = entry.item;
             target_out.* = entry.target;
             if (entry.target) |target| _ = target.vtable.addRef(target);
             return types.kResultOk;
         }
 
-        fn addItem(ptr: *anyopaque, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
-            for (&owner(ptr).entries) |*entry| {
+        fn appendItem(self: *Self, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) ?*Entry {
+            for (&self.entries) |*entry| {
                 if (!entry.occupied) {
                     entry.occupied = true;
                     entry.item = item.*;
                     entry.target = target;
                     if (target) |value| _ = value.vtable.addRef(value);
-                    return types.kResultOk;
+                    return entry;
                 }
             }
-            return types.kResultFalse;
+            return null;
+        }
+
+        fn addItem(ptr: *anyopaque, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
+            _ = owner(ptr).appendItem(item, target) orelse return types.kResultFalse;
+            return types.kResultOk;
         }
 
         fn removeItem(ptr: *anyopaque, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {

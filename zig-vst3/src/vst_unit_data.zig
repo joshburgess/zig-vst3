@@ -36,8 +36,8 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             string128.copy(&self.units[0].name, name);
         }
 
-        pub fn addUnit(self: *Self, id: vsttypes.UnitID, parent_id: vsttypes.UnitID, name: []const u8, program_list_id: vsttypes.ProgramListID) types.tresult {
-            const index = vst_index.appendIndex(self.unit_count, max_units) orelse return types.kResultFalse;
+        fn appendUnitIndex(self: *Self, id: vsttypes.UnitID, parent_id: vsttypes.UnitID, name: []const u8, program_list_id: vsttypes.ProgramListID) ?usize {
+            const index = vst_index.appendIndex(self.unit_count, max_units) orelse return null;
             self.units[index] = .{
                 .id = id,
                 .parentUnitId = parent_id,
@@ -45,17 +45,27 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             };
             string128.copy(&self.units[index].name, name);
             self.unit_count = @intCast(index + 1);
+            return index;
+        }
+
+        pub fn addUnit(self: *Self, id: vsttypes.UnitID, parent_id: vsttypes.UnitID, name: []const u8, program_list_id: vsttypes.ProgramListID) types.tresult {
+            _ = self.appendUnitIndex(id, parent_id, name, program_list_id) orelse return types.kResultFalse;
             return types.kResultOk;
         }
 
-        pub fn addProgramList(self: *Self, id: vsttypes.ProgramListID, name: []const u8, program_count: types.int32) types.tresult {
-            const index = vst_index.appendIndex(self.program_list_count, max_program_lists) orelse return types.kResultFalse;
+        fn appendProgramListIndex(self: *Self, id: vsttypes.ProgramListID, name: []const u8, program_count: types.int32) ?usize {
+            const index = vst_index.appendIndex(self.program_list_count, max_program_lists) orelse return null;
             self.program_lists[index] = .{
                 .id = id,
                 .programCount = program_count,
             };
             string128.copy(&self.program_lists[index].name, name);
             self.program_list_count = @intCast(index + 1);
+            return index;
+        }
+
+        pub fn addProgramList(self: *Self, id: vsttypes.ProgramListID, name: []const u8, program_count: types.int32) types.tresult {
+            _ = self.appendProgramListIndex(id, name, program_count) orelse return types.kResultFalse;
             return types.kResultOk;
         }
 
@@ -103,12 +113,14 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return @intCast(owner(ptr).safeUnitCount());
         }
 
+        fn failUnitInfo(out: *ivstunits.UnitInfo) types.tresult {
+            out.* = .{};
+            return types.kInvalidArgument;
+        }
+
         fn getUnitInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.c) types.tresult {
             const self = owner(ptr);
-            const unit_index = vst_index.bounded(index, self.safeUnitCount()) orelse {
-                out.* = .{};
-                return types.kInvalidArgument;
-            };
+            const unit_index = vst_index.bounded(index, self.safeUnitCount()) orelse return failUnitInfo(out);
             out.* = self.units[unit_index];
             return types.kResultOk;
         }
@@ -117,12 +129,14 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return @intCast(owner(ptr).safeProgramListCount());
         }
 
+        fn failProgramListInfo(out: *ivstunits.ProgramListInfo) types.tresult {
+            out.* = .{};
+            return types.kInvalidArgument;
+        }
+
         fn getProgramListInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.c) types.tresult {
             const self = owner(ptr);
-            const list_index = vst_index.bounded(index, self.safeProgramListCount()) orelse {
-                out.* = .{};
-                return types.kInvalidArgument;
-            };
+            const list_index = vst_index.bounded(index, self.safeProgramListCount()) orelse return failProgramListInfo(out);
             out.* = self.program_lists[list_index];
             return types.kResultOk;
         }

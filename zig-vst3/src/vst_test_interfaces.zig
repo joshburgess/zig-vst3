@@ -214,21 +214,31 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "ITestSuite");
         }
 
-        fn addTest(ptr: *anyopaque, name: types.FIDString, test_iface: ?*itest.ITest) callconv(.c) types.tresult {
-            const self = owner(ptr);
-            const index = vst_index.appendIndexU32(self.test_count, max_tests) orelse return types.kResultFalse;
+        fn appendTestIndex(self: *Self, name: types.FIDString, test_iface: ?*itest.ITest) ?usize {
+            const index = vst_index.appendIndexU32(self.test_count, max_tests) orelse return null;
             if (test_iface) |value| _ = value.vtable.addRef(value);
             self.tests[index] = .{ .name = name, .test_iface = test_iface };
             self.test_count +|= 1;
+            return index;
+        }
+
+        fn addTest(ptr: *anyopaque, name: types.FIDString, test_iface: ?*itest.ITest) callconv(.c) types.tresult {
+            const self = owner(ptr);
+            _ = self.appendTestIndex(name, test_iface) orelse return types.kResultFalse;
             return types.kResultOk;
+        }
+
+        fn appendSuiteIndex(self: *Self, name: types.FIDString, suite_iface: ?*itest.ITestSuite) ?usize {
+            const index = vst_index.appendIndexU32(self.suite_count, max_suites) orelse return null;
+            if (suite_iface) |value| _ = value.vtable.addRef(value);
+            self.suites[index] = .{ .name = name, .suite = suite_iface };
+            self.suite_count +|= 1;
+            return index;
         }
 
         fn addTestSuite(ptr: *anyopaque, name: types.FIDString, suite_iface: ?*itest.ITestSuite) callconv(.c) types.tresult {
             const self = owner(ptr);
-            const index = vst_index.appendIndexU32(self.suite_count, max_suites) orelse return types.kResultFalse;
-            if (suite_iface) |value| _ = value.vtable.addRef(value);
-            self.suites[index] = .{ .name = name, .suite = suite_iface };
-            self.suite_count +|= 1;
+            _ = self.appendSuiteIndex(name, suite_iface) orelse return types.kResultFalse;
             return types.kResultOk;
         }
 
