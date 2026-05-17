@@ -117,16 +117,23 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             return @intCast(self.safeExpressionCount());
         }
 
+        fn failNoteExpressionInfo(out: *ivstnoteexpression.NoteExpressionTypeInfo) types.tresult {
+            out.* = .{};
+            return types.kInvalidArgument;
+        }
+
         fn getNoteExpressionInfo(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, index: types.int32, out: *ivstnoteexpression.NoteExpressionTypeInfo) callconv(.c) types.tresult {
             const self = ownerFromNoteExpression(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;
-            const expression_index = vst_index.bounded(index, self.safeExpressionCount()) orelse {
-                out.* = .{};
-                return types.kInvalidArgument;
-            };
+            const expression_index = vst_index.bounded(index, self.safeExpressionCount()) orelse return failNoteExpressionInfo(out);
             out.* = self.expressions[expression_index];
             return types.kResultOk;
+        }
+
+        fn failNoteExpressionString(out: [*]vsttypes.TChar, result: types.tresult) types.tresult {
+            string128.clearPtr(out);
+            return result;
         }
 
         fn getNoteExpressionStringByValue(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, type_id: ivstnoteexpression.NoteExpressionTypeID, value: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
@@ -136,10 +143,15 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             string128.clearPtr(out);
             if (@hasDecl(Config, "getNoteExpressionStringByValue")) {
                 const result = Config.getNoteExpressionStringByValue(self, bus_index, channel, type_id, value, out);
-                if (result != types.kResultOk) string128.clearPtr(out);
+                if (result != types.kResultOk) return failNoteExpressionString(out, result);
                 return result;
             }
             return types.kResultFalse;
+        }
+
+        fn failNoteExpressionValue(out: *ivstnoteexpression.NoteExpressionValue, result: types.tresult) types.tresult {
+            out.* = 0;
+            return result;
         }
 
         fn getNoteExpressionValueByString(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, type_id: ivstnoteexpression.NoteExpressionTypeID, text: [*:0]const vsttypes.TChar, out: *ivstnoteexpression.NoteExpressionValue) callconv(.c) types.tresult {
@@ -149,7 +161,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             out.* = 0;
             if (@hasDecl(Config, "getNoteExpressionValueByString")) {
                 const result = Config.getNoteExpressionValueByString(self, bus_index, channel, type_id, text, out);
-                if (result != types.kResultOk) out.* = 0;
+                if (result != types.kResultOk) return failNoteExpressionValue(out, result);
                 return result;
             }
             return types.kResultFalse;
@@ -162,14 +174,16 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             return @intCast(self.safeKeyswitchCount());
         }
 
+        fn failKeyswitchInfo(out: *ivstnoteexpression.KeyswitchInfo) types.tresult {
+            out.* = .{};
+            return types.kInvalidArgument;
+        }
+
         fn getKeyswitchInfo(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, index: types.int32, out: *ivstnoteexpression.KeyswitchInfo) callconv(.c) types.tresult {
             const self = ownerFromKeyswitch(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;
-            const keyswitch_index = vst_index.bounded(index, self.safeKeyswitchCount()) orelse {
-                out.* = .{};
-                return types.kInvalidArgument;
-            };
+            const keyswitch_index = vst_index.bounded(index, self.safeKeyswitchCount()) orelse return failKeyswitchInfo(out);
             out.* = self.keyswitches[keyswitch_index];
             return types.kResultOk;
         }
