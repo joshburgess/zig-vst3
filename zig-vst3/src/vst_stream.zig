@@ -5,13 +5,17 @@ const interface_map = @import("interface_map.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 
+pub fn byteCount(len: usize) ?types.int32 {
+    return std.math.cast(types.int32, len);
+}
+
 pub fn writeAll(stream: ?*ibstream.IBStream, bytes: []const u8) types.tresult {
     const out = stream orelse return types.kInvalidArgument;
-    const byte_count = std.math.cast(types.int32, bytes.len) orelse return types.kInvalidArgument;
+    const byte_count_value = byteCount(bytes.len) orelse return types.kInvalidArgument;
     var bytes_written: types.int32 = 0;
-    const result = out.vtable.write(out, @constCast(bytes.ptr), byte_count, &bytes_written);
+    const result = out.vtable.write(out, @constCast(bytes.ptr), byte_count_value, &bytes_written);
     if (result != types.kResultOk) return result;
-    return if (bytes_written == byte_count) types.kResultOk else types.kResultFalse;
+    return if (bytes_written == byte_count_value) types.kResultOk else types.kResultFalse;
 }
 
 pub fn FixedBufferStream(comptime capacity: usize) type {
@@ -259,6 +263,12 @@ test "writeAll reports missing and short streams" {
     try std.testing.expectEqual(types.kResultOk, writeAll(stream.asStream(), "abcd"));
     try std.testing.expectEqualStrings("abcd", stream.data());
     try std.testing.expectEqual(types.kResultFalse, writeAll(stream.asStream(), "x"));
+}
+
+test "byteCount rejects sizes that cannot fit IBStream" {
+    try std.testing.expectEqual(@as(?types.int32, 0), byteCount(0));
+    try std.testing.expectEqual(@as(?types.int32, std.math.maxInt(types.int32)), byteCount(std.math.maxInt(types.int32)));
+    try std.testing.expectEqual(@as(?types.int32, null), byteCount(@as(usize, std.math.maxInt(types.int32)) + 1));
 }
 
 test "fixed buffer stream round-trips generated chunked IO" {
