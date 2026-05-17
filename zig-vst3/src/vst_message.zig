@@ -131,7 +131,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         const Entry = extern struct {
             id: ?ivstattributes.AttrID = null,
-            kind: types.uint32 = @intFromEnum(Kind.empty),
+            kind: Kind = .empty,
             int_value: types.int64 = 0,
             float_value: f64 = 0,
             string_value: [max_string_chars]vsttypes.TChar = [_]vsttypes.TChar{0} ** max_string_chars,
@@ -181,7 +181,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
         fn slotFor(self: *Self, id: ivstattributes.AttrID) ?*Entry {
             if (self.findEntry(id)) |entry| return entry;
             for (&self.entries) |*entry| {
-                if (entry.kind == @intFromEnum(Kind.empty)) {
+                if (entry.kind == .empty) {
                     entry.id = id;
                     return entry;
                 }
@@ -191,7 +191,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn setInt(ptr: *anyopaque, id: ivstattributes.AttrID, value: types.int64) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.kind = @intFromEnum(Kind.int);
+            entry.kind = .int;
             entry.int_value = value;
             return types.kResultOk;
         }
@@ -201,7 +201,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
                 out.* = 0;
                 return types.kResultFalse;
             };
-            if (entry.kind != @intFromEnum(Kind.int)) {
+            if (entry.kind != .int) {
                 out.* = 0;
                 return types.kInvalidArgument;
             }
@@ -211,7 +211,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn setFloat(ptr: *anyopaque, id: ivstattributes.AttrID, value: f64) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.kind = @intFromEnum(Kind.float);
+            entry.kind = .float;
             entry.float_value = value;
             return types.kResultOk;
         }
@@ -221,7 +221,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
                 out.* = 0;
                 return types.kResultFalse;
             };
-            if (entry.kind != @intFromEnum(Kind.float)) {
+            if (entry.kind != .float) {
                 out.* = 0;
                 return types.kInvalidArgument;
             }
@@ -231,7 +231,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn setString(ptr: *anyopaque, id: ivstattributes.AttrID, value: [*:0]const vsttypes.TChar) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.kind = @intFromEnum(Kind.string);
+            entry.kind = .string;
             @memset(&entry.string_value, 0);
             const len = @min(std.mem.len(value), max_string_chars - 1);
             @memcpy(entry.string_value[0..len], value[0..len]);
@@ -244,7 +244,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             const entry = owner(ptr).findEntry(id) orelse {
                 return types.kResultFalse;
             };
-            if (entry.kind != @intFromEnum(Kind.string)) {
+            if (entry.kind != .string) {
                 return types.kInvalidArgument;
             }
             const len = @min(std.mem.len(@as([*:0]const vsttypes.TChar, @ptrCast(&entry.string_value))), size - 1);
@@ -256,7 +256,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             if (size > max_binary_bytes) return types.kResultFalse;
             if (size > 0 and value == null) return types.kInvalidArgument;
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.kind = @intFromEnum(Kind.binary);
+            entry.kind = .binary;
             entry.binary_size = size;
             @memset(&entry.binary_value, 0);
             if (size > 0) {
@@ -273,7 +273,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
                 size.* = 0;
                 return types.kResultFalse;
             };
-            if (entry.kind != @intFromEnum(Kind.binary)) {
+            if (entry.kind != .binary) {
                 out.* = null;
                 size.* = 0;
                 return types.kInvalidArgument;
