@@ -191,6 +191,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             if (copy and size > max_binary_bytes) return types.kResultFalse;
             const entry = ownerFromAttributes(ptr).slotFor(id) orelse return types.kResultFalse;
             if (copy) {
+                @memset(&entry.binary, 0);
                 if (size > 0) {
                     const source = data orelse return types.kInvalidArgument;
                     const bytes: [*]const u8 = @ptrCast(source);
@@ -465,6 +466,19 @@ test "persistent attributes copy binary payloads" {
     out = [_]u8{9} ** 4;
     try std.testing.expectEqual(types.kResultFalse, attrs.vtable.getBinaryData(attrs, "blob", &out, 2));
     try std.testing.expectEqualSlices(u8, &.{ 0, 0, 9, 9 }, &out);
+}
+
+test "persistent attributes clear stale copied binary bytes" {
+    const Store = Attributes(1, 8);
+    var store = Store{};
+    const attrs = store.asAttributes();
+    const longer = [_]u8{ 1, 2, 3, 4 };
+    const shorter = [_]u8{9};
+
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.setBinaryData(attrs, "blob", &longer, longer.len, true));
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.setBinaryData(attrs, "blob", &shorter, shorter.len, true));
+    try std.testing.expectEqual(@as(types.uint32, shorter.len), store.entries[0].binary_size);
+    try std.testing.expectEqualSlices(u8, &.{ 9, 0, 0, 0 }, store.entries[0].binary[0..4]);
 }
 
 test "persistent attributes can reference borrowed binary payloads" {
