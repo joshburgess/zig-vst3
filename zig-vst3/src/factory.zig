@@ -119,9 +119,8 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
 
         fn classAt(index: types.int32) ?ClassInfo {
             if (comptime classes.len == 0) return null;
-            if (index < 0) return null;
-            const class_index: usize = @intCast(index);
-            return if (class_index < classes.len) classes[class_index] else null;
+            const class_index = vst_index.bounded(index, classes.len) orelse return null;
+            return classes[class_index];
         }
 
         comptime {
@@ -274,9 +273,8 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
 
         fn classAt(index: types.int32) ?ClassInfo {
             if (comptime classes.len == 0) return null;
-            if (index < 0) return null;
-            const class_index: usize = @intCast(index);
-            return if (class_index < classes.len) classes[class_index] else null;
+            const class_index = vst_index.bounded(index, classes.len) orelse return null;
+            return classes[class_index];
         }
 
         comptime {

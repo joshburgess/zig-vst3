@@ -30,6 +30,7 @@ const plug_process = plug_core.process;
 const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
+const vst_index = @import("vst_index.zig");
 const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_bridge = @import("zig_vst3_plugin_bridge.zig");
 
@@ -82,10 +83,6 @@ pub fn ReflectedEditController(comptime Config: type) type {
             .set = Config.parameter_set,
             .state = &parameter_state,
         };
-
-        fn indexFromHost(index: types.int32) ?usize {
-            return if (index < 0) null else @intCast(index);
-        }
 
         pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
             return query(&controller.iface, @ptrCast(requested_iid), out);
@@ -713,7 +710,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getUnitInfo(_: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.c) types.tresult {
-            const unit_index = indexFromHost(index) orelse {
+            const unit_index = vst_index.bounded(index, UnitSet.unit_count) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
             };
@@ -735,7 +732,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getProgramListInfo(_: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.c) types.tresult {
-            const list_index = indexFromHost(index) orelse {
+            const list_index = vst_index.bounded(index, UnitSet.program_list_count) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
             };
@@ -753,7 +750,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn getProgramName(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             string128.clearPtr(out);
-            const index = indexFromHost(program_index) orelse return types.kInvalidArgument;
+            const count = units.programCount(list_id) orelse return types.kInvalidArgument;
+            const index = vst_index.bounded(program_index, count) orelse return types.kInvalidArgument;
             const name = units.programName(list_id, index) orelse return types.kInvalidArgument;
             string128.copyPtr(out, name);
             return types.kResultOk;
@@ -761,7 +759,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn getProgramInfo(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             string128.clearPtr(out);
-            const index = indexFromHost(program_index) orelse return types.kInvalidArgument;
+            const count = units.programCount(list_id) orelse return types.kInvalidArgument;
+            const index = vst_index.bounded(program_index, count) orelse return types.kInvalidArgument;
             const value = units.programInfo(list_id, index, std.mem.span(attribute_id)) orelse return types.kInvalidArgument;
             string128.copyPtr(out, value);
             return types.kResultOk;
@@ -812,9 +811,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getProgramData(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
-            const index = indexFromHost(program_index) orelse return types.kInvalidArgument;
             const count = units.programCount(list_id) orelse return types.kResultFalse;
-            if (index >= count) return types.kInvalidArgument;
+            const index = vst_index.bounded(program_index, count) orelse return types.kInvalidArgument;
             const reflected = units.program(list_id, index) orelse return types.kInvalidArgument;
             if (reflected.parameters.len == 0) return types.kResultFalse;
 

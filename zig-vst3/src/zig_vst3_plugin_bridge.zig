@@ -15,6 +15,7 @@ const vstspeaker = @import("pluginterfaces/vst/vstspeaker.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
 const vst_event_list = @import("vst_event_list.zig");
+const vst_index = @import("vst_index.zig");
 const vst_parameter_changes = @import("vst_parameter_changes.zig");
 const vst_stream = @import("vst_stream.zig");
 
@@ -362,9 +363,7 @@ pub fn fillParameterInfo(
 }
 
 fn parameterIndex(comptime Params: type, index: types.int32) ?usize {
-    if (index < 0) return null;
-    const value: usize = @intCast(index);
-    return if (value < plug.parameters.ParameterSet(Params).count) value else null;
+    return vst_index.bounded(index, plug.parameters.ParameterSet(Params).count);
 }
 
 fn parameterInfoFlags(
