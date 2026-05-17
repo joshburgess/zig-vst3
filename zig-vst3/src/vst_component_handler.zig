@@ -528,6 +528,11 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             return types.kResultOk;
         }
 
+        fn failSystemTime(out: *types.int64, fallback: types.int64, result: types.tresult) types.tresult {
+            out.* = fallback;
+            return result;
+        }
+
         fn getSystemTime(ptr: *anyopaque, out: *types.int64) callconv(.c) types.tresult {
             const self = ownerFromTime(ptr);
             self.system_time_count +|= 1;
@@ -536,7 +541,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             out.* = value;
             if (@hasDecl(Config, "getSystemTime")) {
                 const result = Config.getSystemTime(self, out);
-                if (result != types.kResultOk) out.* = value;
+                if (result != types.kResultOk) return failSystemTime(out, value, result);
                 return result;
             }
             return types.kResultOk;
@@ -669,6 +674,11 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
             return types.kResultOk;
         }
 
+        fn failStartedProgress(out: *ivsteditcontroller.ProgressID, fallback: ivsteditcontroller.ProgressID, result: types.tresult) types.tresult {
+            out.* = fallback;
+            return result;
+        }
+
         fn start(ptr: *anyopaque, progress_type: types.uint32, description: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
             self.start_count +|= 1;
@@ -678,7 +688,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
             self.last_id = id;
             if (@hasDecl(Config, "start")) {
                 const result = Config.start(self, progress_type, description, out);
-                if (result != types.kResultOk) out.* = id;
+                if (result != types.kResultOk) return failStartedProgress(out, id, result);
                 return result;
             }
             return types.kResultOk;
