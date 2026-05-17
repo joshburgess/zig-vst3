@@ -72,6 +72,11 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return if (next[1] == 0) next[0] else null;
         }
 
+        fn failPosition(out: ?*types.int64, result: types.tresult) types.tresult {
+            if (out) |value| value.* = -1;
+            return result;
+        }
+
         fn ownerFromStream(ptr: *anyopaque) *Self {
             const iface: *ibstream.IBStream = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -163,21 +168,17 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             const next = switch (mode) {
                 @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet) => offset,
                 @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur) => seekTarget(self.pos, offset) orelse {
-                    if (result) |out| out.* = -1;
-                    return types.kResultFalse;
+                    return failPosition(result, types.kResultFalse);
                 },
                 @intFromEnum(ibstream.IStreamSeekMode.kIBSeekEnd) => seekTarget(self.boundedLen(), offset) orelse {
-                    if (result) |out| out.* = -1;
-                    return types.kResultFalse;
+                    return failPosition(result, types.kResultFalse);
                 },
                 else => {
-                    if (result) |out| out.* = -1;
-                    return types.kInvalidArgument;
+                    return failPosition(result, types.kInvalidArgument);
                 },
             };
             if (next < 0 or next > self.boundedLen()) {
-                if (result) |out| out.* = -1;
-                return types.kResultFalse;
+                return failPosition(result, types.kResultFalse);
             }
             self.pos = @intCast(next);
             if (result) |out| out.* = next;
@@ -186,16 +187,14 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
 
         fn tell(ptr: *anyopaque, pos: *types.int64) callconv(.c) types.tresult {
             pos.* = std.math.cast(types.int64, ownerFromStream(ptr).pos) orelse {
-                pos.* = -1;
-                return types.kResultFalse;
+                return failPosition(pos, types.kResultFalse);
             };
             return types.kResultOk;
         }
 
         fn getStreamSize(ptr: *anyopaque, size: *types.int64) callconv(.c) types.tresult {
             size.* = std.math.cast(types.int64, ownerFromSizeable(ptr).boundedLen()) orelse {
-                size.* = -1;
-                return types.kResultFalse;
+                return failPosition(size, types.kResultFalse);
             };
             return types.kResultOk;
         }
