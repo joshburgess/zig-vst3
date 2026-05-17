@@ -41,10 +41,15 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return vst_index.clampedCountU32(self.platform_count, max_platforms);
         }
 
-        pub fn addPlatform(self: *Self, platform: types.FIDString) types.tresult {
-            const index = vst_index.appendIndexU32(self.platform_count, max_platforms) orelse return types.kResultFalse;
+        fn appendPlatformIndex(self: *Self, platform: types.FIDString) ?usize {
+            const index = vst_index.appendIndexU32(self.platform_count, max_platforms) orelse return null;
             self.platforms[index] = platform;
             self.platform_count +|= 1;
+            return index;
+        }
+
+        pub fn addPlatform(self: *Self, platform: types.FIDString) types.tresult {
+            _ = self.appendPlatformIndex(platform) orelse return types.kResultFalse;
             return types.kResultOk;
         }
 

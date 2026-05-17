@@ -42,17 +42,27 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             return &self.keyswitch;
         }
 
-        pub fn addExpression(self: *Self, info: ivstnoteexpression.NoteExpressionTypeInfo) types.tresult {
-            const index = vst_index.appendIndexU32(self.expression_count, max_expressions) orelse return types.kResultFalse;
+        fn appendExpressionIndex(self: *Self, info: ivstnoteexpression.NoteExpressionTypeInfo) ?usize {
+            const index = vst_index.appendIndexU32(self.expression_count, max_expressions) orelse return null;
             self.expressions[index] = info;
             self.expression_count +|= 1;
+            return index;
+        }
+
+        pub fn addExpression(self: *Self, info: ivstnoteexpression.NoteExpressionTypeInfo) types.tresult {
+            _ = self.appendExpressionIndex(info) orelse return types.kResultFalse;
             return types.kResultOk;
         }
 
-        pub fn addKeyswitch(self: *Self, info: ivstnoteexpression.KeyswitchInfo) types.tresult {
-            const index = vst_index.appendIndexU32(self.keyswitch_count, max_keyswitches) orelse return types.kResultFalse;
+        fn appendKeyswitchIndex(self: *Self, info: ivstnoteexpression.KeyswitchInfo) ?usize {
+            const index = vst_index.appendIndexU32(self.keyswitch_count, max_keyswitches) orelse return null;
             self.keyswitches[index] = info;
             self.keyswitch_count +|= 1;
+            return index;
+        }
+
+        pub fn addKeyswitch(self: *Self, info: ivstnoteexpression.KeyswitchInfo) types.tresult {
+            _ = self.appendKeyswitchIndex(info) orelse return types.kResultFalse;
             return types.kResultOk;
         }
 

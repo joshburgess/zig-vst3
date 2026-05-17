@@ -32,10 +32,15 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
             return vst_index.clampedCountU32(self.count, max_iids);
         }
 
-        pub fn addSupported(self: *Self, iid: *const tuid.TUID) types.tresult {
-            const index = vst_index.appendIndexU32(self.count, max_iids) orelse return types.kResultFalse;
+        fn appendSupportedIndex(self: *Self, iid: *const tuid.TUID) ?usize {
+            const index = vst_index.appendIndexU32(self.count, max_iids) orelse return null;
             self.supported[index] = iid.*;
             self.count +|= 1;
+            return index;
+        }
+
+        pub fn addSupported(self: *Self, iid: *const tuid.TUID) types.tresult {
+            _ = self.appendSupportedIndex(iid) orelse return types.kResultFalse;
             return types.kResultOk;
         }
 
@@ -227,17 +232,27 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return vst_index.clampedCountU32(self.midi1_count, max_midi1);
         }
 
-        pub fn addMidi2(self: *Self, assignment: ivstmidimapping2.Midi2ControllerParamIDAssignment) types.tresult {
-            const index = vst_index.appendIndexU32(self.midi2_count, max_midi2) orelse return types.kResultFalse;
+        fn appendMidi2Index(self: *Self, assignment: ivstmidimapping2.Midi2ControllerParamIDAssignment) ?usize {
+            const index = vst_index.appendIndexU32(self.midi2_count, max_midi2) orelse return null;
             self.midi2[index] = assignment;
             self.midi2_count +|= 1;
+            return index;
+        }
+
+        pub fn addMidi2(self: *Self, assignment: ivstmidimapping2.Midi2ControllerParamIDAssignment) types.tresult {
+            _ = self.appendMidi2Index(assignment) orelse return types.kResultFalse;
             return types.kResultOk;
         }
 
-        pub fn addMidi1(self: *Self, assignment: ivstmidimapping2.Midi1ControllerParamIDAssignment) types.tresult {
-            const index = vst_index.appendIndexU32(self.midi1_count, max_midi1) orelse return types.kResultFalse;
+        fn appendMidi1Index(self: *Self, assignment: ivstmidimapping2.Midi1ControllerParamIDAssignment) ?usize {
+            const index = vst_index.appendIndexU32(self.midi1_count, max_midi1) orelse return null;
             self.midi1[index] = assignment;
             self.midi1_count +|= 1;
+            return index;
+        }
+
+        pub fn addMidi1(self: *Self, assignment: ivstmidimapping2.Midi1ControllerParamIDAssignment) types.tresult {
+            _ = self.appendMidi1Index(assignment) orelse return types.kResultFalse;
             return types.kResultOk;
         }
 
@@ -385,10 +400,15 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
             return vst_index.clampedCountU32(self.map_count, max_maps);
         }
 
-        pub fn addMap(self: *Self, map: ivstphysicalui.PhysicalUIMap) types.tresult {
-            const index = vst_index.appendIndexU32(self.map_count, max_maps) orelse return types.kResultFalse;
+        fn appendMapIndex(self: *Self, map: ivstphysicalui.PhysicalUIMap) ?usize {
+            const index = vst_index.appendIndexU32(self.map_count, max_maps) orelse return null;
             self.maps[index] = map;
             self.map_count +|= 1;
+            return index;
+        }
+
+        pub fn addMap(self: *Self, map: ivstphysicalui.PhysicalUIMap) types.tresult {
+            _ = self.appendMapIndex(map) orelse return types.kResultFalse;
             return types.kResultOk;
         }
 

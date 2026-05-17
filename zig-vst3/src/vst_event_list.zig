@@ -28,10 +28,15 @@ pub fn EventList(comptime max_events: usize) type {
             return vst_index.clampedCount(self.count, max_events);
         }
 
-        pub fn append(self: *Self, event: ivstevents.Event) types.tresult {
-            const index = vst_index.appendIndex(self.count, max_events) orelse return types.kResultFalse;
+        fn appendIndex(self: *Self, event: ivstevents.Event) ?usize {
+            const index = vst_index.appendIndex(self.count, max_events) orelse return null;
             self.events[index] = event;
             self.count +|= 1;
+            return index;
+        }
+
+        pub fn append(self: *Self, event: ivstevents.Event) types.tresult {
+            _ = self.appendIndex(event) orelse return types.kResultFalse;
             return types.kResultOk;
         }
 
