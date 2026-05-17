@@ -147,8 +147,9 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
 
         fn triggerUpdates(ptr: *anyopaque, changed: ?*anyopaque, message: types.int32) callconv(.c) types.tresult {
             for (&owner(ptr).entries) |*entry| {
-                if (entry.dependent != null and entry.changed == changed) {
-                    entry.dependent.?.vtable.update(entry.dependent.?, changed, message);
+                if (entry.dependent) |dependent| {
+                    if (entry.changed != changed) continue;
+                    dependent.vtable.update(dependent, changed, message);
                     entry.deferred = false;
                     entry.deferred_message = 0;
                 }

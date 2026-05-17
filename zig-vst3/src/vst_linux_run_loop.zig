@@ -137,8 +137,9 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
 
         pub fn triggerEvent(self: *Self, fd: Linux.FileDescriptor) types.tresult {
             for (&self.event_handlers) |*entry| {
-                if (entry.handler != null and entry.fd == fd) {
-                    entry.handler.?.vtable.onFDIsSet(entry.handler.?, fd);
+                if (entry.handler) |handler| {
+                    if (entry.fd != fd) continue;
+                    handler.vtable.onFDIsSet(handler, fd);
                     return types.kResultOk;
                 }
             }
