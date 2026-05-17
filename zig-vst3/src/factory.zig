@@ -1,5 +1,6 @@
 const std = @import("std");
 const funknown = @import("funknown.zig");
+const interface_map = @import("interface_map.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const tuid = @import("tuid.zig");
@@ -57,16 +58,11 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
         }
 
         fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            if (std.mem.eql(u8, requested_iid, &funknown.iid) or
-                std.mem.eql(u8, requested_iid, &ipluginbase.iplugin_factory_iid))
-            {
-                _ = addRef(ptr);
-                out.* = ptr;
-                return types.kResultOk;
-            }
-
-            out.* = null;
-            return types.kNoInterface;
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &ipluginbase.iplugin_factory_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -174,18 +170,13 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
         }
 
         fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            if (std.mem.eql(u8, requested_iid, &funknown.iid) or
-                std.mem.eql(u8, requested_iid, &ipluginbase.iplugin_factory_iid) or
-                std.mem.eql(u8, requested_iid, &ipluginbase.iplugin_factory2_iid) or
-                std.mem.eql(u8, requested_iid, &ipluginbase.iplugin_factory3_iid))
-            {
-                _ = addRef(ptr);
-                out.* = ptr;
-                return types.kResultOk;
-            }
-
-            out.* = null;
-            return types.kNoInterface;
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &ipluginbase.iplugin_factory_iid, .ptr = ptr },
+                .{ .iid = &ipluginbase.iplugin_factory2_iid, .ptr = ptr },
+                .{ .iid = &ipluginbase.iplugin_factory3_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -513,6 +504,16 @@ test "static factory 3 exposes factory2 and factory3 metadata" {
     try std.testing.expectEqual(types.kResultOk, factory.vtable.getClassInfoUnicode(factory, 0, &info_w));
     try std.testing.expectEqualSlices(types.char16, std.unicode.utf8ToUtf16LeStringLiteral("Test Plug-in"), std.mem.sliceTo(&info_w.name, 0));
     try std.testing.expectEqualSlices(types.char16, std.unicode.utf8ToUtf16LeStringLiteral("Test Vendor"), std.mem.sliceTo(&info_w.vendor, 0));
+}
+
+test "static factory 3 clears missing query outputs" {
+    const TestFactory = StaticFactory3(.{ .vendor = "Test Vendor" }, &.{});
+    const factory = TestFactory.getPluginFactory3();
+    const missing_iid = tuid.inlineUid(0x55555555, 0x66666666, 0x77777777, 0x88888888);
+    var out: ?*anyopaque = @ptrFromInt(0x1);
+
+    try std.testing.expectEqual(types.kNoInterface, factory.vtable.queryInterface(factory, &missing_iid, &out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), out);
 }
 
 test "static factory 3 clears invalid metadata and stores host context" {
