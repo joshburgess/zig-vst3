@@ -6,6 +6,34 @@ pub const format_version: u16 = 1;
 pub const encoded_header_size: usize = magic.len + @sizeOf(u16) + @sizeOf(u16);
 pub const encoded_entry_size: usize = @sizeOf(u32) + @sizeOf(u64);
 
+fn countMatches(actual_count: usize, expected_count: usize) bool {
+    return actual_count == expected_count;
+}
+
+fn countIsFewer(actual_count: usize, expected_count: usize) bool {
+    return actual_count < expected_count;
+}
+
+fn countIsMore(actual_count: usize, expected_count: usize) bool {
+    return actual_count > expected_count;
+}
+
+fn countMissing(actual_count: usize, expected_count: usize) usize {
+    return expected_count -| actual_count;
+}
+
+fn countExtra(actual_count: usize, expected_count: usize) usize {
+    return actual_count -| expected_count;
+}
+
+fn countHasEntries(count: usize) bool {
+    return count != 0;
+}
+
+fn countHasNoEntries(count: usize) bool {
+    return count == 0;
+}
+
 pub const ParameterStateHeader = struct {
     version: u16,
     entry_count: usize,
@@ -15,11 +43,11 @@ pub const ParameterStateHeader = struct {
     }
 
     pub fn hasEntries(self: ParameterStateHeader) bool {
-        return self.entry_count != 0;
+        return countHasEntries(self.entry_count);
     }
 
     pub fn hasNoEntries(self: ParameterStateHeader) bool {
-        return self.entry_count == 0;
+        return countHasNoEntries(self.entry_count);
     }
 
     pub fn entriesEmpty(self: ParameterStateHeader) bool {
@@ -31,23 +59,23 @@ pub const ParameterStateHeader = struct {
     }
 
     pub fn matchesEntryCount(self: ParameterStateHeader, expected_count: usize) bool {
-        return self.entry_count == expected_count;
+        return countMatches(self.entry_count, expected_count);
     }
 
     pub fn hasFewerEntriesThan(self: ParameterStateHeader, expected_count: usize) bool {
-        return self.entry_count < expected_count;
+        return countIsFewer(self.entry_count, expected_count);
     }
 
     pub fn hasMoreEntriesThan(self: ParameterStateHeader, expected_count: usize) bool {
-        return self.entry_count > expected_count;
+        return countIsMore(self.entry_count, expected_count);
     }
 
     pub fn missingEntryCount(self: ParameterStateHeader, expected_count: usize) usize {
-        return expected_count -| self.entry_count;
+        return countMissing(self.entry_count, expected_count);
     }
 
     pub fn extraEntryCount(self: ParameterStateHeader, expected_count: usize) usize {
-        return self.entry_count -| expected_count;
+        return countExtra(self.entry_count, expected_count);
     }
 
     pub fn encodedSize(self: ParameterStateHeader) usize {
@@ -118,111 +146,111 @@ pub const ReadParameterStateReport = struct {
     }
 
     pub fn matchesDecodedCount(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.entry_count == expected_count;
+        return countMatches(self.decodedCount(), expected_count);
     }
 
     pub fn hasFewerDecodedEntriesThan(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.entry_count < expected_count;
+        return countIsFewer(self.decodedCount(), expected_count);
     }
 
     pub fn hasMoreDecodedEntriesThan(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.entry_count > expected_count;
+        return countIsMore(self.decodedCount(), expected_count);
     }
 
     pub fn missingDecodedEntryCount(self: ReadParameterStateReport, expected_count: usize) usize {
-        return expected_count -| self.entry_count;
+        return countMissing(self.decodedCount(), expected_count);
     }
 
     pub fn extraDecodedEntryCount(self: ReadParameterStateReport, expected_count: usize) usize {
-        return self.entry_count -| expected_count;
+        return countExtra(self.decodedCount(), expected_count);
     }
 
     pub fn matchesRestoredCount(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.restored_count == expected_count;
+        return countMatches(self.restoredCount(), expected_count);
     }
 
     pub fn hasFewerRestoredEntriesThan(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.restored_count < expected_count;
+        return countIsFewer(self.restoredCount(), expected_count);
     }
 
     pub fn hasMoreRestoredEntriesThan(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.restored_count > expected_count;
+        return countIsMore(self.restoredCount(), expected_count);
     }
 
     pub fn missingRestoredEntryCount(self: ReadParameterStateReport, expected_count: usize) usize {
-        return expected_count -| self.restored_count;
+        return countMissing(self.restoredCount(), expected_count);
     }
 
     pub fn extraRestoredEntryCount(self: ReadParameterStateReport, expected_count: usize) usize {
-        return self.restored_count -| expected_count;
+        return countExtra(self.restoredCount(), expected_count);
     }
 
     pub fn matchesIgnoredCount(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.ignored_count == expected_count;
+        return countMatches(self.ignoredCount(), expected_count);
     }
 
     pub fn hasFewerIgnoredEntriesThan(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.ignored_count < expected_count;
+        return countIsFewer(self.ignoredCount(), expected_count);
     }
 
     pub fn hasMoreIgnoredEntriesThan(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.ignored_count > expected_count;
+        return countIsMore(self.ignoredCount(), expected_count);
     }
 
     pub fn missingIgnoredEntryCount(self: ReadParameterStateReport, expected_count: usize) usize {
-        return expected_count -| self.ignored_count;
+        return countMissing(self.ignoredCount(), expected_count);
     }
 
     pub fn extraIgnoredEntryCount(self: ReadParameterStateReport, expected_count: usize) usize {
-        return self.ignored_count -| expected_count;
+        return countExtra(self.ignoredCount(), expected_count);
     }
 
     pub fn matchesAccountedCount(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.accountedCount() == expected_count;
+        return countMatches(self.accountedCount(), expected_count);
     }
 
     pub fn hasFewerAccountedEntriesThan(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.accountedCount() < expected_count;
+        return countIsFewer(self.accountedCount(), expected_count);
     }
 
     pub fn hasMoreAccountedEntriesThan(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.accountedCount() > expected_count;
+        return countIsMore(self.accountedCount(), expected_count);
     }
 
     pub fn missingAccountedEntryCount(self: ReadParameterStateReport, expected_count: usize) usize {
-        return expected_count -| self.accountedCount();
+        return countMissing(self.accountedCount(), expected_count);
     }
 
     pub fn extraAccountedEntryCount(self: ReadParameterStateReport, expected_count: usize) usize {
-        return self.accountedCount() -| expected_count;
+        return countExtra(self.accountedCount(), expected_count);
     }
 
     pub fn matchesUnaccountedCount(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.unaccountedCount() == expected_count;
+        return countMatches(self.unaccountedCount(), expected_count);
     }
 
     pub fn hasFewerUnaccountedEntriesThan(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.unaccountedCount() < expected_count;
+        return countIsFewer(self.unaccountedCount(), expected_count);
     }
 
     pub fn hasMoreUnaccountedEntriesThan(self: ReadParameterStateReport, expected_count: usize) bool {
-        return self.unaccountedCount() > expected_count;
+        return countIsMore(self.unaccountedCount(), expected_count);
     }
 
     pub fn missingUnaccountedEntryCount(self: ReadParameterStateReport, expected_count: usize) usize {
-        return expected_count -| self.unaccountedCount();
+        return countMissing(self.unaccountedCount(), expected_count);
     }
 
     pub fn extraUnaccountedEntryCount(self: ReadParameterStateReport, expected_count: usize) usize {
-        return self.unaccountedCount() -| expected_count;
+        return countExtra(self.unaccountedCount(), expected_count);
     }
 
     pub fn hasDecodedEntries(self: ReadParameterStateReport) bool {
-        return self.entry_count != 0;
+        return countHasEntries(self.decodedCount());
     }
 
     pub fn hasNoDecodedEntries(self: ReadParameterStateReport) bool {
-        return self.entry_count == 0;
+        return countHasNoEntries(self.decodedCount());
     }
 
     pub fn decodedEntriesEmpty(self: ReadParameterStateReport) bool {
@@ -230,11 +258,11 @@ pub const ReadParameterStateReport = struct {
     }
 
     pub fn hasRestoredEntries(self: ReadParameterStateReport) bool {
-        return self.restored_count != 0;
+        return countHasEntries(self.restoredCount());
     }
 
     pub fn hasNoRestoredEntries(self: ReadParameterStateReport) bool {
-        return self.restored_count == 0;
+        return countHasNoEntries(self.restoredCount());
     }
 
     pub fn restoredEntriesEmpty(self: ReadParameterStateReport) bool {
@@ -242,11 +270,11 @@ pub const ReadParameterStateReport = struct {
     }
 
     pub fn hasIgnoredEntries(self: ReadParameterStateReport) bool {
-        return self.ignored_count != 0;
+        return countHasEntries(self.ignoredCount());
     }
 
     pub fn hasNoIgnoredEntries(self: ReadParameterStateReport) bool {
-        return self.ignored_count == 0;
+        return countHasNoEntries(self.ignoredCount());
     }
 
     pub fn ignoredEntriesEmpty(self: ReadParameterStateReport) bool {
@@ -254,11 +282,11 @@ pub const ReadParameterStateReport = struct {
     }
 
     pub fn hasAccountedEntries(self: ReadParameterStateReport) bool {
-        return self.accountedCount() != 0;
+        return countHasEntries(self.accountedCount());
     }
 
     pub fn hasNoAccountedEntries(self: ReadParameterStateReport) bool {
-        return self.accountedCount() == 0;
+        return countHasNoEntries(self.accountedCount());
     }
 
     pub fn accountedEntriesEmpty(self: ReadParameterStateReport) bool {
@@ -266,11 +294,11 @@ pub const ReadParameterStateReport = struct {
     }
 
     pub fn hasUnaccountedEntries(self: ReadParameterStateReport) bool {
-        return self.unaccountedCount() != 0;
+        return countHasEntries(self.unaccountedCount());
     }
 
     pub fn hasNoUnaccountedEntries(self: ReadParameterStateReport) bool {
-        return self.unaccountedCount() == 0;
+        return countHasNoEntries(self.unaccountedCount());
     }
 
     pub fn unaccountedEntriesEmpty(self: ReadParameterStateReport) bool {
@@ -278,32 +306,32 @@ pub const ReadParameterStateReport = struct {
     }
 
     pub fn accountedAllEntries(self: ReadParameterStateReport) bool {
-        return self.accountedCount() == self.entry_count;
+        return countMatches(self.accountedCount(), self.decodedCount());
     }
 
     pub fn accountedPartialEntries(self: ReadParameterStateReport) bool {
         const accounted = self.accountedCount();
-        return accounted != 0 and accounted < self.entry_count;
+        return countHasEntries(accounted) and countIsFewer(accounted, self.decodedCount());
     }
 
     pub fn restoredAllEntries(self: ReadParameterStateReport) bool {
-        return self.restored_count == self.entry_count and self.ignored_count == 0;
+        return countMatches(self.restoredCount(), self.decodedCount()) and self.hasNoIgnoredEntries();
     }
 
     pub fn restoredPartialEntries(self: ReadParameterStateReport) bool {
-        return self.restored_count != 0 and self.restored_count < self.entry_count;
+        return self.hasRestoredEntries() and countIsFewer(self.restoredCount(), self.decodedCount());
     }
 
     pub fn ignoredAllEntries(self: ReadParameterStateReport) bool {
-        return self.entry_count != 0 and self.ignored_count == self.entry_count and self.restored_count == 0;
+        return self.hasDecodedEntries() and countMatches(self.ignoredCount(), self.decodedCount()) and self.hasNoRestoredEntries();
     }
 
     pub fn ignoredPartialEntries(self: ReadParameterStateReport) bool {
-        return self.ignored_count != 0 and self.ignored_count < self.entry_count;
+        return self.hasIgnoredEntries() and countIsFewer(self.ignoredCount(), self.decodedCount());
     }
 
     pub fn restoredAndIgnoredEntries(self: ReadParameterStateReport) bool {
-        return self.restored_count != 0 and self.ignored_count != 0;
+        return self.hasRestoredEntries() and self.hasIgnoredEntries();
     }
 
     pub fn fullyHandled(self: ReadParameterStateReport) bool {
@@ -311,7 +339,7 @@ pub const ReadParameterStateReport = struct {
     }
 
     pub fn classification(self: ReadParameterStateReport) ReadParameterStateClassification {
-        if (self.entry_count == 0) return .empty;
+        if (self.hasNoDecodedEntries()) return .empty;
         if (!self.accountedAllEntries()) return .partial;
         if (self.restoredAllEntries()) return .restored_all;
         if (self.ignoredAllEntries()) return .ignored_all;
