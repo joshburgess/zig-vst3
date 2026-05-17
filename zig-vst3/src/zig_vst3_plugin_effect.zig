@@ -1070,14 +1070,14 @@ test "reflected edit controller exposes configured units and programs" {
     try std.testing.expectEqual(@as(types.int32, 2), list.programCount);
     try std.testing.expectEqual(@as(vsttypes.TChar, 'V'), list.name[0]);
 
-    var program_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var program_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getProgramName(unit_info, 7, 1, &program_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'L'), program_name[0]);
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramName(unit_info, 7, -1, &program_name));
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramName(unit_info, 7, 2, &program_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[0]);
 
-    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getProgramInfo(unit_info, 7, 0, "category", &program_info));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'C'), program_info[0]);
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramInfo(unit_info, 7, -1, "category", &program_info));

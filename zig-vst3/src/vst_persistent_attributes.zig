@@ -343,7 +343,7 @@ test "persistent object returns class ID and counts save load calls" {
     var object = Object{};
     const iface = object.asInterface();
 
-    var out: [16]types.char8 = [_]types.char8{0} ** 16;
+    var out: tuid.TUID = tuid.zero;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getClassID(iface, &out));
     try std.testing.expectEqualSlices(u8, &expected_class_id, &out);
 

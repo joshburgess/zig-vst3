@@ -147,9 +147,9 @@ pub fn TestPlugProvider(comptime Config: type) type {
         }
 
         fn componentUidFor(out: *anyopaque) types.tresult {
-            const bytes: *[16]u8 = @ptrCast(@alignCast(out));
+            const bytes: *tuid.TUID = @ptrCast(@alignCast(out));
             if (!@hasDecl(Config, "component_uid")) {
-                bytes.* = [_]u8{0} ** 16;
+                bytes.* = tuid.zero;
                 return types.kResultFalse;
             }
             bytes.* = Config.component_uid;
@@ -198,7 +198,7 @@ test "test plug provider returns configured metadata" {
     var string = String{};
     const iface = provider.asProvider();
 
-    var out_uid: tuid.TUID = [_]u8{0} ** 16;
+    var out_uid: tuid.TUID = tuid.zero;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getSubCategories(iface, string.asStringResult()));
     try std.testing.expectEqualStrings("Fx|Tools", string.text8Span());
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getComponentUID(iface, &out_uid));
@@ -250,10 +250,10 @@ test "test plug provider delegates component controller and release hooks throug
 test "test plug provider reports missing component UID deterministically" {
     const Provider = TestPlugProvider(struct {});
     var provider = Provider{};
-    var out_uid: tuid.TUID = [_]u8{0xAA} ** 16;
+    var out_uid: tuid.TUID = [_]u8{0xAA} ** tuid.byte_count;
 
     try std.testing.expectEqual(types.kResultFalse, provider.asProvider().vtable.getComponentUID(provider.asProvider(), &out_uid));
-    try std.testing.expectEqualSlices(u8, &([_]u8{0} ** 16), &out_uid);
+    try std.testing.expectEqualSlices(u8, &tuid.zero, &out_uid);
 }
 
 test "test plug provider exposes provider2 and factory" {

@@ -4,6 +4,7 @@ const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const plug_process = @import("zig-vst3-plugin-core").process;
+const string128 = @import("string128.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_component_handler = @import("vst_component_handler.zig");
@@ -458,17 +459,17 @@ test "gain controller exposes default root unit info" {
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getUnitInfo(unit_info, 1, &missing));
     try std.testing.expectEqual(@as(types.int32, 0), unit_info.vtable.getProgramListCount(unit_info));
 
-    var program_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var program_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramName(unit_info, ivstunits.kNoProgramListId, 0, &program_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[1]);
 
-    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramInfo(unit_info, ivstunits.kNoProgramListId, 0, "name", &program_info));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[1]);
 
-    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramPitchName(unit_info, ivstunits.kNoProgramListId, 0, 60, &pitch_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[1]);
@@ -617,7 +618,7 @@ test "gain controller exposes default note expression and keyswitch interfaces" 
         types.kInvalidArgument,
         expression.vtable.getNoteExpressionInfo(expression, 0, 0, 0, &expression_info),
     );
-    var expression_text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var expression_text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     const empty_expression_text: [1:0]vsttypes.TChar = .{0};
     var expression_value: ivstnoteexpression.NoteExpressionValue = 1.0;
     try std.testing.expectEqual(
