@@ -99,6 +99,13 @@ fn countMatchingChanges(items: []const ParameterChange, context: anytype, compti
     return result;
 }
 
+fn hasMatchingChange(items: []const ParameterChange, context: anytype, comptime matches: anytype) bool {
+    for (items) |item| {
+        if (matches(item, context)) return true;
+    }
+    return false;
+}
+
 fn nextMatchingChange(items: []const ParameterChange, last_offset: ?usize, last_index: usize, context: anytype, comptime matches: anytype) ?IndexedParameterChange {
     var result: ?IndexedParameterChange = null;
     for (items, 0..) |item, index| {
@@ -348,15 +355,16 @@ pub const ParameterChanges = struct {
     }
 
     pub fn has(self: ParameterChanges, id: u32) bool {
-        return self.first(id) != null;
+        return hasMatchingChange(self.items, id, matchesId);
     }
 
     pub fn hasAtOffset(self: ParameterChanges, sample_offset: usize) bool {
-        return self.countAtOffset(sample_offset) != 0;
+        return hasMatchingChange(self.items, sample_offset, matchesOffset);
     }
 
     pub fn hasForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) bool {
-        return self.countForIdAtOffset(id, sample_offset) != 0;
+        const context = IdOffset{ .id = id, .sample_offset = sample_offset };
+        return hasMatchingChange(self.items, context, matchesIdOffset);
     }
 
     pub fn empty(self: ParameterChanges, id: u32) bool {

@@ -959,23 +959,24 @@ pub const Events = struct {
     }
 
     pub fn hasKind(self: Events, kind: EventKind) bool {
-        return self.firstKind(kind) != null;
+        return hasMatchingEvent(self.items, kind, matchesKind);
     }
 
     pub fn hasNoteAttacks(self: Events) bool {
-        return self.countNoteAttacks() != 0;
+        return hasMatchingEvent(self.items, {}, matchesNoteAttack);
     }
 
     pub fn hasNoteReleases(self: Events) bool {
-        return self.countNoteReleases() != 0;
+        return hasMatchingEvent(self.items, {}, matchesNoteRelease);
     }
 
     pub fn hasAtOffset(self: Events, sample_offset: usize) bool {
-        return self.countAtOffset(sample_offset) != 0;
+        return hasMatchingEvent(self.items, sample_offset, matchesOffset);
     }
 
     pub fn hasKindAtOffset(self: Events, kind: EventKind, sample_offset: usize) bool {
-        return self.countKindAtOffset(kind, sample_offset) != 0;
+        const context = KindOffset{ .kind = kind, .sample_offset = sample_offset };
+        return hasMatchingEvent(self.items, context, matchesKindOffset);
     }
 
     pub fn kindEmpty(self: Events, kind: EventKind) bool {
