@@ -11,6 +11,7 @@ const types = @import("pluginterfaces/base/types.zig");
 const plug = @import("zig-vst3-plugin-core");
 const audio_processor_algo = @import("pluginterfaces/vst/vstaudioprocessoralgo.zig");
 const events_helper = @import("pluginterfaces/vst/vsteventshelper.zig");
+const fixed_string = @import("fixed_string.zig");
 const vstspeaker = @import("pluginterfaces/vst/vstspeaker.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
@@ -412,7 +413,7 @@ pub fn getParamValueByString(
     out.* = 0;
     const index = set.indexOfId(id) orelse return types.kInvalidArgument;
     var buffer: [parsed_parameter_value_bytes]u8 = undefined;
-    const parsed_text = readAscii16Ptr(text, &buffer);
+    const parsed_text = fixed_string.readUtf16ZAsAscii(text, &buffer);
     out.* = set.parsePlain(index, parsed_text) catch return types.kResultFalse;
     return types.kResultOk;
 }
@@ -762,14 +763,6 @@ const IBStreamWriter = struct {
         return total;
     }
 };
-
-fn readAscii16Ptr(source: [*]vsttypes.TChar, buffer: []u8) []const u8 {
-    var len: usize = 0;
-    while (len < buffer.len and source[len] != 0) : (len += 1) {
-        buffer[len] = @intCast(@min(source[len], 0xff));
-    }
-    return buffer[0..len];
-}
 
 fn vstAudioBuffers(comptime Sample: type, buffer: ivstaudioprocessor.AudioBusBuffers) ?[*][*]Sample {
     return switch (Sample) {
