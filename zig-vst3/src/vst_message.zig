@@ -260,7 +260,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             entry.binary_size = size;
             @memset(&entry.binary_value, 0);
             if (size > 0) {
-                const bytes: [*]const u8 = @ptrCast(value.?);
+                const bytes: [*]const u8 = @ptrCast(value orelse return types.kInvalidArgument);
                 @memcpy(entry.binary_value[0..size], bytes[0..size]);
             }
             return types.kResultOk;

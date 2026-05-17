@@ -459,7 +459,11 @@ pub const ParameterChanges = struct {
         var result: ?ParameterChange = null;
         for (self.items) |item| {
             if (!item.isForId(id) or item.sample_offset > sample_offset) continue;
-            if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
+            if (result) |current| {
+                if (item.sample_offset >= current.sample_offset) result = item;
+            } else {
+                result = item;
+            }
         }
         return result;
     }

@@ -116,7 +116,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             }
             if (self.pos > self.boundedLen()) return types.kResultFalse;
             if (requested > 0) {
-                const output = @as([*]u8, @ptrCast(buffer.?))[0..requested];
+                const output = @as([*]u8, @ptrCast(buffer orelse return types.kInvalidArgument))[0..requested];
                 @memcpy(output, self.bytes[self.pos..][0..requested]);
             }
             self.pos += requested;
@@ -134,7 +134,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
                 return types.kResultFalse;
             }
             if (requested > 0) {
-                const input = @as([*]const u8, @ptrCast(buffer.?))[0..requested];
+                const input = @as([*]const u8, @ptrCast(buffer orelse return types.kInvalidArgument))[0..requested];
                 @memcpy(self.bytes[self.pos..][0..requested], input);
             }
             self.pos += requested;
