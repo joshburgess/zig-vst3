@@ -56,11 +56,7 @@ pub fn PluginCompatibility(comptime json: []const u8) type {
         }
 
         fn getCompatibilityJSON(_: *anyopaque, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
-            const out = stream orelse return types.kInvalidArgument;
-            var bytes_written: types.int32 = 0;
-            const result = out.vtable.write(out, @constCast(json.ptr), @intCast(json.len), &bytes_written);
-            if (result != types.kResultOk) return result;
-            return if (bytes_written == json.len) types.kResultOk else types.kResultFalse;
+            return vst_stream.writeAll(stream, json);
         }
 
         const vtable = iplugincompatibility.IPluginCompatibilityVTable{

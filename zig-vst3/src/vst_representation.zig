@@ -48,11 +48,7 @@ pub fn XmlRepresentation(comptime xml: []const u8) type {
             const self = owner(ptr);
             self.request_count +|= 1;
             self.last_info = info.*;
-            const out = stream orelse return types.kInvalidArgument;
-            var bytes_written: types.int32 = 0;
-            const result = out.vtable.write(out, @constCast(xml.ptr), @intCast(xml.len), &bytes_written);
-            if (result != types.kResultOk) return result;
-            return if (bytes_written == xml.len) types.kResultOk else types.kResultFalse;
+            return vst_stream.writeAll(stream, xml);
         }
 
         const vtable = ivstrepresentation.IXmlRepresentationControllerVTable{

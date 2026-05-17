@@ -5,6 +5,15 @@ const interface_map = @import("interface_map.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 
+pub fn writeAll(stream: ?*ibstream.IBStream, bytes: []const u8) types.tresult {
+    const out = stream orelse return types.kInvalidArgument;
+    const byte_count = std.math.cast(types.int32, bytes.len) orelse return types.kInvalidArgument;
+    var bytes_written: types.int32 = 0;
+    const result = out.vtable.write(out, @constCast(bytes.ptr), byte_count, &bytes_written);
+    if (result != types.kResultOk) return result;
+    return if (bytes_written == byte_count) types.kResultOk else types.kResultFalse;
+}
+
 pub fn FixedBufferStream(comptime capacity: usize) type {
     if (capacity == 0) @compileError("FixedBufferStream requires at least one byte of capacity");
 
@@ -240,6 +249,16 @@ test "fixed buffer stream reads writes seeks and reports size" {
     var size: types.int64 = -1;
     try std.testing.expectEqual(types.kResultOk, sizeable.vtable.getStreamSize(sizeable, &size));
     try std.testing.expectEqual(@as(types.int64, 3), size);
+}
+
+test "writeAll reports missing and short streams" {
+    const Stream = FixedBufferStream(4);
+    var stream = Stream{};
+
+    try std.testing.expectEqual(types.kInvalidArgument, writeAll(null, "abc"));
+    try std.testing.expectEqual(types.kResultOk, writeAll(stream.asStream(), "abcd"));
+    try std.testing.expectEqualStrings("abcd", stream.data());
+    try std.testing.expectEqual(types.kResultFalse, writeAll(stream.asStream(), "x"));
 }
 
 test "fixed buffer stream round-trips generated chunked IO" {
