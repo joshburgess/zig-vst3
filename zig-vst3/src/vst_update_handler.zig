@@ -160,11 +160,11 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
         fn deferUpdates(ptr: *anyopaque, changed: ?*anyopaque, message: types.int32) callconv(.c) types.tresult {
             var matched = false;
             for (&owner(ptr).entries) |*entry| {
-                if (entry.dependent != null and entry.changed == changed) {
-                    entry.deferred = true;
-                    entry.deferred_message = message;
-                    matched = true;
-                }
+                if (entry.dependent == null) continue;
+                if (entry.changed != changed) continue;
+                entry.deferred = true;
+                entry.deferred_message = message;
+                matched = true;
             }
             return if (matched) types.kResultOk else types.kResultFalse;
         }

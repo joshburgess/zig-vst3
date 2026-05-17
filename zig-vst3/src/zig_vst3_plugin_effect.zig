@@ -626,17 +626,23 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromConnectionPoint(ptr);
-            if (peer == null) {
-                return types.kInvalidArgument;
-            }
+            const connection_peer = peer orelse return types.kInvalidArgument;
             releaseConnectionPeer(&self.connected_peer);
-            self.connected_peer = retainConnectionPeer(peer);
+            self.connected_peer = retainConnectionPeer(connection_peer);
             return types.kResultOk;
         }
 
         fn disconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromConnectionPoint(ptr);
-            if (peer == null or self.connected_peer == null or self.connected_peer == peer) {
+            const connection_peer = peer orelse {
+                releaseConnectionPeer(&self.connected_peer);
+                return types.kResultOk;
+            };
+            const connected_peer = self.connected_peer orelse {
+                releaseConnectionPeer(&self.connected_peer);
+                return types.kResultOk;
+            };
+            if (connected_peer == connection_peer) {
                 releaseConnectionPeer(&self.connected_peer);
                 return types.kResultOk;
             }
@@ -1322,10 +1328,9 @@ fn retainComponentHandler(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentH
     return base;
 }
 
-fn retainConnectionPeer(peer: ?*ivstmessage.IConnectionPoint) ?*ivstmessage.IConnectionPoint {
-    const value = peer orelse return null;
-    _ = value.vtable.addRef(value);
-    return value;
+fn retainConnectionPeer(peer: *ivstmessage.IConnectionPoint) *ivstmessage.IConnectionPoint {
+    _ = peer.vtable.addRef(peer);
+    return peer;
 }
 
 fn releaseConnectionPeer(peer: *?*ivstmessage.IConnectionPoint) void {
@@ -1705,17 +1710,23 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn componentConnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
-            if (peer == null) {
-                return types.kInvalidArgument;
-            }
+            const connection_peer = peer orelse return types.kInvalidArgument;
             releaseConnectionPeer(&self.connected_peer);
-            self.connected_peer = retainConnectionPeer(peer);
+            self.connected_peer = retainConnectionPeer(connection_peer);
             return types.kResultOk;
         }
 
         fn componentDisconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
-            if (peer == null or self.connected_peer == null or self.connected_peer == peer) {
+            const connection_peer = peer orelse {
+                releaseConnectionPeer(&self.connected_peer);
+                return types.kResultOk;
+            };
+            const connected_peer = self.connected_peer orelse {
+                releaseConnectionPeer(&self.connected_peer);
+                return types.kResultOk;
+            };
+            if (connected_peer == connection_peer) {
                 releaseConnectionPeer(&self.connected_peer);
                 return types.kResultOk;
             }
