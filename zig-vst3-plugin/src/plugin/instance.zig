@@ -1212,13 +1212,17 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return (try self.applyProgramCount(list_id, program_index)) != null;
         }
 
+        fn validateProgramParameter(self: *const Self, parameter: units_api.ProgramParameter) !void {
+            if (!common.isNormalized(parameter.normalized)) {
+                return error.ProgramParameterOutsideNormalizedRange;
+            }
+            if (self.parameterIndexOfId(parameter.parameter_id) == null) return error.UnknownProgramParameter;
+        }
+
         pub fn applyProgramCount(self: *Self, list_id: i32, program_index: usize) !?usize {
             const item = self.program(list_id, program_index) orelse return null;
             for (item.parameters) |parameter| {
-                if (!common.isNormalized(parameter.normalized)) {
-                    return error.ProgramParameterOutsideNormalizedRange;
-                }
-                if (self.parameterIndexOfId(parameter.parameter_id) == null) return error.UnknownProgramParameter;
+                try self.validateProgramParameter(parameter);
             }
             var changed_count: usize = 0;
             for (item.parameters) |parameter| {
