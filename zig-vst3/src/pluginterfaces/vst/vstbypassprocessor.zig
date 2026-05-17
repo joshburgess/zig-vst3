@@ -177,7 +177,13 @@ pub fn Delay(comptime T: type) type {
             var silent_out = false;
             if (self.hasDelay() and src != null) {
                 const buffer_size = self.getBufferSamples();
-                _ = delay(T, num_samples, src.?, dst, self.buffer.ptr, buffer_size, self.in_pos, self.out_pos);
+                if (!delay(T, num_samples, src.?, dst, self.buffer.ptr, buffer_size, self.in_pos, self.out_pos)) {
+                    var index: base.int32 = 0;
+                    while (index < num_samples) : (index += 1) {
+                        dst[@intCast(index)] = 0;
+                    }
+                    return true;
+                }
                 self.in_pos = advancedRingPosition(self.in_pos, num_samples, buffer_size);
                 self.out_pos = advancedRingPosition(self.out_pos, num_samples, buffer_size);
             } else {
@@ -267,6 +273,20 @@ test "delay processor wraps ring positions for oversized blocks" {
     try std.testing.expect(!silent);
     try std.testing.expectEqual(@as(base.int32, 2), processor_delay.in_pos);
     try std.testing.expectEqual(@as(base.int32, 0), processor_delay.out_pos);
+}
+
+test "delay processor clears output when ring state is invalid" {
+    var input = [_]f32{ 1, 2 };
+    var output = [_]f32{ 9, 9 };
+    var storage = [_]f32{0} ** 4;
+    var processor_delay = Delay(f32).init(&storage, 2, 2);
+    processor_delay.in_pos = -1;
+
+    const silent = processor_delay.process(&input, &output, input.len, false);
+    try std.testing.expect(silent);
+    try std.testing.expectEqualSlices(f32, &.{ 0, 0 }, &output);
+    try std.testing.expectEqual(@as(base.int32, -1), processor_delay.in_pos);
+    try std.testing.expectEqual(@as(base.int32, 2), processor_delay.out_pos);
 }
 
 test "bypass helpers reject invalid sizes and positions" {
