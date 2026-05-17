@@ -197,15 +197,14 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return types.kResultOk;
         }
 
+        fn failInt(out: *types.int64, result: types.tresult) types.tresult {
+            out.* = 0;
+            return result;
+        }
+
         fn getInt(ptr: *anyopaque, id: ivstattributes.AttrID, out: *types.int64) callconv(.c) types.tresult {
-            const entry = owner(ptr).findEntry(id) orelse {
-                out.* = 0;
-                return types.kResultFalse;
-            };
-            if (entry.kind != .int) {
-                out.* = 0;
-                return types.kInvalidArgument;
-            }
+            const entry = owner(ptr).findEntry(id) orelse return failInt(out, types.kResultFalse);
+            if (entry.kind != .int) return failInt(out, types.kInvalidArgument);
             out.* = entry.int_value;
             return types.kResultOk;
         }
@@ -217,15 +216,14 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return types.kResultOk;
         }
 
+        fn failFloat(out: *f64, result: types.tresult) types.tresult {
+            out.* = 0;
+            return result;
+        }
+
         fn getFloat(ptr: *anyopaque, id: ivstattributes.AttrID, out: *f64) callconv(.c) types.tresult {
-            const entry = owner(ptr).findEntry(id) orelse {
-                out.* = 0;
-                return types.kResultFalse;
-            };
-            if (entry.kind != .float) {
-                out.* = 0;
-                return types.kInvalidArgument;
-            }
+            const entry = owner(ptr).findEntry(id) orelse return failFloat(out, types.kResultFalse);
+            if (entry.kind != .float) return failFloat(out, types.kInvalidArgument);
             out.* = entry.float_value;
             return types.kResultOk;
         }
@@ -268,17 +266,15 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return types.kResultOk;
         }
 
+        fn failBinary(out: *?*const anyopaque, size: *types.uint32, result: types.tresult) types.tresult {
+            out.* = null;
+            size.* = 0;
+            return result;
+        }
+
         fn getBinary(ptr: *anyopaque, id: ivstattributes.AttrID, out: *?*const anyopaque, size: *types.uint32) callconv(.c) types.tresult {
-            const entry = owner(ptr).findEntry(id) orelse {
-                out.* = null;
-                size.* = 0;
-                return types.kResultFalse;
-            };
-            if (entry.kind != .binary) {
-                out.* = null;
-                size.* = 0;
-                return types.kInvalidArgument;
-            }
+            const entry = owner(ptr).findEntry(id) orelse return failBinary(out, size, types.kResultFalse);
+            if (entry.kind != .binary) return failBinary(out, size, types.kInvalidArgument);
             out.* = &entry.binary_value;
             size.* = entry.binary_size;
             return types.kResultOk;
