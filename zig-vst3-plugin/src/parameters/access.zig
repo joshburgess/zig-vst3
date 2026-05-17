@@ -66,9 +66,7 @@ pub fn ParameterValues(comptime Params: type) type {
             if (index >= Set.count) return null;
             if (!std.math.isFinite(value)) return null;
             const normalized = clampNormalized(value);
-            const changed: usize = if (self.values[index].load() != normalized) 1 else 0;
-            self.values[index].store(normalized);
-            return changed;
+            return self.storeNormalizedAt(index, normalized);
         }
 
         pub fn storeIndexCount(self: *Self, index: usize, value: f64) ?usize {
@@ -99,9 +97,7 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn copyFromCount(self: *Self, source: *const Self) usize {
             var changed: usize = 0;
             inline for (0..Set.count) |index| {
-                const value = source.values[index].load();
-                if (self.values[index].load() != value) changed +|= 1;
-                self.values[index].store(value);
+                changed +|= self.storeNormalizedAt(index, source.values[index].load());
             }
             return changed;
         }
@@ -113,9 +109,7 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn resetToDefaultsCount(self: *Self, set: *const Set) usize {
             var changed: usize = 0;
             inline for (0..Set.count) |index| {
-                const default = set.defaultNormalizedAt(index);
-                if (self.values[index].load() != default) changed +|= 1;
-                self.values[index].store(default);
+                changed +|= self.storeNormalizedAt(index, set.defaultNormalizedAt(index));
             }
             return changed;
         }
@@ -130,9 +124,7 @@ pub fn ParameterValues(comptime Params: type) type {
 
         pub fn resetToDefaultCount(self: *Self, set: *const Set, index: usize) ?usize {
             const default = set.defaultNormalized(index) orelse return null;
-            const changed: usize = if (self.values[index].load() != default) 1 else 0;
-            self.values[index].store(default);
-            return changed;
+            return self.storeNormalizedAt(index, default);
         }
 
         pub fn resetToDefaultIndexCount(self: *Self, set: *const Set, index: usize) ?usize {
@@ -310,6 +302,12 @@ pub fn ParameterValues(comptime Params: type) type {
 
         pub fn applyChanges(self: *Self, set: *const Set, changes: process.ParameterChanges) void {
             _ = self.applyChangesCount(set, changes);
+        }
+
+        fn storeNormalizedAt(self: *Self, index: usize, normalized: f64) usize {
+            const changed: usize = if (self.values[index].load() != normalized) 1 else 0;
+            self.values[index].store(normalized);
+            return changed;
         }
 
         pub fn view(self: *const Self, set: *const Set) ParameterView(Params) {
