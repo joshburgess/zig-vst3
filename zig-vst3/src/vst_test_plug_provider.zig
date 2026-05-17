@@ -147,8 +147,11 @@ pub fn TestPlugProvider(comptime Config: type) type {
         }
 
         fn componentUidFor(out: *anyopaque) types.tresult {
-            if (!@hasDecl(Config, "component_uid")) return types.kResultFalse;
             const bytes: *[16]u8 = @ptrCast(@alignCast(out));
+            if (!@hasDecl(Config, "component_uid")) {
+                bytes.* = [_]u8{0} ** 16;
+                return types.kResultFalse;
+            }
             bytes.* = Config.component_uid;
             return types.kResultOk;
         }
@@ -250,7 +253,7 @@ test "test plug provider reports missing component UID deterministically" {
     var out_uid: tuid.TUID = [_]u8{0xAA} ** 16;
 
     try std.testing.expectEqual(types.kResultFalse, provider.asProvider().vtable.getComponentUID(provider.asProvider(), &out_uid));
-    try std.testing.expectEqualSlices(u8, &([_]u8{0xAA} ** 16), &out_uid);
+    try std.testing.expectEqualSlices(u8, &([_]u8{0} ** 16), &out_uid);
 }
 
 test "test plug provider exposes provider2 and factory" {
