@@ -145,11 +145,13 @@ pub const StereoAudioBuses = struct {
         if (num_inputs != expected_inputs or num_outputs != expected_outputs) {
             return types.kResultFalse;
         }
-        if (config.audio_input and (inputs == null or inputs.?[0] != stereo_arrangement)) {
-            return types.kResultFalse;
+        if (config.audio_input) {
+            const input_arrangements = inputs orelse return types.kResultFalse;
+            if (input_arrangements[0] != stereo_arrangement) return types.kResultFalse;
         }
-        if (config.audio_output and (outputs == null or outputs.?[0] != stereo_arrangement)) {
-            return types.kResultFalse;
+        if (config.audio_output) {
+            const output_arrangements = outputs orelse return types.kResultFalse;
+            if (output_arrangements[0] != stereo_arrangement) return types.kResultFalse;
         }
         return types.kResultOk;
     }
@@ -318,16 +320,44 @@ pub fn fillParameterInfo(
         out.* = .{};
         return types.kInvalidArgument;
     };
+    const id = set.id(parameter_index) orelse {
+        out.* = .{};
+        return types.kInvalidArgument;
+    };
+    const step_count = set.stepCount(parameter_index) orelse {
+        out.* = .{};
+        return types.kInvalidArgument;
+    };
+    const default_normalized = set.defaultNormalized(parameter_index) orelse {
+        out.* = .{};
+        return types.kInvalidArgument;
+    };
+    const unit_id = set.unitId(parameter_index) orelse {
+        out.* = .{};
+        return types.kInvalidArgument;
+    };
+    const name = set.name(parameter_index) orelse {
+        out.* = .{};
+        return types.kInvalidArgument;
+    };
+    const short_name = set.shortName(parameter_index) orelse {
+        out.* = .{};
+        return types.kInvalidArgument;
+    };
+    const units = set.units(parameter_index) orelse {
+        out.* = .{};
+        return types.kInvalidArgument;
+    };
     out.* = .{
-        .id = set.id(parameter_index).?,
-        .stepCount = set.stepCount(parameter_index).?,
-        .defaultNormalizedValue = set.defaultNormalized(parameter_index).?,
-        .unitId = set.unitId(parameter_index).?,
+        .id = id,
+        .stepCount = step_count,
+        .defaultNormalizedValue = default_normalized,
+        .unitId = unit_id,
         .flags = parameterInfoFlags(Params, set, parameter_index),
     };
-    string128.copy(&out.title, set.name(parameter_index).?);
-    string128.copy(&out.shortTitle, set.shortName(parameter_index).?);
-    string128.copy(&out.units, set.units(parameter_index).?);
+    string128.copy(&out.title, name);
+    string128.copy(&out.shortTitle, short_name);
+    string128.copy(&out.units, units);
     return types.kResultOk;
 }
 
@@ -522,16 +552,18 @@ pub fn makeMainAudioProcessContextConfigured(
     bus_config: StereoAudioBuses.Config,
 ) !plug.process.ProcessContext(Sample) {
     const frame_count = try validFrameCount(data);
-    if (bus_config.audio_input and (data.numInputs <= 0 or data.inputs == null)) {
-        return error.MissingMainAudioBus;
-    }
-    if (bus_config.audio_output and (data.numOutputs <= 0 or data.outputs == null)) {
-        return error.MissingMainAudioBus;
-    }
     var input_channels: [max_audio_channels][]const Sample = undefined;
     var output_channels: [max_audio_channels][]Sample = undefined;
-    const input_count = if (bus_config.audio_input) try fillInputChannels(Sample, data.inputs.?[0], frame_count, &input_channels) else 0;
-    const output_count = if (bus_config.audio_output) try fillOutputChannels(Sample, data.outputs.?[0], frame_count, &output_channels) else 0;
+    const input_count = if (bus_config.audio_input) input: {
+        if (data.numInputs <= 0) return error.MissingMainAudioBus;
+        const inputs = data.inputs orelse return error.MissingMainAudioBus;
+        break :input try fillInputChannels(Sample, inputs[0], frame_count, &input_channels);
+    } else 0;
+    const output_count = if (bus_config.audio_output) output: {
+        if (data.numOutputs <= 0) return error.MissingMainAudioBus;
+        const outputs = data.outputs orelse return error.MissingMainAudioBus;
+        break :output try fillOutputChannels(Sample, outputs[0], frame_count, &output_channels);
+    } else 0;
     if ((bus_config.audio_input and input_count == 0) or (bus_config.audio_output and output_count == 0)) {
         return error.MissingMainAudioChannels;
     }
