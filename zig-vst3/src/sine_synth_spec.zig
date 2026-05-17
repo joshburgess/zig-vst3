@@ -21,7 +21,7 @@ const SineSynthPlugin = struct {
 
 pub const Spec = plug.plugin.PluginSpec(SineSynthPlugin);
 pub const parameter_set = Spec.ParameterSet.init(.{});
-pub const level_param_index = parameter_set.indexOfId(level_param_id).?;
-pub const default_level = parameter_set.defaultNormalized(level_param_index).?;
+pub const level_param_index = parameter_set.indexOfId(level_param_id) orelse @compileError("Level parameter ID is missing from the parameter set");
+pub const default_level = parameter_set.defaultNormalized(level_param_index) orelse @compileError("Level parameter default is unavailable");
 pub const component_class_name = Spec.component_class_name;
 pub const controller_class_name = Spec.controller_class_name;

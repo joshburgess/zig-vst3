@@ -13,6 +13,6 @@ const BypassPlugin = struct {
 
 pub const Spec = plug.plugin.PluginSpec(BypassPlugin);
 pub const parameter_set = Spec.ParameterSet.init(.{});
-pub const bypass_param_index = parameter_set.indexOfId(bypass_param_id).?;
+pub const bypass_param_index = parameter_set.indexOfId(bypass_param_id) orelse @compileError("Bypass parameter ID is missing from the parameter set");
 pub const component_class_name = Spec.component_class_name;
 pub const controller_class_name = Spec.controller_class_name;

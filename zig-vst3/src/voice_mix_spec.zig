@@ -13,6 +13,6 @@ const VoiceMixPlugin = struct {
 
 pub const Spec = plug.plugin.PluginSpec(VoiceMixPlugin);
 pub const parameter_set = Spec.ParameterSet.init(.{});
-pub const voices_param_index = parameter_set.indexOfId(voices_param_id).?;
+pub const voices_param_index = parameter_set.indexOfId(voices_param_id) orelse @compileError("Voices parameter ID is missing from the parameter set");
 pub const component_class_name = Spec.component_class_name;
 pub const controller_class_name = Spec.controller_class_name;
