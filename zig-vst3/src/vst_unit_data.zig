@@ -141,12 +141,17 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return types.kResultOk;
         }
 
+        fn failProgramString(out: [*]vsttypes.TChar, result: types.tresult) types.tresult {
+            string128.clearPtr(out);
+            return result;
+        }
+
         fn getProgramName(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = owner(ptr);
             string128.clearPtr(out);
             if (@hasDecl(Config, "getProgramName")) {
                 const result = Config.getProgramName(self, list_id, program_index, out);
-                if (result != types.kResultOk) string128.clearPtr(out);
+                if (result != types.kResultOk) return failProgramString(out, result);
                 return result;
             }
             return types.kInvalidArgument;
@@ -157,7 +162,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             string128.clearPtr(out);
             if (@hasDecl(Config, "getProgramInfo")) {
                 const result = Config.getProgramInfo(self, list_id, program_index, attribute_id, out);
-                if (result != types.kResultOk) string128.clearPtr(out);
+                if (result != types.kResultOk) return failProgramString(out, result);
                 return result;
             }
             return types.kInvalidArgument;
@@ -174,7 +179,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             string128.clearPtr(out);
             if (@hasDecl(Config, "getProgramPitchName")) {
                 const result = Config.getProgramPitchName(self, list_id, program_index, pitch, out);
-                if (result != types.kResultOk) string128.clearPtr(out);
+                if (result != types.kResultOk) return failProgramString(out, result);
                 return result;
             }
             return types.kInvalidArgument;
@@ -195,12 +200,17 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return types.kInvalidArgument;
         }
 
+        fn failUnitByBus(out: *vsttypes.UnitID, result: types.tresult) types.tresult {
+            out.* = ivstunits.kRootUnitId;
+            return result;
+        }
+
         fn getUnitByBus(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, channel: types.int32, out: *vsttypes.UnitID) callconv(.c) types.tresult {
             const self = owner(ptr);
             out.* = ivstunits.kRootUnitId;
             if (@hasDecl(Config, "getUnitByBus")) {
                 const result = Config.getUnitByBus(self, media_type, direction, bus_index, channel, out);
-                if (result != types.kResultOk) out.* = ivstunits.kRootUnitId;
+                if (result != types.kResultOk) return failUnitByBus(out, result);
                 return result;
             }
             return types.kResultOk;
