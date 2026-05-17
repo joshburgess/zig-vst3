@@ -81,7 +81,11 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
 
         fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = owner(ptr);
-            const point_index = boundedIndex(index, self.safePointCount()) orelse return types.kInvalidArgument;
+            const point_index = boundedIndex(index, self.safePointCount()) orelse {
+                sample_offset.* = 0;
+                value.* = 0;
+                return types.kInvalidArgument;
+            };
             const point = self.points[point_index];
             sample_offset.* = point.sample_offset;
             value.* = point.value;
@@ -227,9 +231,13 @@ test "parameter changes expose queued points" {
     sample_offset = 99;
     value = 99;
     try std.testing.expectEqual(types.kInvalidArgument, queue_iface.vtable.getPoint(queue_iface, -1, &sample_offset, &value));
-    try std.testing.expectEqual(@as(types.int32, 99), sample_offset);
-    try std.testing.expectEqual(@as(vsttypes.ParamValue, 99), value);
+    try std.testing.expectEqual(@as(types.int32, 0), sample_offset);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0), value);
+    sample_offset = 99;
+    value = 99;
     try std.testing.expectEqual(types.kInvalidArgument, queue_iface.vtable.getPoint(queue_iface, 2, &sample_offset, &value));
+    try std.testing.expectEqual(@as(types.int32, 0), sample_offset);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0), value);
     try std.testing.expect(iface.vtable.getParameterData(iface, -1) == null);
     try std.testing.expect(iface.vtable.getParameterData(iface, 1) == null);
 }
@@ -311,6 +319,8 @@ test "parameter changes clamp corrupted counts" {
     queue.point_count = -1;
     try std.testing.expectEqual(@as(types.int32, 0), queue_iface.vtable.getPointCount(queue_iface));
     try std.testing.expectEqual(types.kInvalidArgument, queue_iface.vtable.getPoint(queue_iface, 0, &sample_offset, &value));
+    try std.testing.expectEqual(@as(types.int32, 0), sample_offset);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0), value);
     try std.testing.expectEqual(types.kResultFalse, queue_iface.vtable.addPoint(queue_iface, 0, 0.5, &point_index));
     try std.testing.expectEqual(@as(types.int32, -1), point_index);
 
