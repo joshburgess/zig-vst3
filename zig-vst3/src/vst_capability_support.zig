@@ -9,6 +9,7 @@ const ivstpluginterfacesupport = @import("pluginterfaces/vst/ivstpluginterfacesu
 const ivstprefetchablesupport = @import("pluginterfaces/vst/ivstprefetchablesupport.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_index = @import("vst_index.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
@@ -28,7 +29,7 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
         }
 
         fn safeCount(self: *const Self) usize {
-            return @min(self.count, max_iids);
+            return vst_index.clampedCountU32(self.count, max_iids);
         }
 
         pub fn addSupported(self: *Self, iid: *const tuid.TUID) types.tresult {
@@ -219,11 +220,11 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
         }
 
         fn safeMidi2Count(self: *const Self) usize {
-            return @min(self.midi2_count, max_midi2);
+            return vst_index.clampedCountU32(self.midi2_count, max_midi2);
         }
 
         fn safeMidi1Count(self: *const Self) usize {
-            return @min(self.midi1_count, max_midi1);
+            return vst_index.clampedCountU32(self.midi1_count, max_midi1);
         }
 
         pub fn addMidi2(self: *Self, assignment: ivstmidimapping2.Midi2ControllerParamIDAssignment) types.tresult {

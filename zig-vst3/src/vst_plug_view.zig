@@ -4,6 +4,7 @@ const interface_map = @import("interface_map.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_index = @import("vst_index.zig");
 
 pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
     if (max_platforms == 0) @compileError("PlugView requires at least one platform slot");
@@ -36,7 +37,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         }
 
         fn safePlatformCount(self: *const Self) usize {
-            return @min(self.platform_count, max_platforms);
+            return vst_index.clampedCountU32(self.platform_count, max_platforms);
         }
 
         pub fn addPlatform(self: *Self, platform: types.FIDString) types.tresult {

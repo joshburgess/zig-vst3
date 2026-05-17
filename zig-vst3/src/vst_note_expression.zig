@@ -27,11 +27,11 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
         last_channel: types.int16 = 0,
 
         fn safeExpressionCount(self: *const Self) usize {
-            return @min(self.expression_count, max_expressions);
+            return vst_index.clampedCountU32(self.expression_count, max_expressions);
         }
 
         fn safeKeyswitchCount(self: *const Self) usize {
-            return @min(self.keyswitch_count, max_keyswitches);
+            return vst_index.clampedCountU32(self.keyswitch_count, max_keyswitches);
         }
 
         pub fn asNoteExpression(self: *Self) *ivstnoteexpression.INoteExpressionController {
