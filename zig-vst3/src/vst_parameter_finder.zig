@@ -8,6 +8,11 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
+fn failParamId(out: *vsttypes.ParamID) types.tresult {
+    out.* = vsttypes.kNoParamId;
+    return types.kResultFalse;
+}
+
 pub fn ParameterFinder(comptime Config: type) type {
     return extern struct {
         const Self = @This();
@@ -47,8 +52,7 @@ pub fn ParameterFinder(comptime Config: type) type {
                     return types.kResultOk;
                 }
             }
-            out.* = vsttypes.kNoParamId;
-            return types.kResultFalse;
+            return failParamId(out);
         }
 
         const vtable = ivstplugview.IParameterFinderVTable{
@@ -99,8 +103,7 @@ pub fn ParameterFunctionName(comptime Config: type) type {
                     return types.kResultOk;
                 }
             }
-            out.* = vsttypes.kNoParamId;
-            return types.kResultFalse;
+            return failParamId(out);
         }
 
         const vtable = ivstparameterfunctionname.IParameterFunctionNameVTable{
@@ -151,8 +154,7 @@ pub fn RemapParamID(comptime Config: type) type {
                     return types.kResultOk;
                 }
             }
-            out.* = vsttypes.kNoParamId;
-            return types.kResultFalse;
+            return failParamId(out);
         }
 
         const vtable = ivstremapparamid.IRemapParamIDVTable{
