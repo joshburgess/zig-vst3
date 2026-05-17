@@ -817,8 +817,7 @@ pub fn parameterOptionNormalized(param: anytype, option_index: usize) ?f64 {
     return null;
 }
 
-pub fn parameterDescriptorError(param: anytype) ?anyerror {
-    const Param = @TypeOf(param);
+fn validateParameterMetadata(param: anytype) ?anyerror {
     if (param.name.len == 0) return error.EmptyParameterName;
     if (shared.containsNul(param.name) or
         shared.containsNul(param.short_name) or
@@ -826,13 +825,26 @@ pub fn parameterDescriptorError(param: anytype) ?anyerror {
     {
         return error.InvalidParameterMetadata;
     }
-    if (Param == FloatParam) {
-        if (!shared.isValidRange(param.min, param.max)) return error.InvalidParameterRange;
-        if (!shared.isFiniteInRange(f64, param.default, param.min, param.max)) return error.InvalidParameterDefault;
-    } else if (Param == IntParam) {
-        if (param.max <= param.min) return error.InvalidParameterRange;
-        if (param.default < param.min or param.default > param.max) return error.InvalidParameterDefault;
-    }
+    return null;
+}
+
+fn validateFloatParameterRange(param: FloatParam) ?anyerror {
+    if (!shared.isValidRange(param.min, param.max)) return error.InvalidParameterRange;
+    if (!shared.isFiniteInRange(f64, param.default, param.min, param.max)) return error.InvalidParameterDefault;
+    return null;
+}
+
+fn validateIntParameterRange(param: IntParam) ?anyerror {
+    if (param.max <= param.min) return error.InvalidParameterRange;
+    if (param.default < param.min or param.default > param.max) return error.InvalidParameterDefault;
+    return null;
+}
+
+pub fn parameterDescriptorError(param: anytype) ?anyerror {
+    const Param = @TypeOf(param);
+    if (validateParameterMetadata(param)) |err| return err;
+    if (Param == FloatParam) return validateFloatParameterRange(param);
+    if (Param == IntParam) return validateIntParameterRange(param);
     return null;
 }
 

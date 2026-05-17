@@ -1261,18 +1261,46 @@ pub fn UnitSet(comptime config: Config) type {
             return self.rootUnit().name;
         }
 
+        fn validateRequiredUnitName(name: []const u8) !void {
+            if (name.len == 0) return error.EmptyUnitName;
+            if (common.containsNul(name)) return error.InvalidUnitMetadata;
+        }
+
+        fn validateRequiredProgramListName(name: []const u8) !void {
+            if (name.len == 0) return error.EmptyProgramListName;
+            if (common.containsNul(name)) return error.InvalidProgramListMetadata;
+        }
+
+        fn validateRequiredProgramName(name: []const u8) !void {
+            if (name.len == 0) return error.EmptyProgramName;
+            if (common.containsNul(name)) return error.InvalidProgramMetadata;
+        }
+
+        fn validateRequiredProgramInfoKey(key: []const u8) !void {
+            if (key.len == 0) return error.EmptyProgramInfoKey;
+            if (common.containsNul(key)) return error.InvalidProgramInfoMetadata;
+        }
+
+        fn validateProgramInfoValue(value: []const u8) !void {
+            if (common.containsNul(value)) return error.InvalidProgramInfoMetadata;
+        }
+
+        fn validateProgramParameterValue(parameter: ProgramParameter) !void {
+            if (!common.isNormalized(parameter.normalized)) {
+                return error.ProgramParameterOutsideNormalizedRange;
+            }
+        }
+
         pub fn validateUnits(self: Self) !void {
             if (config.units.len == 0) return error.MissingRootUnit;
             if (self.duplicateUnitId() != null) return error.DuplicateUnitId;
             if (self.duplicateUnitName() != null) return error.DuplicateUnitName;
             const root = self.unitById(root_unit_id) orelse return error.MissingRootUnit;
-            if (root.name.len == 0) return error.EmptyUnitName;
-            if (common.containsNul(root.name)) return error.InvalidUnitMetadata;
+            try validateRequiredUnitName(root.name);
             if (root.parent_id != no_parent_unit_id) return error.InvalidUnitParent;
             for (config.units) |item| {
                 if (item.id == no_parent_unit_id) return error.ReservedUnitId;
-                if (item.name.len == 0) return error.EmptyUnitName;
-                if (common.containsNul(item.name)) return error.InvalidUnitMetadata;
+                try validateRequiredUnitName(item.name);
                 if (item.id != root_unit_id and self.unitById(item.parent_id) == null) return error.InvalidUnitParent;
                 if (item.program_list_id != no_program_list_id and self.programListById(item.program_list_id) == null) {
                     return error.InvalidUnitProgramList;
@@ -1286,22 +1314,18 @@ pub fn UnitSet(comptime config: Config) type {
             if (self.duplicateProgramListName() != null) return error.DuplicateProgramListName;
             for (config.program_lists) |list| {
                 if (list.id == no_program_list_id) return error.ReservedProgramListId;
-                if (list.name.len == 0) return error.EmptyProgramListName;
-                if (common.containsNul(list.name)) return error.InvalidProgramListMetadata;
+                try validateRequiredProgramListName(list.name);
                 if (self.duplicateProgramName(list.id) != null) return error.DuplicateProgramName;
                 for (list.programs, 0..) |item, item_index| {
-                    if (item.name.len == 0) return error.EmptyProgramName;
-                    if (common.containsNul(item.name)) return error.InvalidProgramMetadata;
+                    try validateRequiredProgramName(item.name);
                     if (self.duplicateProgramParameterId(list.id, item_index) != null) return error.DuplicateProgramParameter;
                     if (self.duplicateProgramInfoKey(list.id, item_index) != null) return error.DuplicateProgramInfoKey;
                     for (item.parameters) |parameter| {
-                        if (!common.isNormalized(parameter.normalized)) {
-                            return error.ProgramParameterOutsideNormalizedRange;
-                        }
+                        try validateProgramParameterValue(parameter);
                     }
                     for (item.info) |info| {
-                        if (info.key.len == 0) return error.EmptyProgramInfoKey;
-                        if (common.containsNul(info.key) or common.containsNul(info.value)) return error.InvalidProgramInfoMetadata;
+                        try validateRequiredProgramInfoKey(info.key);
+                        try validateProgramInfoValue(info.value);
                     }
                 }
             }
