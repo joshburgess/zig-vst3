@@ -724,7 +724,10 @@ pub const Event = struct {
                 try validateUnitEventValue(self.value);
             },
             .note_expression_value => try validateUnitEventValue(self.value),
-            .note_expression_int, .note_expression_text, .data, .other => {},
+            .data => {
+                if (self.data.len > max_data_event_bytes) return error.DataEventTooLarge;
+            },
+            .note_expression_int, .note_expression_text, .other => {},
         }
     }
 };
@@ -2121,6 +2124,21 @@ test "events reject invalid MIDI metadata" {
     try std.testing.expectError(error.InvalidEventBusIndex, Events.init(&bad_bus, 4));
 }
 
+test "events reject oversized data payloads" {
+    const max_payload = [_]u8{0} ** max_data_event_bytes;
+    const max_data = [_]Event{
+        Event.dataEvent(0, 1, &max_payload),
+    };
+    const oversized_payload = [_]u8{0} ** (max_data_event_bytes + 1);
+    const oversized_data = [_]Event{
+        Event.dataEvent(0, 1, &oversized_payload),
+    };
+
+    _ = try Events.init(&max_data, 4);
+    try std.testing.expectError(error.DataEventTooLarge, oversized_data[0].validate(4));
+    try std.testing.expectError(error.DataEventTooLarge, Events.init(&oversized_data, 4));
+}
+
 test "events validate generated boundary cases" {
     const valid_offsets = [_]usize{ 0, 1, 3 };
     for (valid_offsets) |offset| {
@@ -2544,6 +2562,13 @@ test "event writer appends event views atomically" {
 
     const invalid = [_]Event{Event.midiCc(0, 0, 1, 2.0)};
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, outside_writer.appendAllCount(.{ .items = &invalid }));
+    try std.testing.expectEqual(@as(usize, 0), outside_writer.eventCount());
+
+    const oversized_payload = [_]u8{0} ** (max_data_event_bytes + 1);
+    const oversized_data = [_]Event{
+        Event.dataEvent(0, 1, &oversized_payload),
+    };
+    try std.testing.expectError(error.DataEventTooLarge, outside_writer.appendAllCount(.{ .items = &oversized_data }));
     try std.testing.expectEqual(@as(usize, 0), outside_writer.eventCount());
 }
 
