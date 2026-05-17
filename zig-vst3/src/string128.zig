@@ -3,6 +3,7 @@ const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 pub const code_units = @typeInfo(vsttypes.String128).array.len;
 pub const payload_units = code_units - 1;
+pub const zero: vsttypes.String128 = [_]vsttypes.TChar{0} ** code_units;
 
 pub fn clear(dest: *vsttypes.String128) void {
     @memset(dest, 0);
@@ -14,7 +15,7 @@ pub fn clearPtr(dest: [*]vsttypes.TChar) void {
 
 pub fn copy(dest: *vsttypes.String128, source: []const u8) void {
     clear(dest);
-    const len = @min(source.len, dest.len - 1);
+    const len = @min(source.len, payload_units);
     for (source[0..len], 0..) |char, index| {
         dest[index] = char;
     }
@@ -42,7 +43,7 @@ test "String128 copies zero-fill and truncate ASCII text" {
     }
 
     clear(&value);
-    try std.testing.expectEqualSlices(vsttypes.TChar, &([_]vsttypes.TChar{0} ** code_units), &value);
+    try std.testing.expectEqualSlices(vsttypes.TChar, &zero, &value);
 }
 
 test "String128 pointer copies zero-fill and truncate ASCII text" {
@@ -59,5 +60,5 @@ test "String128 pointer copies zero-fill and truncate ASCII text" {
     }
 
     clearPtr(&value);
-    try std.testing.expectEqualSlices(vsttypes.TChar, &([_]vsttypes.TChar{0} ** code_units), &value);
+    try std.testing.expectEqualSlices(vsttypes.TChar, &zero, &value);
 }

@@ -527,15 +527,15 @@ test "unit info delegates optional callbacks and supports query interface" {
     var info = Info{};
     const iface = info.asInterface();
 
-    var name: vsttypes.String128 = [_]vsttypes.TChar{0} ** string128.code_units;
+    var name: vsttypes.String128 = string128.zero;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramName(iface, 1, 2, &name));
     try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Init")[0..4], std.mem.sliceTo(&name, 0));
 
-    var program_info: vsttypes.String128 = [_]vsttypes.TChar{0} ** string128.code_units;
+    var program_info: vsttypes.String128 = string128.zero;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramInfo(iface, 1, 2, "category", &program_info));
     try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Lead")[0..4], std.mem.sliceTo(&program_info, 0));
 
-    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{0} ** string128.code_units;
+    var pitch_name: vsttypes.String128 = string128.zero;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.hasProgramPitchNames(iface, 1, 2));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.hasProgramPitchNames(iface, 1, 3));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramPitchName(iface, 1, 2, 60, &pitch_name));

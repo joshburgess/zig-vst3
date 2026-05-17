@@ -267,7 +267,7 @@ test "note expression helper delegates string conversions and query interface" {
     var helper = Helper{};
     const expression = helper.asNoteExpression();
 
-    var text: vsttypes.String128 = [_]vsttypes.TChar{0} ** string128.code_units;
+    var text: vsttypes.String128 = string128.zero;
     try std.testing.expectEqual(types.kResultOk, expression.vtable.getNoteExpressionStringByValue(expression, 0, 1, 12, 0.75, &text));
     try std.testing.expectEqualSlices(vsttypes.TChar, &.{ 'O', 'K' }, std.mem.sliceTo(&text, 0));
 
