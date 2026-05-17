@@ -216,21 +216,19 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
 
         fn addTest(ptr: *anyopaque, name: types.FIDString, test_iface: ?*itest.ITest) callconv(.c) types.tresult {
             const self = owner(ptr);
-            const index = self.test_count;
-            self.test_count +|= 1;
-            if (index >= max_tests) return types.kResultFalse;
+            const index = vst_index.appendIndexU32(self.test_count, max_tests) orelse return types.kResultFalse;
             if (test_iface) |value| _ = value.vtable.addRef(value);
             self.tests[index] = .{ .name = name, .test_iface = test_iface };
+            self.test_count +|= 1;
             return types.kResultOk;
         }
 
         fn addTestSuite(ptr: *anyopaque, name: types.FIDString, suite_iface: ?*itest.ITestSuite) callconv(.c) types.tresult {
             const self = owner(ptr);
-            const index = self.suite_count;
-            self.suite_count +|= 1;
-            if (index >= max_suites) return types.kResultFalse;
+            const index = vst_index.appendIndexU32(self.suite_count, max_suites) orelse return types.kResultFalse;
             if (suite_iface) |value| _ = value.vtable.addRef(value);
             self.suites[index] = .{ .name = name, .suite = suite_iface };
+            self.suite_count +|= 1;
             return types.kResultOk;
         }
 
@@ -414,8 +412,8 @@ test "test suite stores tests suites and environment" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.setEnvironment(iface, test_iface));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.setEnvironment(iface, null));
 
-    try std.testing.expectEqual(@as(types.uint32, 2), suite.test_count);
-    try std.testing.expectEqual(@as(types.uint32, 2), suite.suite_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), suite.test_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), suite.suite_count);
     try std.testing.expectEqualStrings("case", std.mem.span(suite.tests[0].name.?));
     try std.testing.expectEqual(test_iface, suite.tests[0].test_iface.?);
     try std.testing.expectEqualStrings("nested", std.mem.span(suite.suites[0].name.?));
