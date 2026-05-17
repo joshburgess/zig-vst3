@@ -1,6 +1,7 @@
 const std = @import("std");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
+const string128 = @import("string128.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const ivstattributes = @import("pluginterfaces/vst/ivstattributes.zig");
@@ -344,9 +345,10 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
 
         fn getFileName(ptr: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = owner(ptr);
-            @memset(out[0..128], 0);
+            string128.clearPtr(out);
             const len = std.mem.len(@as([*:0]const vsttypes.TChar, @ptrCast(&self.file_name)));
-            @memcpy(out[0..len], self.file_name[0..len]);
+            const copy_len = @min(len, string128.payload_units);
+            @memcpy(out[0..copy_len], self.file_name[0..copy_len]);
             return types.kResultOk;
         }
 
@@ -544,4 +546,20 @@ test "stream attributes expose filename and attribute list" {
     try std.testing.expect(queried != null);
     const queried_stream: *ivstattributes.IStreamAttributes = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_stream.vtable.release(queried_stream));
+}
+
+test "stream attributes truncate filename to String128 output" {
+    const TestStreamAttributes = StreamAttributes(160, 1, 4, 4);
+    var stream_attributes = TestStreamAttributes{};
+    const iface = stream_attributes.asInterface();
+    var long_name: [160:0]vsttypes.TChar = [_:0]vsttypes.TChar{'a'} ** 160;
+    long_name[0] = 'f';
+
+    stream_attributes.setFileName(&long_name);
+
+    var file_name_out: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getFileName(iface, &file_name_out));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'f'), file_name_out[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'a'), file_name_out[string128.payload_units - 1]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), file_name_out[string128.payload_units]);
 }
