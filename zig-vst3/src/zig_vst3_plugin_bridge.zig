@@ -487,8 +487,7 @@ pub fn makeProcessContext(
     output_events: ?*plug.process.EventWriter,
 ) !plug.process.ProcessContext(Sample) {
     const frame_count = try validFrameCount(data);
-    if (input.numChannels < 0 or output.numChannels < 0) return error.InvalidChannelCount;
-    const channel_count: usize = @intCast(@min(@min(input.numChannels, output.numChannels), max_audio_channels));
+    const channel_count = try boundedPairedAudioChannelCount(input, output);
     var input_channels: [max_audio_channels][]const Sample = undefined;
     var output_channels: [max_audio_channels][]Sample = undefined;
     const input_buffers = vstAudioBuffers(Sample, input) orelse return error.MissingInputBuffers;
@@ -512,8 +511,7 @@ pub fn makeProcessContext(
 }
 
 fn fillInputChannels(comptime Sample: type, bus: ivstaudioprocessor.AudioBusBuffers, frame_count: usize, out: *[max_audio_channels][]const Sample) !usize {
-    if (bus.numChannels < 0) return error.InvalidChannelCount;
-    const channel_count: usize = @intCast(@min(bus.numChannels, max_audio_channels));
+    const channel_count = try boundedAudioChannelCount(bus);
     if (channel_count == 0) return 0;
     const buffers = vstAudioBuffers(Sample, bus) orelse return error.MissingInputBuffers;
     for (0..channel_count) |channel| {
@@ -523,8 +521,7 @@ fn fillInputChannels(comptime Sample: type, bus: ivstaudioprocessor.AudioBusBuff
 }
 
 fn fillOutputChannels(comptime Sample: type, bus: ivstaudioprocessor.AudioBusBuffers, frame_count: usize, out: *[max_audio_channels][]Sample) !usize {
-    if (bus.numChannels < 0) return error.InvalidChannelCount;
-    const channel_count: usize = @intCast(@min(bus.numChannels, max_audio_channels));
+    const channel_count = try boundedAudioChannelCount(bus);
     if (channel_count == 0) return 0;
     const buffers = vstAudioBuffers(Sample, bus) orelse return error.MissingOutputBuffers;
     for (0..channel_count) |channel| {
@@ -770,6 +767,17 @@ fn vstAudioBuffers(comptime Sample: type, buffer: ivstaudioprocessor.AudioBusBuf
         f64 => buffer.channelBuffers.channelBuffers64,
         else => @compileError("unsupported VST3 sample type"),
     };
+}
+
+fn boundedAudioChannelCount(bus: ivstaudioprocessor.AudioBusBuffers) !usize {
+    if (bus.numChannels < 0) return error.InvalidChannelCount;
+    return @intCast(@min(bus.numChannels, max_audio_channels));
+}
+
+fn boundedPairedAudioChannelCount(input: ivstaudioprocessor.AudioBusBuffers, output: ivstaudioprocessor.AudioBusBuffers) !usize {
+    const input_count = try boundedAudioChannelCount(input);
+    const output_count = try boundedAudioChannelCount(output);
+    return @min(input_count, output_count);
 }
 
 const ParameterChangeCollector = struct {
