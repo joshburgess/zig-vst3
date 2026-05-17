@@ -29,8 +29,8 @@ pub fn EventList(comptime max_events: usize) type {
         }
 
         pub fn append(self: *Self, event: ivstevents.Event) types.tresult {
-            if (self.count < 0 or self.count >= max_events) return types.kResultFalse;
-            self.events[@intCast(self.count)] = event;
+            const index = vst_index.appendIndex(self.count, max_events) orelse return types.kResultFalse;
+            self.events[index] = event;
             self.count +|= 1;
             return types.kResultOk;
         }

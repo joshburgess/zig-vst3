@@ -38,8 +38,8 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
         }
 
         pub fn appendPoint(self: *Self, sample_offset: types.int32, value: vsttypes.ParamValue) types.tresult {
-            if (self.point_count < 0 or self.point_count >= max_points) return types.kResultFalse;
-            self.points[@intCast(self.point_count)] = .{ .sample_offset = sample_offset, .value = value };
+            const index = vst_index.appendIndex(self.point_count, max_points) orelse return types.kResultFalse;
+            self.points[index] = .{ .sample_offset = sample_offset, .value = value };
             self.point_count +|= 1;
             return types.kResultOk;
         }
@@ -88,7 +88,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
 
         fn addPoint(ptr: *anyopaque, sample_offset: types.int32, value: vsttypes.ParamValue, index: *types.int32) callconv(.c) types.tresult {
             const self = owner(ptr);
-            if (self.point_count < 0 or self.point_count >= max_points) {
+            if (vst_index.appendIndex(self.point_count, max_points) == null) {
                 index.* = -1;
                 return types.kResultFalse;
             }
@@ -130,8 +130,7 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
         }
 
         pub fn addQueue(self: *Self, id: vsttypes.ParamID) ?*Queue {
-            if (self.queue_count < 0 or self.queue_count >= max_queues) return null;
-            const index: usize = @intCast(self.queue_count);
+            const index = vst_index.appendIndex(self.queue_count, max_queues) orelse return null;
             self.queues[index] = Queue.init(id);
             self.queue_count +|= 1;
             return &self.queues[index];

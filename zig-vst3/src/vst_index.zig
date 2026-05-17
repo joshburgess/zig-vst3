@@ -7,6 +7,12 @@ pub fn bounded(index: types.int32, count: usize) ?usize {
     return if (value < count) value else null;
 }
 
+pub fn appendIndex(count: types.int32, capacity: usize) ?usize {
+    if (count < 0) return null;
+    const value: usize = @intCast(count);
+    return if (value < capacity) value else null;
+}
+
 pub fn clampedCount(count: types.int32, capacity: usize) usize {
     if (count <= 0) return 0;
     return @min(@as(usize, @intCast(count)), capacity);
@@ -43,6 +49,14 @@ test "bounded rejects negative and out-of-range host indexes" {
     try std.testing.expectEqual(@as(?usize, null), bounded(-1, 2));
     try std.testing.expectEqual(@as(?usize, null), bounded(2, 2));
     try std.testing.expectEqual(@as(?usize, null), bounded(0, 0));
+}
+
+test "appendIndex accepts only writable host count indexes" {
+    try std.testing.expectEqual(@as(?usize, 0), appendIndex(0, 2));
+    try std.testing.expectEqual(@as(?usize, 1), appendIndex(1, 2));
+    try std.testing.expectEqual(@as(?usize, null), appendIndex(-1, 2));
+    try std.testing.expectEqual(@as(?usize, null), appendIndex(2, 2));
+    try std.testing.expectEqual(@as(?usize, null), appendIndex(0, 0));
 }
 
 test "clampedCount converts host counts to storage bounds" {

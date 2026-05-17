@@ -37,8 +37,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         }
 
         pub fn addUnit(self: *Self, id: vsttypes.UnitID, parent_id: vsttypes.UnitID, name: []const u8, program_list_id: vsttypes.ProgramListID) types.tresult {
-            if (self.safeUnitCount() >= max_units) return types.kResultFalse;
-            const index = self.safeUnitCount();
+            const index = vst_index.appendIndex(self.unit_count, max_units) orelse return types.kResultFalse;
             self.units[index] = .{
                 .id = id,
                 .parentUnitId = parent_id,
@@ -50,8 +49,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         }
 
         pub fn addProgramList(self: *Self, id: vsttypes.ProgramListID, name: []const u8, program_count: types.int32) types.tresult {
-            if (self.safeProgramListCount() >= max_program_lists) return types.kResultFalse;
-            const index = self.safeProgramListCount();
+            const index = vst_index.appendIndex(self.program_list_count, max_program_lists) orelse return types.kResultFalse;
             self.program_lists[index] = .{
                 .id = id,
                 .programCount = program_count,
@@ -475,6 +473,7 @@ test "unit info clamps corrupted counts" {
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getUnitInfo(iface, 0, &unit));
     try std.testing.expectEqual(@as(vsttypes.UnitID, 0), unit.id);
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.selectUnit(iface, ivstunits.kRootUnitId));
+    try std.testing.expectEqual(types.kResultFalse, info.addUnit(2, ivstunits.kRootUnitId, "Child", ivstunits.kNoProgramListId));
 
     info.unit_count = 3;
     try std.testing.expectEqual(@as(types.int32, 2), iface.vtable.getUnitCount(iface));
@@ -484,6 +483,7 @@ test "unit info clamps corrupted counts" {
     try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getProgramListCount(iface));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramListInfo(iface, 0, &list));
     try std.testing.expectEqual(@as(vsttypes.ProgramListID, 0), list.id);
+    try std.testing.expectEqual(types.kResultFalse, info.addProgramList(1, "Programs", 1));
 
     info.program_list_count = 2;
     try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getProgramListCount(iface));
