@@ -3,6 +3,10 @@ const common = @import("common.zig");
 
 const clampNormalized = common.clampNormalized;
 
+fn trimPlainText(text: []const u8) []const u8 {
+    return std.mem.trim(u8, text, " \t\r\n");
+}
+
 pub const FloatParam = struct {
     id: u32,
     name: []const u8,
@@ -72,7 +76,7 @@ pub const FloatParam = struct {
     }
 
     pub fn parsePlain(self: FloatParam, text: []const u8) !f64 {
-        const value = try std.fmt.parseFloat(f64, std.mem.trim(u8, text, " \t\r\n"));
+        const value = try std.fmt.parseFloat(f64, trimPlainText(text));
         return self.normalize(value);
     }
 };
@@ -150,7 +154,7 @@ pub const IntParam = struct {
     }
 
     pub fn parsePlain(self: IntParam, text: []const u8) !f64 {
-        const value = try std.fmt.parseInt(i64, std.mem.trim(u8, text, " \t\r\n"), 10);
+        const value = try std.fmt.parseInt(i64, trimPlainText(text), 10);
         return self.normalize(value);
     }
 };
@@ -191,7 +195,7 @@ pub const BoolParam = struct {
     }
 
     pub fn parsePlain(self: BoolParam, text: []const u8) !f64 {
-        const trimmed = std.mem.trim(u8, text, " \t\r\n");
+        const trimmed = trimPlainText(text);
         if (std.ascii.eqlIgnoreCase(trimmed, "on") or
             std.ascii.eqlIgnoreCase(trimmed, "true") or
             std.mem.eql(u8, trimmed, "1"))
@@ -290,7 +294,7 @@ pub fn EnumParam(comptime Enum: type) type {
         }
 
         pub fn parsePlain(_: Self, text: []const u8) !f64 {
-            const trimmed = std.mem.trim(u8, text, " \t\r\n");
+            const trimmed = trimPlainText(text);
             inline for (info.fields, 0..) |field, index| {
                 if (std.mem.eql(u8, trimmed, field.name)) {
                     return normalizedFromIndex(index);
@@ -343,6 +347,19 @@ test "float parameter clamps defaults and values" {
     try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "Flat", 1.0, 1.0, 1.0));
     try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "Inf", 0.0, std.math.inf(f64), 1.0));
     try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "NaN", std.math.nan(f64), 1.0, 1.0));
+}
+
+test "parameter descriptor parsing trims plain text consistently" {
+    const Mode = enum { clean, lead };
+    const gain = FloatParam.init(1, "Gain", 0.0, 1.0, 0.0);
+    const voices = IntParam.init(2, "Voices", 1, 16, 1);
+    const bypass = BoolParam{ .id = 3, .name = "Bypass" };
+    const mode = EnumParam(Mode){ .id = 4, .name = "Mode", .default = .clean };
+
+    try std.testing.expectEqual(@as(f64, 0.5), try gain.parsePlain("\t0.5\r\n"));
+    try std.testing.expectEqual(@as(f64, 1.0), try voices.parsePlain("\t16\r\n"));
+    try std.testing.expectEqual(@as(f64, 1.0), try bypass.parsePlain("\ttrue\r\n"));
+    try std.testing.expectEqual(@as(f64, 1.0), try mode.parsePlain("\tlead\r\n"));
 }
 
 test "int parameter clamps and rounds normalized values" {
