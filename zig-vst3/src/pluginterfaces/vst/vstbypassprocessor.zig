@@ -175,30 +175,27 @@ pub fn Delay(comptime T: type) type {
         pub fn process(self: *Self, src: ?[*]const T, dst: [*]T, num_samples: base.int32, silent_in: bool) bool {
             if (num_samples <= 0) return silent_in;
             var silent_out = false;
-            if (self.hasDelay() and src != null) {
-                const buffer_size = self.getBufferSamples();
-                if (!delay(T, num_samples, src.?, dst, self.buffer.ptr, buffer_size, self.in_pos, self.out_pos)) {
-                    var index: base.int32 = 0;
-                    while (index < num_samples) : (index += 1) {
-                        dst[@intCast(index)] = 0;
-                    }
-                    return true;
-                }
-                self.in_pos = advancedRingPosition(self.in_pos, num_samples, buffer_size);
-                self.out_pos = advancedRingPosition(self.out_pos, num_samples, buffer_size);
-            } else {
+            if (self.hasDelay()) {
                 if (src) |source| {
-                    if (!silent_in) {
-                        var index: base.int32 = 0;
-                        while (index < num_samples) : (index += 1) {
-                            dst[@intCast(index)] = source[@intCast(index)];
-                        }
-                    } else {
+                    const buffer_size = self.getBufferSamples();
+                    if (!delay(T, num_samples, source, dst, self.buffer.ptr, buffer_size, self.in_pos, self.out_pos)) {
                         var index: base.int32 = 0;
                         while (index < num_samples) : (index += 1) {
                             dst[@intCast(index)] = 0;
                         }
-                        silent_out = true;
+                        return true;
+                    }
+                    self.in_pos = advancedRingPosition(self.in_pos, num_samples, buffer_size);
+                    self.out_pos = advancedRingPosition(self.out_pos, num_samples, buffer_size);
+                    return silent_out;
+                }
+            }
+
+            if (src) |source| {
+                if (!silent_in) {
+                    var index: base.int32 = 0;
+                    while (index < num_samples) : (index += 1) {
+                        dst[@intCast(index)] = source[@intCast(index)];
                     }
                 } else {
                     var index: base.int32 = 0;
@@ -207,6 +204,12 @@ pub fn Delay(comptime T: type) type {
                     }
                     silent_out = true;
                 }
+            } else {
+                var index: base.int32 = 0;
+                while (index < num_samples) : (index += 1) {
+                    dst[@intCast(index)] = 0;
+                }
+                silent_out = true;
             }
             return silent_out;
         }
