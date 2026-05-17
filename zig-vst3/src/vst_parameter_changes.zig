@@ -78,25 +78,29 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
             return @intCast(owner(ptr).safePointCount());
         }
 
+        fn failPoint(sample_offset: *types.int32, value: *vsttypes.ParamValue) types.tresult {
+            sample_offset.* = 0;
+            value.* = 0;
+            return types.kInvalidArgument;
+        }
+
         fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = owner(ptr);
-            const point_index = vst_index.bounded(index, self.safePointCount()) orelse {
-                sample_offset.* = 0;
-                value.* = 0;
-                return types.kInvalidArgument;
-            };
+            const point_index = vst_index.bounded(index, self.safePointCount()) orelse return failPoint(sample_offset, value);
             const point = self.points[point_index];
             sample_offset.* = point.sample_offset;
             value.* = point.value;
             return types.kResultOk;
         }
 
+        fn failAddedPoint(index: *types.int32) types.tresult {
+            index.* = -1;
+            return types.kResultFalse;
+        }
+
         fn addPoint(ptr: *anyopaque, sample_offset: types.int32, value: vsttypes.ParamValue, index: *types.int32) callconv(.c) types.tresult {
             const self = owner(ptr);
-            index.* = self.appendPointIndex(sample_offset, value) orelse {
-                index.* = -1;
-                return types.kResultFalse;
-            };
+            index.* = self.appendPointIndex(sample_offset, value) orelse return failAddedPoint(index);
             return types.kResultOk;
         }
 
@@ -183,6 +187,11 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
             return self.queues[queue_index].asInterface();
         }
 
+        fn failAddedParameterData(index: *types.int32) ?*ivstparameterchanges.IParamValueQueue {
+            index.* = -1;
+            return null;
+        }
+
         fn addParameterData(ptr: *anyopaque, id: *const vsttypes.ParamID, index: *types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
             const self = owner(ptr);
             for (self.queues[0..self.safeQueueCount()], 0..) |*queue, queue_index| {
@@ -191,10 +200,7 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
                     return queue.asInterface();
                 }
             }
-            const queue_index = self.addQueueIndex(id.*) orelse {
-                index.* = -1;
-                return null;
-            };
+            const queue_index = self.addQueueIndex(id.*) orelse return failAddedParameterData(index);
             index.* = @intCast(queue_index);
             return self.queues[queue_index].asInterface();
         }
