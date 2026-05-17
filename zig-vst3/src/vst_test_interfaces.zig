@@ -46,14 +46,16 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
         }
 
         fn addErrorMessage(ptr: *anyopaque, text: ?[*:0]const types.char16) callconv(.c) void {
-            owner(ptr).store(&owner(ptr).errors, &owner(ptr).error_count, text);
+            const self = owner(ptr);
+            store(&self.errors, &self.error_count, text);
         }
 
         fn addMessage(ptr: *anyopaque, text: ?[*:0]const types.char16) callconv(.c) void {
-            owner(ptr).store(&owner(ptr).messages, &owner(ptr).message_count, text);
+            const self = owner(ptr);
+            store(&self.messages, &self.message_count, text);
         }
 
-        fn store(self: *Self, target: *[max_messages][max_chars]types.char16, count: *types.uint32, text: ?[*:0]const types.char16) void {
+        fn store(target: *[max_messages][max_chars]types.char16, count: *types.uint32, text: ?[*:0]const types.char16) void {
             const index = count.*;
             if (index < max_messages) {
                 @memset(&target[index], 0);
@@ -63,7 +65,6 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
                     @memcpy(target[index][0..len], span[0..len]);
                 }
             }
-            _ = self;
             count.* +|= 1;
         }
 
