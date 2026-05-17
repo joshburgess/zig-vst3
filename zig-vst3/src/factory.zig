@@ -101,7 +101,7 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
 
         fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
             for (classes) |class| {
-                if (std.mem.eql(u8, cid[0..16], &class.cid)) {
+                if (matchesClassId(cid, class)) {
                     if (class.create) |create| {
                         const result = create(requested_iid, out);
                         if (result != types.kResultOk) out.* = null;
@@ -215,7 +215,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
 
         fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
             for (classes) |class| {
-                if (std.mem.eql(u8, cid[0..16], &class.cid)) {
+                if (matchesClassId(cid, class)) {
                     if (class.create) |create| {
                         const result = create(requested_iid, out);
                         if (result != types.kResultOk) out.* = null;
@@ -286,6 +286,10 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
             }
         }
     };
+}
+
+fn matchesClassId(cid: types.FIDString, class: ClassInfo) bool {
+    return std.mem.eql(u8, cid[0..16], &class.cid);
 }
 
 fn copyZ(dest: anytype, source: []const u8) void {
