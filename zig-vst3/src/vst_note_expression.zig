@@ -4,13 +4,8 @@ const interface_map = @import("interface_map.zig");
 const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_index = @import("vst_index.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
-
-fn boundedIndex(index: types.int32, count: usize) ?usize {
-    if (index < 0) return null;
-    const value: usize = @intCast(index);
-    return if (value < count) value else null;
-}
 
 pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_keyswitches: usize, comptime Config: type) type {
     if (max_expressions == 0 and max_keyswitches == 0) @compileError("NoteExpressionController requires at least one expression or keyswitch slot");
@@ -115,7 +110,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             const self = ownerFromNoteExpression(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;
-            const expression_index = boundedIndex(index, self.safeExpressionCount()) orelse {
+            const expression_index = vst_index.bounded(index, self.safeExpressionCount()) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
             };
@@ -160,7 +155,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             const self = ownerFromKeyswitch(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;
-            const keyswitch_index = boundedIndex(index, self.safeKeyswitchCount()) orelse {
+            const keyswitch_index = vst_index.bounded(index, self.safeKeyswitchCount()) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
             };

@@ -4,12 +4,7 @@ const interface_map = @import("interface_map.zig");
 const ivstevents = @import("pluginterfaces/vst/ivstevents.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
-
-fn boundedIndex(index: types.int32, count: usize) ?usize {
-    if (index < 0) return null;
-    const value: usize = @intCast(index);
-    return if (value < count) value else null;
-}
+const vst_index = @import("vst_index.zig");
 
 pub fn EventList(comptime max_events: usize) type {
     if (max_events == 0) @compileError("EventList requires at least one event slot");
@@ -30,8 +25,7 @@ pub fn EventList(comptime max_events: usize) type {
         }
 
         fn safeCount(self: *const Self) usize {
-            if (self.count <= 0) return 0;
-            return @min(@as(usize, @intCast(self.count)), max_events);
+            return vst_index.clampedCount(self.count, max_events);
         }
 
         pub fn append(self: *Self, event: ivstevents.Event) types.tresult {
@@ -80,7 +74,7 @@ pub fn EventList(comptime max_events: usize) type {
                 event.* = .{};
                 return types.kResultFalse;
             }
-            const event_index = boundedIndex(index, self.safeCount()) orelse {
+            const event_index = vst_index.bounded(index, self.safeCount()) orelse {
                 event.* = .{};
                 return types.kInvalidArgument;
             };

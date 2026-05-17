@@ -5,14 +5,9 @@ const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_index = @import("vst_index.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
-
-fn boundedIndex(index: types.int32, count: usize) ?usize {
-    if (index < 0) return null;
-    const value: usize = @intCast(index);
-    return if (value < count) value else null;
-}
 
 pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, comptime Config: type) type {
     if (max_units == 0) @compileError("UnitInfo requires at least one unit slot");
@@ -67,13 +62,11 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         }
 
         fn safeUnitCount(self: *const Self) usize {
-            if (self.unit_count <= 0) return 0;
-            return @min(@as(usize, @intCast(self.unit_count)), max_units);
+            return vst_index.clampedCount(self.unit_count, max_units);
         }
 
         fn safeProgramListCount(self: *const Self) usize {
-            if (self.program_list_count <= 0) return 0;
-            return @min(@as(usize, @intCast(self.program_list_count)), max_program_lists);
+            return vst_index.clampedCount(self.program_list_count, max_program_lists);
         }
 
         fn rootUnits() [max_units]ivstunits.UnitInfo {
@@ -114,7 +107,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn getUnitInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.c) types.tresult {
             const self = owner(ptr);
-            const unit_index = boundedIndex(index, self.safeUnitCount()) orelse {
+            const unit_index = vst_index.bounded(index, self.safeUnitCount()) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
             };
@@ -128,7 +121,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn getProgramListInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.c) types.tresult {
             const self = owner(ptr);
-            const list_index = boundedIndex(index, self.safeProgramListCount()) orelse {
+            const list_index = vst_index.bounded(index, self.safeProgramListCount()) orelse {
                 out.* = .{};
                 return types.kInvalidArgument;
             };

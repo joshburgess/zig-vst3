@@ -4,13 +4,8 @@ const interface_map = @import("interface_map.zig");
 const ivstparameterchanges = @import("pluginterfaces/vst/ivstparameterchanges.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_index = @import("vst_index.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
-
-fn boundedIndex(index: types.int32, count: usize) ?usize {
-    if (index < 0) return null;
-    const value: usize = @intCast(index);
-    return if (value < count) value else null;
-}
 
 pub const ParamPoint = extern struct {
     sample_offset: types.int32 = 0,
@@ -39,8 +34,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
         }
 
         fn safePointCount(self: *const Self) usize {
-            if (self.point_count <= 0) return 0;
-            return @min(@as(usize, @intCast(self.point_count)), max_points);
+            return vst_index.clampedCount(self.point_count, max_points);
         }
 
         pub fn appendPoint(self: *Self, sample_offset: types.int32, value: vsttypes.ParamValue) types.tresult {
@@ -81,7 +75,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
 
         fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = owner(ptr);
-            const point_index = boundedIndex(index, self.safePointCount()) orelse {
+            const point_index = vst_index.bounded(index, self.safePointCount()) orelse {
                 sample_offset.* = 0;
                 value.* = 0;
                 return types.kInvalidArgument;
@@ -132,8 +126,7 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
         }
 
         fn safeQueueCount(self: *const Self) usize {
-            if (self.queue_count <= 0) return 0;
-            return @min(@as(usize, @intCast(self.queue_count)), max_queues);
+            return vst_index.clampedCount(self.queue_count, max_queues);
         }
 
         pub fn addQueue(self: *Self, id: vsttypes.ParamID) ?*Queue {
@@ -178,7 +171,7 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
 
         fn getParameterData(ptr: *anyopaque, index: types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
             const self = owner(ptr);
-            const queue_index = boundedIndex(index, self.safeQueueCount()) orelse return null;
+            const queue_index = vst_index.bounded(index, self.safeQueueCount()) orelse return null;
             return self.queues[queue_index].asInterface();
         }
 
