@@ -793,7 +793,7 @@ fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.Para
     if (sample_offset < 0) return;
     const offset: usize = @intCast(sample_offset);
     if (offset >= collector.frame_count) return;
-    if (!isUnitRangeValue(value)) return;
+    if (!isNormalizedValue(value)) return;
     collector.storage[collector.count] = .{
         .id = id,
         .sample_offset = offset,
@@ -808,11 +808,11 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
     const offset: usize = @intCast(event.sampleOffset);
     if (offset >= collector.frame_count) return;
     const converted: ?plug.process.Event = switch (event.type) {
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent) => if (isUnitValue(event.data.noteOn.velocity))
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent) => if (isNormalizedValue(event.data.noteOn.velocity))
             plug.process.Event.noteOn(offset, event.data.noteOn.channel, event.data.noteOn.pitch, event.data.noteOn.velocity).withBusIndex(event.busIndex)
         else
             null,
-        @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent) => if (isUnitValue(event.data.noteOff.velocity))
+        @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent) => if (isNormalizedValue(event.data.noteOff.velocity))
             plug.process.Event.noteOff(offset, event.data.noteOff.channel, event.data.noteOff.pitch, event.data.noteOff.velocity).withBusIndex(event.busIndex)
         else
             null,
@@ -821,7 +821,7 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
         else
             null,
         @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent) => collectLegacyMidiCcEvent(event, offset),
-        @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent) => if (isUnitValue(event.data.polyPressure.pressure))
+        @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent) => if (isNormalizedValue(event.data.polyPressure.pressure))
             plug.process.Event.aftertouch(offset, event.data.polyPressure.channel, event.data.polyPressure.pitch, event.data.polyPressure.pressure).withBusIndex(event.busIndex)
         else
             null,
@@ -854,11 +854,7 @@ fn collectLegacyMidiCcEvent(event: *const ivstevents.Event, offset: usize) plug.
     };
 }
 
-fn isUnitValue(value: f32) bool {
-    return isUnitRangeValue(value);
-}
-
-fn isUnitRangeValue(value: anytype) bool {
+pub fn isNormalizedValue(value: anytype) bool {
     return std.math.isFinite(value) and value >= 0.0 and value <= 1.0;
 }
 
@@ -875,7 +871,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
     };
     switch (event.kind) {
         .note_on => {
-            if (!isUnitValue(event.velocity)) return null;
+            if (!isNormalizedValue(event.velocity)) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent);
             result.data = .{ .noteOn = .{
                 .channel = event.channel,
@@ -884,7 +880,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
             } };
         },
         .note_off => {
-            if (!isUnitValue(event.velocity)) return null;
+            if (!isNormalizedValue(event.velocity)) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kNoteOffEvent);
             result.data = .{ .noteOff = .{
                 .channel = event.channel,
@@ -895,7 +891,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
         .midi_cc => {
             const control_number = std.math.cast(types.uint8, event.control_number) orelse return null;
             const channel = std.math.cast(types.int8, event.channel) orelse return null;
-            if (!isUnitValue(event.value)) return null;
+            if (!isNormalizedValue(event.value)) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent);
             result.data = .{ .midiCCOut = .{
                 .controlNumber = control_number,
@@ -905,7 +901,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
         },
         .pitch_bend => {
             const channel = std.math.cast(types.int8, event.channel) orelse return null;
-            if (!isUnitValue(event.value)) return null;
+            if (!isNormalizedValue(event.value)) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kLegacyMIDICCOutEvent);
             result.data = .{ .midiCCOut = .{
                 .controlNumber = ivstmidicontrollers.kPitchBend,
@@ -915,7 +911,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
             events_helper.setPitchBendValue(&result.data.midiCCOut, event.value);
         },
         .aftertouch => {
-            if (!isUnitValue(event.value)) return null;
+            if (!isNormalizedValue(event.value)) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kPolyPressureEvent);
             result.data = .{ .polyPressure = .{
                 .channel = event.channel,
@@ -1871,6 +1867,16 @@ test "zig-vst3-plugin bridge process data frame counts are explicit" {
     data.numSamples = -1;
     try std.testing.expectEqual(@as(usize, 0), frameCountOrZero(&data));
     try std.testing.expectError(error.InvalidFrameCount, validFrameCount(&data));
+}
+
+test "zig-vst3-plugin bridge normalized values are finite unit range" {
+    try std.testing.expect(isNormalizedValue(@as(f64, 0.0)));
+    try std.testing.expect(isNormalizedValue(@as(f64, 0.5)));
+    try std.testing.expect(isNormalizedValue(@as(f64, 1.0)));
+    try std.testing.expect(!isNormalizedValue(@as(f64, -0.01)));
+    try std.testing.expect(!isNormalizedValue(@as(f64, 1.01)));
+    try std.testing.expect(!isNormalizedValue(std.math.nan(f32)));
+    try std.testing.expect(!isNormalizedValue(std.math.inf(f64)));
 }
 
 test "zig-vst3-plugin bridge stream byte counts fit VST int32" {

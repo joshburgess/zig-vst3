@@ -818,7 +818,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
             var values = plug_core.parameters.ParameterValues(Params).init(Config.parameter_set);
             for (reflected.parameters) |parameter| {
-                if (!std.math.isFinite(parameter.normalized) or parameter.normalized < 0.0 or parameter.normalized > 1.0) {
+                if (!zig_vst3_plugin_bridge.isNormalizedValue(parameter.normalized)) {
                     return types.kResultFalse;
                 }
                 _ = values.storeById(Config.parameter_set, parameter.parameter_id, parameter.normalized);
