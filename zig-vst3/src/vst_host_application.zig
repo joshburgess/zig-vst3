@@ -53,13 +53,18 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
             return types.kResultOk;
         }
 
+        fn failCreatedInstance(out: *?*anyopaque, result: types.tresult) types.tresult {
+            out.* = null;
+            return result;
+        }
+
         fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.create_instance_count +|= 1;
             out.* = null;
             if (@hasDecl(Config, "createInstance")) {
                 const result = Config.createInstance(self, cid, iid, out);
-                if (result != types.kResultOk) out.* = null;
+                if (result != types.kResultOk) return failCreatedInstance(out, result);
                 return result;
             }
             return types.kResultFalse;

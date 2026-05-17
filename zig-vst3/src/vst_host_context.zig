@@ -90,12 +90,17 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
             return types.kResultOk;
         }
 
+        fn failCreatedInstance(out: *?*anyopaque, result: types.tresult) types.tresult {
+            out.* = null;
+            return result;
+        }
+
         fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             out.* = null;
             if (@hasDecl(Config, "createInstance")) {
                 const result = Config.createInstance(self, cid, iid, out);
-                if (result != types.kResultOk) out.* = null;
+                if (result != types.kResultOk) return failCreatedInstance(out, result);
                 return result;
             }
             return types.kResultFalse;
@@ -203,12 +208,17 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
             return types.kResultOk;
         }
 
+        fn failCreatedInstance(out: *?*anyopaque, result: types.tresult) types.tresult {
+            out.* = null;
+            return result;
+        }
+
         fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             out.* = null;
             if (@hasDecl(Config, "createInstance")) {
                 const result = Config.createInstance(self, cid, iid, out);
-                if (result != types.kResultOk) out.* = null;
+                if (result != types.kResultOk) return failCreatedInstance(out, result);
                 return result;
             }
             return types.kResultFalse;
@@ -318,15 +328,25 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return types.kResultOk;
         }
 
+        fn failCreatedInstance(out: *?*anyopaque, result: types.tresult) types.tresult {
+            out.* = null;
+            return result;
+        }
+
         fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
             out.* = null;
             if (@hasDecl(Config, "createInstance")) {
                 const result = Config.createInstance(self, cid, iid, out);
-                if (result != types.kResultOk) out.* = null;
+                if (result != types.kResultOk) return failCreatedInstance(out, result);
                 return result;
             }
             return types.kResultFalse;
+        }
+
+        fn failOpenedQueue(out: *ivstdataexchange.DataExchangeQueueID, result: types.tresult) types.tresult {
+            out.* = ivstdataexchange.InvalidDataExchangeQueueID;
+            return result;
         }
 
         fn openQueue(ptr: *anyopaque, processor: ?*ivstaudioprocessor.IAudioProcessor, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) callconv(.c) types.tresult {
@@ -336,7 +356,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             out.* = ivstdataexchange.InvalidDataExchangeQueueID;
             if (@hasDecl(Config, "openQueue")) {
                 const result = Config.openQueue(self, processor, block_size, num_blocks, alignment, user_context_id, out);
-                if (result != types.kResultOk) out.* = ivstdataexchange.InvalidDataExchangeQueueID;
+                if (result != types.kResultOk) return failOpenedQueue(out, result);
                 return result;
             }
             return types.kResultFalse;
@@ -350,12 +370,17 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return types.kResultOk;
         }
 
+        fn failLockedBlock(block: *ivstdataexchange.DataExchangeBlock, result: types.tresult) types.tresult {
+            block.* = .{};
+            return result;
+        }
+
         fn lockBlock(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
             block.* = .{};
             if (@hasDecl(Config, "lockBlock")) {
                 const result = Config.lockBlock(self, queue_id, block);
-                if (result != types.kResultOk) block.* = .{};
+                if (result != types.kResultOk) return failLockedBlock(block, result);
                 return result;
             }
             return types.kResultOk;
