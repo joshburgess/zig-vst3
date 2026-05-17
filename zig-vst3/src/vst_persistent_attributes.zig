@@ -209,24 +209,20 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return types.kResultOk;
         }
 
+        fn failVariant(out: *fvariant.FVariant) types.tresult {
+            out.* = .{};
+            return types.kResultFalse;
+        }
+
         fn get(ptr: *anyopaque, id: ipersistent.IAttrID, out: *fvariant.FVariant) callconv(.c) types.tresult {
-            const entry = ownerFromAttributes(ptr).findEntry(id) orelse {
-                out.* = .{};
-                return types.kResultFalse;
-            };
+            const entry = ownerFromAttributes(ptr).findEntry(id) orelse return failVariant(out);
             out.* = entry.value;
             return types.kResultOk;
         }
 
         fn unqueue(ptr: *anyopaque, id: ipersistent.IAttrID, out: *fvariant.FVariant) callconv(.c) types.tresult {
-            const entry = ownerFromAttributes(ptr).findEntry(id) orelse {
-                out.* = .{};
-                return types.kResultFalse;
-            };
-            if (!entry.queued) {
-                out.* = .{};
-                return types.kResultFalse;
-            }
+            const entry = ownerFromAttributes(ptr).findEntry(id) orelse return failVariant(out);
+            if (!entry.queued) return failVariant(out);
             entry.queued = false;
             out.* = entry.value;
             return types.kResultOk;
@@ -250,13 +246,17 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return types.kResultOk;
         }
 
-        fn getBinaryData(ptr: *anyopaque, id: ipersistent.IAttrID, out: ?*anyopaque, size: types.uint32) callconv(.c) types.tresult {
+        fn clearBinaryOutput(out: ?*anyopaque, size: types.uint32) void {
             if (out) |buffer| {
                 if (size > 0) {
                     const bytes: [*]u8 = @ptrCast(buffer);
                     @memset(bytes[0..size], 0);
                 }
             }
+        }
+
+        fn getBinaryData(ptr: *anyopaque, id: ipersistent.IAttrID, out: ?*anyopaque, size: types.uint32) callconv(.c) types.tresult {
+            clearBinaryOutput(out, size);
             const entry = ownerFromAttributes(ptr).findEntry(id) orelse return types.kResultFalse;
             if (entry.binary_size > size) return types.kResultFalse;
             if (entry.binary_size > 0 and out == null) return types.kInvalidArgument;
