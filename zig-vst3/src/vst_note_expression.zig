@@ -2,6 +2,7 @@ const std = @import("std");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
 const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
+const string128 = @import("string128.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_index = @import("vst_index.zig");
@@ -122,10 +123,10 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             const self = ownerFromNoteExpression(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;
-            @memset(out[0..128], 0);
+            string128.clearPtr(out);
             if (@hasDecl(Config, "getNoteExpressionStringByValue")) {
                 const result = Config.getNoteExpressionStringByValue(self, bus_index, channel, type_id, value, out);
-                if (result != types.kResultOk) @memset(out[0..128], 0);
+                if (result != types.kResultOk) string128.clearPtr(out);
                 return result;
             }
             return types.kResultFalse;
@@ -233,7 +234,7 @@ test "note expression helper clears failed outputs" {
     try std.testing.expectEqual(types.kInvalidArgument, expression.vtable.getNoteExpressionInfo(expression, 0, 1, 0, &expression_info));
     try std.testing.expectEqual(@as(ivstnoteexpression.NoteExpressionTypeID, 0), expression_info.typeId);
 
-    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kResultFalse, expression.vtable.getNoteExpressionStringByValue(expression, 0, 1, 0, 0.25, &text));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[0]);
 
@@ -266,7 +267,7 @@ test "note expression helper delegates string conversions and query interface" {
     var helper = Helper{};
     const expression = helper.asNoteExpression();
 
-    var text: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128;
+    var text: vsttypes.String128 = [_]vsttypes.TChar{0} ** string128.code_units;
     try std.testing.expectEqual(types.kResultOk, expression.vtable.getNoteExpressionStringByValue(expression, 0, 1, 12, 0.75, &text));
     try std.testing.expectEqualSlices(vsttypes.TChar, &.{ 'O', 'K' }, std.mem.sliceTo(&text, 0));
 
@@ -298,10 +299,10 @@ test "note expression helper clears delegated conversion failures" {
     var helper = Helper{};
     const expression = helper.asNoteExpression();
 
-    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kInvalidArgument, expression.vtable.getNoteExpressionStringByValue(expression, 0, 0, 1, 0.5, &text));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[0]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[127]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[string128.payload_units]);
 
     const input_text: [1:0]vsttypes.TChar = .{0};
     var value: ivstnoteexpression.NoteExpressionValue = 0.5;
