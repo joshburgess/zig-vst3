@@ -61,12 +61,8 @@ pub const Program = struct {
     }
 
     pub fn duplicateParameterId(self: Program) ?u32 {
-        for (self.parameters, 0..) |left, left_index| {
-            for (self.parameters[left_index + 1 ..]) |right| {
-                if (right.parameter_id == left.parameter_id) return left.parameter_id;
-            }
-        }
-        return null;
+        const index = self.duplicateParameterIdIndex() orelse return null;
+        return self.parameters[index].parameter_id;
     }
 
     pub fn duplicateParameterIdIndex(self: Program) ?usize {
@@ -83,12 +79,8 @@ pub const Program = struct {
     }
 
     pub fn duplicateInfoKey(self: Program) ?[]const u8 {
-        for (self.info, 0..) |left, left_index| {
-            for (self.info[left_index + 1 ..]) |right| {
-                if (std.mem.eql(u8, right.key, left.key)) return left.key;
-            }
-        }
-        return null;
+        const index = self.duplicateInfoKeyIndex() orelse return null;
+        return self.info[index].key;
     }
 
     pub fn duplicateInfoKeyIndex(self: Program) ?usize {
@@ -180,12 +172,8 @@ pub const ProgramList = struct {
     }
 
     pub fn duplicateProgramName(self: ProgramList) ?[]const u8 {
-        for (self.programs, 0..) |left, left_index| {
-            for (self.programs[left_index + 1 ..]) |right| {
-                if (std.mem.eql(u8, right.name, left.name)) return left.name;
-            }
-        }
-        return null;
+        const index = self.duplicateProgramNameIndex() orelse return null;
+        return self.programs[index].name;
     }
 
     pub fn duplicateProgramNameIndex(self: ProgramList) ?usize {

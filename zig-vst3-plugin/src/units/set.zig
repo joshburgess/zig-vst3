@@ -43,13 +43,10 @@ pub fn UnitSet(comptime config: Config) type {
             return program_list_count != 0;
         }
 
-        pub fn duplicateUnitId(_: Self) ?i32 {
-            for (config.units, 0..) |left, left_index| {
-                for (config.units[left_index + 1 ..]) |right| {
-                    if (right.id == left.id) return left.id;
-                }
-            }
-            return null;
+        pub fn duplicateUnitId(self: Self) ?i32 {
+            if (comptime config.units.len == 0) return null;
+            const index = self.duplicateUnitIdIndex() orelse return null;
+            return config.units[index].id;
         }
 
         pub fn duplicateUnitIdIndex(_: Self) ?usize {
@@ -65,13 +62,10 @@ pub fn UnitSet(comptime config: Config) type {
             return self.duplicateUnitId() != null;
         }
 
-        pub fn duplicateUnitName(_: Self) ?[]const u8 {
-            for (config.units, 0..) |left, left_index| {
-                for (config.units[left_index + 1 ..]) |right| {
-                    if (std.mem.eql(u8, right.name, left.name)) return left.name;
-                }
-            }
-            return null;
+        pub fn duplicateUnitName(self: Self) ?[]const u8 {
+            if (comptime config.units.len == 0) return null;
+            const index = self.duplicateUnitNameIndex() orelse return null;
+            return config.units[index].name;
         }
 
         pub fn duplicateUnitNameIndex(_: Self) ?usize {
@@ -94,13 +88,10 @@ pub fn UnitSet(comptime config: Config) type {
             return null;
         }
 
-        pub fn duplicateProgramListId(_: Self) ?i32 {
-            for (config.program_lists, 0..) |left, left_index| {
-                for (config.program_lists[left_index + 1 ..]) |right| {
-                    if (right.id == left.id) return left.id;
-                }
-            }
-            return null;
+        pub fn duplicateProgramListId(self: Self) ?i32 {
+            if (comptime config.program_lists.len == 0) return null;
+            const index = self.duplicateProgramListIdIndex() orelse return null;
+            return config.program_lists[index].id;
         }
 
         pub fn duplicateProgramListIdIndex(_: Self) ?usize {
@@ -116,13 +107,10 @@ pub fn UnitSet(comptime config: Config) type {
             return self.duplicateProgramListId() != null;
         }
 
-        pub fn duplicateProgramListName(_: Self) ?[]const u8 {
-            for (config.program_lists, 0..) |left, left_index| {
-                for (config.program_lists[left_index + 1 ..]) |right| {
-                    if (std.mem.eql(u8, right.name, left.name)) return left.name;
-                }
-            }
-            return null;
+        pub fn duplicateProgramListName(self: Self) ?[]const u8 {
+            if (comptime config.program_lists.len == 0) return null;
+            const index = self.duplicateProgramListNameIndex() orelse return null;
+            return config.program_lists[index].name;
         }
 
         pub fn duplicateProgramListNameIndex(_: Self) ?usize {

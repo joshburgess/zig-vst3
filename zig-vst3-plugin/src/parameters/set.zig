@@ -37,15 +37,9 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn duplicateId(self: *const Self) ?u32 {
-            inline for (fields, 0..) |left_field, left_index| {
-                const left_id = @field(self.params, left_field.name).id;
-                inline for (fields[left_index + 1 ..]) |right_field| {
-                    if (@field(self.params, right_field.name).id == left_id) {
-                        return left_id;
-                    }
-                }
-            }
-            return null;
+            if (comptime fields.len == 0) return null;
+            const index = self.duplicateIdIndex() orelse return null;
+            return self.id(index);
         }
 
         pub fn duplicateIdIndex(self: *const Self) ?usize {
@@ -69,15 +63,9 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn duplicateName(self: *const Self) ?[]const u8 {
-            inline for (fields, 0..) |left_field, left_index| {
-                const left_name = @field(self.params, left_field.name).name;
-                inline for (fields[left_index + 1 ..]) |right_field| {
-                    if (std.mem.eql(u8, @field(self.params, right_field.name).name, left_name)) {
-                        return left_name;
-                    }
-                }
-            }
-            return null;
+            if (comptime fields.len == 0) return null;
+            const index = self.duplicateNameIndex() orelse return null;
+            return self.name(index);
         }
 
         pub fn duplicateNameIndex(self: *const Self) ?usize {
