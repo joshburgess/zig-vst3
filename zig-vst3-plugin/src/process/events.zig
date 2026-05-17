@@ -242,7 +242,11 @@ fn firstMatchingEvent(items: []const Event, context: anytype, comptime matches: 
     var result: ?Event = null;
     for (items) |item| {
         if (!matches(item, context)) continue;
-        if (result == null or item.sample_offset < result.?.sample_offset) result = item;
+        if (result) |current| {
+            if (item.sample_offset < current.sample_offset) result = item;
+        } else {
+            result = item;
+        }
     }
     return result;
 }
@@ -251,7 +255,11 @@ fn latestMatchingEvent(items: []const Event, context: anytype, comptime matches:
     var result: ?Event = null;
     for (items) |item| {
         if (!matches(item, context)) continue;
-        if (result == null or item.sample_offset >= result.?.sample_offset) result = item;
+        if (result) |current| {
+            if (item.sample_offset >= current.sample_offset) result = item;
+        } else {
+            result = item;
+        }
     }
     return result;
 }
@@ -294,9 +302,12 @@ fn nextMatchingEvent(items: []const Event, last_offset: ?usize, last_index: usiz
             if (item.sample_offset < offset) continue;
             if (item.sample_offset == offset and index <= last_index) continue;
         }
-        if (result == null or item.sample_offset < result.?.item.sample_offset or
-            (item.sample_offset == result.?.item.sample_offset and index < result.?.index))
-        {
+        const replace = if (result) |current|
+            item.sample_offset < current.item.sample_offset or
+                (item.sample_offset == current.item.sample_offset and index < current.index)
+        else
+            true;
+        if (replace) {
             result = .{ .item = item, .index = index };
         }
     }
@@ -307,7 +318,11 @@ fn nextMatchingSampleOffset(items: []const Event, after_sample_offset: usize, co
     var result: ?usize = null;
     for (items) |item| {
         if (!matches(item, context) or item.sample_offset <= after_sample_offset) continue;
-        if (result == null or item.sample_offset < result.?) result = item.sample_offset;
+        if (result) |current| {
+            if (item.sample_offset < current) result = item.sample_offset;
+        } else {
+            result = item.sample_offset;
+        }
     }
     return result;
 }
