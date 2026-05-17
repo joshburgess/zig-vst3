@@ -23,8 +23,10 @@ pub fn writeParameterState(
     comptime format.assertEncodableParameterCount(Params);
     try writeParameterStateHeaderForCount(parameters.ParameterSet(Params).count, writer);
     inline for (0..parameters.ParameterSet(Params).count) |index| {
-        try writer.writeInt(u32, set.id(index).?, .little);
-        try writer.writeInt(u64, @bitCast(values.load(index).?), .little);
+        const id = set.id(index) orelse return error.InvalidParameterState;
+        const normalized = values.load(index) orelse return error.InvalidParameterState;
+        try writer.writeInt(u32, id, .little);
+        try writer.writeInt(u64, @bitCast(normalized), .little);
     }
 }
 
@@ -56,12 +58,15 @@ pub fn writeParameterStateJson(
     try writer.writeAll(",\"parameters\":[");
     inline for (0..parameters.ParameterSet(Params).count) |index| {
         if (index != 0) try writer.writeByte(',');
+        const id = set.id(index) orelse return error.InvalidParameterState;
+        const name = set.name(index) orelse return error.InvalidParameterState;
+        const normalized = values.load(index) orelse return error.InvalidParameterState;
         try writer.writeAll("{\"id\":");
-        try writer.print("{}", .{set.id(index).?});
+        try writer.print("{}", .{id});
         try writer.writeAll(",\"name\":");
-        try writer.print("{f}", .{std.json.fmt(set.name(index).?, .{})});
+        try writer.print("{f}", .{std.json.fmt(name, .{})});
         try writer.writeAll(",\"normalized\":");
-        try writer.print("{d}", .{values.load(index).?});
+        try writer.print("{d}", .{normalized});
         try writer.writeByte('}');
     }
     try writer.writeAll("]}");
