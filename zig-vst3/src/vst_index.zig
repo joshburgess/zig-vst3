@@ -13,6 +13,11 @@ pub fn appendIndex(count: types.int32, capacity: usize) ?usize {
     return if (value < capacity) value else null;
 }
 
+pub fn appendIndexU32(count: types.uint32, capacity: usize) ?usize {
+    const value: usize = @intCast(count);
+    return if (value < capacity) value else null;
+}
+
 pub fn clampedCount(count: types.int32, capacity: usize) usize {
     if (count <= 0) return 0;
     return @min(@as(usize, @intCast(count)), capacity);
@@ -57,6 +62,13 @@ test "appendIndex accepts only writable host count indexes" {
     try std.testing.expectEqual(@as(?usize, null), appendIndex(-1, 2));
     try std.testing.expectEqual(@as(?usize, null), appendIndex(2, 2));
     try std.testing.expectEqual(@as(?usize, null), appendIndex(0, 0));
+}
+
+test "appendIndexU32 accepts only writable unsigned count indexes" {
+    try std.testing.expectEqual(@as(?usize, 0), appendIndexU32(0, 2));
+    try std.testing.expectEqual(@as(?usize, 1), appendIndexU32(1, 2));
+    try std.testing.expectEqual(@as(?usize, null), appendIndexU32(2, 2));
+    try std.testing.expectEqual(@as(?usize, null), appendIndexU32(0, 0));
 }
 
 test "clampedCount converts host counts to storage bounds" {

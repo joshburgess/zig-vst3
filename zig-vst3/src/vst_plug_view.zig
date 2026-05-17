@@ -8,6 +8,7 @@ const vst_index = @import("vst_index.zig");
 
 pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
     if (max_platforms == 0) @compileError("PlugView requires at least one platform slot");
+    vst_index.requireUint32Capacity(max_platforms, "PlugView platform capacity");
 
     return extern struct {
         const Self = @This();
@@ -41,8 +42,8 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         }
 
         pub fn addPlatform(self: *Self, platform: types.FIDString) types.tresult {
-            if (self.platform_count >= max_platforms) return types.kResultFalse;
-            self.platforms[self.platform_count] = platform;
+            const index = vst_index.appendIndexU32(self.platform_count, max_platforms) orelse return types.kResultFalse;
+            self.platforms[index] = platform;
             self.platform_count +|= 1;
             return types.kResultOk;
         }
@@ -222,6 +223,7 @@ test "plug view clamps inflated platform counts" {
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.isPlatformTypeSupported(iface, iplugview.PlatformType.kPlatformTypeNSView));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.isPlatformTypeSupported(iface, iplugview.PlatformType.kPlatformTypeWaylandSurfaceID));
+    try std.testing.expectEqual(types.kResultFalse, view.addPlatform(iplugview.PlatformType.kPlatformTypeWaylandSurfaceID));
 }
 
 test "plug view tracks input size focus and frame state" {

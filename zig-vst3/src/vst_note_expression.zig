@@ -43,15 +43,15 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
         }
 
         pub fn addExpression(self: *Self, info: ivstnoteexpression.NoteExpressionTypeInfo) types.tresult {
-            if (self.expression_count >= max_expressions) return types.kResultFalse;
-            self.expressions[self.expression_count] = info;
+            const index = vst_index.appendIndexU32(self.expression_count, max_expressions) orelse return types.kResultFalse;
+            self.expressions[index] = info;
             self.expression_count +|= 1;
             return types.kResultOk;
         }
 
         pub fn addKeyswitch(self: *Self, info: ivstnoteexpression.KeyswitchInfo) types.tresult {
-            if (self.keyswitch_count >= max_keyswitches) return types.kResultFalse;
-            self.keyswitches[self.keyswitch_count] = info;
+            const index = vst_index.appendIndexU32(self.keyswitch_count, max_keyswitches) orelse return types.kResultFalse;
+            self.keyswitches[index] = info;
             self.keyswitch_count +|= 1;
             return types.kResultOk;
         }
@@ -219,6 +219,16 @@ test "note expression helper stores expression and keyswitch info" {
     try std.testing.expectEqual(@as(types.int32, 36), keyswitch_info.keyswitchMax);
     try std.testing.expectEqual(@as(types.int32, 7), keyswitch_info.unitId);
     try std.testing.expectEqual(types.kInvalidArgument, keyswitch.vtable.getKeyswitchInfo(keyswitch, 4, 5, 1, &keyswitch_info));
+}
+
+test "note expression helper rejects appends after inflated counts" {
+    const Helper = NoteExpressionController(1, 1, struct {});
+    var helper = Helper{};
+    helper.expression_count = 99;
+    helper.keyswitch_count = 99;
+
+    try std.testing.expectEqual(types.kResultFalse, helper.addExpression(.{}));
+    try std.testing.expectEqual(types.kResultFalse, helper.addKeyswitch(.{}));
 }
 
 test "note expression helper clears failed outputs" {
