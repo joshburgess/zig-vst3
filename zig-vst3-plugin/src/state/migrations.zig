@@ -62,7 +62,7 @@ fn migrationIdsShareChain(left_id: u32, right_id: u32, migrations: []const Param
 
 fn migrationPathIsCyclic(start_id: u32, migrations: []const ParameterIdMigration) bool {
     var current = start_id;
-    for (0..migrations.len + 1) |_| {
+    for (0..migrationStepLimit(migrations)) |_| {
         current = nextParameterMigrationId(current, migrations) orelse return false;
     }
     return true;
@@ -72,7 +72,7 @@ fn migrationPathContains(start_id: u32, target_id: u32, migrations: []const Para
     if (start_id == target_id) return true;
 
     var current = start_id;
-    for (0..migrations.len + 1) |_| {
+    for (0..migrationStepLimit(migrations)) |_| {
         current = nextParameterMigrationId(current, migrations) orelse return false;
         if (current == target_id) return true;
     }
@@ -81,10 +81,14 @@ fn migrationPathContains(start_id: u32, target_id: u32, migrations: []const Para
 
 pub fn migratedParameterId(id: u32, migrations: []const ParameterIdMigration) u32 {
     var current = id;
-    for (0..migrations.len + 1) |_| {
+    for (0..migrationStepLimit(migrations)) |_| {
         current = nextParameterMigrationId(current, migrations) orelse return current;
     }
     return id;
+}
+
+fn migrationStepLimit(migrations: []const ParameterIdMigration) usize {
+    return migrations.len + 1;
 }
 
 fn nextParameterMigrationId(id: u32, migrations: []const ParameterIdMigration) ?u32 {
