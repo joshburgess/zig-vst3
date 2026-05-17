@@ -827,9 +827,7 @@ pub fn parameterDescriptorError(param: anytype) ?anyerror {
         return error.InvalidParameterMetadata;
     }
     if (Param == FloatParam) {
-        if (!std.math.isFinite(param.min) or !std.math.isFinite(param.max) or param.max <= param.min) {
-            return error.InvalidParameterRange;
-        }
+        if (!shared.isValidRange(param.min, param.max)) return error.InvalidParameterRange;
         if (!shared.isFiniteInRange(f64, param.default, param.min, param.max)) return error.InvalidParameterDefault;
     } else if (Param == IntParam) {
         if (param.max <= param.min) return error.InvalidParameterRange;

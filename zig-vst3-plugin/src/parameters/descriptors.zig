@@ -25,7 +25,7 @@ pub const FloatParam = struct {
     }
 
     pub fn initChecked(id: u32, name: []const u8, min: f64, max: f64, default: f64) !FloatParam {
-        if (!std.math.isFinite(min) or !std.math.isFinite(max) or max <= min) return error.InvalidParameterRange;
+        if (!common.isValidRange(min, max)) return error.InvalidParameterRange;
         return .{
             .id = id,
             .name = name,
