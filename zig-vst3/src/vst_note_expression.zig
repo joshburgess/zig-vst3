@@ -128,7 +128,11 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             self.last_bus = bus_index;
             self.last_channel = channel;
             @memset(out[0..128], 0);
-            if (@hasDecl(Config, "getNoteExpressionStringByValue")) return Config.getNoteExpressionStringByValue(self, bus_index, channel, type_id, value, out);
+            if (@hasDecl(Config, "getNoteExpressionStringByValue")) {
+                const result = Config.getNoteExpressionStringByValue(self, bus_index, channel, type_id, value, out);
+                if (result != types.kResultOk) @memset(out[0..128], 0);
+                return result;
+            }
             return types.kResultFalse;
         }
 
@@ -137,7 +141,11 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             self.last_bus = bus_index;
             self.last_channel = channel;
             out.* = 0;
-            if (@hasDecl(Config, "getNoteExpressionValueByString")) return Config.getNoteExpressionValueByString(self, bus_index, channel, type_id, text, out);
+            if (@hasDecl(Config, "getNoteExpressionValueByString")) {
+                const result = Config.getNoteExpressionValueByString(self, bus_index, channel, type_id, text, out);
+                if (result != types.kResultOk) out.* = 0;
+                return result;
+            }
             return types.kResultFalse;
         }
 
@@ -276,4 +284,32 @@ test "note expression helper delegates string conversions and query interface" {
     try std.testing.expect(queried != null);
     const queried_keyswitch: *ivstnoteexpression.IKeyswitchController = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_keyswitch.vtable.release(queried_keyswitch));
+}
+
+test "note expression helper clears delegated conversion failures" {
+    const Helper = NoteExpressionController(1, 1, struct {
+        pub fn getNoteExpressionStringByValue(_: anytype, _: types.int32, _: types.int16, _: ivstnoteexpression.NoteExpressionTypeID, _: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) types.tresult {
+            out[0] = 'N';
+            out[1] = 'O';
+            out[2] = 0;
+            return types.kInvalidArgument;
+        }
+
+        pub fn getNoteExpressionValueByString(_: anytype, _: types.int32, _: types.int16, _: ivstnoteexpression.NoteExpressionTypeID, _: [*:0]const vsttypes.TChar, out: *ivstnoteexpression.NoteExpressionValue) types.tresult {
+            out.* = 0.75;
+            return types.kResultFalse;
+        }
+    });
+    var helper = Helper{};
+    const expression = helper.asNoteExpression();
+
+    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    try std.testing.expectEqual(types.kInvalidArgument, expression.vtable.getNoteExpressionStringByValue(expression, 0, 0, 1, 0.5, &text));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[0]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[127]);
+
+    const input_text: [1:0]vsttypes.TChar = .{0};
+    var value: ivstnoteexpression.NoteExpressionValue = 0.5;
+    try std.testing.expectEqual(types.kResultFalse, expression.vtable.getNoteExpressionValueByString(expression, 0, 0, 1, &input_text, &value));
+    try std.testing.expectEqual(@as(ivstnoteexpression.NoteExpressionValue, 0), value);
 }
