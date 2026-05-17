@@ -5,10 +5,11 @@ const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ivstrepresentation = @import("pluginterfaces/vst/ivstrepresentation.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_index = @import("vst_index.zig");
 const vst_stream = @import("vst_stream.zig");
 
 pub fn XmlRepresentation(comptime xml: []const u8) type {
-    if (xml.len > std.math.maxInt(types.int32)) @compileError("XML representation must fit in int32 bytes");
+    vst_index.requireInt32Length(xml.len, "XML representation");
 
     return extern struct {
         const Self = @This();

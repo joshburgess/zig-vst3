@@ -5,6 +5,7 @@ const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const iplugincompatibility = @import("pluginterfaces/base/iplugincompatibility.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_index = @import("vst_index.zig");
 const vst_stream = @import("vst_stream.zig");
 
 fn validateJsonStringLiteral(comptime field: []const u8, comptime value: []const u8) void {
@@ -21,7 +22,7 @@ pub fn basicMetadataJson(comptime vendor: []const u8, comptime name: []const u8,
 }
 
 pub fn PluginCompatibility(comptime json: []const u8) type {
-    if (json.len > std.math.maxInt(types.int32)) @compileError("PluginCompatibility JSON must fit in int32 bytes");
+    vst_index.requireInt32Length(json.len, "PluginCompatibility JSON");
 
     return extern struct {
         const Self = @This();

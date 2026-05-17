@@ -4,6 +4,7 @@ const interface_map = @import("interface_map.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const tuid = @import("tuid.zig");
+const vst_index = @import("vst_index.zig");
 
 pub const FactoryInfo = struct {
     vendor: []const u8,
@@ -124,9 +125,7 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
 
         comptime {
             _ = Self;
-            if (classes.len > std.math.maxInt(types.int32)) {
-                @compileError("VST3 factory class count exceeds int32 range");
-            }
+            vst_index.requireInt32Length(classes.len, "VST3 factory class count");
         }
     };
 }
@@ -281,9 +280,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
 
         comptime {
             _ = Self;
-            if (classes.len > std.math.maxInt(types.int32)) {
-                @compileError("VST3 factory class count exceeds int32 range");
-            }
+            vst_index.requireInt32Length(classes.len, "VST3 factory class count");
         }
     };
 }
