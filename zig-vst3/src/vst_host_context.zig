@@ -391,7 +391,7 @@ test "channel context host exposes info listener and records callbacks" {
     const Host = ChannelContextHost("Test Host", struct {});
     var host = Host{};
     var queried: ?*anyopaque = null;
-    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
 
     try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.getName(host.asHostApplication(), &name));
     try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Test Host"), std.mem.sliceTo(&name, 0));
@@ -432,13 +432,13 @@ test "channel context host truncates names and delegates create-instance success
         }
     });
     var host = Host{};
-    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     var created: ?*anyopaque = null;
 
     try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.getName(host.asHostApplication(), &name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'a'), name[0]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 'w'), name[126]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[127]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'w'), name[string128.payload_units - 1]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[string128.payload_units]);
     try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.createInstance(host.asHostApplication(), &funknown.iid, &ivstchannelcontextinfo.iinfo_listener_iid, &created));
     try std.testing.expectEqual(created_ptr, created.?);
 }

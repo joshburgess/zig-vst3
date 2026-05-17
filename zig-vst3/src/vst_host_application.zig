@@ -198,7 +198,7 @@ test "host application exposes name and create-instance hook" {
     var host = Host{};
     const iface = host.asInterface();
 
-    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getName(iface, &name));
     try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Test Host"), std.mem.sliceTo(&name, 0));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[10]);
@@ -233,11 +233,11 @@ test "host application zero-fills and truncates String128 names" {
     const Host = HostApplication(long_name, struct {});
     var host = Host{};
     const iface = host.asInterface();
-    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getName(iface, &name));
-    try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[127]);
-    for (name[0..127], 0..) |char, index| {
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[string128.payload_units]);
+    for (name[0..string128.payload_units], 0..) |char, index| {
         try std.testing.expectEqual(@as(vsttypes.TChar, long_name[index]), char);
     }
 }

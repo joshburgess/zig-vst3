@@ -1703,7 +1703,7 @@ test "zig-vst3-plugin bridge parameter controller exposes reflected edit operati
         .state = &state,
     };
     var info = ivsteditcontroller.ParameterInfo{};
-    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     var value: vsttypes.ParamValue = 0;
 
     try std.testing.expectEqual(@as(types.int32, 3), controller.parameterCount());
@@ -1930,7 +1930,7 @@ test "zig-vst3-plugin bridge formats and parses VST3 parameter strings" {
     };
     const Set = plug.parameters.ParameterSet(Params);
     const set = Set.init(.{});
-    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var text: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     var value: vsttypes.ParamValue = 0;
 
     try std.testing.expectEqual(types.kResultOk, getParamStringByValue(Params, &set, 7, 0.5, &text));
@@ -1938,10 +1938,10 @@ test "zig-vst3-plugin bridge formats and parses VST3 parameter strings" {
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[6]);
     try std.testing.expectEqual(types.kResultOk, getParamValueByString(Params, &set, 7, &text, &value));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), value);
-    text = [_]vsttypes.TChar{'x'} ** 128;
+    text = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kInvalidArgument, getParamStringByValue(Params, &set, 8, 0.5, &text));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[0]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[127]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text[string128.payload_units]);
 
     value = 99;
     try std.testing.expectEqual(types.kInvalidArgument, getParamValueByString(Params, &set, 8, &text, &value));

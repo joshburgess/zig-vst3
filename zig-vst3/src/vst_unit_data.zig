@@ -375,17 +375,17 @@ test "unit info exposes root unit defaults" {
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getUnitInfo(iface, 1, &missing));
     try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getProgramListCount(iface));
 
-    var program_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var program_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramName(iface, ivstunits.kNoProgramListId, 0, &program_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[1]);
 
-    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramInfo(iface, ivstunits.kNoProgramListId, 0, "name", &program_info));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[1]);
 
-    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramPitchName(iface, ivstunits.kNoProgramListId, 0, 60, &pitch_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[1]);
@@ -447,20 +447,20 @@ test "unit info truncates long unit and program-list names" {
     var root = ivstunits.UnitInfo{};
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getUnitInfo(iface, 0, &root));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'a'), root.name[0]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 'w'), root.name[126]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 0), root.name[127]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'w'), root.name[string128.payload_units - 1]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), root.name[string128.payload_units]);
 
     var unit = ivstunits.UnitInfo{};
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getUnitInfo(iface, 1, &unit));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'a'), unit.name[0]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 'w'), unit.name[126]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 0), unit.name[127]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'w'), unit.name[string128.payload_units - 1]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), unit.name[string128.payload_units]);
 
     var list = ivstunits.ProgramListInfo{};
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramListInfo(iface, 0, &list));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'a'), list.name[0]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 'w'), list.name[126]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 0), list.name[127]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 'w'), list.name[string128.payload_units - 1]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), list.name[string128.payload_units]);
 }
 
 test "unit info clamps corrupted counts" {
@@ -527,15 +527,15 @@ test "unit info delegates optional callbacks and supports query interface" {
     var info = Info{};
     const iface = info.asInterface();
 
-    var name: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128;
+    var name: vsttypes.String128 = [_]vsttypes.TChar{0} ** string128.code_units;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramName(iface, 1, 2, &name));
     try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Init")[0..4], std.mem.sliceTo(&name, 0));
 
-    var program_info: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128;
+    var program_info: vsttypes.String128 = [_]vsttypes.TChar{0} ** string128.code_units;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramInfo(iface, 1, 2, "category", &program_info));
     try std.testing.expectEqualSlices(vsttypes.TChar, std.unicode.utf8ToUtf16LeStringLiteral("Lead")[0..4], std.mem.sliceTo(&program_info, 0));
 
-    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{0} ** 128;
+    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{0} ** string128.code_units;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.hasProgramPitchNames(iface, 1, 2));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.hasProgramPitchNames(iface, 1, 3));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramPitchName(iface, 1, 2, 60, &pitch_name));
@@ -589,20 +589,20 @@ test "unit info clears delegated failure outputs" {
     var info = Info{};
     const iface = info.asInterface();
 
-    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramName(iface, 1, 2, &name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[0]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[127]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), name[string128.payload_units]);
 
-    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramInfo(iface, 1, 2, "name", &program_info));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[0]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[127]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[string128.payload_units]);
 
-    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** 128;
+    var pitch_name: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramPitchName(iface, 1, 2, 60, &pitch_name));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[0]);
-    try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[127]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[string128.payload_units]);
 
     var unit_id: vsttypes.UnitID = 99;
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getUnitByBus(iface, vsttypes.MediaTypes.kAudio, vsttypes.BusDirections.kInput, 0, 0, &unit_id));
