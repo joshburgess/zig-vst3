@@ -532,7 +532,9 @@ const TestEventList = struct {
         if (index < 0) return base.kInvalidArgument;
         const self = owner(ptr);
         self.read_count += 1;
-        if (self.fail_index != null and index == self.fail_index.?) return base.kResultFalse;
+        if (self.fail_index) |fail_index| {
+            if (index == fail_index) return base.kResultFalse;
+        }
         const event_index: usize = @intCast(index);
         if (event_index >= self.items.len) return base.kInvalidArgument;
         event.* = self.items[event_index];

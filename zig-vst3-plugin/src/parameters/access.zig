@@ -27,7 +27,7 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn init(set: *const Set) Self {
             var self: Self = undefined;
             inline for (0..Set.count) |index| {
-                self.values[index] = NormalizedValue.init(set.defaultNormalized(index).?);
+                self.values[index] = NormalizedValue.init(set.defaultNormalizedAt(index));
             }
             return self;
         }
@@ -109,7 +109,7 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn resetToDefaultsCount(self: *Self, set: *const Set) usize {
             var changed: usize = 0;
             inline for (0..Set.count) |index| {
-                const default = set.defaultNormalized(index).?;
+                const default = set.defaultNormalizedAt(index);
                 if (self.values[index].load() != default) changed +|= 1;
                 self.values[index].store(default);
             }
@@ -156,7 +156,7 @@ pub fn ParameterValues(comptime Params: type) type {
         }
 
         pub fn loadFieldNormalized(self: *const Self, set: *const Set, comptime field_name: []const u8) f64 {
-            return self.load(set.indexOfField(field_name)).?;
+            return self.values[set.indexOfField(field_name)].load();
         }
 
         pub fn loadField(self: *const Self, set: *const Set, comptime field_name: []const u8) FieldPlainType(Params, field_name) {
@@ -185,13 +185,14 @@ pub fn ParameterValues(comptime Params: type) type {
         }
 
         pub fn fieldIsDefault(self: *const Self, set: *const Set, comptime field_name: []const u8) bool {
-            return self.isDefault(set, set.indexOfField(field_name)).?;
+            const index = set.indexOfField(field_name);
+            return self.values[index].load() == set.fieldDefaultNormalized(field_name);
         }
 
         pub fn nonDefaultCount(self: *const Self, set: *const Set) usize {
             var count: usize = 0;
             inline for (0..Set.count) |index| {
-                if (!self.isDefault(set, index).?) count +|= 1;
+                if (self.values[index].load() != set.defaultNormalizedAt(index)) count +|= 1;
             }
             return count;
         }

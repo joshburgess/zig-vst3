@@ -495,6 +495,14 @@ pub fn ParameterSet(comptime Params: type) type {
             @compileError("unknown parameter field: " ++ field_name);
         }
 
+        pub fn descriptorAt(self: *const Self, comptime index: usize) fields[index].type {
+            return @field(self.params, fields[index].name);
+        }
+
+        pub fn defaultNormalizedAt(self: *const Self, comptime index: usize) f64 {
+            return self.descriptorAt(index).defaultNormalized();
+        }
+
         pub fn descriptor(self: *const Self, comptime field_name: []const u8) FieldDescriptor(Params, field_name) {
             return @field(self.params, field_name);
         }
@@ -508,7 +516,8 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn fieldShortName(self: *const Self, comptime field_name: []const u8) []const u8 {
-            return self.shortName(self.indexOfField(field_name)).?;
+            const param = self.descriptor(field_name);
+            return if (param.short_name.len == 0) param.name else param.short_name;
         }
 
         pub fn fieldUnits(self: *const Self, comptime field_name: []const u8) []const u8 {
