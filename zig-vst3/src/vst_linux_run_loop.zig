@@ -161,6 +161,44 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
             return @fieldParentPtr("iface", iface);
         }
 
+        fn findEventEntry(self: *Self, handler: *Linux.IEventHandler) ?*EventEntry {
+            for (&self.event_handlers) |*entry| {
+                if (entry.handler == handler) return entry;
+            }
+            return null;
+        }
+
+        fn appendEventEntry(self: *Self, handler: *Linux.IEventHandler, fd: Linux.FileDescriptor) ?*EventEntry {
+            for (&self.event_handlers) |*entry| {
+                if (entry.handler == null) {
+                    entry.handler = handler;
+                    entry.fd = fd;
+                    _ = handler.vtable.addRef(handler);
+                    return entry;
+                }
+            }
+            return null;
+        }
+
+        fn findTimerEntry(self: *Self, handler: *Linux.ITimerHandler) ?*TimerEntry {
+            for (&self.timer_handlers) |*entry| {
+                if (entry.handler == handler) return entry;
+            }
+            return null;
+        }
+
+        fn appendTimerEntry(self: *Self, handler: *Linux.ITimerHandler, interval: Linux.TimerInterval) ?*TimerEntry {
+            for (&self.timer_handlers) |*entry| {
+                if (entry.handler == null) {
+                    entry.handler = handler;
+                    entry.interval = interval;
+                    _ = handler.vtable.addRef(handler);
+                    return entry;
+                }
+            }
+            return null;
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
@@ -181,65 +219,39 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
             const event_handler = handler orelse return types.kInvalidArgument;
             if (fd < 0) return types.kInvalidArgument;
             const self = owner(ptr);
-            for (&self.event_handlers) |*entry| {
-                if (entry.handler == event_handler) {
-                    entry.fd = fd;
-                    return types.kResultOk;
-                }
+            if (self.findEventEntry(event_handler)) |entry| {
+                entry.fd = fd;
+                return types.kResultOk;
             }
-            for (&self.event_handlers) |*entry| {
-                if (entry.handler == null) {
-                    entry.handler = event_handler;
-                    entry.fd = fd;
-                    _ = event_handler.vtable.addRef(event_handler);
-                    return types.kResultOk;
-                }
-            }
-            return types.kResultFalse;
+            _ = self.appendEventEntry(event_handler, fd) orelse return types.kResultFalse;
+            return types.kResultOk;
         }
 
         fn unregisterEventHandler(ptr: *anyopaque, handler: ?*Linux.IEventHandler) callconv(.c) types.tresult {
             const event_handler = handler orelse return types.kInvalidArgument;
-            for (&owner(ptr).event_handlers) |*entry| {
-                if (entry.handler == event_handler) {
-                    entry.* = .{};
-                    _ = event_handler.vtable.release(event_handler);
-                    return types.kResultOk;
-                }
-            }
-            return types.kResultFalse;
+            const entry = owner(ptr).findEventEntry(event_handler) orelse return types.kResultFalse;
+            entry.* = .{};
+            _ = event_handler.vtable.release(event_handler);
+            return types.kResultOk;
         }
 
         fn registerTimer(ptr: *anyopaque, handler: ?*Linux.ITimerHandler, interval: Linux.TimerInterval) callconv(.c) types.tresult {
             const timer_handler = handler orelse return types.kInvalidArgument;
             const self = owner(ptr);
-            for (&self.timer_handlers) |*entry| {
-                if (entry.handler == timer_handler) {
-                    entry.interval = interval;
-                    return types.kResultOk;
-                }
+            if (self.findTimerEntry(timer_handler)) |entry| {
+                entry.interval = interval;
+                return types.kResultOk;
             }
-            for (&self.timer_handlers) |*entry| {
-                if (entry.handler == null) {
-                    entry.handler = timer_handler;
-                    entry.interval = interval;
-                    _ = timer_handler.vtable.addRef(timer_handler);
-                    return types.kResultOk;
-                }
-            }
-            return types.kResultFalse;
+            _ = self.appendTimerEntry(timer_handler, interval) orelse return types.kResultFalse;
+            return types.kResultOk;
         }
 
         fn unregisterTimer(ptr: *anyopaque, handler: ?*Linux.ITimerHandler) callconv(.c) types.tresult {
             const timer_handler = handler orelse return types.kInvalidArgument;
-            for (&owner(ptr).timer_handlers) |*entry| {
-                if (entry.handler == timer_handler) {
-                    entry.* = .{};
-                    _ = timer_handler.vtable.release(timer_handler);
-                    return types.kResultOk;
-                }
-            }
-            return types.kResultFalse;
+            const entry = owner(ptr).findTimerEntry(timer_handler) orelse return types.kResultFalse;
+            entry.* = .{};
+            _ = timer_handler.vtable.release(timer_handler);
+            return types.kResultOk;
         }
 
         const vtable = Linux.IRunLoopVTable{
