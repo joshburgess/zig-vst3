@@ -37,6 +37,10 @@ pub fn ParameterValues(comptime Params: type) type {
             return self.values[index].load();
         }
 
+        pub fn loadAt(self: *const Self, comptime index: usize) f64 {
+            return self.values[index].load();
+        }
+
         pub fn loadIndex(self: *const Self, index: usize) ?f64 {
             return self.load(index);
         }
@@ -1666,7 +1670,9 @@ test "parameter values initialize from reflected defaults" {
     var values = Values.init(&set);
 
     try std.testing.expectEqual(@as(?f64, 0.25), values.load(0));
+    try std.testing.expectEqual(@as(f64, 0.25), values.loadAt(0));
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(1));
+    try std.testing.expectEqual(@as(f64, 1.0), values.loadAt(1));
     try std.testing.expectEqual(@as(?f64, null), values.load(2));
     try std.testing.expect(values.store(0, 2.0));
     try std.testing.expectEqual(@as(?f64, 1.0), values.load(0));

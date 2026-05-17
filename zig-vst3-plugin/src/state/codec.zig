@@ -24,7 +24,7 @@ pub fn writeParameterState(
     try writeParameterStateHeaderForCount(parameters.ParameterSet(Params).count, writer);
     inline for (0..parameters.ParameterSet(Params).count) |index| {
         const id = set.idAt(index);
-        const normalized = values.load(index) orelse return error.InvalidParameterState;
+        const normalized = values.loadAt(index);
         try writer.writeInt(u32, id, .little);
         try writer.writeInt(u64, @bitCast(normalized), .little);
     }
@@ -60,7 +60,7 @@ pub fn writeParameterStateJson(
         if (index != 0) try writer.writeByte(',');
         const id = set.idAt(index);
         const name = set.nameAt(index);
-        const normalized = values.load(index) orelse return error.InvalidParameterState;
+        const normalized = values.loadAt(index);
         try writer.writeAll("{\"id\":");
         try writer.print("{}", .{id});
         try writer.writeAll(",\"name\":");
