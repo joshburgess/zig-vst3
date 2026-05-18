@@ -330,6 +330,176 @@ test "unit set exposes custom units and programs" {
     try set.validate();
 }
 
+test "unit set program accessors stay symmetric across selector forms" {
+    const programs = [_]Program{
+        .{
+            .name = "Init",
+            .parameters = &.{
+                .{ .parameter_id = 3, .normalized = 0.25 },
+                .{ .parameter_id = 5, .normalized = 0.50 },
+            },
+            .info = &.{
+                .{ .key = "category", .value = "Clean" },
+                .{ .key = "author", .value = "Factory" },
+            },
+        },
+        .{
+            .name = "Drive",
+            .parameters = &.{.{ .parameter_id = 3, .normalized = 0.75 }},
+            .info = &.{.{ .key = "category", .value = "Distortion" }},
+        },
+    };
+    const Set = UnitSet(.{
+        .units = &.{
+            Unit.root("Main"),
+            .{ .id = 1, .name = "Oscillator", .parent_id = root_unit_id, .program_list_id = 10 },
+        },
+        .program_lists = &.{
+            .{ .id = 10, .name = "Oscillator Presets", .programs = &programs },
+        },
+    });
+    const set = Set{};
+    const list_id: i32 = 10;
+    const list_name = "Oscillator Presets";
+    const unit_id: i32 = 1;
+    const unit_name = "Oscillator";
+    const program_names = [_][]const u8{ "Init", "Drive", "Missing" };
+    const parameter_ids = [_]u32{ 3, 5, 99 };
+    const info_keys = [_][]const u8{ "category", "author", "missing" };
+
+    for (0..programs.len + 1) |program_index| {
+        try std.testing.expectEqual(set.programCount(list_id), set.programCountByName(list_name));
+        try std.testing.expectEqual(set.programCount(list_id), set.programCountForUnit(unit_id));
+        try std.testing.expectEqual(set.programCount(list_id), set.programCountForUnitName(unit_name));
+        try std.testing.expectEqual(set.programName(list_id, program_index), set.programNameByListName(list_name, program_index));
+        try std.testing.expectEqual(set.programName(list_id, program_index), set.programNameForUnit(unit_id, program_index));
+        try std.testing.expectEqual(set.programName(list_id, program_index), set.programNameForUnitName(unit_name, program_index));
+        try std.testing.expectEqual(set.program(list_id, program_index), set.programByListName(list_name, program_index));
+        try std.testing.expectEqual(set.program(list_id, program_index), set.programForUnit(unit_id, program_index));
+        try std.testing.expectEqual(set.program(list_id, program_index), set.programForUnitName(unit_name, program_index));
+        try std.testing.expectEqual(set.programParameterCount(list_id, program_index), set.programParameterCountByListName(list_name, program_index));
+        try std.testing.expectEqual(set.programParameterCount(list_id, program_index), set.programParameterCountForUnit(unit_id, program_index));
+        try std.testing.expectEqual(set.programParameterCount(list_id, program_index), set.programParameterCountForUnitName(unit_name, program_index));
+        try std.testing.expectEqual(set.programHasParameters(list_id, program_index), set.programHasParametersByListName(list_name, program_index));
+        try std.testing.expectEqual(set.programHasParameters(list_id, program_index), set.programHasParametersForUnit(unit_id, program_index));
+        try std.testing.expectEqual(set.programHasParameters(list_id, program_index), set.programHasParametersForUnitName(unit_name, program_index));
+        try std.testing.expectEqual(set.programParametersEmpty(list_id, program_index), set.programParametersEmptyByListName(list_name, program_index));
+        try std.testing.expectEqual(set.programParametersEmpty(list_id, program_index), set.programParametersEmptyForUnit(unit_id, program_index));
+        try std.testing.expectEqual(set.programParametersEmpty(list_id, program_index), set.programParametersEmptyForUnitName(unit_name, program_index));
+        try std.testing.expectEqual(set.programInfoCount(list_id, program_index), set.programInfoCountByListName(list_name, program_index));
+        try std.testing.expectEqual(set.programInfoCount(list_id, program_index), set.programInfoCountForUnit(unit_id, program_index));
+        try std.testing.expectEqual(set.programInfoCount(list_id, program_index), set.programInfoCountForUnitName(unit_name, program_index));
+        try std.testing.expectEqual(set.programHasInfoEntries(list_id, program_index), set.programHasInfoEntriesByListName(list_name, program_index));
+        try std.testing.expectEqual(set.programHasInfoEntries(list_id, program_index), set.programHasInfoEntriesForUnit(unit_id, program_index));
+        try std.testing.expectEqual(set.programHasInfoEntries(list_id, program_index), set.programHasInfoEntriesForUnitName(unit_name, program_index));
+        try std.testing.expectEqual(set.programInfoEmpty(list_id, program_index), set.programInfoEmptyByListName(list_name, program_index));
+        try std.testing.expectEqual(set.programInfoEmpty(list_id, program_index), set.programInfoEmptyForUnit(unit_id, program_index));
+        try std.testing.expectEqual(set.programInfoEmpty(list_id, program_index), set.programInfoEmptyForUnitName(unit_name, program_index));
+
+        for (0..3) |parameter_index| {
+            try std.testing.expectEqual(set.programParameter(list_id, program_index, parameter_index), set.programParameterByListName(list_name, program_index, parameter_index));
+            try std.testing.expectEqual(set.programParameter(list_id, program_index, parameter_index), set.programParameterForUnit(unit_id, program_index, parameter_index));
+            try std.testing.expectEqual(set.programParameter(list_id, program_index, parameter_index), set.programParameterForUnitName(unit_name, program_index, parameter_index));
+        }
+        for (parameter_ids) |parameter_id| {
+            try std.testing.expectEqual(set.programParameterById(list_id, program_index, parameter_id), set.programParameterByIdForListName(list_name, program_index, parameter_id));
+            try std.testing.expectEqual(set.programParameterById(list_id, program_index, parameter_id), set.programParameterByIdForUnit(unit_id, program_index, parameter_id));
+            try std.testing.expectEqual(set.programParameterById(list_id, program_index, parameter_id), set.programParameterByIdForUnitName(unit_name, program_index, parameter_id));
+            try std.testing.expectEqual(set.programParameterIndexOfId(list_id, program_index, parameter_id), set.programParameterIndexOfIdByListName(list_name, program_index, parameter_id));
+            try std.testing.expectEqual(set.programParameterIndexOfId(list_id, program_index, parameter_id), set.programParameterIndexOfIdForUnit(unit_id, program_index, parameter_id));
+            try std.testing.expectEqual(set.programParameterIndexOfId(list_id, program_index, parameter_id), set.programParameterIndexOfIdForUnitName(unit_name, program_index, parameter_id));
+            try std.testing.expectEqual(set.hasProgramParameter(list_id, program_index, parameter_id), set.hasProgramParameterByListName(list_name, program_index, parameter_id));
+            try std.testing.expectEqual(set.hasProgramParameter(list_id, program_index, parameter_id), set.hasProgramParameterForUnit(unit_id, program_index, parameter_id));
+            try std.testing.expectEqual(set.hasProgramParameter(list_id, program_index, parameter_id), set.hasProgramParameterForUnitName(unit_name, program_index, parameter_id));
+        }
+        for (0..3) |info_index| {
+            try std.testing.expectEqual(set.programInfoEntry(list_id, program_index, info_index), set.programInfoEntryByListName(list_name, program_index, info_index));
+            try std.testing.expectEqual(set.programInfoEntry(list_id, program_index, info_index), set.programInfoEntryForUnit(unit_id, program_index, info_index));
+            try std.testing.expectEqual(set.programInfoEntry(list_id, program_index, info_index), set.programInfoEntryForUnitName(unit_name, program_index, info_index));
+        }
+        for (info_keys) |key| {
+            try std.testing.expectEqual(set.programInfo(list_id, program_index, key), set.programInfoByListName(list_name, program_index, key));
+            try std.testing.expectEqual(set.programInfo(list_id, program_index, key), set.programInfoForUnit(unit_id, program_index, key));
+            try std.testing.expectEqual(set.programInfo(list_id, program_index, key), set.programInfoForUnitName(unit_name, program_index, key));
+            try std.testing.expectEqual(set.programInfoEntryByKey(list_id, program_index, key), set.programInfoEntryByKeyByListName(list_name, program_index, key));
+            try std.testing.expectEqual(set.programInfoEntryByKey(list_id, program_index, key), set.programInfoEntryByKeyForUnit(unit_id, program_index, key));
+            try std.testing.expectEqual(set.programInfoEntryByKey(list_id, program_index, key), set.programInfoEntryByKeyForUnitName(unit_name, program_index, key));
+            try std.testing.expectEqual(set.programInfoIndexOfKey(list_id, program_index, key), set.programInfoIndexOfKeyByListName(list_name, program_index, key));
+            try std.testing.expectEqual(set.programInfoIndexOfKey(list_id, program_index, key), set.programInfoIndexOfKeyForUnit(unit_id, program_index, key));
+            try std.testing.expectEqual(set.programInfoIndexOfKey(list_id, program_index, key), set.programInfoIndexOfKeyForUnitName(unit_name, program_index, key));
+            try std.testing.expectEqual(set.hasProgramInfo(list_id, program_index, key), set.hasProgramInfoByListName(list_name, program_index, key));
+            try std.testing.expectEqual(set.hasProgramInfo(list_id, program_index, key), set.hasProgramInfoForUnit(unit_id, program_index, key));
+            try std.testing.expectEqual(set.hasProgramInfo(list_id, program_index, key), set.hasProgramInfoForUnitName(unit_name, program_index, key));
+        }
+    }
+
+    for (program_names) |program_name| {
+        try std.testing.expectEqual(set.programByName(list_id, program_name), set.programByNameForListName(list_name, program_name));
+        try std.testing.expectEqual(set.programByName(list_id, program_name), set.programByNameForUnit(unit_id, program_name));
+        try std.testing.expectEqual(set.programByName(list_id, program_name), set.programByNameForUnitName(unit_name, program_name));
+        try std.testing.expectEqual(set.programIndexOfName(list_id, program_name), set.programIndexOfNameByListName(list_name, program_name));
+        try std.testing.expectEqual(set.programIndexOfName(list_id, program_name), set.programIndexOfNameForUnit(unit_id, program_name));
+        try std.testing.expectEqual(set.programIndexOfName(list_id, program_name), set.programIndexOfNameForUnitName(unit_name, program_name));
+        try std.testing.expectEqual(set.hasProgramName(list_id, program_name), set.hasProgramNameByListName(list_name, program_name));
+        try std.testing.expectEqual(set.hasProgramName(list_id, program_name), set.hasProgramNameForUnit(unit_id, program_name));
+        try std.testing.expectEqual(set.hasProgramName(list_id, program_name), set.hasProgramNameForUnitName(unit_name, program_name));
+        try std.testing.expectEqual(set.programParameterCountByName(list_id, program_name), set.programParameterCountByNameForListName(list_name, program_name));
+        try std.testing.expectEqual(set.programParameterCountByName(list_id, program_name), set.programParameterCountByNameForUnit(unit_id, program_name));
+        try std.testing.expectEqual(set.programParameterCountByName(list_id, program_name), set.programParameterCountByNameForUnitName(unit_name, program_name));
+        try std.testing.expectEqual(set.programHasParametersByName(list_id, program_name), set.programHasParametersByNameForListName(list_name, program_name));
+        try std.testing.expectEqual(set.programHasParametersByName(list_id, program_name), set.programHasParametersByNameForUnit(unit_id, program_name));
+        try std.testing.expectEqual(set.programHasParametersByName(list_id, program_name), set.programHasParametersByNameForUnitName(unit_name, program_name));
+        try std.testing.expectEqual(set.programParametersEmptyByName(list_id, program_name), set.programParametersEmptyByNameForListName(list_name, program_name));
+        try std.testing.expectEqual(set.programParametersEmptyByName(list_id, program_name), set.programParametersEmptyByNameForUnit(unit_id, program_name));
+        try std.testing.expectEqual(set.programParametersEmptyByName(list_id, program_name), set.programParametersEmptyByNameForUnitName(unit_name, program_name));
+        try std.testing.expectEqual(set.programInfoCountByName(list_id, program_name), set.programInfoCountByNameForListName(list_name, program_name));
+        try std.testing.expectEqual(set.programInfoCountByName(list_id, program_name), set.programInfoCountByNameForUnit(unit_id, program_name));
+        try std.testing.expectEqual(set.programInfoCountByName(list_id, program_name), set.programInfoCountByNameForUnitName(unit_name, program_name));
+        try std.testing.expectEqual(set.programHasInfoEntriesByName(list_id, program_name), set.programHasInfoEntriesByNameForListName(list_name, program_name));
+        try std.testing.expectEqual(set.programHasInfoEntriesByName(list_id, program_name), set.programHasInfoEntriesByNameForUnit(unit_id, program_name));
+        try std.testing.expectEqual(set.programHasInfoEntriesByName(list_id, program_name), set.programHasInfoEntriesByNameForUnitName(unit_name, program_name));
+        try std.testing.expectEqual(set.programInfoEmptyByName(list_id, program_name), set.programInfoEmptyByNameForListName(list_name, program_name));
+        try std.testing.expectEqual(set.programInfoEmptyByName(list_id, program_name), set.programInfoEmptyByNameForUnit(unit_id, program_name));
+        try std.testing.expectEqual(set.programInfoEmptyByName(list_id, program_name), set.programInfoEmptyByNameForUnitName(unit_name, program_name));
+
+        for (0..3) |parameter_index| {
+            try std.testing.expectEqual(set.programParameterByName(list_id, program_name, parameter_index), set.programParameterByNameForListName(list_name, program_name, parameter_index));
+            try std.testing.expectEqual(set.programParameterByName(list_id, program_name, parameter_index), set.programParameterByNameForUnit(unit_id, program_name, parameter_index));
+            try std.testing.expectEqual(set.programParameterByName(list_id, program_name, parameter_index), set.programParameterByNameForUnitName(unit_name, program_name, parameter_index));
+        }
+        for (parameter_ids) |parameter_id| {
+            try std.testing.expectEqual(set.programParameterByNameAndId(list_id, program_name, parameter_id), set.programParameterByNameAndIdForListName(list_name, program_name, parameter_id));
+            try std.testing.expectEqual(set.programParameterByNameAndId(list_id, program_name, parameter_id), set.programParameterByNameAndIdForUnit(unit_id, program_name, parameter_id));
+            try std.testing.expectEqual(set.programParameterByNameAndId(list_id, program_name, parameter_id), set.programParameterByNameAndIdForUnitName(unit_name, program_name, parameter_id));
+            try std.testing.expectEqual(set.programParameterIndexOfIdByName(list_id, program_name, parameter_id), set.programParameterIndexOfIdByNameForListName(list_name, program_name, parameter_id));
+            try std.testing.expectEqual(set.programParameterIndexOfIdByName(list_id, program_name, parameter_id), set.programParameterIndexOfIdByNameForUnit(unit_id, program_name, parameter_id));
+            try std.testing.expectEqual(set.programParameterIndexOfIdByName(list_id, program_name, parameter_id), set.programParameterIndexOfIdByNameForUnitName(unit_name, program_name, parameter_id));
+            try std.testing.expectEqual(set.hasProgramParameterByName(list_id, program_name, parameter_id), set.hasProgramParameterByNameForListName(list_name, program_name, parameter_id));
+            try std.testing.expectEqual(set.hasProgramParameterByName(list_id, program_name, parameter_id), set.hasProgramParameterByNameForUnit(unit_id, program_name, parameter_id));
+            try std.testing.expectEqual(set.hasProgramParameterByName(list_id, program_name, parameter_id), set.hasProgramParameterByNameForUnitName(unit_name, program_name, parameter_id));
+        }
+        for (0..3) |info_index| {
+            try std.testing.expectEqual(set.programInfoEntryByName(list_id, program_name, info_index), set.programInfoEntryByNameForListName(list_name, program_name, info_index));
+            try std.testing.expectEqual(set.programInfoEntryByName(list_id, program_name, info_index), set.programInfoEntryByNameForUnit(unit_id, program_name, info_index));
+            try std.testing.expectEqual(set.programInfoEntryByName(list_id, program_name, info_index), set.programInfoEntryByNameForUnitName(unit_name, program_name, info_index));
+        }
+        for (info_keys) |key| {
+            try std.testing.expectEqual(set.programInfoByName(list_id, program_name, key), set.programInfoByNameForListName(list_name, program_name, key));
+            try std.testing.expectEqual(set.programInfoByName(list_id, program_name, key), set.programInfoByNameForUnit(unit_id, program_name, key));
+            try std.testing.expectEqual(set.programInfoByName(list_id, program_name, key), set.programInfoByNameForUnitName(unit_name, program_name, key));
+            try std.testing.expectEqual(set.programInfoEntryByNameAndKey(list_id, program_name, key), set.programInfoEntryByNameAndKeyForListName(list_name, program_name, key));
+            try std.testing.expectEqual(set.programInfoEntryByNameAndKey(list_id, program_name, key), set.programInfoEntryByNameAndKeyForUnit(unit_id, program_name, key));
+            try std.testing.expectEqual(set.programInfoEntryByNameAndKey(list_id, program_name, key), set.programInfoEntryByNameAndKeyForUnitName(unit_name, program_name, key));
+            try std.testing.expectEqual(set.programInfoIndexOfKeyByName(list_id, program_name, key), set.programInfoIndexOfKeyByNameForListName(list_name, program_name, key));
+            try std.testing.expectEqual(set.programInfoIndexOfKeyByName(list_id, program_name, key), set.programInfoIndexOfKeyByNameForUnit(unit_id, program_name, key));
+            try std.testing.expectEqual(set.programInfoIndexOfKeyByName(list_id, program_name, key), set.programInfoIndexOfKeyByNameForUnitName(unit_name, program_name, key));
+            try std.testing.expectEqual(set.hasProgramInfoByName(list_id, program_name, key), set.hasProgramInfoByNameForListName(list_name, program_name, key));
+            try std.testing.expectEqual(set.hasProgramInfoByName(list_id, program_name, key), set.hasProgramInfoByNameForUnit(unit_id, program_name, key));
+            try std.testing.expectEqual(set.hasProgramInfoByName(list_id, program_name, key), set.hasProgramInfoByNameForUnitName(unit_name, program_name, key));
+        }
+    }
+}
+
 test "unit set validates ids names and links" {
     const DuplicateUnits = UnitSet(.{
         .units = &.{ Unit.root("Root"), .{ .id = root_unit_id, .name = "Other" } },
