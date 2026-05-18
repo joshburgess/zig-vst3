@@ -2632,6 +2632,120 @@ test "event writer queries written events by offset" {
     try std.testing.expectEqual(@as(i16, 64), same_offset_writer.latestAtOffset(2).?.pitch);
 }
 
+test "event writer generated queries match event views" {
+    const kinds = [_]EventKind{ .note_on, .note_off, .midi_cc, .pitch_bend };
+    const bus_indexes = [_]i32{ 0, 1, 2 };
+    const channels = [_]i16{ 0, 1, 2 };
+    const frame_count = 6;
+
+    for (0..32) |seed| {
+        var source: [4]Event = undefined;
+        for (&source, 0..) |*item, index| {
+            const sample_offset = (seed * 3 + index * 2) % frame_count;
+            const channel: i16 = @intCast((seed + index) % 3);
+            item.* = (switch (kinds[(seed + index * 2) % kinds.len]) {
+                .note_on => Event.noteOn(sample_offset, channel, @intCast(60 + index), 0.25),
+                .note_off => Event.noteOff(sample_offset, channel, @intCast(60 + index), 0.0),
+                .midi_cc => Event.midiCc(sample_offset, channel, @intCast(1 + index), 0.5),
+                .pitch_bend => Event.pitchBend(sample_offset, channel, 0.75),
+                else => unreachable,
+            }).withBusIndex(@intCast((seed + index * 2) % 3));
+        }
+
+        for (0..source.len + 1) |len| {
+            var storage: [source.len]Event = undefined;
+            var writer = EventWriter.init(&storage, frame_count);
+            try writer.appendAll(try Events.init(source[0..len], frame_count));
+            const view = writer.events();
+
+            try std.testing.expectEqual(view.eventCount(), writer.eventCount());
+            try std.testing.expectEqual(view.isEmpty(), writer.isEmpty());
+            try std.testing.expectEqual(view.hasEvents(), writer.hasEvents());
+            try std.testing.expectEqual(view.firstSampleOffset(), writer.firstSampleOffset());
+            try std.testing.expectEqual(view.latestSampleOffset(), writer.latestSampleOffset());
+            try std.testing.expectEqual(view.first(), writer.first());
+            try std.testing.expectEqual(view.latest(), writer.latest());
+
+            for (kinds) |kind| {
+                try std.testing.expectEqual(view.countKind(kind), writer.countKind(kind));
+                try std.testing.expectEqual(view.hasKind(kind), writer.hasKind(kind));
+                try std.testing.expectEqual(view.kindEmpty(kind), writer.kindEmpty(kind));
+                try std.testing.expectEqual(view.onlyKind(kind), writer.onlyKind(kind));
+                try std.testing.expectEqual(view.firstSampleOffsetForKind(kind), writer.firstSampleOffsetForKind(kind));
+                try std.testing.expectEqual(view.latestSampleOffsetForKind(kind), writer.latestSampleOffsetForKind(kind));
+                try std.testing.expectEqual(view.firstKind(kind), writer.firstKind(kind));
+                try std.testing.expectEqual(view.latestKind(kind), writer.latestKind(kind));
+                for (0..frame_count) |sample_offset| {
+                    try std.testing.expectEqual(view.countKindAtOffset(kind, sample_offset), writer.countKindAtOffset(kind, sample_offset));
+                    try std.testing.expectEqual(view.hasKindAtOffset(kind, sample_offset), writer.hasKindAtOffset(kind, sample_offset));
+                    try std.testing.expectEqual(view.kindAtOffsetEmpty(kind, sample_offset), writer.kindAtOffsetEmpty(kind, sample_offset));
+                    try std.testing.expectEqual(view.onlyKindAtOffset(kind, sample_offset), writer.onlyKindAtOffset(kind, sample_offset));
+                    try std.testing.expectEqual(view.firstKindAtOffset(kind, sample_offset), writer.firstKindAtOffset(kind, sample_offset));
+                    try std.testing.expectEqual(view.latestKindAtOffset(kind, sample_offset), writer.latestKindAtOffset(kind, sample_offset));
+                    try std.testing.expectEqual(view.nextSampleOffsetForKind(kind, sample_offset), writer.nextSampleOffsetForKind(kind, sample_offset));
+                }
+            }
+
+            for (0..frame_count) |sample_offset| {
+                try std.testing.expectEqual(view.countAtOffset(sample_offset), writer.countAtOffset(sample_offset));
+                try std.testing.expectEqual(view.hasAtOffset(sample_offset), writer.hasAtOffset(sample_offset));
+                try std.testing.expectEqual(view.offsetEmpty(sample_offset), writer.offsetEmpty(sample_offset));
+                try std.testing.expectEqual(view.onlyAtOffset(sample_offset), writer.onlyAtOffset(sample_offset));
+                try std.testing.expectEqual(view.firstAtOffset(sample_offset), writer.firstAtOffset(sample_offset));
+                try std.testing.expectEqual(view.latestAtOffset(sample_offset), writer.latestAtOffset(sample_offset));
+                try std.testing.expectEqual(view.nextSampleOffset(sample_offset), writer.nextSampleOffset(sample_offset));
+            }
+
+            for (bus_indexes) |bus_index| {
+                try std.testing.expectEqual(view.countBus(bus_index), writer.countBus(bus_index));
+                try std.testing.expectEqual(view.hasBus(bus_index), writer.hasBus(bus_index));
+                try std.testing.expectEqual(view.busEmpty(bus_index), writer.busEmpty(bus_index));
+                try std.testing.expectEqual(view.onlyBus(bus_index), writer.onlyBus(bus_index));
+                try std.testing.expectEqual(view.firstSampleOffsetForBus(bus_index), writer.firstSampleOffsetForBus(bus_index));
+                try std.testing.expectEqual(view.latestSampleOffsetForBus(bus_index), writer.latestSampleOffsetForBus(bus_index));
+                try std.testing.expectEqual(view.firstBus(bus_index), writer.firstBus(bus_index));
+                try std.testing.expectEqual(view.latestBus(bus_index), writer.latestBus(bus_index));
+                for (0..frame_count) |sample_offset| {
+                    try std.testing.expectEqual(view.nextSampleOffsetForBus(bus_index, sample_offset), writer.nextSampleOffsetForBus(bus_index, sample_offset));
+                }
+            }
+
+            for (channels) |channel| {
+                try std.testing.expectEqual(view.countChannel(channel), writer.countChannel(channel));
+                try std.testing.expectEqual(view.hasChannel(channel), writer.hasChannel(channel));
+                try std.testing.expectEqual(view.channelEmpty(channel), writer.channelEmpty(channel));
+                try std.testing.expectEqual(view.onlyChannel(channel), writer.onlyChannel(channel));
+                try std.testing.expectEqual(view.firstSampleOffsetForChannel(channel), writer.firstSampleOffsetForChannel(channel));
+                try std.testing.expectEqual(view.latestSampleOffsetForChannel(channel), writer.latestSampleOffsetForChannel(channel));
+                try std.testing.expectEqual(view.firstChannel(channel), writer.firstChannel(channel));
+                try std.testing.expectEqual(view.latestChannel(channel), writer.latestChannel(channel));
+                for (0..frame_count) |sample_offset| {
+                    try std.testing.expectEqual(view.nextSampleOffsetForChannel(channel, sample_offset), writer.nextSampleOffsetForChannel(channel, sample_offset));
+                }
+            }
+
+            for (bus_indexes) |bus_index| {
+                for (channels) |channel| {
+                    try std.testing.expectEqual(view.countBusChannel(bus_index, channel), writer.countBusChannel(bus_index, channel));
+                    try std.testing.expectEqual(view.hasBusChannel(bus_index, channel), writer.hasBusChannel(bus_index, channel));
+                    try std.testing.expectEqual(view.busChannelEmpty(bus_index, channel), writer.busChannelEmpty(bus_index, channel));
+                    try std.testing.expectEqual(view.onlyBusChannel(bus_index, channel), writer.onlyBusChannel(bus_index, channel));
+                    try std.testing.expectEqual(view.firstSampleOffsetForBusChannel(bus_index, channel), writer.firstSampleOffsetForBusChannel(bus_index, channel));
+                    try std.testing.expectEqual(view.latestSampleOffsetForBusChannel(bus_index, channel), writer.latestSampleOffsetForBusChannel(bus_index, channel));
+                    try std.testing.expectEqual(view.firstBusChannel(bus_index, channel), writer.firstBusChannel(bus_index, channel));
+                    try std.testing.expectEqual(view.latestBusChannel(bus_index, channel), writer.latestBusChannel(bus_index, channel));
+                    for (0..frame_count) |sample_offset| {
+                        try std.testing.expectEqual(
+                            view.nextSampleOffsetForBusChannel(bus_index, channel, sample_offset),
+                            writer.nextSampleOffsetForBusChannel(bus_index, channel, sample_offset),
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
 test "event writer appends event views atomically" {
     const items = [_]Event{
         Event.noteOn(0, 0, 60, 1.0),
