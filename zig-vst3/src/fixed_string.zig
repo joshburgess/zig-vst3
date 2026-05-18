@@ -58,3 +58,67 @@ test "readUtf16ZAsAscii truncates to output buffer" {
 
     try std.testing.expectEqualSlices(u8, "ab", text);
 }
+
+test "copyAsciiZ generated capacity boundaries" {
+    const Case = struct {
+        capacity: usize,
+        expected: []const u8,
+    };
+    const cases = [_]Case{
+        .{ .capacity = 1, .expected = &.{0} },
+        .{ .capacity = 2, .expected = &.{ 'a', 0 } },
+        .{ .capacity = 4, .expected = &.{ 'a', 'b', 'c', 0 } },
+        .{ .capacity = 8, .expected = &.{ 'a', 'b', 'c', 'd', 'e', 0, 0, 0 } },
+    };
+
+    inline for (cases) |case| {
+        var text = [_]u8{'x'} ** case.capacity;
+
+        copyAsciiZ(&text, "abcde");
+
+        try std.testing.expectEqualSlices(u8, case.expected, &text);
+    }
+}
+
+test "copyAsciiToUtf16Z generated capacity boundaries" {
+    const Case = struct {
+        capacity: usize,
+        expected: []const types.char16,
+    };
+    const cases = [_]Case{
+        .{ .capacity = 1, .expected = &.{0} },
+        .{ .capacity = 2, .expected = &.{ 'a', 0 } },
+        .{ .capacity = 4, .expected = &.{ 'a', 'b', 'c', 0 } },
+        .{ .capacity = 8, .expected = &.{ 'a', 'b', 'c', 'd', 'e', 0, 0, 0 } },
+    };
+
+    inline for (cases) |case| {
+        var text = [_]types.char16{'x'} ** case.capacity;
+
+        copyAsciiToUtf16Z(&text, "abcde");
+
+        try std.testing.expectEqualSlices(types.char16, case.expected, &text);
+    }
+}
+
+test "readUtf16ZAsAscii generated output boundaries" {
+    const source = [_:0]types.char16{ 'a', 0x0100, 'c', 0 };
+    const Case = struct {
+        capacity: usize,
+        expected: []const u8,
+    };
+    const cases = [_]Case{
+        .{ .capacity = 0, .expected = "" },
+        .{ .capacity = 1, .expected = &.{'a'} },
+        .{ .capacity = 2, .expected = &.{ 'a', 0xff } },
+        .{ .capacity = 4, .expected = &.{ 'a', 0xff, 'c' } },
+    };
+
+    inline for (cases) |case| {
+        var buffer = [_]u8{0} ** case.capacity;
+
+        const text = readUtf16ZAsAscii(&source, &buffer);
+
+        try std.testing.expectEqualSlices(u8, case.expected, text);
+    }
+}

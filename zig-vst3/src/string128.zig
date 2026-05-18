@@ -62,3 +62,31 @@ test "String128 pointer copies zero-fill and truncate ASCII text" {
     clearPtr(&value);
     try std.testing.expectEqualSlices(vsttypes.TChar, &zero, &value);
 }
+
+test "String128 copies short and empty text with zero fill" {
+    var value: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** code_units;
+
+    copy(&value, "abc");
+    try std.testing.expectEqualSlices(vsttypes.TChar, &.{ 'a', 'b', 'c', 0, 0 }, value[0..5]);
+    for (value[5..]) |char| {
+        try std.testing.expectEqual(@as(vsttypes.TChar, 0), char);
+    }
+
+    value = [_]vsttypes.TChar{'x'} ** code_units;
+    copy(&value, "");
+    try std.testing.expectEqualSlices(vsttypes.TChar, &zero, &value);
+}
+
+test "String128 pointer copies short and empty text with zero fill" {
+    var value: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** code_units;
+
+    copyPtr(&value, "abc");
+    try std.testing.expectEqualSlices(vsttypes.TChar, &.{ 'a', 'b', 'c', 0, 0 }, value[0..5]);
+    for (value[5..]) |char| {
+        try std.testing.expectEqual(@as(vsttypes.TChar, 0), char);
+    }
+
+    value = [_]vsttypes.TChar{'x'} ** code_units;
+    copyPtr(&value, "");
+    try std.testing.expectEqualSlices(vsttypes.TChar, &zero, &value);
+}
