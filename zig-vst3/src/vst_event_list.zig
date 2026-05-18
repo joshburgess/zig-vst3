@@ -69,20 +69,16 @@ pub fn EventList(comptime max_events: usize) type {
             return @intCast(owner(ptr).safeCount());
         }
 
+        fn failEvent(event: *ivstevents.Event, result: types.tresult) types.tresult {
+            event.* = .{};
+            return result;
+        }
+
         fn getEvent(ptr: *anyopaque, index: types.int32, event: *ivstevents.Event) callconv(.c) types.tresult {
-            if (index < 0) {
-                event.* = .{};
-                return types.kInvalidArgument;
-            }
+            if (index < 0) return failEvent(event, types.kInvalidArgument);
             const self = owner(ptr);
-            if (index == self.fail_get_index) {
-                event.* = .{};
-                return types.kResultFalse;
-            }
-            const event_index = vst_index.bounded(index, self.safeCount()) orelse {
-                event.* = .{};
-                return types.kInvalidArgument;
-            };
+            if (index == self.fail_get_index) return failEvent(event, types.kResultFalse);
+            const event_index = vst_index.bounded(index, self.safeCount()) orelse return failEvent(event, types.kInvalidArgument);
             event.* = self.events[event_index];
             return types.kResultOk;
         }

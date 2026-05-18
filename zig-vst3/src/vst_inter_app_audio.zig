@@ -50,16 +50,19 @@ pub fn InterAppAudioHost(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IInterAppAudioHost");
         }
 
+        fn failScreenSize(self: *Self, out_rect: *iplugview.ViewRect, out_scale: *f32, result: types.tresult) types.tresult {
+            out_rect.* = self.screen;
+            out_scale.* = self.scale_factor;
+            return result;
+        }
+
         fn getScreenSize(ptr: *anyopaque, out_rect: *iplugview.ViewRect, out_scale: *f32) callconv(.c) types.tresult {
             const self = owner(ptr);
             out_rect.* = self.screen;
             out_scale.* = self.scale_factor;
             if (@hasDecl(Config, "getScreenSize")) {
                 const result = Config.getScreenSize(self, out_rect, out_scale);
-                if (result != types.kResultOk) {
-                    out_rect.* = self.screen;
-                    out_scale.* = self.scale_factor;
-                }
+                if (result != types.kResultOk) return self.failScreenSize(out_rect, out_scale, result);
                 return result;
             }
             return types.kResultOk;
@@ -87,12 +90,17 @@ pub fn InterAppAudioHost(comptime Config: type) type {
             return types.kResultOk;
         }
 
+        fn failHostIcon(self: *Self, out_icon: *?*anyopaque, result: types.tresult) types.tresult {
+            out_icon.* = self.host_icon;
+            return result;
+        }
+
         fn getHostIcon(ptr: *anyopaque, out_icon: *?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
             out_icon.* = self.host_icon;
             if (@hasDecl(Config, "getHostIcon")) {
                 const result = Config.getHostIcon(self, out_icon);
-                if (result != types.kResultOk) out_icon.* = self.host_icon;
+                if (result != types.kResultOk) return self.failHostIcon(out_icon, result);
                 return result;
             }
             return if (self.host_icon == null) types.kResultFalse else types.kResultOk;
