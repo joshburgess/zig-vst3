@@ -209,6 +209,21 @@ test "string result clears inactive encoding when switching text width" {
     try std.testing.expect(!iface.vtable.isWideString(iface));
 }
 
+test "string result truncates narrow and wide text with trailing zero" {
+    const Result = StringResult(4, 3);
+    var result = Result{};
+    const iface = result.asString();
+
+    iface.vtable.setText8(iface, "abcdef");
+    try std.testing.expectEqualStrings("abc", result.text8Span());
+    try std.testing.expectEqual(@as(types.char8, 0), result.text8[3]);
+
+    const wide_value = [_:0]types.char16{ 'A', 'B', 'C', 'D' };
+    iface.vtable.setText16(iface, &wide_value);
+    try std.testing.expectEqualSlices(types.char16, &.{ 'A', 'B' }, result.text16Span());
+    try std.testing.expectEqual(@as(types.char16, 0), result.text16[2]);
+}
+
 test "string result supports both string interfaces" {
     const Result = StringResult(8, 8);
     var result = Result{};
@@ -219,4 +234,20 @@ test "string result supports both string interfaces" {
     try std.testing.expect(queried != null);
     const string_iface: *istringresult.IString = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), string_iface.vtable.release(string_iface));
+}
+
+test "string result query works from string side and clears unsupported outputs" {
+    const Result = StringResult(8, 8);
+    var result = Result{};
+    const iface = result.asString();
+
+    var queried_result: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &istringresult.istring_result_iid, &queried_result));
+    try std.testing.expect(queried_result != null);
+    const result_iface: *istringresult.IStringResult = @ptrCast(@alignCast(queried_result.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), result_iface.vtable.release(result_iface));
+
+    var missing: ?*anyopaque = @ptrCast(iface);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &missing));
+    try std.testing.expectEqual(@as(?*anyopaque, null), missing);
 }
