@@ -240,7 +240,8 @@ test "remap param ID maps compatible old parameter IDs" {
     const target_cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
     const Remap = RemapParamID(struct {
         pub fn getCompatibleParamID(class_id: *const tuid.TUID, old_param_id: vsttypes.ParamID) ?vsttypes.ParamID {
-            if (std.mem.eql(u8, class_id, &target_cid) and old_param_id == 100) return 200;
+            const supported_cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
+            if (std.mem.eql(u8, class_id, &supported_cid) and old_param_id == 100) return 200;
             return null;
         }
     });

@@ -2,6 +2,7 @@ const std = @import("std");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
+const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
@@ -135,6 +136,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         }
 
         fn getProgramListInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.c) types.tresult {
+            if (max_program_lists == 0) return failProgramListInfo(out);
             const self = owner(ptr);
             const list_index = vst_index.bounded(index, self.safeProgramListCount()) orelse return failProgramListInfo(out);
             out.* = self.program_lists[list_index];
@@ -629,7 +631,7 @@ test "unit info clears delegated failure outputs" {
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), pitch_name[string128.payload_units]);
 
     var unit_id: vsttypes.UnitID = 99;
-    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getUnitByBus(iface, vsttypes.MediaTypes.kAudio, vsttypes.BusDirections.kInput, 0, 0, &unit_id));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getUnitByBus(iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 0, &unit_id));
     try std.testing.expectEqual(ivstunits.kRootUnitId, unit_id);
 }
 
