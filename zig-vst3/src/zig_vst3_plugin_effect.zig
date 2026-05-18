@@ -1018,6 +1018,34 @@ fn countToInt32(count: usize) types.int32 {
     return std.math.cast(types.int32, count) orelse std.math.maxInt(types.int32);
 }
 
+test "reflected edit controller clears unsupported query outputs" {
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "QueryController";
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+    });
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var queried: ?*anyopaque = @ptrFromInt(0x10);
+    try std.testing.expectEqual(types.kNoInterface, controller_iface.vtable.queryInterface(controller_iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.queryInterface(controller_iface, &ivstunits.iunit_info_iid, &queried));
+    const unit_info: *ivstunits.IUnitInfo = @ptrCast(@alignCast(queried.?));
+
+    queried = @ptrFromInt(0x20);
+    try std.testing.expectEqual(types.kNoInterface, unit_info.vtable.queryInterface(unit_info, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+    try std.testing.expect(unit_info.vtable.release(unit_info) >= 1);
+}
+
 test "reflected edit controller exposes configured units and programs" {
     const programs = [_]plug_core.units.Program{
         .{ .name = "Clean", .info = &.{.{ .key = "category", .value = "Clean" }} },
@@ -1371,6 +1399,49 @@ fn releaseComponentHandlers(controller: anytype) void {
         _ = handler.vtable.release(handler);
         controller.component_handler = null;
     }
+}
+
+test "simple stereo effect clears unsupported query outputs" {
+    const TestEffect = SimpleStereoEffect(struct {
+        pub const component_name = "QueryComponent";
+        pub const controller_cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
+        pub const Processor = struct {
+            pub fn process(_: @This(), comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+                for (0..context.outputChannelCount()) |channel| {
+                    const output = context.outputChannel(channel) orelse continue;
+                    @memset(output, 0);
+                }
+            }
+        };
+
+        pub fn applyParameterChanges(_: plug_process.ParameterChanges) void {}
+
+        pub fn readState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultFalse;
+        }
+
+        pub fn writeState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultFalse;
+        }
+    });
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestEffect.create(@ptrCast(&ivstcomponent.icomponent_iid), &component_out));
+    try std.testing.expect(component_out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(component_out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var queried: ?*anyopaque = @ptrFromInt(0x10);
+    try std.testing.expectEqual(types.kNoInterface, component_iface.vtable.queryInterface(component_iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &queried));
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(queried.?));
+
+    queried = @ptrFromInt(0x20);
+    try std.testing.expectEqual(types.kNoInterface, processor.vtable.queryInterface(processor, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+    try std.testing.expect(processor.vtable.release(processor) >= 1);
 }
 
 pub fn SimpleStereoEffect(comptime Config: type) type {
