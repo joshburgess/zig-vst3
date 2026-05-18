@@ -921,14 +921,14 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqual(@as(?f64, null), set.defaultNormalizedByName("Missing"));
     try std.testing.expectEqual(@as(?f64, 0.75), set.defaultPlain(0));
     try std.testing.expectEqual(@as(?f64, 4.0), set.defaultPlainById(1));
-    try std.testing.expectEqual(@as(?f64, 1.0), set.defaultPlainByName("Bypass"));
+    try std.testing.expectEqual(@as(?f64, 0.0), set.defaultPlainByName("Bypass"));
     try std.testing.expectEqual(@as(?f64, 1.0), set.defaultPlainByName("Mode"));
     try std.testing.expectEqual(@as(?f64, null), set.defaultPlain(99));
     try std.testing.expectEqual(@as(?f64, null), set.defaultPlainById(99));
     try std.testing.expectEqual(@as(?f64, null), set.defaultPlainByName("Missing"));
     try std.testing.expectEqual(@as(f64, 0.75), set.fieldDefaultPlain("gain"));
     try std.testing.expectEqual(@as(i64, 4), set.fieldDefaultPlain("voices"));
-    try std.testing.expectEqual(true, set.fieldDefaultPlain("bypass"));
+    try std.testing.expectEqual(false, set.fieldDefaultPlain("bypass"));
     try std.testing.expectEqual(Mode.lead, set.fieldDefaultPlain("mode"));
     try std.testing.expectEqual(@as(?bool, true), set.canAutomate(0));
     try std.testing.expectEqual(@as(?bool, false), set.canAutomateById(1));

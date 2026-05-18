@@ -261,7 +261,7 @@ test "exponential smoother approaches target by coefficient" {
     try std.testing.expectApproxEqAbs(0.25, smoother.next(), 0.000001);
     try std.testing.expectApproxEqAbs(0.4375, smoother.next(), 0.000001);
     smoother.setCoefficient(0.5);
-    try std.testing.expectApproxEqAbs(0.578125, smoother.next(), 0.000001);
+    try std.testing.expectApproxEqAbs(0.71875, smoother.next(), 0.000001);
     try std.testing.expectApproxEqAbs(0.5, smoother.coefficientValue(), 0.000001);
     try std.testing.expect(smoother.atTarget(0.5));
     try std.testing.expect(!smoother.needsSmoothing(0.5));

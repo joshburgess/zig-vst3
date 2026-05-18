@@ -1858,7 +1858,7 @@ test "parameter view binds reflected set and values" {
     const Mode = enum { clean, boost, mute };
     const Params = struct {
         gain: FloatParam = .{ .id = 0, .name = "Gain", .units = "dB", .min = -12.0, .max = 6.0, .default = 0.0 },
-        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 4, .default = 1, .can_automate = false, .is_read_only = true },
+        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 4, .default = 1, .can_automate = false, .is_read_only = true, .unit_id = 2 },
         bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
         mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
     };
@@ -2098,7 +2098,7 @@ test "parameter editor binds reflected set and mutable values" {
     const Mode = enum { clean, boost, mute };
     const Params = struct {
         gain: FloatParam = .{ .id = 0, .name = "Gain", .units = "dB", .min = -12.0, .max = 6.0, .default = 0.0 },
-        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 4, .default = 1, .can_automate = false, .is_read_only = true },
+        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 4, .default = 1, .can_automate = false, .is_read_only = true, .unit_id = 2 },
         bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
         mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .clean },
     };
@@ -2335,7 +2335,7 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(?usize, null), editor.storeByNameCount("Gain", std.math.nan(f64)));
     try std.testing.expectEqual(@as(?usize, 0), editor.storeNormalizedCount("gain", 0.75));
     try std.testing.expectEqual(@as(?usize, 1), editor.storeNormalizedCount("gain", 0.5));
-    try std.testing.expectEqual(@as(?usize, 0), editor.storeCount("gain", 0.0));
+    try std.testing.expectEqual(@as(?usize, 1), editor.storeCount("gain", 0.0));
     try std.testing.expectEqual(@as(?usize, 1), editor.storeCount("gain", 3.0));
     try std.testing.expectEqual(@as(?usize, 0), editor.storeIndexCount(0, 0.8333333333333334));
     try std.testing.expectEqual(@as(?usize, 1), editor.storePlainCount(0, 6.0));

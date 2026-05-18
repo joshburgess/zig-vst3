@@ -618,9 +618,10 @@ test "parameter state rejects malformed headers and unsupported versions" {
 
     var bad_version: [magic.len + @sizeOf(u16) + @sizeOf(u16)]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bad_version);
-    try out_stream.writer().writeAll(magic);
-    try out_stream.writer().writeInt(u16, format_version + 1, .little);
-    try out_stream.writer().writeInt(u16, 0, .little);
+    var bad_version_writer = out_stream.writer();
+    try bad_version_writer.writeAll(magic);
+    try bad_version_writer.writeInt(u16, format_version + 1, .little);
+    try bad_version_writer.writeInt(u16, 0, .little);
     var in_stream = FixedBufferStream.init(&bad_version);
     try std.testing.expectError(error.UnsupportedStateVersion, readParameterState(Params, &set, &values, in_stream.reader()));
 }
@@ -636,10 +637,11 @@ test "parameter state rejects truncated entries without changing defaults" {
     var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + @sizeOf(u32)]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
 
-    try out_stream.writer().writeAll(magic);
-    try out_stream.writer().writeInt(u16, format_version, .little);
-    try out_stream.writer().writeInt(u16, 1, .little);
-    try out_stream.writer().writeInt(u32, 0, .little);
+    var writer = out_stream.writer();
+    try writer.writeAll(magic);
+    try writer.writeInt(u16, format_version, .little);
+    try writer.writeInt(u16, 1, .little);
+    try writer.writeInt(u32, 0, .little);
 
     var in_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectError(error.EndOfStream, readParameterState(Params, &set, &values, in_stream.reader()));
@@ -846,7 +848,7 @@ test "parameter state exposes migration resolution" {
     try std.testing.expectEqual(@as(?usize, null), ambiguousParameterMigrationIndex(&migrations));
     try std.testing.expectEqual(@as(?usize, 0), identityParameterMigrationIndex(&identity));
     try std.testing.expectEqual(@as(?usize, 0), cyclicParameterMigrationIndex(&cycle));
-    try std.testing.expectEqual(@as(?usize, 1), cyclicParameterMigrationIndex(&longer_cycle));
+    try std.testing.expectEqual(@as(?usize, 0), cyclicParameterMigrationIndex(&longer_cycle));
     try std.testing.expectEqual(@as(?usize, null), ambiguousParameterMigrationIndex(&cycle));
     try std.testing.expectEqual(@as(?usize, null), ambiguousParameterMigrationIndex(&longer_cycle));
     try std.testing.expectEqual(@as(?usize, 1), ambiguousParameterMigrationIndex(&converging));

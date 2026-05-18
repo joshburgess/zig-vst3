@@ -1770,7 +1770,8 @@ test "process context supports named init options" {
     const output_channels = [_][]f32{&output};
     const parameter_changes = [_]ParameterChange{.{ .id = 7, .sample_offset = 1, .normalized = 0.25 }};
     const events = [_]Event{Event.noteOn(2, 0, 60, 0.5)};
-    var output_events = EventWriter.init(&.{});
+    var output_event_storage: [1]Event = undefined;
+    var output_events = EventWriter.init(&output_event_storage, output.len);
 
     const context = try ProcessContext(f32).initWithOptions(.{
         .sample_rate = 44_100.0,
@@ -1787,7 +1788,8 @@ test "process context supports named init options" {
     try std.testing.expectEqual(@as(usize, 3), context.frameCount());
     try std.testing.expectEqual(@as(usize, 1), context.parameterChangeCount());
     try std.testing.expectEqual(@as(usize, 1), context.inputEventCount());
-    try std.testing.expect(context.hasOutputEvents());
+    try std.testing.expect(context.outputEventWriter() != null);
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventCapacity());
 }
 
 test "process context reports frame count for input-only and output-only processors" {

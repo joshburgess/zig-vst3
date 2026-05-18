@@ -9,4 +9,9 @@ pub const units = @import("units.zig");
 
 test {
     std.testing.refAllDecls(common);
+    std.testing.refAllDecls(parameters);
+    std.testing.refAllDecls(plugin);
+    std.testing.refAllDecls(process);
+    std.testing.refAllDecls(state);
+    std.testing.refAllDecls(units);
 }

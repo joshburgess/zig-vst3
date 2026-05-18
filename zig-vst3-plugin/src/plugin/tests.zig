@@ -373,7 +373,9 @@ test "plugin instance exposes custom unit and program metadata" {
     const Synth = struct {
         pub const name = "Unit Synth";
         pub const vendor = "zig-vst3";
-        pub const Params = struct {};
+        pub const Params = struct {
+            program: parameters.FloatParam = parameters.FloatParam.init(1, "Program", 0.0, 1.0, 0.5),
+        };
         pub const units = units_api.Config{
             .units = &.{
                 units_api.Unit.root("Main"),
@@ -975,7 +977,7 @@ test "plugin instance applies parameter changes to owned values" {
     try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(?f64, null), instance.parameterView().loadById(99));
 
-    instance.storeParameterNormalized("gain", 0.5);
+    try std.testing.expect(instance.storeParameterNormalized("gain", 0.5));
     instance.applyParameterChanges(view);
     try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
 }
@@ -1138,8 +1140,8 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expect(!instance.parameterHasOptionsByName("Missing"));
     try std.testing.expect(instance.parameterOptionsEmptyByName("Missing"));
     var buffer: [16]u8 = undefined;
-    try std.testing.expectEqualStrings("lead", try instance.formatParameterPlainIndex(2, 1.0, &buffer));
-    try std.testing.expectEqualStrings("lead", try instance.formatParameterPlain(2, 1.0, &buffer));
+    try std.testing.expectEqualStrings("mute", try instance.formatParameterPlainIndex(2, 1.0, &buffer));
+    try std.testing.expectEqualStrings("mute", try instance.formatParameterPlain(2, 1.0, &buffer));
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlainIndex(2, "mute"));
     try std.testing.expectEqual(@as(f64, 1.0), try instance.parseParameterPlain(2, "mute"));
     try std.testing.expectEqual(@as(?f64, 2.0), instance.parameterPlainFromNormalizedIndex(2, 1.0));

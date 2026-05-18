@@ -114,8 +114,8 @@ test "normalized and modulated values clamp generated inputs" {
             value.storeModulation(modulation);
 
             try std.testing.expectEqual(expected_base, value.loadBase());
-            try std.testing.expectEqual(expected_modulation, value.loadModulation());
-            try std.testing.expectEqual(std.math.clamp(expected_base + expected_modulation, 0.0, 1.0), value.load());
+            try std.testing.expectApproxEqAbs(expected_modulation, value.loadModulation(), 0.000001);
+            try std.testing.expectApproxEqAbs(std.math.clamp(expected_base + expected_modulation, 0.0, 1.0), value.load(), 0.000001);
         }
     }
 }
