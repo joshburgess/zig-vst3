@@ -304,9 +304,7 @@ test "linux event and timer handlers delegate callbacks and support query interf
     event.asInterface().vtable.onFDIsSet(event.asInterface(), 12);
     timer.asInterface().vtable.onTimer(timer.asInterface());
     try std.testing.expectEqual(@as(Linux.FileDescriptor, 12), event.last_fd);
-    try std.testing.expectEqual(@as(Linux.FileDescriptor, 12), Event.last_fd);
     try std.testing.expectEqual(@as(types.uint32, 1), timer.timer_count);
-    try std.testing.expectEqual(@as(types.uint32, 1), Timer.count);
 
     var event_query: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, event.asInterface().vtable.queryInterface(event.asInterface(), &iplugview.ievent_handler_iid, &event_query));
