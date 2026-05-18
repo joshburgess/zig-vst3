@@ -47,6 +47,7 @@ pub fn StringResult(comptime max_text8_bytes: usize, comptime max_text16_units: 
 
         fn copyText8(self: *Self, value: ?[*:0]const types.char8) void {
             @memset(&self.text8, 0);
+            @memset(&self.text16, 0);
             if (value) |text| {
                 const len = @min(std.mem.len(text), max_text8_bytes - 1);
                 @memcpy(self.text8[0..len], text[0..len]);
@@ -55,6 +56,7 @@ pub fn StringResult(comptime max_text8_bytes: usize, comptime max_text16_units: 
         }
 
         fn copyText16(self: *Self, value: ?[*:0]const types.char16) void {
+            @memset(&self.text8, 0);
             @memset(&self.text16, 0);
             if (value) |text| {
                 const len = @min(std.mem.len(text), max_text16_units - 1);
@@ -185,6 +187,26 @@ test "string result clears null narrow and wide inputs" {
     iface.vtable.setText16(iface, null);
     try std.testing.expectEqualSlices(types.char16, &.{}, result.text16Span());
     try std.testing.expect(iface.vtable.isWideString(iface));
+}
+
+test "string result clears inactive encoding when switching text width" {
+    const Result = StringResult(8, 8);
+    var result = Result{};
+    const iface = result.asString();
+
+    iface.vtable.setText8(iface, "gain");
+    try std.testing.expectEqualStrings("gain", result.text8Span());
+
+    const wide_value = [_:0]types.char16{ 'O', 'K' };
+    iface.vtable.setText16(iface, &wide_value);
+    try std.testing.expectEqualStrings("", result.text8Span());
+    try std.testing.expectEqualSlices(types.char16, &.{ 'O', 'K' }, result.text16Span());
+    try std.testing.expect(iface.vtable.isWideString(iface));
+
+    iface.vtable.setText8(iface, "mix");
+    try std.testing.expectEqualStrings("mix", result.text8Span());
+    try std.testing.expectEqualSlices(types.char16, &.{}, result.text16Span());
+    try std.testing.expect(!iface.vtable.isWideString(iface));
 }
 
 test "string result supports both string interfaces" {
