@@ -10,6 +10,7 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
     if (max_messages == 0) @compileError("TestResult requires at least one message slot");
     vst_index.requireUint32Capacity(max_messages, "TestResult message capacity");
     if (max_chars == 0) @compileError("TestResult requires at least one char per message");
+    vst_index.requireUint32Capacity(max_chars, "TestResult message char capacity");
 
     return extern struct {
         const Self = @This();
@@ -57,8 +58,7 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
         }
 
         fn store(target: *[max_messages][max_chars]types.char16, count: *types.uint32, text: ?[*:0]const types.char16) void {
-            const index = count.*;
-            if (index < max_messages) {
+            if (vst_index.appendIndexU32(count.*, max_messages)) |index| {
                 @memset(&target[index], 0);
                 if (text) |value| {
                     const span = std.mem.span(value);
@@ -341,6 +341,19 @@ test "test result counts messages past fixed storage" {
 
     try std.testing.expectEqual(@as(types.uint32, 2), result.message_count);
     try std.testing.expectEqualSlices(types.char16, text[0..3], result.message(0));
+}
+
+test "test result ignores corrupted high message counts" {
+    const Result = TestResult(1, 4);
+    var result = Result{};
+    const iface = result.asInterface();
+    const text = std.unicode.utf8ToUtf16LeStringLiteral("abc");
+
+    result.message_count = std.math.maxInt(types.uint32);
+    iface.vtable.addMessage(iface, text);
+
+    try std.testing.expectEqual(std.math.maxInt(types.uint32), result.message_count);
+    try std.testing.expectEqualSlices(types.char16, &[_]types.char16{}, result.message(0));
 }
 
 test "test result records null messages as empty entries" {
