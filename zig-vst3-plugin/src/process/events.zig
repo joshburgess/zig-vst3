@@ -1723,12 +1723,28 @@ test "events generated queries match reference scans" {
             return result;
         }
 
+        fn hasKind(items: []const Event, kind: EventKind) bool {
+            return countKind(items, kind) != 0;
+        }
+
+        fn onlyKind(items: []const Event, kind: EventKind) bool {
+            return items.len != 0 and countKind(items, kind) == items.len;
+        }
+
         fn countMatching(items: []const Event, context: anytype, comptime matches: anytype) usize {
             var result: usize = 0;
             for (items) |item| {
                 if (matches(item, context)) result += 1;
             }
             return result;
+        }
+
+        fn hasMatching(items: []const Event, context: anytype, comptime matches: anytype) bool {
+            return countMatching(items, context, matches) != 0;
+        }
+
+        fn onlyMatching(items: []const Event, context: anytype, comptime matches: anytype) bool {
+            return items.len != 0 and countMatching(items, context, matches) == items.len;
         }
 
         fn firstMatching(items: []const Event, context: anytype, comptime matches: anytype) ?Event {
@@ -1770,6 +1786,19 @@ test "events generated queries match reference scans" {
             return result;
         }
 
+        fn nextAnyOffset(items: []const Event, after_sample_offset: usize) ?usize {
+            var result: ?usize = null;
+            for (items) |item| {
+                if (item.sample_offset <= after_sample_offset) continue;
+                if (result) |current| {
+                    if (item.sample_offset < current) result = item.sample_offset;
+                } else {
+                    result = item.sample_offset;
+                }
+            }
+            return result;
+        }
+
         fn firstKind(items: []const Event, kind: EventKind) ?Event {
             return firstMatching(items, kind, itemMatchesKind);
         }
@@ -1788,6 +1817,30 @@ test "events generated queries match reference scans" {
                 if (item.sample_offset == sample_offset) result += 1;
             }
             return result;
+        }
+
+        fn hasAtOffset(items: []const Event, sample_offset: usize) bool {
+            return countAtOffset(items, sample_offset) != 0;
+        }
+
+        fn onlyAtOffset(items: []const Event, sample_offset: usize) bool {
+            return items.len != 0 and countAtOffset(items, sample_offset) == items.len;
+        }
+
+        fn countKindAtOffset(items: []const Event, kind: EventKind, sample_offset: usize) usize {
+            var result: usize = 0;
+            for (items) |item| {
+                if (item.kind == kind and item.sample_offset == sample_offset) result += 1;
+            }
+            return result;
+        }
+
+        fn hasKindAtOffset(items: []const Event, kind: EventKind, sample_offset: usize) bool {
+            return countKindAtOffset(items, kind, sample_offset) != 0;
+        }
+
+        fn onlyKindAtOffset(items: []const Event, kind: EventKind, sample_offset: usize) bool {
+            return items.len != 0 and countKindAtOffset(items, kind, sample_offset) == items.len;
         }
     };
 
@@ -1816,9 +1869,16 @@ test "events generated queries match reference scans" {
 
             for (kinds) |kind| {
                 try std.testing.expectEqual(Reference.countKind(items, kind), view.countKind(kind));
+                try std.testing.expectEqual(Reference.hasKind(items, kind), view.hasKind(kind));
+                try std.testing.expectEqual(!Reference.hasKind(items, kind), view.kindEmpty(kind));
+                try std.testing.expectEqual(Reference.onlyKind(items, kind), view.onlyKind(kind));
                 try std.testing.expectEqual(Reference.firstKind(items, kind), view.firstKind(kind));
                 try std.testing.expectEqual(Reference.latestKind(items, kind), view.latestKind(kind));
                 for (0..frame_count) |sample_offset| {
+                    try std.testing.expectEqual(Reference.countKindAtOffset(items, kind, sample_offset), view.countKindAtOffset(kind, sample_offset));
+                    try std.testing.expectEqual(Reference.hasKindAtOffset(items, kind, sample_offset), view.hasKindAtOffset(kind, sample_offset));
+                    try std.testing.expectEqual(!Reference.hasKindAtOffset(items, kind, sample_offset), view.kindAtOffsetEmpty(kind, sample_offset));
+                    try std.testing.expectEqual(Reference.onlyKindAtOffset(items, kind, sample_offset), view.onlyKindAtOffset(kind, sample_offset));
                     try std.testing.expectEqual(
                         Reference.nextOffsetForKind(items, kind, sample_offset),
                         view.nextSampleOffsetForKind(kind, sample_offset),
@@ -1828,10 +1888,17 @@ test "events generated queries match reference scans" {
 
             for (0..frame_count) |sample_offset| {
                 try std.testing.expectEqual(Reference.countAtOffset(items, sample_offset), view.countAtOffset(sample_offset));
+                try std.testing.expectEqual(Reference.hasAtOffset(items, sample_offset), view.hasAtOffset(sample_offset));
+                try std.testing.expectEqual(!Reference.hasAtOffset(items, sample_offset), view.offsetEmpty(sample_offset));
+                try std.testing.expectEqual(Reference.onlyAtOffset(items, sample_offset), view.onlyAtOffset(sample_offset));
+                try std.testing.expectEqual(Reference.nextAnyOffset(items, sample_offset), view.nextSampleOffset(sample_offset));
             }
 
             for (bus_indexes) |bus_index| {
                 try std.testing.expectEqual(Reference.countMatching(items, bus_index, Reference.itemMatchesBus), view.countBus(bus_index));
+                try std.testing.expectEqual(Reference.hasMatching(items, bus_index, Reference.itemMatchesBus), view.hasBus(bus_index));
+                try std.testing.expectEqual(!Reference.hasMatching(items, bus_index, Reference.itemMatchesBus), view.busEmpty(bus_index));
+                try std.testing.expectEqual(Reference.onlyMatching(items, bus_index, Reference.itemMatchesBus), view.onlyBus(bus_index));
                 try std.testing.expectEqual(Reference.firstMatching(items, bus_index, Reference.itemMatchesBus), view.firstBus(bus_index));
                 try std.testing.expectEqual(Reference.latestMatching(items, bus_index, Reference.itemMatchesBus), view.latestBus(bus_index));
                 for (0..frame_count) |sample_offset| {
@@ -1844,6 +1911,9 @@ test "events generated queries match reference scans" {
 
             for (channels) |channel| {
                 try std.testing.expectEqual(Reference.countMatching(items, channel, Reference.itemMatchesChannel), view.countChannel(channel));
+                try std.testing.expectEqual(Reference.hasMatching(items, channel, Reference.itemMatchesChannel), view.hasChannel(channel));
+                try std.testing.expectEqual(!Reference.hasMatching(items, channel, Reference.itemMatchesChannel), view.channelEmpty(channel));
+                try std.testing.expectEqual(Reference.onlyMatching(items, channel, Reference.itemMatchesChannel), view.onlyChannel(channel));
                 try std.testing.expectEqual(Reference.firstMatching(items, channel, Reference.itemMatchesChannel), view.firstChannel(channel));
                 try std.testing.expectEqual(Reference.latestMatching(items, channel, Reference.itemMatchesChannel), view.latestChannel(channel));
                 for (0..frame_count) |sample_offset| {
@@ -1858,6 +1928,9 @@ test "events generated queries match reference scans" {
                 for (channels) |channel| {
                     const bus_channel = BusChannel{ .bus_index = bus_index, .channel = channel };
                     try std.testing.expectEqual(Reference.countMatching(items, bus_channel, Reference.itemMatchesBusChannel), view.countBusChannel(bus_index, channel));
+                    try std.testing.expectEqual(Reference.hasMatching(items, bus_channel, Reference.itemMatchesBusChannel), view.hasBusChannel(bus_index, channel));
+                    try std.testing.expectEqual(!Reference.hasMatching(items, bus_channel, Reference.itemMatchesBusChannel), view.busChannelEmpty(bus_index, channel));
+                    try std.testing.expectEqual(Reference.onlyMatching(items, bus_channel, Reference.itemMatchesBusChannel), view.onlyBusChannel(bus_index, channel));
                     try std.testing.expectEqual(Reference.firstMatching(items, bus_channel, Reference.itemMatchesBusChannel), view.firstBusChannel(bus_index, channel));
                     try std.testing.expectEqual(Reference.latestMatching(items, bus_channel, Reference.itemMatchesBusChannel), view.latestBusChannel(bus_index, channel));
                     for (0..frame_count) |sample_offset| {
