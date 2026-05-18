@@ -97,3 +97,13 @@ test "xml representation supports query interface" {
     const queried_iface: *ivstrepresentation.IXmlRepresentationController = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_iface.vtable.release(queried_iface));
 }
+
+test "xml representation clears unsupported query output" {
+    const Xml = XmlRepresentation("<vstXML/>");
+    var xml = Xml{};
+    const iface = xml.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}

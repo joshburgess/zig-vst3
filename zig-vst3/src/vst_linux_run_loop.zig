@@ -319,6 +319,21 @@ test "linux event and timer handlers delegate callbacks and support query interf
     try std.testing.expectEqual(@as(types.uint32, 1), queried_timer.vtable.release(queried_timer));
 }
 
+test "linux event and timer handlers clear unsupported query output" {
+    const Event = EventHandler(struct {});
+    const Timer = TimerHandler(struct {});
+    var event = Event{};
+    var timer = Timer{};
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, event.asInterface().vtable.queryInterface(event.asInterface(), &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    queried = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, timer.asInterface().vtable.queryInterface(timer.asInterface(), &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "linux run loop updates duplicate event registrations without extra retain" {
     const Loop = RunLoop(1, 1);
     const Handler = EventHandler(struct {});
@@ -413,4 +428,14 @@ test "linux run loop supports query interface" {
     try std.testing.expect(queried != null);
     const queried_loop: *Linux.IRunLoop = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_loop.vtable.release(queried_loop));
+}
+
+test "linux run loop clears unsupported query output" {
+    const Loop = RunLoop(1, 1);
+    var loop = Loop{};
+    const iface = loop.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }

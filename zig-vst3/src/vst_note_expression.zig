@@ -316,6 +316,21 @@ test "note expression helper delegates string conversions and query interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_keyswitch.vtable.release(queried_keyswitch));
 }
 
+test "note expression helper clears unsupported query output from both interfaces" {
+    const Helper = NoteExpressionController(1, 1, struct {});
+    var helper = Helper{};
+    const expression = helper.asNoteExpression();
+    const keyswitch = helper.asKeyswitch();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, expression.vtable.queryInterface(expression, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    queried = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, keyswitch.vtable.queryInterface(keyswitch, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "note expression helper clears delegated conversion failures" {
     const Helper = NoteExpressionController(1, 1, struct {
         pub fn getNoteExpressionStringByValue(_: anytype, _: types.int32, _: types.int16, _: ivstnoteexpression.NoteExpressionTypeID, _: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) types.tresult {

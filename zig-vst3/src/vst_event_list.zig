@@ -150,6 +150,16 @@ test "event list enforces bounds and supports query interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_events.vtable.release(queried_events));
 }
 
+test "event list clears unsupported query output" {
+    const List = EventList(1);
+    var list = List{};
+    const iface = list.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "event list preserves count when add event is configured to fail" {
     const List = EventList(2);
     var list = List{ .fail_add_index = 1 };

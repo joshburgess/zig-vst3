@@ -218,6 +218,16 @@ test "context menu target delegates execution and supports query interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_target.vtable.release(queried_target));
 }
 
+test "context menu target clears unsupported query output" {
+    const Target = ContextMenuTarget(struct {});
+    var target = Target{};
+    const iface = target.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "context menu stores items and retains targets" {
     const Menu = ContextMenu(2);
     const Target = ContextMenuTarget(struct {});
@@ -329,4 +339,14 @@ test "context menu records popup coordinates and supports query interface" {
     try std.testing.expect(queried != null);
     const queried_menu: *ivstcontextmenu.IContextMenu = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_menu.vtable.release(queried_menu));
+}
+
+test "context menu clears unsupported query output" {
+    const Menu = ContextMenu(1);
+    var menu = Menu{};
+    const iface = menu.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }

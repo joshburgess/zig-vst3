@@ -395,6 +395,18 @@ test "persistent object supports query interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), persistent.vtable.release(persistent));
 }
 
+test "persistent object clears unsupported query output" {
+    const Object = Persistent(struct {
+        pub const class_id = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
+    });
+    var object = Object{};
+    const iface = object.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "persistent attributes store and enumerate variants" {
     const Store = Attributes(4, 8);
     var store = Store{};
@@ -531,4 +543,19 @@ test "persistent attributes supports attributes2 query interface" {
     try std.testing.expect(queried != null);
     const attrs2: *ipersistent.IAttributes2 = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), attrs2.vtable.release(attrs2));
+}
+
+test "persistent attributes clear unsupported query output from both interfaces" {
+    const Store = Attributes(2, 8);
+    var store = Store{};
+    const attrs = store.asAttributes();
+    const attrs2 = store.asAttributes2();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, attrs.vtable.queryInterface(attrs, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    queried = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, attrs2.vtable.queryInterface(attrs2, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }
