@@ -1,4 +1,5 @@
 const format = @import("format.zig");
+const std = @import("std");
 
 pub const ParameterIdMigration = format.ParameterIdMigration;
 
@@ -104,4 +105,46 @@ fn nextParameterMigrationId(id: u32, migrations: []const ParameterIdMigration) ?
         if (migration.old_id == id) return migration.new_id;
     }
     return null;
+}
+
+test "parameter migration validation accepts empty and chained migrations" {
+    try validateParameterIdMigrations(&.{});
+
+    const migrations = [_]ParameterIdMigration{
+        .{ .old_id = 1, .new_id = 2 },
+        .{ .old_id = 2, .new_id = 3 },
+    };
+    try validateParameterIdMigrations(&migrations);
+    try std.testing.expectEqual(@as(u32, 3), migratedParameterId(1, &migrations));
+    try std.testing.expectEqual(@as(u32, 3), migratedParameterId(2, &migrations));
+    try std.testing.expectEqual(@as(u32, 4), migratedParameterId(4, &migrations));
+}
+
+test "parameter migration validation reports invalid migration tables" {
+    const identity = [_]ParameterIdMigration{
+        .{ .old_id = 1, .new_id = 1 },
+    };
+    try std.testing.expectEqual(@as(?usize, 0), identityParameterMigrationIndex(&identity));
+    try std.testing.expectError(error.IdentityParameterMigration, validateParameterIdMigrations(&identity));
+
+    const duplicate = [_]ParameterIdMigration{
+        .{ .old_id = 1, .new_id = 2 },
+        .{ .old_id = 1, .new_id = 3 },
+    };
+    try std.testing.expectEqual(@as(?usize, 1), duplicateParameterMigrationIndex(&duplicate));
+    try std.testing.expectError(error.DuplicateParameterMigration, validateParameterIdMigrations(&duplicate));
+
+    const cycle = [_]ParameterIdMigration{
+        .{ .old_id = 1, .new_id = 2 },
+        .{ .old_id = 2, .new_id = 1 },
+    };
+    try std.testing.expectEqual(@as(?usize, 0), cyclicParameterMigrationIndex(&cycle));
+    try std.testing.expectError(error.CyclicParameterMigration, validateParameterIdMigrations(&cycle));
+
+    const ambiguous = [_]ParameterIdMigration{
+        .{ .old_id = 1, .new_id = 3 },
+        .{ .old_id = 2, .new_id = 3 },
+    };
+    try std.testing.expectEqual(@as(?usize, 1), ambiguousParameterMigrationIndex(&ambiguous));
+    try std.testing.expectError(error.AmbiguousParameterMigration, validateParameterIdMigrations(&ambiguous));
 }
