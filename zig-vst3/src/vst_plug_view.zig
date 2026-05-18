@@ -337,7 +337,8 @@ test "plug view preserves accepted state when delegated hooks reject changes" {
     try std.testing.expectEqual(@as(types.int16, 14), view.last_key_code);
     try std.testing.expectEqual(@as(types.int16, 5), view.last_key_modifiers);
 
-    try std.testing.expectEqual(types.kResultFalse, iface.vtable.setFrame(iface, @ptrFromInt(0x1234)));
+    var frame = iplugview.IPlugFrame{ .vtable = undefined };
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.setFrame(iface, &frame));
     try std.testing.expectEqual(@as(?*iplugview.IPlugFrame, null), view.frame);
 }
 
