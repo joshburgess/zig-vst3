@@ -432,6 +432,23 @@ test "channel context host exposes info listener and records callbacks" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.info_release_count);
 }
 
+test "channel context host clears unsupported query outputs" {
+    const Host = ChannelContextHost("Test Host", struct {});
+    var host = Host{};
+
+    var queried: ?*anyopaque = @ptrFromInt(0x10);
+    try std.testing.expectEqual(types.kNoInterface, host.asHostApplication().vtable.queryInterface(host.asHostApplication(), &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.queryInterface(host.asHostApplication(), &ivstchannelcontextinfo.iinfo_listener_iid, &queried));
+    const listener: *ivstchannelcontextinfo.IInfoListener = @ptrCast(@alignCast(queried.?));
+
+    queried = @ptrFromInt(0x20);
+    try std.testing.expectEqual(types.kNoInterface, listener.vtable.queryInterface(listener, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), listener.vtable.release(listener));
+}
+
 test "channel context host clears failed delegated create-instance output" {
     const Host = ChannelContextHost("Test Host", struct {
         pub fn createInstance(_: anytype, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) types.tresult {
@@ -481,6 +498,23 @@ test "automation state host exposes automation state and records callbacks" {
     try std.testing.expectEqual(ivstautomationstate.AutomationStates.kReadWriteState, host.last_state);
     try std.testing.expectEqual(@as(types.uint32, 1), automation.vtable.release(automation));
     try std.testing.expectEqual(@as(types.uint32, 1), host.automation_release_count);
+}
+
+test "automation state host clears unsupported query outputs" {
+    const Host = AutomationStateHost("Test Host", struct {});
+    var host = Host{};
+
+    var queried: ?*anyopaque = @ptrFromInt(0x10);
+    try std.testing.expectEqual(types.kNoInterface, host.asHostApplication().vtable.queryInterface(host.asHostApplication(), &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.queryInterface(host.asHostApplication(), &ivstautomationstate.iautomation_state_iid, &queried));
+    const automation: *ivstautomationstate.IAutomationState = @ptrCast(@alignCast(queried.?));
+
+    queried = @ptrFromInt(0x20);
+    try std.testing.expectEqual(types.kNoInterface, automation.vtable.queryInterface(automation, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), automation.vtable.release(automation));
 }
 
 test "automation state host clears failed delegated create-instance output" {
@@ -541,6 +575,23 @@ test "data exchange host exposes handler and records queue callbacks" {
 
     try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
     try std.testing.expectEqual(@as(types.uint32, 1), host.release_count);
+}
+
+test "data exchange host clears unsupported query outputs" {
+    const Host = DataExchangeHost("Test Host", struct {});
+    var host = Host{};
+
+    var queried: ?*anyopaque = @ptrFromInt(0x10);
+    try std.testing.expectEqual(types.kNoInterface, host.asHostApplication().vtable.queryInterface(host.asHostApplication(), &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.queryInterface(host.asHostApplication(), &ivstdataexchange.idata_exchange_handler_iid, &queried));
+    const handler: *ivstdataexchange.IDataExchangeHandler = @ptrCast(@alignCast(queried.?));
+
+    queried = @ptrFromInt(0x20);
+    try std.testing.expectEqual(types.kNoInterface, handler.vtable.queryInterface(handler, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
 }
 
 test "data exchange host delegates successful block lifecycle" {
