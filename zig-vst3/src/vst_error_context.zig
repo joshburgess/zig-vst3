@@ -133,3 +133,13 @@ test "error context supports query interface" {
     const queried_context: *ierrorcontext.IErrorContext = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_context.vtable.release(queried_context));
 }
+
+test "error context clears unsupported query output" {
+    const Context = ErrorContext(8);
+    var context = Context{};
+    const iface = context.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}

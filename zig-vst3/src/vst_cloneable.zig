@@ -92,3 +92,13 @@ test "cloneable supports query interface" {
     const queried_cloneable: *icloneable.ICloneable = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_cloneable.vtable.release(queried_cloneable));
 }
+
+test "cloneable clears unsupported query output" {
+    const Object = Cloneable(struct {});
+    var object = Object{};
+    const iface = object.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}

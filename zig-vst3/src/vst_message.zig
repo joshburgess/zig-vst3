@@ -519,6 +519,16 @@ test "message stores id and exposes attributes" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_message.vtable.release(queried_message));
 }
 
+test "message clears unsupported query output" {
+    const TestMessage = Message(32, 4, 16, 8);
+    var message = TestMessage{};
+    const iface = message.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "stream attributes expose filename and attribute list" {
     const TestStreamAttributes = StreamAttributes(32, 4, 16, 8);
     var stream_attributes = TestStreamAttributes{};
@@ -561,4 +571,24 @@ test "stream attributes truncate filename to String128 output" {
     try std.testing.expectEqual(@as(vsttypes.TChar, 'f'), file_name_out[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 'a'), file_name_out[string128.payload_units - 1]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), file_name_out[string128.payload_units]);
+}
+
+test "stream attributes clear unsupported query output" {
+    const TestStreamAttributes = StreamAttributes(32, 4, 16, 8);
+    var stream_attributes = TestStreamAttributes{};
+    const iface = stream_attributes.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
+test "attribute list clears unsupported query output" {
+    const List = AttributeList(1, 4, 4);
+    var list = List{};
+    const iface = list.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }

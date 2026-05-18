@@ -307,3 +307,23 @@ test "update handler supports query interface" {
     const queried_handler: *iupdatehandler.IUpdateHandler = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_handler.vtable.release(queried_handler));
 }
+
+test "update handler clears unsupported query output" {
+    const Handler = UpdateHandler(1);
+    var handler = Handler{};
+    const iface = handler.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
+test "dependent clears unsupported query output" {
+    const Dep = Dependent(struct {});
+    var dependent = Dep{};
+    const iface = dependent.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
