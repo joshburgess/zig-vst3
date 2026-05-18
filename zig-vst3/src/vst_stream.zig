@@ -206,7 +206,8 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             if (size < 0 or size > capacity) return types.kResultFalse;
             const self = ownerFromSizeable(ptr);
             const next: usize = @intCast(size);
-            if (next > self.len) @memset(self.bytes[self.len..next], 0);
+            const old_len = self.boundedLen();
+            if (next > old_len) @memset(self.bytes[old_len..next], 0);
             self.len = next;
             self.pos = @min(self.pos, self.len);
             return types.kResultOk;
@@ -518,4 +519,20 @@ test "fixed buffer stream clamps corrupted cursors and sizes" {
     count = 99;
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.write(iface, &input, 1, &count));
     try std.testing.expectEqual(@as(types.int32, 0), count);
+}
+
+test "fixed buffer stream zero fills after corrupted oversized length" {
+    const Stream = FixedBufferStream(8);
+    var stream = Stream{};
+    const sizeable = stream.asSizeableStream();
+    stream.bytes = [_]u8{ 1, 2, 3, 4, 5, 6, 7, 8 };
+    stream.len = std.math.maxInt(usize);
+    stream.pos = 6;
+
+    try std.testing.expectEqual(types.kResultOk, sizeable.vtable.setStreamSize(sizeable, 4));
+    try std.testing.expectEqual(@as(usize, 4), stream.len);
+    try std.testing.expectEqual(@as(usize, 4), stream.pos);
+
+    try std.testing.expectEqual(types.kResultOk, sizeable.vtable.setStreamSize(sizeable, 8));
+    try std.testing.expectEqualSlices(u8, &.{ 1, 2, 3, 4, 0, 0, 0, 0 }, stream.data());
 }
