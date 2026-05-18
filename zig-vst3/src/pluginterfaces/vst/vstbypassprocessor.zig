@@ -154,7 +154,8 @@ pub fn Delay(comptime T: type) type {
                 @min(requested_samples[0], storage_samples)
             else
                 storage_samples;
-            const actual_delay = @min(@max(delay_samples, 0), buffer_samples);
+            const max_delay = @max(buffer_samples -| 1, 0);
+            const actual_delay = @min(@max(delay_samples, 0), max_delay);
             return .{
                 .buffer = storage[0..@intCast(buffer_samples)],
                 .buffer_samples = buffer_samples,
@@ -276,6 +277,34 @@ test "delay processor wraps ring positions for oversized blocks" {
     try std.testing.expect(!silent);
     try std.testing.expectEqual(@as(base.int32, 2), processor_delay.in_pos);
     try std.testing.expectEqual(@as(base.int32, 0), processor_delay.out_pos);
+}
+
+test "delay processor keeps one free ring slot when storage is undersized" {
+    var single_input = [_]f32{42};
+    var single_output = [_]f32{9};
+    var single_storage = [_]f32{0};
+    var single_delay = Delay(f32).init(&single_storage, 1, 1);
+
+    try std.testing.expectEqual(@as(base.int32, 1), single_delay.getBufferSamples());
+    try std.testing.expectEqual(@as(base.int32, 0), single_delay.delay_samples);
+
+    const single_silent = single_delay.process(&single_input, &single_output, single_input.len, false);
+    try std.testing.expect(!single_silent);
+    try std.testing.expectEqual(@as(f32, 42), single_output[0]);
+
+    var input = [_]f32{ 1, 2 };
+    var output = [_]f32{ 9, 9 };
+    var storage = [_]f32{0} ** 4;
+    var processor_delay = Delay(f32).init(&storage, 4, 4);
+
+    try std.testing.expectEqual(@as(base.int32, 4), processor_delay.getBufferSamples());
+    try std.testing.expectEqual(@as(base.int32, 3), processor_delay.delay_samples);
+    try std.testing.expectEqual(@as(base.int32, 0), processor_delay.in_pos);
+    try std.testing.expectEqual(@as(base.int32, 1), processor_delay.out_pos);
+
+    const silent = processor_delay.process(&input, &output, input.len, false);
+    try std.testing.expect(!silent);
+    try std.testing.expectEqualSlices(f32, &.{ 0, 0 }, &output);
 }
 
 test "delay processor clears output when ring state is invalid" {
