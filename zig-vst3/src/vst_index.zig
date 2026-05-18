@@ -83,3 +83,43 @@ test "clampedCountU32 converts host counts to storage bounds" {
     try std.testing.expectEqual(@as(usize, 2), clampedCountU32(2, 3));
     try std.testing.expectEqual(@as(usize, 3), clampedCountU32(4, 3));
 }
+
+test "int32 index helpers share generated boundary policy" {
+    const capacities = [_]usize{ 0, 1, 2, 7 };
+    const values = [_]types.int32{ -2, -1, 0, 1, 2, 6, 7, std.math.maxInt(types.int32) };
+
+    for (capacities) |capacity| {
+        for (values) |value| {
+            const expected_index: ?usize = if (value >= 0 and @as(usize, @intCast(value)) < capacity)
+                @intCast(value)
+            else
+                null;
+            try std.testing.expectEqual(expected_index, bounded(value, capacity));
+            try std.testing.expectEqual(expected_index, appendIndex(value, capacity));
+
+            const expected_count: usize = if (value <= 0)
+                0
+            else
+                @min(@as(usize, @intCast(value)), capacity);
+            try std.testing.expectEqual(expected_count, clampedCount(value, capacity));
+        }
+    }
+}
+
+test "uint32 index helpers share generated boundary policy" {
+    const capacities = [_]usize{ 0, 1, 2, 7 };
+    const values = [_]types.uint32{ 0, 1, 2, 6, 7, std.math.maxInt(types.uint32) };
+
+    for (capacities) |capacity| {
+        for (values) |value| {
+            const expected_index: ?usize = if (@as(usize, @intCast(value)) < capacity)
+                @intCast(value)
+            else
+                null;
+            try std.testing.expectEqual(expected_index, appendIndexU32(value, capacity));
+
+            const expected_count = @min(@as(usize, @intCast(value)), capacity);
+            try std.testing.expectEqual(expected_count, clampedCountU32(value, capacity));
+        }
+    }
+}

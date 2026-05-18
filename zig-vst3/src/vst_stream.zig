@@ -502,6 +502,51 @@ test "fixed buffer stream rejects writes when position is past write limit" {
     try std.testing.expectEqual(@as(types.int32, 0), count);
 }
 
+test "fixed buffer stream zero-byte IO permits null buffers" {
+    const Stream = FixedBufferStream(4);
+    var stream = Stream{};
+    const iface = stream.asStream();
+    var count: types.int32 = -1;
+    var pos: types.int64 = -1;
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.write(iface, null, 0, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.tell(iface, &pos));
+    try std.testing.expectEqual(@as(types.int64, 0), pos);
+
+    count = -1;
+    pos = -1;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.read(iface, null, 0, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.tell(iface, &pos));
+    try std.testing.expectEqual(@as(types.int64, 0), pos);
+}
+
+test "fixed buffer stream failed IO preserves cursor" {
+    const Stream = FixedBufferStream(4);
+    var stream = Stream{ .write_limit = 2 };
+    const iface = stream.asStream();
+    var input = [_]u8{ 1, 2, 3 };
+    var pos: types.int64 = -1;
+    var count: types.int32 = -1;
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.write(iface, &input, input.len, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.tell(iface, &pos));
+    try std.testing.expectEqual(@as(types.int64, 0), pos);
+
+    stream.write_limit = 4;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.write(iface, &input, 2, null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.seek(iface, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+
+    pos = -1;
+    count = -1;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.read(iface, &input, input.len, &count));
+    try std.testing.expectEqual(@as(types.int32, 0), count);
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.tell(iface, &pos));
+    try std.testing.expectEqual(@as(types.int64, 0), pos);
+}
+
 test "fixed buffer stream clamps corrupted cursors and sizes" {
     const Stream = FixedBufferStream(8);
     var stream = Stream{};
