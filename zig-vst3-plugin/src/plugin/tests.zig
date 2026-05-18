@@ -1477,6 +1477,30 @@ test "plugin instance applies process parameter changes before dispatch" {
     try std.testing.expectEqual(@as(?f64, 0.25), instance.plugin.observed);
 }
 
+test "plugin instance applies process parameter changes without process hooks" {
+    const Gain = struct {
+        pub const name = "Instance Process Parameters Without Hooks";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const changes = [_]process_api.ParameterChange{
+        instance.parameterChange("gain", 0, 0.25),
+    };
+    var context = process_api.ProcessContext(f32){
+        .sample_rate = 48_000.0,
+        .parameter_changes = try process_api.ParameterChanges.init(&changes, 1),
+    };
+
+    try std.testing.expect(!instance.hasAnyProcessHook());
+    instance.process(&context);
+
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
+}
+
 test "plugin instance passes input events to process hooks" {
     const Monitor = struct {
         event_count: usize = 0,
@@ -1679,6 +1703,30 @@ test "plugin instance applies process64 parameter changes before dispatch" {
 
     try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
     try std.testing.expectEqual(@as(?f64, 0.75), instance.plugin.observed);
+}
+
+test "plugin instance applies process64 parameter changes without process64 hooks" {
+    const Gain = struct {
+        pub const name = "Instance Process64 Parameters Without Hooks";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const changes = [_]process_api.ParameterChange{
+        instance.parameterChange("gain", 0, 0.75),
+    };
+    var context = process_api.ProcessContext(f64){
+        .sample_rate = 48_000.0,
+        .parameter_changes = try process_api.ParameterChanges.init(&changes, 1),
+    };
+
+    try std.testing.expect(!instance.hasAnyProcessHook());
+    instance.process64(&context);
+
+    try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
 }
 
 test "plugin instance passes events to process64 hooks" {
