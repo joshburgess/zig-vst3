@@ -113,19 +113,23 @@ pub fn WaylandFrame(comptime Config: type) type {
             return null;
         }
 
+        fn failParentSurface(self: *Self, rect: *iplugview.ViewRect) ?*iwaylandframe.xdg_surface {
+            rect.* = .{};
+            self.last_parent_rect = rect.*;
+            return null;
+        }
+
         fn getParentSurface(ptr: *anyopaque, rect: *iplugview.ViewRect, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.xdg_surface {
             const self = owner(ptr);
             self.parent_surface_count +|= 1;
             self.last_display = display;
             if (@hasDecl(Config, "getParentSurface")) {
                 const surface = Config.getParentSurface(rect, display);
-                if (surface == null) rect.* = .{};
+                if (surface == null) return self.failParentSurface(rect);
                 self.last_parent_rect = rect.*;
                 return surface;
             }
-            rect.* = .{};
-            self.last_parent_rect = rect.*;
-            return null;
+            return self.failParentSurface(rect);
         }
 
         fn getParentToplevel(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.xdg_toplevel {
