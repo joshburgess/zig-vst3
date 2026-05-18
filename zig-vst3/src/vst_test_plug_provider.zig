@@ -269,3 +269,16 @@ test "test plug provider exposes provider2 and factory" {
     try std.testing.expectEqual(factory, provider2.vtable.getPluginFactory(provider2).?);
     try std.testing.expectEqual(@as(types.uint32, 1), provider2.vtable.release(provider2));
 }
+
+test "test plug provider clears unsupported query output from both interfaces" {
+    const Provider = TestPlugProvider(struct {});
+    var provider = Provider{};
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, provider.asProvider().vtable.queryInterface(provider.asProvider(), &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    queried = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, provider.asProvider2().vtable.queryInterface(provider.asProvider2(), &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}

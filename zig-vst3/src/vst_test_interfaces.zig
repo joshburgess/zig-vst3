@@ -562,3 +562,30 @@ test "test interfaces support query interface" {
     const queried_factory_iface: *itest.ITestFactory = @ptrCast(@alignCast(queried_factory.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_factory_iface.vtable.release(queried_factory_iface));
 }
+
+test "test interfaces clear unsupported query outputs" {
+    const TestObject = Test(struct {});
+    const Result = TestResult(1, 1);
+    const Suite = TestSuite(1, 1);
+    const Factory = TestFactory(struct {});
+    var object = TestObject{};
+    var result = Result{};
+    var suite = Suite{};
+    var factory = Factory{};
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, object.asInterface().vtable.queryInterface(object.asInterface(), &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    queried = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, result.asInterface().vtable.queryInterface(result.asInterface(), &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    queried = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, suite.asInterface().vtable.queryInterface(suite.asInterface(), &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    queried = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, factory.asInterface().vtable.queryInterface(factory.asInterface(), &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}

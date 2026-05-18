@@ -369,3 +369,13 @@ test "plug view delegates size constraints and query interface" {
     const queried_view: *iplugview.IPlugView = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_view.vtable.release(queried_view));
 }
+
+test "plug view clears unsupported query output" {
+    const View = PlugView(1, struct {});
+    var view = View{};
+    const iface = view.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}

@@ -234,6 +234,10 @@ test "string result supports both string interfaces" {
     try std.testing.expect(queried != null);
     const string_iface: *istringresult.IString = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), string_iface.vtable.release(string_iface));
+
+    queried = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }
 
 test "string result query works from string side and clears unsupported outputs" {
