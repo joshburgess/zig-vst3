@@ -191,7 +191,7 @@ test "test plug provider returns configured metadata" {
     const String = @import("vst_string_result.zig").StringResult(32, 8);
     const expected_component_uid = tuid.inlineUid(0x01234567, 0x89ABCDEF, 0x10203040, 0x50607080);
     const Provider = TestPlugProvider(struct {
-        pub const component_uid = expected_component_uid;
+        pub const component_uid = tuid.inlineUid(0x01234567, 0x89ABCDEF, 0x10203040, 0x50607080);
         pub const sub_categories = "Fx|Tools";
     });
     var provider = Provider{};
@@ -199,7 +199,7 @@ test "test plug provider returns configured metadata" {
     const iface = provider.asProvider();
 
     var out_uid: tuid.TUID = tuid.zero;
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.getSubCategories(iface, string.asStringResult()));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getSubCategories(iface, string.asResult()));
     try std.testing.expectEqualStrings("Fx|Tools", string.text8Span());
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getComponentUID(iface, &out_uid));
     try std.testing.expectEqualSlices(u8, &expected_component_uid, &out_uid);

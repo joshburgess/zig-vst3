@@ -83,6 +83,10 @@ test "zig-vst3 module exposes a development version" {
 }
 
 test {
+    std.testing.refAllDecls(factory);
+    std.testing.refAllDecls(funknown);
+    std.testing.refAllDecls(interface_map);
+    std.testing.refAllDecls(multi_interface);
     std.testing.refAllDecls(vst_capability_support);
     std.testing.refAllDecls(vst_cloneable);
     std.testing.refAllDecls(vst_component_handler);
@@ -97,12 +101,14 @@ test {
     std.testing.refAllDecls(vst_parameter_finder);
     std.testing.refAllDecls(vst_unit_data);
     std.testing.refAllDecls(vst_parameter_changes);
+    std.testing.refAllDecls(vst_persistent_attributes);
     std.testing.refAllDecls(vst_plug_frame);
     std.testing.refAllDecls(vst_plug_view);
     std.testing.refAllDecls(vst_representation);
     std.testing.refAllDecls(vst_string_result);
     std.testing.refAllDecls(vst_stream);
     std.testing.refAllDecls(vst_test_interfaces);
+    std.testing.refAllDecls(vst_test_plug_provider);
     std.testing.refAllDecls(vst_update_handler);
     std.testing.refAllDecls(vst_wayland_frame);
 }

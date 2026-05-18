@@ -339,7 +339,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
 test "persistent object returns class ID and counts save load calls" {
     const expected_class_id = tuid.inlineUid(0x01234567, 0x89ABCDEF, 0x10325476, 0x98BADCFE);
     const Object = Persistent(struct {
-        pub const class_id = expected_class_id;
+        pub const class_id = tuid.inlineUid(0x01234567, 0x89ABCDEF, 0x10325476, 0x98BADCFE);
     });
     var object = Object{};
     const iface = object.asInterface();
@@ -355,9 +355,8 @@ test "persistent object returns class ID and counts save load calls" {
 }
 
 test "persistent object delegates save and load hooks" {
-    const expected_class_id = tuid.inlineUid(0x10203040, 0x50607080, 0x90A0B0C0, 0xD0E0F000);
     const Object = Persistent(struct {
-        pub const class_id = expected_class_id;
+        pub const class_id = tuid.inlineUid(0x10203040, 0x50607080, 0x90A0B0C0, 0xD0E0F000);
 
         pub fn saveAttributes(self: anytype, attributes: ?*ipersistent.IAttributes) types.tresult {
             _ = self;
@@ -473,8 +472,8 @@ test "persistent attributes clear stale copied binary bytes" {
     const Store = Attributes(1, 8);
     var store = Store{};
     const attrs = store.asAttributes();
-    const longer = [_]u8{ 1, 2, 3, 4 };
-    const shorter = [_]u8{9};
+    var longer = [_]u8{ 1, 2, 3, 4 };
+    var shorter = [_]u8{9};
 
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.setBinaryData(attrs, "blob", &longer, longer.len, true));
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.setBinaryData(attrs, "blob", &shorter, shorter.len, true));
