@@ -126,12 +126,10 @@ pub const EventOffsetIterator = struct {
     next_index: usize = 0,
 
     pub fn next(self: *EventOffsetIterator) ?Event {
-        while (self.next_index < self.events.items.len) : (self.next_index += 1) {
+        while (self.next_index < self.events.items.len) {
             const item = self.events.items[self.next_index];
-            if (item.isAtOffset(self.sample_offset)) {
-                self.next_index += 1;
-                return item;
-            }
+            self.next_index += 1;
+            if (item.isAtOffset(self.sample_offset)) return item;
         }
         return null;
     }
