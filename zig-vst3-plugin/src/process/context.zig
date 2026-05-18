@@ -2231,6 +2231,48 @@ test "process context rejects attached changes outside frame count" {
     ));
 }
 
+test "process context keeps existing attachments after rejected setters" {
+    const input = [_]f32{ 0.1, 0.2 };
+    var output = [_]f32{ 0.0, 0.0 };
+    const input_channels = [_][]const f32{&input};
+    const output_channels = [_][]f32{&output};
+    const valid_changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 1, .normalized = 0.5 },
+    };
+    const invalid_changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 2, .normalized = 0.75 },
+    };
+    const valid_events = [_]Event{
+        Event.noteOn(1, 0, 60, 1.0),
+    };
+    const invalid_events = [_]Event{
+        Event.noteOff(2, 0, 60, 0.0),
+    };
+    var output_storage: [1]Event = undefined;
+    var valid_writer = EventWriter.init(&output_storage, input.len);
+    var mismatched_storage: [1]Event = undefined;
+    var mismatched_writer = EventWriter.init(&mismatched_storage, input.len + 1);
+    var context = try ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .parameter_changes = &valid_changes,
+        .events = &valid_events,
+        .output_events = &valid_writer,
+    });
+
+    try std.testing.expectError(error.ParameterChangeOutsideBlock, context.setParameterChanges(&invalid_changes));
+    try std.testing.expectEqual(@as(usize, 1), context.parameterChangeCount());
+    try std.testing.expectEqual(@as(?usize, 1), context.latestParameterChangeOffset());
+    try std.testing.expectEqual(@as(?f64, 0.5), context.latestParameterNormalized(7));
+
+    try std.testing.expectError(error.EventOutsideBlock, context.setEvents(&invalid_events));
+    try std.testing.expectEqual(@as(usize, 1), context.inputEventCount());
+    try std.testing.expectEqual(@as(?usize, 1), context.latestInputEventOffset());
+    try std.testing.expectEqual(EventKind.note_on, context.latestInputEvent().?.kind);
+
+    try std.testing.expectError(error.MismatchedFrameCount, context.setOutputEvents(&mismatched_writer));
+    try std.testing.expect(context.hasOutputEventWriter());
+    try std.testing.expect(context.outputEventWriter().? == &valid_writer);
+}
+
 test "process block segments split at parameter and event offsets" {
     const changes = [_]ParameterChange{
         .{ .id = 7, .sample_offset = 5, .normalized = 0.75 },
