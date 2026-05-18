@@ -1,4 +1,5 @@
 const common = @import("../common.zig");
+const std = @import("std");
 
 pub const PrepareConfig = struct {
     sample_rate: f64,
@@ -9,3 +10,19 @@ pub const PrepareConfig = struct {
         if (self.max_block_size == 0) return error.InvalidMaxBlockSize;
     }
 };
+
+test "prepare config accepts positive finite sample rates and nonzero block sizes" {
+    try (PrepareConfig{ .sample_rate = 44_100.0, .max_block_size = 1 }).validate();
+    try (PrepareConfig{ .sample_rate = 192_000.0, .max_block_size = 4096 }).validate();
+}
+
+test "prepare config rejects invalid sample rates" {
+    try std.testing.expectError(error.InvalidSampleRate, (PrepareConfig{ .sample_rate = 0.0, .max_block_size = 64 }).validate());
+    try std.testing.expectError(error.InvalidSampleRate, (PrepareConfig{ .sample_rate = -44_100.0, .max_block_size = 64 }).validate());
+    try std.testing.expectError(error.InvalidSampleRate, (PrepareConfig{ .sample_rate = std.math.inf(f64), .max_block_size = 64 }).validate());
+    try std.testing.expectError(error.InvalidSampleRate, (PrepareConfig{ .sample_rate = std.math.nan(f64), .max_block_size = 64 }).validate());
+}
+
+test "prepare config rejects zero block size" {
+    try std.testing.expectError(error.InvalidMaxBlockSize, (PrepareConfig{ .sample_rate = 48_000.0, .max_block_size = 0 }).validate());
+}
