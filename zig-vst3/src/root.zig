@@ -87,9 +87,18 @@ test {
     std.testing.refAllDecls(vst_cloneable);
     std.testing.refAllDecls(vst_component_handler);
     std.testing.refAllDecls(vst_content_scale_support);
+    std.testing.refAllDecls(vst_context_menu);
     std.testing.refAllDecls(vst_error_context);
     std.testing.refAllDecls(vst_event_list);
+    std.testing.refAllDecls(vst_message);
+    std.testing.refAllDecls(vst_note_expression);
     std.testing.refAllDecls(vst_parameter_finder);
     std.testing.refAllDecls(vst_unit_data);
+    std.testing.refAllDecls(vst_parameter_changes);
+    std.testing.refAllDecls(vst_plug_frame);
+    std.testing.refAllDecls(vst_representation);
+    std.testing.refAllDecls(vst_string_result);
+    std.testing.refAllDecls(vst_stream);
+    std.testing.refAllDecls(vst_test_interfaces);
     std.testing.refAllDecls(vst_update_handler);
 }

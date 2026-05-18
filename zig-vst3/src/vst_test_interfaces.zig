@@ -389,7 +389,7 @@ test "test object tracks default lifecycle calls" {
 test "test object delegates lifecycle hooks and description" {
     const expected_description = std.unicode.utf8ToUtf16LeStringLiteral("custom");
     const TestObject = Test(struct {
-        pub const description = expected_description;
+        pub const description = std.unicode.utf8ToUtf16LeStringLiteral("custom");
 
         pub fn setup(self: anytype) bool {
             _ = self;
