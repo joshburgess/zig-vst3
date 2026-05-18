@@ -230,6 +230,23 @@ test "host application clears failed delegated create-instance output" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.create_instance_count);
 }
 
+test "host application clears unsupported query and default create-instance outputs" {
+    const Host = HostApplication("Test Host", struct {});
+    var host = Host{};
+    const iface = host.asInterface();
+
+    var queried: ?*anyopaque = iface;
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.query_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), host.add_ref_count);
+
+    var created: ?*anyopaque = @ptrFromInt(0x20);
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.createInstance(iface, &funknown.iid, &funknown.iid, &created));
+    try std.testing.expectEqual(@as(?*anyopaque, null), created);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.create_instance_count);
+}
+
 test "host application zero-fills and truncates String128 names" {
     const long_name =
         "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz" ++
@@ -270,6 +287,25 @@ test "wrapper marker supports query interface" {
     try std.testing.expect(queried_aax != null);
     const aax_iface: *ivsthostapplication.IVst3ToAAXWrapper = @ptrCast(@alignCast(queried_aax.?));
     try std.testing.expectEqual(@as(types.uint32, 1), aax_iface.vtable.release(aax_iface));
+}
+
+test "wrapper marker clears unsupported query output" {
+    var wrapper = Vst3ToVst2Wrapper{};
+    const iface = wrapper.asInterface();
+    var queried: ?*anyopaque = iface;
+
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
+test "wrapper MPE support clears unsupported query output" {
+    const MPE = WrapperMPESupport(struct {});
+    var support = MPE{};
+    const iface = support.asInterface();
+    var queried: ?*anyopaque = iface;
+
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }
 
 test "wrapper MPE support stores latest settings" {

@@ -236,6 +236,16 @@ test "parameter function name returns no-param without a config hook" {
     try std.testing.expectEqual(vsttypes.kNoParamId, found);
 }
 
+test "remap param ID returns no-param without a config hook" {
+    const Remap = RemapParamID(struct {});
+    var remap = Remap{};
+    const iface = remap.asInterface();
+    var found: vsttypes.ParamID = 123;
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getCompatibleParamID(iface, &funknown.iid, 1, &found));
+    try std.testing.expectEqual(vsttypes.kNoParamId, found);
+}
+
 test "remap param ID maps compatible old parameter IDs" {
     const target_cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
     const Remap = RemapParamID(struct {
@@ -274,4 +284,25 @@ test "parameter function name and remap helpers support query interface" {
     try std.testing.expect(remap_query != null);
     const remap_iface: *ivstremapparamid.IRemapParamID = @ptrCast(@alignCast(remap_query.?));
     try std.testing.expectEqual(@as(types.uint32, 1), remap_iface.vtable.release(remap_iface));
+}
+
+test "parameter helper unsupported queries clear stale outputs" {
+    const Finder = ParameterFinder(struct {});
+    const FunctionNames = ParameterFunctionName(struct {});
+    const Remap = RemapParamID(struct {});
+    var finder = Finder{};
+    var functions = FunctionNames{};
+    var remap = Remap{};
+
+    var finder_query: ?*anyopaque = finder.asInterface();
+    try std.testing.expectEqual(types.kNoInterface, finder.asInterface().vtable.queryInterface(finder.asInterface(), &tuid.zero, &finder_query));
+    try std.testing.expectEqual(@as(?*anyopaque, null), finder_query);
+
+    var function_query: ?*anyopaque = functions.asInterface();
+    try std.testing.expectEqual(types.kNoInterface, functions.asInterface().vtable.queryInterface(functions.asInterface(), &tuid.zero, &function_query));
+    try std.testing.expectEqual(@as(?*anyopaque, null), function_query);
+
+    var remap_query: ?*anyopaque = remap.asInterface();
+    try std.testing.expectEqual(types.kNoInterface, remap.asInterface().vtable.queryInterface(remap.asInterface(), &tuid.zero, &remap_query));
+    try std.testing.expectEqual(@as(?*anyopaque, null), remap_query);
 }
