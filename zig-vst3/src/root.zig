@@ -81,3 +81,8 @@ pub fn targetName() []const u8 {
 test "zig-vst3 module exposes a development version" {
     try std.testing.expect(std.mem.endsWith(u8, version, "-dev"));
 }
+
+test {
+    std.testing.refAllDecls(vst_component_handler);
+    std.testing.refAllDecls(vst_update_handler);
+}
