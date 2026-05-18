@@ -202,6 +202,34 @@ test "parameter state header helpers validate magic and count range" {
     try std.testing.expectError(error.InvalidStateMagic, readParameterStateHeader(bad_magic_stream.reader()));
 }
 
+test "parameter state header generated helper invariants" {
+    for (0..8) |entry_count| {
+        const versions = [_]u16{ format_version, format_version + 1 };
+        for (versions) |version| {
+            const header = ParameterStateHeader{
+                .version = version,
+                .entry_count = entry_count,
+            };
+
+            try std.testing.expectEqual(entry_count, header.entryCount());
+            try std.testing.expectEqual(entry_count != 0, header.hasEntries());
+            try std.testing.expectEqual(entry_count == 0, header.hasNoEntries());
+            try std.testing.expectEqual(entry_count == 0, header.entriesEmpty());
+            try std.testing.expectEqual(version == format_version, header.isCurrentVersion());
+            try std.testing.expectEqual(encodedSizeForCount(entry_count), header.encodedSize());
+            try std.testing.expectEqual(try encodedSizeForCountChecked(entry_count), try header.encodedSizeChecked());
+
+            for (0..8) |expected_count| {
+                try std.testing.expectEqual(entry_count == expected_count, header.matchesEntryCount(expected_count));
+                try std.testing.expectEqual(entry_count < expected_count, header.hasFewerEntriesThan(expected_count));
+                try std.testing.expectEqual(entry_count > expected_count, header.hasMoreEntriesThan(expected_count));
+                try std.testing.expectEqual(expected_count -| entry_count, header.missingEntryCount(expected_count));
+                try std.testing.expectEqual(entry_count -| expected_count, header.extraEntryCount(expected_count));
+            }
+        }
+    }
+}
+
 test "parameter state writes debug json" {
     const Params = struct {
         gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
