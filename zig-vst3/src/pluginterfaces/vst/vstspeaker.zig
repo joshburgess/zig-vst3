@@ -1,5 +1,6 @@
 const std = @import("std");
 const base = @import("../base/types.zig");
+const vst_index = @import("../../vst_index.zig");
 const vsttypes = @import("vsttypes.zig");
 
 pub const kSpeakerL: vsttypes.Speaker = @as(vsttypes.Speaker, 1) << 0;
@@ -809,18 +810,15 @@ pub const SpeakerArray = struct {
     }
 
     pub fn total(self: *const SpeakerArray) base.int32 {
-        return self.count;
+        return @intCast(self.safeCount());
     }
 
     fn safeCount(self: *const SpeakerArray) usize {
-        if (self.count <= 0) return 0;
-        return @min(@as(usize, @intCast(self.count)), kMaxSpeakers);
+        return vst_index.clampedCount(self.count, kMaxSpeakers);
     }
 
     pub fn at(self: *const SpeakerArray, index: base.int32) SpeakerType {
-        if (index < 0) return 0;
-        const speaker_index: usize = @intCast(index);
-        if (speaker_index >= self.safeCount()) return 0;
+        const speaker_index = vst_index.bounded(index, self.safeCount()) orelse return 0;
         return self.speaker[speaker_index];
     }
 
@@ -880,8 +878,14 @@ test "speaker helpers match expected core behavior" {
     try std.testing.expectEqual(@as(base.uint64, 0), speakers.at(64));
     var corrupted = SpeakerArray.init(SpeakerArr.kStereo);
     corrupted.count = SpeakerArray.kMaxSpeakers + 1;
+    try std.testing.expectEqual(@as(base.int32, SpeakerArray.kMaxSpeakers), corrupted.total());
     try std.testing.expectEqual(@as(base.uint64, 0), corrupted.at(SpeakerArray.kMaxSpeakers));
     try std.testing.expectEqual(SpeakerArr.kStereo, corrupted.getArrangement());
+
+    corrupted.count = -1;
+    try std.testing.expectEqual(@as(base.int32, 0), corrupted.total());
+    try std.testing.expectEqual(@as(base.uint64, 0), corrupted.at(0));
+    try std.testing.expectEqual(@as(vsttypes.SpeakerArrangement, 0), corrupted.getArrangement());
 }
 
 test "speaker arrangement strings cover named and unknown arrangements" {
