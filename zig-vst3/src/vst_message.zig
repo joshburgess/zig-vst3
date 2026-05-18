@@ -6,6 +6,7 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const ivstattributes = @import("pluginterfaces/vst/ivstattributes.zig");
 const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
+const vst_index = @import("vst_index.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 pub fn ConnectionPoint(comptime Config: type) type {
@@ -119,6 +120,8 @@ test "connection point preserves peer when delegated connection changes fail" {
 pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usize, comptime max_binary_bytes: usize) type {
     if (max_entries == 0) @compileError("AttributeList requires at least one entry");
     if (max_string_chars == 0) @compileError("AttributeList requires at least one string code unit");
+    vst_index.requireUint32Capacity(max_string_chars, "AttributeList string capacity");
+    vst_index.requireUint32Capacity(max_binary_bytes, "AttributeList binary capacity");
 
     return extern struct {
         const Self = @This();
