@@ -96,6 +96,7 @@ test {
     std.testing.refAllDecls(vst_event_list);
     std.testing.refAllDecls(vst_host_application);
     std.testing.refAllDecls(vst_host_context);
+    std.testing.refAllDecls(vst_inter_app_audio);
     std.testing.refAllDecls(vst_linux_run_loop);
     std.testing.refAllDecls(vst_message);
     std.testing.refAllDecls(vst_note_expression);

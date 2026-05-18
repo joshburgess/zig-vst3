@@ -21,7 +21,8 @@ pub fn InterAppAudioHost(comptime Config: type) type {
         remote_control_count: types.uint32 = 0,
         last_remote_control_event: types.uint32 = 0,
         scheduled_event_count: types.uint32 = 0,
-        last_preset_uid: ?tuid.TUID = null,
+        last_preset_uid: tuid.TUID = tuid.zero,
+        has_last_preset_uid: bool = false,
         host_icon: ?*anyopaque = null,
         preset_manager: ?*ivstinterappaudio.IInterAppAudioPresetManager = null,
 
@@ -116,6 +117,7 @@ pub fn InterAppAudioHost(comptime Config: type) type {
         fn createPresetManager(ptr: *anyopaque, uid: *const tuid.TUID) callconv(.c) ?*ivstinterappaudio.IInterAppAudioPresetManager {
             const self = owner(ptr);
             self.last_preset_uid = uid.*;
+            self.has_last_preset_uid = true;
             if (@hasDecl(Config, "createPresetManager")) return Config.createPresetManager(self, uid);
             return self.preset_manager;
         }
@@ -308,7 +310,8 @@ test "inter-app audio host returns icon and preset manager" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getHostIcon(iface, &out_icon));
     try std.testing.expectEqual(icon, out_icon.?);
     try std.testing.expectEqual(presets.asInterface(), iface.vtable.createPresetManager(iface, &preset_uid).?);
-    try std.testing.expectEqualSlices(u8, &preset_uid, &host.last_preset_uid.?);
+    try std.testing.expect(host.has_last_preset_uid);
+    try std.testing.expectEqualSlices(u8, &preset_uid, &host.last_preset_uid);
 }
 
 test "inter-app audio host delegates hooks and supports query interface" {
@@ -371,9 +374,8 @@ test "inter-app audio host resets delegated failure outputs" {
 test "inter-app audio host delegates scheduled UI events" {
     const Host = InterAppAudioHost(struct {
         pub fn scheduleEventFromUI(self: anytype, event: *events.Event) types.tresult {
-            try std.testing.expectEqual(@as(types.uint32, 1), self.scheduled_event_count);
-            try std.testing.expectEqual(@as(types.int32, 128), event.sampleOffset);
-            try std.testing.expectEqual(@intFromEnum(events.Event.EventTypes.kNoteOnEvent), event.type);
+            _ = self;
+            _ = event;
             return types.kResultFalse;
         }
     });
@@ -387,34 +389,35 @@ test "inter-app audio host delegates scheduled UI events" {
 
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.scheduleEventFromUI(iface, &event));
     try std.testing.expectEqual(@as(types.uint32, 1), host.scheduled_event_count);
+    try std.testing.expectEqual(@as(types.int32, 128), event.sampleOffset);
+    try std.testing.expectEqual(@intFromEnum(events.Event.EventTypes.kNoteOnEvent), event.type);
 }
 
 test "inter-app audio host delegates remote control and preset manager creation" {
     const Presets = InterAppAudioPresetManager(struct {});
     const Host = InterAppAudioHost(struct {
-        var returned_presets: ?*ivstinterappaudio.IInterAppAudioPresetManager = null;
-
         pub fn sendRemoteControlEvent(self: anytype, event_id: types.uint32) types.tresult {
-            try std.testing.expectEqual(@as(types.uint32, 1), self.remote_control_count);
-            try std.testing.expectEqual(@as(types.uint32, 0x1234), event_id);
+            _ = self;
+            _ = event_id;
             return types.kInvalidArgument;
         }
 
         pub fn createPresetManager(self: anytype, uid: *const tuid.TUID) ?*ivstinterappaudio.IInterAppAudioPresetManager {
-            try std.testing.expectEqualSlices(u8, uid, &self.last_preset_uid.?);
-            return returned_presets;
+            _ = uid;
+            return self.preset_manager;
         }
     });
     var presets = Presets{};
-    Host.returned_presets = presets.asInterface();
-    var host = Host{};
+    var host = Host{ .preset_manager = presets.asInterface() };
     const iface = host.asInterface();
     const preset_uid = tuid.inlineUid(0x12345678, 0x90abcdef, 0x11223344, 0x55667788);
 
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.sendRemoteControlEvent(iface, 0x1234));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.remote_control_count);
     try std.testing.expectEqual(@as(types.uint32, 0x1234), host.last_remote_control_event);
     try std.testing.expectEqual(presets.asInterface(), iface.vtable.createPresetManager(iface, &preset_uid).?);
-    try std.testing.expectEqualSlices(u8, &preset_uid, &host.last_preset_uid.?);
+    try std.testing.expect(host.has_last_preset_uid);
+    try std.testing.expectEqualSlices(u8, &preset_uid, &host.last_preset_uid);
 }
 
 test "inter-app audio connection notification stores state" {
@@ -432,7 +435,7 @@ test "inter-app audio connection notification stores state" {
 }
 
 test "inter-app audio connection notification delegates state changes" {
-    const Notification = InterAppAudioConnectionNotification(struct {
+    const NotificationConfig = struct {
         var callback_count: types.uint32 = 0;
         var last_connected = false;
         var last_change_count: types.uint32 = 0;
@@ -442,19 +445,20 @@ test "inter-app audio connection notification delegates state changes" {
             last_connected = connected;
             last_change_count = self.change_count;
         }
-    });
+    };
+    const Notification = InterAppAudioConnectionNotification(NotificationConfig);
     var notification = Notification{};
     const iface = notification.asInterface();
 
     iface.vtable.onInterAppAudioConnectionStateChange(iface, 1);
-    try std.testing.expectEqual(@as(types.uint32, 1), Notification.callback_count);
-    try std.testing.expectEqual(@as(types.uint32, 1), Notification.last_change_count);
-    try std.testing.expect(Notification.last_connected);
+    try std.testing.expectEqual(@as(types.uint32, 1), NotificationConfig.callback_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), NotificationConfig.last_change_count);
+    try std.testing.expect(NotificationConfig.last_connected);
 
     iface.vtable.onInterAppAudioConnectionStateChange(iface, 0);
-    try std.testing.expectEqual(@as(types.uint32, 2), Notification.callback_count);
-    try std.testing.expectEqual(@as(types.uint32, 2), Notification.last_change_count);
-    try std.testing.expect(!Notification.last_connected);
+    try std.testing.expectEqual(@as(types.uint32, 2), NotificationConfig.callback_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), NotificationConfig.last_change_count);
+    try std.testing.expect(!NotificationConfig.last_connected);
 }
 
 test "inter-app audio connection notification supports query interface" {
