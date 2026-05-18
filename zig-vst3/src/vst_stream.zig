@@ -77,6 +77,11 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return result;
         }
 
+        fn failByteCount(out: ?*types.int32, result: types.tresult) types.tresult {
+            if (out) |value| value.* = 0;
+            return result;
+        }
+
         fn ownerFromStream(ptr: *anyopaque) *Self {
             const iface: *ibstream.IBStream = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -124,15 +129,14 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         }
 
         fn read(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_read: ?*types.int32) callconv(.c) types.tresult {
-            if (bytes_read) |out| out.* = 0;
-            if (byte_count < 0) return types.kInvalidArgument;
+            if (byte_count < 0) return failByteCount(bytes_read, types.kInvalidArgument);
             const requested: usize = @intCast(byte_count);
-            if (requested > 0 and buffer == null) return types.kInvalidArgument;
+            if (requested > 0 and buffer == null) return failByteCount(bytes_read, types.kInvalidArgument);
             const self = ownerFromStream(ptr);
             if (requested > self.readableBytes()) {
-                return types.kResultFalse;
+                return failByteCount(bytes_read, types.kResultFalse);
             }
-            if (self.pos > self.boundedLen()) return types.kResultFalse;
+            if (self.pos > self.boundedLen()) return failByteCount(bytes_read, types.kResultFalse);
             if (requested > 0) {
                 const target = buffer orelse return types.kInvalidArgument;
                 const output = @as([*]u8, @ptrCast(target))[0..requested];
@@ -144,13 +148,12 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         }
 
         fn write(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_written: ?*types.int32) callconv(.c) types.tresult {
-            if (bytes_written) |out| out.* = 0;
-            if (byte_count < 0) return types.kInvalidArgument;
+            if (byte_count < 0) return failByteCount(bytes_written, types.kInvalidArgument);
             const requested: usize = @intCast(byte_count);
-            if (requested > 0 and buffer == null) return types.kInvalidArgument;
+            if (requested > 0 and buffer == null) return failByteCount(bytes_written, types.kInvalidArgument);
             const self = ownerFromStream(ptr);
             if (self.pos > capacity or self.pos > self.boundedWriteLimit() or requested > self.writableBytes()) {
-                return types.kResultFalse;
+                return failByteCount(bytes_written, types.kResultFalse);
             }
             if (requested > 0) {
                 const source = buffer orelse return types.kInvalidArgument;
