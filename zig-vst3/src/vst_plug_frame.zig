@@ -125,3 +125,13 @@ test "plug frame supports query interface" {
     const queried_frame: *iplugview.IPlugFrame = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_frame.vtable.release(queried_frame));
 }
+
+test "plug frame clears unsupported query output" {
+    const Frame = PlugFrame(struct {});
+    var frame = Frame{};
+    const iface = frame.asInterface();
+    var queried: ?*anyopaque = iface;
+
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}

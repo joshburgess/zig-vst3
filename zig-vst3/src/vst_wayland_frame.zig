@@ -200,6 +200,16 @@ test "wayland host supports query interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_host.vtable.release(queried_host));
 }
 
+test "wayland host clears unsupported query output" {
+    const Host = WaylandHost(struct {});
+    var host = Host{};
+    const iface = host.asInterface();
+    var queried: ?*anyopaque = iface;
+
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "wayland frame returns null by default" {
     const Frame = WaylandFrame(struct {});
     var frame = Frame{};
@@ -270,4 +280,14 @@ test "wayland frame supports query interface" {
     try std.testing.expect(queried != null);
     const queried_frame: *iwaylandframe.IWaylandFrame = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_frame.vtable.release(queried_frame));
+}
+
+test "wayland frame clears unsupported query output" {
+    const Frame = WaylandFrame(struct {});
+    var frame = Frame{};
+    const iface = frame.asInterface();
+    var queried: ?*anyopaque = iface;
+
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }

@@ -499,6 +499,16 @@ test "plug interface support clamps inflated counts" {
     try std.testing.expectEqual(types.kResultFalse, support.addSupported(&ivstpluginterfacesupport.iplug_interface_support_iid));
 }
 
+test "plug interface support clears unsupported query output" {
+    const Support = PlugInterfaceSupport(1);
+    var support = Support{};
+    const iface = support.asInterface();
+    var queried: ?*anyopaque = iface;
+
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "prefetchable support reports default state and supports query interface" {
     const Support = PrefetchableSupport(struct {});
     var support = Support{ .state = @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsYetPrefetchable) };
@@ -531,6 +541,16 @@ test "prefetchable support reports state and clears delegated failure" {
     try std.testing.expectEqual(@as(types.uint32, 1), support.get_count);
 }
 
+test "prefetchable support clears unsupported query output" {
+    const Support = PrefetchableSupport(struct {});
+    var support = Support{};
+    const iface = support.asInterface();
+    var queried: ?*anyopaque = iface;
+
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "midi learn tracks live controller input and delegates result" {
     const Learn = MidiLearn(struct {
         pub fn onLiveMIDIControllerInput(_: anytype, bus_index: types.int32, channel: types.int16, controller: vsttypes.CtrlNumber) types.tresult {
@@ -546,6 +566,16 @@ test "midi learn tracks live controller input and delegates result" {
     try std.testing.expectEqual(@as(types.int32, 1), learn.last_bus);
     try std.testing.expectEqual(@as(types.int16, 2), learn.last_channel);
     try std.testing.expectEqual(@as(vsttypes.CtrlNumber, 64), learn.last_controller);
+}
+
+test "midi learn clears unsupported query output" {
+    const Learn = MidiLearn(struct {});
+    var learn = Learn{};
+    const iface = learn.asInterface();
+    var queried: ?*anyopaque = iface;
+
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }
 
 test "midi 2 mapping copies midi 1 and midi 2 assignment lists" {
@@ -680,6 +710,19 @@ test "midi learn 2 tracks midi 1 and midi 2 controller input" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_learn.vtable.release(queried_learn));
 }
 
+test "midi 2 mapping clears unsupported query outputs from both interfaces" {
+    const Mapping = Midi2Mapping(1, 1, struct {});
+    var mapping = Mapping{};
+    var mapping_query: ?*anyopaque = mapping.asMapping();
+    var learn_query: ?*anyopaque = mapping.asLearn();
+
+    try std.testing.expectEqual(types.kNoInterface, mapping.asMapping().vtable.queryInterface(mapping.asMapping(), &tuid.zero, &mapping_query));
+    try std.testing.expectEqual(@as(?*anyopaque, null), mapping_query);
+
+    try std.testing.expectEqual(types.kNoInterface, mapping.asLearn().vtable.queryInterface(mapping.asLearn(), &tuid.zero, &learn_query));
+    try std.testing.expectEqual(@as(?*anyopaque, null), learn_query);
+}
+
 test "physical UI mapping exposes fixed map list and clears delegated failures" {
     const Mapping = PhysicalUIMapping(1, struct {
         pub fn getPhysicalUIMapping(_: anytype, _: types.int32, _: types.int16, out: *ivstphysicalui.PhysicalUIMapList) types.tresult {
@@ -740,4 +783,14 @@ test "physical UI mapping reports empty lists and supports query interface" {
     try std.testing.expect(queried != null);
     const queried_iface: *ivstphysicalui.INoteExpressionPhysicalUIMapping = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_iface.vtable.release(queried_iface));
+}
+
+test "physical UI mapping clears unsupported query output" {
+    const Mapping = PhysicalUIMapping(1, struct {});
+    var mapping = Mapping{};
+    const iface = mapping.asInterface();
+    var queried: ?*anyopaque = iface;
+
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }

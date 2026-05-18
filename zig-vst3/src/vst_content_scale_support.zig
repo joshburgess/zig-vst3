@@ -115,3 +115,13 @@ test "content scale support supports query interface" {
     const queried_support: *scale_support.IPlugViewContentScaleSupport = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_support.vtable.release(queried_support));
 }
+
+test "content scale support clears unsupported query output" {
+    const Support = ContentScaleSupport(struct {});
+    var support = Support{};
+    const iface = support.asInterface();
+    var queried: ?*anyopaque = iface;
+
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
