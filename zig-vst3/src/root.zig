@@ -115,6 +115,7 @@ test {
     std.testing.refAllDecls(sine_synth_controller);
     std.testing.refAllDecls(sine_synth_plugin);
     std.testing.refAllDecls(sine_synth_spec);
+    std.testing.refAllDecls(pluginterfaces);
     std.testing.refAllDecls(tuid);
     std.testing.refAllDecls(vst_capability_support);
     std.testing.refAllDecls(vst_cloneable);
