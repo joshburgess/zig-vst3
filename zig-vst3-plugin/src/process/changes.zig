@@ -854,6 +854,36 @@ test "parameter changes generated queries match reference scans" {
             }
             return result;
         }
+
+        fn firstAtOffset(items: []const ParameterChange, sample_offset: usize) ?ParameterChange {
+            for (items) |item| {
+                if (item.sample_offset == sample_offset) return item;
+            }
+            return null;
+        }
+
+        fn latestAtOffset(items: []const ParameterChange, sample_offset: usize) ?ParameterChange {
+            var result: ?ParameterChange = null;
+            for (items) |item| {
+                if (item.sample_offset == sample_offset) result = item;
+            }
+            return result;
+        }
+
+        fn firstForIdAtOffset(items: []const ParameterChange, id: u32, sample_offset: usize) ?ParameterChange {
+            for (items) |item| {
+                if (item.id == id and item.sample_offset == sample_offset) return item;
+            }
+            return null;
+        }
+
+        fn latestForIdAtOffset(items: []const ParameterChange, id: u32, sample_offset: usize) ?ParameterChange {
+            var result: ?ParameterChange = null;
+            for (items) |item| {
+                if (item.id == id and item.sample_offset == sample_offset) result = item;
+            }
+            return result;
+        }
     };
 
     const ids = [_]u32{ 7, 8, 9 };
@@ -878,6 +908,8 @@ test "parameter changes generated queries match reference scans" {
                 try std.testing.expectEqual(Reference.first(items, id), view.first(id));
                 try std.testing.expectEqual(Reference.latest(items, id), view.latest(id));
                 for (0..frame_count) |sample_offset| {
+                    try std.testing.expectEqual(Reference.firstForIdAtOffset(items, id, sample_offset), view.firstForIdAtOffset(id, sample_offset));
+                    try std.testing.expectEqual(Reference.latestForIdAtOffset(items, id, sample_offset), view.latestForIdAtOffset(id, sample_offset));
                     try std.testing.expectEqual(
                         Reference.nextOffset(items, id, sample_offset),
                         view.nextSampleOffsetForId(id, sample_offset),
@@ -887,6 +919,8 @@ test "parameter changes generated queries match reference scans" {
 
             for (0..frame_count) |sample_offset| {
                 try std.testing.expectEqual(Reference.countAtOffset(items, sample_offset), view.countAtOffset(sample_offset));
+                try std.testing.expectEqual(Reference.firstAtOffset(items, sample_offset), view.firstAtOffset(sample_offset));
+                try std.testing.expectEqual(Reference.latestAtOffset(items, sample_offset), view.latestAtOffset(sample_offset));
             }
         }
     }

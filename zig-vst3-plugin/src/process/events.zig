@@ -1705,6 +1705,18 @@ test "events generated queries match reference scans" {
             return item.kind == kind;
         }
 
+        fn itemMatchesBus(item: Event, bus_index: i32) bool {
+            return item.bus_index == bus_index;
+        }
+
+        fn itemMatchesChannel(item: Event, channel: i16) bool {
+            return item.hasChannel() and item.channel == channel;
+        }
+
+        fn itemMatchesBusChannel(item: Event, bus_channel: BusChannel) bool {
+            return itemMatchesBus(item, bus_channel.bus_index) and itemMatchesChannel(item, bus_channel.channel);
+        }
+
         fn countKind(items: []const Event, kind: EventKind) usize {
             var result: usize = 0;
             for (items) |item| {
@@ -1713,10 +1725,18 @@ test "events generated queries match reference scans" {
             return result;
         }
 
-        fn firstKind(items: []const Event, kind: EventKind) ?Event {
+        fn countMatching(items: []const Event, context: anytype, comptime matches: anytype) usize {
+            var result: usize = 0;
+            for (items) |item| {
+                if (matches(item, context)) result += 1;
+            }
+            return result;
+        }
+
+        fn firstMatching(items: []const Event, context: anytype, comptime matches: anytype) ?Event {
             var result: ?Event = null;
             for (items) |item| {
-                if (!itemMatchesKind(item, kind)) continue;
+                if (!matches(item, context)) continue;
                 if (result) |current| {
                     if (item.sample_offset < current.sample_offset) result = item;
                 } else {
@@ -1726,10 +1746,10 @@ test "events generated queries match reference scans" {
             return result;
         }
 
-        fn latestKind(items: []const Event, kind: EventKind) ?Event {
+        fn latestMatching(items: []const Event, context: anytype, comptime matches: anytype) ?Event {
             var result: ?Event = null;
             for (items) |item| {
-                if (!itemMatchesKind(item, kind)) continue;
+                if (!matches(item, context)) continue;
                 if (result) |current| {
                     if (item.sample_offset >= current.sample_offset) result = item;
                 } else {
@@ -1739,10 +1759,10 @@ test "events generated queries match reference scans" {
             return result;
         }
 
-        fn nextOffsetForKind(items: []const Event, kind: EventKind, after_sample_offset: usize) ?usize {
+        fn nextOffsetMatching(items: []const Event, context: anytype, after_sample_offset: usize, comptime matches: anytype) ?usize {
             var result: ?usize = null;
             for (items) |item| {
-                if (!itemMatchesKind(item, kind) or item.sample_offset <= after_sample_offset) continue;
+                if (!matches(item, context) or item.sample_offset <= after_sample_offset) continue;
                 if (result) |current| {
                     if (item.sample_offset < current) result = item.sample_offset;
                 } else {
@@ -1750,6 +1770,18 @@ test "events generated queries match reference scans" {
                 }
             }
             return result;
+        }
+
+        fn firstKind(items: []const Event, kind: EventKind) ?Event {
+            return firstMatching(items, kind, itemMatchesKind);
+        }
+
+        fn latestKind(items: []const Event, kind: EventKind) ?Event {
+            return latestMatching(items, kind, itemMatchesKind);
+        }
+
+        fn nextOffsetForKind(items: []const Event, kind: EventKind, after_sample_offset: usize) ?usize {
+            return nextOffsetMatching(items, kind, after_sample_offset, itemMatchesKind);
         }
 
         fn countAtOffset(items: []const Event, sample_offset: usize) usize {
@@ -1762,19 +1794,22 @@ test "events generated queries match reference scans" {
     };
 
     const kinds = [_]EventKind{ .note_on, .note_off, .midi_cc, .pitch_bend };
+    const bus_indexes = [_]i32{ 0, 1, 2 };
+    const channels = [_]i16{ 0, 1, 2 };
     const frame_count = 6;
 
     for (0..32) |seed| {
         var storage: [4]Event = undefined;
         for (&storage, 0..) |*item, index| {
             const sample_offset = (seed * 3 + index * 2) % frame_count;
-            item.* = switch (kinds[(seed + index * 2) % kinds.len]) {
-                .note_on => Event.noteOn(sample_offset, @intCast(index % 2), @intCast(60 + index), 0.25),
-                .note_off => Event.noteOff(sample_offset, @intCast(index % 2), @intCast(60 + index), 0.0),
-                .midi_cc => Event.midiCc(sample_offset, @intCast(index % 2), @intCast(1 + index), 0.5),
-                .pitch_bend => Event.pitchBend(sample_offset, @intCast(index % 2), 0.75),
+            const channel: i16 = @intCast((seed + index) % 3);
+            item.* = (switch (kinds[(seed + index * 2) % kinds.len]) {
+                .note_on => Event.noteOn(sample_offset, channel, @intCast(60 + index), 0.25),
+                .note_off => Event.noteOff(sample_offset, channel, @intCast(60 + index), 0.0),
+                .midi_cc => Event.midiCc(sample_offset, channel, @intCast(1 + index), 0.5),
+                .pitch_bend => Event.pitchBend(sample_offset, channel, 0.75),
                 else => unreachable,
-            };
+            }).withBusIndex(@intCast((seed + index * 2) % 3));
         }
 
         for (0..storage.len + 1) |len| {
@@ -1795,6 +1830,45 @@ test "events generated queries match reference scans" {
 
             for (0..frame_count) |sample_offset| {
                 try std.testing.expectEqual(Reference.countAtOffset(items, sample_offset), view.countAtOffset(sample_offset));
+            }
+
+            for (bus_indexes) |bus_index| {
+                try std.testing.expectEqual(Reference.countMatching(items, bus_index, Reference.itemMatchesBus), view.countBus(bus_index));
+                try std.testing.expectEqual(Reference.firstMatching(items, bus_index, Reference.itemMatchesBus), view.firstBus(bus_index));
+                try std.testing.expectEqual(Reference.latestMatching(items, bus_index, Reference.itemMatchesBus), view.latestBus(bus_index));
+                for (0..frame_count) |sample_offset| {
+                    try std.testing.expectEqual(
+                        Reference.nextOffsetMatching(items, bus_index, sample_offset, Reference.itemMatchesBus),
+                        view.nextSampleOffsetForBus(bus_index, sample_offset),
+                    );
+                }
+            }
+
+            for (channels) |channel| {
+                try std.testing.expectEqual(Reference.countMatching(items, channel, Reference.itemMatchesChannel), view.countChannel(channel));
+                try std.testing.expectEqual(Reference.firstMatching(items, channel, Reference.itemMatchesChannel), view.firstChannel(channel));
+                try std.testing.expectEqual(Reference.latestMatching(items, channel, Reference.itemMatchesChannel), view.latestChannel(channel));
+                for (0..frame_count) |sample_offset| {
+                    try std.testing.expectEqual(
+                        Reference.nextOffsetMatching(items, channel, sample_offset, Reference.itemMatchesChannel),
+                        view.nextSampleOffsetForChannel(channel, sample_offset),
+                    );
+                }
+            }
+
+            for (bus_indexes) |bus_index| {
+                for (channels) |channel| {
+                    const bus_channel = BusChannel{ .bus_index = bus_index, .channel = channel };
+                    try std.testing.expectEqual(Reference.countMatching(items, bus_channel, Reference.itemMatchesBusChannel), view.countBusChannel(bus_index, channel));
+                    try std.testing.expectEqual(Reference.firstMatching(items, bus_channel, Reference.itemMatchesBusChannel), view.firstBusChannel(bus_index, channel));
+                    try std.testing.expectEqual(Reference.latestMatching(items, bus_channel, Reference.itemMatchesBusChannel), view.latestBusChannel(bus_index, channel));
+                    for (0..frame_count) |sample_offset| {
+                        try std.testing.expectEqual(
+                            Reference.nextOffsetMatching(items, bus_channel, sample_offset, Reference.itemMatchesBusChannel),
+                            view.nextSampleOffsetForBusChannel(bus_index, channel, sample_offset),
+                        );
+                    }
+                }
             }
         }
     }
