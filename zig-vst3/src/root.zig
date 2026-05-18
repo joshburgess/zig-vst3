@@ -114,4 +114,6 @@ test {
     std.testing.refAllDecls(vst_test_plug_provider);
     std.testing.refAllDecls(vst_update_handler);
     std.testing.refAllDecls(vst_wayland_frame);
+    std.testing.refAllDecls(zig_vst3_plugin_bridge);
+    std.testing.refAllDecls(zig_vst3_plugin_effect);
 }
