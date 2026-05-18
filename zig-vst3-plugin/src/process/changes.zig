@@ -808,6 +808,14 @@ test "parameter changes generated queries match reference scans" {
             return result;
         }
 
+        fn has(items: []const ParameterChange, id: u32) bool {
+            return count(items, id) != 0;
+        }
+
+        fn only(items: []const ParameterChange, id: u32) bool {
+            return items.len != 0 and count(items, id) == items.len;
+        }
+
         fn first(items: []const ParameterChange, id: u32) ?ParameterChange {
             var result: ?ParameterChange = null;
             for (items) |item| {
@@ -834,6 +842,19 @@ test "parameter changes generated queries match reference scans" {
             return result;
         }
 
+        fn nextAnyOffset(items: []const ParameterChange, after_sample_offset: usize) ?usize {
+            var result: ?usize = null;
+            for (items) |item| {
+                if (item.sample_offset <= after_sample_offset) continue;
+                if (result) |current| {
+                    if (item.sample_offset < current) result = item.sample_offset;
+                } else {
+                    result = item.sample_offset;
+                }
+            }
+            return result;
+        }
+
         fn nextOffset(items: []const ParameterChange, id: u32, after_sample_offset: usize) ?usize {
             var result: ?usize = null;
             for (items) |item| {
@@ -855,11 +876,35 @@ test "parameter changes generated queries match reference scans" {
             return result;
         }
 
+        fn hasAtOffset(items: []const ParameterChange, sample_offset: usize) bool {
+            return countAtOffset(items, sample_offset) != 0;
+        }
+
+        fn onlyAtOffset(items: []const ParameterChange, sample_offset: usize) bool {
+            return items.len != 0 and countAtOffset(items, sample_offset) == items.len;
+        }
+
         fn firstAtOffset(items: []const ParameterChange, sample_offset: usize) ?ParameterChange {
             for (items) |item| {
                 if (item.sample_offset == sample_offset) return item;
             }
             return null;
+        }
+
+        fn countForIdAtOffset(items: []const ParameterChange, id: u32, sample_offset: usize) usize {
+            var result: usize = 0;
+            for (items) |item| {
+                if (item.id == id and item.sample_offset == sample_offset) result += 1;
+            }
+            return result;
+        }
+
+        fn hasForIdAtOffset(items: []const ParameterChange, id: u32, sample_offset: usize) bool {
+            return countForIdAtOffset(items, id, sample_offset) != 0;
+        }
+
+        fn onlyForIdAtOffset(items: []const ParameterChange, id: u32, sample_offset: usize) bool {
+            return items.len != 0 and countForIdAtOffset(items, id, sample_offset) == items.len;
         }
 
         fn latestAtOffset(items: []const ParameterChange, sample_offset: usize) ?ParameterChange {
@@ -905,11 +950,22 @@ test "parameter changes generated queries match reference scans" {
 
             for (ids) |id| {
                 try std.testing.expectEqual(Reference.count(items, id), view.count(id));
+                try std.testing.expectEqual(Reference.has(items, id), view.has(id));
+                try std.testing.expectEqual(!Reference.has(items, id), view.empty(id));
+                try std.testing.expectEqual(Reference.only(items, id), view.only(id));
                 try std.testing.expectEqual(Reference.first(items, id), view.first(id));
                 try std.testing.expectEqual(Reference.latest(items, id), view.latest(id));
                 for (0..frame_count) |sample_offset| {
+                    try std.testing.expectEqual(Reference.countForIdAtOffset(items, id, sample_offset), view.countForIdAtOffset(id, sample_offset));
+                    try std.testing.expectEqual(Reference.hasForIdAtOffset(items, id, sample_offset), view.hasForIdAtOffset(id, sample_offset));
+                    try std.testing.expectEqual(!Reference.hasForIdAtOffset(items, id, sample_offset), view.idAtOffsetEmpty(id, sample_offset));
+                    try std.testing.expectEqual(Reference.onlyForIdAtOffset(items, id, sample_offset), view.onlyForIdAtOffset(id, sample_offset));
                     try std.testing.expectEqual(Reference.firstForIdAtOffset(items, id, sample_offset), view.firstForIdAtOffset(id, sample_offset));
                     try std.testing.expectEqual(Reference.latestForIdAtOffset(items, id, sample_offset), view.latestForIdAtOffset(id, sample_offset));
+                    try std.testing.expectEqual(
+                        Reference.nextAnyOffset(items, sample_offset),
+                        view.nextSampleOffset(sample_offset),
+                    );
                     try std.testing.expectEqual(
                         Reference.nextOffset(items, id, sample_offset),
                         view.nextSampleOffsetForId(id, sample_offset),
@@ -919,6 +975,9 @@ test "parameter changes generated queries match reference scans" {
 
             for (0..frame_count) |sample_offset| {
                 try std.testing.expectEqual(Reference.countAtOffset(items, sample_offset), view.countAtOffset(sample_offset));
+                try std.testing.expectEqual(Reference.hasAtOffset(items, sample_offset), view.hasAtOffset(sample_offset));
+                try std.testing.expectEqual(!Reference.hasAtOffset(items, sample_offset), view.offsetEmpty(sample_offset));
+                try std.testing.expectEqual(Reference.onlyAtOffset(items, sample_offset), view.onlyAtOffset(sample_offset));
                 try std.testing.expectEqual(Reference.firstAtOffset(items, sample_offset), view.firstAtOffset(sample_offset));
                 try std.testing.expectEqual(Reference.latestAtOffset(items, sample_offset), view.latestAtOffset(sample_offset));
             }
