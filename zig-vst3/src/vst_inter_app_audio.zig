@@ -339,6 +339,16 @@ test "inter-app audio host delegates hooks and supports query interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), out.vtable.release(out));
 }
 
+test "inter-app audio host clears unsupported query output" {
+    const Host = InterAppAudioHost(struct {});
+    var host = Host{};
+    const iface = host.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "inter-app audio host resets delegated failure outputs" {
     const Host = InterAppAudioHost(struct {
         pub fn getScreenSize(self: anytype, out_rect: *iplugview.ViewRect, out_scale: *f32) types.tresult {
@@ -473,6 +483,16 @@ test "inter-app audio connection notification supports query interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), out.vtable.release(out));
 }
 
+test "inter-app audio connection notification clears unsupported query output" {
+    const Notification = InterAppAudioConnectionNotification(struct {});
+    var notification = Notification{};
+    const iface = notification.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "inter-app audio preset manager counts default actions" {
     const Presets = InterAppAudioPresetManager(struct {});
     var presets = Presets{};
@@ -519,4 +539,14 @@ test "inter-app audio preset manager supports query interface" {
     try std.testing.expect(queried != null);
     const out: *ivstinterappaudio.IInterAppAudioPresetManager = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), out.vtable.release(out));
+}
+
+test "inter-app audio preset manager clears unsupported query output" {
+    const Presets = InterAppAudioPresetManager(struct {});
+    var presets = Presets{};
+    const iface = presets.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }

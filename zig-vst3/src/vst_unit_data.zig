@@ -574,6 +574,16 @@ test "unit info delegates optional callbacks and supports query interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_info.vtable.release(queried_info));
 }
 
+test "unit info clears unsupported query output" {
+    const Info = UnitInfo(1, 0, struct {});
+    var info = Info{};
+    const iface = info.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "unit info clears delegated failure outputs" {
     const Info = UnitInfo(1, 0, struct {
         pub fn getProgramName(self: anytype, list_id: vsttypes.ProgramListID, program_index: types.int32, out: [*]vsttypes.TChar) types.tresult {
@@ -708,4 +718,19 @@ test "unit program data delegates hooks and supports query interface" {
     try std.testing.expect(queried != null);
     const queried_units: *ivstunits.IUnitData = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_units.vtable.release(queried_units));
+}
+
+test "unit program data clears unsupported query output from both interfaces" {
+    const Data = UnitProgramData(struct {});
+    var data = Data{};
+    const programs = data.asProgramListData();
+    const units = data.asUnitData();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, programs.vtable.queryInterface(programs, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    queried = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, units.vtable.queryInterface(units, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }

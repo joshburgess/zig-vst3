@@ -431,6 +431,21 @@ test "fixed buffer stream sizeable interface can query stream interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_stream.vtable.release(queried_stream));
 }
 
+test "fixed buffer stream clears unsupported query output from both interfaces" {
+    const Stream = FixedBufferStream(4);
+    var stream = Stream{};
+    const iface = stream.asStream();
+    const sizeable = stream.asSizeableStream();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+
+    queried = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, sizeable.vtable.queryInterface(sizeable, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
 test "fixed buffer stream enforces bounds and supports query interface" {
     const Stream = FixedBufferStream(4);
     var stream = Stream{ .write_limit = 2 };

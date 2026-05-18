@@ -123,3 +123,13 @@ test "plugin compatibility supports query interface" {
     const queried_iface: *iplugincompatibility.IPluginCompatibility = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_iface.vtable.release(queried_iface));
 }
+
+test "plugin compatibility clears unsupported query output" {
+    const Compatibility = PluginCompatibility("{}");
+    var compatibility = Compatibility{};
+    const iface = compatibility.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
