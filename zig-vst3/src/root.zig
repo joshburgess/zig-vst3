@@ -83,7 +83,12 @@ test "zig-vst3 module exposes a development version" {
 }
 
 test {
+    std.testing.refAllDecls(vst_capability_support);
+    std.testing.refAllDecls(vst_cloneable);
     std.testing.refAllDecls(vst_component_handler);
+    std.testing.refAllDecls(vst_content_scale_support);
+    std.testing.refAllDecls(vst_error_context);
+    std.testing.refAllDecls(vst_event_list);
     std.testing.refAllDecls(vst_parameter_finder);
     std.testing.refAllDecls(vst_unit_data);
     std.testing.refAllDecls(vst_update_handler);

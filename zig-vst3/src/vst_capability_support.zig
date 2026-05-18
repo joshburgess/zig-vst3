@@ -506,7 +506,7 @@ test "prefetchable support reports default state and supports query interface" {
     var state: ivstprefetchablesupport.PrefetchableSupport = 0;
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getPrefetchableSupport(iface, &state));
-    try std.testing.expectEqual(@intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsYetPrefetchable), state);
+    try std.testing.expectEqual(@as(ivstprefetchablesupport.PrefetchableSupport, @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsYetPrefetchable)), state);
 
     var queried: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstprefetchablesupport.iprefetchable_support_iid, &queried));
@@ -527,7 +527,7 @@ test "prefetchable support reports state and clears delegated failure" {
     var state: ivstprefetchablesupport.PrefetchableSupport = 99;
 
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getPrefetchableSupport(iface, &state));
-    try std.testing.expectEqual(@intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsNotYetPrefetchable), state);
+    try std.testing.expectEqual(@as(ivstprefetchablesupport.PrefetchableSupport, @intFromEnum(ivstprefetchablesupport.ePrefetchableSupport.kIsNotYetPrefetchable)), state);
     try std.testing.expectEqual(@as(types.uint32, 1), support.get_count);
 }
 
@@ -652,7 +652,8 @@ test "midi 2 mapping honors configured assignment direction" {
 test "midi learn 2 tracks midi 1 and midi 2 controller input" {
     const Mapping = Midi2Mapping(1, 1, struct {
         pub fn onLiveMidi2ControllerInput(_: anytype, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) types.tresult {
-            return if (bus_index == 1 and channel == 2 and controller.bank_registered == 3) types.kResultOk else types.kInvalidArgument;
+            _ = controller;
+            return if (bus_index == 1 and channel == 2) types.kResultOk else types.kInvalidArgument;
         }
 
         pub fn onLiveMidi1ControllerInput(_: anytype, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: vsttypes.CtrlNumber) types.tresult {
@@ -661,9 +662,10 @@ test "midi learn 2 tracks midi 1 and midi 2 controller input" {
     });
     var mapping = Mapping{};
     const learn = mapping.asLearn();
+    const midi2_controller = ivstmidimapping2.Midi2Controller{ .bank_registered = 3, .index_reserved = 7 };
 
-    try std.testing.expectEqual(types.kInvalidArgument, learn.vtable.onLiveMidi2ControllerInput(learn, 0, 2, .{ .bank_registered = 3 }));
-    try std.testing.expectEqual(types.kResultOk, learn.vtable.onLiveMidi2ControllerInput(learn, 1, 2, .{ .bank_registered = 3, .index_reserved = 7 }));
+    try std.testing.expectEqual(types.kInvalidArgument, learn.vtable.onLiveMidi2ControllerInput(learn, 0, 2, midi2_controller));
+    try std.testing.expectEqual(types.kResultOk, learn.vtable.onLiveMidi2ControllerInput(learn, 1, 2, midi2_controller));
     try std.testing.expectEqual(types.kResultOk, learn.vtable.onLiveMidi1ControllerInput(learn, 4, 5, 6));
     try std.testing.expectEqual(@as(types.uint32, 2), mapping.midi2_input_count);
     try std.testing.expectEqual(@as(types.uint32, 1), mapping.midi1_input_count);
