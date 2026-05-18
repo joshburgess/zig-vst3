@@ -1041,6 +1041,120 @@ test "parameter set reflects descriptor fields" {
     try std.testing.expectEqual(@as(f64, 1.0), set.fieldNormalizedFromPlain("mode", .lead));
 }
 
+test "parameter set generated selectors stay symmetric" {
+    const Mode = enum { clean, lead };
+    const Params = struct {
+        gain: FloatParam = .{ .id = 0, .name = "Gain", .short_name = "Gain", .units = "dB", .min = -12.0, .max = 12.0, .default = 0.0 },
+        voices: IntParam = .{ .id = 1, .name = "Voices", .short_name = "Vox", .min = 1, .max = 16, .default = 4, .can_automate = false, .is_read_only = true, .unit_id = 2 },
+        bypass: BoolParam = .{ .id = 2, .name = "Bypass" },
+        mode: EnumParam(Mode) = .{ .id = 3, .name = "Mode", .default = .lead },
+    };
+    const Set = ParameterSet(Params);
+    const set = Set.init(.{});
+    const ids = [_]u32{ 0, 1, 2, 3, 99 };
+    const names = [_][]const u8{ "Gain", "Voices", "Bypass", "Mode", "Missing" };
+
+    for (0..Set.count + 1) |index| {
+        const id_value = set.id(index);
+        const name_value = set.name(index);
+        try std.testing.expectEqual(id_value != null, name_value != null);
+
+        if (id_value) |id| {
+            try std.testing.expectEqual(index, set.indexOfId(id).?);
+            try std.testing.expectEqual(name_value, set.nameById(id));
+            try std.testing.expectEqual(set.shortName(index), set.shortNameById(id));
+            try std.testing.expectEqual(set.units(index), set.unitsById(id));
+            try std.testing.expectEqual(set.defaultNormalized(index), set.defaultNormalizedById(id));
+            try std.testing.expectEqual(set.defaultPlain(index), set.defaultPlainById(id));
+            try std.testing.expectEqual(set.plainMinimum(index), set.plainMinimumById(id));
+            try std.testing.expectEqual(set.plainMaximum(index), set.plainMaximumById(id));
+            try std.testing.expectEqual(set.hasPlainRange(index), set.hasPlainRangeById(id));
+            try std.testing.expectEqual(set.isBypass(index), set.isBypassById(id));
+            try std.testing.expectEqual(set.canAutomate(index), set.canAutomateById(id));
+            try std.testing.expectEqual(set.isReadOnly(index), set.isReadOnlyById(id));
+            try std.testing.expectEqual(set.unitId(index), set.unitIdById(id));
+            try std.testing.expectEqual(set.stepCount(index), set.stepCountById(id));
+            try std.testing.expectEqual(set.isList(index), set.isListById(id));
+            try std.testing.expectEqual(set.optionCount(index), set.optionCountById(id));
+            try std.testing.expectEqual(set.hasOptions(index), set.hasOptionsById(id));
+            try std.testing.expectEqual(set.optionsEmpty(index), set.optionsEmptyById(id));
+            for (0..3) |option_index| {
+                try std.testing.expectEqual(set.optionLabel(index, option_index), set.optionLabelById(id, option_index));
+                try std.testing.expectEqual(set.optionNormalized(index, option_index), set.optionNormalizedById(id, option_index));
+            }
+        }
+
+        if (name_value) |name_text| {
+            try std.testing.expectEqual(index, set.indexOfName(name_text).?);
+            try std.testing.expectEqual(id_value, set.idByName(name_text));
+            try std.testing.expectEqual(set.shortName(index), set.shortNameByName(name_text));
+            try std.testing.expectEqual(set.units(index), set.unitsByName(name_text));
+            try std.testing.expectEqual(set.defaultNormalized(index), set.defaultNormalizedByName(name_text));
+            try std.testing.expectEqual(set.defaultPlain(index), set.defaultPlainByName(name_text));
+            try std.testing.expectEqual(set.plainMinimum(index), set.plainMinimumByName(name_text));
+            try std.testing.expectEqual(set.plainMaximum(index), set.plainMaximumByName(name_text));
+            try std.testing.expectEqual(set.hasPlainRange(index), set.hasPlainRangeByName(name_text));
+            try std.testing.expectEqual(set.isBypass(index), set.isBypassByName(name_text));
+            try std.testing.expectEqual(set.canAutomate(index), set.canAutomateByName(name_text));
+            try std.testing.expectEqual(set.isReadOnly(index), set.isReadOnlyByName(name_text));
+            try std.testing.expectEqual(set.unitId(index), set.unitIdByName(name_text));
+            try std.testing.expectEqual(set.stepCount(index), set.stepCountByName(name_text));
+            try std.testing.expectEqual(set.isList(index), set.isListByName(name_text));
+            try std.testing.expectEqual(set.optionCount(index), set.optionCountByName(name_text));
+            try std.testing.expectEqual(set.hasOptions(index), set.hasOptionsByName(name_text));
+            try std.testing.expectEqual(set.optionsEmpty(index), set.optionsEmptyByName(name_text));
+            for (0..3) |option_index| {
+                try std.testing.expectEqual(set.optionLabel(index, option_index), set.optionLabelByName(name_text, option_index));
+                try std.testing.expectEqual(set.optionNormalized(index, option_index), set.optionNormalizedByName(name_text, option_index));
+            }
+        }
+    }
+
+    for (ids) |id| {
+        if (set.indexOfId(id) == null) {
+            try std.testing.expectEqual(@as(?[]const u8, null), set.nameById(id));
+            try std.testing.expectEqual(@as(?[]const u8, null), set.shortNameById(id));
+            try std.testing.expectEqual(@as(?[]const u8, null), set.unitsById(id));
+            try std.testing.expectEqual(@as(?f64, null), set.defaultNormalizedById(id));
+            try std.testing.expectEqual(@as(?f64, null), set.defaultPlainById(id));
+            try std.testing.expectEqual(@as(?f64, null), set.plainMinimumById(id));
+            try std.testing.expectEqual(@as(?f64, null), set.plainMaximumById(id));
+            try std.testing.expect(!set.hasPlainRangeById(id));
+            try std.testing.expectEqual(@as(?bool, null), set.isBypassById(id));
+            try std.testing.expectEqual(@as(?bool, null), set.canAutomateById(id));
+            try std.testing.expectEqual(@as(?bool, null), set.isReadOnlyById(id));
+            try std.testing.expectEqual(@as(?i32, null), set.unitIdById(id));
+            try std.testing.expectEqual(@as(?i32, null), set.stepCountById(id));
+            try std.testing.expectEqual(@as(?bool, null), set.isListById(id));
+            try std.testing.expectEqual(@as(?usize, null), set.optionCountById(id));
+            try std.testing.expect(!set.hasOptionsById(id));
+            try std.testing.expect(set.optionsEmptyById(id));
+        }
+    }
+
+    for (names) |name_text| {
+        if (set.indexOfName(name_text) == null) {
+            try std.testing.expectEqual(@as(?u32, null), set.idByName(name_text));
+            try std.testing.expectEqual(@as(?[]const u8, null), set.shortNameByName(name_text));
+            try std.testing.expectEqual(@as(?[]const u8, null), set.unitsByName(name_text));
+            try std.testing.expectEqual(@as(?f64, null), set.defaultNormalizedByName(name_text));
+            try std.testing.expectEqual(@as(?f64, null), set.defaultPlainByName(name_text));
+            try std.testing.expectEqual(@as(?f64, null), set.plainMinimumByName(name_text));
+            try std.testing.expectEqual(@as(?f64, null), set.plainMaximumByName(name_text));
+            try std.testing.expect(!set.hasPlainRangeByName(name_text));
+            try std.testing.expectEqual(@as(?bool, null), set.isBypassByName(name_text));
+            try std.testing.expectEqual(@as(?bool, null), set.canAutomateByName(name_text));
+            try std.testing.expectEqual(@as(?bool, null), set.isReadOnlyByName(name_text));
+            try std.testing.expectEqual(@as(?i32, null), set.unitIdByName(name_text));
+            try std.testing.expectEqual(@as(?i32, null), set.stepCountByName(name_text));
+            try std.testing.expectEqual(@as(?bool, null), set.isListByName(name_text));
+            try std.testing.expectEqual(@as(?usize, null), set.optionCountByName(name_text));
+            try std.testing.expect(!set.hasOptionsByName(name_text));
+            try std.testing.expect(set.optionsEmptyByName(name_text));
+        }
+    }
+}
+
 test "parameter set reports duplicate ids" {
     const Params = struct {
         gain: FloatParam = .{ .id = 7, .name = "Gain", .min = 0.0, .max = 1.0, .default = 0.5 },
