@@ -511,6 +511,45 @@ test "audio processor helper skips empty last parameter queues" {
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), collector.last_param_value);
 }
 
+test "audio processor helpers treat negative reported counts as empty" {
+    const event_items = [_]events.Event{
+        .{
+            .sampleOffset = 3,
+            .type = @intFromEnum(events.Event.EventTypes.kNoteOnEvent),
+            .data = .{ .noteOn = .{ .pitch = 60, .velocity = 0.5 } },
+        },
+    };
+    var list = TestEventList.init(&event_items, null);
+    list.reported_count = -1;
+    var collector = EventCollector{};
+
+    forEachEvent(&list.iface, &collector, collectEvent);
+
+    try std.testing.expectEqual(@as(usize, 0), collector.count);
+    try std.testing.expectEqual(@as(usize, 0), list.read_count);
+
+    const points = [_]TestParamPoint{
+        .{ .sample_offset = 2, .value = 0.25 },
+    };
+    var queue = TestParamValueQueue.init(11, &points);
+    queue.reported_count = -1;
+
+    forEachParamValueQueue(&queue.iface, &collector, collectParamValue);
+    forEachLastParamValueQueue(&queue.iface, &collector, collectParamValue);
+
+    try std.testing.expectEqual(@as(usize, 0), collector.count);
+    try std.testing.expectEqual(@as(usize, 0), queue.read_count);
+
+    var queues = [_]?*parameter_changes.IParamValueQueue{&queue.iface};
+    var changes = TestParameterChanges.init(&queues);
+    changes.reported_count = -1;
+
+    forEachParameterChanges(&changes.iface, &collector, collectLastParamQueue);
+
+    try std.testing.expectEqual(@as(usize, 0), collector.count);
+    try std.testing.expectEqual(@as(usize, 0), changes.read_count);
+}
+
 const TestEventList = struct {
     iface: events.IEventList = .{ .vtable = &vtable },
     items: []const events.Event,
