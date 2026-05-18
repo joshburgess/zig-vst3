@@ -83,10 +83,39 @@ test "zig-vst3 module exposes a development version" {
 }
 
 test {
+    std.testing.refAllDecls(entry);
+    std.testing.refAllDecls(bypass_component);
+    std.testing.refAllDecls(bypass_controller);
+    std.testing.refAllDecls(bypass_plugin);
+    std.testing.refAllDecls(bypass_spec);
+    std.testing.refAllDecls(event_echo_component);
+    std.testing.refAllDecls(event_echo_controller);
+    std.testing.refAllDecls(event_echo_plugin);
+    std.testing.refAllDecls(event_echo_spec);
+    std.testing.refAllDecls(event_monitor_component);
+    std.testing.refAllDecls(event_monitor_controller);
+    std.testing.refAllDecls(event_monitor_plugin);
+    std.testing.refAllDecls(event_monitor_spec);
     std.testing.refAllDecls(factory);
     std.testing.refAllDecls(funknown);
+    std.testing.refAllDecls(gain_component);
+    std.testing.refAllDecls(gain_controller);
+    std.testing.refAllDecls(gain_spec);
     std.testing.refAllDecls(interface_map);
+    std.testing.refAllDecls(mode_gain_component);
+    std.testing.refAllDecls(mode_gain_controller);
+    std.testing.refAllDecls(mode_gain_plugin);
+    std.testing.refAllDecls(mode_gain_spec);
     std.testing.refAllDecls(multi_interface);
+    std.testing.refAllDecls(note_gate_component);
+    std.testing.refAllDecls(note_gate_controller);
+    std.testing.refAllDecls(note_gate_plugin);
+    std.testing.refAllDecls(note_gate_spec);
+    std.testing.refAllDecls(sine_synth_component);
+    std.testing.refAllDecls(sine_synth_controller);
+    std.testing.refAllDecls(sine_synth_plugin);
+    std.testing.refAllDecls(sine_synth_spec);
+    std.testing.refAllDecls(tuid);
     std.testing.refAllDecls(vst_capability_support);
     std.testing.refAllDecls(vst_cloneable);
     std.testing.refAllDecls(vst_component_handler);
@@ -114,6 +143,10 @@ test {
     std.testing.refAllDecls(vst_test_plug_provider);
     std.testing.refAllDecls(vst_update_handler);
     std.testing.refAllDecls(vst_wayland_frame);
+    std.testing.refAllDecls(voice_mix_component);
+    std.testing.refAllDecls(voice_mix_controller);
+    std.testing.refAllDecls(voice_mix_plugin);
+    std.testing.refAllDecls(voice_mix_spec);
     std.testing.refAllDecls(zig_vst3_plugin_bridge);
     std.testing.refAllDecls(zig_vst3_plugin_effect);
 }
