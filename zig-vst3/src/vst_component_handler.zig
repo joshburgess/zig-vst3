@@ -974,6 +974,17 @@ test "component handler records delegated automation failures" {
     try std.testing.expectEqual(@as(types.int32, 3), handler.last_restart_flags);
 }
 
+test "component handler clears unsupported query outputs" {
+    const Handler = ComponentHandler(struct {});
+    var handler = Handler{};
+    const iface = handler.asHandler();
+    var out: ?*anyopaque = iface;
+
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), out);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.add_ref_count);
+}
+
 test "component handler 2 exposes extension and records callbacks" {
     const Handler = ComponentHandler2(struct {});
     var handler = Handler{};
@@ -996,6 +1007,20 @@ test "component handler 2 exposes extension and records callbacks" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.handler2_release_count);
 }
 
+test "component handler 2 clears unsupported query outputs from both interfaces" {
+    const Handler = ComponentHandler2(struct {});
+    var handler = Handler{};
+    var handler_out: ?*anyopaque = handler.asHandler();
+    var handler2_out: ?*anyopaque = handler.asHandler2();
+
+    try std.testing.expectEqual(types.kNoInterface, handler.asHandler().vtable.queryInterface(handler.asHandler(), &tuid.zero, &handler_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), handler_out);
+
+    try std.testing.expectEqual(types.kNoInterface, handler.asHandler2().vtable.queryInterface(handler.asHandler2(), &ivsteditcontroller.icomponent_handler_iid, &handler2_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), handler2_out);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.handler2_add_ref_count);
+}
+
 test "component handler 3 exposes context menu extension" {
     const Handler = ComponentHandler3(struct {});
     var handler = Handler{};
@@ -1009,6 +1034,20 @@ test "component handler 3 exposes context menu extension" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.context_menu_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler3.vtable.release(handler3));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.handler3_release_count);
+}
+
+test "component handler 3 clears unsupported query outputs from both interfaces" {
+    const Handler = ComponentHandler3(struct {});
+    var handler = Handler{};
+    var handler_out: ?*anyopaque = handler.asHandler();
+    var handler3_out: ?*anyopaque = handler.asHandler3();
+
+    try std.testing.expectEqual(types.kNoInterface, handler.asHandler().vtable.queryInterface(handler.asHandler(), &tuid.zero, &handler_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), handler_out);
+
+    try std.testing.expectEqual(types.kNoInterface, handler.asHandler3().vtable.queryInterface(handler.asHandler3(), &ivsteditcontroller.icomponent_handler_iid, &handler3_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), handler3_out);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.handler3_add_ref_count);
 }
 
 test "component handler exposes bus activation and system time extensions" {
@@ -1089,6 +1128,25 @@ test "component handler records successful delegated system time output" {
     try std.testing.expectEqual(@as(types.uint32, 1), time.vtable.release(time));
 }
 
+test "component handler bus and time clear unsupported query outputs" {
+    const Handler = ComponentHandlerBusAndTime(struct {});
+    var handler = Handler{};
+    var handler_out: ?*anyopaque = handler.asHandler();
+    var bus_out: ?*anyopaque = handler.asBusActivation();
+    var time_out: ?*anyopaque = handler.asSystemTime();
+
+    try std.testing.expectEqual(types.kNoInterface, handler.asHandler().vtable.queryInterface(handler.asHandler(), &tuid.zero, &handler_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), handler_out);
+
+    try std.testing.expectEqual(types.kNoInterface, handler.asBusActivation().vtable.queryInterface(handler.asBusActivation(), &ivsteditcontroller.icomponent_handler_iid, &bus_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), bus_out);
+
+    try std.testing.expectEqual(types.kNoInterface, handler.asSystemTime().vtable.queryInterface(handler.asSystemTime(), &ivsteditcontroller.icomponent_handler_iid, &time_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), time_out);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.bus_add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.time_add_ref_count);
+}
+
 test "component handler exposes progress callbacks" {
     const Handler = ComponentHandlerProgress(struct {
         pub const progress_id: ivsteditcontroller.ProgressID = 77;
@@ -1166,6 +1224,20 @@ test "component handler records successful delegated progress id output" {
     try std.testing.expectEqual(@as(types.uint32, 1), progress.vtable.release(progress));
 }
 
+test "component handler progress clears unsupported query outputs" {
+    const Handler = ComponentHandlerProgress(struct {});
+    var handler = Handler{};
+    var handler_out: ?*anyopaque = handler.asHandler();
+    var progress_out: ?*anyopaque = handler.asProgress();
+
+    try std.testing.expectEqual(types.kNoInterface, handler.asHandler().vtable.queryInterface(handler.asHandler(), &tuid.zero, &handler_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), handler_out);
+
+    try std.testing.expectEqual(types.kNoInterface, handler.asProgress().vtable.queryInterface(handler.asProgress(), &ivsteditcontroller.icomponent_handler_iid, &progress_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), progress_out);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.progress_add_ref_count);
+}
+
 test "component handler exposes unit handler extensions" {
     const Handler = ComponentHandlerUnits(struct {});
     var handler = Handler{};
@@ -1193,4 +1265,23 @@ test "component handler exposes unit handler extensions" {
     try std.testing.expectEqual(@as(types.uint32, 1), unit2.vtable.release(unit2));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.unit_release_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.unit2_release_count);
+}
+
+test "component handler units clear unsupported query outputs" {
+    const Handler = ComponentHandlerUnits(struct {});
+    var handler = Handler{};
+    var handler_out: ?*anyopaque = handler.asHandler();
+    var unit_out: ?*anyopaque = handler.asUnitHandler();
+    var unit2_out: ?*anyopaque = handler.asUnitHandler2();
+
+    try std.testing.expectEqual(types.kNoInterface, handler.asHandler().vtable.queryInterface(handler.asHandler(), &tuid.zero, &handler_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), handler_out);
+
+    try std.testing.expectEqual(types.kNoInterface, handler.asUnitHandler().vtable.queryInterface(handler.asUnitHandler(), &ivsteditcontroller.icomponent_handler_iid, &unit_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), unit_out);
+
+    try std.testing.expectEqual(types.kNoInterface, handler.asUnitHandler2().vtable.queryInterface(handler.asUnitHandler2(), &ivsteditcontroller.icomponent_handler_iid, &unit2_out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), unit2_out);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.unit_add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.unit2_add_ref_count);
 }
