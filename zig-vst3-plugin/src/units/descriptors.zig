@@ -220,3 +220,90 @@ pub const Config = struct {
     units: []const Unit = &.{Unit.root("Root")},
     program_lists: []const ProgramList = &.{},
 };
+
+test "unit descriptors expose root, parent, and program list flags" {
+    const root = Unit.root("Main");
+    try std.testing.expect(root.isRoot());
+    try std.testing.expect(!root.hasParent());
+    try std.testing.expect(!root.hasProgramList());
+    try std.testing.expectEqual(root_unit_id, root.id);
+    try std.testing.expectEqual(no_parent_unit_id, root.parent_id);
+
+    const child = Unit{
+        .id = 1,
+        .name = "Voice",
+        .parent_id = root_unit_id,
+        .program_list_id = 7,
+    };
+    try std.testing.expect(!child.isRoot());
+    try std.testing.expect(child.hasParent());
+    try std.testing.expect(child.hasProgramList());
+}
+
+test "program descriptors expose parameters and duplicate ids" {
+    const program = Program{
+        .name = "Lead",
+        .parameters = &.{
+            .{ .parameter_id = 10, .normalized = 0.25 },
+            .{ .parameter_id = 20, .normalized = 0.5 },
+            .{ .parameter_id = 10, .normalized = 0.75 },
+        },
+    };
+
+    try std.testing.expectEqual(@as(usize, 3), program.parameterCount());
+    try std.testing.expect(program.hasParameters());
+    try std.testing.expect(!program.parametersEmpty());
+    try std.testing.expectEqual(@as(?usize, 2), program.duplicateParameterIdIndex());
+    try std.testing.expectEqual(@as(?u32, 10), program.duplicateParameterId());
+    try std.testing.expect(program.hasDuplicateParameterIds());
+    try std.testing.expectEqual(ProgramParameter{ .parameter_id = 20, .normalized = 0.5 }, program.parameterById(20).?);
+    try std.testing.expectEqual(@as(?ProgramParameter, null), program.parameter(99));
+    try std.testing.expect(program.hasParameter(10));
+    try std.testing.expect(!program.hasParameter(99));
+}
+
+test "program descriptors expose info entries and duplicate keys" {
+    const program = Program{
+        .name = "Bass",
+        .info = &.{
+            .{ .key = "author", .value = "A" },
+            .{ .key = "category", .value = "Bass" },
+            .{ .key = "author", .value = "B" },
+        },
+    };
+
+    try std.testing.expectEqual(@as(usize, 3), program.infoCount());
+    try std.testing.expect(program.hasInfo());
+    try std.testing.expect(!program.infoEmpty());
+    try std.testing.expectEqual(@as(?usize, 2), program.duplicateInfoKeyIndex());
+    try std.testing.expectEqualStrings("author", program.duplicateInfoKey().?);
+    try std.testing.expect(program.hasDuplicateInfoKeys());
+    try std.testing.expectEqualStrings("Bass", program.infoValue("category").?);
+    try std.testing.expectEqual(@as(?ProgramInfo, null), program.infoEntry(99));
+    try std.testing.expect(program.hasInfoKey("author"));
+    try std.testing.expect(!program.hasInfoKey("missing"));
+}
+
+test "program list descriptors expose programs and duplicate names" {
+    const list = ProgramList{
+        .id = 7,
+        .name = "Voice Programs",
+        .programs = &.{
+            .{ .name = "Init" },
+            .{ .name = "Lead" },
+            .{ .name = "Lead" },
+        },
+    };
+
+    try std.testing.expectEqual(@as(usize, 3), list.programCount());
+    try std.testing.expect(!list.isEmpty());
+    try std.testing.expect(list.hasPrograms());
+    try std.testing.expectEqual(@as(?usize, 2), list.duplicateProgramNameIndex());
+    try std.testing.expectEqualStrings("Lead", list.duplicateProgramName().?);
+    try std.testing.expect(list.hasDuplicateProgramNames());
+    try std.testing.expectEqualStrings("Init", list.programName(0).?);
+    try std.testing.expectEqual(@as(?usize, 1), list.programIndexOfName("Lead"));
+    try std.testing.expectEqual(@as(?Program, null), list.program(99));
+    try std.testing.expect(list.hasProgramName("Lead"));
+    try std.testing.expect(!list.hasProgramName("missing"));
+}
