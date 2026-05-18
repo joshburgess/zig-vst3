@@ -267,6 +267,54 @@ test "context menu clears failed item lookups and rejects full storage" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.removeItem(iface, &item, first.asInterface()));
 }
 
+test "context menu indexes only occupied slots and reuses removed storage" {
+    const Menu = ContextMenu(3);
+    var menu = Menu{};
+    const iface = menu.asInterface();
+    var first = ivstcontextmenu.IContextMenuItem{ .tag = 10 };
+    var second = ivstcontextmenu.IContextMenuItem{ .tag = 20 };
+    var third = ivstcontextmenu.IContextMenuItem{ .tag = 30 };
+    var replacement = ivstcontextmenu.IContextMenuItem{ .tag = 40 };
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &first, null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &second, null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &third, null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.removeItem(iface, &second, null));
+    try std.testing.expectEqual(@as(types.int32, 2), iface.vtable.getItemCount(iface));
+
+    var out_item: ivstcontextmenu.IContextMenuItem = .{};
+    var out_target: ?*ivstcontextmenu.IContextMenuTarget = undefined;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getItem(iface, 0, &out_item, &out_target));
+    try std.testing.expectEqual(@as(types.int32, 10), out_item.tag);
+    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenuTarget, null), out_target);
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getItem(iface, 1, &out_item, &out_target));
+    try std.testing.expectEqual(@as(types.int32, 30), out_item.tag);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &replacement, null));
+    try std.testing.expectEqual(@as(types.int32, 3), iface.vtable.getItemCount(iface));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getItem(iface, 1, &out_item, &out_target));
+    try std.testing.expectEqual(@as(types.int32, 40), out_item.tag);
+}
+
+test "context menu rejects negative item indexes without touching retained targets" {
+    const Menu = ContextMenu(1);
+    const Target = ContextMenuTarget(struct {});
+    var menu = Menu{};
+    var target = Target{};
+    const iface = menu.asInterface();
+    var item = ivstcontextmenu.IContextMenuItem{ .tag = 7 };
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &item, target.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 2), target.ref_count.load(.monotonic));
+
+    var out_item = ivstcontextmenu.IContextMenuItem{ .tag = 99 };
+    var out_target: ?*ivstcontextmenu.IContextMenuTarget = target.asInterface();
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getItem(iface, -1, &out_item, &out_target));
+    try std.testing.expectEqual(@as(types.int32, 0), out_item.tag);
+    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenuTarget, null), out_target);
+    try std.testing.expectEqual(@as(types.uint32, 2), target.ref_count.load(.monotonic));
+}
+
 test "context menu records popup coordinates and supports query interface" {
     const Menu = ContextMenu(1);
     var menu = Menu{};

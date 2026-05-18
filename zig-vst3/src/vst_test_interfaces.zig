@@ -465,6 +465,27 @@ test "test suite rejects overflow without retaining rejected entries" {
     try std.testing.expectEqual(nested.asInterface(), suite.suites[0].suite.?);
 }
 
+test "test suite ignores corrupted high counts without retaining entries" {
+    const Suite = TestSuite(1, 1);
+    const TestObject = Test(struct {});
+    var suite = Suite{};
+    var test_object = TestObject{};
+    var nested = Suite{};
+    const iface = suite.asInterface();
+
+    suite.test_count = std.math.maxInt(types.uint32);
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addTest(iface, "case", test_object.asInterface()));
+    try std.testing.expectEqual(std.math.maxInt(types.uint32), suite.test_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), test_object.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(?*itest.ITest, null), suite.tests[0].test_iface);
+
+    suite.suite_count = std.math.maxInt(types.uint32);
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addTestSuite(iface, "suite", nested.asInterface()));
+    try std.testing.expectEqual(std.math.maxInt(types.uint32), suite.suite_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), nested.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(?*itest.ITestSuite, null), suite.suites[0].suite);
+}
+
 test "test suite retains and releases replacement environments" {
     const Suite = TestSuite(1, 1);
     const TestObject = Test(struct {});
