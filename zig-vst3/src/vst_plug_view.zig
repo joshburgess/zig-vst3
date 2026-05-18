@@ -111,28 +111,37 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         fn onWheel(ptr: *anyopaque, distance: f32) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.wheel_count +|= 1;
+            if (@hasDecl(Config, "onWheel")) {
+                const result = Config.onWheel(self, distance);
+                if (result != types.kResultOk) return result;
+            }
             self.last_wheel_distance = distance;
-            if (@hasDecl(Config, "onWheel")) return Config.onWheel(self, distance);
             return types.kResultOk;
         }
 
         fn onKeyDown(ptr: *anyopaque, key: types.char16, key_code: types.int16, modifiers: types.int16) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.key_down_count +|= 1;
+            if (@hasDecl(Config, "onKeyDown")) {
+                const result = Config.onKeyDown(self, key, key_code, modifiers);
+                if (result != types.kResultOk) return result;
+            }
             self.last_key = key;
             self.last_key_code = key_code;
             self.last_key_modifiers = modifiers;
-            if (@hasDecl(Config, "onKeyDown")) return Config.onKeyDown(self, key, key_code, modifiers);
             return types.kResultOk;
         }
 
         fn onKeyUp(ptr: *anyopaque, key: types.char16, key_code: types.int16, modifiers: types.int16) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.key_up_count +|= 1;
+            if (@hasDecl(Config, "onKeyUp")) {
+                const result = Config.onKeyUp(self, key, key_code, modifiers);
+                if (result != types.kResultOk) return result;
+            }
             self.last_key = key;
             self.last_key_code = key_code;
             self.last_key_modifiers = modifiers;
-            if (@hasDecl(Config, "onKeyUp")) return Config.onKeyUp(self, key, key_code, modifiers);
             return types.kResultOk;
         }
 
@@ -269,6 +278,18 @@ test "plug view preserves accepted state when delegated hooks reject changes" {
             return types.kResultFalse;
         }
 
+        pub fn onWheel(_: anytype, distance: f32) types.tresult {
+            return if (distance > 0) types.kResultOk else types.kResultFalse;
+        }
+
+        pub fn onKeyDown(_: anytype, key: types.char16, _: types.int16, _: types.int16) types.tresult {
+            return if (key == 'a') types.kResultOk else types.kResultFalse;
+        }
+
+        pub fn onKeyUp(_: anytype, key: types.char16, _: types.int16, _: types.int16) types.tresult {
+            return if (key == 'a') types.kResultOk else types.kResultFalse;
+        }
+
         pub fn setFrame(_: anytype, _: ?*iplugview.IPlugFrame) types.tresult {
             return types.kResultFalse;
         }
@@ -289,6 +310,32 @@ test "plug view preserves accepted state when delegated hooks reject changes" {
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.onFocus(iface, 1));
     try std.testing.expect(!view.has_focus);
     try std.testing.expectEqual(@as(types.uint32, 1), view.focus_count);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.onWheel(iface, 1.5));
+    try std.testing.expectEqual(@as(f32, 1.5), view.last_wheel_distance);
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.onWheel(iface, -1.0));
+    try std.testing.expectEqual(@as(types.uint32, 2), view.wheel_count);
+    try std.testing.expectEqual(@as(f32, 1.5), view.last_wheel_distance);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.onKeyDown(iface, 'a', 12, 3));
+    try std.testing.expectEqual(@as(types.char16, 'a'), view.last_key);
+    try std.testing.expectEqual(@as(types.int16, 12), view.last_key_code);
+    try std.testing.expectEqual(@as(types.int16, 3), view.last_key_modifiers);
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.onKeyDown(iface, 'b', 13, 4));
+    try std.testing.expectEqual(@as(types.uint32, 2), view.key_down_count);
+    try std.testing.expectEqual(@as(types.char16, 'a'), view.last_key);
+    try std.testing.expectEqual(@as(types.int16, 12), view.last_key_code);
+    try std.testing.expectEqual(@as(types.int16, 3), view.last_key_modifiers);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.onKeyUp(iface, 'a', 14, 5));
+    try std.testing.expectEqual(@as(types.char16, 'a'), view.last_key);
+    try std.testing.expectEqual(@as(types.int16, 14), view.last_key_code);
+    try std.testing.expectEqual(@as(types.int16, 5), view.last_key_modifiers);
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.onKeyUp(iface, 'b', 15, 6));
+    try std.testing.expectEqual(@as(types.uint32, 2), view.key_up_count);
+    try std.testing.expectEqual(@as(types.char16, 'a'), view.last_key);
+    try std.testing.expectEqual(@as(types.int16, 14), view.last_key_code);
+    try std.testing.expectEqual(@as(types.int16, 5), view.last_key_modifiers);
 
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.setFrame(iface, @ptrFromInt(0x1234)));
     try std.testing.expectEqual(@as(?*iplugview.IPlugFrame, null), view.frame);
