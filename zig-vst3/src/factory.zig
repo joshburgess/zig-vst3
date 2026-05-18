@@ -371,6 +371,36 @@ test "static factory clears invalid class info outputs" {
     try std.testing.expectEqual(@as(types.int32, 0), class_info.cardinality);
 }
 
+test "static factory rejects generated invalid class indexes" {
+    const TestFactory = StaticFactory(.{ .vendor = "Test Vendor" }, &.{
+        .{
+            .cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444),
+            .category = "Audio Module Class",
+            .name = "Test Plug-in",
+        },
+        .{
+            .cid = tuid.inlineUid(0x55555555, 0x66666666, 0x77777777, 0x88888888),
+            .category = "Audio Module Class",
+            .name = "Second Plug-in",
+        },
+    });
+    const factory = TestFactory.getPluginFactory().?;
+    const invalid_indexes = [_]types.int32{ -2, -1, 2, 3, std.math.maxInt(types.int32) };
+
+    for (invalid_indexes) |index| {
+        var class_info = ipluginbase.PClassInfo{
+            .cid = tuid.inlineUid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xDDDDDDDD),
+            .cardinality = 7,
+        };
+
+        try std.testing.expectEqual(types.kInvalidArgument, factory.vtable.getClassInfo(factory, index, &class_info));
+        try std.testing.expectEqualSlices(u8, &tuid.zero, &class_info.cid);
+        try std.testing.expectEqual(@as(types.int32, 0), class_info.cardinality);
+        try std.testing.expectEqual(@as(u8, 0), class_info.category[0]);
+        try std.testing.expectEqual(@as(u8, 0), class_info.name[0]);
+    }
+}
+
 test "static factory dispatches createInstance by class id" {
     const Create = struct {
         fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
@@ -514,4 +544,74 @@ test "static factory 3 clears invalid metadata and stores host context" {
     var host = funknown.TestObject{};
     try std.testing.expectEqual(types.kResultOk, factory.vtable.setHostContext(factory, host.asUnknown()));
     try std.testing.expectEqual(host.asUnknown(), TestFactory.instance.host_context.?);
+}
+
+test "static factory 3 rejects generated invalid class indexes" {
+    const TestFactory = StaticFactory3(.{ .vendor = "Test Vendor" }, &.{
+        .{
+            .cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444),
+            .category = "Audio Module Class",
+            .name = "Test Plug-in",
+            .class_flags = 9,
+            .sub_categories = "Fx",
+            .version = "1.2.3",
+            .sdk_version = "VST 3.8.0",
+        },
+        .{
+            .cid = tuid.inlineUid(0x55555555, 0x66666666, 0x77777777, 0x88888888),
+            .category = "Audio Module Class",
+            .name = "Second Plug-in",
+            .class_flags = 11,
+            .sub_categories = "Instrument",
+            .version = "4.5.6",
+            .sdk_version = "VST 3.8.0",
+        },
+    });
+    const factory = TestFactory.getPluginFactory3();
+    const invalid_indexes = [_]types.int32{ -2, -1, 2, 3, std.math.maxInt(types.int32) };
+
+    for (invalid_indexes) |index| {
+        var info = ipluginbase.PClassInfo{
+            .cid = tuid.inlineUid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xDDDDDDDD),
+            .cardinality = 7,
+        };
+        var info2 = ipluginbase.PClassInfo2{
+            .cid = tuid.inlineUid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xDDDDDDDD),
+            .cardinality = 7,
+            .classFlags = 77,
+        };
+        var info_w = ipluginbase.PClassInfoW{
+            .cid = tuid.inlineUid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xDDDDDDDD),
+            .cardinality = 7,
+            .classFlags = 77,
+        };
+
+        try std.testing.expectEqual(types.kInvalidArgument, factory.vtable.getClassInfo(factory, index, &info));
+        try std.testing.expectEqualSlices(u8, &tuid.zero, &info.cid);
+        try std.testing.expectEqual(@as(types.int32, 0), info.cardinality);
+        try std.testing.expectEqual(@as(u8, 0), info.category[0]);
+        try std.testing.expectEqual(@as(u8, 0), info.name[0]);
+
+        try std.testing.expectEqual(types.kInvalidArgument, factory.vtable.getClassInfo2(factory, index, &info2));
+        try std.testing.expectEqualSlices(u8, &tuid.zero, &info2.cid);
+        try std.testing.expectEqual(@as(types.int32, 0), info2.cardinality);
+        try std.testing.expectEqual(@as(types.uint32, 0), info2.classFlags);
+        try std.testing.expectEqual(@as(u8, 0), info2.category[0]);
+        try std.testing.expectEqual(@as(u8, 0), info2.name[0]);
+        try std.testing.expectEqual(@as(u8, 0), info2.subCategories[0]);
+        try std.testing.expectEqual(@as(u8, 0), info2.vendor[0]);
+        try std.testing.expectEqual(@as(u8, 0), info2.version[0]);
+        try std.testing.expectEqual(@as(u8, 0), info2.sdkVersion[0]);
+
+        try std.testing.expectEqual(types.kInvalidArgument, factory.vtable.getClassInfoUnicode(factory, index, &info_w));
+        try std.testing.expectEqualSlices(u8, &tuid.zero, &info_w.cid);
+        try std.testing.expectEqual(@as(types.int32, 0), info_w.cardinality);
+        try std.testing.expectEqual(@as(types.uint32, 0), info_w.classFlags);
+        try std.testing.expectEqual(@as(u8, 0), info_w.category[0]);
+        try std.testing.expectEqual(@as(types.char16, 0), info_w.name[0]);
+        try std.testing.expectEqual(@as(u8, 0), info_w.subCategories[0]);
+        try std.testing.expectEqual(@as(types.char16, 0), info_w.vendor[0]);
+        try std.testing.expectEqual(@as(types.char16, 0), info_w.version[0]);
+        try std.testing.expectEqual(@as(types.char16, 0), info_w.sdkVersion[0]);
+    }
 }
