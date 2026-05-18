@@ -258,7 +258,7 @@ pub fn forEachParameterChanges(changes: ?*parameter_changes.IParameterChanges, c
     const param_count = parameter_changes_list.vtable.getParameterCount(parameter_changes_list);
     var param_index: base.int32 = 0;
     while (param_index < param_count) : (param_index += 1) {
-        const param_queue = parameter_changes_list.vtable.getParameterData(parameter_changes_list, param_index) orelse break;
+        const param_queue = parameter_changes_list.vtable.getParameterData(parameter_changes_list, param_index) orelse continue;
         callback(context, param_queue);
     }
 }
@@ -465,23 +465,30 @@ test "audio processor helper stops parameter point iteration at invalid reported
     try std.testing.expectEqual(@as(usize, 3), queue.read_count);
 }
 
-test "audio processor helper stops parameter queue iteration at invalid reported boundary" {
-    const points = [_]TestParamPoint{
+test "audio processor helper keeps SDK-compatible sparse parameter queue iteration" {
+    const first_points = [_]TestParamPoint{
         .{ .sample_offset = 2, .value = 0.25 },
     };
-    var queue = TestParamValueQueue.init(11, &points);
-    var queues = [_]*parameter_changes.IParamValueQueue{&queue.iface};
+    const second_points = [_]TestParamPoint{
+        .{ .sample_offset = 6, .value = 0.75 },
+    };
+    var first_queue = TestParamValueQueue.init(11, &first_points);
+    var second_queue = TestParamValueQueue.init(13, &second_points);
+    var queues = [_]?*parameter_changes.IParamValueQueue{
+        &first_queue.iface,
+        null,
+        &second_queue.iface,
+    };
     var changes = TestParameterChanges.init(&queues);
-    changes.reported_count = 1000;
     var collector = EventCollector{};
 
     forEachParameterChanges(&changes.iface, &collector, collectLastParamQueue);
 
-    try std.testing.expectEqual(@as(usize, 1), collector.count);
-    try std.testing.expectEqual(@as(vsttypes.ParamID, 11), collector.last_param_id);
-    try std.testing.expectEqual(@as(base.int32, 2), collector.last_sample_offset);
-    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), collector.last_param_value);
-    try std.testing.expectEqual(@as(usize, 2), changes.read_count);
+    try std.testing.expectEqual(@as(usize, 2), collector.count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 13), collector.last_param_id);
+    try std.testing.expectEqual(@as(base.int32, 6), collector.last_sample_offset);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), collector.last_param_value);
+    try std.testing.expectEqual(@as(usize, 3), changes.read_count);
 }
 
 test "audio processor helper skips empty last parameter queues" {
@@ -642,7 +649,7 @@ fn collectLastParamQueue(collector: *EventCollector, queue: *parameter_changes.I
 
 const TestParameterChanges = struct {
     iface: parameter_changes.IParameterChanges = .{ .vtable = &vtable },
-    queues: []const *parameter_changes.IParamValueQueue,
+    queues: []const ?*parameter_changes.IParamValueQueue,
     reported_count: ?base.int32 = null,
     read_count: usize = 0,
 
@@ -655,7 +662,7 @@ const TestParameterChanges = struct {
         .addParameterData = addParameterData,
     };
 
-    fn init(queues: []const *parameter_changes.IParamValueQueue) TestParameterChanges {
+    fn init(queues: []const ?*parameter_changes.IParamValueQueue) TestParameterChanges {
         return .{ .queues = queues };
     }
 
