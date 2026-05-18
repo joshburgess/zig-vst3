@@ -9,7 +9,7 @@ const vst_index = @import("vst_index.zig");
 const vst_stream = @import("vst_stream.zig");
 
 fn validateJsonStringLiteral(comptime field: []const u8, comptime value: []const u8) void {
-    for (value) |char| {
+    inline for (value) |char| {
         if (char < 0x20 or char == '"' or char == '\\') @compileError(field ++ " must not contain control characters, quotes, or backslashes");
     }
 }
@@ -79,7 +79,7 @@ test "plugin compatibility writes JSON to stream" {
 }
 
 test "plugin compatibility basic metadata JSON is valid and streamable" {
-    const json = basicMetadataJson("zig-vst3", "Mode Gain", "0.1.0");
+    const json = comptime basicMetadataJson("zig-vst3", "Mode Gain", "0.1.0");
     const Compatibility = PluginCompatibility(json);
     const Stream = vst_stream.FixedBufferStream(256);
     var compatibility = Compatibility{};

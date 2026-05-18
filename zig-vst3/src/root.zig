@@ -104,6 +104,7 @@ test {
     std.testing.refAllDecls(vst_persistent_attributes);
     std.testing.refAllDecls(vst_plug_frame);
     std.testing.refAllDecls(vst_plug_view);
+    std.testing.refAllDecls(vst_plugin_compatibility);
     std.testing.refAllDecls(vst_representation);
     std.testing.refAllDecls(vst_string_result);
     std.testing.refAllDecls(vst_stream);
