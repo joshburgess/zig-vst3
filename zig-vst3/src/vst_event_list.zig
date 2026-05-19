@@ -44,6 +44,11 @@ pub fn EventList(comptime max_events: usize) type {
             return self.events[0..self.safeCount()];
         }
 
+        pub fn eventByIndex(self: *const Self, index: types.int32) ?ivstevents.Event {
+            const event_index = vst_index.bounded(index, self.safeCount()) orelse return null;
+            return self.events[event_index];
+        }
+
         fn owner(ptr: *anyopaque) *Self {
             const iface: *ivstevents.IEventList = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -78,8 +83,7 @@ pub fn EventList(comptime max_events: usize) type {
             if (index < 0) return failEvent(event, types.kInvalidArgument);
             const self = owner(ptr);
             if (index == self.fail_get_index) return failEvent(event, types.kResultFalse);
-            const event_index = vst_index.bounded(index, self.safeCount()) orelse return failEvent(event, types.kInvalidArgument);
-            event.* = self.events[event_index];
+            event.* = self.eventByIndex(index) orelse return failEvent(event, types.kInvalidArgument);
             return types.kResultOk;
         }
 
@@ -112,6 +116,8 @@ test "event list reads and writes events" {
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.addEvent(iface, &event));
     try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getEventCount(iface));
+    try std.testing.expectEqual(@as(types.int32, 3), list.eventByIndex(0).?.sampleOffset);
+    try std.testing.expect(list.eventByIndex(1) == null);
 
     var read_event = ivstevents.Event{};
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getEvent(iface, 0, &read_event));
