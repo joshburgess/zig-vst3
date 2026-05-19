@@ -23,9 +23,20 @@ pub fn identityParameterMigrationIndex(migrations: []const ParameterIdMigration)
 }
 
 pub fn duplicateParameterMigrationIndex(migrations: []const ParameterIdMigration) ?usize {
+    return firstMigrationPairIndex(migrations, duplicateOldIds);
+}
+
+fn duplicateOldIds(left: ParameterIdMigration, right: ParameterIdMigration, _: []const ParameterIdMigration) bool {
+    return left.old_id == right.old_id;
+}
+
+fn firstMigrationPairIndex(
+    migrations: []const ParameterIdMigration,
+    comptime matches: fn (ParameterIdMigration, ParameterIdMigration, []const ParameterIdMigration) bool,
+) ?usize {
     for (migrations, 0..) |left, left_index| {
         for (migrations[left_index + 1 ..], left_index + 1..) |right, right_index| {
-            if (left.old_id == right.old_id) return right_index;
+            if (matches(left, right, migrations)) return right_index;
         }
     }
     return null;
@@ -39,27 +50,16 @@ pub fn cyclicParameterMigrationIndex(migrations: []const ParameterIdMigration) ?
 }
 
 pub fn ambiguousParameterMigrationIndex(migrations: []const ParameterIdMigration) ?usize {
-    for (migrations, 0..) |left, left_index| {
-        const left_target = migratedParameterId(left.old_id, migrations);
-        for (migrations[left_index + 1 ..], left_index + 1..) |right, right_index| {
-            if (migrationTargetsAreAmbiguous(
-                left.old_id,
-                left_target,
-                right.old_id,
-                migrations,
-            )) return right_index;
-        }
-    }
-    return null;
+    return firstMigrationPairIndex(migrations, migrationTargetsAreAmbiguous);
 }
 
 fn migrationTargetsAreAmbiguous(
-    left_id: u32,
-    left_target: u32,
-    right_id: u32,
+    left: ParameterIdMigration,
+    right: ParameterIdMigration,
     migrations: []const ParameterIdMigration,
 ) bool {
-    return left_target == migratedParameterId(right_id, migrations) and !migrationIdsShareChain(left_id, right_id, migrations);
+    return migratedParameterId(left.old_id, migrations) == migratedParameterId(right.old_id, migrations) and
+        !migrationIdsShareChain(left.old_id, right.old_id, migrations);
 }
 
 fn migrationIdsShareChain(left_id: u32, right_id: u32, migrations: []const ParameterIdMigration) bool {
