@@ -1209,14 +1209,16 @@ test "reflected edit controller round-trips parameter state through host callbac
     try std.testing.expectApproxEqAbs(@as(vsttypes.ParamValue, 0.75), controller_iface.vtable.getParamNormalized(controller_iface, 1), 0.000001);
 }
 
-fn queryHostApplication(context: ?*anyopaque) ?*ivsthostapplication.IHostApplication {
-    const raw = context orelse return null;
-    const unknown: *funknown.Header = @ptrCast(@alignCast(raw));
+fn queryInterfaceAs(comptime Base: type, comptime Interface: type, source: ?*anyopaque, iid: *const tuid.TUID) ?*Interface {
+    const raw = source orelse return null;
+    const base: *Base = @ptrCast(@alignCast(raw));
     var out: ?*anyopaque = null;
-    if (unknown.vtable.queryInterface(unknown, &ivsthostapplication.ihost_application_iid, &out) != types.kResultOk) {
-        return null;
-    }
+    if (base.vtable.queryInterface(base, iid, &out) != types.kResultOk) return null;
     return if (out) |value| @ptrCast(@alignCast(value)) else null;
+}
+
+fn queryHostApplication(context: ?*anyopaque) ?*ivsthostapplication.IHostApplication {
+    return queryInterfaceAs(funknown.Header, ivsthostapplication.IHostApplication, context, &ivsthostapplication.ihost_application_iid);
 }
 
 fn releaseHostApplication(host_application: *?*ivsthostapplication.IHostApplication) void {
@@ -1227,13 +1229,7 @@ fn releaseHostApplication(host_application: *?*ivsthostapplication.IHostApplicat
 }
 
 fn queryInfoListener(context: ?*anyopaque) ?*ivstchannelcontextinfo.IInfoListener {
-    const raw = context orelse return null;
-    const unknown: *funknown.Header = @ptrCast(@alignCast(raw));
-    var out: ?*anyopaque = null;
-    if (unknown.vtable.queryInterface(unknown, &ivstchannelcontextinfo.iinfo_listener_iid, &out) != types.kResultOk) {
-        return null;
-    }
-    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+    return queryInterfaceAs(funknown.Header, ivstchannelcontextinfo.IInfoListener, context, &ivstchannelcontextinfo.iinfo_listener_iid);
 }
 
 fn releaseInfoListener(info_listener: *?*ivstchannelcontextinfo.IInfoListener) void {
@@ -1244,13 +1240,7 @@ fn releaseInfoListener(info_listener: *?*ivstchannelcontextinfo.IInfoListener) v
 }
 
 fn queryAutomationState(context: ?*anyopaque) ?*ivstautomationstate.IAutomationState {
-    const raw = context orelse return null;
-    const unknown: *funknown.Header = @ptrCast(@alignCast(raw));
-    var out: ?*anyopaque = null;
-    if (unknown.vtable.queryInterface(unknown, &ivstautomationstate.iautomation_state_iid, &out) != types.kResultOk) {
-        return null;
-    }
-    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+    return queryInterfaceAs(funknown.Header, ivstautomationstate.IAutomationState, context, &ivstautomationstate.iautomation_state_iid);
 }
 
 fn releaseAutomationState(automation_state: *?*ivstautomationstate.IAutomationState) void {
@@ -1261,13 +1251,7 @@ fn releaseAutomationState(automation_state: *?*ivstautomationstate.IAutomationSt
 }
 
 fn queryDataExchangeHandler(context: ?*anyopaque) ?*ivstdataexchange.IDataExchangeHandler {
-    const raw = context orelse return null;
-    const unknown: *funknown.Header = @ptrCast(@alignCast(raw));
-    var out: ?*anyopaque = null;
-    if (unknown.vtable.queryInterface(unknown, &ivstdataexchange.idata_exchange_handler_iid, &out) != types.kResultOk) {
-        return null;
-    }
-    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+    return queryInterfaceAs(funknown.Header, ivstdataexchange.IDataExchangeHandler, context, &ivstdataexchange.idata_exchange_handler_iid);
 }
 
 fn releaseDataExchangeHandler(data_exchange_handler: *?*ivstdataexchange.IDataExchangeHandler) void {
@@ -1278,73 +1262,31 @@ fn releaseDataExchangeHandler(data_exchange_handler: *?*ivstdataexchange.IDataEx
 }
 
 fn queryComponentHandler2(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentHandler2 {
-    const raw = handler orelse return null;
-    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
-    var out: ?*anyopaque = null;
-    if (base.vtable.queryInterface(base, &ivsteditcontroller.icomponent_handler2_iid, &out) != types.kResultOk) {
-        return null;
-    }
-    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+    return queryInterfaceAs(ivsteditcontroller.IComponentHandler, ivsteditcontroller.IComponentHandler2, handler, &ivsteditcontroller.icomponent_handler2_iid);
 }
 
 fn queryComponentHandler3(handler: ?*anyopaque) ?*ivstcontextmenu.IComponentHandler3 {
-    const raw = handler orelse return null;
-    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
-    var out: ?*anyopaque = null;
-    if (base.vtable.queryInterface(base, &ivstcontextmenu.icomponent_handler3_iid, &out) != types.kResultOk) {
-        return null;
-    }
-    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+    return queryInterfaceAs(ivsteditcontroller.IComponentHandler, ivstcontextmenu.IComponentHandler3, handler, &ivstcontextmenu.icomponent_handler3_iid);
 }
 
 fn queryComponentHandlerBusActivation(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentHandlerBusActivation {
-    const raw = handler orelse return null;
-    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
-    var out: ?*anyopaque = null;
-    if (base.vtable.queryInterface(base, &ivsteditcontroller.icomponent_handler_bus_activation_iid, &out) != types.kResultOk) {
-        return null;
-    }
-    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+    return queryInterfaceAs(ivsteditcontroller.IComponentHandler, ivsteditcontroller.IComponentHandlerBusActivation, handler, &ivsteditcontroller.icomponent_handler_bus_activation_iid);
 }
 
 fn queryComponentHandlerSystemTime(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentHandlerSystemTime {
-    const raw = handler orelse return null;
-    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
-    var out: ?*anyopaque = null;
-    if (base.vtable.queryInterface(base, &ivsteditcontroller.icomponent_handler_system_time_iid, &out) != types.kResultOk) {
-        return null;
-    }
-    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+    return queryInterfaceAs(ivsteditcontroller.IComponentHandler, ivsteditcontroller.IComponentHandlerSystemTime, handler, &ivsteditcontroller.icomponent_handler_system_time_iid);
 }
 
 fn queryProgress(handler: ?*anyopaque) ?*ivsteditcontroller.IProgress {
-    const raw = handler orelse return null;
-    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
-    var out: ?*anyopaque = null;
-    if (base.vtable.queryInterface(base, &ivsteditcontroller.iprogress_iid, &out) != types.kResultOk) {
-        return null;
-    }
-    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+    return queryInterfaceAs(ivsteditcontroller.IComponentHandler, ivsteditcontroller.IProgress, handler, &ivsteditcontroller.iprogress_iid);
 }
 
 fn queryUnitHandler(handler: ?*anyopaque) ?*ivstunits.IUnitHandler {
-    const raw = handler orelse return null;
-    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
-    var out: ?*anyopaque = null;
-    if (base.vtable.queryInterface(base, &ivstunits.iunit_handler_iid, &out) != types.kResultOk) {
-        return null;
-    }
-    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+    return queryInterfaceAs(ivsteditcontroller.IComponentHandler, ivstunits.IUnitHandler, handler, &ivstunits.iunit_handler_iid);
 }
 
 fn queryUnitHandler2(handler: ?*anyopaque) ?*ivstunits.IUnitHandler2 {
-    const raw = handler orelse return null;
-    const base: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(raw));
-    var out: ?*anyopaque = null;
-    if (base.vtable.queryInterface(base, &ivstunits.iunit_handler2_iid, &out) != types.kResultOk) {
-        return null;
-    }
-    return if (out) |value| @ptrCast(@alignCast(value)) else null;
+    return queryInterfaceAs(ivsteditcontroller.IComponentHandler, ivstunits.IUnitHandler2, handler, &ivstunits.iunit_handler2_iid);
 }
 
 fn retainComponentHandler(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentHandler {
