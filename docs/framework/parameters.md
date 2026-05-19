@@ -134,7 +134,7 @@ const display = try set.formatPlainById(0, 0.5, buffer[0..]);
 
 ## Boundary Rules
 
-Hosts speak normalized `0.0...1.0` values. Descriptors clamp normalized input before converting it to plain values. Direct normalized stores reject non-finite values. Plain input is clamped to each descriptor's declared range before normalization.
+Hosts speak normalized `0.0...1.0` values. Descriptors clamp normalized input before converting it to plain values. Mutable parameter stores reject non-finite normalized and plain values. Finite plain input is clamped to each descriptor's declared range before normalization.
 
 Descriptor validation rejects empty display names, embedded NUL bytes in host-facing strings, duplicate ids or names, invalid ranges, non-finite defaults, and defaults outside their declared range. Empty `short_name` falls back to the display name.
 
