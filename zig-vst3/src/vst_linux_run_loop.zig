@@ -119,11 +119,33 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
         const EventEntry = extern struct {
             handler: ?*Linux.IEventHandler = null,
             fd: Linux.FileDescriptor = -1,
+
+            fn set(self: *EventEntry, handler: *Linux.IEventHandler, fd: Linux.FileDescriptor) void {
+                self.handler = handler;
+                self.fd = fd;
+                _ = handler.vtable.addRef(handler);
+            }
+
+            fn clear(self: *EventEntry) void {
+                if (self.handler) |handler| _ = handler.vtable.release(handler);
+                self.* = .{};
+            }
         };
 
         const TimerEntry = extern struct {
             handler: ?*Linux.ITimerHandler = null,
             interval: Linux.TimerInterval = 0,
+
+            fn set(self: *TimerEntry, handler: *Linux.ITimerHandler, interval: Linux.TimerInterval) void {
+                self.handler = handler;
+                self.interval = interval;
+                _ = handler.vtable.addRef(handler);
+            }
+
+            fn clear(self: *TimerEntry) void {
+                if (self.handler) |handler| _ = handler.vtable.release(handler);
+                self.* = .{};
+            }
         };
 
         iface: Linux.IRunLoop = .{ .vtable = &vtable },
@@ -174,9 +196,7 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
         fn appendEventEntry(self: *Self, handler: *Linux.IEventHandler, fd: Linux.FileDescriptor) ?*EventEntry {
             for (&self.event_handlers) |*entry| {
                 if (entry.handler == null) {
-                    entry.handler = handler;
-                    entry.fd = fd;
-                    _ = handler.vtable.addRef(handler);
+                    entry.set(handler, fd);
                     return entry;
                 }
             }
@@ -193,9 +213,7 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
         fn appendTimerEntry(self: *Self, handler: *Linux.ITimerHandler, interval: Linux.TimerInterval) ?*TimerEntry {
             for (&self.timer_handlers) |*entry| {
                 if (entry.handler == null) {
-                    entry.handler = handler;
-                    entry.interval = interval;
-                    _ = handler.vtable.addRef(handler);
+                    entry.set(handler, interval);
                     return entry;
                 }
             }
@@ -233,8 +251,7 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
         fn unregisterEventHandler(ptr: *anyopaque, handler: ?*Linux.IEventHandler) callconv(.c) types.tresult {
             const event_handler = handler orelse return types.kInvalidArgument;
             const entry = owner(ptr).findEventEntry(event_handler) orelse return types.kResultFalse;
-            entry.* = .{};
-            _ = event_handler.vtable.release(event_handler);
+            entry.clear();
             return types.kResultOk;
         }
 
@@ -252,8 +269,7 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
         fn unregisterTimer(ptr: *anyopaque, handler: ?*Linux.ITimerHandler) callconv(.c) types.tresult {
             const timer_handler = handler orelse return types.kInvalidArgument;
             const entry = owner(ptr).findTimerEntry(timer_handler) orelse return types.kResultFalse;
-            entry.* = .{};
-            _ = timer_handler.vtable.release(timer_handler);
+            entry.clear();
             return types.kResultOk;
         }
 
@@ -286,6 +302,8 @@ test "linux run loop registers and triggers event handlers" {
     try std.testing.expectEqual(@as(Linux.FileDescriptor, 7), handler.last_fd);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.unregisterEventHandler(iface, event_handler));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(?*Linux.IEventHandler, null), loop.event_handlers[0].handler);
+    try std.testing.expectEqual(@as(Linux.FileDescriptor, -1), loop.event_handlers[0].fd);
 }
 
 test "linux event and timer handlers delegate callbacks and support query interface" {
@@ -421,6 +439,8 @@ test "linux run loop updates duplicate timers and rejects full storage" {
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.unregisterTimer(iface, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.unregisterTimer(iface, first.asInterface()));
     try std.testing.expectEqual(@as(types.uint32, 1), first.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(?*Linux.ITimerHandler, null), loop.timer_handlers[0].handler);
+    try std.testing.expectEqual(@as(Linux.TimerInterval, 0), loop.timer_handlers[0].interval);
 }
 
 test "linux run loop supports query interface" {
