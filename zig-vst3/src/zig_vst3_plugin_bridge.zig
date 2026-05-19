@@ -1802,6 +1802,7 @@ test "zig-vst3-plugin bridge stereo buses can be output only" {
     try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), output_only));
     try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput), output_only));
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info, output_only));
+    try std.testing.expectEqual(ivstcomponent.BusInfo{}, info);
     try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &info, output_only));
     try expectString128("Stereo Out", &info.name);
 
@@ -1824,6 +1825,7 @@ test "zig-vst3-plugin bridge stereo buses can be input only" {
     try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info, input_only));
     try expectString128("Stereo In", &info.name);
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &info, input_only));
+    try std.testing.expectEqual(ivstcomponent.BusInfo{}, info);
 
     try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.setArrangementsConfigured(&inputs, 1, null, 0, input_only));
     try std.testing.expectEqual(types.kResultFalse, StereoAudioBuses.setArrangementsConfigured(&inputs, 1, &inputs, 1, input_only));
@@ -1839,6 +1841,7 @@ test "zig-vst3-plugin bridge stereo buses can disable event input" {
 
     try std.testing.expectEqual(@as(types.int32, 0), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput), no_event_input));
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info, no_event_input));
+    try std.testing.expectEqual(ivstcomponent.BusInfo{}, info);
     try std.testing.expectEqual(@as(types.int32, 1), StereoAudioBuses.busCountConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput), .{ .event_input = false, .event_output = true }));
     try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &info, .{ .event_input = false, .event_output = true }));
     try expectString128("Event Out", &info.name);
