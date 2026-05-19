@@ -15,18 +15,22 @@ pub fn getChannelBuffersPointer(
     return @ptrCast(buffers.channelBuffers.channelBuffers64);
 }
 
+fn sampleSizeInBytes(process_setup: *const audio_processor.ProcessSetup) base.uint32 {
+    return if (process_setup.symbolicSampleSize == @intFromEnum(audio_processor.SymbolicSampleSizes.kSample32))
+        @intCast(@sizeOf(vsttypes.Sample32))
+    else
+        @intCast(@sizeOf(vsttypes.Sample64));
+}
+
 pub fn getSampleFramesSizeInBytes(
     process_setup: *const audio_processor.ProcessSetup,
     num_samples: base.int32,
 ) base.uint32 {
     if (num_samples <= 0) return 0;
-    const sample_size: base.int32 = if (process_setup.symbolicSampleSize == @intFromEnum(audio_processor.SymbolicSampleSizes.kSample32))
-        @intCast(@sizeOf(vsttypes.Sample32))
-    else
-        @intCast(@sizeOf(vsttypes.Sample64));
-    const max_samples = std.math.maxInt(base.uint32) / @as(base.uint32, @intCast(sample_size));
+    const sample_size = sampleSizeInBytes(process_setup);
+    const max_samples = std.math.maxInt(base.uint32) / sample_size;
     const safe_samples: base.uint32 = @min(@as(base.uint32, @intCast(num_samples)), max_samples);
-    return safe_samples * @as(base.uint32, @intCast(sample_size));
+    return safe_samples * sample_size;
 }
 
 pub fn getChannelMask(num_channels: base.int32) base.uint64 {
@@ -293,6 +297,8 @@ test "audio processor helpers match expected core behavior" {
     try @import("std").testing.expectEqual(@as(base.uint32, 32), getSampleFramesSizeInBytes(&setup32, 8));
     try @import("std").testing.expectEqual(@as(base.uint32, 64), getSampleFramesSizeInBytes(&setup64, 8));
     try @import("std").testing.expectEqual(@as(base.uint32, 0xFFFFFFFC), getSampleFramesSizeInBytes(&setup32, std.math.maxInt(base.int32)));
+    setup64.symbolicSampleSize = 99;
+    try @import("std").testing.expectEqual(@as(base.uint32, 64), getSampleFramesSizeInBytes(&setup64, 8));
     try @import("std").testing.expectEqual(@as(base.uint64, 0x3f), getChannelMask(6));
     try @import("std").testing.expectEqual(@as(base.uint64, 0xFFFFFFFFFFFFFFFF), getChannelMask(64));
 }
