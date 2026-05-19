@@ -229,6 +229,21 @@ pub const Config = struct {
     program_lists: []const ProgramList = &.{},
 };
 
+test "field index helpers find scalar, string, and duplicate fields" {
+    const items = [_]ProgramList{
+        .{ .id = 1, .name = "A" },
+        .{ .id = 2, .name = "B" },
+        .{ .id = 2, .name = "A" },
+    };
+
+    try std.testing.expectEqual(@as(?usize, 1), scalarFieldIndex(ProgramList, &items, "id", 2));
+    try std.testing.expectEqual(@as(?usize, null), scalarFieldIndex(ProgramList, &items, "id", 9));
+    try std.testing.expectEqual(@as(?usize, 0), stringFieldIndex(ProgramList, &items, "name", "A"));
+    try std.testing.expectEqual(@as(?usize, null), stringFieldIndex(ProgramList, &items, "name", "Missing"));
+    try std.testing.expectEqual(@as(?usize, 2), duplicateScalarFieldIndex(ProgramList, &items, "id"));
+    try std.testing.expectEqual(@as(?usize, 2), duplicateStringFieldIndex(ProgramList, &items, "name"));
+}
+
 test "unit descriptors expose root, parent, and program list flags" {
     const root = Unit.root("Main");
     try std.testing.expect(root.isRoot());
