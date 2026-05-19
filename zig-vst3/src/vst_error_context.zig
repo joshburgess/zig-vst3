@@ -114,6 +114,25 @@ test "error context truncates messages to fixed capacity" {
     try std.testing.expectEqualStrings("abcd", context.messageSpan());
 }
 
+test "error context clears stale bytes when replacing messages" {
+    const Context = ErrorContext(8);
+    var context = Context{};
+
+    context.setMessage("failure");
+    try std.testing.expectEqualStrings("failure", context.messageSpan());
+
+    context.setMessage("ok");
+    try std.testing.expectEqualStrings("ok", context.messageSpan());
+    try std.testing.expectEqual(@as(types.char8, 0), context.message[2]);
+    try std.testing.expectEqual(@as(types.char8, 0), context.message[3]);
+
+    const TinyContext = ErrorContext(1);
+    var tiny = TinyContext{};
+    tiny.setMessage("x");
+    try std.testing.expectEqualStrings("", tiny.messageSpan());
+    try std.testing.expectEqual(@as(types.char8, 0), tiny.message[0]);
+}
+
 test "error context rejects missing output string" {
     const Context = ErrorContext(8);
     var context = Context{};
