@@ -710,6 +710,25 @@ test "midi learn 2 tracks midi 1 and midi 2 controller input" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_learn.vtable.release(queried_learn));
 }
 
+test "midi 2 mapping query interfaces share object refcount" {
+    const Mapping = Midi2Mapping(1, 1, struct {});
+    var mapping = Mapping{};
+
+    var queried_mapping: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, mapping.asLearn().vtable.queryInterface(mapping.asLearn(), &ivstmidimapping2.imidi_mapping2_iid, &queried_mapping));
+    try std.testing.expectEqual(@as(?*anyopaque, mapping.asMapping()), queried_mapping);
+    try std.testing.expectEqual(@as(types.uint32, 2), mapping.ref_count.load(.seq_cst));
+
+    var queried_unknown: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, mapping.asLearn().vtable.queryInterface(mapping.asLearn(), &funknown.iid, &queried_unknown));
+    try std.testing.expectEqual(@as(?*anyopaque, mapping.asMapping()), queried_unknown);
+    try std.testing.expectEqual(@as(types.uint32, 3), mapping.ref_count.load(.seq_cst));
+
+    const mapping_iface: *ivstmidimapping2.IMidiMapping2 = @ptrCast(@alignCast(queried_mapping.?));
+    try std.testing.expectEqual(@as(types.uint32, 2), mapping_iface.vtable.release(mapping_iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), mapping.asMapping().vtable.release(mapping.asMapping()));
+}
+
 test "midi 2 mapping clears unsupported query outputs from both interfaces" {
     const Mapping = Midi2Mapping(1, 1, struct {});
     var mapping = Mapping{};
