@@ -165,6 +165,13 @@ pub fn MidiLearn(comptime Config: type) type {
             return &self.iface;
         }
 
+        fn recordInput(self: *Self, bus_index: types.int32, channel: types.int16, controller: vsttypes.CtrlNumber) void {
+            self.input_count +|= 1;
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            self.last_controller = controller;
+        }
+
         fn owner(ptr: *anyopaque) *Self {
             const iface: *ivstmidilearn.IMidiLearn = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -188,10 +195,7 @@ pub fn MidiLearn(comptime Config: type) type {
 
         fn onLiveMIDIControllerInput(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, controller: vsttypes.CtrlNumber) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.input_count +|= 1;
-            self.last_bus = bus_index;
-            self.last_channel = channel;
-            self.last_controller = controller;
+            self.recordInput(bus_index, channel, controller);
             if (@hasDecl(Config, "onLiveMIDIControllerInput")) {
                 return Config.onLiveMIDIControllerInput(self, bus_index, channel, controller);
             }
@@ -235,6 +239,20 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         pub fn asLearn(self: *Self) *ivstmidimapping2.IMidiLearn2 {
             return &self.learn_iface;
+        }
+
+        fn recordMidi2Input(self: *Self, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) void {
+            self.midi2_input_count +|= 1;
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            self.last_midi2_controller = controller;
+        }
+
+        fn recordMidi1Input(self: *Self, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: vsttypes.CtrlNumber) void {
+            self.midi1_input_count +|= 1;
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            self.last_midi1_controller = controller;
         }
 
         fn safeMidi2Count(self: *const Self) usize {
@@ -358,20 +376,14 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         fn onLiveMidi2ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) callconv(.c) types.tresult {
             const self = ownerFromLearn(ptr);
-            self.midi2_input_count +|= 1;
-            self.last_bus = bus_index;
-            self.last_channel = channel;
-            self.last_midi2_controller = controller;
+            self.recordMidi2Input(bus_index, channel, controller);
             if (@hasDecl(Config, "onLiveMidi2ControllerInput")) return Config.onLiveMidi2ControllerInput(self, bus_index, channel, controller);
             return types.kResultOk;
         }
 
         fn onLiveMidi1ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: vsttypes.CtrlNumber) callconv(.c) types.tresult {
             const self = ownerFromLearn(ptr);
-            self.midi1_input_count +|= 1;
-            self.last_bus = bus_index;
-            self.last_channel = channel;
-            self.last_midi1_controller = controller;
+            self.recordMidi1Input(bus_index, channel, controller);
             if (@hasDecl(Config, "onLiveMidi1ControllerInput")) return Config.onLiveMidi1ControllerInput(self, bus_index, channel, controller);
             return types.kResultOk;
         }
@@ -413,6 +425,12 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
 
         pub fn asInterface(self: *Self) *ivstphysicalui.INoteExpressionPhysicalUIMapping {
             return &self.iface;
+        }
+
+        fn recordRequest(self: *Self, bus_index: types.int32, channel: types.int16) void {
+            self.request_count +|= 1;
+            self.last_bus = bus_index;
+            self.last_channel = channel;
         }
 
         fn safeMapCount(self: *const Self) usize {
@@ -467,9 +485,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
 
         fn getPhysicalUIMapping(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, out: *ivstphysicalui.PhysicalUIMapList) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.request_count +|= 1;
-            self.last_bus = bus_index;
-            self.last_channel = channel;
+            self.recordRequest(bus_index, channel);
             const maps = self.physicalMaps();
             out.* = .{
                 .count = @intCast(maps.len),
