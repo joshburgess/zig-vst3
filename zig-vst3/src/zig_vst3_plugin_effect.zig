@@ -332,68 +332,72 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
+        fn queryFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *Controller, ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            return query(&ownerFn(ptr).iface, requested_iid, out);
+        }
+
         fn queryFromUnitInfo(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromUnitInfo(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromUnitInfo, ptr, requested_iid, out);
         }
 
         fn queryFromProgramListData(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromProgramListData(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromProgramListData, ptr, requested_iid, out);
         }
 
         fn queryFromUnitData(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromUnitData(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromUnitData, ptr, requested_iid, out);
         }
 
         fn queryFromController2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromController2(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromController2, ptr, requested_iid, out);
         }
 
         fn queryFromConnectionPoint(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromConnectionPoint(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromConnectionPoint, ptr, requested_iid, out);
         }
 
         fn queryFromHostEditing(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromHostEditing(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromHostEditing, ptr, requested_iid, out);
         }
 
         fn queryFromMidiMapping(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromMidiMapping(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromMidiMapping, ptr, requested_iid, out);
         }
 
         fn queryFromMidiLearn(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromMidiLearn(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromMidiLearn, ptr, requested_iid, out);
         }
 
         fn queryFromMidiMapping2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromMidiMapping2(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromMidiMapping2, ptr, requested_iid, out);
         }
 
         fn queryFromMidiLearn2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromMidiLearn2(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromMidiLearn2, ptr, requested_iid, out);
         }
 
         fn queryFromNoteExpression(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromNoteExpression(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromNoteExpression, ptr, requested_iid, out);
         }
 
         fn queryFromKeyswitch(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromKeyswitch(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromKeyswitch, ptr, requested_iid, out);
         }
 
         fn queryFromPhysicalUIMapping(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromPhysicalUIMapping(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromPhysicalUIMapping, ptr, requested_iid, out);
         }
 
         fn queryFromParameterFunctionName(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromParameterFunctionName(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromParameterFunctionName, ptr, requested_iid, out);
         }
 
         fn queryFromRemapParamID(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromRemapParamID(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromRemapParamID, ptr, requested_iid, out);
         }
 
         fn queryFromXmlRepresentation(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromXmlRepresentation(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromXmlRepresentation, ptr, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -404,132 +408,140 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, Config.controller_name);
         }
 
+        fn addRefFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *Controller, ptr: *anyopaque) types.uint32 {
+            return addRef(&ownerFn(ptr).iface);
+        }
+
+        fn releaseFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *Controller, ptr: *anyopaque) types.uint32 {
+            return release(&ownerFn(ptr).iface);
+        }
+
         fn addRefFromUnitInfo(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromUnitInfo(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromUnitInfo, ptr);
         }
 
         fn releaseFromUnitInfo(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromUnitInfo(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromUnitInfo, ptr);
         }
 
         fn addRefFromProgramListData(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromProgramListData(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromProgramListData, ptr);
         }
 
         fn releaseFromProgramListData(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromProgramListData(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromProgramListData, ptr);
         }
 
         fn addRefFromUnitData(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromUnitData(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromUnitData, ptr);
         }
 
         fn releaseFromUnitData(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromUnitData(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromUnitData, ptr);
         }
 
         fn addRefFromController2(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromController2(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromController2, ptr);
         }
 
         fn releaseFromController2(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromController2(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromController2, ptr);
         }
 
         fn addRefFromConnectionPoint(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromConnectionPoint(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromConnectionPoint, ptr);
         }
 
         fn releaseFromConnectionPoint(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromConnectionPoint(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromConnectionPoint, ptr);
         }
 
         fn addRefFromHostEditing(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromHostEditing(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromHostEditing, ptr);
         }
 
         fn releaseFromHostEditing(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromHostEditing(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromHostEditing, ptr);
         }
 
         fn addRefFromMidiMapping(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromMidiMapping(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromMidiMapping, ptr);
         }
 
         fn releaseFromMidiMapping(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromMidiMapping(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromMidiMapping, ptr);
         }
 
         fn addRefFromMidiLearn(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromMidiLearn(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromMidiLearn, ptr);
         }
 
         fn releaseFromMidiLearn(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromMidiLearn(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromMidiLearn, ptr);
         }
 
         fn addRefFromMidiMapping2(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromMidiMapping2(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromMidiMapping2, ptr);
         }
 
         fn releaseFromMidiMapping2(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromMidiMapping2(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromMidiMapping2, ptr);
         }
 
         fn addRefFromMidiLearn2(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromMidiLearn2(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromMidiLearn2, ptr);
         }
 
         fn releaseFromMidiLearn2(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromMidiLearn2(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromMidiLearn2, ptr);
         }
 
         fn addRefFromNoteExpression(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromNoteExpression(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromNoteExpression, ptr);
         }
 
         fn releaseFromNoteExpression(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromNoteExpression(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromNoteExpression, ptr);
         }
 
         fn addRefFromKeyswitch(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromKeyswitch(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromKeyswitch, ptr);
         }
 
         fn releaseFromKeyswitch(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromKeyswitch(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromKeyswitch, ptr);
         }
 
         fn addRefFromPhysicalUIMapping(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromPhysicalUIMapping(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromPhysicalUIMapping, ptr);
         }
 
         fn releaseFromPhysicalUIMapping(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromPhysicalUIMapping(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromPhysicalUIMapping, ptr);
         }
 
         fn addRefFromParameterFunctionName(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromParameterFunctionName(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromParameterFunctionName, ptr);
         }
 
         fn releaseFromParameterFunctionName(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromParameterFunctionName(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromParameterFunctionName, ptr);
         }
 
         fn addRefFromRemapParamID(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromRemapParamID(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromRemapParamID, ptr);
         }
 
         fn releaseFromRemapParamID(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromRemapParamID(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromRemapParamID, ptr);
         }
 
         fn addRefFromXmlRepresentation(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromXmlRepresentation(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromXmlRepresentation, ptr);
         }
 
         fn releaseFromXmlRepresentation(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromXmlRepresentation(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromXmlRepresentation, ptr);
         }
 
         fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.c) types.tresult {
@@ -1505,32 +1517,36 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
+        fn queryFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *Component, ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            return query(&ownerFn(ptr).iface, requested_iid, out);
+        }
+
         fn queryFromProcessor(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromProcessor(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromProcessor, ptr, requested_iid, out);
         }
 
         fn queryFromComponentConnectionPoint(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromComponentConnectionPoint(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromComponentConnectionPoint, ptr, requested_iid, out);
         }
 
         fn queryFromProcessContextRequirements(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromProcessContextRequirements(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromProcessContextRequirements, ptr, requested_iid, out);
         }
 
         fn queryFromAudioPresentationLatency(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromAudioPresentationLatency(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromAudioPresentationLatency, ptr, requested_iid, out);
         }
 
         fn queryFromPlugInterfaceSupport(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromPlugInterfaceSupport(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromPlugInterfaceSupport, ptr, requested_iid, out);
         }
 
         fn queryFromPrefetchableSupport(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromPrefetchableSupport(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromPrefetchableSupport, ptr, requested_iid, out);
         }
 
         fn queryFromDataExchangeReceiver(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&ownerFromDataExchangeReceiver(ptr).iface, requested_iid, out);
+            return queryFromOwnedInterface(ownerFromDataExchangeReceiver, ptr, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -1622,60 +1638,68 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             .getTailSamples = getTailSamples,
         };
 
+        fn addRefFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *Component, ptr: *anyopaque) types.uint32 {
+            return addRef(&ownerFn(ptr).iface);
+        }
+
+        fn releaseFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *Component, ptr: *anyopaque) types.uint32 {
+            return release(&ownerFn(ptr).iface);
+        }
+
         fn addRefFromProcessor(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromProcessor(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromProcessor, ptr);
         }
 
         fn releaseFromProcessor(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromProcessor(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromProcessor, ptr);
         }
 
         fn addRefFromComponentConnectionPoint(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromComponentConnectionPoint(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromComponentConnectionPoint, ptr);
         }
 
         fn releaseFromComponentConnectionPoint(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromComponentConnectionPoint(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromComponentConnectionPoint, ptr);
         }
 
         fn addRefFromProcessContextRequirements(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromProcessContextRequirements(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromProcessContextRequirements, ptr);
         }
 
         fn releaseFromProcessContextRequirements(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromProcessContextRequirements(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromProcessContextRequirements, ptr);
         }
 
         fn addRefFromAudioPresentationLatency(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromAudioPresentationLatency(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromAudioPresentationLatency, ptr);
         }
 
         fn releaseFromAudioPresentationLatency(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromAudioPresentationLatency(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromAudioPresentationLatency, ptr);
         }
 
         fn addRefFromPlugInterfaceSupport(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromPlugInterfaceSupport(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromPlugInterfaceSupport, ptr);
         }
 
         fn releaseFromPlugInterfaceSupport(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromPlugInterfaceSupport(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromPlugInterfaceSupport, ptr);
         }
 
         fn addRefFromPrefetchableSupport(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromPrefetchableSupport(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromPrefetchableSupport, ptr);
         }
 
         fn releaseFromPrefetchableSupport(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromPrefetchableSupport(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromPrefetchableSupport, ptr);
         }
 
         fn addRefFromDataExchangeReceiver(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRef(&ownerFromDataExchangeReceiver(ptr).iface);
+            return addRefFromOwnedInterface(ownerFromDataExchangeReceiver, ptr);
         }
 
         fn releaseFromDataExchangeReceiver(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return release(&ownerFromDataExchangeReceiver(ptr).iface);
+            return releaseFromOwnedInterface(ownerFromDataExchangeReceiver, ptr);
         }
 
         const component_connection_point_vtable = ivstmessage.IConnectionPointVTable{
