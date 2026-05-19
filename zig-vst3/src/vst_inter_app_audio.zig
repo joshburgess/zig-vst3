@@ -30,6 +30,16 @@ pub fn InterAppAudioHost(comptime Config: type) type {
             return &self.iface;
         }
 
+        fn recordRemoteControlEvent(self: *Self, event_id: types.uint32) void {
+            self.remote_control_count +|= 1;
+            self.last_remote_control_event = event_id;
+        }
+
+        fn recordPresetManagerRequest(self: *Self, uid: *const tuid.TUID) void {
+            self.last_preset_uid = uid.*;
+            self.has_last_preset_uid = true;
+        }
+
         fn owner(ptr: *anyopaque) *Self {
             const iface: *ivstinterappaudio.IInterAppAudioHost = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -85,8 +95,7 @@ pub fn InterAppAudioHost(comptime Config: type) type {
 
         fn sendRemoteControlEvent(ptr: *anyopaque, event_id: types.uint32) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.remote_control_count +|= 1;
-            self.last_remote_control_event = event_id;
+            self.recordRemoteControlEvent(event_id);
             if (@hasDecl(Config, "sendRemoteControlEvent")) return Config.sendRemoteControlEvent(self, event_id);
             return types.kResultOk;
         }
@@ -116,8 +125,7 @@ pub fn InterAppAudioHost(comptime Config: type) type {
 
         fn createPresetManager(ptr: *anyopaque, uid: *const tuid.TUID) callconv(.c) ?*ivstinterappaudio.IInterAppAudioPresetManager {
             const self = owner(ptr);
-            self.last_preset_uid = uid.*;
-            self.has_last_preset_uid = true;
+            self.recordPresetManagerRequest(uid);
             if (@hasDecl(Config, "createPresetManager")) return Config.createPresetManager(self, uid);
             return self.preset_manager;
         }

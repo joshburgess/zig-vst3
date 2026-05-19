@@ -19,6 +19,11 @@ pub fn PlugFrame(comptime Config: type) type {
             return &self.iface;
         }
 
+        fn acceptResize(self: *Self, view: ?*iplugview.IPlugView, rect: *const iplugview.ViewRect) void {
+            self.last_view = view;
+            self.last_rect = rect.*;
+        }
+
         fn owner(ptr: *anyopaque) *Self {
             const iface: *iplugview.IPlugFrame = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -47,8 +52,7 @@ pub fn PlugFrame(comptime Config: type) type {
                 const result = Config.resizeView(view, rect);
                 if (result != types.kResultOk) return result;
             }
-            self.last_view = view;
-            self.last_rect = rect.*;
+            self.acceptResize(view, rect);
             return types.kResultOk;
         }
 
