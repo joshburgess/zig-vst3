@@ -1,4 +1,5 @@
 const std = @import("std");
+const fixed_string = @import("fixed_string.zig");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
 const istringresult = @import("pluginterfaces/base/istringresult.zig");
@@ -46,21 +47,21 @@ pub fn StringResult(comptime max_text8_bytes: usize, comptime max_text16_units: 
         }
 
         fn copyText8(self: *Self, value: ?[*:0]const types.char8) void {
-            @memset(&self.text8, 0);
             @memset(&self.text16, 0);
             if (value) |text| {
-                const len = @min(std.mem.len(text), max_text8_bytes - 1);
-                @memcpy(self.text8[0..len], text[0..len]);
+                fixed_string.copyAsciiZ(&self.text8, std.mem.span(text));
+            } else {
+                fixed_string.copyAsciiZ(&self.text8, "");
             }
             self.wide = false;
         }
 
         fn copyText16(self: *Self, value: ?[*:0]const types.char16) void {
             @memset(&self.text8, 0);
-            @memset(&self.text16, 0);
             if (value) |text| {
-                const len = @min(std.mem.len(text), max_text16_units - 1);
-                @memcpy(self.text16[0..len], text[0..len]);
+                fixed_string.copyUtf16Z(&self.text16, std.mem.span(text));
+            } else {
+                fixed_string.copyUtf16Z(&self.text16, &.{});
             }
             self.wide = true;
         }

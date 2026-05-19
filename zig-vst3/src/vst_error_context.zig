@@ -1,4 +1,5 @@
 const std = @import("std");
+const fixed_string = @import("fixed_string.zig");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
 const ierrorcontext = @import("pluginterfaces/base/ierrorcontext.zig");
@@ -24,9 +25,7 @@ pub fn ErrorContext(comptime max_message_bytes: usize) type {
         }
 
         pub fn setMessage(self: *Self, value: []const u8) void {
-            @memset(&self.message, 0);
-            const len = @min(value.len, max_message_bytes - 1);
-            @memcpy(self.message[0..len], value[0..len]);
+            fixed_string.copyAsciiZ(&self.message, value);
         }
 
         pub fn messageSpan(self: *const Self) []const u8 {

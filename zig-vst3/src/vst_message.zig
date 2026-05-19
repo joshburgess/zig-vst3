@@ -1,4 +1,5 @@
 const std = @import("std");
+const fixed_string = @import("fixed_string.zig");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
 const string128 = @import("string128.zig");
@@ -285,9 +286,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
         fn setString(ptr: *anyopaque, id: ivstattributes.AttrID, value: [*:0]const vsttypes.TChar) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
             entry.kind = .string;
-            @memset(&entry.string_value, 0);
-            const len = @min(std.mem.len(value), max_string_chars - 1);
-            @memcpy(entry.string_value[0..len], value[0..len]);
+            fixed_string.copyUtf16Z(&entry.string_value, std.mem.span(value));
             return types.kResultOk;
         }
 
@@ -367,9 +366,7 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
         }
 
         pub fn setFileName(self: *Self, value: [*:0]const vsttypes.TChar) void {
-            @memset(&self.file_name, 0);
-            const len = @min(std.mem.len(value), max_file_name_chars - 1);
-            @memcpy(self.file_name[0..len], value[0..len]);
+            fixed_string.copyUtf16Z(&self.file_name, std.mem.span(value));
         }
 
         fn owner(ptr: *anyopaque) *Self {
