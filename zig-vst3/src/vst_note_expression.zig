@@ -66,6 +66,16 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             return types.kResultOk;
         }
 
+        pub fn expressionByIndex(self: *const Self, index: types.int32) ?ivstnoteexpression.NoteExpressionTypeInfo {
+            const expression_index = vst_index.bounded(index, self.safeExpressionCount()) orelse return null;
+            return self.expressions[expression_index];
+        }
+
+        pub fn keyswitchByIndex(self: *const Self, index: types.int32) ?ivstnoteexpression.KeyswitchInfo {
+            const keyswitch_index = vst_index.bounded(index, self.safeKeyswitchCount()) orelse return null;
+            return self.keyswitches[keyswitch_index];
+        }
+
         fn ownerFromNoteExpression(ptr: *anyopaque) *Self {
             const iface: *ivstnoteexpression.INoteExpressionController = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("note_expression", iface);
@@ -126,8 +136,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             const self = ownerFromNoteExpression(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;
-            const expression_index = vst_index.bounded(index, self.safeExpressionCount()) orelse return failNoteExpressionInfo(out);
-            out.* = self.expressions[expression_index];
+            out.* = self.expressionByIndex(index) orelse return failNoteExpressionInfo(out);
             return types.kResultOk;
         }
 
@@ -183,8 +192,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             const self = ownerFromKeyswitch(ptr);
             self.last_bus = bus_index;
             self.last_channel = channel;
-            const keyswitch_index = vst_index.bounded(index, self.safeKeyswitchCount()) orelse return failKeyswitchInfo(out);
-            out.* = self.keyswitches[keyswitch_index];
+            out.* = self.keyswitchByIndex(index) orelse return failKeyswitchInfo(out);
             return types.kResultOk;
         }
 
@@ -220,6 +228,8 @@ test "note expression helper stores expression and keyswitch info" {
         .associatedParameterId = 42,
     }));
     try std.testing.expectEqual(types.kResultFalse, helper.addExpression(.{ .typeId = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kVibratoTypeID) }));
+    try std.testing.expectEqual(@intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kBrightnessTypeID), helper.expressionByIndex(0).?.typeId);
+    try std.testing.expect(helper.expressionByIndex(1) == null);
     try std.testing.expectEqual(@as(types.int32, 1), expression.vtable.getNoteExpressionCount(expression, 2, 3));
 
     var expression_info = ivstnoteexpression.NoteExpressionTypeInfo{};
@@ -235,6 +245,8 @@ test "note expression helper stores expression and keyswitch info" {
         .unitId = 7,
     }));
     try std.testing.expectEqual(types.kResultFalse, helper.addKeyswitch(.{ .typeId = @intFromEnum(ivstnoteexpression.KeyswitchTypeIDs.kOnReleaseKeyswitchTypeID) }));
+    try std.testing.expectEqual(@as(types.int32, 24), helper.keyswitchByIndex(0).?.keyswitchMin);
+    try std.testing.expect(helper.keyswitchByIndex(1) == null);
     try std.testing.expectEqual(@as(types.int32, 1), keyswitch.vtable.getKeyswitchCount(keyswitch, 4, 5));
 
     var keyswitch_info = ivstnoteexpression.KeyswitchInfo{};

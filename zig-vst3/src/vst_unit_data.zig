@@ -92,6 +92,16 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return null;
         }
 
+        pub fn unitByIndex(self: *const Self, index: types.int32) ?ivstunits.UnitInfo {
+            const unit_index = vst_index.bounded(index, self.safeUnitCount()) orelse return null;
+            return self.units[unit_index];
+        }
+
+        pub fn programListByIndex(self: *const Self, index: types.int32) ?ivstunits.ProgramListInfo {
+            const list_index = vst_index.bounded(index, self.safeProgramListCount()) orelse return null;
+            return self.program_lists[list_index];
+        }
+
         fn rootUnits() [max_units]ivstunits.UnitInfo {
             var values: [max_units]ivstunits.UnitInfo = [_]ivstunits.UnitInfo{.{}} ** max_units;
             values[0] = .{
@@ -135,8 +145,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn getUnitInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.c) types.tresult {
             const self = owner(ptr);
-            const unit_index = vst_index.bounded(index, self.safeUnitCount()) orelse return failUnitInfo(out);
-            out.* = self.units[unit_index];
+            out.* = self.unitByIndex(index) orelse return failUnitInfo(out);
             return types.kResultOk;
         }
 
@@ -152,8 +161,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         fn getProgramListInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.c) types.tresult {
             if (max_program_lists == 0) return failProgramListInfo(out);
             const self = owner(ptr);
-            const list_index = vst_index.bounded(index, self.safeProgramListCount()) orelse return failProgramListInfo(out);
-            out.* = self.program_lists[list_index];
+            out.* = self.programListByIndex(index) orelse return failProgramListInfo(out);
             return types.kResultOk;
         }
 
@@ -439,6 +447,10 @@ test "unit info stores program list entries and selected unit" {
 
     var unit = ivstunits.UnitInfo{};
     var list = ivstunits.ProgramListInfo{};
+    try std.testing.expectEqual(@as(vsttypes.UnitID, 7), info.unitByIndex(1).?.id);
+    try std.testing.expect(info.unitByIndex(2) == null);
+    try std.testing.expectEqual(@as(vsttypes.ProgramListID, 4), info.programListByIndex(0).?.id);
+    try std.testing.expect(info.programListByIndex(1) == null);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getUnitInfo(iface, 1, &unit));
     try std.testing.expectEqual(@as(vsttypes.UnitID, 7), unit.id);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramListInfo(iface, 0, &list));
