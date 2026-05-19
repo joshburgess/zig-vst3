@@ -243,6 +243,9 @@ pub fn ParameterValues(comptime Params: type) type {
         }
 
         pub fn storeFieldCount(self: *Self, set: *const Set, comptime field_name: []const u8, plain: FieldPlainType(Params, field_name)) ?usize {
+            if (comptime @typeInfo(FieldPlainType(Params, field_name)) == .float) {
+                if (!std.math.isFinite(plain)) return null;
+            }
             const param = set.descriptor(field_name);
             return self.storeCount(set.indexOfField(field_name), param.normalize(plain));
         }
@@ -2369,6 +2372,9 @@ test "parameter editor binds reflected set and mutable values" {
     try std.testing.expectEqual(@as(i64, 4), editor.load("voices"));
     try std.testing.expectEqual(false, editor.load("bypass"));
     try std.testing.expectEqual(Mode.mute, editor.load("mode"));
+    try std.testing.expect(!editor.store("gain", std.math.inf(f64)));
+    try std.testing.expectEqual(@as(?usize, null), editor.storeCount("gain", -std.math.inf(f64)));
+    try std.testing.expectEqual(@as(f64, 1.5), editor.load("gain"));
     try std.testing.expectEqual(@as(f64, 1.0), editor.loadNormalized("mode"));
     try std.testing.expectEqual(@as(?f64, 1.0), editor.loadIndex(3));
     try std.testing.expectEqual(@as(?f64, 2.0), editor.loadPlain(3));
