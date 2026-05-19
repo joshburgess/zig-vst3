@@ -61,6 +61,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         }
 
         fn appendProgramListIndex(self: *Self, id: vsttypes.ProgramListID, name: []const u8, program_count: types.int32) ?usize {
+            if (program_count < 0) return null;
             const index = vst_index.appendIndex(self.program_list_count, max_program_lists) orelse return null;
             self.program_lists[index] = .{
                 .id = id,
@@ -499,6 +500,20 @@ test "unit info rejects extra unit and program-list entries" {
     var list = ivstunits.ProgramListInfo{};
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramListInfo(iface, 0, &list));
     try std.testing.expectEqual(@as(vsttypes.ProgramListID, 1), list.id);
+}
+
+test "unit info rejects invalid program-list counts" {
+    const Info = UnitInfo(1, 1, struct {});
+    var info = Info{};
+    const iface = info.asInterface();
+
+    try std.testing.expectEqual(types.kResultFalse, info.addProgramList(1, "Invalid", -1));
+    try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getProgramListCount(iface));
+
+    var list = ivstunits.ProgramListInfo{ .id = 99, .programCount = 99 };
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramListInfo(iface, 0, &list));
+    try std.testing.expectEqual(@as(vsttypes.ProgramListID, 0), list.id);
+    try std.testing.expectEqual(@as(types.int32, 0), list.programCount);
 }
 
 test "unit info truncates long unit and program-list names" {

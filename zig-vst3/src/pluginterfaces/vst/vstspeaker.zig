@@ -830,8 +830,9 @@ pub const SpeakerArray = struct {
         while (true) {
             const mask: SpeakerType = @as(SpeakerType, 1) << index;
             if ((arrangement & mask) != 0) {
-                self.speaker[@intCast(self.count)] = mask;
-                self.count += 1;
+                const speaker_index = vst_index.appendIndex(self.count, kMaxSpeakers) orelse break;
+                self.speaker[speaker_index] = mask;
+                self.count = @intCast(speaker_index + 1);
             }
             if (index == kMaxSpeakers - 1) break;
             index += 1;
@@ -919,4 +920,14 @@ test "speaker array resets stale speakers when arrangement changes" {
     try std.testing.expectEqual(@as(base.uint64, 0), speakers.at(2));
     try std.testing.expectEqual(SpeakerArr.kStereo, speakers.getArrangement());
     try std.testing.expectEqual(@as(base.int32, -1), speakers.getSpeakerIndex(kSpeakerLfe));
+}
+
+test "speaker array handles every speaker slot" {
+    const all_speakers = ~@as(vsttypes.SpeakerArrangement, 0);
+    const speakers = SpeakerArray.init(all_speakers);
+
+    try std.testing.expectEqual(@as(base.int32, SpeakerArray.kMaxSpeakers), speakers.total());
+    try std.testing.expectEqual(@as(base.uint64, 1), speakers.at(0));
+    try std.testing.expectEqual(@as(base.uint64, 1) << (SpeakerArray.kMaxSpeakers - 1), speakers.at(SpeakerArray.kMaxSpeakers - 1));
+    try std.testing.expectEqual(all_speakers, speakers.getArrangement());
 }
