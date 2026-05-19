@@ -78,6 +78,20 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return vst_index.clampedCount(self.program_list_count, max_program_lists);
         }
 
+        pub fn unitIndexOfId(self: *const Self, id: vsttypes.UnitID) ?usize {
+            for (self.units[0..self.safeUnitCount()], 0..) |unit, unit_index| {
+                if (unit.id == id) return unit_index;
+            }
+            return null;
+        }
+
+        pub fn programListIndexOfId(self: *const Self, id: vsttypes.ProgramListID) ?usize {
+            for (self.program_lists[0..self.safeProgramListCount()], 0..) |list, list_index| {
+                if (list.id == id) return list_index;
+            }
+            return null;
+        }
+
         fn rootUnits() [max_units]ivstunits.UnitInfo {
             var values: [max_units]ivstunits.UnitInfo = [_]ivstunits.UnitInfo{.{}} ** max_units;
             values[0] = .{
@@ -193,13 +207,9 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
 
         fn selectUnit(ptr: *anyopaque, id: vsttypes.UnitID) callconv(.c) types.tresult {
             const self = owner(ptr);
-            for (self.units[0..self.safeUnitCount()]) |unit| {
-                if (unit.id == id) {
-                    self.selected_unit = id;
-                    return types.kResultOk;
-                }
-            }
-            return types.kInvalidArgument;
+            _ = self.unitIndexOfId(id) orelse return types.kInvalidArgument;
+            self.selected_unit = id;
+            return types.kResultOk;
         }
 
         fn failUnitByBus(out: *vsttypes.UnitID, result: types.tresult) types.tresult {
@@ -434,6 +444,11 @@ test "unit info stores program list entries and selected unit" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getProgramListInfo(iface, 0, &list));
     try std.testing.expectEqual(@as(vsttypes.ProgramListID, 4), list.id);
     try std.testing.expectEqual(@as(types.int32, 3), list.programCount);
+    try std.testing.expectEqual(@as(?usize, 0), info.unitIndexOfId(ivstunits.kRootUnitId));
+    try std.testing.expectEqual(@as(?usize, 1), info.unitIndexOfId(7));
+    try std.testing.expectEqual(@as(?usize, null), info.unitIndexOfId(99));
+    try std.testing.expectEqual(@as(?usize, 0), info.programListIndexOfId(4));
+    try std.testing.expectEqual(@as(?usize, null), info.programListIndexOfId(99));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.selectUnit(iface, 7));
     try std.testing.expectEqual(@as(vsttypes.UnitID, 7), iface.vtable.getSelectedUnit(iface));
 }

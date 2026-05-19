@@ -44,6 +44,17 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
             return types.kResultOk;
         }
 
+        pub fn supports(self: *const Self, iid: *const tuid.TUID) bool {
+            return self.supportedIndex(iid) != null;
+        }
+
+        pub fn supportedIndex(self: *const Self, iid: *const tuid.TUID) ?usize {
+            for (self.supported[0..self.safeCount()], 0..) |supported, supported_index| {
+                if (std.mem.eql(u8, &supported, iid)) return supported_index;
+            }
+            return null;
+        }
+
         fn owner(ptr: *anyopaque) *Self {
             const iface: *ivstpluginterfacesupport.IPlugInterfaceSupport = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -67,10 +78,7 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
 
         fn isPlugInterfaceSupported(ptr: *anyopaque, iid: *const tuid.TUID) callconv(.c) types.tresult {
             const self = owner(ptr);
-            for (self.supported[0..self.safeCount()]) |supported| {
-                if (std.mem.eql(u8, &supported, iid)) return types.kResultOk;
-            }
-            return types.kResultFalse;
+            return if (self.supports(iid)) types.kResultOk else types.kResultFalse;
         }
 
         const vtable = ivstpluginterfacesupport.IPlugInterfaceSupportVTable{
@@ -475,6 +483,10 @@ test "plug interface support stores supported IIDs" {
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.isPlugInterfaceSupported(iface, &ivstpluginterfacesupport.iplug_interface_support_iid));
     try std.testing.expectEqual(types.kResultOk, support.addSupported(&ivstpluginterfacesupport.iplug_interface_support_iid));
     try std.testing.expectEqual(types.kResultFalse, support.addSupported(&ivstprefetchablesupport.iprefetchable_support_iid));
+    try std.testing.expect(support.supports(&ivstpluginterfacesupport.iplug_interface_support_iid));
+    try std.testing.expectEqual(@as(?usize, 0), support.supportedIndex(&ivstpluginterfacesupport.iplug_interface_support_iid));
+    try std.testing.expect(!support.supports(&ivstprefetchablesupport.iprefetchable_support_iid));
+    try std.testing.expectEqual(@as(?usize, null), support.supportedIndex(&ivstprefetchablesupport.iprefetchable_support_iid));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.isPlugInterfaceSupported(iface, &ivstpluginterfacesupport.iplug_interface_support_iid));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.isPlugInterfaceSupported(iface, &ivstprefetchablesupport.iprefetchable_support_iid));
 
