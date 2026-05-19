@@ -282,7 +282,7 @@ test "parameter state ignores unknown parameter ids" {
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + 2 * (@sizeOf(u32) + @sizeOf(u64))]u8 = undefined;
+    var bytes: [encoded_header_size + 2 * encoded_entry_size]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
@@ -610,7 +610,7 @@ test "parameter state rejects duplicate restored parameter ids without partial u
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + 2 * (@sizeOf(u32) + @sizeOf(u64))]u8 = undefined;
+    var bytes: [encoded_header_size + 2 * encoded_entry_size]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
@@ -640,11 +640,11 @@ test "parameter state rejects malformed headers and unsupported versions" {
     const set = Set.init(.{});
     var values = Values.init(&set);
 
-    var bad_magic = [_]u8{0} ** (magic.len + @sizeOf(u16) + @sizeOf(u16));
+    var bad_magic = [_]u8{0} ** encoded_header_size;
     var bad_magic_stream = FixedBufferStream.init(&bad_magic);
     try std.testing.expectError(error.InvalidStateMagic, readParameterState(Params, &set, &values, bad_magic_stream.reader()));
 
-    var bad_version: [magic.len + @sizeOf(u16) + @sizeOf(u16)]u8 = undefined;
+    var bad_version: [encoded_header_size]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bad_version);
     var bad_version_writer = out_stream.writer();
     try bad_version_writer.writeAll(magic);
@@ -662,7 +662,7 @@ test "parameter state rejects truncated entries without changing defaults" {
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + @sizeOf(u32)]u8 = undefined;
+    var bytes: [encoded_header_size + @sizeOf(u32)]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
 
     var writer = out_stream.writer();
@@ -685,7 +685,7 @@ test "parameter state rejects later truncated entries without partial updates" {
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + (@sizeOf(u32) + @sizeOf(u64)) + @sizeOf(u32)]u8 = undefined;
+    var bytes: [encoded_header_size + encoded_entry_size + @sizeOf(u32)]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
@@ -714,7 +714,7 @@ test "parameter state rejects normalized values outside range without partial up
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + 2 * (@sizeOf(u32) + @sizeOf(u64))]u8 = undefined;
+    var bytes: [encoded_header_size + 2 * encoded_entry_size]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
@@ -743,7 +743,7 @@ test "parameter state rejects non-finite normalized values without partial updat
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [magic.len + @sizeOf(u16) + @sizeOf(u16) + @sizeOf(u32) + @sizeOf(u64)]u8 = undefined;
+    var bytes: [encoded_header_size + encoded_entry_size]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
