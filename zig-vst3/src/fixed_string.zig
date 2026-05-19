@@ -3,8 +3,13 @@ const types = @import("pluginterfaces/base/types.zig");
 
 pub fn copyAsciiZ(dest: anytype, source: []const u8) void {
     const N = @typeInfo(@TypeOf(dest.*)).array.len;
-    @memset(dest, 0);
-    const len = @min(source.len, N - 1);
+    copyAsciiZPtr(dest, N, source);
+}
+
+pub fn copyAsciiZPtr(dest: [*]types.char8, capacity: usize, source: []const u8) void {
+    if (capacity == 0) return;
+    @memset(dest[0..capacity], 0);
+    const len = @min(source.len, capacity - 1);
     @memcpy(dest[0..len], source[0..len]);
 }
 
@@ -48,6 +53,14 @@ test "copyAsciiZ zero-fills and truncates" {
     copyAsciiZ(&text, "abcdef");
 
     try std.testing.expectEqualSlices(u8, &.{ 'a', 'b', 'c', 0 }, &text);
+}
+
+test "copyAsciiZPtr accepts zero capacity" {
+    var text = [_]u8{'x'} ** 1;
+
+    copyAsciiZPtr(&text, 0, "abc");
+
+    try std.testing.expectEqual(@as(u8, 'x'), text[0]);
 }
 
 test "copyAsciiToUtf16Z zero-fills and truncates" {
