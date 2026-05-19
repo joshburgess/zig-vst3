@@ -734,3 +734,22 @@ test "unit program data clears unsupported query output from both interfaces" {
     try std.testing.expectEqual(types.kNoInterface, units.vtable.queryInterface(units, &tuid.zero, &queried));
     try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }
+
+test "unit program data query interfaces share object refcount" {
+    const Data = UnitProgramData(struct {});
+    var data = Data{};
+
+    var queried_programs: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, data.asUnitData().vtable.queryInterface(data.asUnitData(), &ivstunits.iprogram_list_data_iid, &queried_programs));
+    try std.testing.expectEqual(@as(?*anyopaque, data.asProgramListData()), queried_programs);
+    try std.testing.expectEqual(@as(types.uint32, 2), data.ref_count.load(.seq_cst));
+
+    var queried_unknown: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, data.asUnitData().vtable.queryInterface(data.asUnitData(), &funknown.iid, &queried_unknown));
+    try std.testing.expectEqual(@as(?*anyopaque, data.asProgramListData()), queried_unknown);
+    try std.testing.expectEqual(@as(types.uint32, 3), data.ref_count.load(.seq_cst));
+
+    const programs: *ivstunits.IProgramListData = @ptrCast(@alignCast(queried_programs.?));
+    try std.testing.expectEqual(@as(types.uint32, 2), programs.vtable.release(programs));
+    try std.testing.expectEqual(@as(types.uint32, 1), data.asProgramListData().vtable.release(data.asProgramListData()));
+}
