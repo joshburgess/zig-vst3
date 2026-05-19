@@ -91,6 +91,13 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             binary: [max_binary_bytes]u8 = [_]u8{0} ** max_binary_bytes,
             binary_size: types.uint32 = 0,
             owns_binary: bool = false,
+
+            fn resetValue(self: *Entry, value: fvariant.FVariant) void {
+                self.value = value;
+                @memset(&self.binary, 0);
+                self.binary_size = 0;
+                self.owns_binary = false;
+            }
         };
 
         iface: ipersistent.IAttributes = .{ .vtable = &attributes_vtable },
@@ -193,9 +200,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
 
         fn set(ptr: *anyopaque, id: ipersistent.IAttrID, value: *const fvariant.FVariant) callconv(.c) types.tresult {
             const entry = ownerFromAttributes(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.value = value.*;
-            entry.owns_binary = false;
-            entry.binary_size = 0;
+            entry.resetValue(value.*);
             return types.kResultOk;
         }
 
@@ -212,19 +217,17 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             if (copy and size > max_binary_bytes) return types.kResultFalse;
             const entry = ownerFromAttributes(ptr).slotFor(id) orelse return types.kResultFalse;
             if (copy) {
-                @memset(&entry.binary, 0);
+                entry.resetValue(.{ .type = fvariant.kObject, .value = .{ .object = &entry.binary } });
                 if (size > 0) {
                     const source = data orelse return types.kInvalidArgument;
                     const bytes: [*]const u8 = @ptrCast(source);
                     @memcpy(entry.binary[0..size], bytes[0..size]);
                 }
-                entry.value = .{ .type = fvariant.kObject, .value = .{ .object = &entry.binary } };
                 entry.binary_size = size;
                 entry.owns_binary = true;
             } else {
-                entry.value = .{ .type = fvariant.kObject, .value = .{ .object = data } };
+                entry.resetValue(.{ .type = fvariant.kObject, .value = .{ .object = data } });
                 entry.binary_size = size;
-                entry.owns_binary = false;
             }
             return types.kResultOk;
         }
@@ -503,6 +506,20 @@ test "persistent attributes clear stale copied binary bytes" {
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.setBinaryData(attrs, "blob", &shorter, shorter.len, true));
     try std.testing.expectEqual(@as(types.uint32, shorter.len), store.entries[0].binary_size);
     try std.testing.expectEqualSlices(u8, &.{ 9, 0, 0, 0 }, store.entries[0].binary[0..4]);
+}
+
+test "persistent attributes clear copied binary storage on value replacement" {
+    const Store = Attributes(1, 8);
+    var store = Store{};
+    const attrs = store.asAttributes();
+    var payload = [_]u8{ 1, 2, 3, 4 };
+    const value = fvariant.FVariant{ .type = fvariant.kInteger, .value = .{ .intValue = 5 } };
+
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.setBinaryData(attrs, "blob", &payload, payload.len, true));
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.set(attrs, "blob", &value));
+    try std.testing.expectEqual(@as(types.uint32, 0), store.entries[0].binary_size);
+    try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0 }, store.entries[0].binary[0..4]);
+    try std.testing.expect(!store.entries[0].owns_binary);
 }
 
 test "persistent attributes can reference borrowed binary payloads" {
