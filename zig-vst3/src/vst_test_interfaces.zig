@@ -60,8 +60,7 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
 
         fn store(target: *[max_messages][max_chars]types.char16, count: *types.uint32, text: ?[*:0]const types.char16) void {
             if (vst_index.appendIndexU32(count.*, max_messages)) |index| {
-                const value = if (text) |ptr| std.mem.span(ptr) else &.{};
-                fixed_string.copyUtf16Z(&target[index], value);
+                fixed_string.copyUtf16Z(&target[index], fixed_string.spanUtf16Z(text));
             }
             count.* +|= 1;
         }

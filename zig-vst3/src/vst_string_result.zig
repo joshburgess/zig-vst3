@@ -48,21 +48,13 @@ pub fn StringResult(comptime max_text8_bytes: usize, comptime max_text16_units: 
 
         fn copyText8(self: *Self, value: ?[*:0]const types.char8) void {
             @memset(&self.text16, 0);
-            if (value) |text| {
-                fixed_string.copyAsciiZ(&self.text8, std.mem.span(text));
-            } else {
-                fixed_string.copyAsciiZ(&self.text8, "");
-            }
+            fixed_string.copyAsciiZ(&self.text8, fixed_string.spanAsciiZ(value));
             self.wide = false;
         }
 
         fn copyText16(self: *Self, value: ?[*:0]const types.char16) void {
             @memset(&self.text8, 0);
-            if (value) |text| {
-                fixed_string.copyUtf16Z(&self.text16, std.mem.span(text));
-            } else {
-                fixed_string.copyUtf16Z(&self.text16, &.{});
-            }
+            fixed_string.copyUtf16Z(&self.text16, fixed_string.spanUtf16Z(value));
             self.wide = true;
         }
 

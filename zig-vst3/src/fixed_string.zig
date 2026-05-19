@@ -39,6 +39,14 @@ pub fn copyUtf16ZPtr(dest: [*]types.char16, capacity: usize, source: []const typ
     @memcpy(dest[0..len], source[0..len]);
 }
 
+pub fn spanAsciiZ(value: ?[*:0]const types.char8) []const types.char8 {
+    return if (value) |text| std.mem.span(text) else "";
+}
+
+pub fn spanUtf16Z(value: ?[*:0]const types.char16) []const types.char16 {
+    return if (value) |text| std.mem.span(text) else &.{};
+}
+
 pub fn readUtf16ZAsAscii(source: [*]const types.char16, buffer: []u8) []const u8 {
     var len: usize = 0;
     while (len < buffer.len and source[len] != 0) : (len += 1) {
@@ -102,6 +110,16 @@ test "readUtf16ZAsAscii stops at zero and clamps code units" {
     const text = readUtf16ZAsAscii(&source, &buffer);
 
     try std.testing.expectEqualSlices(u8, &.{ 'a', 0xff, 'c' }, text);
+}
+
+test "nullable string spans use empty fallbacks" {
+    const ascii = "gain";
+    const wide = [_:0]types.char16{ 'O', 'K' };
+
+    try std.testing.expectEqualStrings("gain", spanAsciiZ(ascii));
+    try std.testing.expectEqualStrings("", spanAsciiZ(null));
+    try std.testing.expectEqualSlices(types.char16, &.{ 'O', 'K' }, spanUtf16Z(&wide));
+    try std.testing.expectEqualSlices(types.char16, &.{}, spanUtf16Z(null));
 }
 
 test "readUtf16ZAsAscii truncates to output buffer" {
