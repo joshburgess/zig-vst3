@@ -95,6 +95,26 @@ test "plug frame delegates resize requests to config" {
     try std.testing.expectEqual(@as(types.uint32, 1), frame.resize_count);
 }
 
+test "plug frame stores accepted delegated resize state" {
+    const Config = struct {
+        fn resizeView(_: ?*iplugview.IPlugView, rect: *iplugview.ViewRect) types.tresult {
+            rect.right = rect.left + 640;
+            rect.bottom = rect.top + 480;
+            return types.kResultOk;
+        }
+    };
+    const Frame = PlugFrame(Config);
+    var frame = Frame{};
+    const iface = frame.asInterface();
+    const view: *iplugview.IPlugView = @ptrFromInt(0x1000);
+    var rect = iplugview.ViewRect{ .left = 10, .top = 20, .right = 30, .bottom = 40 };
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.resizeView(iface, view, &rect));
+    try std.testing.expectEqual(@as(types.uint32, 1), frame.resize_count);
+    try std.testing.expectEqual(view, frame.last_view.?);
+    try std.testing.expectEqual(iplugview.ViewRect{ .left = 10, .top = 20, .right = 650, .bottom = 500 }, frame.last_rect);
+}
+
 test "plug frame preserves accepted resize state when delegation fails" {
     const Config = struct {
         fn resizeView(_: ?*iplugview.IPlugView, _: *iplugview.ViewRect) types.tresult {
