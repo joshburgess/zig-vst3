@@ -1221,11 +1221,15 @@ fn queryHostApplication(context: ?*anyopaque) ?*ivsthostapplication.IHostApplica
     return queryInterfaceAs(funknown.Header, ivsthostapplication.IHostApplication, context, &ivsthostapplication.ihost_application_iid);
 }
 
-fn releaseHostApplication(host_application: *?*ivsthostapplication.IHostApplication) void {
-    if (host_application.*) |host| {
-        _ = host.vtable.release(host);
-        host_application.* = null;
+fn releaseOptionalInterface(comptime Interface: type, slot: *?*Interface) void {
+    if (slot.*) |value| {
+        _ = value.vtable.release(value);
+        slot.* = null;
     }
+}
+
+fn releaseHostApplication(host_application: *?*ivsthostapplication.IHostApplication) void {
+    releaseOptionalInterface(ivsthostapplication.IHostApplication, host_application);
 }
 
 fn queryInfoListener(context: ?*anyopaque) ?*ivstchannelcontextinfo.IInfoListener {
@@ -1233,10 +1237,7 @@ fn queryInfoListener(context: ?*anyopaque) ?*ivstchannelcontextinfo.IInfoListene
 }
 
 fn releaseInfoListener(info_listener: *?*ivstchannelcontextinfo.IInfoListener) void {
-    if (info_listener.*) |listener| {
-        _ = listener.vtable.release(listener);
-        info_listener.* = null;
-    }
+    releaseOptionalInterface(ivstchannelcontextinfo.IInfoListener, info_listener);
 }
 
 fn queryAutomationState(context: ?*anyopaque) ?*ivstautomationstate.IAutomationState {
@@ -1244,10 +1245,7 @@ fn queryAutomationState(context: ?*anyopaque) ?*ivstautomationstate.IAutomationS
 }
 
 fn releaseAutomationState(automation_state: *?*ivstautomationstate.IAutomationState) void {
-    if (automation_state.*) |state| {
-        _ = state.vtable.release(state);
-        automation_state.* = null;
-    }
+    releaseOptionalInterface(ivstautomationstate.IAutomationState, automation_state);
 }
 
 fn queryDataExchangeHandler(context: ?*anyopaque) ?*ivstdataexchange.IDataExchangeHandler {
@@ -1255,10 +1253,7 @@ fn queryDataExchangeHandler(context: ?*anyopaque) ?*ivstdataexchange.IDataExchan
 }
 
 fn releaseDataExchangeHandler(data_exchange_handler: *?*ivstdataexchange.IDataExchangeHandler) void {
-    if (data_exchange_handler.*) |handler| {
-        _ = handler.vtable.release(handler);
-        data_exchange_handler.* = null;
-    }
+    releaseOptionalInterface(ivstdataexchange.IDataExchangeHandler, data_exchange_handler);
 }
 
 fn queryComponentHandler2(handler: ?*anyopaque) ?*ivsteditcontroller.IComponentHandler2 {
@@ -1302,45 +1297,18 @@ fn retainConnectionPeer(peer: *ivstmessage.IConnectionPoint) *ivstmessage.IConne
 }
 
 fn releaseConnectionPeer(peer: *?*ivstmessage.IConnectionPoint) void {
-    if (peer.*) |value| {
-        _ = value.vtable.release(value);
-        peer.* = null;
-    }
+    releaseOptionalInterface(ivstmessage.IConnectionPoint, peer);
 }
 
 fn releaseComponentHandlers(controller: anytype) void {
-    if (controller.unit_handler2) |unit_handler2| {
-        _ = unit_handler2.vtable.release(unit_handler2);
-        controller.unit_handler2 = null;
-    }
-    if (controller.unit_handler) |unit_handler| {
-        _ = unit_handler.vtable.release(unit_handler);
-        controller.unit_handler = null;
-    }
-    if (controller.component_handler_system_time) |handler_system_time| {
-        _ = handler_system_time.vtable.release(handler_system_time);
-        controller.component_handler_system_time = null;
-    }
-    if (controller.progress) |progress| {
-        _ = progress.vtable.release(progress);
-        controller.progress = null;
-    }
-    if (controller.component_handler_bus_activation) |handler_bus_activation| {
-        _ = handler_bus_activation.vtable.release(handler_bus_activation);
-        controller.component_handler_bus_activation = null;
-    }
-    if (controller.component_handler3) |handler3| {
-        _ = handler3.vtable.release(handler3);
-        controller.component_handler3 = null;
-    }
-    if (controller.component_handler2) |handler2| {
-        _ = handler2.vtable.release(handler2);
-        controller.component_handler2 = null;
-    }
-    if (controller.component_handler) |handler| {
-        _ = handler.vtable.release(handler);
-        controller.component_handler = null;
-    }
+    releaseOptionalInterface(ivstunits.IUnitHandler2, &controller.unit_handler2);
+    releaseOptionalInterface(ivstunits.IUnitHandler, &controller.unit_handler);
+    releaseOptionalInterface(ivsteditcontroller.IComponentHandlerSystemTime, &controller.component_handler_system_time);
+    releaseOptionalInterface(ivsteditcontroller.IProgress, &controller.progress);
+    releaseOptionalInterface(ivsteditcontroller.IComponentHandlerBusActivation, &controller.component_handler_bus_activation);
+    releaseOptionalInterface(ivstcontextmenu.IComponentHandler3, &controller.component_handler3);
+    releaseOptionalInterface(ivsteditcontroller.IComponentHandler2, &controller.component_handler2);
+    releaseOptionalInterface(ivsteditcontroller.IComponentHandler, &controller.component_handler);
 }
 
 test "simple stereo effect clears unsupported query outputs" {
