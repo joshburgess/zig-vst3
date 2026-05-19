@@ -141,6 +141,16 @@ pub fn ComponentHandler2(comptime Config: type) type {
             return &self.handler2;
         }
 
+        fn recordDirty(self: *Self, state: types.TBool) void {
+            self.dirty_count +|= 1;
+            self.last_dirty_state = state;
+        }
+
+        fn recordOpenEditor(self: *Self, name: types.FIDString) void {
+            self.open_editor_count +|= 1;
+            self.last_editor_name = name;
+        }
+
         fn ownerFromHandler(ptr: *anyopaque) *Self {
             const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("handler", iface);
@@ -219,16 +229,14 @@ pub fn ComponentHandler2(comptime Config: type) type {
 
         fn setDirty(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
-            self.dirty_count +|= 1;
-            self.last_dirty_state = state;
+            self.recordDirty(state);
             if (@hasDecl(Config, "setDirty")) return Config.setDirty(self, state);
             return types.kResultOk;
         }
 
         fn requestOpenEditor(ptr: *anyopaque, name: types.FIDString) callconv(.c) types.tresult {
             const self = ownerFromHandler2(ptr);
-            self.open_editor_count +|= 1;
-            self.last_editor_name = name;
+            self.recordOpenEditor(name);
             if (@hasDecl(Config, "requestOpenEditor")) return Config.requestOpenEditor(self, name);
             return types.kResultOk;
         }
@@ -288,6 +296,11 @@ pub fn ComponentHandler3(comptime Config: type) type {
 
         pub fn asHandler3(self: *Self) *ivstcontextmenu.IComponentHandler3 {
             return &self.handler3;
+        }
+
+        fn recordContextMenuRequest(self: *Self, param_id: ?*const vsttypes.ParamID) void {
+            self.context_menu_count +|= 1;
+            if (param_id) |id| self.last_param_id = id.*;
         }
 
         fn ownerFromHandler(ptr: *anyopaque) *Self {
@@ -368,8 +381,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
 
         fn createContextMenu(ptr: *anyopaque, view: ?*iplugview.IPlugView, param_id: ?*const vsttypes.ParamID) callconv(.c) ?*ivstcontextmenu.IContextMenu {
             const self = ownerFromHandler3(ptr);
-            self.context_menu_count +|= 1;
-            if (param_id) |id| self.last_param_id = id.*;
+            self.recordContextMenuRequest(param_id);
             if (@hasDecl(Config, "createContextMenu")) return Config.createContextMenu(self, view, param_id);
             return null;
         }
@@ -425,6 +437,25 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
 
         pub fn asSystemTime(self: *Self) *ivsteditcontroller.IComponentHandlerSystemTime {
             return &self.system_time;
+        }
+
+        fn recordBusActivation(self: *Self, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, state: types.TBool) void {
+            self.bus_activation_count +|= 1;
+            self.last_media_type = media_type;
+            self.last_direction = direction;
+            self.last_bus_index = bus_index;
+            self.last_bus_state = state;
+        }
+
+        fn startSystemTimeRequest(self: *Self) types.int64 {
+            self.system_time_count +|= 1;
+            const value = if (@hasDecl(Config, "system_time")) Config.system_time else 0;
+            self.last_system_time = value;
+            return value;
+        }
+
+        fn acceptSystemTime(self: *Self, value: types.int64) void {
+            self.last_system_time = value;
         }
 
         fn ownerFromHandler(ptr: *anyopaque) *Self {
@@ -535,11 +566,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
 
         fn requestBusActivation(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, state: types.TBool) callconv(.c) types.tresult {
             const self = ownerFromBus(ptr);
-            self.bus_activation_count +|= 1;
-            self.last_media_type = media_type;
-            self.last_direction = direction;
-            self.last_bus_index = bus_index;
-            self.last_bus_state = state;
+            self.recordBusActivation(media_type, direction, bus_index, state);
             if (@hasDecl(Config, "requestBusActivation")) return Config.requestBusActivation(self, media_type, direction, bus_index, state);
             return types.kResultOk;
         }
@@ -551,14 +578,12 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
 
         fn getSystemTime(ptr: *anyopaque, out: *types.int64) callconv(.c) types.tresult {
             const self = ownerFromTime(ptr);
-            self.system_time_count +|= 1;
-            const value = if (@hasDecl(Config, "system_time")) Config.system_time else 0;
-            self.last_system_time = value;
+            const value = self.startSystemTimeRequest();
             out.* = value;
             if (@hasDecl(Config, "getSystemTime")) {
                 const result = Config.getSystemTime(self, out);
                 if (result != types.kResultOk) return failSystemTime(out, value, result);
-                self.last_system_time = out.*;
+                self.acceptSystemTime(out.*);
                 return result;
             }
             return types.kResultOk;
@@ -613,6 +638,30 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
 
         pub fn asProgress(self: *Self) *ivsteditcontroller.IProgress {
             return &self.progress;
+        }
+
+        fn startProgress(self: *Self, progress_type: types.uint32, out: *ivsteditcontroller.ProgressID) ivsteditcontroller.ProgressID {
+            self.start_count +|= 1;
+            self.last_type = progress_type;
+            const id = if (@hasDecl(Config, "progress_id")) Config.progress_id else 1;
+            out.* = id;
+            self.last_id = id;
+            return id;
+        }
+
+        fn acceptProgressStart(self: *Self, id: ivsteditcontroller.ProgressID) void {
+            self.last_id = id;
+        }
+
+        fn recordProgressUpdate(self: *Self, id: ivsteditcontroller.ProgressID, value: vsttypes.ParamValue) void {
+            self.update_count +|= 1;
+            self.last_id = id;
+            self.last_value = value;
+        }
+
+        fn recordProgressFinish(self: *Self, id: ivsteditcontroller.ProgressID) void {
+            self.finish_count +|= 1;
+            self.last_id = id;
         }
 
         fn ownerFromHandler(ptr: *anyopaque) *Self {
@@ -698,15 +747,11 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
 
         fn start(ptr: *anyopaque, progress_type: types.uint32, description: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
-            self.start_count +|= 1;
-            self.last_type = progress_type;
-            const id = if (@hasDecl(Config, "progress_id")) Config.progress_id else 1;
-            out.* = id;
-            self.last_id = id;
+            const id = self.startProgress(progress_type, out);
             if (@hasDecl(Config, "start")) {
                 const result = Config.start(self, progress_type, description, out);
                 if (result != types.kResultOk) return failStartedProgress(out, id, result);
-                self.last_id = out.*;
+                self.acceptProgressStart(out.*);
                 return result;
             }
             return types.kResultOk;
@@ -714,17 +759,14 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
 
         fn update(ptr: *anyopaque, id: ivsteditcontroller.ProgressID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
-            self.update_count +|= 1;
-            self.last_id = id;
-            self.last_value = value;
+            self.recordProgressUpdate(id, value);
             if (@hasDecl(Config, "update")) return Config.update(self, id, value);
             return types.kResultOk;
         }
 
         fn finish(ptr: *anyopaque, id: ivsteditcontroller.ProgressID) callconv(.c) types.tresult {
             const self = ownerFromProgress(ptr);
-            self.finish_count +|= 1;
-            self.last_id = id;
+            self.recordProgressFinish(id);
             if (@hasDecl(Config, "finish")) return Config.finish(self, id);
             return types.kResultOk;
         }
@@ -781,6 +823,17 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
 
         pub fn asUnitHandler2(self: *Self) *ivstunits.IUnitHandler2 {
             return &self.unit_handler2;
+        }
+
+        fn recordUnitSelection(self: *Self, unit_id: vsttypes.UnitID) void {
+            self.unit_selection_count +|= 1;
+            self.last_unit_id = unit_id;
+        }
+
+        fn recordProgramListChange(self: *Self, list_id: vsttypes.ProgramListID, program_index: types.int32) void {
+            self.program_list_count +|= 1;
+            self.last_program_list_id = list_id;
+            self.last_program_index = program_index;
         }
 
         fn ownerFromHandler(ptr: *anyopaque) *Self {
@@ -891,17 +944,14 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
 
         fn notifyUnitSelection(ptr: *anyopaque, unit_id: vsttypes.UnitID) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
-            self.unit_selection_count +|= 1;
-            self.last_unit_id = unit_id;
+            self.recordUnitSelection(unit_id);
             if (@hasDecl(Config, "notifyUnitSelection")) return Config.notifyUnitSelection(self, unit_id);
             return types.kResultOk;
         }
 
         fn notifyProgramListChange(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32) callconv(.c) types.tresult {
             const self = ownerFromUnit(ptr);
-            self.program_list_count +|= 1;
-            self.last_program_list_id = list_id;
-            self.last_program_index = program_index;
+            self.recordProgramListChange(list_id, program_index);
             if (@hasDecl(Config, "notifyProgramListChange")) return Config.notifyProgramListChange(self, list_id, program_index);
             return types.kResultOk;
         }
