@@ -12,6 +12,21 @@ const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
 
+fn failCreatedInstance(out: *?*anyopaque, result: types.tresult) types.tresult {
+    out.* = null;
+    return result;
+}
+
+fn createHostInstance(comptime Config: type, self: anytype, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+    out.* = null;
+    if (@hasDecl(Config, "createInstance")) {
+        const result = Config.createInstance(self, cid, iid, out);
+        if (result != types.kResultOk) return failCreatedInstance(out, result);
+        return result;
+    }
+    return types.kResultFalse;
+}
+
 pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type {
     return extern struct {
         const Self = @This();
@@ -90,20 +105,9 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
             return types.kResultOk;
         }
 
-        fn failCreatedInstance(out: *?*anyopaque, result: types.tresult) types.tresult {
-            out.* = null;
-            return result;
-        }
-
         fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
-            out.* = null;
-            if (@hasDecl(Config, "createInstance")) {
-                const result = Config.createInstance(self, cid, iid, out);
-                if (result != types.kResultOk) return failCreatedInstance(out, result);
-                return result;
-            }
-            return types.kResultFalse;
+            return createHostInstance(Config, self, cid, iid, out);
         }
 
         fn setChannelContextInfos(ptr: *anyopaque, attributes: ?*ivstattributes.IAttributeList) callconv(.c) types.tresult {
@@ -208,20 +212,9 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
             return types.kResultOk;
         }
 
-        fn failCreatedInstance(out: *?*anyopaque, result: types.tresult) types.tresult {
-            out.* = null;
-            return result;
-        }
-
         fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
-            out.* = null;
-            if (@hasDecl(Config, "createInstance")) {
-                const result = Config.createInstance(self, cid, iid, out);
-                if (result != types.kResultOk) return failCreatedInstance(out, result);
-                return result;
-            }
-            return types.kResultFalse;
+            return createHostInstance(Config, self, cid, iid, out);
         }
 
         fn setAutomationState(ptr: *anyopaque, state: types.int32) callconv(.c) types.tresult {
@@ -328,20 +321,9 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn failCreatedInstance(out: *?*anyopaque, result: types.tresult) types.tresult {
-            out.* = null;
-            return result;
-        }
-
         fn createInstance(ptr: *anyopaque, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
-            out.* = null;
-            if (@hasDecl(Config, "createInstance")) {
-                const result = Config.createInstance(self, cid, iid, out);
-                if (result != types.kResultOk) return failCreatedInstance(out, result);
-                return result;
-            }
-            return types.kResultFalse;
+            return createHostInstance(Config, self, cid, iid, out);
         }
 
         fn failOpenedQueue(out: *ivstdataexchange.DataExchangeQueueID, result: types.tresult) types.tresult {
