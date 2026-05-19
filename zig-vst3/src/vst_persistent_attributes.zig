@@ -545,6 +545,25 @@ test "persistent attributes supports attributes2 query interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), attrs2.vtable.release(attrs2));
 }
 
+test "persistent attributes query interfaces share object refcount" {
+    const Store = Attributes(2, 8);
+    var store = Store{};
+
+    var queried_attrs: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, store.asAttributes2().vtable.queryInterface(store.asAttributes2(), &ipersistent.iattributes_iid, &queried_attrs));
+    try std.testing.expectEqual(@as(?*anyopaque, store.asAttributes()), queried_attrs);
+    try std.testing.expectEqual(@as(types.uint32, 2), store.ref_count.load(.seq_cst));
+
+    var queried_unknown: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, store.asAttributes2().vtable.queryInterface(store.asAttributes2(), &funknown.iid, &queried_unknown));
+    try std.testing.expectEqual(@as(?*anyopaque, store.asAttributes()), queried_unknown);
+    try std.testing.expectEqual(@as(types.uint32, 3), store.ref_count.load(.seq_cst));
+
+    const attrs: *ipersistent.IAttributes = @ptrCast(@alignCast(queried_attrs.?));
+    try std.testing.expectEqual(@as(types.uint32, 2), attrs.vtable.release(attrs));
+    try std.testing.expectEqual(@as(types.uint32, 1), store.asAttributes().vtable.release(store.asAttributes()));
+}
+
 test "persistent attributes clear unsupported query output from both interfaces" {
     const Store = Attributes(2, 8);
     var store = Store{};
