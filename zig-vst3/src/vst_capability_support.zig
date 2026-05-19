@@ -245,6 +245,14 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return vst_index.clampedCountU32(self.midi1_count, max_midi1);
         }
 
+        pub fn midi2Assignments(self: *const Self) []const ivstmidimapping2.Midi2ControllerParamIDAssignment {
+            return self.midi2[0..self.safeMidi2Count()];
+        }
+
+        pub fn midi1Assignments(self: *const Self) []const ivstmidimapping2.Midi1ControllerParamIDAssignment {
+            return self.midi1[0..self.safeMidi1Count()];
+        }
+
         fn appendMidi2Index(self: *Self, assignment: ivstmidimapping2.Midi2ControllerParamIDAssignment) ?usize {
             const index = vst_index.appendIndexU32(self.midi2_count, max_midi2) orelse return null;
             self.midi2[index] = assignment;
@@ -320,7 +328,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         fn getNumMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection) callconv(.c) types.uint32 {
             const self = ownerFromMapping(ptr);
-            return if (acceptsDirection(direction)) @intCast(self.safeMidi2Count()) else 0;
+            return if (acceptsDirection(direction)) @intCast(self.midi2Assignments().len) else 0;
         }
 
         fn copyAssignments(direction: vsttypes.BusDirection, list: anytype, assignments: anytype) types.tresult {
@@ -335,17 +343,17 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         fn getMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi2ControllerParamIDAssignmentList) callconv(.c) types.tresult {
             const self = ownerFromMapping(ptr);
-            return copyAssignments(direction, list, self.midi2[0..self.safeMidi2Count()]);
+            return copyAssignments(direction, list, self.midi2Assignments());
         }
 
         fn getNumMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection) callconv(.c) types.uint32 {
             const self = ownerFromMapping(ptr);
-            return if (acceptsDirection(direction)) @intCast(self.safeMidi1Count()) else 0;
+            return if (acceptsDirection(direction)) @intCast(self.midi1Assignments().len) else 0;
         }
 
         fn getMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi1ControllerParamIDAssignmentList) callconv(.c) types.tresult {
             const self = ownerFromMapping(ptr);
-            return copyAssignments(direction, list, self.midi1[0..self.safeMidi1Count()]);
+            return copyAssignments(direction, list, self.midi1Assignments());
         }
 
         fn onLiveMidi2ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) callconv(.c) types.tresult {
@@ -411,6 +419,14 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
             return vst_index.clampedCountU32(self.map_count, max_maps);
         }
 
+        pub fn physicalMaps(self: *Self) []ivstphysicalui.PhysicalUIMap {
+            return self.maps[0..self.safeMapCount()];
+        }
+
+        pub fn physicalMapsConst(self: *const Self) []const ivstphysicalui.PhysicalUIMap {
+            return self.maps[0..self.safeMapCount()];
+        }
+
         fn appendMapIndex(self: *Self, map: ivstphysicalui.PhysicalUIMap) ?usize {
             const index = vst_index.appendIndexU32(self.map_count, max_maps) orelse return null;
             self.maps[index] = map;
@@ -454,9 +470,10 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
             self.request_count +|= 1;
             self.last_bus = bus_index;
             self.last_channel = channel;
+            const maps = self.physicalMaps();
             out.* = .{
-                .count = @intCast(self.safeMapCount()),
-                .map = &self.maps,
+                .count = @intCast(maps.len),
+                .map = maps.ptr,
             };
             if (@hasDecl(Config, "getPhysicalUIMapping")) {
                 const result = Config.getPhysicalUIMapping(self, bus_index, channel, out);
@@ -607,6 +624,10 @@ test "midi 2 mapping copies midi 1 and midi 2 assignment lists" {
     }));
     try std.testing.expectEqual(types.kResultFalse, mapping.addMidi2(.{ .pId = 101 }));
     try std.testing.expectEqual(types.kResultFalse, mapping.addMidi1(.{ .pId = 201 }));
+    try std.testing.expectEqual(@as(usize, 1), mapping.midi2Assignments().len);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 100), mapping.midi2Assignments()[0].pId);
+    try std.testing.expectEqual(@as(usize, 1), mapping.midi1Assignments().len);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 200), mapping.midi1Assignments()[0].pId);
 
     try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput)));
     try std.testing.expectEqual(@as(types.uint32, 0), iface.vtable.getNumMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kOutput)));
@@ -655,6 +676,8 @@ test "midi 2 mapping clamps inflated assignment counts" {
     mapping.midi2_count = 99;
     mapping.midi1_count = 99;
 
+    try std.testing.expectEqual(@as(usize, 1), mapping.midi2Assignments().len);
+    try std.testing.expectEqual(@as(usize, 1), mapping.midi1Assignments().len);
     try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput)));
     try std.testing.expectEqual(@as(types.uint32, 1), iface.vtable.getNumMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput)));
     try std.testing.expectEqual(types.kResultFalse, mapping.addMidi2(.{ .pId = 101 }));
@@ -763,6 +786,8 @@ test "physical UI mapping exposes fixed map list and clears delegated failures" 
     const iface = mapping.asInterface();
     try std.testing.expectEqual(types.kResultOk, mapping.addMap(.{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 12 }));
     try std.testing.expectEqual(types.kResultFalse, mapping.addMap(.{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIXMovement), .noteExpressionTypeID = 13 }));
+    try std.testing.expectEqual(@as(usize, 1), mapping.physicalMapsConst().len);
+    try std.testing.expectEqual(@as(types.uint32, 12), mapping.physicalMapsConst()[0].noteExpressionTypeID);
 
     var list = ivstphysicalui.PhysicalUIMapList{};
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getPhysicalUIMapping(iface, 3, 4, &list));
@@ -787,6 +812,7 @@ test "physical UI mapping clamps inflated map counts" {
     mapping.maps[0] = .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 12 };
     mapping.map_count = 99;
 
+    try std.testing.expectEqual(@as(usize, 1), mapping.physicalMapsConst().len);
     var list = ivstphysicalui.PhysicalUIMapList{};
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getPhysicalUIMapping(iface, 0, 1, &list));
     try std.testing.expectEqual(@as(types.uint32, 1), list.count);
