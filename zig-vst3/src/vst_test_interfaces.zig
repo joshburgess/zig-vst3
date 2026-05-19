@@ -232,6 +232,12 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
             return index;
         }
 
+        fn replaceEnvironment(self: *Self, environment: ?*itest.ITest) void {
+            if (environment) |value| _ = value.vtable.addRef(value);
+            if (self.environment) |previous| _ = previous.vtable.release(previous);
+            self.environment = environment;
+        }
+
         fn addTestSuite(ptr: *anyopaque, name: types.FIDString, suite_iface: ?*itest.ITestSuite) callconv(.c) types.tresult {
             const self = owner(ptr);
             _ = self.appendSuiteIndex(name, suite_iface) orelse return types.kResultFalse;
@@ -239,10 +245,7 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
         }
 
         fn setEnvironment(ptr: *anyopaque, environment: ?*itest.ITest) callconv(.c) types.tresult {
-            const self = owner(ptr);
-            if (environment) |value| _ = value.vtable.addRef(value);
-            if (self.environment) |previous| _ = previous.vtable.release(previous);
-            self.environment = environment;
+            owner(ptr).replaceEnvironment(environment);
             return types.kResultOk;
         }
 
