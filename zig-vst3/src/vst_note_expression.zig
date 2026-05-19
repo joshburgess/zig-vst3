@@ -42,6 +42,11 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             return &self.keyswitch;
         }
 
+        fn recordBusContext(self: *Self, bus_index: types.int32, channel: types.int16) void {
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+        }
+
         fn appendExpressionIndex(self: *Self, info: ivstnoteexpression.NoteExpressionTypeInfo) ?usize {
             const index = vst_index.appendIndexU32(self.expression_count, max_expressions) orelse return null;
             self.expressions[index] = info;
@@ -122,8 +127,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
 
         fn getNoteExpressionCount(ptr: *anyopaque, bus_index: types.int32, channel: types.int16) callconv(.c) types.int32 {
             const self = ownerFromNoteExpression(ptr);
-            self.last_bus = bus_index;
-            self.last_channel = channel;
+            self.recordBusContext(bus_index, channel);
             return @intCast(self.safeExpressionCount());
         }
 
@@ -134,8 +138,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
 
         fn getNoteExpressionInfo(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, index: types.int32, out: *ivstnoteexpression.NoteExpressionTypeInfo) callconv(.c) types.tresult {
             const self = ownerFromNoteExpression(ptr);
-            self.last_bus = bus_index;
-            self.last_channel = channel;
+            self.recordBusContext(bus_index, channel);
             out.* = self.expressionByIndex(index) orelse return failNoteExpressionInfo(out);
             return types.kResultOk;
         }
@@ -147,8 +150,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
 
         fn getNoteExpressionStringByValue(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, type_id: ivstnoteexpression.NoteExpressionTypeID, value: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = ownerFromNoteExpression(ptr);
-            self.last_bus = bus_index;
-            self.last_channel = channel;
+            self.recordBusContext(bus_index, channel);
             string128.clearPtr(out);
             if (@hasDecl(Config, "getNoteExpressionStringByValue")) {
                 const result = Config.getNoteExpressionStringByValue(self, bus_index, channel, type_id, value, out);
@@ -165,8 +167,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
 
         fn getNoteExpressionValueByString(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, type_id: ivstnoteexpression.NoteExpressionTypeID, text: [*:0]const vsttypes.TChar, out: *ivstnoteexpression.NoteExpressionValue) callconv(.c) types.tresult {
             const self = ownerFromNoteExpression(ptr);
-            self.last_bus = bus_index;
-            self.last_channel = channel;
+            self.recordBusContext(bus_index, channel);
             out.* = 0;
             if (@hasDecl(Config, "getNoteExpressionValueByString")) {
                 const result = Config.getNoteExpressionValueByString(self, bus_index, channel, type_id, text, out);
@@ -178,8 +179,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
 
         fn getKeyswitchCount(ptr: *anyopaque, bus_index: types.int32, channel: types.int16) callconv(.c) types.int32 {
             const self = ownerFromKeyswitch(ptr);
-            self.last_bus = bus_index;
-            self.last_channel = channel;
+            self.recordBusContext(bus_index, channel);
             return @intCast(self.safeKeyswitchCount());
         }
 
@@ -190,8 +190,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
 
         fn getKeyswitchInfo(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, index: types.int32, out: *ivstnoteexpression.KeyswitchInfo) callconv(.c) types.tresult {
             const self = ownerFromKeyswitch(ptr);
-            self.last_bus = bus_index;
-            self.last_channel = channel;
+            self.recordBusContext(bus_index, channel);
             out.* = self.keyswitchByIndex(index) orelse return failKeyswitchInfo(out);
             return types.kResultOk;
         }
