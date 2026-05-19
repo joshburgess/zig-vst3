@@ -315,15 +315,19 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return if (acceptsDirection(direction)) @intCast(self.safeMidi2Count()) else 0;
         }
 
+        fn copyAssignments(direction: vsttypes.BusDirection, list: anytype, assignments: anytype) types.tresult {
+            if (!acceptsDirection(direction)) return types.kResultFalse;
+            const count = assignments.len;
+            if (count == 0) return types.kResultFalse;
+            const out = list.map orelse return types.kInvalidArgument;
+            if (list.count < count) return types.kResultFalse;
+            @memcpy(out[0..count], assignments);
+            return types.kResultOk;
+        }
+
         fn getMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi2ControllerParamIDAssignmentList) callconv(.c) types.tresult {
             const self = ownerFromMapping(ptr);
-            if (!acceptsDirection(direction)) return types.kResultFalse;
-            const count = self.safeMidi2Count();
-            if (count == 0) return types.kResultFalse;
-            const assignments = list.map orelse return types.kInvalidArgument;
-            if (list.count < count) return types.kResultFalse;
-            @memcpy(assignments[0..count], self.midi2[0..count]);
-            return types.kResultOk;
+            return copyAssignments(direction, list, self.midi2[0..self.safeMidi2Count()]);
         }
 
         fn getNumMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection) callconv(.c) types.uint32 {
@@ -333,13 +337,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         fn getMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi1ControllerParamIDAssignmentList) callconv(.c) types.tresult {
             const self = ownerFromMapping(ptr);
-            if (!acceptsDirection(direction)) return types.kResultFalse;
-            const count = self.safeMidi1Count();
-            if (count == 0) return types.kResultFalse;
-            const assignments = list.map orelse return types.kInvalidArgument;
-            if (list.count < count) return types.kResultFalse;
-            @memcpy(assignments[0..count], self.midi1[0..count]);
-            return types.kResultOk;
+            return copyAssignments(direction, list, self.midi1[0..self.safeMidi1Count()]);
         }
 
         fn onLiveMidi2ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) callconv(.c) types.tresult {
