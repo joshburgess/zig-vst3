@@ -1447,6 +1447,32 @@ pub const EventWriter = struct {
         return .{ .items = self.storage[0..self.eventCount()] };
     }
 };
+
+const GeneratedRoutableEventKind = enum {
+    note_on,
+    note_off,
+    midi_cc,
+    pitch_bend,
+};
+
+fn generatedRoutableEvent(kind: GeneratedRoutableEventKind, sample_offset: usize, channel: i16, pitch: i16) Event {
+    return switch (kind) {
+        .note_on => Event.noteOn(sample_offset, channel, pitch, 0.25),
+        .note_off => Event.noteOff(sample_offset, channel, pitch, 0.0),
+        .midi_cc => Event.midiCc(sample_offset, channel, 1, 0.5),
+        .pitch_bend => Event.pitchBend(sample_offset, channel, 0.75),
+    };
+}
+
+fn generatedRoutableEventKind(kind: GeneratedRoutableEventKind) EventKind {
+    return switch (kind) {
+        .note_on => .note_on,
+        .note_off => .note_off,
+        .midi_cc => .midi_cc,
+        .pitch_bend => .pitch_bend,
+    };
+}
+
 test "events validate block offsets and count kinds" {
     const items = [_]Event{
         Event.noteOn(0, 0, 60, 0.75),
@@ -1844,7 +1870,7 @@ test "events generated queries match reference scans" {
         }
     };
 
-    const kinds = [_]EventKind{ .note_on, .note_off, .midi_cc, .pitch_bend };
+    const kinds = [_]GeneratedRoutableEventKind{ .note_on, .note_off, .midi_cc, .pitch_bend };
     const bus_indexes = [_]i32{ 0, 1, 2 };
     const channels = [_]i16{ 0, 1, 2 };
     const frame_count = 6;
@@ -1854,13 +1880,8 @@ test "events generated queries match reference scans" {
         for (&storage, 0..) |*item, index| {
             const sample_offset = (seed * 3 + index * 2) % frame_count;
             const channel: i16 = @intCast((seed + index) % 3);
-            item.* = (switch (kinds[(seed + index * 2) % kinds.len]) {
-                .note_on => Event.noteOn(sample_offset, channel, @intCast(60 + index), 0.25),
-                .note_off => Event.noteOff(sample_offset, channel, @intCast(60 + index), 0.0),
-                .midi_cc => Event.midiCc(sample_offset, channel, @intCast(1 + index), 0.5),
-                .pitch_bend => Event.pitchBend(sample_offset, channel, 0.75),
-                else => unreachable,
-            }).withBusIndex(@intCast((seed + index * 2) % 3));
+            item.* = generatedRoutableEvent(kinds[(seed + index * 2) % kinds.len], sample_offset, channel, @intCast(60 + index))
+                .withBusIndex(@intCast((seed + index * 2) % 3));
         }
 
         for (0..storage.len + 1) |len| {
@@ -1868,20 +1889,21 @@ test "events generated queries match reference scans" {
             const view = try Events.init(items, frame_count);
 
             for (kinds) |kind| {
-                try std.testing.expectEqual(Reference.countKind(items, kind), view.countKind(kind));
-                try std.testing.expectEqual(Reference.hasKind(items, kind), view.hasKind(kind));
-                try std.testing.expectEqual(!Reference.hasKind(items, kind), view.kindEmpty(kind));
-                try std.testing.expectEqual(Reference.onlyKind(items, kind), view.onlyKind(kind));
-                try std.testing.expectEqual(Reference.firstKind(items, kind), view.firstKind(kind));
-                try std.testing.expectEqual(Reference.latestKind(items, kind), view.latestKind(kind));
+                const event_kind = generatedRoutableEventKind(kind);
+                try std.testing.expectEqual(Reference.countKind(items, event_kind), view.countKind(event_kind));
+                try std.testing.expectEqual(Reference.hasKind(items, event_kind), view.hasKind(event_kind));
+                try std.testing.expectEqual(!Reference.hasKind(items, event_kind), view.kindEmpty(event_kind));
+                try std.testing.expectEqual(Reference.onlyKind(items, event_kind), view.onlyKind(event_kind));
+                try std.testing.expectEqual(Reference.firstKind(items, event_kind), view.firstKind(event_kind));
+                try std.testing.expectEqual(Reference.latestKind(items, event_kind), view.latestKind(event_kind));
                 for (0..frame_count) |sample_offset| {
-                    try std.testing.expectEqual(Reference.countKindAtOffset(items, kind, sample_offset), view.countKindAtOffset(kind, sample_offset));
-                    try std.testing.expectEqual(Reference.hasKindAtOffset(items, kind, sample_offset), view.hasKindAtOffset(kind, sample_offset));
-                    try std.testing.expectEqual(!Reference.hasKindAtOffset(items, kind, sample_offset), view.kindAtOffsetEmpty(kind, sample_offset));
-                    try std.testing.expectEqual(Reference.onlyKindAtOffset(items, kind, sample_offset), view.onlyKindAtOffset(kind, sample_offset));
+                    try std.testing.expectEqual(Reference.countKindAtOffset(items, event_kind, sample_offset), view.countKindAtOffset(event_kind, sample_offset));
+                    try std.testing.expectEqual(Reference.hasKindAtOffset(items, event_kind, sample_offset), view.hasKindAtOffset(event_kind, sample_offset));
+                    try std.testing.expectEqual(!Reference.hasKindAtOffset(items, event_kind, sample_offset), view.kindAtOffsetEmpty(event_kind, sample_offset));
+                    try std.testing.expectEqual(Reference.onlyKindAtOffset(items, event_kind, sample_offset), view.onlyKindAtOffset(event_kind, sample_offset));
                     try std.testing.expectEqual(
-                        Reference.nextOffsetForKind(items, kind, sample_offset),
-                        view.nextSampleOffsetForKind(kind, sample_offset),
+                        Reference.nextOffsetForKind(items, event_kind, sample_offset),
+                        view.nextSampleOffsetForKind(event_kind, sample_offset),
                     );
                 }
             }
@@ -2633,7 +2655,7 @@ test "event writer queries written events by offset" {
 }
 
 test "event writer generated queries match event views" {
-    const kinds = [_]EventKind{ .note_on, .note_off, .midi_cc, .pitch_bend };
+    const kinds = [_]GeneratedRoutableEventKind{ .note_on, .note_off, .midi_cc, .pitch_bend };
     const bus_indexes = [_]i32{ 0, 1, 2 };
     const channels = [_]i16{ 0, 1, 2 };
     const frame_count = 6;
@@ -2643,13 +2665,8 @@ test "event writer generated queries match event views" {
         for (&source, 0..) |*item, index| {
             const sample_offset = (seed * 3 + index * 2) % frame_count;
             const channel: i16 = @intCast((seed + index) % 3);
-            item.* = (switch (kinds[(seed + index * 2) % kinds.len]) {
-                .note_on => Event.noteOn(sample_offset, channel, @intCast(60 + index), 0.25),
-                .note_off => Event.noteOff(sample_offset, channel, @intCast(60 + index), 0.0),
-                .midi_cc => Event.midiCc(sample_offset, channel, @intCast(1 + index), 0.5),
-                .pitch_bend => Event.pitchBend(sample_offset, channel, 0.75),
-                else => unreachable,
-            }).withBusIndex(@intCast((seed + index * 2) % 3));
+            item.* = generatedRoutableEvent(kinds[(seed + index * 2) % kinds.len], sample_offset, channel, @intCast(60 + index))
+                .withBusIndex(@intCast((seed + index * 2) % 3));
         }
 
         for (0..source.len + 1) |len| {
@@ -2667,22 +2684,23 @@ test "event writer generated queries match event views" {
             try std.testing.expectEqual(view.latest(), writer.latest());
 
             for (kinds) |kind| {
-                try std.testing.expectEqual(view.countKind(kind), writer.countKind(kind));
-                try std.testing.expectEqual(view.hasKind(kind), writer.hasKind(kind));
-                try std.testing.expectEqual(view.kindEmpty(kind), writer.kindEmpty(kind));
-                try std.testing.expectEqual(view.onlyKind(kind), writer.onlyKind(kind));
-                try std.testing.expectEqual(view.firstSampleOffsetForKind(kind), writer.firstSampleOffsetForKind(kind));
-                try std.testing.expectEqual(view.latestSampleOffsetForKind(kind), writer.latestSampleOffsetForKind(kind));
-                try std.testing.expectEqual(view.firstKind(kind), writer.firstKind(kind));
-                try std.testing.expectEqual(view.latestKind(kind), writer.latestKind(kind));
+                const event_kind = generatedRoutableEventKind(kind);
+                try std.testing.expectEqual(view.countKind(event_kind), writer.countKind(event_kind));
+                try std.testing.expectEqual(view.hasKind(event_kind), writer.hasKind(event_kind));
+                try std.testing.expectEqual(view.kindEmpty(event_kind), writer.kindEmpty(event_kind));
+                try std.testing.expectEqual(view.onlyKind(event_kind), writer.onlyKind(event_kind));
+                try std.testing.expectEqual(view.firstSampleOffsetForKind(event_kind), writer.firstSampleOffsetForKind(event_kind));
+                try std.testing.expectEqual(view.latestSampleOffsetForKind(event_kind), writer.latestSampleOffsetForKind(event_kind));
+                try std.testing.expectEqual(view.firstKind(event_kind), writer.firstKind(event_kind));
+                try std.testing.expectEqual(view.latestKind(event_kind), writer.latestKind(event_kind));
                 for (0..frame_count) |sample_offset| {
-                    try std.testing.expectEqual(view.countKindAtOffset(kind, sample_offset), writer.countKindAtOffset(kind, sample_offset));
-                    try std.testing.expectEqual(view.hasKindAtOffset(kind, sample_offset), writer.hasKindAtOffset(kind, sample_offset));
-                    try std.testing.expectEqual(view.kindAtOffsetEmpty(kind, sample_offset), writer.kindAtOffsetEmpty(kind, sample_offset));
-                    try std.testing.expectEqual(view.onlyKindAtOffset(kind, sample_offset), writer.onlyKindAtOffset(kind, sample_offset));
-                    try std.testing.expectEqual(view.firstKindAtOffset(kind, sample_offset), writer.firstKindAtOffset(kind, sample_offset));
-                    try std.testing.expectEqual(view.latestKindAtOffset(kind, sample_offset), writer.latestKindAtOffset(kind, sample_offset));
-                    try std.testing.expectEqual(view.nextSampleOffsetForKind(kind, sample_offset), writer.nextSampleOffsetForKind(kind, sample_offset));
+                    try std.testing.expectEqual(view.countKindAtOffset(event_kind, sample_offset), writer.countKindAtOffset(event_kind, sample_offset));
+                    try std.testing.expectEqual(view.hasKindAtOffset(event_kind, sample_offset), writer.hasKindAtOffset(event_kind, sample_offset));
+                    try std.testing.expectEqual(view.kindAtOffsetEmpty(event_kind, sample_offset), writer.kindAtOffsetEmpty(event_kind, sample_offset));
+                    try std.testing.expectEqual(view.onlyKindAtOffset(event_kind, sample_offset), writer.onlyKindAtOffset(event_kind, sample_offset));
+                    try std.testing.expectEqual(view.firstKindAtOffset(event_kind, sample_offset), writer.firstKindAtOffset(event_kind, sample_offset));
+                    try std.testing.expectEqual(view.latestKindAtOffset(event_kind, sample_offset), writer.latestKindAtOffset(event_kind, sample_offset));
+                    try std.testing.expectEqual(view.nextSampleOffsetForKind(event_kind, sample_offset), writer.nextSampleOffsetForKind(event_kind, sample_offset));
                 }
             }
 
