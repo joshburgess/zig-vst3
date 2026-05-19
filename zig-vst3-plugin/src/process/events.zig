@@ -1455,11 +1455,11 @@ const GeneratedRoutableEventKind = enum {
     pitch_bend,
 };
 
-fn generatedRoutableEvent(kind: GeneratedRoutableEventKind, sample_offset: usize, channel: i16, pitch: i16) Event {
+fn generatedRoutableEvent(kind: GeneratedRoutableEventKind, sample_offset: usize, channel: i16, pitch: i16, control_number: i16) Event {
     return switch (kind) {
         .note_on => Event.noteOn(sample_offset, channel, pitch, 0.25),
         .note_off => Event.noteOff(sample_offset, channel, pitch, 0.0),
-        .midi_cc => Event.midiCc(sample_offset, channel, 1, 0.5),
+        .midi_cc => Event.midiCc(sample_offset, channel, control_number, 0.5),
         .pitch_bend => Event.pitchBend(sample_offset, channel, 0.75),
     };
 }
@@ -1880,7 +1880,7 @@ test "events generated queries match reference scans" {
         for (&storage, 0..) |*item, index| {
             const sample_offset = (seed * 3 + index * 2) % frame_count;
             const channel: i16 = @intCast((seed + index) % 3);
-            item.* = generatedRoutableEvent(kinds[(seed + index * 2) % kinds.len], sample_offset, channel, @intCast(60 + index))
+            item.* = generatedRoutableEvent(kinds[(seed + index * 2) % kinds.len], sample_offset, channel, @intCast(60 + index), @intCast(1 + index))
                 .withBusIndex(@intCast((seed + index * 2) % 3));
         }
 
@@ -2665,7 +2665,7 @@ test "event writer generated queries match event views" {
         for (&source, 0..) |*item, index| {
             const sample_offset = (seed * 3 + index * 2) % frame_count;
             const channel: i16 = @intCast((seed + index) % 3);
-            item.* = generatedRoutableEvent(kinds[(seed + index * 2) % kinds.len], sample_offset, channel, @intCast(60 + index))
+            item.* = generatedRoutableEvent(kinds[(seed + index * 2) % kinds.len], sample_offset, channel, @intCast(60 + index), @intCast(1 + index))
                 .withBusIndex(@intCast((seed + index * 2) % 3));
         }
 
