@@ -29,6 +29,27 @@ pub fn ComponentHandler(comptime Config: type) type {
             return &self.iface;
         }
 
+        fn recordBeginEdit(self: *Self, id: vsttypes.ParamID) void {
+            self.begin_count +|= 1;
+            self.last_param_id = id;
+        }
+
+        fn recordPerformEdit(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
+            self.perform_count +|= 1;
+            self.last_param_id = id;
+            self.last_value = value;
+        }
+
+        fn recordEndEdit(self: *Self, id: vsttypes.ParamID) void {
+            self.end_count +|= 1;
+            self.last_param_id = id;
+        }
+
+        fn recordRestart(self: *Self, flags: types.int32) void {
+            self.restart_count +|= 1;
+            self.last_restart_flags = flags;
+        }
+
         fn owner(ptr: *anyopaque) *Self {
             const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -57,33 +78,28 @@ pub fn ComponentHandler(comptime Config: type) type {
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.begin_count +|= 1;
-            self.last_param_id = id;
+            self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
             return types.kResultOk;
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.perform_count +|= 1;
-            self.last_param_id = id;
-            self.last_value = value;
+            self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
             return types.kResultOk;
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.end_count +|= 1;
-            self.last_param_id = id;
+            self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
             return types.kResultOk;
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.restart_count +|= 1;
-            self.last_restart_flags = flags;
+            self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
             return types.kResultOk;
         }
