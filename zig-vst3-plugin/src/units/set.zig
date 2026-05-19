@@ -50,12 +50,7 @@ pub fn UnitSet(comptime config: Config) type {
         }
 
         pub fn duplicateUnitIdIndex(_: Self) ?usize {
-            for (config.units, 0..) |left, left_index| {
-                for (config.units[left_index + 1 ..], left_index + 1..) |right, right_index| {
-                    if (right.id == left.id) return right_index;
-                }
-            }
-            return null;
+            return descriptors.duplicateScalarFieldIndex(Unit, config.units, "id");
         }
 
         pub fn hasDuplicateUnitIds(self: Self) bool {
@@ -69,12 +64,7 @@ pub fn UnitSet(comptime config: Config) type {
         }
 
         pub fn duplicateUnitNameIndex(_: Self) ?usize {
-            for (config.units, 0..) |left, left_index| {
-                for (config.units[left_index + 1 ..], left_index + 1..) |right, right_index| {
-                    if (std.mem.eql(u8, right.name, left.name)) return right_index;
-                }
-            }
-            return null;
+            return descriptors.duplicateStringFieldIndex(Unit, config.units, "name");
         }
 
         pub fn hasDuplicateUnitNames(self: Self) bool {
@@ -95,12 +85,7 @@ pub fn UnitSet(comptime config: Config) type {
         }
 
         pub fn duplicateProgramListIdIndex(_: Self) ?usize {
-            for (config.program_lists, 0..) |left, left_index| {
-                for (config.program_lists[left_index + 1 ..], left_index + 1..) |right, right_index| {
-                    if (right.id == left.id) return right_index;
-                }
-            }
-            return null;
+            return descriptors.duplicateScalarFieldIndex(ProgramList, config.program_lists, "id");
         }
 
         pub fn hasDuplicateProgramListIds(self: Self) bool {
@@ -114,12 +99,7 @@ pub fn UnitSet(comptime config: Config) type {
         }
 
         pub fn duplicateProgramListNameIndex(_: Self) ?usize {
-            for (config.program_lists, 0..) |left, left_index| {
-                for (config.program_lists[left_index + 1 ..], left_index + 1..) |right, right_index| {
-                    if (std.mem.eql(u8, right.name, left.name)) return right_index;
-                }
-            }
-            return null;
+            return descriptors.duplicateStringFieldIndex(ProgramList, config.program_lists, "name");
         }
 
         pub fn hasDuplicateProgramListNames(self: Self) bool {

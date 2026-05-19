@@ -4,6 +4,24 @@ pub const root_unit_id: i32 = 0;
 pub const no_parent_unit_id: i32 = -1;
 pub const no_program_list_id: i32 = -1;
 
+pub fn duplicateScalarFieldIndex(comptime T: type, items: []const T, comptime field_name: []const u8) ?usize {
+    for (items, 0..) |left, left_index| {
+        for (items[left_index + 1 ..], left_index + 1..) |right, right_index| {
+            if (@field(right, field_name) == @field(left, field_name)) return right_index;
+        }
+    }
+    return null;
+}
+
+pub fn duplicateStringFieldIndex(comptime T: type, items: []const T, comptime field_name: []const u8) ?usize {
+    for (items, 0..) |left, left_index| {
+        for (items[left_index + 1 ..], left_index + 1..) |right, right_index| {
+            if (std.mem.eql(u8, @field(right, field_name), @field(left, field_name))) return right_index;
+        }
+    }
+    return null;
+}
+
 pub const Unit = struct {
     id: i32,
     name: []const u8,
@@ -66,12 +84,7 @@ pub const Program = struct {
     }
 
     pub fn duplicateParameterIdIndex(self: Program) ?usize {
-        for (self.parameters, 0..) |left, left_index| {
-            for (self.parameters[left_index + 1 ..], left_index + 1..) |right, right_index| {
-                if (right.parameter_id == left.parameter_id) return right_index;
-            }
-        }
-        return null;
+        return duplicateScalarFieldIndex(ProgramParameter, self.parameters, "parameter_id");
     }
 
     pub fn hasDuplicateParameterIds(self: Program) bool {
@@ -84,12 +97,7 @@ pub const Program = struct {
     }
 
     pub fn duplicateInfoKeyIndex(self: Program) ?usize {
-        for (self.info, 0..) |left, left_index| {
-            for (self.info[left_index + 1 ..], left_index + 1..) |right, right_index| {
-                if (std.mem.eql(u8, right.key, left.key)) return right_index;
-            }
-        }
-        return null;
+        return duplicateStringFieldIndex(ProgramInfo, self.info, "key");
     }
 
     pub fn hasDuplicateInfoKeys(self: Program) bool {
@@ -177,12 +185,7 @@ pub const ProgramList = struct {
     }
 
     pub fn duplicateProgramNameIndex(self: ProgramList) ?usize {
-        for (self.programs, 0..) |left, left_index| {
-            for (self.programs[left_index + 1 ..], left_index + 1..) |right, right_index| {
-                if (std.mem.eql(u8, right.name, left.name)) return right_index;
-            }
-        }
-        return null;
+        return duplicateStringFieldIndex(Program, self.programs, "name");
     }
 
     pub fn hasDuplicateProgramNames(self: ProgramList) bool {
