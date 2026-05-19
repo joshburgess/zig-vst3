@@ -228,108 +228,59 @@ pub fn build(b: *std.Build) void {
         raw_api_script_steps[index] = addScriptCheckStep(b, options);
     }
 
-    const funknown_harness_zig = b.addObject(.{
+    const funknown_harness_zig = addAbiHarnessObject(b, target, optimize, zig_vst3, .{
         .name = "funknown_harness_zig",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/abi/funknown_harness.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+        .root_source_file = "tests/abi/funknown_harness.zig",
     });
-    funknown_harness_zig.root_module.addImport("zig-vst3", zig_vst3);
-
-    const funknown_harness = b.addExecutable(.{
-        .name = "funknown_harness",
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-            .sanitize_c = .off,
-        }),
-    });
-    funknown_harness.root_module.addCSourceFile(.{
-        .file = b.path("tests/abi/funknown_harness.c"),
-        .flags = &.{},
-    });
-    funknown_harness.root_module.addObject(funknown_harness_zig);
-
-    const funknown_abi_step = b.step("funknown-abi", "Run the C ABI harness for the FUnknown prototype");
-    funknown_abi_step.dependOn(&b.addRunArtifact(funknown_harness).step);
-
-    const multi_interface_harness_zig = b.addObject(.{
+    const multi_interface_harness_zig = addAbiHarnessObject(b, target, optimize, zig_vst3, .{
         .name = "multi_interface_harness_zig",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/abi/multi_interface_harness.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+        .root_source_file = "tests/abi/multi_interface_harness.zig",
     });
-    multi_interface_harness_zig.root_module.addImport("zig-vst3", zig_vst3);
 
-    const multi_interface_harness = b.addExecutable(.{
-        .name = "multi_interface_harness",
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-            .sanitize_c = .off,
-        }),
-    });
-    multi_interface_harness.root_module.addCSourceFile(.{
-        .file = b.path("tests/abi/multi_interface_harness.c"),
-        .flags = &.{},
-    });
-    multi_interface_harness.root_module.addObject(multi_interface_harness_zig);
-
-    const multi_interface_abi_step = b.step("multi-interface-abi", "Run the C ABI harness for multi-interface query dispatch");
-    multi_interface_abi_step.dependOn(&b.addRunArtifact(multi_interface_harness).step);
-
-    const multi_interface_cpp_harness = b.addExecutable(.{
-        .name = "multi_interface_cpp_harness",
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
+    const abi_harness_options = [_]AbiHarnessOptions{
+        .{
+            .step_name = "funknown-abi",
+            .description = "Run the C ABI harness for the FUnknown prototype",
+            .artifact_name = "funknown_harness",
+            .source_file = "tests/abi/funknown_harness.c",
+            .object = funknown_harness_zig,
+        },
+        .{
+            .step_name = "multi-interface-abi",
+            .description = "Run the C ABI harness for multi-interface query dispatch",
+            .artifact_name = "multi_interface_harness",
+            .source_file = "tests/abi/multi_interface_harness.c",
+            .object = multi_interface_harness_zig,
+        },
+        .{
+            .step_name = "multi-interface-cpp-abi",
+            .description = "Run the C++ ABI harness for multi-interface query dispatch",
+            .artifact_name = "multi_interface_cpp_harness",
+            .source_file = "tests/abi/multi_interface_harness.cpp",
+            .source_flags = &.{"-std=c++17"},
             .link_libcpp = true,
-            .sanitize_c = .off,
-        }),
-    });
-    multi_interface_cpp_harness.root_module.addCSourceFile(.{
-        .file = b.path("tests/abi/multi_interface_harness.cpp"),
-        .flags = &.{"-std=c++17"},
-    });
-    multi_interface_cpp_harness.root_module.addObject(multi_interface_harness_zig);
-
-    const multi_interface_cpp_abi_step = b.step("multi-interface-cpp-abi", "Run the C++ ABI harness for multi-interface query dispatch");
-    multi_interface_cpp_abi_step.dependOn(&b.addRunArtifact(multi_interface_cpp_harness).step);
-
-    const multi_interface_sdk_harness = b.addExecutable(.{
-        .name = "multi_interface_sdk_harness",
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
+            .object = multi_interface_harness_zig,
+        },
+        .{
+            .step_name = "multi-interface-sdk-abi",
+            .description = "Run the Steinberg SDK C++ ABI harness for multi-interface query dispatch",
+            .artifact_name = "multi_interface_sdk_harness",
+            .source_file = "tests/abi/multi_interface_sdk_harness.cpp",
+            .source_flags = &.{"-std=c++17"},
+            .include_path = ".vst3-sdk/vst3sdk",
             .link_libcpp = true,
-            .sanitize_c = .off,
-        }),
-    });
-    multi_interface_sdk_harness.root_module.addIncludePath(b.path(".vst3-sdk/vst3sdk"));
-    multi_interface_sdk_harness.root_module.addCSourceFile(.{
-        .file = b.path("tests/abi/multi_interface_sdk_harness.cpp"),
-        .flags = &.{"-std=c++17"},
-    });
-    multi_interface_sdk_harness.root_module.addObject(multi_interface_harness_zig);
-
-    const multi_interface_sdk_abi_step = b.step("multi-interface-sdk-abi", "Run the Steinberg SDK C++ ABI harness for multi-interface query dispatch");
-    multi_interface_sdk_abi_step.dependOn(&b.addRunArtifact(multi_interface_sdk_harness).step);
+            .object = multi_interface_harness_zig,
+        },
+    };
+    var abi_harness_steps: [abi_harness_options.len]*std.Build.Step = undefined;
+    for (abi_harness_options, 0..) |options, index| {
+        abi_harness_steps[index] = addAbiHarnessStep(b, target, optimize, options);
+    }
 
     const raw_api_abi_step = b.step("raw-api-abi", "Run raw API ABI and entry-symbol checks");
     raw_api_abi_step.dependOn(entry_symbols_step);
     addStepDependencies(raw_api_abi_step, &raw_api_script_steps);
-    raw_api_abi_step.dependOn(funknown_abi_step);
-    raw_api_abi_step.dependOn(multi_interface_abi_step);
-    raw_api_abi_step.dependOn(multi_interface_cpp_abi_step);
-    raw_api_abi_step.dependOn(multi_interface_sdk_abi_step);
+    addStepDependencies(raw_api_abi_step, &abi_harness_steps);
 
     const phase1_step = b.step("phase1", "Run Phase 1 COM/vtable integration checks");
     phase1_step.dependOn(test_step);
@@ -492,6 +443,22 @@ const ScriptCheckOptions = struct {
     script: []const u8,
 };
 
+const AbiHarnessObjectOptions = struct {
+    name: []const u8,
+    root_source_file: []const u8,
+};
+
+const AbiHarnessOptions = struct {
+    step_name: []const u8,
+    description: []const u8,
+    artifact_name: []const u8,
+    source_file: []const u8,
+    source_flags: []const []const u8 = &.{},
+    include_path: ?[]const u8 = null,
+    link_libcpp: bool = false,
+    object: *std.Build.Step.Compile,
+};
+
 const Vst3BundleKind = enum {
     native,
     linux,
@@ -529,6 +496,55 @@ fn addScriptCheckStep(b: *std.Build, options: ScriptCheckOptions) *std.Build.Ste
     const step = b.step(options.step_name, options.description);
     const check = b.addSystemCommand(&.{options.script});
     step.dependOn(&check.step);
+    return step;
+}
+
+fn addAbiHarnessObject(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    zig_vst3: *std.Build.Module,
+    options: AbiHarnessObjectOptions,
+) *std.Build.Step.Compile {
+    const object = b.addObject(.{
+        .name = options.name,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(options.root_source_file),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    object.root_module.addImport("zig-vst3", zig_vst3);
+    return object;
+}
+
+fn addAbiHarnessStep(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    options: AbiHarnessOptions,
+) *std.Build.Step {
+    const harness = b.addExecutable(.{
+        .name = options.artifact_name,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .link_libcpp = options.link_libcpp,
+            .sanitize_c = .off,
+        }),
+    });
+    if (options.include_path) |include_path| {
+        harness.root_module.addIncludePath(b.path(include_path));
+    }
+    harness.root_module.addCSourceFile(.{
+        .file = b.path(options.source_file),
+        .flags = options.source_flags,
+    });
+    harness.root_module.addObject(options.object);
+
+    const step = b.step(options.step_name, options.description);
+    step.dependOn(&b.addRunArtifact(harness).step);
     return step;
 }
 
