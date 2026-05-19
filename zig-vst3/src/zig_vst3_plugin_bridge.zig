@@ -1081,7 +1081,7 @@ test "zig-vst3-plugin bridge rejects invalid normalized IBStream state" {
     try std.testing.expectEqual(types.kResultOk, restored.setNormalizedById(1, 0.6));
 
     try std.testing.expectEqual(types.kResultOk, source.writeToStream(stream.asStream()));
-    const second_value_offset = plug.state.encoded_header_size + plug.state.encoded_entry_size + @sizeOf(u32);
+    const second_value_offset = plug.state.encodedEntryValueOffset(1);
     var invalid_value = FixedBufferStream.init(stream.bytes[second_value_offset..][0..@sizeOf(u64)]);
     try invalid_value.writer().writeInt(u64, @bitCast(@as(f64, 1.5)), .little);
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));

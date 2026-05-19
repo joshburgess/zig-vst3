@@ -101,6 +101,23 @@ pub fn encodedSizeForCountChecked(count: usize) !usize {
     return std.math.add(usize, encoded_header_size, entries_size);
 }
 
+pub fn encodedEntryOffset(index: usize) usize {
+    return encodedEntryOffsetChecked(index) catch std.math.maxInt(usize);
+}
+
+pub fn encodedEntryOffsetChecked(index: usize) !usize {
+    const entries_size = try std.math.mul(usize, index, encoded_entry_size);
+    return std.math.add(usize, encoded_header_size, entries_size);
+}
+
+pub fn encodedEntryValueOffset(index: usize) usize {
+    return encodedEntryValueOffsetChecked(index) catch std.math.maxInt(usize);
+}
+
+pub fn encodedEntryValueOffsetChecked(index: usize) !usize {
+    return std.math.add(usize, try encodedEntryOffsetChecked(index), @sizeOf(u32));
+}
+
 pub fn assertEncodableParameterCount(comptime Params: type) void {
     if (parameters.ParameterSet(Params).count > std.math.maxInt(u16)) {
         @compileError("parameter state format supports at most 65535 parameters");

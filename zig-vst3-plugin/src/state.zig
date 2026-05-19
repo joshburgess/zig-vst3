@@ -15,6 +15,10 @@ pub const ReadParameterStateReport = format.ReadParameterStateReport;
 pub const encodedSize = format.encodedSize;
 pub const encodedSizeForCount = format.encodedSizeForCount;
 pub const encodedSizeForCountChecked = format.encodedSizeForCountChecked;
+pub const encodedEntryOffset = format.encodedEntryOffset;
+pub const encodedEntryOffsetChecked = format.encodedEntryOffsetChecked;
+pub const encodedEntryValueOffset = format.encodedEntryValueOffset;
+pub const encodedEntryValueOffsetChecked = format.encodedEntryValueOffsetChecked;
 
 pub const writeParameterState = codec.writeParameterState;
 pub const writeParameterStateHeaderForCount = codec.writeParameterStateHeaderForCount;

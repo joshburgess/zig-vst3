@@ -14,6 +14,10 @@ const ReadParameterStateReport = state.ReadParameterStateReport;
 const encodedSize = state.encodedSize;
 const encodedSizeForCount = state.encodedSizeForCount;
 const encodedSizeForCountChecked = state.encodedSizeForCountChecked;
+const encodedEntryOffset = state.encodedEntryOffset;
+const encodedEntryOffsetChecked = state.encodedEntryOffsetChecked;
+const encodedEntryValueOffset = state.encodedEntryValueOffset;
+const encodedEntryValueOffsetChecked = state.encodedEntryValueOffsetChecked;
 const writeParameterState = state.writeParameterState;
 const writeParameterStateHeaderForCount = state.writeParameterStateHeaderForCount;
 const readParameterStateHeader = state.readParameterStateHeader;
@@ -74,8 +78,16 @@ test "parameter state round-trips normalized values" {
     try std.testing.expectEqual(@as(usize, 36), encodedSizeForCount(2));
     try std.testing.expectEqual(@as(usize, 36), try encodedSizeForCountChecked(2));
     try std.testing.expectEqual(@as(usize, 36), encodedSize(Params));
+    try std.testing.expectEqual(encoded_header_size, encodedEntryOffset(0));
+    try std.testing.expectEqual(encoded_header_size + encoded_entry_size, encodedEntryOffset(1));
+    try std.testing.expectEqual(encoded_header_size + @sizeOf(u32), encodedEntryValueOffset(0));
+    try std.testing.expectEqual(encoded_header_size + encoded_entry_size + @sizeOf(u32), encodedEntryValueOffset(1));
     try std.testing.expectError(error.Overflow, encodedSizeForCountChecked(std.math.maxInt(usize)));
+    try std.testing.expectError(error.Overflow, encodedEntryOffsetChecked(std.math.maxInt(usize)));
+    try std.testing.expectError(error.Overflow, encodedEntryValueOffsetChecked(std.math.maxInt(usize)));
     try std.testing.expectEqual(std.math.maxInt(usize), encodedSizeForCount(std.math.maxInt(usize)));
+    try std.testing.expectEqual(std.math.maxInt(usize), encodedEntryOffset(std.math.maxInt(usize)));
+    try std.testing.expectEqual(std.math.maxInt(usize), encodedEntryValueOffset(std.math.maxInt(usize)));
     try std.testing.expect(values.storeField(&set, "gain", 0.25));
     try std.testing.expect(values.storeField(&set, "mix", 0.75));
 
