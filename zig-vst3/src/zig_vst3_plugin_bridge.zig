@@ -1706,7 +1706,17 @@ test "zig-vst3-plugin bridge parameter controller exposes reflected edit operati
     try expectString128("Gn", &info.shortTitle);
     try expectString128("dB", &info.units);
     try std.testing.expectEqual(types.kInvalidArgument, controller.parameterInfo(-1, &info));
+    try std.testing.expectEqual(ivsteditcontroller.ParameterInfo{}, info);
+    info.id = 99;
+    info.title[0] = 'x';
+    info.shortTitle[0] = 'x';
+    info.units[0] = 'x';
+    info.stepCount = 99;
+    info.defaultNormalizedValue = 1;
+    info.unitId = 99;
+    info.flags = 99;
     try std.testing.expectEqual(types.kInvalidArgument, controller.parameterInfo(3, &info));
+    try std.testing.expectEqual(ivsteditcontroller.ParameterInfo{}, info);
 
     try std.testing.expectEqual(types.kResultOk, controller.stringByValue(7, 0.5, &text));
     try expectString128("1.000", &text);
@@ -1758,6 +1768,7 @@ test "zig-vst3-plugin bridge stereo buses expose audio and event input metadata"
     try expectString128("Event Out", &info.name);
 
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 1, &info));
+    try std.testing.expectEqual(ivstcomponent.BusInfo{}, info);
 }
 
 test "zig-vst3-plugin bridge stereo audio buses validate arrangements" {
@@ -1938,6 +1949,7 @@ test "zig-vst3-plugin bridge fills VST3 parameter info from reflected set" {
     try std.testing.expectEqual(@as(types.int32, 2), info.stepCount);
     try std.testing.expect((info.flags & ivsteditcontroller.ParameterInfo.ParameterFlags.kIsList) != 0);
     try std.testing.expectEqual(types.kInvalidArgument, fillParameterInfo(Params, &set, 4, &info));
+    try std.testing.expectEqual(ivsteditcontroller.ParameterInfo{}, info);
 }
 
 test "zig-vst3-plugin bridge formats and parses VST3 parameter strings" {
