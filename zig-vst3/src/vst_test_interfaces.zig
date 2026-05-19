@@ -1,4 +1,5 @@
 const std = @import("std");
+const fixed_string = @import("fixed_string.zig");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
 const itest = @import("pluginterfaces/test/itest.zig");
@@ -59,12 +60,8 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
 
         fn store(target: *[max_messages][max_chars]types.char16, count: *types.uint32, text: ?[*:0]const types.char16) void {
             if (vst_index.appendIndexU32(count.*, max_messages)) |index| {
-                @memset(&target[index], 0);
-                if (text) |value| {
-                    const span = std.mem.span(value);
-                    const len = @min(span.len, max_chars - 1);
-                    @memcpy(target[index][0..len], span[0..len]);
-                }
+                const value = if (text) |ptr| std.mem.span(ptr) else &.{};
+                fixed_string.copyUtf16Z(&target[index], value);
             }
             count.* +|= 1;
         }
