@@ -82,6 +82,7 @@ pub fn ParameterValues(comptime Params: type) type {
         }
 
         pub fn storePlainCount(self: *Self, set: *const Set, index: usize, plain: f64) ?usize {
+            if (!std.math.isFinite(plain)) return null;
             const normalized = set.normalizedFromPlain(index, plain) orelse return null;
             return self.storeCount(index, normalized);
         }
@@ -1704,8 +1705,17 @@ test "parameter values initialize from reflected defaults" {
     try std.testing.expectEqual(@as(?f64, null), values.loadPlain(&set, 99));
     try std.testing.expectEqual(@as(?usize, null), values.storePlainCount(&set, 99, 0.5));
     try std.testing.expectEqual(@as(?usize, null), values.storePlainIndexCount(&set, 99, 0.5));
+    try std.testing.expectEqual(@as(?usize, null), values.storePlainCount(&set, 0, std.math.inf(f64)));
+    try std.testing.expectEqual(@as(?usize, null), values.storePlainIndexCount(&set, 0, -std.math.inf(f64)));
+    try std.testing.expectEqual(@as(?usize, null), values.storePlainByIdCount(&set, 0, std.math.nan(f64)));
+    try std.testing.expectEqual(@as(?usize, null), values.storePlainByNameCount(&set, "Gain", std.math.inf(f64)));
     try std.testing.expect(!values.storePlain(&set, 99, 0.5));
     try std.testing.expect(!values.storePlainIndex(&set, 99, 0.5));
+    try std.testing.expect(!values.storePlain(&set, 0, std.math.nan(f64)));
+    try std.testing.expect(!values.storePlainIndex(&set, 0, std.math.inf(f64)));
+    try std.testing.expect(!values.storePlainById(&set, 0, -std.math.inf(f64)));
+    try std.testing.expect(!values.storePlainByName(&set, "Gain", std.math.nan(f64)));
+    try std.testing.expectEqual(@as(?f64, 0.5), values.loadPlain(&set, 0));
 
     var copied = Values.init(&set);
     try std.testing.expectEqual(@as(usize, 1), copied.copyFromCount(&values));
