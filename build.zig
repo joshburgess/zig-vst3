@@ -188,133 +188,45 @@ pub fn build(b: *std.Build) void {
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
     validator_step.dependOn(&build_validator.step);
 
-    const tuid_abi_step = b.step("tuid-abi", "Compare Zig TUID bytes against the pinned VST3 SDK");
-    const check_tuid_abi = b.addSystemCommand(&.{"scripts/check_tuid_abi.sh"});
-    tuid_abi_step.dependOn(&check_tuid_abi.step);
+    const raw_api_script_checks = [_]ScriptCheckOptions{
+        .{ .step_name = "tuid-abi", .description = "Compare Zig TUID bytes against the pinned VST3 SDK", .script = "scripts/check_tuid_abi.sh" },
+        .{ .step_name = "pluginbase-abi", .description = "Compare Zig pluginbase layouts against the pinned VST3 SDK", .script = "scripts/check_pluginbase_abi.sh" },
+        .{ .step_name = "ibstream-abi", .description = "Compare Zig IBStream declarations against the pinned VST3 SDK", .script = "scripts/check_ibstream_abi.sh" },
+        .{ .step_name = "base-strings-error-abi", .description = "Compare Zig base string and error declarations against the pinned VST3 SDK", .script = "scripts/check_base_strings_error_abi.sh" },
+        .{ .step_name = "base-persistence-abi", .description = "Compare Zig base persistence declarations against the pinned VST3 SDK", .script = "scripts/check_base_persistence_abi.sh" },
+        .{ .step_name = "base-update-compatibility-abi", .description = "Compare Zig base update and compatibility declarations against the pinned VST3 SDK", .script = "scripts/check_base_update_compatibility_abi.sh" },
+        .{ .step_name = "component-abi", .description = "Compare Zig IComponent declarations against the pinned VST3 SDK", .script = "scripts/check_component_abi.sh" },
+        .{ .step_name = "audio-processor-abi", .description = "Compare Zig IAudioProcessor declarations against the pinned VST3 SDK", .script = "scripts/check_audio_processor_abi.sh" },
+        .{ .step_name = "bypass-processor-abi", .description = "Compare Zig bypass processor helper declarations against the pinned VST3 SDK", .script = "scripts/check_bypass_processor_abi.sh" },
+        .{ .step_name = "process-context-abi", .description = "Compare Zig process context declarations against the pinned VST3 SDK", .script = "scripts/check_process_context_abi.sh" },
+        .{ .step_name = "edit-controller-abi", .description = "Compare Zig IEditController declarations against the pinned VST3 SDK", .script = "scripts/check_edit_controller_abi.sh" },
+        .{ .step_name = "parameter-changes-abi", .description = "Compare Zig parameter change declarations against the pinned VST3 SDK", .script = "scripts/check_parameter_changes_abi.sh" },
+        .{ .step_name = "events-abi", .description = "Compare Zig event declarations against the pinned VST3 SDK", .script = "scripts/check_events_abi.sh" },
+        .{ .step_name = "host-message-abi", .description = "Compare Zig host/message declarations against the pinned VST3 SDK", .script = "scripts/check_host_message_abi.sh" },
+        .{ .step_name = "plugview-abi", .description = "Compare Zig plug view declarations against the pinned VST3 SDK", .script = "scripts/check_plugview_abi.sh" },
+        .{ .step_name = "units-abi", .description = "Compare Zig unit declarations against the pinned VST3 SDK", .script = "scripts/check_units_abi.sh" },
+        .{ .step_name = "midi-mapping-abi", .description = "Compare Zig MIDI mapping declarations against the pinned VST3 SDK", .script = "scripts/check_midi_mapping_abi.sh" },
+        .{ .step_name = "midi-controllers-abi", .description = "Compare Zig MIDI controller constants against the pinned VST3 SDK", .script = "scripts/check_midi_controllers_abi.sh" },
+        .{ .step_name = "speaker-core-abi", .description = "Compare Zig speaker constants and helpers against the pinned VST3 SDK", .script = "scripts/check_speaker_core_abi.sh" },
+        .{ .step_name = "preset-keys-abi", .description = "Compare Zig preset attribute constants against the pinned VST3 SDK", .script = "scripts/check_preset_keys_abi.sh" },
+        .{ .step_name = "preset-file-abi", .description = "Compare Zig preset file chunk declarations against the pinned VST3 SDK", .script = "scripts/check_preset_file_abi.sh" },
+        .{ .step_name = "note-expression-abi", .description = "Compare Zig note expression declarations against the pinned VST3 SDK", .script = "scripts/check_note_expression_abi.sh" },
+        .{ .step_name = "capability-state-abi", .description = "Compare Zig capability and state declarations against the pinned VST3 SDK", .script = "scripts/check_capability_state_abi.sh" },
+        .{ .step_name = "parameter-helpers-abi", .description = "Compare Zig parameter helper declarations against the pinned VST3 SDK", .script = "scripts/check_parameter_helpers_abi.sh" },
+        .{ .step_name = "context-menu-abi", .description = "Compare Zig context menu declarations against the pinned VST3 SDK", .script = "scripts/check_context_menu_abi.sh" },
+        .{ .step_name = "physical-channel-abi", .description = "Compare Zig physical UI and channel context declarations against the pinned VST3 SDK", .script = "scripts/check_physical_channel_abi.sh" },
+        .{ .step_name = "data-exchange-abi", .description = "Compare Zig data exchange declarations against the pinned VST3 SDK", .script = "scripts/check_data_exchange_abi.sh" },
+        .{ .step_name = "representation-abi", .description = "Compare Zig XML representation declarations against the pinned VST3 SDK", .script = "scripts/check_representation_abi.sh" },
+        .{ .step_name = "wayland-frame-abi", .description = "Compare Zig Wayland frame declarations against the pinned VST3 SDK", .script = "scripts/check_wayland_frame_abi.sh" },
+        .{ .step_name = "inter-app-audio-abi", .description = "Compare Zig Inter-App Audio declarations against the pinned VST3 SDK", .script = "scripts/check_inter_app_audio_abi.sh" },
+        .{ .step_name = "test-plug-provider-abi", .description = "Compare Zig test plug provider declarations against the pinned VST3 SDK", .script = "scripts/check_test_plug_provider_abi.sh" },
+        .{ .step_name = "test-interfaces-abi", .description = "Compare Zig test interface declarations against the pinned VST3 SDK", .script = "scripts/check_test_interfaces_abi.sh" },
+    };
 
-    const pluginbase_abi_step = b.step("pluginbase-abi", "Compare Zig pluginbase layouts against the pinned VST3 SDK");
-    const check_pluginbase_abi = b.addSystemCommand(&.{"scripts/check_pluginbase_abi.sh"});
-    pluginbase_abi_step.dependOn(&check_pluginbase_abi.step);
-
-    const ibstream_abi_step = b.step("ibstream-abi", "Compare Zig IBStream declarations against the pinned VST3 SDK");
-    const check_ibstream_abi = b.addSystemCommand(&.{"scripts/check_ibstream_abi.sh"});
-    ibstream_abi_step.dependOn(&check_ibstream_abi.step);
-
-    const base_strings_error_abi_step = b.step("base-strings-error-abi", "Compare Zig base string and error declarations against the pinned VST3 SDK");
-    const check_base_strings_error_abi = b.addSystemCommand(&.{"scripts/check_base_strings_error_abi.sh"});
-    base_strings_error_abi_step.dependOn(&check_base_strings_error_abi.step);
-
-    const base_persistence_abi_step = b.step("base-persistence-abi", "Compare Zig base persistence declarations against the pinned VST3 SDK");
-    const check_base_persistence_abi = b.addSystemCommand(&.{"scripts/check_base_persistence_abi.sh"});
-    base_persistence_abi_step.dependOn(&check_base_persistence_abi.step);
-
-    const base_update_compatibility_abi_step = b.step("base-update-compatibility-abi", "Compare Zig base update and compatibility declarations against the pinned VST3 SDK");
-    const check_base_update_compatibility_abi = b.addSystemCommand(&.{"scripts/check_base_update_compatibility_abi.sh"});
-    base_update_compatibility_abi_step.dependOn(&check_base_update_compatibility_abi.step);
-
-    const component_abi_step = b.step("component-abi", "Compare Zig IComponent declarations against the pinned VST3 SDK");
-    const check_component_abi = b.addSystemCommand(&.{"scripts/check_component_abi.sh"});
-    component_abi_step.dependOn(&check_component_abi.step);
-
-    const audio_processor_abi_step = b.step("audio-processor-abi", "Compare Zig IAudioProcessor declarations against the pinned VST3 SDK");
-    const check_audio_processor_abi = b.addSystemCommand(&.{"scripts/check_audio_processor_abi.sh"});
-    audio_processor_abi_step.dependOn(&check_audio_processor_abi.step);
-
-    const bypass_processor_abi_step = b.step("bypass-processor-abi", "Compare Zig bypass processor helper declarations against the pinned VST3 SDK");
-    const check_bypass_processor_abi = b.addSystemCommand(&.{"scripts/check_bypass_processor_abi.sh"});
-    bypass_processor_abi_step.dependOn(&check_bypass_processor_abi.step);
-
-    const process_context_abi_step = b.step("process-context-abi", "Compare Zig process context declarations against the pinned VST3 SDK");
-    const check_process_context_abi = b.addSystemCommand(&.{"scripts/check_process_context_abi.sh"});
-    process_context_abi_step.dependOn(&check_process_context_abi.step);
-
-    const edit_controller_abi_step = b.step("edit-controller-abi", "Compare Zig IEditController declarations against the pinned VST3 SDK");
-    const check_edit_controller_abi = b.addSystemCommand(&.{"scripts/check_edit_controller_abi.sh"});
-    edit_controller_abi_step.dependOn(&check_edit_controller_abi.step);
-
-    const parameter_changes_abi_step = b.step("parameter-changes-abi", "Compare Zig parameter change declarations against the pinned VST3 SDK");
-    const check_parameter_changes_abi = b.addSystemCommand(&.{"scripts/check_parameter_changes_abi.sh"});
-    parameter_changes_abi_step.dependOn(&check_parameter_changes_abi.step);
-
-    const events_abi_step = b.step("events-abi", "Compare Zig event declarations against the pinned VST3 SDK");
-    const check_events_abi = b.addSystemCommand(&.{"scripts/check_events_abi.sh"});
-    events_abi_step.dependOn(&check_events_abi.step);
-
-    const host_message_abi_step = b.step("host-message-abi", "Compare Zig host/message declarations against the pinned VST3 SDK");
-    const check_host_message_abi = b.addSystemCommand(&.{"scripts/check_host_message_abi.sh"});
-    host_message_abi_step.dependOn(&check_host_message_abi.step);
-
-    const plugview_abi_step = b.step("plugview-abi", "Compare Zig plug view declarations against the pinned VST3 SDK");
-    const check_plugview_abi = b.addSystemCommand(&.{"scripts/check_plugview_abi.sh"});
-    plugview_abi_step.dependOn(&check_plugview_abi.step);
-
-    const units_abi_step = b.step("units-abi", "Compare Zig unit declarations against the pinned VST3 SDK");
-    const check_units_abi = b.addSystemCommand(&.{"scripts/check_units_abi.sh"});
-    units_abi_step.dependOn(&check_units_abi.step);
-
-    const midi_mapping_abi_step = b.step("midi-mapping-abi", "Compare Zig MIDI mapping declarations against the pinned VST3 SDK");
-    const check_midi_mapping_abi = b.addSystemCommand(&.{"scripts/check_midi_mapping_abi.sh"});
-    midi_mapping_abi_step.dependOn(&check_midi_mapping_abi.step);
-
-    const midi_controllers_abi_step = b.step("midi-controllers-abi", "Compare Zig MIDI controller constants against the pinned VST3 SDK");
-    const check_midi_controllers_abi = b.addSystemCommand(&.{"scripts/check_midi_controllers_abi.sh"});
-    midi_controllers_abi_step.dependOn(&check_midi_controllers_abi.step);
-
-    const speaker_core_abi_step = b.step("speaker-core-abi", "Compare Zig speaker constants and helpers against the pinned VST3 SDK");
-    const check_speaker_core_abi = b.addSystemCommand(&.{"scripts/check_speaker_core_abi.sh"});
-    speaker_core_abi_step.dependOn(&check_speaker_core_abi.step);
-
-    const preset_keys_abi_step = b.step("preset-keys-abi", "Compare Zig preset attribute constants against the pinned VST3 SDK");
-    const check_preset_keys_abi = b.addSystemCommand(&.{"scripts/check_preset_keys_abi.sh"});
-    preset_keys_abi_step.dependOn(&check_preset_keys_abi.step);
-
-    const preset_file_abi_step = b.step("preset-file-abi", "Compare Zig preset file chunk declarations against the pinned VST3 SDK");
-    const check_preset_file_abi = b.addSystemCommand(&.{"scripts/check_preset_file_abi.sh"});
-    preset_file_abi_step.dependOn(&check_preset_file_abi.step);
-
-    const note_expression_abi_step = b.step("note-expression-abi", "Compare Zig note expression declarations against the pinned VST3 SDK");
-    const check_note_expression_abi = b.addSystemCommand(&.{"scripts/check_note_expression_abi.sh"});
-    note_expression_abi_step.dependOn(&check_note_expression_abi.step);
-
-    const capability_state_abi_step = b.step("capability-state-abi", "Compare Zig capability and state declarations against the pinned VST3 SDK");
-    const check_capability_state_abi = b.addSystemCommand(&.{"scripts/check_capability_state_abi.sh"});
-    capability_state_abi_step.dependOn(&check_capability_state_abi.step);
-
-    const parameter_helpers_abi_step = b.step("parameter-helpers-abi", "Compare Zig parameter helper declarations against the pinned VST3 SDK");
-    const check_parameter_helpers_abi = b.addSystemCommand(&.{"scripts/check_parameter_helpers_abi.sh"});
-    parameter_helpers_abi_step.dependOn(&check_parameter_helpers_abi.step);
-
-    const context_menu_abi_step = b.step("context-menu-abi", "Compare Zig context menu declarations against the pinned VST3 SDK");
-    const check_context_menu_abi = b.addSystemCommand(&.{"scripts/check_context_menu_abi.sh"});
-    context_menu_abi_step.dependOn(&check_context_menu_abi.step);
-
-    const physical_channel_abi_step = b.step("physical-channel-abi", "Compare Zig physical UI and channel context declarations against the pinned VST3 SDK");
-    const check_physical_channel_abi = b.addSystemCommand(&.{"scripts/check_physical_channel_abi.sh"});
-    physical_channel_abi_step.dependOn(&check_physical_channel_abi.step);
-
-    const data_exchange_abi_step = b.step("data-exchange-abi", "Compare Zig data exchange declarations against the pinned VST3 SDK");
-    const check_data_exchange_abi = b.addSystemCommand(&.{"scripts/check_data_exchange_abi.sh"});
-    data_exchange_abi_step.dependOn(&check_data_exchange_abi.step);
-
-    const representation_abi_step = b.step("representation-abi", "Compare Zig XML representation declarations against the pinned VST3 SDK");
-    const check_representation_abi = b.addSystemCommand(&.{"scripts/check_representation_abi.sh"});
-    representation_abi_step.dependOn(&check_representation_abi.step);
-
-    const wayland_frame_abi_step = b.step("wayland-frame-abi", "Compare Zig Wayland frame declarations against the pinned VST3 SDK");
-    const check_wayland_frame_abi = b.addSystemCommand(&.{"scripts/check_wayland_frame_abi.sh"});
-    wayland_frame_abi_step.dependOn(&check_wayland_frame_abi.step);
-
-    const inter_app_audio_abi_step = b.step("inter-app-audio-abi", "Compare Zig Inter-App Audio declarations against the pinned VST3 SDK");
-    const check_inter_app_audio_abi = b.addSystemCommand(&.{"scripts/check_inter_app_audio_abi.sh"});
-    inter_app_audio_abi_step.dependOn(&check_inter_app_audio_abi.step);
-
-    const test_plug_provider_abi_step = b.step("test-plug-provider-abi", "Compare Zig test plug provider declarations against the pinned VST3 SDK");
-    const check_test_plug_provider_abi = b.addSystemCommand(&.{"scripts/check_test_plug_provider_abi.sh"});
-    test_plug_provider_abi_step.dependOn(&check_test_plug_provider_abi.step);
-
-    const test_interfaces_abi_step = b.step("test-interfaces-abi", "Compare Zig test interface declarations against the pinned VST3 SDK");
-    const check_test_interfaces_abi = b.addSystemCommand(&.{"scripts/check_test_interfaces_abi.sh"});
-    test_interfaces_abi_step.dependOn(&check_test_interfaces_abi.step);
+    var raw_api_script_steps: [raw_api_script_checks.len]*std.Build.Step = undefined;
+    for (raw_api_script_checks, 0..) |options, index| {
+        raw_api_script_steps[index] = addScriptCheckStep(b, options);
+    }
 
     const funknown_harness_zig = b.addObject(.{
         .name = "funknown_harness_zig",
@@ -413,38 +325,7 @@ pub fn build(b: *std.Build) void {
 
     const raw_api_abi_step = b.step("raw-api-abi", "Run raw API ABI and entry-symbol checks");
     raw_api_abi_step.dependOn(entry_symbols_step);
-    raw_api_abi_step.dependOn(tuid_abi_step);
-    raw_api_abi_step.dependOn(pluginbase_abi_step);
-    raw_api_abi_step.dependOn(ibstream_abi_step);
-    raw_api_abi_step.dependOn(base_strings_error_abi_step);
-    raw_api_abi_step.dependOn(base_persistence_abi_step);
-    raw_api_abi_step.dependOn(base_update_compatibility_abi_step);
-    raw_api_abi_step.dependOn(component_abi_step);
-    raw_api_abi_step.dependOn(audio_processor_abi_step);
-    raw_api_abi_step.dependOn(bypass_processor_abi_step);
-    raw_api_abi_step.dependOn(process_context_abi_step);
-    raw_api_abi_step.dependOn(edit_controller_abi_step);
-    raw_api_abi_step.dependOn(parameter_changes_abi_step);
-    raw_api_abi_step.dependOn(events_abi_step);
-    raw_api_abi_step.dependOn(host_message_abi_step);
-    raw_api_abi_step.dependOn(plugview_abi_step);
-    raw_api_abi_step.dependOn(units_abi_step);
-    raw_api_abi_step.dependOn(midi_mapping_abi_step);
-    raw_api_abi_step.dependOn(midi_controllers_abi_step);
-    raw_api_abi_step.dependOn(speaker_core_abi_step);
-    raw_api_abi_step.dependOn(preset_keys_abi_step);
-    raw_api_abi_step.dependOn(preset_file_abi_step);
-    raw_api_abi_step.dependOn(note_expression_abi_step);
-    raw_api_abi_step.dependOn(capability_state_abi_step);
-    raw_api_abi_step.dependOn(parameter_helpers_abi_step);
-    raw_api_abi_step.dependOn(context_menu_abi_step);
-    raw_api_abi_step.dependOn(physical_channel_abi_step);
-    raw_api_abi_step.dependOn(data_exchange_abi_step);
-    raw_api_abi_step.dependOn(representation_abi_step);
-    raw_api_abi_step.dependOn(wayland_frame_abi_step);
-    raw_api_abi_step.dependOn(inter_app_audio_abi_step);
-    raw_api_abi_step.dependOn(test_plug_provider_abi_step);
-    raw_api_abi_step.dependOn(test_interfaces_abi_step);
+    addStepDependencies(raw_api_abi_step, &raw_api_script_steps);
     raw_api_abi_step.dependOn(funknown_abi_step);
     raw_api_abi_step.dependOn(multi_interface_abi_step);
     raw_api_abi_step.dependOn(multi_interface_cpp_abi_step);
@@ -605,6 +486,12 @@ const ExamplePluginSteps = struct {
     core_example_tests: *std.Build.Step.Compile,
 };
 
+const ScriptCheckOptions = struct {
+    step_name: []const u8,
+    description: []const u8,
+    script: []const u8,
+};
+
 const Vst3BundleKind = enum {
     native,
     linux,
@@ -636,6 +523,13 @@ fn addExamplePluginTestDependencies(
         step.dependOn(&b.addRunArtifact(plugin.plugin_tests).step);
         step.dependOn(&b.addRunArtifact(plugin.core_example_tests).step);
     }
+}
+
+fn addScriptCheckStep(b: *std.Build, options: ScriptCheckOptions) *std.Build.Step {
+    const step = b.step(options.step_name, options.description);
+    const check = b.addSystemCommand(&.{options.script});
+    step.dependOn(&check.step);
+    return step;
 }
 
 fn addExamplePlugin(
