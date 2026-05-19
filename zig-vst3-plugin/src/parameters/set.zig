@@ -43,10 +43,14 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn duplicateIdIndex(self: *const Self) ?usize {
+            return self.duplicateScalarFieldIndex("id");
+        }
+
+        fn duplicateScalarFieldIndex(self: *const Self, comptime field_name: []const u8) ?usize {
             inline for (fields, 0..) |left_field, left_index| {
-                const left_id = @field(self.params, left_field.name).id;
+                const left_value = @field(@field(self.params, left_field.name), field_name);
                 inline for (fields[left_index + 1 ..], left_index + 1..) |right_field, right_index| {
-                    if (@field(self.params, right_field.name).id == left_id) {
+                    if (@field(@field(self.params, right_field.name), field_name) == left_value) {
                         return right_index;
                     }
                 }
@@ -69,10 +73,14 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn duplicateNameIndex(self: *const Self) ?usize {
+            return self.duplicateStringFieldIndex("name");
+        }
+
+        fn duplicateStringFieldIndex(self: *const Self, comptime field_name: []const u8) ?usize {
             inline for (fields, 0..) |left_field, left_index| {
-                const left_name = @field(self.params, left_field.name).name;
+                const left_value = @field(@field(self.params, left_field.name), field_name);
                 inline for (fields[left_index + 1 ..], left_index + 1..) |right_field, right_index| {
-                    if (std.mem.eql(u8, @field(self.params, right_field.name).name, left_name)) {
+                    if (std.mem.eql(u8, @field(@field(self.params, right_field.name), field_name), left_value)) {
                         return right_index;
                     }
                 }
