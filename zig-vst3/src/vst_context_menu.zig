@@ -105,19 +105,23 @@ pub fn ContextMenu(comptime max_items: usize) type {
         }
 
         fn getItemCount(ptr: *anyopaque) callconv(.c) types.int32 {
-            var count: types.int32 = 0;
-            for (&owner(ptr).entries) |*entry| {
+            return @intCast(owner(ptr).occupiedCount());
+        }
+
+        pub fn occupiedCount(self: *const Self) usize {
+            var count: usize = 0;
+            for (&self.entries) |*entry| {
                 if (entry.occupied) count += 1;
             }
             return count;
         }
 
-        fn occupiedByIndex(self: *Self, index: types.int32) ?*Entry {
-            if (index < 0) return null;
-            var current: types.int32 = 0;
+        pub fn occupiedByIndex(self: *Self, index: types.int32) ?*Entry {
+            const wanted_index = vst_index.bounded(index, self.occupiedCount()) orelse return null;
+            var current: usize = 0;
             for (&self.entries) |*entry| {
                 if (entry.occupied) {
-                    if (current == index) return entry;
+                    if (current == wanted_index) return entry;
                     current += 1;
                 }
             }
@@ -289,8 +293,13 @@ test "context menu indexes only occupied slots and reuses removed storage" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &first, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &second, null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &third, null));
+    try std.testing.expectEqual(@as(usize, 3), menu.occupiedCount());
     try std.testing.expectEqual(types.kResultOk, iface.vtable.removeItem(iface, &second, null));
+    try std.testing.expectEqual(@as(usize, 2), menu.occupiedCount());
     try std.testing.expectEqual(@as(types.int32, 2), iface.vtable.getItemCount(iface));
+    try std.testing.expectEqual(@as(types.int32, 10), menu.occupiedByIndex(0).?.item.tag);
+    try std.testing.expectEqual(@as(types.int32, 30), menu.occupiedByIndex(1).?.item.tag);
+    try std.testing.expect(menu.occupiedByIndex(2) == null);
 
     var out_item: ivstcontextmenu.IContextMenuItem = .{};
     var out_target: ?*ivstcontextmenu.IContextMenuTarget = undefined;
