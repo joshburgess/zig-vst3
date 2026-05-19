@@ -79,9 +79,9 @@ test "parameter state round-trips normalized values" {
     try std.testing.expectEqual(@as(usize, 36), try encodedSizeForCountChecked(2));
     try std.testing.expectEqual(@as(usize, 36), encodedSize(Params));
     try std.testing.expectEqual(encoded_header_size, encodedEntryOffset(0));
-    try std.testing.expectEqual(encoded_header_size + encoded_entry_size, encodedEntryOffset(1));
-    try std.testing.expectEqual(encoded_header_size + @sizeOf(u32), encodedEntryValueOffset(0));
-    try std.testing.expectEqual(encoded_header_size + encoded_entry_size + @sizeOf(u32), encodedEntryValueOffset(1));
+    try std.testing.expectEqual(@as(usize, 24), encodedEntryOffset(1));
+    try std.testing.expectEqual(@as(usize, 16), encodedEntryValueOffset(0));
+    try std.testing.expectEqual(@as(usize, 28), encodedEntryValueOffset(1));
     try std.testing.expectError(error.Overflow, encodedSizeForCountChecked(std.math.maxInt(usize)));
     try std.testing.expectError(error.Overflow, encodedEntryOffsetChecked(std.math.maxInt(usize)));
     try std.testing.expectError(error.Overflow, encodedEntryValueOffsetChecked(std.math.maxInt(usize)));
@@ -294,7 +294,7 @@ test "parameter state ignores unknown parameter ids" {
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [encoded_header_size + 2 * encoded_entry_size]u8 = undefined;
+    var bytes: [encodedSizeForCount(2)]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
@@ -622,7 +622,7 @@ test "parameter state rejects duplicate restored parameter ids without partial u
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [encoded_header_size + 2 * encoded_entry_size]u8 = undefined;
+    var bytes: [encodedSizeForCount(2)]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
@@ -674,7 +674,7 @@ test "parameter state rejects truncated entries without changing defaults" {
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [encoded_header_size + @sizeOf(u32)]u8 = undefined;
+    var bytes: [encodedEntryValueOffset(0)]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
 
     var writer = out_stream.writer();
@@ -697,7 +697,7 @@ test "parameter state rejects later truncated entries without partial updates" {
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [encoded_header_size + encoded_entry_size + @sizeOf(u32)]u8 = undefined;
+    var bytes: [encodedEntryValueOffset(1)]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
@@ -726,7 +726,7 @@ test "parameter state rejects normalized values outside range without partial up
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [encoded_header_size + 2 * encoded_entry_size]u8 = undefined;
+    var bytes: [encodedSizeForCount(2)]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
@@ -755,7 +755,7 @@ test "parameter state rejects non-finite normalized values without partial updat
     const Values = parameters.ParameterValues(Params);
     const set = Set.init(.{});
     var values = Values.init(&set);
-    var bytes: [encoded_header_size + encoded_entry_size]u8 = undefined;
+    var bytes: [encodedSizeForCount(1)]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 

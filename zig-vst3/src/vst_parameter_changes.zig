@@ -150,8 +150,13 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
         }
 
         pub fn findQueue(self: *Self, id: vsttypes.ParamID) ?*Queue {
-            for (self.queues[0..self.safeQueueCount()]) |*queue| {
-                if (queue.id == id) return queue;
+            const index = self.findQueueIndex(id) orelse return null;
+            return &self.queues[index];
+        }
+
+        pub fn findQueueIndex(self: *Self, id: vsttypes.ParamID) ?usize {
+            for (self.queues[0..self.safeQueueCount()], 0..) |*queue, queue_index| {
+                if (queue.id == id) return queue_index;
             }
             return null;
         }
@@ -194,11 +199,9 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
 
         fn addParameterData(ptr: *anyopaque, id: *const vsttypes.ParamID, index: *types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
             const self = owner(ptr);
-            for (self.queues[0..self.safeQueueCount()], 0..) |*queue, queue_index| {
-                if (queue.id == id.*) {
-                    index.* = @intCast(queue_index);
-                    return queue.asInterface();
-                }
+            if (self.findQueueIndex(id.*)) |queue_index| {
+                index.* = @intCast(queue_index);
+                return self.queues[queue_index].asInterface();
             }
             const queue_index = self.addQueueIndex(id.*) orelse return failAddedParameterData(index);
             index.* = @intCast(queue_index);
@@ -292,6 +295,10 @@ test "parameter changes reuse existing queues by id" {
     try std.testing.expectEqual(@as(types.int32, 0), second_index);
     try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getParameterCount(iface));
     try std.testing.expect(first_queue == second_queue);
+    try std.testing.expectEqual(@as(?usize, 0), changes.findQueueIndex(id));
+    try std.testing.expect(changes.findQueue(id).?.asInterface() == first_queue);
+    try std.testing.expectEqual(@as(?usize, null), changes.findQueueIndex(10));
+    try std.testing.expect(changes.findQueue(10) == null);
 
     var queried: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, first_queue.vtable.queryInterface(first_queue, &ivstparameterchanges.iparam_value_queue_iid, &queried));
