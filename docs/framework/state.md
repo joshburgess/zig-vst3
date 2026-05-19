@@ -97,6 +97,7 @@ The JSON uses the same format version and reflected parameter values as the bina
 - `state.encoded_header_size`: binary header size.
 - `state.encoded_entry_size`: one parameter entry size.
 - `state.encodedSizeForCount(count)` and `state.encodedSizeForCountChecked(count)`: count-based state size helpers.
+- `state.encodedEntryOffset(index)` and `state.encodedEntryValueOffset(index)`: byte offsets for binary-state fixtures.
 - `state.encodedSize(Params)`: full reflected parameter snapshot size.
 - `state.format_version`: current binary and debug JSON state version.
 - `state.ParameterStateHeader`: decoded header metadata and entry-count compatibility helpers.
