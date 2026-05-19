@@ -247,6 +247,23 @@ test "host application clears unsupported query and default create-instance outp
     try std.testing.expectEqual(@as(types.uint32, 1), host.create_instance_count);
 }
 
+test "host application tracks successful query refcounts" {
+    const Host = HostApplication("Test Host", struct {});
+    var host = Host{};
+    const iface = host.asInterface();
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivsthostapplication.ihost_application_iid, &queried));
+    try std.testing.expect(queried != null);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.query_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), host.release_count);
+
+    const queried_host: *ivsthostapplication.IHostApplication = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_host.vtable.release(queried_host));
+    try std.testing.expectEqual(@as(types.uint32, 1), host.release_count);
+}
+
 test "host application zero-fills and truncates String128 names" {
     const long_name =
         "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz" ++
