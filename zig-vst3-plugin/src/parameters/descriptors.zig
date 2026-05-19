@@ -214,7 +214,9 @@ pub const BoolParam = struct {
 
 pub fn EnumParam(comptime Enum: type) type {
     const info = @typeInfo(Enum).@"enum";
-    std.debug.assert(info.fields.len > 0);
+    if (info.fields.len == 0) {
+        @compileError("EnumParam requires at least one enum field");
+    }
 
     return struct {
         const Self = @This();
@@ -536,6 +538,16 @@ test "enum descriptors map generated normalized values to valid options" {
     const Mode = enum(u8) { clean = 2, crunch = 7, lead = 42, fuzz = 99 };
     const ModeParam = EnumParam(Mode);
     const mode = ModeParam{ .id = 12, .name = "Mode", .default = .clean };
+    const expected_options = [_]struct {
+        value: Mode,
+        label: []const u8,
+        normalized: f64,
+    }{
+        .{ .value = .clean, .label = "clean", .normalized = 0.0 },
+        .{ .value = .crunch, .label = "crunch", .normalized = 1.0 / 3.0 },
+        .{ .value = .lead, .label = "lead", .normalized = 2.0 / 3.0 },
+        .{ .value = .fuzz, .label = "fuzz", .normalized = 1.0 },
+    };
     const normalized_inputs = [_]f64{
         -std.math.inf(f64),
         -100.0,
@@ -565,6 +577,17 @@ test "enum descriptors map generated normalized values to valid options" {
         std.math.inf(f64),
         std.math.nan(f64),
     };
+
+    try std.testing.expectEqual(expected_options.len, mode.optionCount());
+    for (expected_options, 0..) |expected, index| {
+        try std.testing.expectEqual(index, mode.indexOfValue(expected.value));
+        try std.testing.expectEqual(expected.value, mode.valueAtOptionIndex(index).?);
+        try std.testing.expectEqualStrings(expected.label, mode.labelAtOptionIndex(index).?);
+        try std.testing.expectEqual(expected.normalized, mode.normalizedFromOptionIndex(index).?);
+    }
+    try std.testing.expectEqual(@as(?Mode, null), mode.valueAtOptionIndex(expected_options.len));
+    try std.testing.expectEqual(@as(?[]const u8, null), mode.labelAtOptionIndex(expected_options.len));
+    try std.testing.expectEqual(@as(?f64, null), mode.normalizedFromOptionIndex(expected_options.len));
 
     for (normalized_inputs) |normalized| {
         const value = mode.denormalize(normalized);
