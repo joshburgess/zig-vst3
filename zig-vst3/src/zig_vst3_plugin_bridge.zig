@@ -99,8 +99,7 @@ pub const StereoAudioBuses = struct {
 
     pub fn busInfoConfigured(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, out: *ivstcomponent.BusInfo, config: Config) types.tresult {
         if (index != 0) {
-            out.* = .{};
-            return types.kInvalidArgument;
+            return failBusInfo(out);
         }
 
         const has_audio_bus =
@@ -133,6 +132,10 @@ pub const StereoAudioBuses = struct {
             return types.kResultOk;
         }
 
+        return failBusInfo(out);
+    }
+
+    fn failBusInfo(out: *ivstcomponent.BusInfo) types.tresult {
         out.* = .{};
         return types.kInvalidArgument;
     }
@@ -318,38 +321,14 @@ pub fn fillParameterInfo(
     index: types.int32,
     out: *ivsteditcontroller.ParameterInfo,
 ) types.tresult {
-    const parameter_index = parameterIndex(Params, index) orelse {
-        out.* = .{};
-        return types.kInvalidArgument;
-    };
-    const id = set.id(parameter_index) orelse {
-        out.* = .{};
-        return types.kInvalidArgument;
-    };
-    const step_count = set.stepCount(parameter_index) orelse {
-        out.* = .{};
-        return types.kInvalidArgument;
-    };
-    const default_normalized = set.defaultNormalized(parameter_index) orelse {
-        out.* = .{};
-        return types.kInvalidArgument;
-    };
-    const unit_id = set.unitId(parameter_index) orelse {
-        out.* = .{};
-        return types.kInvalidArgument;
-    };
-    const name = set.name(parameter_index) orelse {
-        out.* = .{};
-        return types.kInvalidArgument;
-    };
-    const short_name = set.shortName(parameter_index) orelse {
-        out.* = .{};
-        return types.kInvalidArgument;
-    };
-    const units = set.units(parameter_index) orelse {
-        out.* = .{};
-        return types.kInvalidArgument;
-    };
+    const parameter_index = parameterIndex(Params, index) orelse return failParameterInfo(out);
+    const id = set.id(parameter_index) orelse return failParameterInfo(out);
+    const step_count = set.stepCount(parameter_index) orelse return failParameterInfo(out);
+    const default_normalized = set.defaultNormalized(parameter_index) orelse return failParameterInfo(out);
+    const unit_id = set.unitId(parameter_index) orelse return failParameterInfo(out);
+    const name = set.name(parameter_index) orelse return failParameterInfo(out);
+    const short_name = set.shortName(parameter_index) orelse return failParameterInfo(out);
+    const units = set.units(parameter_index) orelse return failParameterInfo(out);
     out.* = .{
         .id = id,
         .stepCount = step_count,
@@ -361,6 +340,11 @@ pub fn fillParameterInfo(
     string128.copy(&out.shortTitle, short_name);
     string128.copy(&out.units, units);
     return types.kResultOk;
+}
+
+fn failParameterInfo(out: *ivsteditcontroller.ParameterInfo) types.tresult {
+    out.* = .{};
+    return types.kInvalidArgument;
 }
 
 fn parameterIndex(comptime Params: type, index: types.int32) ?usize {
