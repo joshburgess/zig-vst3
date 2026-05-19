@@ -103,20 +103,24 @@ fn query(object: *TestObject, requested_iid: *const tuid.TUID, out: *?*anyopaque
     return interface_map.query(&object.unknown, &entries, requested_iid, out);
 }
 
+fn queryFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *TestObject, ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) funknown.tresult {
+    return query(ownerFn(ptr), requested_iid, out);
+}
+
 fn queryFromUnknown(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
-    return query(objectFromUnknown(ptr), requested_iid, out);
+    return queryFromOwnedInterface(objectFromUnknown, ptr, requested_iid, out);
 }
 
 fn queryFromA(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
-    return query(objectFromA(ptr), requested_iid, out);
+    return queryFromOwnedInterface(objectFromA, ptr, requested_iid, out);
 }
 
 fn queryFromB(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
-    return query(objectFromB(ptr), requested_iid, out);
+    return queryFromOwnedInterface(objectFromB, ptr, requested_iid, out);
 }
 
 fn queryFromC(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
-    return query(objectFromC(ptr), requested_iid, out);
+    return queryFromOwnedInterface(objectFromC, ptr, requested_iid, out);
 }
 
 fn addRefFromUnknown(ptr: *anyopaque) callconv(.c) funknown.uint32 {
@@ -127,34 +131,38 @@ fn releaseFromUnknown(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     return funknown.release(ptr);
 }
 
-fn addRefFromA(ptr: *anyopaque) callconv(.c) funknown.uint32 {
-    const object = objectFromA(ptr);
+fn addRefFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *TestObject, ptr: *anyopaque) funknown.uint32 {
+    const object = ownerFn(ptr);
     return object.unknown.vtable.addRef(&object.unknown);
+}
+
+fn releaseFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *TestObject, ptr: *anyopaque) funknown.uint32 {
+    const object = ownerFn(ptr);
+    return object.unknown.vtable.release(&object.unknown);
+}
+
+fn addRefFromA(ptr: *anyopaque) callconv(.c) funknown.uint32 {
+    return addRefFromOwnedInterface(objectFromA, ptr);
 }
 
 fn releaseFromA(ptr: *anyopaque) callconv(.c) funknown.uint32 {
-    const object = objectFromA(ptr);
-    return object.unknown.vtable.release(&object.unknown);
+    return releaseFromOwnedInterface(objectFromA, ptr);
 }
 
 fn addRefFromB(ptr: *anyopaque) callconv(.c) funknown.uint32 {
-    const object = objectFromB(ptr);
-    return object.unknown.vtable.addRef(&object.unknown);
+    return addRefFromOwnedInterface(objectFromB, ptr);
 }
 
 fn releaseFromB(ptr: *anyopaque) callconv(.c) funknown.uint32 {
-    const object = objectFromB(ptr);
-    return object.unknown.vtable.release(&object.unknown);
+    return releaseFromOwnedInterface(objectFromB, ptr);
 }
 
 fn addRefFromC(ptr: *anyopaque) callconv(.c) funknown.uint32 {
-    const object = objectFromC(ptr);
-    return object.unknown.vtable.addRef(&object.unknown);
+    return addRefFromOwnedInterface(objectFromC, ptr);
 }
 
 fn releaseFromC(ptr: *anyopaque) callconv(.c) funknown.uint32 {
-    const object = objectFromC(ptr);
-    return object.unknown.vtable.release(&object.unknown);
+    return releaseFromOwnedInterface(objectFromC, ptr);
 }
 
 fn callA(ptr: *anyopaque) callconv(.c) funknown.uint32 {
