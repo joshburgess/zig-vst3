@@ -1237,6 +1237,9 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expect(!instance.storeParameterIndex(0, std.math.inf(f64)));
     try std.testing.expect(!instance.storeParameterById(0, -std.math.inf(f64)));
     try std.testing.expect(!instance.storeParameterByName("Gain", std.math.nan(f64)));
+    try std.testing.expect(!instance.storeParameterPlainIndex(0, std.math.inf(f64)));
+    try std.testing.expect(!instance.storeParameterPlainById(0, -std.math.inf(f64)));
+    try std.testing.expect(!instance.storeParameterPlainByName("Gain", std.math.nan(f64)));
     try std.testing.expect(!instance.storeParameterIndex(99, 1.0));
     try std.testing.expect(!instance.storeParameterPlainIndex(99, 1.0));
     try std.testing.expect(!instance.storeParameterById(99, 1.0));
@@ -1310,6 +1313,9 @@ test "plugin instance exposes typed parameter field access" {
     try std.testing.expectEqual(@as(?usize, null), instance.storeParameterPlainByIdCount(99, 1.0));
     try std.testing.expectEqual(@as(?usize, null), instance.storeParameterByNameCount("Missing", 1.0));
     try std.testing.expectEqual(@as(?usize, null), instance.storeParameterPlainByNameCount("Missing", 1.0));
+    try std.testing.expectEqual(@as(?usize, null), instance.storeParameterPlainIndexCount(0, std.math.inf(f64)));
+    try std.testing.expectEqual(@as(?usize, null), instance.storeParameterPlainByIdCount(0, -std.math.inf(f64)));
+    try std.testing.expectEqual(@as(?usize, null), instance.storeParameterPlainByNameCount("Gain", std.math.nan(f64)));
     try std.testing.expectEqual(@as(?usize, 1), instance.resetParameterToDefaultCount("gain"));
     try std.testing.expectEqual(@as(?usize, 0), instance.resetParameterToDefaultCount("gain"));
     try std.testing.expect(instance.storeParameter("gain", 6.0));
