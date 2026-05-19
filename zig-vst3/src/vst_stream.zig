@@ -66,6 +66,18 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return self.boundedWriteLimit() -| self.boundedPos();
         }
 
+        fn readableSlice(self: *const Self, requested: usize) ?[]const u8 {
+            if (self.pos > self.boundedLen()) return null;
+            if (requested > self.readableBytes()) return null;
+            return self.bytes[self.pos..][0..requested];
+        }
+
+        fn writableSlice(self: *Self, requested: usize) ?[]u8 {
+            if (self.pos > capacity or self.pos > self.boundedWriteLimit()) return null;
+            if (requested > self.writableBytes()) return null;
+            return self.bytes[self.pos..][0..requested];
+        }
+
         fn seekTarget(base: usize, offset: types.int64) ?types.int64 {
             const start = std.math.cast(types.int64, base) orelse return null;
             const next = @addWithOverflow(start, offset);
@@ -133,14 +145,11 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             const requested: usize = @intCast(byte_count);
             if (requested > 0 and buffer == null) return failByteCount(bytes_read, types.kInvalidArgument);
             const self = ownerFromStream(ptr);
-            if (requested > self.readableBytes()) {
-                return failByteCount(bytes_read, types.kResultFalse);
-            }
-            if (self.pos > self.boundedLen()) return failByteCount(bytes_read, types.kResultFalse);
+            const source = self.readableSlice(requested) orelse return failByteCount(bytes_read, types.kResultFalse);
             if (requested > 0) {
                 const target = buffer orelse return types.kInvalidArgument;
                 const output = @as([*]u8, @ptrCast(target))[0..requested];
-                @memcpy(output, self.bytes[self.pos..][0..requested]);
+                @memcpy(output, source);
             }
             self.pos += requested;
             if (bytes_read) |out| out.* = @intCast(requested);
@@ -152,13 +161,11 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             const requested: usize = @intCast(byte_count);
             if (requested > 0 and buffer == null) return failByteCount(bytes_written, types.kInvalidArgument);
             const self = ownerFromStream(ptr);
-            if (self.pos > capacity or self.pos > self.boundedWriteLimit() or requested > self.writableBytes()) {
-                return failByteCount(bytes_written, types.kResultFalse);
-            }
+            const target = self.writableSlice(requested) orelse return failByteCount(bytes_written, types.kResultFalse);
             if (requested > 0) {
                 const source = buffer orelse return types.kInvalidArgument;
                 const input = @as([*]const u8, @ptrCast(source))[0..requested];
-                @memcpy(self.bytes[self.pos..][0..requested], input);
+                @memcpy(target, input);
             }
             self.pos += requested;
             self.len = @max(self.len, self.pos);
