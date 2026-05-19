@@ -96,7 +96,7 @@ jobs:
       - name: Validate example bundles
         run: zig build validate-examples
       - name: Upload validated bundles
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: validated-vst3-bundles-${{ matrix.os }}
           path: zig-out/bundle/
@@ -132,7 +132,7 @@ jobs:
       - name: Build target bundles
         run: zig build -Dtarget=${{ matrix.target }} ${{ matrix.bundle_step }}
       - name: Upload target bundles
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vst3-bundles-${{ matrix.target }}
           path: zig-out/bundle/
