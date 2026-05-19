@@ -67,7 +67,7 @@ pub const EventMonitor = struct {
         self.note_on_count = context.countEvents(.note_on);
         var note_events = context.inputEventsOfKind(.note_on);
         while (note_events.next()) |event| {
-            if (event.isForBus(0)) self.main_bus_note_count += 1;
+            if (event.isForBus(0)) self.main_bus_note_count +|= 1;
         }
 
         self.note_off_count = context.countEvents(.note_off);
@@ -82,8 +82,8 @@ pub const EventMonitor = struct {
         var cc_events = context.inputEventsOfKind(.midi_cc);
         while (cc_events.next()) |event| {
             const cc = event.asMidiCC() orelse continue;
-            self.midi_cc_count += 1;
-            if (event.isForChannel(0)) self.channel_zero_midi_count += 1;
+            self.midi_cc_count +|= 1;
+            if (event.isForChannel(0)) self.channel_zero_midi_count +|= 1;
             self.latest_midi_cc_value = cc.value;
         }
 
