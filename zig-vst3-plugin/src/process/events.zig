@@ -126,12 +126,7 @@ pub const EventOffsetIterator = struct {
     next_index: usize = 0,
 
     pub fn next(self: *EventOffsetIterator) ?Event {
-        while (self.next_index < self.events.items.len) {
-            const item = self.events.items[self.next_index];
-            self.next_index += 1;
-            if (item.isAtOffset(self.sample_offset)) return item;
-        }
-        return null;
+        return nextStoredMatchingEvent(self.events.items, &self.next_index, self.sample_offset, matchesOffset);
     }
 };
 
@@ -275,6 +270,15 @@ fn latestStoredMatchingEvent(items: []const Event, context: anytype, comptime ma
         if (matches(item, context)) result = item;
     }
     return result;
+}
+
+fn nextStoredMatchingEvent(items: []const Event, next_index: *usize, context: anytype, comptime matches: anytype) ?Event {
+    while (next_index.* < items.len) {
+        const item = items[next_index.*];
+        next_index.* += 1;
+        if (matches(item, context)) return item;
+    }
+    return null;
 }
 
 fn countMatchingEvents(items: []const Event, context: anytype, comptime matches: anytype) usize {

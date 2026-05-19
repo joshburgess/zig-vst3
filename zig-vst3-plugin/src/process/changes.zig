@@ -91,6 +91,15 @@ fn latestStoredMatchingChange(items: []const ParameterChange, context: anytype, 
     return result;
 }
 
+fn nextStoredMatchingChange(items: []const ParameterChange, next_index: *usize, context: anytype, comptime matches: anytype) ?ParameterChange {
+    while (next_index.* < items.len) {
+        const item = items[next_index.*];
+        next_index.* += 1;
+        if (matches(item, context)) return item;
+    }
+    return null;
+}
+
 fn countMatchingChanges(items: []const ParameterChange, context: anytype, comptime matches: anytype) usize {
     var result: usize = 0;
     for (items) |item| {
@@ -240,12 +249,7 @@ pub const ParameterChangeOffsetIterator = struct {
     next_index: usize = 0,
 
     pub fn next(self: *ParameterChangeOffsetIterator) ?ParameterChange {
-        while (self.next_index < self.changes.items.len) {
-            const item = self.changes.items[self.next_index];
-            self.next_index += 1;
-            if (item.isAtOffset(self.sample_offset)) return item;
-        }
-        return null;
+        return nextStoredMatchingChange(self.changes.items, &self.next_index, self.sample_offset, matchesOffset);
     }
 };
 
@@ -256,12 +260,8 @@ pub const ParameterChangeIdOffsetIterator = struct {
     next_index: usize = 0,
 
     pub fn next(self: *ParameterChangeIdOffsetIterator) ?ParameterChange {
-        while (self.next_index < self.changes.items.len) {
-            const item = self.changes.items[self.next_index];
-            self.next_index += 1;
-            if (item.isForIdAtOffset(self.id, self.sample_offset)) return item;
-        }
-        return null;
+        const context = IdOffset{ .id = self.id, .sample_offset = self.sample_offset };
+        return nextStoredMatchingChange(self.changes.items, &self.next_index, context, matchesIdOffset);
     }
 };
 
