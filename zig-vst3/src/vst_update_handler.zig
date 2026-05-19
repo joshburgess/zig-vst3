@@ -112,6 +112,32 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             return null;
         }
 
+        pub fn deferMatchingUpdates(self: *Self, changed: ?*anyopaque, message: types.int32) bool {
+            var matched = false;
+            for (&self.entries) |*entry| {
+                if (entry.dependent == null) continue;
+                if (entry.changed != changed) continue;
+                entry.deferred = true;
+                entry.deferred_message = message;
+                matched = true;
+            }
+            return matched;
+        }
+
+        pub fn triggerMatchingUpdates(self: *Self, changed: ?*anyopaque, message: types.int32) bool {
+            var matched = false;
+            for (&self.entries) |*entry| {
+                if (entry.dependent) |dependent| {
+                    if (entry.changed != changed) continue;
+                    dependent.vtable.update(dependent, changed, message);
+                    entry.deferred = false;
+                    entry.deferred_message = 0;
+                    matched = true;
+                }
+            }
+            return matched;
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = ptr },
@@ -146,29 +172,11 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
         }
 
         fn triggerUpdates(ptr: *anyopaque, changed: ?*anyopaque, message: types.int32) callconv(.c) types.tresult {
-            var matched = false;
-            for (&owner(ptr).entries) |*entry| {
-                if (entry.dependent) |dependent| {
-                    if (entry.changed != changed) continue;
-                    dependent.vtable.update(dependent, changed, message);
-                    entry.deferred = false;
-                    entry.deferred_message = 0;
-                    matched = true;
-                }
-            }
-            return if (matched) types.kResultOk else types.kResultFalse;
+            return if (owner(ptr).triggerMatchingUpdates(changed, message)) types.kResultOk else types.kResultFalse;
         }
 
         fn deferUpdates(ptr: *anyopaque, changed: ?*anyopaque, message: types.int32) callconv(.c) types.tresult {
-            var matched = false;
-            for (&owner(ptr).entries) |*entry| {
-                if (entry.dependent == null) continue;
-                if (entry.changed != changed) continue;
-                entry.deferred = true;
-                entry.deferred_message = message;
-                matched = true;
-            }
-            return if (matched) types.kResultOk else types.kResultFalse;
+            return if (owner(ptr).deferMatchingUpdates(changed, message)) types.kResultOk else types.kResultFalse;
         }
 
         const vtable = iupdatehandler.IUpdateHandlerVTable{
@@ -195,9 +203,11 @@ test "update handler registers triggers and removes dependents" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.addDependent(iface, &changed, dep_iface));
     try std.testing.expectEqual(@as(usize, 1), handler.dependentCount());
     try std.testing.expectEqual(@as(types.uint32, 2), dependent.ref_count.load(.monotonic));
+    try std.testing.expect(handler.triggerMatchingUpdates(&changed, @intFromEnum(iupdatehandler.ChangeMessage.kWillChange)));
+    try std.testing.expectEqual(@as(types.uint32, 1), dependent.update_count);
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.triggerUpdates(iface, &changed, @intFromEnum(iupdatehandler.ChangeMessage.kChanged)));
-    try std.testing.expectEqual(@as(types.uint32, 1), dependent.update_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), dependent.update_count);
     try std.testing.expectEqual(@intFromEnum(iupdatehandler.ChangeMessage.kChanged), dependent.last_message);
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.removeDependent(iface, &changed, dep_iface));
@@ -213,6 +223,9 @@ test "update handler records deferred updates" {
     const iface = handler.asInterface();
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.addDependent(iface, null, dependent.asInterface()));
+    try std.testing.expect(handler.deferMatchingUpdates(null, 99));
+    try std.testing.expect(handler.entries[0].deferred);
+    try std.testing.expectEqual(@as(types.int32, 99), handler.entries[0].deferred_message);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.deferUpdates(iface, null, 123));
     try std.testing.expect(handler.entries[0].deferred);
     try std.testing.expectEqual(@as(types.int32, 123), handler.entries[0].deferred_message);
