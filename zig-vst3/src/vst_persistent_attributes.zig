@@ -137,6 +137,26 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return null;
         }
 
+        pub fn attributeCount(self: *const Self) usize {
+            var count: usize = 0;
+            for (&self.entries) |*entry| {
+                if (entry.id != null) count += 1;
+            }
+            return count;
+        }
+
+        pub fn attributeIDByIndex(self: *const Self, index: types.int32) ?ipersistent.IAttrID {
+            const wanted_index = vst_index.bounded(index, self.attributeCount()) orelse return null;
+            var current: usize = 0;
+            for (&self.entries) |*entry| {
+                if (entry.id) |id| {
+                    if (current == wanted_index) return id;
+                    current += 1;
+                }
+            }
+            return null;
+        }
+
         fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.iface },
@@ -281,23 +301,11 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
         }
 
         fn countAttributes(ptr: *anyopaque) callconv(.c) types.int32 {
-            var count: types.int32 = 0;
-            for (&ownerFromAttributes2(ptr).entries) |*entry| {
-                if (entry.id != null) count += 1;
-            }
-            return count;
+            return @intCast(ownerFromAttributes2(ptr).attributeCount());
         }
 
         fn getAttributeID(ptr: *anyopaque, index: types.int32) callconv(.c) ipersistent.IAttrID {
-            if (index < 0) return "";
-            var current: types.int32 = 0;
-            for (&ownerFromAttributes2(ptr).entries) |*entry| {
-                if (entry.id) |id| {
-                    if (current == index) return id;
-                    current += 1;
-                }
-            }
-            return "";
+            return ownerFromAttributes2(ptr).attributeIDByIndex(index) orelse "";
         }
 
         const attributes_vtable = ipersistent.IAttributesVTable{
@@ -415,6 +423,10 @@ test "persistent attributes store and enumerate variants" {
     const gain = fvariant.FVariant{ .type = fvariant.kFloat, .value = .{ .floatValue = 0.75 } };
 
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.set(attrs, "gain", &gain));
+    try std.testing.expectEqual(@as(usize, 1), store.attributeCount());
+    try std.testing.expectEqualStrings("gain", std.mem.span(store.attributeIDByIndex(0).?));
+    try std.testing.expectEqual(@as(?ipersistent.IAttrID, null), store.attributeIDByIndex(-1));
+    try std.testing.expectEqual(@as(?ipersistent.IAttrID, null), store.attributeIDByIndex(1));
     try std.testing.expectEqual(@as(types.int32, 1), attrs2.vtable.countAttributes(attrs2));
     try std.testing.expectEqualStrings("gain", std.mem.span(attrs2.vtable.getAttributeID(attrs2, 0)));
 

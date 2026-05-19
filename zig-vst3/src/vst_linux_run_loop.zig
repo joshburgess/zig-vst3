@@ -136,14 +136,10 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
         }
 
         pub fn triggerEvent(self: *Self, fd: Linux.FileDescriptor) types.tresult {
-            for (&self.event_handlers) |*entry| {
-                if (entry.handler) |handler| {
-                    if (entry.fd != fd) continue;
-                    handler.vtable.onFDIsSet(handler, fd);
-                    return types.kResultOk;
-                }
-            }
-            return types.kResultFalse;
+            const entry = self.findEventEntryByFd(fd) orelse return types.kResultFalse;
+            const handler = entry.handler orelse return types.kResultFalse;
+            handler.vtable.onFDIsSet(handler, fd);
+            return types.kResultOk;
         }
 
         pub fn triggerTimer(self: *Self, handler: *Linux.ITimerHandler) types.tresult {
@@ -164,6 +160,13 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
         fn findEventEntry(self: *Self, handler: *Linux.IEventHandler) ?*EventEntry {
             for (&self.event_handlers) |*entry| {
                 if (entry.handler == handler) return entry;
+            }
+            return null;
+        }
+
+        pub fn findEventEntryByFd(self: *Self, fd: Linux.FileDescriptor) ?*EventEntry {
+            for (&self.event_handlers) |*entry| {
+                if (entry.handler != null and entry.fd == fd) return entry;
             }
             return null;
         }
@@ -276,6 +279,8 @@ test "linux run loop registers and triggers event handlers" {
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.registerEventHandler(iface, event_handler, 7));
     try std.testing.expectEqual(@as(types.uint32, 2), handler.ref_count.load(.monotonic));
+    try std.testing.expect(loop.findEventEntryByFd(7) != null);
+    try std.testing.expectEqual(@as(?*Loop.EventEntry, null), loop.findEventEntryByFd(8));
     try std.testing.expectEqual(types.kResultOk, loop.triggerEvent(7));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.event_count);
     try std.testing.expectEqual(@as(Linux.FileDescriptor, 7), handler.last_fd);
