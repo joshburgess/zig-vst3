@@ -1,4 +1,5 @@
 const std = @import("std");
+const fixed_string = @import("fixed_string.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 pub const code_units = @typeInfo(vsttypes.String128).array.len;
@@ -14,19 +15,11 @@ pub fn clearPtr(dest: [*]vsttypes.TChar) void {
 }
 
 pub fn copy(dest: *vsttypes.String128, source: []const u8) void {
-    clear(dest);
-    const len = @min(source.len, payload_units);
-    for (source[0..len], 0..) |char, index| {
-        dest[index] = char;
-    }
+    fixed_string.copyAsciiToUtf16Z(dest, source);
 }
 
 pub fn copyPtr(dest: [*]vsttypes.TChar, source: []const u8) void {
-    clearPtr(dest);
-    const len = @min(source.len, payload_units);
-    for (source[0..len], 0..) |char, index| {
-        dest[index] = char;
-    }
+    fixed_string.copyAsciiToUtf16ZPtr(dest, code_units, source);
 }
 
 test "String128 copies zero-fill and truncate ASCII text" {

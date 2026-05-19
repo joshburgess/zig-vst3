@@ -392,10 +392,7 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
 
         fn getFileName(ptr: *anyopaque, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = owner(ptr);
-            string128.clearPtr(out);
-            const len = std.mem.len(@as([*:0]const vsttypes.TChar, @ptrCast(&self.file_name)));
-            const copy_len = @min(len, string128.payload_units);
-            @memcpy(out[0..copy_len], self.file_name[0..copy_len]);
+            fixed_string.copyUtf16ZPtr(out, string128.code_units, std.mem.sliceTo(&self.file_name, 0));
             return types.kResultOk;
         }
 
@@ -456,9 +453,7 @@ pub fn Message(comptime max_message_id_bytes: usize, comptime max_attributes: us
 
         fn setMessageID(ptr: *anyopaque, value: types.FIDString) callconv(.c) void {
             const self = owner(ptr);
-            @memset(&self.message_id, 0);
-            const len = @min(std.mem.len(value), max_message_id_bytes - 1);
-            @memcpy(self.message_id[0..len], value[0..len]);
+            fixed_string.copyAsciiZ(&self.message_id, std.mem.span(value));
         }
 
         fn getAttributes(ptr: *anyopaque) callconv(.c) ?*ivstattributes.IAttributeList {

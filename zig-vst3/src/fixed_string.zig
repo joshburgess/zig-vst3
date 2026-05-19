@@ -10,8 +10,13 @@ pub fn copyAsciiZ(dest: anytype, source: []const u8) void {
 
 pub fn copyAsciiToUtf16Z(dest: anytype, source: []const u8) void {
     const N = @typeInfo(@TypeOf(dest.*)).array.len;
-    @memset(dest, 0);
-    const len = @min(source.len, N - 1);
+    copyAsciiToUtf16ZPtr(dest, N, source);
+}
+
+pub fn copyAsciiToUtf16ZPtr(dest: [*]types.char16, capacity: usize, source: []const u8) void {
+    if (capacity == 0) return;
+    @memset(dest[0..capacity], 0);
+    const len = @min(source.len, capacity - 1);
     for (source[0..len], 0..) |char, index| {
         dest[index] = char;
     }
@@ -19,8 +24,13 @@ pub fn copyAsciiToUtf16Z(dest: anytype, source: []const u8) void {
 
 pub fn copyUtf16Z(dest: anytype, source: []const types.char16) void {
     const N = @typeInfo(@TypeOf(dest.*)).array.len;
-    @memset(dest, 0);
-    const len = @min(source.len, N - 1);
+    copyUtf16ZPtr(dest, N, source);
+}
+
+pub fn copyUtf16ZPtr(dest: [*]types.char16, capacity: usize, source: []const types.char16) void {
+    if (capacity == 0) return;
+    @memset(dest[0..capacity], 0);
+    const len = @min(source.len, capacity - 1);
     @memcpy(dest[0..len], source[0..len]);
 }
 
@@ -48,12 +58,28 @@ test "copyAsciiToUtf16Z zero-fills and truncates" {
     try std.testing.expectEqualSlices(types.char16, &.{ 'a', 'b', 'c', 0 }, &text);
 }
 
+test "copyAsciiToUtf16ZPtr accepts zero capacity" {
+    var text = [_]types.char16{'x'} ** 1;
+
+    copyAsciiToUtf16ZPtr(&text, 0, "abc");
+
+    try std.testing.expectEqual(@as(types.char16, 'x'), text[0]);
+}
+
 test "copyUtf16Z zero-fills and truncates" {
     var text = [_]types.char16{'x'} ** 4;
 
     copyUtf16Z(&text, &.{ 'a', 'b', 'c', 'd', 'e' });
 
     try std.testing.expectEqualSlices(types.char16, &.{ 'a', 'b', 'c', 0 }, &text);
+}
+
+test "copyUtf16ZPtr accepts zero capacity" {
+    var text = [_]types.char16{'x'} ** 1;
+
+    copyUtf16ZPtr(&text, 0, &.{ 'a', 'b', 'c' });
+
+    try std.testing.expectEqual(@as(types.char16, 'x'), text[0]);
 }
 
 test "readUtf16ZAsAscii stops at zero and clamps code units" {
