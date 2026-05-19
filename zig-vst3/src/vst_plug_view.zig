@@ -53,6 +53,24 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
+        fn acceptAttachment(self: *Self, parent: ?*anyopaque, platform: types.FIDString) void {
+            self.attached_count +|= 1;
+            self.attached_parent = parent;
+            self.attached_platform = platform;
+        }
+
+        fn acceptRemoval(self: *Self) void {
+            self.removed_count +|= 1;
+            self.attached_parent = null;
+            self.attached_platform = null;
+        }
+
+        fn acceptKey(self: *Self, key: types.char16, key_code: types.int16, modifiers: types.int16) void {
+            self.last_key = key;
+            self.last_key_code = key_code;
+            self.last_key_modifiers = modifiers;
+        }
+
         fn owner(ptr: *anyopaque) *Self {
             const iface: *iplugview.IPlugView = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -90,9 +108,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
                 const result = Config.attached(self, parent, platform);
                 if (result != types.kResultOk) return result;
             }
-            self.attached_count +|= 1;
-            self.attached_parent = parent;
-            self.attached_platform = platform;
+            self.acceptAttachment(parent, platform);
             return types.kResultOk;
         }
 
@@ -102,9 +118,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
                 const result = Config.removed(self);
                 if (result != types.kResultOk) return result;
             }
-            self.removed_count +|= 1;
-            self.attached_parent = null;
-            self.attached_platform = null;
+            self.acceptRemoval();
             return types.kResultOk;
         }
 
@@ -126,9 +140,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
                 const result = Config.onKeyDown(self, key, key_code, modifiers);
                 if (result != types.kResultOk) return result;
             }
-            self.last_key = key;
-            self.last_key_code = key_code;
-            self.last_key_modifiers = modifiers;
+            self.acceptKey(key, key_code, modifiers);
             return types.kResultOk;
         }
 
@@ -139,9 +151,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
                 const result = Config.onKeyUp(self, key, key_code, modifiers);
                 if (result != types.kResultOk) return result;
             }
-            self.last_key = key;
-            self.last_key_code = key_code;
-            self.last_key_modifiers = modifiers;
+            self.acceptKey(key, key_code, modifiers);
             return types.kResultOk;
         }
 
