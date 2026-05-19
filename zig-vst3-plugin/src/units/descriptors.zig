@@ -22,6 +22,20 @@ pub fn duplicateStringFieldIndex(comptime T: type, items: []const T, comptime fi
     return null;
 }
 
+pub fn scalarFieldIndex(comptime T: type, items: []const T, comptime field_name: []const u8, value: anytype) ?usize {
+    for (items, 0..) |item, index| {
+        if (@field(item, field_name) == value) return index;
+    }
+    return null;
+}
+
+pub fn stringFieldIndex(comptime T: type, items: []const T, comptime field_name: []const u8, value: []const u8) ?usize {
+    for (items, 0..) |item, index| {
+        if (std.mem.eql(u8, @field(item, field_name), value)) return index;
+    }
+    return null;
+}
+
 pub const Unit = struct {
     id: i32,
     name: []const u8,
@@ -110,10 +124,7 @@ pub const Program = struct {
     }
 
     pub fn parameterIndexOfId(self: Program, parameter_id: u32) ?usize {
-        for (self.parameters, 0..) |item, index| {
-            if (item.parameter_id == parameter_id) return index;
-        }
-        return null;
+        return scalarFieldIndex(ProgramParameter, self.parameters, "parameter_id", parameter_id);
     }
 
     pub fn parameterById(self: Program, parameter_id: u32) ?ProgramParameter {
@@ -131,10 +142,7 @@ pub const Program = struct {
     }
 
     pub fn infoIndexOfKey(self: Program, key: []const u8) ?usize {
-        for (self.info, 0..) |item, index| {
-            if (std.mem.eql(u8, item.key, key)) return index;
-        }
-        return null;
+        return stringFieldIndex(ProgramInfo, self.info, "key", key);
     }
 
     pub fn infoEntryByKey(self: Program, key: []const u8) ?ProgramInfo {
@@ -203,10 +211,7 @@ pub const ProgramList = struct {
     }
 
     pub fn programIndexOfName(self: ProgramList, name: []const u8) ?usize {
-        for (self.programs, 0..) |item, index| {
-            if (std.mem.eql(u8, item.name, name)) return index;
-        }
-        return null;
+        return stringFieldIndex(Program, self.programs, "name", name);
     }
 
     pub fn programByName(self: ProgramList, name: []const u8) ?Program {

@@ -332,17 +332,11 @@ pub fn UnitSet(comptime config: Config) type {
         }
 
         pub fn unitIndexOfId(_: Self, id: i32) ?usize {
-            for (config.units, 0..) |item, index| {
-                if (item.id == id) return index;
-            }
-            return null;
+            return descriptors.scalarFieldIndex(Unit, config.units, "id", id);
         }
 
         pub fn unitIndexOfName(_: Self, name: []const u8) ?usize {
-            for (config.units, 0..) |item, index| {
-                if (std.mem.eql(u8, item.name, name)) return index;
-            }
-            return null;
+            return descriptors.stringFieldIndex(Unit, config.units, "name", name);
         }
 
         pub fn programList(_: Self, index: usize) ?ProgramList {
@@ -351,10 +345,9 @@ pub fn UnitSet(comptime config: Config) type {
         }
 
         pub fn programListById(_: Self, id: i32) ?ProgramList {
-            for (config.program_lists) |item| {
-                if (item.id == id) return item;
-            }
-            return null;
+            if (comptime config.program_lists.len == 0) return null;
+            const index = descriptors.scalarFieldIndex(ProgramList, config.program_lists, "id", id) orelse return null;
+            return config.program_lists[index];
         }
 
         pub fn programListByName(self: Self, name: []const u8) ?ProgramList {
@@ -423,17 +416,11 @@ pub fn UnitSet(comptime config: Config) type {
         }
 
         pub fn programListIndexOfId(_: Self, id: i32) ?usize {
-            for (config.program_lists, 0..) |item, index| {
-                if (item.id == id) return index;
-            }
-            return null;
+            return descriptors.scalarFieldIndex(ProgramList, config.program_lists, "id", id);
         }
 
         pub fn programListIndexOfName(_: Self, name: []const u8) ?usize {
-            for (config.program_lists, 0..) |item, index| {
-                if (std.mem.eql(u8, item.name, name)) return index;
-            }
-            return null;
+            return descriptors.stringFieldIndex(ProgramList, config.program_lists, "name", name);
         }
 
         pub fn programCount(self: Self, list_id: i32) ?usize {
