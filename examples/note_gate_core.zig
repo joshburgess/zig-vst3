@@ -54,7 +54,7 @@ pub const NoteGate = struct {
         const pitch_index = @as(usize, @intCast(pitch));
         if (!self.held_notes[channel_index][pitch_index]) {
             self.held_notes[channel_index][pitch_index] = true;
-            self.held_note_count += 1;
+            self.held_note_count +|= 1;
         }
         self.open = true;
     }
@@ -64,7 +64,7 @@ pub const NoteGate = struct {
         const pitch_index = @as(usize, @intCast(pitch));
         if (self.held_notes[channel_index][pitch_index]) {
             self.held_notes[channel_index][pitch_index] = false;
-            self.held_note_count -= 1;
+            self.held_note_count -|= 1;
         }
         self.open = self.held_note_count > 0;
     }
@@ -201,6 +201,24 @@ test "note gate core example tracks same pitch on separate channels" {
     try std.testing.expectEqual(@as(f32, 1.0), output[2]);
     try std.testing.expectEqual(@as(f32, -1.0), output[3]);
     try std.testing.expectEqual(@as(f32, 0.0), output[4]);
+    try std.testing.expect(!plugin.open);
+    try std.testing.expectEqual(@as(usize, 0), plugin.held_note_count);
+}
+
+test "note gate core example keeps held-note count bounded for repeated note messages" {
+    var plugin = NoteGate{};
+
+    plugin.releaseNote(0, 60);
+    try std.testing.expect(!plugin.open);
+    try std.testing.expectEqual(@as(usize, 0), plugin.held_note_count);
+
+    plugin.holdNote(0, 60);
+    plugin.holdNote(0, 60);
+    try std.testing.expect(plugin.open);
+    try std.testing.expectEqual(@as(usize, 1), plugin.held_note_count);
+
+    plugin.releaseNote(0, 60);
+    plugin.releaseNote(0, 60);
     try std.testing.expect(!plugin.open);
     try std.testing.expectEqual(@as(usize, 0), plugin.held_note_count);
 }

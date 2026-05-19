@@ -59,7 +59,7 @@ const NoteGateState = struct {
         const index = @as(usize, @intCast(pitch));
         if (self.held_notes[index]) {
             self.held_notes[index] = false;
-            self.held_note_count -= 1;
+            self.held_note_count -|= 1;
         }
         self.open = self.held_note_count > 0;
     }
@@ -321,6 +321,26 @@ test "note gate processor stays open while overlapping notes are held" {
     try std.testing.expectEqual(@as(f32, 1.0), output[2]);
     try std.testing.expectEqual(@as(f32, -1.0), output[3]);
     try std.testing.expectEqual(@as(f32, 0.0), output[4]);
+    try std.testing.expect(!local_gate.open);
+    try std.testing.expectEqual(@as(usize, 0), local_gate.held_note_count);
+}
+
+test "note gate processor keeps held-note count bounded for repeated note messages" {
+    const std = @import("std");
+
+    var local_gate = NoteGateState{};
+
+    local_gate.releaseNote(60);
+    try std.testing.expect(!local_gate.open);
+    try std.testing.expectEqual(@as(usize, 0), local_gate.held_note_count);
+
+    local_gate.holdNote(60);
+    local_gate.holdNote(60);
+    try std.testing.expect(local_gate.open);
+    try std.testing.expectEqual(@as(usize, 1), local_gate.held_note_count);
+
+    local_gate.releaseNote(60);
+    local_gate.releaseNote(60);
     try std.testing.expect(!local_gate.open);
     try std.testing.expectEqual(@as(usize, 0), local_gate.held_note_count);
 }
