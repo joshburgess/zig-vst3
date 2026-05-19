@@ -70,6 +70,18 @@ pub fn ContextMenu(comptime max_items: usize) type {
             occupied: bool = false,
             item: ivstcontextmenu.IContextMenuItem = .{},
             target: ?*ivstcontextmenu.IContextMenuTarget = null,
+
+            fn set(self: *Entry, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) void {
+                self.occupied = true;
+                self.item = item.*;
+                self.target = target;
+                if (target) |value| _ = value.vtable.addRef(value);
+            }
+
+            fn clear(self: *Entry) void {
+                if (self.target) |value| _ = value.vtable.release(value);
+                self.* = .{};
+            }
         };
 
         iface: ivstcontextmenu.IContextMenu = .{ .vtable = &vtable },
@@ -145,10 +157,7 @@ pub fn ContextMenu(comptime max_items: usize) type {
         fn appendItem(self: *Self, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) ?*Entry {
             for (&self.entries) |*entry| {
                 if (!entry.occupied) {
-                    entry.occupied = true;
-                    entry.item = item.*;
-                    entry.target = target;
-                    if (target) |value| _ = value.vtable.addRef(value);
+                    entry.set(item, target);
                     return entry;
                 }
             }
@@ -163,8 +172,7 @@ pub fn ContextMenu(comptime max_items: usize) type {
         fn removeItem(ptr: *anyopaque, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
             for (&owner(ptr).entries) |*entry| {
                 if (entry.occupied and entry.item.tag == item.tag and entry.target == target) {
-                    if (entry.target) |value| _ = value.vtable.release(value);
-                    entry.* = .{};
+                    entry.clear();
                     return types.kResultOk;
                 }
             }
@@ -279,6 +287,9 @@ test "context menu clears failed item lookups and rejects full storage" {
 
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.removeItem(iface, &extra, first.asInterface()));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.removeItem(iface, &item, first.asInterface()));
+    try std.testing.expect(!menu.entries[0].occupied);
+    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenuTarget, null), menu.entries[0].target);
+    try std.testing.expectEqual(@as(types.int32, 0), menu.entries[0].item.tag);
 }
 
 test "context menu indexes only occupied slots and reuses removed storage" {
