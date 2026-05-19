@@ -38,6 +38,8 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
         }
 
         fn appendPointIndex(self: *Self, sample_offset: types.int32, value: vsttypes.ParamValue) ?types.int32 {
+            if (sample_offset < 0) return null;
+            if (!isNormalized(value)) return null;
             const index = vst_index.appendIndex(self.point_count, max_points) orelse return null;
             self.points[index] = .{ .sample_offset = sample_offset, .value = value };
             self.point_count +|= 1;
@@ -118,6 +120,10 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
             .addPoint = addPoint,
         };
     };
+}
+
+fn isNormalized(value: vsttypes.ParamValue) bool {
+    return std.math.isFinite(value) and value >= 0.0 and value <= 1.0;
 }
 
 pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queue: usize) type {
@@ -337,6 +343,33 @@ test "parameter value queue preserves contents when full" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getPoint(iface, 0, &sample_offset, &value));
     try std.testing.expectEqual(@as(types.int32, 12), sample_offset);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), value);
+}
+
+test "parameter value queue rejects invalid points" {
+    var queue = ParamValueQueue(2).init(7);
+    const iface = queue.asInterface();
+    var index: types.int32 = 42;
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addPoint(iface, -1, 0.5, &index));
+    try std.testing.expectEqual(@as(types.int32, -1), index);
+    try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getPointCount(iface));
+
+    index = 42;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addPoint(iface, 0, -0.01, &index));
+    try std.testing.expectEqual(@as(types.int32, -1), index);
+
+    index = 42;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addPoint(iface, 0, 1.01, &index));
+    try std.testing.expectEqual(@as(types.int32, -1), index);
+
+    index = 42;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addPoint(iface, 0, std.math.inf(vsttypes.ParamValue), &index));
+    try std.testing.expectEqual(@as(types.int32, -1), index);
+
+    index = 42;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addPoint(iface, 0, 1.0, &index));
+    try std.testing.expectEqual(@as(types.int32, 0), index);
+    try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getPointCount(iface));
 }
 
 test "parameter changes clear unsupported query outputs" {

@@ -15,6 +15,7 @@ const fixed_string = @import("fixed_string.zig");
 const vstspeaker = @import("pluginterfaces/vst/vstspeaker.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
+const tuid = @import("tuid.zig");
 const vst_event_list = @import("vst_event_list.zig");
 const vst_index = @import("vst_index.zig");
 const vst_parameter_changes = @import("vst_parameter_changes.zig");
@@ -1142,21 +1143,143 @@ test "zig-vst3-plugin bridge collects VST3 parameter changes" {
 }
 
 test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter changes" {
-    const Changes = vst_parameter_changes.ParameterChanges(2, 6);
-    var changes = Changes{};
-    const gain_queue = changes.addQueue(7).?;
-    try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(0, 0.25));
-    try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(-1, 0.5));
-    try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(4, 0.75));
-    try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(2, 1.5));
-    try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(2, std.math.inf(vsttypes.ParamValue)));
-    try std.testing.expectEqual(types.kResultOk, gain_queue.appendPoint(3, 0.5));
-    const mix_queue = changes.addQueue(8).?;
-    try std.testing.expectEqual(types.kResultOk, mix_queue.appendPoint(1, 0.0));
+    const TestParamPoint = struct {
+        sample_offset: types.int32,
+        value: vsttypes.ParamValue,
+    };
+    const TestParamValueQueue = struct {
+        iface: ivstparameterchanges.IParamValueQueue = .{ .vtable = &vtable },
+        id: vsttypes.ParamID,
+        points: []const TestParamPoint,
+
+        const Self = @This();
+
+        fn init(id: vsttypes.ParamID, points: []const TestParamPoint) Self {
+            return .{ .id = id, .points = points };
+        }
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *ivstparameterchanges.IParamValueQueue = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn addRef(_: *anyopaque) callconv(.c) types.uint32 {
+            return 1;
+        }
+
+        fn release(_: *anyopaque) callconv(.c) types.uint32 {
+            return 1;
+        }
+
+        fn getParameterId(ptr: *anyopaque) callconv(.c) vsttypes.ParamID {
+            return owner(ptr).id;
+        }
+
+        fn getPointCount(ptr: *anyopaque) callconv(.c) types.int32 {
+            return @intCast(owner(ptr).points.len);
+        }
+
+        fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (index < 0) return types.kInvalidArgument;
+            const self = owner(ptr);
+            const point_index: usize = @intCast(index);
+            if (point_index >= self.points.len) return types.kInvalidArgument;
+            const point = self.points[point_index];
+            sample_offset.* = point.sample_offset;
+            value.* = point.value;
+            return types.kResultOk;
+        }
+
+        fn addPoint(_: *anyopaque, _: types.int32, _: vsttypes.ParamValue, index: *types.int32) callconv(.c) types.tresult {
+            index.* = -1;
+            return types.kResultFalse;
+        }
+
+        const vtable = ivstparameterchanges.IParamValueQueueVTable{
+            .queryInterface = queryInterface,
+            .addRef = addRef,
+            .release = release,
+            .getParameterId = getParameterId,
+            .getPointCount = getPointCount,
+            .getPoint = getPoint,
+            .addPoint = addPoint,
+        };
+    };
+    const TestParameterChanges = struct {
+        iface: ivstparameterchanges.IParameterChanges = .{ .vtable = &vtable },
+        queues: []const ?*ivstparameterchanges.IParamValueQueue,
+
+        const Self = @This();
+
+        fn owner(ptr: *anyopaque) *Self {
+            const iface: *ivstparameterchanges.IParameterChanges = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("iface", iface);
+        }
+
+        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn addRef(_: *anyopaque) callconv(.c) types.uint32 {
+            return 1;
+        }
+
+        fn release(_: *anyopaque) callconv(.c) types.uint32 {
+            return 1;
+        }
+
+        fn getParameterCount(ptr: *anyopaque) callconv(.c) types.int32 {
+            return @intCast(owner(ptr).queues.len);
+        }
+
+        fn getParameterData(ptr: *anyopaque, index: types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
+            if (index < 0) return null;
+            const self = owner(ptr);
+            const queue_index: usize = @intCast(index);
+            if (queue_index >= self.queues.len) return null;
+            return self.queues[queue_index];
+        }
+
+        fn addParameterData(_: *anyopaque, _: *const vsttypes.ParamID, index: *types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
+            index.* = -1;
+            return null;
+        }
+
+        const vtable = ivstparameterchanges.IParameterChangesVTable{
+            .queryInterface = queryInterface,
+            .addRef = addRef,
+            .release = release,
+            .getParameterCount = getParameterCount,
+            .getParameterData = getParameterData,
+            .addParameterData = addParameterData,
+        };
+    };
+    const gain_points = [_]TestParamPoint{
+        .{ .sample_offset = 0, .value = 0.25 },
+        .{ .sample_offset = -1, .value = 0.5 },
+        .{ .sample_offset = 4, .value = 0.75 },
+        .{ .sample_offset = 2, .value = 1.5 },
+        .{ .sample_offset = 2, .value = std.math.inf(vsttypes.ParamValue) },
+        .{ .sample_offset = 3, .value = 0.5 },
+    };
+    const mix_points = [_]TestParamPoint{.{ .sample_offset = 1, .value = 0.0 }};
+    var gain_queue = TestParamValueQueue.init(7, &gain_points);
+    var mix_queue = TestParamValueQueue.init(8, &mix_points);
+    var queues = [_]?*ivstparameterchanges.IParamValueQueue{
+        &gain_queue.iface,
+        &mix_queue.iface,
+    };
+    var changes = TestParameterChanges{ .queues = &queues };
     var storage: [2]plug.process.ParameterChange = undefined;
     var data = ivstaudioprocessor.ProcessData{
         .numSamples = 4,
-        .inputParameterChanges = changes.asInterface(),
+        .inputParameterChanges = &changes.iface,
     };
 
     const collected = collectInputParameterChanges(&data, &storage);
