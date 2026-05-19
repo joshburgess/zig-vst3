@@ -193,6 +193,15 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             string_value: [max_string_chars]vsttypes.TChar = [_]vsttypes.TChar{0} ** max_string_chars,
             binary_value: [max_binary_bytes]u8 = [_]u8{0} ** max_binary_bytes,
             binary_size: types.uint32 = 0,
+
+            fn reset(self: *Entry, kind: Kind) void {
+                self.kind = kind;
+                self.int_value = 0;
+                self.float_value = 0;
+                @memset(&self.string_value, 0);
+                @memset(&self.binary_value, 0);
+                self.binary_size = 0;
+            }
         };
 
         iface: ivstattributes.IAttributeList = .{ .vtable = &attribute_vtable },
@@ -247,7 +256,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn setInt(ptr: *anyopaque, id: ivstattributes.AttrID, value: types.int64) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.kind = .int;
+            entry.reset(.int);
             entry.int_value = value;
             return types.kResultOk;
         }
@@ -266,7 +275,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn setFloat(ptr: *anyopaque, id: ivstattributes.AttrID, value: f64) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.kind = .float;
+            entry.reset(.float);
             entry.float_value = value;
             return types.kResultOk;
         }
@@ -285,7 +294,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn setString(ptr: *anyopaque, id: ivstattributes.AttrID, value: [*:0]const vsttypes.TChar) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.kind = .string;
+            entry.reset(.string);
             fixed_string.copyUtf16Z(&entry.string_value, std.mem.span(value));
             return types.kResultOk;
         }
@@ -308,9 +317,8 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             if (size > max_binary_bytes) return types.kResultFalse;
             if (size > 0 and value == null) return types.kInvalidArgument;
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.kind = .binary;
+            entry.reset(.binary);
             entry.binary_size = size;
-            @memset(&entry.binary_value, 0);
             if (size > 0) {
                 const source = value orelse return types.kInvalidArgument;
                 const bytes: [*]const u8 = @ptrCast(source);
@@ -570,6 +578,16 @@ test "attribute list replaces values and clears stale typed outputs" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getString(iface, "value", &text_out, text_out.len));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'n'), text_out[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), text_out[3]);
+
+    const bytes = [_]u8{ 1, 2, 3 };
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setBinary(iface, "value", &bytes, bytes.len));
+    try std.testing.expectEqual(@as(types.uint32, bytes.len), list.entries[0].binary_size);
+    try std.testing.expectEqual(@as(u8, 3), list.entries[0].binary_value[2]);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setInt(iface, "value", 25));
+    try std.testing.expectEqual(@as(types.uint32, 0), list.entries[0].binary_size);
+    try std.testing.expectEqual(@as(u8, 0), list.entries[0].binary_value[2]);
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), list.entries[0].string_value[0]);
 }
 
 test "attribute list stores empty binary values and rejects null nonempty data" {
