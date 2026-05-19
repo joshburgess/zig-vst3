@@ -70,6 +70,19 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             dependent: ?*iupdatehandler.IDependent = null,
             deferred: bool = false,
             deferred_message: types.int32 = 0,
+
+            fn set(self: *Entry, changed: ?*anyopaque, dependent: *iupdatehandler.IDependent) void {
+                self.changed = changed;
+                self.dependent = dependent;
+                self.deferred = false;
+                self.deferred_message = 0;
+                _ = dependent.vtable.addRef(dependent);
+            }
+
+            fn clear(self: *Entry) void {
+                if (self.dependent) |dependent| _ = dependent.vtable.release(dependent);
+                self.* = .{};
+            }
         };
 
         iface: iupdatehandler.IUpdateHandler = .{ .vtable = &vtable },
@@ -104,8 +117,8 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             if (self.findEntry(changed, dependent)) |entry| return entry;
             for (&self.entries) |*entry| {
                 if (entry.dependent == null) {
-                    entry.changed = changed;
-                    entry.dependent = dependent;
+                    const dep = dependent orelse return null;
+                    entry.set(changed, dep);
                     return entry;
                 }
             }
@@ -159,15 +172,13 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             const self = owner(ptr);
             if (self.findEntry(changed, dep) != null) return types.kResultOk;
             _ = self.slotFor(changed, dep) orelse return types.kResultFalse;
-            _ = dep.vtable.addRef(dep);
             return types.kResultOk;
         }
 
         fn removeDependent(ptr: *anyopaque, changed: ?*anyopaque, dependent: ?*iupdatehandler.IDependent) callconv(.c) types.tresult {
             const dep = dependent orelse return types.kInvalidArgument;
             const entry = owner(ptr).findEntry(changed, dep) orelse return types.kResultFalse;
-            entry.* = .{};
-            _ = dep.vtable.release(dep);
+            entry.clear();
             return types.kResultOk;
         }
 
@@ -213,6 +224,10 @@ test "update handler registers triggers and removes dependents" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.removeDependent(iface, &changed, dep_iface));
     try std.testing.expectEqual(@as(usize, 0), handler.dependentCount());
     try std.testing.expectEqual(@as(types.uint32, 1), dependent.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(?*anyopaque, null), handler.entries[0].changed);
+    try std.testing.expectEqual(@as(?*iupdatehandler.IDependent, null), handler.entries[0].dependent);
+    try std.testing.expect(!handler.entries[0].deferred);
+    try std.testing.expectEqual(@as(types.int32, 0), handler.entries[0].deferred_message);
 }
 
 test "update handler records deferred updates" {
