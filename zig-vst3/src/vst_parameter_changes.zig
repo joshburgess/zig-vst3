@@ -300,6 +300,25 @@ test "parameter changes reuse existing queues by id" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_queue.vtable.release(queried_queue));
 }
 
+test "parameter value queue preserves contents when full" {
+    var queue = ParamValueQueue(1).init(7);
+    const iface = queue.asInterface();
+    var first_index: types.int32 = -1;
+    var rejected_index: types.int32 = 42;
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addPoint(iface, 12, 0.25, &first_index));
+    try std.testing.expectEqual(@as(types.int32, 0), first_index);
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addPoint(iface, 24, 0.75, &rejected_index));
+    try std.testing.expectEqual(@as(types.int32, -1), rejected_index);
+    try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getPointCount(iface));
+
+    var sample_offset: types.int32 = -1;
+    var value: vsttypes.ParamValue = -1;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.getPoint(iface, 0, &sample_offset, &value));
+    try std.testing.expectEqual(@as(types.int32, 12), sample_offset);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), value);
+}
+
 test "parameter changes clear unsupported query outputs" {
     const Changes = ParameterChanges(1, 1);
     var changes = Changes{};

@@ -331,6 +331,25 @@ test "note expression helper clears unsupported query output from both interface
     try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }
 
+test "note expression helper query interfaces share object refcount" {
+    const Helper = NoteExpressionController(1, 1, struct {});
+    var helper = Helper{};
+
+    var queried_expression: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, helper.asKeyswitch().vtable.queryInterface(helper.asKeyswitch(), &ivstnoteexpression.inote_expression_controller_iid, &queried_expression));
+    try std.testing.expectEqual(@as(?*anyopaque, helper.asNoteExpression()), queried_expression);
+    try std.testing.expectEqual(@as(types.uint32, 2), helper.ref_count.load(.seq_cst));
+
+    var queried_unknown: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, helper.asKeyswitch().vtable.queryInterface(helper.asKeyswitch(), &funknown.iid, &queried_unknown));
+    try std.testing.expectEqual(@as(?*anyopaque, helper.asNoteExpression()), queried_unknown);
+    try std.testing.expectEqual(@as(types.uint32, 3), helper.ref_count.load(.seq_cst));
+
+    const expression: *ivstnoteexpression.INoteExpressionController = @ptrCast(@alignCast(queried_expression.?));
+    try std.testing.expectEqual(@as(types.uint32, 2), expression.vtable.release(expression));
+    try std.testing.expectEqual(@as(types.uint32, 1), helper.asNoteExpression().vtable.release(helper.asNoteExpression()));
+}
+
 test "note expression helper clears delegated conversion failures" {
     const Helper = NoteExpressionController(1, 1, struct {
         pub fn getNoteExpressionStringByValue(_: anytype, _: types.int32, _: types.int16, _: ivstnoteexpression.NoteExpressionTypeID, _: ivstnoteexpression.NoteExpressionValue, out: [*]vsttypes.TChar) types.tresult {
