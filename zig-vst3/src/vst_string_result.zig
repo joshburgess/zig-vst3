@@ -255,3 +255,22 @@ test "string result query works from string side and clears unsupported outputs"
     try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &missing));
     try std.testing.expectEqual(@as(?*anyopaque, null), missing);
 }
+
+test "string result query interfaces share object refcount" {
+    const Result = StringResult(8, 8);
+    var result = Result{};
+
+    var queried_result: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, result.asString().vtable.queryInterface(result.asString(), &istringresult.istring_result_iid, &queried_result));
+    try std.testing.expectEqual(@as(?*anyopaque, result.asResult()), queried_result);
+    try std.testing.expectEqual(@as(types.uint32, 2), result.ref_count.load(.seq_cst));
+
+    var queried_unknown: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, result.asString().vtable.queryInterface(result.asString(), &funknown.iid, &queried_unknown));
+    try std.testing.expectEqual(@as(?*anyopaque, result.asResult()), queried_unknown);
+    try std.testing.expectEqual(@as(types.uint32, 3), result.ref_count.load(.seq_cst));
+
+    const result_iface: *istringresult.IStringResult = @ptrCast(@alignCast(queried_result.?));
+    try std.testing.expectEqual(@as(types.uint32, 2), result_iface.vtable.release(result_iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), result.asResult().vtable.release(result.asResult()));
+}
