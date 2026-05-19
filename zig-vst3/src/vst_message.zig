@@ -292,15 +292,15 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn getString(ptr: *anyopaque, id: ivstattributes.AttrID, out: [*]vsttypes.TChar, size: types.uint32) callconv(.c) types.tresult {
             if (size == 0) return types.kInvalidArgument;
-            @memset(out[0..size], 0);
             const entry = owner(ptr).findEntry(id) orelse {
+                fixed_string.copyUtf16ZPtr(out, size, &.{});
                 return types.kResultFalse;
             };
             if (entry.kind != .string) {
+                fixed_string.copyUtf16ZPtr(out, size, &.{});
                 return types.kInvalidArgument;
             }
-            const len = @min(std.mem.len(@as([*:0]const vsttypes.TChar, @ptrCast(&entry.string_value))), size - 1);
-            @memcpy(out[0..len], entry.string_value[0..len]);
+            fixed_string.copyUtf16ZPtr(out, size, std.mem.sliceTo(&entry.string_value, 0));
             return types.kResultOk;
         }
 
