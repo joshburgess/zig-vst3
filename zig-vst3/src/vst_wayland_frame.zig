@@ -20,6 +20,11 @@ pub fn WaylandHost(comptime Config: type) type {
             return &self.iface;
         }
 
+        fn recordClose(self: *Self, display: ?*iwaylandframe.wl_display) void {
+            self.close_count +|= 1;
+            self.last_closed_display = display;
+        }
+
         fn owner(ptr: *anyopaque) *Self {
             const iface: *iwaylandframe.IWaylandHost = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -50,8 +55,7 @@ pub fn WaylandHost(comptime Config: type) type {
 
         fn closeWaylandConnection(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.close_count +|= 1;
-            self.last_closed_display = display;
+            self.recordClose(display);
             if (@hasDecl(Config, "closeWaylandConnection")) return Config.closeWaylandConnection(self, display);
             return types.kResultOk;
         }
@@ -82,6 +86,14 @@ pub fn WaylandFrame(comptime Config: type) type {
             return &self.iface;
         }
 
+        fn recordDisplay(self: *Self, display: ?*iwaylandframe.wl_display) void {
+            self.last_display = display;
+        }
+
+        fn acceptParentRect(self: *Self, rect: *const iplugview.ViewRect) void {
+            self.last_parent_rect = rect.*;
+        }
+
         fn owner(ptr: *anyopaque) *Self {
             const iface: *iwaylandframe.IWaylandFrame = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -106,7 +118,7 @@ pub fn WaylandFrame(comptime Config: type) type {
         fn getWaylandSurface(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.wl_surface {
             const self = owner(ptr);
             self.surface_count +|= 1;
-            self.last_display = display;
+            self.recordDisplay(display);
             if (@hasDecl(Config, "getWaylandSurface")) {
                 return Config.getWaylandSurface(display);
             }
@@ -115,18 +127,18 @@ pub fn WaylandFrame(comptime Config: type) type {
 
         fn failParentSurface(self: *Self, rect: *iplugview.ViewRect) ?*iwaylandframe.xdg_surface {
             rect.* = .{};
-            self.last_parent_rect = rect.*;
+            self.acceptParentRect(rect);
             return null;
         }
 
         fn getParentSurface(ptr: *anyopaque, rect: *iplugview.ViewRect, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.xdg_surface {
             const self = owner(ptr);
             self.parent_surface_count +|= 1;
-            self.last_display = display;
+            self.recordDisplay(display);
             if (@hasDecl(Config, "getParentSurface")) {
                 const surface = Config.getParentSurface(rect, display);
                 if (surface == null) return self.failParentSurface(rect);
-                self.last_parent_rect = rect.*;
+                self.acceptParentRect(rect);
                 return surface;
             }
             return self.failParentSurface(rect);
@@ -135,7 +147,7 @@ pub fn WaylandFrame(comptime Config: type) type {
         fn getParentToplevel(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.c) ?*iwaylandframe.xdg_toplevel {
             const self = owner(ptr);
             self.parent_toplevel_count +|= 1;
-            self.last_display = display;
+            self.recordDisplay(display);
             if (@hasDecl(Config, "getParentToplevel")) {
                 return Config.getParentToplevel(display);
             }
