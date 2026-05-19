@@ -117,6 +117,57 @@ test "connection point preserves peer when delegated connection changes fail" {
     try std.testing.expectEqual(existing_peer.asInterface(), point.connected_peer.?);
 }
 
+test "connection point stores peer and ignores unrelated disconnects" {
+    const Point = ConnectionPoint(struct {});
+    var point = Point{};
+    var peer = Point{};
+    var unrelated = Point{};
+    const iface = point.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.connect(iface, peer.asInterface()));
+    try std.testing.expectEqual(peer.asInterface(), point.connected_peer.?);
+    try std.testing.expectEqual(@as(types.uint32, 1), point.connect_count);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.disconnect(iface, unrelated.asInterface()));
+    try std.testing.expectEqual(peer.asInterface(), point.connected_peer.?);
+    try std.testing.expectEqual(@as(types.uint32, 1), point.disconnect_count);
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.disconnect(iface, peer.asInterface()));
+    try std.testing.expectEqual(@as(?*ivstmessage.IConnectionPoint, null), point.connected_peer);
+    try std.testing.expectEqual(@as(types.uint32, 2), point.disconnect_count);
+}
+
+test "connection point stores notified message and supports query interface" {
+    const Point = ConnectionPoint(struct {});
+    const TestMessage = Message(16, 1, 4, 4);
+    var point = Point{};
+    var message = TestMessage{};
+    const iface = point.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.notify(iface, message.asInterface()));
+    try std.testing.expectEqual(message.asInterface(), point.last_message.?);
+    try std.testing.expectEqual(@as(types.uint32, 1), point.notify_count);
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &ivstmessage.iconnection_point_iid, &queried));
+    try std.testing.expect(queried != null);
+    try std.testing.expectEqual(@as(types.uint32, 1), point.add_ref_count);
+    const queried_point: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_point.vtable.release(queried_point));
+    try std.testing.expectEqual(@as(types.uint32, 1), point.release_count);
+}
+
+test "connection point clears unsupported query output" {
+    const Point = ConnectionPoint(struct {});
+    var point = Point{};
+    const iface = point.asInterface();
+
+    var queried: ?*anyopaque = @ptrFromInt(0x1000);
+    try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+    try std.testing.expectEqual(@as(types.uint32, 0), point.add_ref_count);
+}
+
 pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usize, comptime max_binary_bytes: usize) type {
     if (max_entries == 0) @compileError("AttributeList requires at least one entry");
     if (max_string_chars == 0) @compileError("AttributeList requires at least one string code unit");
