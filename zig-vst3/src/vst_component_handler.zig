@@ -124,14 +124,42 @@ pub fn ComponentHandler2(comptime Config: type) type {
         handler2: ivsteditcontroller.IComponentHandler2 = .{ .vtable = &handler2_vtable },
         handler_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         handler2_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        begin_count: types.uint32 = 0,
+        perform_count: types.uint32 = 0,
+        end_count: types.uint32 = 0,
+        restart_count: types.uint32 = 0,
         dirty_count: types.uint32 = 0,
         open_editor_count: types.uint32 = 0,
         start_group_count: types.uint32 = 0,
         finish_group_count: types.uint32 = 0,
         handler2_add_ref_count: types.uint32 = 0,
         handler2_release_count: types.uint32 = 0,
+        last_param_id: vsttypes.ParamID = vsttypes.kNoParamId,
+        last_value: vsttypes.ParamValue = -1,
+        last_restart_flags: types.int32 = 0,
         last_dirty_state: types.TBool = 0,
         last_editor_name: types.FIDString = "",
+
+        fn recordBeginEdit(self: *Self, id: vsttypes.ParamID) void {
+            self.begin_count +|= 1;
+            self.last_param_id = id;
+        }
+
+        fn recordPerformEdit(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
+            self.perform_count +|= 1;
+            self.last_param_id = id;
+            self.last_value = value;
+        }
+
+        fn recordEndEdit(self: *Self, id: vsttypes.ParamID) void {
+            self.end_count +|= 1;
+            self.last_param_id = id;
+        }
+
+        fn recordRestart(self: *Self, flags: types.int32) void {
+            self.restart_count +|= 1;
+            self.last_restart_flags = flags;
+        }
 
         pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
             return &self.handler;
@@ -205,24 +233,28 @@ pub fn ComponentHandler2(comptime Config: type) type {
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
             return types.kResultOk;
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
             return types.kResultOk;
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
             return types.kResultOk;
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
             return types.kResultOk;
         }
@@ -285,10 +317,37 @@ pub fn ComponentHandler3(comptime Config: type) type {
         handler3: ivstcontextmenu.IComponentHandler3 = .{ .vtable = &handler3_vtable },
         handler_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         handler3_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        begin_count: types.uint32 = 0,
+        perform_count: types.uint32 = 0,
+        end_count: types.uint32 = 0,
+        restart_count: types.uint32 = 0,
         context_menu_count: types.uint32 = 0,
         handler3_add_ref_count: types.uint32 = 0,
         handler3_release_count: types.uint32 = 0,
         last_param_id: vsttypes.ParamID = vsttypes.kNoParamId,
+        last_value: vsttypes.ParamValue = -1,
+        last_restart_flags: types.int32 = 0,
+
+        fn recordBeginEdit(self: *Self, id: vsttypes.ParamID) void {
+            self.begin_count +|= 1;
+            self.last_param_id = id;
+        }
+
+        fn recordPerformEdit(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
+            self.perform_count +|= 1;
+            self.last_param_id = id;
+            self.last_value = value;
+        }
+
+        fn recordEndEdit(self: *Self, id: vsttypes.ParamID) void {
+            self.end_count +|= 1;
+            self.last_param_id = id;
+        }
+
+        fn recordRestart(self: *Self, flags: types.int32) void {
+            self.restart_count +|= 1;
+            self.last_restart_flags = flags;
+        }
 
         pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
             return &self.handler;
@@ -357,24 +416,28 @@ pub fn ComponentHandler3(comptime Config: type) type {
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
             return types.kResultOk;
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
             return types.kResultOk;
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
             return types.kResultOk;
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
             return types.kResultOk;
         }
@@ -415,17 +478,45 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         handler_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         bus_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         time_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        begin_count: types.uint32 = 0,
+        perform_count: types.uint32 = 0,
+        end_count: types.uint32 = 0,
+        restart_count: types.uint32 = 0,
         bus_activation_count: types.uint32 = 0,
         system_time_count: types.uint32 = 0,
         bus_add_ref_count: types.uint32 = 0,
         time_add_ref_count: types.uint32 = 0,
         bus_release_count: types.uint32 = 0,
         time_release_count: types.uint32 = 0,
+        last_param_id: vsttypes.ParamID = vsttypes.kNoParamId,
+        last_value: vsttypes.ParamValue = -1,
+        last_restart_flags: types.int32 = 0,
         last_media_type: vsttypes.MediaType = 0,
         last_direction: vsttypes.BusDirection = 0,
         last_bus_index: types.int32 = 0,
         last_bus_state: types.TBool = 0,
         last_system_time: types.int64 = 0,
+
+        fn recordBeginEdit(self: *Self, id: vsttypes.ParamID) void {
+            self.begin_count +|= 1;
+            self.last_param_id = id;
+        }
+
+        fn recordPerformEdit(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
+            self.perform_count +|= 1;
+            self.last_param_id = id;
+            self.last_value = value;
+        }
+
+        fn recordEndEdit(self: *Self, id: vsttypes.ParamID) void {
+            self.end_count +|= 1;
+            self.last_param_id = id;
+        }
+
+        fn recordRestart(self: *Self, flags: types.int32) void {
+            self.restart_count +|= 1;
+            self.last_restart_flags = flags;
+        }
 
         pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
             return &self.handler;
@@ -542,24 +633,28 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
             return types.kResultOk;
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
             return types.kResultOk;
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
             return types.kResultOk;
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
             return types.kResultOk;
         }
@@ -623,14 +718,41 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         progress: ivsteditcontroller.IProgress = .{ .vtable = &progress_vtable },
         handler_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         progress_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        begin_count: types.uint32 = 0,
+        perform_count: types.uint32 = 0,
+        end_count: types.uint32 = 0,
+        restart_count: types.uint32 = 0,
         start_count: types.uint32 = 0,
         update_count: types.uint32 = 0,
         finish_count: types.uint32 = 0,
         progress_add_ref_count: types.uint32 = 0,
         progress_release_count: types.uint32 = 0,
+        last_param_id: vsttypes.ParamID = vsttypes.kNoParamId,
+        last_restart_flags: types.int32 = 0,
         last_type: types.uint32 = 0,
         last_id: ivsteditcontroller.ProgressID = 0,
         last_value: vsttypes.ParamValue = 0,
+
+        fn recordBeginEdit(self: *Self, id: vsttypes.ParamID) void {
+            self.begin_count +|= 1;
+            self.last_param_id = id;
+        }
+
+        fn recordPerformEdit(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
+            self.perform_count +|= 1;
+            self.last_param_id = id;
+            self.last_value = value;
+        }
+
+        fn recordEndEdit(self: *Self, id: vsttypes.ParamID) void {
+            self.end_count +|= 1;
+            self.last_param_id = id;
+        }
+
+        fn recordRestart(self: *Self, flags: types.int32) void {
+            self.restart_count +|= 1;
+            self.last_restart_flags = flags;
+        }
 
         pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
             return &self.handler;
@@ -718,24 +840,28 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
             return types.kResultOk;
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
             return types.kResultOk;
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
             return types.kResultOk;
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
             return types.kResultOk;
         }
@@ -802,6 +928,10 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         handler_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         unit_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         unit2_ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        begin_count: types.uint32 = 0,
+        perform_count: types.uint32 = 0,
+        end_count: types.uint32 = 0,
+        restart_count: types.uint32 = 0,
         unit_selection_count: types.uint32 = 0,
         program_list_count: types.uint32 = 0,
         unit_by_bus_count: types.uint32 = 0,
@@ -809,9 +939,33 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         unit2_add_ref_count: types.uint32 = 0,
         unit_release_count: types.uint32 = 0,
         unit2_release_count: types.uint32 = 0,
+        last_param_id: vsttypes.ParamID = vsttypes.kNoParamId,
+        last_value: vsttypes.ParamValue = -1,
+        last_restart_flags: types.int32 = 0,
         last_unit_id: vsttypes.UnitID = ivstunits.kNoParentUnitId,
         last_program_list_id: vsttypes.ProgramListID = ivstunits.kNoProgramListId,
         last_program_index: types.int32 = 0,
+
+        fn recordBeginEdit(self: *Self, id: vsttypes.ParamID) void {
+            self.begin_count +|= 1;
+            self.last_param_id = id;
+        }
+
+        fn recordPerformEdit(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
+            self.perform_count +|= 1;
+            self.last_param_id = id;
+            self.last_value = value;
+        }
+
+        fn recordEndEdit(self: *Self, id: vsttypes.ParamID) void {
+            self.end_count +|= 1;
+            self.last_param_id = id;
+        }
+
+        fn recordRestart(self: *Self, flags: types.int32) void {
+            self.restart_count +|= 1;
+            self.last_restart_flags = flags;
+        }
 
         pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
             return &self.handler;
@@ -920,24 +1074,28 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
             return types.kResultOk;
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
             return types.kResultOk;
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
             return types.kResultOk;
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
+            self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
             return types.kResultOk;
         }
@@ -1056,6 +1214,18 @@ test "component handler 2 exposes extension and records callbacks" {
     var handler = Handler{};
     var queried: ?*anyopaque = null;
 
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.beginEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, 0.5));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.endEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.restartComponent(handler.asHandler(), 3));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.begin_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.perform_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.end_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.restart_count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 9), handler.last_param_id);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), handler.last_value);
+    try std.testing.expectEqual(@as(types.int32, 3), handler.last_restart_flags);
+
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.queryInterface(handler.asHandler(), &ivsteditcontroller.icomponent_handler2_iid, &queried));
     try std.testing.expect(queried != null);
     const handler2: *ivsteditcontroller.IComponentHandler2 = @ptrCast(@alignCast(queried.?));
@@ -1091,6 +1261,18 @@ test "component handler 3 exposes context menu extension" {
     const Handler = ComponentHandler3(struct {});
     var handler = Handler{};
     var queried: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.beginEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, 0.5));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.endEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.restartComponent(handler.asHandler(), 3));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.begin_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.perform_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.end_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.restart_count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 9), handler.last_param_id);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), handler.last_value);
+    try std.testing.expectEqual(@as(types.int32, 3), handler.last_restart_flags);
 
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.queryInterface(handler.asHandler(), &ivstcontextmenu.icomponent_handler3_iid, &queried));
     try std.testing.expect(queried != null);
@@ -1128,6 +1310,18 @@ test "component handler exposes bus activation and system time extensions" {
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.queryInterface(handler.asHandler(), &ivsteditcontroller.icomponent_handler_system_time_iid, &time_out));
     try std.testing.expect(bus_out != null);
     try std.testing.expect(time_out != null);
+
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.beginEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, 0.5));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.endEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.restartComponent(handler.asHandler(), 3));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.begin_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.perform_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.end_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.restart_count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 9), handler.last_param_id);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), handler.last_value);
+    try std.testing.expectEqual(@as(types.int32, 3), handler.last_restart_flags);
 
     const bus: *ivsteditcontroller.IComponentHandlerBusActivation = @ptrCast(@alignCast(bus_out.?));
     const time: *ivsteditcontroller.IComponentHandlerSystemTime = @ptrCast(@alignCast(time_out.?));
@@ -1219,6 +1413,18 @@ test "component handler exposes progress callbacks" {
     });
     var handler = Handler{};
     var queried: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.beginEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, 0.5));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.endEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.restartComponent(handler.asHandler(), 3));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.begin_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.perform_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.end_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.restart_count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 9), handler.last_param_id);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), handler.last_value);
+    try std.testing.expectEqual(@as(types.int32, 3), handler.last_restart_flags);
 
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.queryInterface(handler.asHandler(), &ivsteditcontroller.iprogress_iid, &queried));
     try std.testing.expect(queried != null);
@@ -1314,6 +1520,18 @@ test "component handler exposes unit handler extensions" {
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.queryInterface(handler.asHandler(), &ivstunits.iunit_handler2_iid, &unit2_out));
     try std.testing.expect(unit_out != null);
     try std.testing.expect(unit2_out != null);
+
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.beginEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, 0.5));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.endEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.restartComponent(handler.asHandler(), 3));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.begin_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.perform_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.end_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.restart_count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 9), handler.last_param_id);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), handler.last_value);
+    try std.testing.expectEqual(@as(types.int32, 3), handler.last_restart_flags);
 
     const unit: *ivstunits.IUnitHandler = @ptrCast(@alignCast(unit_out.?));
     const unit2: *ivstunits.IUnitHandler2 = @ptrCast(@alignCast(unit2_out.?));
