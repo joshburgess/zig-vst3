@@ -2874,6 +2874,21 @@ test "zig-vst3-plugin bridge exposes output event writer to processors" {
     try std.testing.expectEqual(@as(usize, 1), writer.events().items[0].sample_offset);
 }
 
+test "bridge bounded collector caps appended items" {
+    const Collector = BoundedCollector(u8);
+    var storage = [_]u8{0} ** 2;
+    var collector = Collector{ .storage = &storage, .frame_count = 4 };
+
+    try std.testing.expect(collector.append(1));
+    try std.testing.expect(collector.append(2));
+    try std.testing.expect(!collector.append(3));
+    try std.testing.expectEqualSlices(u8, &.{ 1, 2 }, collector.items());
+    try std.testing.expect(!collector.hasCapacity());
+
+    collector.count = 99;
+    try std.testing.expectEqualSlices(u8, &.{ 1, 2 }, collector.items());
+}
+
 fn expectString128(expected: []const u8, actual: *const vsttypes.String128) !void {
     for (expected, 0..) |char, index| {
         try std.testing.expectEqual(@as(vsttypes.TChar, char), actual[index]);
