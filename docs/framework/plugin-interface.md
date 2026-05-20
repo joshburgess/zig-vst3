@@ -101,6 +101,8 @@ Use `processWithParameterView` for most plugins. Use the plain `process` hook wh
 
 `PrepareConfig` rejects non-finite or non-positive sample rates and zero maximum block sizes before `prepare` runs. The VST3 shell applies the same checks when hosts set up processing.
 
+During VST3 processing, the shell uses the host process context sample rate when it is valid. If the host omits the process context, it uses the validated sample rate from `setupProcessing`.
+
 ## Process Context
 
 `process.ProcessContext(Sample)` carries typed audio buffers, parameter changes, input events, optional output-event storage, and sample-rate timing helpers.
