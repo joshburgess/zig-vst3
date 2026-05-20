@@ -527,6 +527,13 @@ test "plug interface support stores supported IIDs" {
     try std.testing.expect(queried != null);
     const queried_iface: *ivstpluginterfacesupport.IPlugInterfaceSupport = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_iface.vtable.release(queried_iface));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), support.ref_count.load(.seq_cst));
+    const queried_unknown: *ivstpluginterfacesupport.IPlugInterfaceSupport = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "plug interface support clamps inflated counts" {
@@ -565,6 +572,13 @@ test "prefetchable support reports default state and supports query interface" {
     try std.testing.expect(queried != null);
     const queried_iface: *ivstprefetchablesupport.IPrefetchableSupport = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_iface.vtable.release(queried_iface));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), support.ref_count.load(.seq_cst));
+    const queried_unknown: *ivstprefetchablesupport.IPrefetchableSupport = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "prefetchable support reports state and clears delegated failure" {
@@ -911,6 +925,13 @@ test "physical UI mapping reports empty lists and supports query interface" {
     try std.testing.expect(queried != null);
     const queried_iface: *ivstphysicalui.INoteExpressionPhysicalUIMapping = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_iface.vtable.release(queried_iface));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), mapping.ref_count.load(.seq_cst));
+    const queried_unknown: *ivstphysicalui.INoteExpressionPhysicalUIMapping = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "physical UI mapping clears unsupported query output" {

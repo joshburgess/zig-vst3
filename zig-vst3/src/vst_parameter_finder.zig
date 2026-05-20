@@ -205,6 +205,13 @@ test "parameter finder supports query interface" {
     try std.testing.expect(queried != null);
     const queried_finder: *ivstplugview.IParameterFinder = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_finder.vtable.release(queried_finder));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), finder.ref_count.load(.seq_cst));
+    const queried_unknown: *ivstplugview.IParameterFinder = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "parameter function name maps known host function names" {
@@ -279,11 +286,25 @@ test "parameter function name and remap helpers support query interface" {
     const function_iface: *ivstparameterfunctionname.IParameterFunctionName = @ptrCast(@alignCast(function_query.?));
     try std.testing.expectEqual(@as(types.uint32, 1), function_iface.vtable.release(function_iface));
 
+    function_query = null;
+    try std.testing.expectEqual(types.kResultOk, functions.asInterface().vtable.queryInterface(functions.asInterface(), &funknown.iid, &function_query));
+    try std.testing.expectEqual(@as(?*anyopaque, functions.asInterface()), function_query);
+    try std.testing.expectEqual(@as(types.uint32, 2), functions.ref_count.load(.seq_cst));
+    const function_unknown: *ivstparameterfunctionname.IParameterFunctionName = @ptrCast(@alignCast(function_query.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), function_unknown.vtable.release(function_unknown));
+
     var remap_query: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, remap.asInterface().vtable.queryInterface(remap.asInterface(), &ivstremapparamid.iremap_param_id_iid, &remap_query));
     try std.testing.expect(remap_query != null);
     const remap_iface: *ivstremapparamid.IRemapParamID = @ptrCast(@alignCast(remap_query.?));
     try std.testing.expectEqual(@as(types.uint32, 1), remap_iface.vtable.release(remap_iface));
+
+    remap_query = null;
+    try std.testing.expectEqual(types.kResultOk, remap.asInterface().vtable.queryInterface(remap.asInterface(), &funknown.iid, &remap_query));
+    try std.testing.expectEqual(@as(?*anyopaque, remap.asInterface()), remap_query);
+    try std.testing.expectEqual(@as(types.uint32, 2), remap.ref_count.load(.seq_cst));
+    const remap_unknown: *ivstremapparamid.IRemapParamID = @ptrCast(@alignCast(remap_query.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), remap_unknown.vtable.release(remap_unknown));
 }
 
 test "parameter helper unsupported queries clear stale outputs" {

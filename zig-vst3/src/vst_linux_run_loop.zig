@@ -337,11 +337,25 @@ test "linux event and timer handlers delegate callbacks and support query interf
     const queried_event: *Linux.IEventHandler = @ptrCast(@alignCast(event_query.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_event.vtable.release(queried_event));
 
+    event_query = null;
+    try std.testing.expectEqual(types.kResultOk, event.asInterface().vtable.queryInterface(event.asInterface(), &funknown.iid, &event_query));
+    try std.testing.expectEqual(@as(?*anyopaque, event.asInterface()), event_query);
+    try std.testing.expectEqual(@as(types.uint32, 2), event.ref_count.load(.seq_cst));
+    const queried_event_unknown: *Linux.IEventHandler = @ptrCast(@alignCast(event_query.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_event_unknown.vtable.release(queried_event_unknown));
+
     var timer_query: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, timer.asInterface().vtable.queryInterface(timer.asInterface(), &iplugview.itimer_handler_iid, &timer_query));
     try std.testing.expect(timer_query != null);
     const queried_timer: *Linux.ITimerHandler = @ptrCast(@alignCast(timer_query.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_timer.vtable.release(queried_timer));
+
+    timer_query = null;
+    try std.testing.expectEqual(types.kResultOk, timer.asInterface().vtable.queryInterface(timer.asInterface(), &funknown.iid, &timer_query));
+    try std.testing.expectEqual(@as(?*anyopaque, timer.asInterface()), timer_query);
+    try std.testing.expectEqual(@as(types.uint32, 2), timer.ref_count.load(.seq_cst));
+    const queried_timer_unknown: *Linux.ITimerHandler = @ptrCast(@alignCast(timer_query.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_timer_unknown.vtable.release(queried_timer_unknown));
 }
 
 test "linux event and timer handlers clear unsupported query output" {
@@ -457,6 +471,13 @@ test "linux run loop supports query interface" {
     try std.testing.expect(queried != null);
     const queried_loop: *Linux.IRunLoop = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_loop.vtable.release(queried_loop));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), loop.ref_count.load(.seq_cst));
+    const queried_unknown: *Linux.IRunLoop = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "linux run loop clears unsupported query output" {
