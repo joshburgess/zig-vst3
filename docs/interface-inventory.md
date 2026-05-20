@@ -2,7 +2,7 @@
 
 SDK source: Steinberg VST3 SDK `v3.8.0_build_66`, commit `9fad9770f2ae8542ab1a548a68c1ad1ac690abe0`.
 
-This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginterfaces/gui` interfaces that declare an IID with `DECLARE_CLASS_IID`. Priorities are initial planning values:
+This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginterfaces/gui` interfaces that declare an IID with `DECLARE_CLASS_IID`. Priority labels group interfaces by release relevance:
 
 - P0: required for the first valid gain plugin
 - P1: required for typical effects, instruments, automation, state, and generic editors
@@ -132,12 +132,12 @@ This inventory covers `pluginterfaces/base`, `pluginterfaces/vst`, and `pluginte
 | `ITestPlugProvider`, `ITestPlugProvider2` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build test-plug-provider-abi`; reusable test provider helper covers provider2 factory, component/controller delegation, release tracking, and missing UID behavior |
 | `ITest`, `ITestResult`, `ITestSuite`, `ITestFactory` | Initial vtable translation complete; IIDs checked against the pinned SDK with `zig build test-interfaces-abi`; reusable test interface helpers cover result storage, null messages, lifecycle delegation, suite registration, environment replacement, and factory delegation |
 
-## Phase 2 P0 Seed List
+## Core Release Interfaces
 
-Translate these first:
+The P0 set is the minimum raw API surface for a valid effect plugin:
 
 `FUnknown`, `IPluginBase`, `IPluginFactory`, `IPluginFactory2`, `IPluginFactory3`, `IBStream`, `IComponent`, `IAudioProcessor`, `IEditController`, `IComponentHandler`, `IParameterChanges`, `IParamValueQueue`, `IEventList`, `IConnectionPoint`, `IMessage`, `IAttributeList`, and `IHostApplication`.
 
 ## 3.8.0 Additions Tracked Explicitly
 
-The SDK 3.8.0 interfaces `IMidiMapping2`, `IMidiLearn2`, `IWaylandHost`, and `IWaylandFrame` are included above. They should not block the first gain plugin, but they must stay visible so the binding set does not silently target an older SDK surface.
+The SDK 3.8.0 interfaces `IMidiMapping2`, `IMidiLearn2`, `IWaylandHost`, and `IWaylandFrame` are included above so the binding set does not silently target an older SDK surface.
