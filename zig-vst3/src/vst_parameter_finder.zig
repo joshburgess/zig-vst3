@@ -24,10 +24,7 @@ pub fn ParameterFinder(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstplugview.IParameterFinder = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstplugview.IParameterFinder, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
@@ -75,10 +72,7 @@ pub fn ParameterFunctionName(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstparameterfunctionname.IParameterFunctionName = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstparameterfunctionname.IParameterFunctionName, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
@@ -126,10 +120,7 @@ pub fn RemapParamID(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstremapparamid.IRemapParamID = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstremapparamid.IRemapParamID, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{

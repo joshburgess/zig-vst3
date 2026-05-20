@@ -21,10 +21,7 @@ pub fn ContextMenuTarget(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstcontextmenu.IContextMenuTarget = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstcontextmenu.IContextMenuTarget, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
@@ -97,10 +94,7 @@ pub fn ContextMenu(comptime max_items: usize) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstcontextmenu.IContextMenu = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstcontextmenu.IContextMenu, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{

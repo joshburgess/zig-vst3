@@ -28,10 +28,7 @@ pub fn ConnectionPoint(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstmessage.IConnectionPoint, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
@@ -241,10 +238,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstattributes.IAttributeList = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstattributes.IAttributeList, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
@@ -406,10 +400,7 @@ pub fn StreamAttributes(comptime max_file_name_chars: usize, comptime max_attrib
             fixed_string.copyUtf16Z(&self.file_name, std.mem.span(value));
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstattributes.IStreamAttributes = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstattributes.IStreamAttributes, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
@@ -463,10 +454,7 @@ pub fn Message(comptime max_message_id_bytes: usize, comptime max_attributes: us
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstmessage.IMessage = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstmessage.IMessage, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries_for_query = [_]interface_map.Entry{
