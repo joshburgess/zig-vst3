@@ -34,6 +34,10 @@ fn countHasNoEntries(count: usize) bool {
     return count == 0;
 }
 
+fn partialCount(actual_count: usize, total_count: usize) bool {
+    return countHasEntries(actual_count) and countIsFewer(actual_count, total_count);
+}
+
 pub const ParameterStateHeader = struct {
     version: u16,
     entry_count: usize,
@@ -327,24 +331,23 @@ pub const ReadParameterStateReport = struct {
     }
 
     pub fn accountedPartialEntries(self: ReadParameterStateReport) bool {
-        const accounted = self.accountedCount();
-        return countHasEntries(accounted) and countIsFewer(accounted, self.decodedCount());
+        return partialCount(self.accountedCount(), self.decodedCount());
     }
 
     pub fn restoredAllEntries(self: ReadParameterStateReport) bool {
-        return countMatches(self.restoredCount(), self.decodedCount()) and self.hasNoIgnoredEntries();
+        return self.restoredCountMatchesDecoded() and self.hasNoIgnoredEntries();
     }
 
     pub fn restoredPartialEntries(self: ReadParameterStateReport) bool {
-        return self.hasRestoredEntries() and countIsFewer(self.restoredCount(), self.decodedCount());
+        return partialCount(self.restoredCount(), self.decodedCount());
     }
 
     pub fn ignoredAllEntries(self: ReadParameterStateReport) bool {
-        return self.hasDecodedEntries() and countMatches(self.ignoredCount(), self.decodedCount()) and self.hasNoRestoredEntries();
+        return self.hasDecodedEntries() and self.ignoredCountMatchesDecoded() and self.hasNoRestoredEntries();
     }
 
     pub fn ignoredPartialEntries(self: ReadParameterStateReport) bool {
-        return self.hasIgnoredEntries() and countIsFewer(self.ignoredCount(), self.decodedCount());
+        return partialCount(self.ignoredCount(), self.decodedCount());
     }
 
     pub fn restoredAndIgnoredEntries(self: ReadParameterStateReport) bool {
@@ -381,5 +384,13 @@ pub const ReadParameterStateReport = struct {
 
     pub fn isPartialClassification(self: ReadParameterStateReport) bool {
         return self.classification() == .partial;
+    }
+
+    fn restoredCountMatchesDecoded(self: ReadParameterStateReport) bool {
+        return countMatches(self.restoredCount(), self.decodedCount());
+    }
+
+    fn ignoredCountMatchesDecoded(self: ReadParameterStateReport) bool {
+        return countMatches(self.ignoredCount(), self.decodedCount());
     }
 };
