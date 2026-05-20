@@ -1377,6 +1377,77 @@ test "simple stereo effect clears unsupported query outputs" {
     try std.testing.expect(processor.vtable.release(processor) >= 1);
 }
 
+test "simple stereo effect processes with setup sample rate when process context is absent" {
+    const Config = struct {
+        pub const component_name = "SampleRateFallback";
+        pub const controller_cid = tuid.inlineUid(0x22222222, 0x33333333, 0x44444444, 0x55555555);
+
+        pub const Processor = struct {
+            pub fn process(_: @This(), comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+                for (0..context.outputChannelCount()) |channel| {
+                    const output = context.outputChannel(channel) orelse continue;
+                    @memset(output, @floatCast(context.sampleRate()));
+                }
+            }
+        };
+
+        pub fn applyParameterChanges(_: plug_process.ParameterChanges) void {}
+
+        pub fn readState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultFalse;
+        }
+
+        pub fn writeState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultFalse;
+        }
+    };
+    const TestEffect = SimpleStereoEffect(Config);
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestEffect.create(@ptrCast(&ivstcomponent.icomponent_iid), &component_out));
+    try std.testing.expect(component_out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(component_out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &processor_out));
+    try std.testing.expect(processor_out != null);
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
+    defer _ = processor.vtable.release(processor);
+
+    var setup = ivstaudioprocessor.ProcessSetup{
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .sampleRate = 44_100.0,
+        .maxSamplesPerBlock = 2,
+    };
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.setupProcessing(processor, &setup));
+
+    var input_samples = [_]f32{ 1.0, 2.0 };
+    var output_samples = [_]f32{ 9.0, 9.0 };
+    var input_channel_ptrs = [_][*]f32{&input_samples};
+    var output_channel_ptrs = [_][*]f32{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
+    }};
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = input_samples.len,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+    };
+
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqual(@as(f32, 44_100.0), output_samples[0]);
+    try std.testing.expectEqual(@as(f32, 44_100.0), output_samples[1]);
+}
+
 pub fn SimpleStereoEffect(comptime Config: type) type {
     return struct {
         const Self = @This();
@@ -1409,6 +1480,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             info_listener: ?*ivstchannelcontextinfo.IInfoListener = null,
             automation_state: ?*ivstautomationstate.IAutomationState = null,
             data_exchange_handler: ?*ivstdataexchange.IDataExchangeHandler = null,
+            sample_rate: f64 = 0,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
         };
 
@@ -1864,10 +1936,12 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return zig_vst3_plugin_bridge.RealtimeProcessorDefaults.latencySamples();
         }
 
-        fn setupProcessing(_: *anyopaque, setup: *ivstaudioprocessor.ProcessSetup) callconv(.c) types.tresult {
+        fn setupProcessing(ptr: *anyopaque, setup: *ivstaudioprocessor.ProcessSetup) callconv(.c) types.tresult {
+            const self = ownerFromProcessor(ptr);
             const setup_result = zig_vst3_plugin_bridge.RealtimeProcessorDefaults.validateProcessSetup(setup);
             if (setup_result != types.kResultOk) return setup_result;
 
+            self.sample_rate = setup.sampleRate;
             resetProcessState();
             return types.kResultOk;
         }
@@ -1877,7 +1951,8 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn process(_: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.c) types.tresult {
+        fn process(ptr: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.c) types.tresult {
+            const self = ownerFromProcessor(ptr);
             var parameter_change_storage: [process_parameter_change_capacity]plug_process.ParameterChange = undefined;
             var event_storage: [process_event_capacity]plug_process.Event = undefined;
             var output_event_storage: [process_output_event_capacity]plug_process.Event = undefined;
@@ -1885,7 +1960,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             const events = zig_vst3_plugin_bridge.collectInputEvents(data, &event_storage);
             var output_events = plug_process.EventWriter.init(&output_event_storage, zig_vst3_plugin_bridge.frameCountOrZero(data));
             Config.applyParameterChanges(parameter_changes);
-            const result = zig_vst3_plugin_bridge.processMainAudioConfigured(data, parameter_changes, events, &output_events, Config.Processor{}, bus_config);
+            const result = zig_vst3_plugin_bridge.processMainAudioConfiguredWithSampleRate(data, parameter_changes, events, &output_events, Config.Processor{}, bus_config, self.sample_rate);
             if (result != types.kResultOk) return result;
             return zig_vst3_plugin_bridge.writeOutputEvents(data, output_events.events());
         }

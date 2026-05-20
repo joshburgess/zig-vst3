@@ -432,6 +432,17 @@ fn validFrameCount(data: *const ivstaudioprocessor.ProcessData) !usize {
     return @intCast(data.numSamples);
 }
 
+fn validSampleRate(value: f64) bool {
+    return std.math.isFinite(value) and value > 0.0;
+}
+
+fn processSampleRate(data: *const ivstaudioprocessor.ProcessData, fallback: f64) f64 {
+    if (data.processContext) |process_context| {
+        if (validSampleRate(process_context.sampleRate)) return process_context.sampleRate;
+    }
+    return fallback;
+}
+
 pub fn collectInputParameterChanges(data: *ivstaudioprocessor.ProcessData, storage: []plug.process.ParameterChange) plug.process.ParameterChanges {
     var collector = ParameterChangeCollector{
         .storage = storage,
@@ -471,6 +482,19 @@ pub fn makeProcessContext(
     events: plug.process.Events,
     output_events: ?*plug.process.EventWriter,
 ) !plug.process.ProcessContext(Sample) {
+    return makeProcessContextWithSampleRate(Sample, input, output, data, parameter_changes, events, output_events, 0);
+}
+
+pub fn makeProcessContextWithSampleRate(
+    comptime Sample: type,
+    input: ivstaudioprocessor.AudioBusBuffers,
+    output: ivstaudioprocessor.AudioBusBuffers,
+    data: *const ivstaudioprocessor.ProcessData,
+    parameter_changes: plug.process.ParameterChanges,
+    events: plug.process.Events,
+    output_events: ?*plug.process.EventWriter,
+    fallback_sample_rate: f64,
+) !plug.process.ProcessContext(Sample) {
     const frame_count = try validFrameCount(data);
     const channel_count = try boundedPairedAudioChannelCount(input, output);
     var input_channels: [max_audio_channels][]const Sample = undefined;
@@ -484,7 +508,7 @@ pub fn makeProcessContext(
     }
 
     return try plug.process.ProcessContext(Sample).initWith(
-        if (data.processContext) |process_context| process_context.sampleRate else 0,
+        processSampleRate(data, fallback_sample_rate),
         input_channels[0..channel_count],
         output_channels[0..channel_count],
         .{
@@ -533,6 +557,18 @@ pub fn makeMainAudioProcessContextConfigured(
     output_events: ?*plug.process.EventWriter,
     bus_config: StereoAudioBuses.Config,
 ) !plug.process.ProcessContext(Sample) {
+    return makeMainAudioProcessContextConfiguredWithSampleRate(Sample, data, parameter_changes, events, output_events, bus_config, 0);
+}
+
+pub fn makeMainAudioProcessContextConfiguredWithSampleRate(
+    comptime Sample: type,
+    data: *const ivstaudioprocessor.ProcessData,
+    parameter_changes: plug.process.ParameterChanges,
+    events: plug.process.Events,
+    output_events: ?*plug.process.EventWriter,
+    bus_config: StereoAudioBuses.Config,
+    fallback_sample_rate: f64,
+) !plug.process.ProcessContext(Sample) {
     const frame_count = try validFrameCount(data);
     var input_channels: [max_audio_channels][]const Sample = undefined;
     var output_channels: [max_audio_channels][]Sample = undefined;
@@ -550,7 +586,7 @@ pub fn makeMainAudioProcessContextConfigured(
         return error.MissingMainAudioChannels;
     }
     return try plug.process.ProcessContext(Sample).initWith(
-        if (data.processContext) |process_context| process_context.sampleRate else 0,
+        processSampleRate(data, fallback_sample_rate),
         input_channels[0..input_count],
         output_channels[0..output_count],
         .{
@@ -579,14 +615,26 @@ pub fn processMainAudioConfigured(
     processor: anytype,
     bus_config: StereoAudioBuses.Config,
 ) types.tresult {
+    return processMainAudioConfiguredWithSampleRate(data, parameter_changes, events, output_events, processor, bus_config, 0);
+}
+
+pub fn processMainAudioConfiguredWithSampleRate(
+    data: *const ivstaudioprocessor.ProcessData,
+    parameter_changes: plug.process.ParameterChanges,
+    events: plug.process.Events,
+    output_events: ?*plug.process.EventWriter,
+    processor: anytype,
+    bus_config: StereoAudioBuses.Config,
+    fallback_sample_rate: f64,
+) types.tresult {
     const sample_size_result = RealtimeProcessorDefaults.canProcessSampleSize(data.symbolicSampleSize);
     if (sample_size_result != types.kResultOk) return sample_size_result;
 
     if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
-        var context = makeMainAudioProcessContextConfigured(f32, data, parameter_changes, events, output_events, bus_config) catch |err| return processContextErrorResult(err);
+        var context = makeMainAudioProcessContextConfiguredWithSampleRate(f32, data, parameter_changes, events, output_events, bus_config, fallback_sample_rate) catch |err| return processContextErrorResult(err);
         processor.process(f32, &context);
     } else {
-        var context = makeMainAudioProcessContextConfigured(f64, data, parameter_changes, events, output_events, bus_config) catch |err| return processContextErrorResult(err);
+        var context = makeMainAudioProcessContextConfiguredWithSampleRate(f64, data, parameter_changes, events, output_events, bus_config, fallback_sample_rate) catch |err| return processContextErrorResult(err);
         processor.process(f64, &context);
     }
     return types.kResultOk;
@@ -2574,6 +2622,41 @@ test "zig-vst3-plugin bridge passes automation and events to main audio processo
     try std.testing.expectEqual(@as(usize, 1), event_count);
     try std.testing.expectEqual(@as(usize, 2), event_offset);
     try std.testing.expectEqual(@as(i16, 64), event_pitch);
+}
+
+test "zig-vst3-plugin bridge uses fallback sample rate without process context" {
+    const Recorder = struct {
+        sample_rate: *f64,
+
+        pub fn process(self: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
+            self.sample_rate.* = context.sampleRate();
+        }
+    };
+
+    var input_samples = [_]f32{ 0.0, 0.0 };
+    var output_samples = [_]f32{ 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f32{&input_samples};
+    var output_channel_ptrs = [_][*]f32{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
+    }};
+    const data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = input_samples.len,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+    };
+    var sample_rate: f64 = 0;
+
+    try std.testing.expectEqual(types.kResultOk, processMainAudioConfiguredWithSampleRate(&data, .{}, .{}, null, Recorder{ .sample_rate = &sample_rate }, .{}, 44_100.0));
+    try std.testing.expectEqual(@as(f64, 44_100.0), sample_rate);
 }
 
 test "zig-vst3-plugin bridge reports malformed main process data" {
