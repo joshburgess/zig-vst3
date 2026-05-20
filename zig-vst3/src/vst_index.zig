@@ -27,6 +27,16 @@ pub fn clampedCountU32(count: types.uint32, capacity: usize) usize {
     return @min(@as(usize, @intCast(count)), capacity);
 }
 
+pub fn nonNegativeCount(count: types.int32) ?usize {
+    if (count < 0) return null;
+    return @intCast(count);
+}
+
+pub fn nonNegativeU32Count(count: types.int32) ?types.uint32 {
+    if (count < 0) return null;
+    return @intCast(count);
+}
+
 pub fn int32Count(count: usize) types.int32 {
     std.debug.assert(count <= std.math.maxInt(types.int32));
     return @intCast(count);
@@ -96,6 +106,18 @@ test "clampedCountU32 converts host counts to storage bounds" {
     try std.testing.expectEqual(@as(usize, 0), clampedCountU32(0, 3));
     try std.testing.expectEqual(@as(usize, 2), clampedCountU32(2, 3));
     try std.testing.expectEqual(@as(usize, 3), clampedCountU32(4, 3));
+}
+
+test "nonNegativeCount converts signed host counts" {
+    try std.testing.expectEqual(@as(?usize, null), nonNegativeCount(-1));
+    try std.testing.expectEqual(@as(?usize, 0), nonNegativeCount(0));
+    try std.testing.expectEqual(@as(?usize, 7), nonNegativeCount(7));
+}
+
+test "nonNegativeU32Count converts signed host counts to unsigned VST fields" {
+    try std.testing.expectEqual(@as(?types.uint32, null), nonNegativeU32Count(-1));
+    try std.testing.expectEqual(@as(?types.uint32, 0), nonNegativeU32Count(0));
+    try std.testing.expectEqual(@as(?types.uint32, 7), nonNegativeU32Count(7));
 }
 
 test "int32 count conversions keep the VST boundary explicit" {

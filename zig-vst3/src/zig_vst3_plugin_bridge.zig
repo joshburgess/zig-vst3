@@ -194,10 +194,11 @@ pub const RealtimeProcessorDefaults = struct {
         const sample_size_result = canProcessSampleSize(setup.symbolicSampleSize);
         if (sample_size_result != types.kResultOk) return sample_size_result;
 
-        if (setup.maxSamplesPerBlock <= 0) return types.kInvalidArgument;
+        const max_block_size = vst_index.nonNegativeU32Count(setup.maxSamplesPerBlock) orelse return types.kInvalidArgument;
+        if (max_block_size == 0) return types.kInvalidArgument;
         const prepare_config = plug.plugin.PrepareConfig{
             .sample_rate = setup.sampleRate,
-            .max_block_size = @intCast(setup.maxSamplesPerBlock),
+            .max_block_size = max_block_size,
         };
         prepare_config.validate() catch return types.kInvalidArgument;
         return types.kResultOk;
@@ -272,7 +273,7 @@ pub fn ParameterController(comptime Params: type) type {
         state: *State,
 
         pub fn parameterCount(_: *const Self) types.int32 {
-            return @intCast(Set.count);
+            return vst_index.int32Count(Set.count);
         }
 
         pub fn parameterInfo(self: *const Self, index: types.int32, out: *ivsteditcontroller.ParameterInfo) types.tresult {
@@ -425,12 +426,11 @@ pub fn plainParamToNormalized(
 }
 
 pub fn frameCountOrZero(data: *const ivstaudioprocessor.ProcessData) usize {
-    return if (data.numSamples <= 0) 0 else @intCast(data.numSamples);
+    return vst_index.nonNegativeCount(data.numSamples) orelse 0;
 }
 
 fn validFrameCount(data: *const ivstaudioprocessor.ProcessData) !usize {
-    if (data.numSamples < 0) return error.InvalidFrameCount;
-    return @intCast(data.numSamples);
+    return vst_index.nonNegativeCount(data.numSamples) orelse error.InvalidFrameCount;
 }
 
 fn validSampleRate(value: f64) bool {
@@ -804,8 +804,8 @@ fn vstAudioBuffers(comptime Sample: type, buffer: ivstaudioprocessor.AudioBusBuf
 }
 
 fn boundedAudioChannelCount(bus: ivstaudioprocessor.AudioBusBuffers) !usize {
-    if (bus.numChannels < 0) return error.InvalidChannelCount;
-    return @intCast(@min(bus.numChannels, max_audio_channels));
+    const count = vst_index.nonNegativeCount(bus.numChannels) orelse return error.InvalidChannelCount;
+    return @min(count, max_audio_channels);
 }
 
 fn boundedPairedAudioChannelCount(input: ivstaudioprocessor.AudioBusBuffers, output: ivstaudioprocessor.AudioBusBuffers) !usize {
@@ -908,8 +908,7 @@ fn collectLegacyMidiCcEvent(event: *const ivstevents.Event, offset: usize) plug.
 }
 
 fn sampleOffsetInBlock(sample_offset: types.int32, frame_count: usize) ?usize {
-    if (sample_offset < 0) return null;
-    const offset: usize = @intCast(sample_offset);
+    const offset = vst_index.nonNegativeCount(sample_offset) orelse return null;
     if (offset >= frame_count) return null;
     return offset;
 }
@@ -1013,7 +1012,7 @@ fn toVstEvent(event: plug.process.Event) ?ivstevents.Event {
             if (event.data.len > max_data_event_bytes) return null;
             result.type = @intFromEnum(ivstevents.Event.EventTypes.kDataEvent);
             result.data = .{ .data = .{
-                .size = @intCast(@min(event.data.len, std.math.maxInt(types.uint32))),
+                .size = vst_index.uint32Count(event.data.len),
                 .type = event.data_type,
                 .bytes = if (event.data.len == 0) null else event.data.ptr,
             } };
