@@ -20,11 +20,6 @@ pub fn WaylandHost(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn recordClose(self: *Self, display: ?*iwaylandframe.wl_display) void {
-            self.close_count +|= 1;
-            self.last_closed_display = display;
-        }
-
         fn owner(ptr: *anyopaque) *Self {
             const iface: *iwaylandframe.IWaylandHost = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -55,8 +50,12 @@ pub fn WaylandHost(comptime Config: type) type {
 
         fn closeWaylandConnection(ptr: *anyopaque, display: ?*iwaylandframe.wl_display) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.recordClose(display);
-            if (@hasDecl(Config, "closeWaylandConnection")) return Config.closeWaylandConnection(self, display);
+            self.close_count +|= 1;
+            if (@hasDecl(Config, "closeWaylandConnection")) {
+                const result = Config.closeWaylandConnection(self, display);
+                if (result != types.kResultOk) return result;
+            }
+            self.last_closed_display = display;
             return types.kResultOk;
         }
 
@@ -198,6 +197,24 @@ test "wayland host delegates connection hooks" {
     try std.testing.expectEqual(types.kResultOk, iface.vtable.closeWaylandConnection(iface, display));
     try std.testing.expectEqual(@as(types.uint32, 1), host.open_count);
     try std.testing.expectEqual(@as(types.uint32, 2), host.close_count);
+    try std.testing.expectEqual(display, host.last_closed_display.?);
+}
+
+test "wayland host preserves last accepted close display on rejection" {
+    const display: *iwaylandframe.wl_display = @ptrFromInt(0x1000);
+    const other_display: *iwaylandframe.wl_display = @ptrFromInt(0x2000);
+    const Host = WaylandHost(struct {
+        pub fn closeWaylandConnection(_: anytype, value: ?*iwaylandframe.wl_display) types.tresult {
+            return if (value == display) types.kResultOk else types.kInvalidArgument;
+        }
+    });
+    var host = Host{};
+    const iface = host.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.closeWaylandConnection(iface, display));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.closeWaylandConnection(iface, other_display));
+    try std.testing.expectEqual(@as(types.uint32, 2), host.close_count);
+    try std.testing.expectEqual(display, host.last_closed_display.?);
 }
 
 test "wayland host supports query interface" {
