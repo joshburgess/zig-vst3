@@ -220,6 +220,19 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             binary_value: [max_binary_bytes]u8 = [_]u8{0} ** max_binary_bytes,
             binary_size: types.uint32 = 0,
 
+            fn isEmpty(self: Entry) bool {
+                return self.kind == .empty;
+            }
+
+            fn hasKind(self: Entry, kind: Kind) bool {
+                return self.kind == kind;
+            }
+
+            fn matchesId(self: Entry, wanted: []const u8) bool {
+                const existing = self.id orelse return false;
+                return std.mem.eql(u8, wanted, std.mem.span(existing));
+            }
+
             fn reset(self: *Entry, kind: Kind) void {
                 self.kind = kind;
                 self.int_value = 0;
@@ -259,9 +272,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
         fn findEntry(self: *Self, id: ivstattributes.AttrID) ?*Entry {
             const wanted = std.mem.span(id);
             for (&self.entries) |*entry| {
-                if (entry.id) |existing| {
-                    if (std.mem.eql(u8, wanted, std.mem.span(existing))) return entry;
-                }
+                if (entry.matchesId(wanted)) return entry;
             }
             return null;
         }
@@ -269,7 +280,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
         fn slotFor(self: *Self, id: ivstattributes.AttrID) ?*Entry {
             if (self.findEntry(id)) |entry| return entry;
             for (&self.entries) |*entry| {
-                if (entry.kind == .empty) {
+                if (entry.isEmpty()) {
                     entry.id = id;
                     return entry;
                 }
@@ -291,7 +302,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn getInt(ptr: *anyopaque, id: ivstattributes.AttrID, out: *types.int64) callconv(.c) types.tresult {
             const entry = owner(ptr).findEntry(id) orelse return failInt(out, types.kResultFalse);
-            if (entry.kind != .int) return failInt(out, types.kInvalidArgument);
+            if (!entry.hasKind(.int)) return failInt(out, types.kInvalidArgument);
             out.* = entry.int_value;
             return types.kResultOk;
         }
@@ -310,7 +321,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn getFloat(ptr: *anyopaque, id: ivstattributes.AttrID, out: *f64) callconv(.c) types.tresult {
             const entry = owner(ptr).findEntry(id) orelse return failFloat(out, types.kResultFalse);
-            if (entry.kind != .float) return failFloat(out, types.kInvalidArgument);
+            if (!entry.hasKind(.float)) return failFloat(out, types.kInvalidArgument);
             out.* = entry.float_value;
             return types.kResultOk;
         }
@@ -328,7 +339,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
                 fixed_string.copyUtf16ZPtr(out, size, &.{});
                 return types.kResultFalse;
             };
-            if (entry.kind != .string) {
+            if (!entry.hasKind(.string)) {
                 fixed_string.copyUtf16ZPtr(out, size, &.{});
                 return types.kInvalidArgument;
             }
@@ -358,7 +369,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn getBinary(ptr: *anyopaque, id: ivstattributes.AttrID, out: *?*const anyopaque, size: *types.uint32) callconv(.c) types.tresult {
             const entry = owner(ptr).findEntry(id) orelse return failBinary(out, size, types.kResultFalse);
-            if (entry.kind != .binary) return failBinary(out, size, types.kInvalidArgument);
+            if (!entry.hasKind(.binary)) return failBinary(out, size, types.kInvalidArgument);
             out.* = &entry.binary_value;
             size.* = entry.binary_size;
             return types.kResultOk;
