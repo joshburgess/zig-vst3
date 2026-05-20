@@ -48,15 +48,8 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
             return &self.info_listener;
         }
 
-        fn ownerFromHost(ptr: *anyopaque) *Self {
-            const iface: *ivsthostapplication.IHostApplication = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("host_application", iface);
-        }
-
-        fn ownerFromInfo(ptr: *anyopaque) *Self {
-            const iface: *ivstchannelcontextinfo.IInfoListener = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("info_listener", iface);
-        }
+        const ownerFromHost = interface_map.ownerFromField(Self, ivsthostapplication.IHostApplication, "host_application");
+        const ownerFromInfo = interface_map.ownerFromField(Self, ivstchannelcontextinfo.IInfoListener, "info_listener");
 
         fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
@@ -155,15 +148,8 @@ pub fn AutomationStateHost(comptime name: []const u8, comptime Config: type) typ
             return &self.automation_state;
         }
 
-        fn ownerFromHost(ptr: *anyopaque) *Self {
-            const iface: *ivsthostapplication.IHostApplication = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("host_application", iface);
-        }
-
-        fn ownerFromAutomation(ptr: *anyopaque) *Self {
-            const iface: *ivstautomationstate.IAutomationState = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("automation_state", iface);
-        }
+        const ownerFromHost = interface_map.ownerFromField(Self, ivsthostapplication.IHostApplication, "host_application");
+        const ownerFromAutomation = interface_map.ownerFromField(Self, ivstautomationstate.IAutomationState, "automation_state");
 
         fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
@@ -264,15 +250,8 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return &self.data_exchange_handler;
         }
 
-        fn ownerFromHost(ptr: *anyopaque) *Self {
-            const iface: *ivsthostapplication.IHostApplication = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("host_application", iface);
-        }
-
-        fn ownerFromDataExchange(ptr: *anyopaque) *Self {
-            const iface: *ivstdataexchange.IDataExchangeHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("data_exchange_handler", iface);
-        }
+        const ownerFromHost = interface_map.ownerFromField(Self, ivsthostapplication.IHostApplication, "host_application");
+        const ownerFromDataExchange = interface_map.ownerFromField(Self, ivstdataexchange.IDataExchangeHandler, "data_exchange_handler");
 
         fn queryHost(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHost(ptr);
