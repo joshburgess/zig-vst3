@@ -31,6 +31,7 @@ const plug_process = plug_core.process;
 const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
+const vst_component_handler = @import("vst_component_handler.zig");
 const vst_index = @import("vst_index.zig");
 const vst_parameter_changes = @import("vst_parameter_changes.zig");
 const vst_stream = @import("vst_stream.zig");
@@ -1075,6 +1076,43 @@ test "reflected edit controller clears unsupported query outputs" {
     try std.testing.expectEqual(types.kNoInterface, unit_info.vtable.queryInterface(unit_info, &tuid.zero, &queried));
     try std.testing.expectEqual(@as(?*anyopaque, null), queried);
     try std.testing.expect(unit_info.vtable.release(unit_info) >= 1);
+}
+
+test "reflected edit controller releases replaced component handlers" {
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "HandlerLifecycleController";
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+    });
+    const Handler = vst_component_handler.ComponentHandler(struct {});
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var first = Handler{};
+    var second = Handler{};
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, first.asHandler()));
+    try std.testing.expectEqual(@as(types.uint32, 1), first.add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), first.release_count);
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, second.asHandler()));
+    try std.testing.expectEqual(@as(types.uint32, 1), first.release_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), second.add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), second.release_count);
+
+    try std.testing.expectEqual(types.kResultOk, TestController.beginEdit(7));
+    try std.testing.expectEqual(@as(types.uint32, 1), second.begin_count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 7), second.last_param_id);
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), second.release_count);
+    try std.testing.expectEqual(types.kResultFalse, TestController.beginEdit(7));
 }
 
 test "reflected edit controller exposes configured units and programs" {
