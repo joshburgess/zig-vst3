@@ -9,6 +9,16 @@ pub fn byteCount(len: usize) ?types.int32 {
     return std.math.cast(types.int32, len);
 }
 
+pub fn byteCountLen(count: types.int32) ?usize {
+    if (count < 0) return null;
+    return @intCast(count);
+}
+
+pub fn completedByteCountLen(count: types.int32, requested: types.int32) ?usize {
+    if (count < 0 or count > requested) return null;
+    return @intCast(count);
+}
+
 pub fn writeAll(stream: ?*ibstream.IBStream, bytes: []const u8) types.tresult {
     const out = stream orelse return types.kInvalidArgument;
     const byte_count_value = byteCount(bytes.len) orelse return types.kInvalidArgument;
@@ -132,8 +142,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         }
 
         fn read(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_read: ?*types.int32) callconv(.c) types.tresult {
-            if (byte_count < 0) return failByteCount(bytes_read, types.kInvalidArgument);
-            const requested: usize = @intCast(byte_count);
+            const requested = byteCountLen(byte_count) orelse return failByteCount(bytes_read, types.kInvalidArgument);
             if (requested > 0 and buffer == null) return failByteCount(bytes_read, types.kInvalidArgument);
             const self = ownerFromStream(ptr);
             const source = self.readableSlice(requested) orelse return failByteCount(bytes_read, types.kResultFalse);
@@ -143,13 +152,12 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
                 @memcpy(output, source);
             }
             self.pos += requested;
-            if (bytes_read) |out| out.* = @intCast(requested);
+            if (bytes_read) |out| out.* = byte_count;
             return types.kResultOk;
         }
 
         fn write(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_written: ?*types.int32) callconv(.c) types.tresult {
-            if (byte_count < 0) return failByteCount(bytes_written, types.kInvalidArgument);
-            const requested: usize = @intCast(byte_count);
+            const requested = byteCountLen(byte_count) orelse return failByteCount(bytes_written, types.kInvalidArgument);
             if (requested > 0 and buffer == null) return failByteCount(bytes_written, types.kInvalidArgument);
             const self = ownerFromStream(ptr);
             const target = self.writableSlice(requested) orelse return failByteCount(bytes_written, types.kResultFalse);
@@ -160,7 +168,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             }
             self.pos += requested;
             self.len = @max(self.len, self.pos);
-            if (bytes_written) |out| out.* = @intCast(requested);
+            if (bytes_written) |out| out.* = byte_count;
             return types.kResultOk;
         }
 
@@ -270,6 +278,15 @@ test "byteCount rejects sizes that cannot fit IBStream" {
     try std.testing.expectEqual(@as(?types.int32, 0), byteCount(0));
     try std.testing.expectEqual(@as(?types.int32, std.math.maxInt(types.int32)), byteCount(std.math.maxInt(types.int32)));
     try std.testing.expectEqual(@as(?types.int32, null), byteCount(@as(usize, std.math.maxInt(types.int32)) + 1));
+}
+
+test "byte count length conversion rejects invalid stream counts" {
+    try std.testing.expectEqual(@as(?usize, 0), byteCountLen(0));
+    try std.testing.expectEqual(@as(?usize, 7), byteCountLen(7));
+    try std.testing.expectEqual(@as(?usize, null), byteCountLen(-1));
+    try std.testing.expectEqual(@as(?usize, 3), completedByteCountLen(3, 4));
+    try std.testing.expectEqual(@as(?usize, null), completedByteCountLen(5, 4));
+    try std.testing.expectEqual(@as(?usize, null), completedByteCountLen(-1, 4));
 }
 
 test "fixed buffer stream round-trips generated chunked IO" {

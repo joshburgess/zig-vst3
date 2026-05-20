@@ -720,10 +720,10 @@ const IBStreamReader = struct {
         const byte_count = vst_stream.byteCount(buffer.len) orelse return error.ReadFailed;
         var bytes_read: types.int32 = 0;
         const result = self.stream.vtable.read(self.stream, buffer.ptr, byte_count, &bytes_read);
-        if (bytes_read < 0 or bytes_read > byte_count) return error.ReadFailed;
-        if (bytes_read == 0) return error.EndOfStream;
+        const read_count = vst_stream.completedByteCountLen(bytes_read, byte_count) orelse return error.ReadFailed;
+        if (read_count == 0) return error.EndOfStream;
         if (result != types.kResultOk) return error.ReadFailed;
-        return @intCast(bytes_read);
+        return read_count;
     }
 
     fn streamImpl(reader_interface: *std.Io.Reader, writer: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
@@ -777,8 +777,8 @@ const IBStreamWriter = struct {
         const byte_count = vst_stream.byteCount(bytes.len) orelse return error.WriteFailed;
         var bytes_written: types.int32 = 0;
         const result = self.stream.vtable.write(self.stream, @constCast(bytes.ptr), byte_count, &bytes_written);
-        if (result != types.kResultOk or bytes_written < 0 or bytes_written > byte_count) return error.WriteFailed;
-        return @intCast(bytes_written);
+        if (result != types.kResultOk) return error.WriteFailed;
+        return vst_stream.completedByteCountLen(bytes_written, byte_count) orelse return error.WriteFailed;
     }
 
     fn drain(writer_interface: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
