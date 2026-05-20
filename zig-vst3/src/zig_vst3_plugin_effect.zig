@@ -1115,6 +1115,47 @@ test "reflected edit controller releases replaced component handlers" {
     try std.testing.expectEqual(types.kResultFalse, TestController.beginEdit(7));
 }
 
+test "reflected edit controller releases replaced unit handler extensions" {
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "UnitHandlerLifecycleController";
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+    });
+    const Handler = vst_component_handler.ComponentHandlerUnits(struct {});
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var first = Handler{};
+    var second = Handler{};
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, first.asHandler()));
+    try std.testing.expectEqual(@as(types.uint32, 1), first.unit_add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), first.unit2_add_ref_count);
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, second.asHandler()));
+    try std.testing.expectEqual(@as(types.uint32, 1), first.unit_release_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), first.unit2_release_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), second.unit_add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), second.unit2_add_ref_count);
+
+    try std.testing.expectEqual(types.kResultOk, TestController.notifyUnitSelection(ivstunits.kRootUnitId));
+    try std.testing.expectEqual(types.kResultOk, TestController.notifyUnitByBusChange());
+    try std.testing.expectEqual(@as(types.uint32, 1), second.unit_selection_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), second.unit_by_bus_count);
+
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), second.unit_release_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), second.unit2_release_count);
+    try std.testing.expectEqual(types.kResultFalse, TestController.notifyUnitSelection(ivstunits.kRootUnitId));
+    try std.testing.expectEqual(types.kResultFalse, TestController.notifyUnitByBusChange());
+}
+
 test "reflected edit controller exposes configured units and programs" {
     const programs = [_]plug_core.units.Program{
         .{ .name = "Clean", .info = &.{.{ .key = "category", .value = "Clean" }} },
