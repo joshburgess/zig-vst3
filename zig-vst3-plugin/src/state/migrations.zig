@@ -148,3 +148,55 @@ test "parameter migration validation reports invalid migration tables" {
     try std.testing.expectEqual(@as(?usize, 1), ambiguousParameterMigrationIndex(&ambiguous));
     try std.testing.expectError(error.AmbiguousParameterMigration, validateParameterIdMigrations(&ambiguous));
 }
+
+test "parameter migration validation covers generated chains" {
+    for (1..8) |chain_len| {
+        var migrations: [7]ParameterIdMigration = undefined;
+        for (0..chain_len) |index| {
+            const old_id: u32 = @intCast(index + 1);
+            migrations[index] = .{
+                .old_id = old_id,
+                .new_id = old_id + 1,
+            };
+        }
+
+        const chain = migrations[0..chain_len];
+        try validateParameterIdMigrations(chain);
+        const terminal: u32 = @intCast(chain_len + 1);
+        for (1..chain_len + 1) |id| {
+            try std.testing.expectEqual(terminal, migratedParameterId(@intCast(id), chain));
+        }
+        try std.testing.expectEqual(@as(u32, 99), migratedParameterId(99, chain));
+    }
+}
+
+test "parameter migration validation covers generated fan-in ambiguity" {
+    for (3..10) |terminal| {
+        const terminal_id: u32 = @intCast(terminal);
+        const migrations = [_]ParameterIdMigration{
+            .{ .old_id = 1, .new_id = terminal_id },
+            .{ .old_id = 2, .new_id = terminal_id },
+        };
+
+        try std.testing.expectEqual(@as(?usize, 1), ambiguousParameterMigrationIndex(&migrations));
+        try std.testing.expectError(error.AmbiguousParameterMigration, validateParameterIdMigrations(&migrations));
+    }
+}
+
+test "parameter migration validation covers generated cycles" {
+    for (2..8) |cycle_len| {
+        var migrations: [7]ParameterIdMigration = undefined;
+        for (0..cycle_len) |index| {
+            const old_id: u32 = @intCast(index + 1);
+            const next_id: u32 = if (index + 1 == cycle_len) 1 else old_id + 1;
+            migrations[index] = .{
+                .old_id = old_id,
+                .new_id = next_id,
+            };
+        }
+
+        const cycle = migrations[0..cycle_len];
+        try std.testing.expectEqual(@as(?usize, 0), cyclicParameterMigrationIndex(cycle));
+        try std.testing.expectError(error.CyclicParameterMigration, validateParameterIdMigrations(cycle));
+    }
+}
