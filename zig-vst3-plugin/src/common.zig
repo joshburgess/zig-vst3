@@ -131,6 +131,35 @@ test "bipolar normalized conversion clamps both directions" {
     try std.testing.expectEqual(@as(f64, -1.0), bipolarFromNormalized(std.math.nan(f64)));
 }
 
+test "normalized bipolar conversions preserve clamped generated inputs" {
+    const inputs = [_]f64{
+        -std.math.inf(f64),
+        -2.0,
+        -1.0,
+        -0.25,
+        0.0,
+        0.25,
+        0.5,
+        1.0,
+        2.0,
+        std.math.inf(f64),
+        std.math.nan(f64),
+    };
+
+    for (inputs) |input| {
+        try std.testing.expectApproxEqAbs(
+            clampBipolarNormalized(input),
+            bipolarFromNormalized(normalizedFromBipolar(input)),
+            0.000001,
+        );
+        try std.testing.expectApproxEqAbs(
+            clampNormalized(input),
+            normalizedFromBipolar(bipolarFromNormalized(input)),
+            0.000001,
+        );
+    }
+}
+
 test "containsNul reports interior NUL bytes" {
     try std.testing.expect(!containsNul(""));
     try std.testing.expect(!containsNul("Gain"));
