@@ -78,7 +78,7 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
         }
 
         fn countClasses(_: *anyopaque) callconv(.c) types.int32 {
-            return @intCast(classes.len);
+            return vst_index.int32Count(classes.len);
         }
 
         fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.c) types.tresult {
@@ -164,7 +164,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
         }
 
         fn countClasses(_: *anyopaque) callconv(.c) types.int32 {
-            return @intCast(classes.len);
+            return vst_index.int32Count(classes.len);
         }
 
         fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.c) types.tresult {

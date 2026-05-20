@@ -113,7 +113,7 @@ pub fn ContextMenu(comptime max_items: usize) type {
         }
 
         fn getItemCount(ptr: *anyopaque) callconv(.c) types.int32 {
-            return @intCast(owner(ptr).occupiedCount());
+            return vst_index.int32Count(owner(ptr).occupiedCount());
         }
 
         pub fn occupiedCount(self: *const Self) usize {

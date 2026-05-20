@@ -295,7 +295,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
         }
 
         fn countAttributes(ptr: *anyopaque) callconv(.c) types.int32 {
-            return @intCast(ownerFromAttributes2(ptr).attributeCount());
+            return vst_index.int32Count(ownerFromAttributes2(ptr).attributeCount());
         }
 
         fn getAttributeID(ptr: *anyopaque, index: types.int32) callconv(.c) ipersistent.IAttrID {

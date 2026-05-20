@@ -313,7 +313,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         fn getNumMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection) callconv(.c) types.uint32 {
             const self = ownerFromMapping(ptr);
-            return if (acceptsDirection(direction)) @intCast(self.midi2Assignments().len) else 0;
+            return if (acceptsDirection(direction)) vst_index.uint32Count(self.midi2Assignments().len) else 0;
         }
 
         fn copyAssignments(direction: vsttypes.BusDirection, list: anytype, assignments: anytype) types.tresult {
@@ -336,7 +336,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         fn getNumMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection) callconv(.c) types.uint32 {
             const self = ownerFromMapping(ptr);
-            return if (acceptsDirection(direction)) @intCast(self.midi1Assignments().len) else 0;
+            return if (acceptsDirection(direction)) vst_index.uint32Count(self.midi1Assignments().len) else 0;
         }
 
         fn getMidi1ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection, list: *const ivstmidimapping2.Midi1ControllerParamIDAssignmentList) callconv(.c) types.tresult {
@@ -468,7 +468,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
             const maps = self.physicalMaps();
             if (maps.len == 0) return failPhysicalUIMapping(out, types.kResultFalse);
             out.* = .{
-                .count = @intCast(maps.len),
+                .count = vst_index.uint32Count(maps.len),
                 .map = maps.ptr,
             };
             if (@hasDecl(Config, "getPhysicalUIMapping")) {

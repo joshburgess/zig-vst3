@@ -121,7 +121,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
         fn getNoteExpressionCount(ptr: *anyopaque, bus_index: types.int32, channel: types.int16) callconv(.c) types.int32 {
             const self = ownerFromNoteExpression(ptr);
             self.recordBusContext(bus_index, channel);
-            return @intCast(self.safeExpressionCount());
+            return vst_index.int32Count(self.safeExpressionCount());
         }
 
         fn failNoteExpressionInfo(out: *ivstnoteexpression.NoteExpressionTypeInfo) types.tresult {
@@ -173,7 +173,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
         fn getKeyswitchCount(ptr: *anyopaque, bus_index: types.int32, channel: types.int16) callconv(.c) types.int32 {
             const self = ownerFromKeyswitch(ptr);
             self.recordBusContext(bus_index, channel);
-            return @intCast(self.safeKeyswitchCount());
+            return vst_index.int32Count(self.safeKeyswitchCount());
         }
 
         fn failKeyswitchInfo(out: *ivstnoteexpression.KeyswitchInfo) types.tresult {
