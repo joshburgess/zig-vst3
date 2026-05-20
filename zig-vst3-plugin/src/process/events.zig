@@ -16,6 +16,15 @@ pub const bipolar_event_value_min: f32 = -1.0;
 pub const bipolar_event_value_max: f32 = 1.0;
 pub const max_data_event_bytes: usize = 4096;
 
+pub fn midiPitchCount() usize {
+    return @intCast(midi_pitch_max - midi_pitch_min + 1);
+}
+
+pub fn midiPitchIndex(pitch: i16) ?usize {
+    if (!isInInclusiveRange(i16, pitch, midi_pitch_min, midi_pitch_max)) return null;
+    return @intCast(pitch - midi_pitch_min);
+}
+
 pub const EventKind = enum {
     note_on,
     note_off,
@@ -751,15 +760,19 @@ pub const Event = struct {
 };
 
 fn validateMidiChannel(channel: i16) !void {
-    if (channel < midi_channel_min or channel > midi_channel_max) return error.InvalidEventChannel;
+    if (!isInInclusiveRange(i16, channel, midi_channel_min, midi_channel_max)) return error.InvalidEventChannel;
 }
 
 fn validateMidiPitch(pitch: i16) !void {
-    if (pitch < midi_pitch_min or pitch > midi_pitch_max) return error.InvalidEventPitch;
+    if (midiPitchIndex(pitch) == null) return error.InvalidEventPitch;
 }
 
 fn validateMidiControlNumber(control_number: i16) !void {
-    if (control_number < midi_control_number_min or control_number > midi_control_number_max) return error.InvalidEventControlNumber;
+    if (!isInInclusiveRange(i16, control_number, midi_control_number_min, midi_control_number_max)) return error.InvalidEventControlNumber;
+}
+
+fn isInInclusiveRange(comptime T: type, value: T, min: T, max: T) bool {
+    return value >= min and value <= max;
 }
 
 fn validateUnitEventValue(value: f32) !void {
@@ -2325,6 +2338,15 @@ test "events reject invalid MIDI metadata" {
     try std.testing.expectError(error.InvalidEventPitch, Events.init(&bad_pitch, 4));
     try std.testing.expectError(error.InvalidEventControlNumber, Events.init(&bad_control, 4));
     try std.testing.expectError(error.InvalidEventBusIndex, Events.init(&bad_bus, 4));
+}
+
+test "events expose stable MIDI pitch indexes" {
+    try std.testing.expectEqual(@as(usize, 128), midiPitchCount());
+    try std.testing.expectEqual(@as(?usize, null), midiPitchIndex(midi_pitch_min - 1));
+    try std.testing.expectEqual(@as(?usize, 0), midiPitchIndex(midi_pitch_min));
+    try std.testing.expectEqual(@as(?usize, 60), midiPitchIndex(60));
+    try std.testing.expectEqual(@as(?usize, midiPitchCount() - 1), midiPitchIndex(midi_pitch_max));
+    try std.testing.expectEqual(@as(?usize, null), midiPitchIndex(midi_pitch_max + 1));
 }
 
 test "events reject oversized data payloads" {
