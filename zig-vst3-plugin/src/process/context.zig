@@ -34,6 +34,17 @@ fn validateAudioChannels(channels: anytype) !usize {
     return frame_count;
 }
 
+fn processFrameCount(input_channel_count: usize, input_frame_count: usize, output_frame_count: usize) usize {
+    if (input_channel_count == 0) return output_frame_count;
+    return input_frame_count;
+}
+
+fn validateProcessFrameCounts(input_channel_count: usize, input_frame_count: usize, output_channel_count: usize, output_frame_count: usize) !void {
+    if (input_channel_count != 0 and output_channel_count != 0 and input_frame_count != output_frame_count) {
+        return error.MismatchedFrameCount;
+    }
+}
+
 pub const ProcessBlockSegmentIterator = struct {
     parameter_changes: ParameterChanges,
     events: Events,
@@ -217,9 +228,7 @@ pub fn ProcessContext(comptime Sample: type) type {
             }
             const inputs = try AudioInputs(Sample).init(options.input_channels);
             const outputs = try AudioOutputs(Sample).init(options.output_channels);
-            if (!inputs.isEmpty() and !outputs.isEmpty() and inputs.frameCount() != outputs.frameCount()) {
-                return error.MismatchedFrameCount;
-            }
+            try validateProcessFrameCounts(inputs.channelCount(), inputs.frameCount(), outputs.channelCount(), outputs.frameCount());
             var context = @This(){
                 .sample_rate = options.sample_rate,
                 .inputs = inputs,
@@ -1533,9 +1542,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn frameCount(self: *const @This()) usize {
-            if (self.inputChannelCount() == 0) return self.outputFrameCount();
-            if (self.outputChannelCount() == 0) return self.inputFrameCount();
-            return self.inputFrameCount();
+            return processFrameCount(self.inputChannelCount(), self.inputFrameCount(), self.outputFrameCount());
         }
     };
 }
@@ -1821,6 +1828,45 @@ test "process context reports frame count for input-only and output-only process
     try std.testing.expect(input_only.outputChannelsEmpty());
     try std.testing.expect(input_only.hasInputChannels());
     try std.testing.expect(!input_only.hasOutputChannels());
+}
+
+test "process context generated frame count cases match process side rules" {
+    const input_empty = [_]f32{};
+    const input_one = [_]f32{0.1};
+    const input_two = [_]f32{ 0.1, 0.2 };
+    const input_three = [_]f32{ 0.1, 0.2, 0.3 };
+    var output_empty = [_]f32{};
+    var output_one = [_]f32{0.0};
+    var output_two = [_]f32{ 0.0, 0.0 };
+    var output_three = [_]f32{ 0.0, 0.0, 0.0 };
+    const input_buffers = [_][]const f32{ &input_empty, &input_one, &input_two, &input_three };
+    const output_buffers = [_][]f32{ &output_empty, &output_one, &output_two, &output_three };
+    const no_input_channels = [_][]const f32{};
+    const no_output_channels = [_][]f32{};
+
+    for (input_buffers) |input_buffer| {
+        for (output_buffers) |output_buffer| {
+            const input_channels = [_][]const f32{input_buffer};
+            const output_channels = [_][]f32{output_buffer};
+            if (input_buffer.len == output_buffer.len) {
+                const context = try ProcessContext(f32).init(48_000.0, &input_channels, &output_channels);
+                try std.testing.expectEqual(input_buffer.len, context.frameCount());
+            } else {
+                try std.testing.expectError(error.MismatchedFrameCount, ProcessContext(f32).init(48_000.0, &input_channels, &output_channels));
+            }
+        }
+
+        const input_only = try ProcessContext(f32).init(48_000.0, &[_][]const f32{input_buffer}, &no_output_channels);
+        try std.testing.expectEqual(input_buffer.len, input_only.frameCount());
+    }
+
+    for (output_buffers) |output_buffer| {
+        const output_only = try ProcessContext(f32).init(48_000.0, &no_input_channels, &[_][]f32{output_buffer});
+        try std.testing.expectEqual(output_buffer.len, output_only.frameCount());
+    }
+
+    const silent = try ProcessContext(f32).init(48_000.0, &no_input_channels, &no_output_channels);
+    try std.testing.expectEqual(@as(usize, 0), silent.frameCount());
 }
 
 test "process context validates attachments for input-only and output-only processors" {
