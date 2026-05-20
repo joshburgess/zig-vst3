@@ -73,6 +73,19 @@ pub fn DelegatedInterface(
     };
 }
 
+pub fn ownerFromField(
+    comptime Owner: type,
+    comptime Interface: type,
+    comptime field_name: []const u8,
+) fn (*anyopaque) *Owner {
+    return struct {
+        fn owner(ptr: *anyopaque) *Owner {
+            const iface: *Interface = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr(field_name, iface);
+        }
+    }.owner;
+}
+
 fn testAddRef(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     const object: *funknown.TestObject = @ptrCast(@alignCast(ptr));
     return object.asUnknown().vtable.addRef(object.asUnknown());

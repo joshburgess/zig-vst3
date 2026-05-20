@@ -232,90 +232,23 @@ pub fn ReflectedEditController(comptime Config: type) type {
             .createView = createView,
         };
 
-        fn owner(ptr: *anyopaque) *Controller {
-            const iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
-
-        fn ownerFromController2(ptr: *anyopaque) *Controller {
-            const iface: *ivsteditcontroller.IEditController2 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("controller2", iface);
-        }
-
-        fn ownerFromConnectionPoint(ptr: *anyopaque) *Controller {
-            const iface: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("connection_point", iface);
-        }
-
-        fn ownerFromHostEditing(ptr: *anyopaque) *Controller {
-            const iface: *ivsteditcontroller.IEditControllerHostEditing = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("host_editing", iface);
-        }
-
-        fn ownerFromUnitInfo(ptr: *anyopaque) *Controller {
-            const iface: *ivstunits.IUnitInfo = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("unit_info", iface);
-        }
-
-        fn ownerFromProgramListData(ptr: *anyopaque) *Controller {
-            const iface: *ivstunits.IProgramListData = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("program_list_data", iface);
-        }
-
-        fn ownerFromUnitData(ptr: *anyopaque) *Controller {
-            const iface: *ivstunits.IUnitData = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("unit_data", iface);
-        }
-
-        fn ownerFromMidiMapping(ptr: *anyopaque) *Controller {
-            const iface: *ivsteditcontroller.IMidiMapping = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("midi_mapping", iface);
-        }
-
-        fn ownerFromMidiLearn(ptr: *anyopaque) *Controller {
-            const iface: *ivstmidilearn.IMidiLearn = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("midi_learn", iface);
-        }
-
-        fn ownerFromMidiMapping2(ptr: *anyopaque) *Controller {
-            const iface: *ivstmidimapping2.IMidiMapping2 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("midi_mapping2", iface);
-        }
-
-        fn ownerFromMidiLearn2(ptr: *anyopaque) *Controller {
-            const iface: *ivstmidimapping2.IMidiLearn2 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("midi_learn2", iface);
-        }
-
-        fn ownerFromNoteExpression(ptr: *anyopaque) *Controller {
-            const iface: *ivstnoteexpression.INoteExpressionController = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("note_expression", iface);
-        }
-
-        fn ownerFromKeyswitch(ptr: *anyopaque) *Controller {
-            const iface: *ivstnoteexpression.IKeyswitchController = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("keyswitch", iface);
-        }
-
-        fn ownerFromPhysicalUIMapping(ptr: *anyopaque) *Controller {
-            const iface: *ivstphysicalui.INoteExpressionPhysicalUIMapping = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("physical_ui_mapping", iface);
-        }
-
-        fn ownerFromParameterFunctionName(ptr: *anyopaque) *Controller {
-            const iface: *ivstparameterfunctionname.IParameterFunctionName = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("parameter_function_name", iface);
-        }
-
-        fn ownerFromRemapParamID(ptr: *anyopaque) *Controller {
-            const iface: *ivstremapparamid.IRemapParamID = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("remap_param_id", iface);
-        }
-
-        fn ownerFromXmlRepresentation(ptr: *anyopaque) *Controller {
-            const iface: *ivstrepresentation.IXmlRepresentationController = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("xml_representation", iface);
-        }
+        const owner = interface_map.ownerFromField(Controller, ivsteditcontroller.IEditController, "iface");
+        const ownerFromController2 = interface_map.ownerFromField(Controller, ivsteditcontroller.IEditController2, "controller2");
+        const ownerFromConnectionPoint = interface_map.ownerFromField(Controller, ivstmessage.IConnectionPoint, "connection_point");
+        const ownerFromHostEditing = interface_map.ownerFromField(Controller, ivsteditcontroller.IEditControllerHostEditing, "host_editing");
+        const ownerFromUnitInfo = interface_map.ownerFromField(Controller, ivstunits.IUnitInfo, "unit_info");
+        const ownerFromProgramListData = interface_map.ownerFromField(Controller, ivstunits.IProgramListData, "program_list_data");
+        const ownerFromUnitData = interface_map.ownerFromField(Controller, ivstunits.IUnitData, "unit_data");
+        const ownerFromMidiMapping = interface_map.ownerFromField(Controller, ivsteditcontroller.IMidiMapping, "midi_mapping");
+        const ownerFromMidiLearn = interface_map.ownerFromField(Controller, ivstmidilearn.IMidiLearn, "midi_learn");
+        const ownerFromMidiMapping2 = interface_map.ownerFromField(Controller, ivstmidimapping2.IMidiMapping2, "midi_mapping2");
+        const ownerFromMidiLearn2 = interface_map.ownerFromField(Controller, ivstmidimapping2.IMidiLearn2, "midi_learn2");
+        const ownerFromNoteExpression = interface_map.ownerFromField(Controller, ivstnoteexpression.INoteExpressionController, "note_expression");
+        const ownerFromKeyswitch = interface_map.ownerFromField(Controller, ivstnoteexpression.IKeyswitchController, "keyswitch");
+        const ownerFromPhysicalUIMapping = interface_map.ownerFromField(Controller, ivstphysicalui.INoteExpressionPhysicalUIMapping, "physical_ui_mapping");
+        const ownerFromParameterFunctionName = interface_map.ownerFromField(Controller, ivstparameterfunctionname.IParameterFunctionName, "parameter_function_name");
+        const ownerFromRemapParamID = interface_map.ownerFromField(Controller, ivstremapparamid.IRemapParamID, "remap_param_id");
+        const ownerFromXmlRepresentation = interface_map.ownerFromField(Controller, ivstrepresentation.IXmlRepresentationController, "xml_representation");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
@@ -1697,45 +1630,14 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             .getState = getState,
         };
 
-        fn owner(ptr: *anyopaque) *Component {
-            const iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
-
-        fn ownerFromProcessor(ptr: *anyopaque) *Component {
-            const iface: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("processor", iface);
-        }
-
-        fn ownerFromComponentConnectionPoint(ptr: *anyopaque) *Component {
-            const iface: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("connection_point", iface);
-        }
-
-        fn ownerFromProcessContextRequirements(ptr: *anyopaque) *Component {
-            const iface: *ivstaudioprocessor.IProcessContextRequirements = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("process_context_requirements", iface);
-        }
-
-        fn ownerFromAudioPresentationLatency(ptr: *anyopaque) *Component {
-            const iface: *ivstaudioprocessor.IAudioPresentationLatency = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("audio_presentation_latency", iface);
-        }
-
-        fn ownerFromPlugInterfaceSupport(ptr: *anyopaque) *Component {
-            const iface: *ivstpluginterfacesupport.IPlugInterfaceSupport = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("plug_interface_support", iface);
-        }
-
-        fn ownerFromPrefetchableSupport(ptr: *anyopaque) *Component {
-            const iface: *ivstprefetchablesupport.IPrefetchableSupport = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("prefetchable_support", iface);
-        }
-
-        fn ownerFromDataExchangeReceiver(ptr: *anyopaque) *Component {
-            const iface: *ivstdataexchange.IDataExchangeReceiver = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("data_exchange_receiver", iface);
-        }
+        const owner = interface_map.ownerFromField(Component, ivstcomponent.IComponent, "iface");
+        const ownerFromProcessor = interface_map.ownerFromField(Component, ivstaudioprocessor.IAudioProcessor, "processor");
+        const ownerFromComponentConnectionPoint = interface_map.ownerFromField(Component, ivstmessage.IConnectionPoint, "connection_point");
+        const ownerFromProcessContextRequirements = interface_map.ownerFromField(Component, ivstaudioprocessor.IProcessContextRequirements, "process_context_requirements");
+        const ownerFromAudioPresentationLatency = interface_map.ownerFromField(Component, ivstaudioprocessor.IAudioPresentationLatency, "audio_presentation_latency");
+        const ownerFromPlugInterfaceSupport = interface_map.ownerFromField(Component, ivstpluginterfacesupport.IPlugInterfaceSupport, "plug_interface_support");
+        const ownerFromPrefetchableSupport = interface_map.ownerFromField(Component, ivstprefetchablesupport.IPrefetchableSupport, "prefetchable_support");
+        const ownerFromDataExchangeReceiver = interface_map.ownerFromField(Component, ivstdataexchange.IDataExchangeReceiver, "data_exchange_receiver");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);

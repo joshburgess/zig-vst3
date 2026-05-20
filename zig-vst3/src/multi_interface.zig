@@ -78,20 +78,9 @@ fn objectFromUnknown(ptr: *anyopaque) *TestObject {
     return @fieldParentPtr("unknown", header);
 }
 
-fn objectFromA(ptr: *anyopaque) *TestObject {
-    const header: *InterfaceHeader = @ptrCast(@alignCast(ptr));
-    return @fieldParentPtr("a", header);
-}
-
-fn objectFromB(ptr: *anyopaque) *TestObject {
-    const header: *InterfaceHeader = @ptrCast(@alignCast(ptr));
-    return @fieldParentPtr("b", header);
-}
-
-fn objectFromC(ptr: *anyopaque) *TestObject {
-    const header: *InterfaceHeader = @ptrCast(@alignCast(ptr));
-    return @fieldParentPtr("c", header);
-}
+const objectFromA = interface_map.ownerFromField(TestObject, InterfaceHeader, "a");
+const objectFromB = interface_map.ownerFromField(TestObject, InterfaceHeader, "b");
+const objectFromC = interface_map.ownerFromField(TestObject, InterfaceHeader, "c");
 
 fn query(object: *TestObject, requested_iid: *const tuid.TUID, out: *?*anyopaque) funknown.tresult {
     const entries = [_]interface_map.Entry{
