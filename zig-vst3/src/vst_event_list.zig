@@ -154,6 +154,13 @@ test "event list enforces bounds and supports query interface" {
     try std.testing.expect(queried != null);
     const queried_events: *ivstevents.IEventList = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_events.vtable.release(queried_events));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), list.ref_count.load(.seq_cst));
+    const queried_unknown: *ivstevents.IEventList = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "event list clears unsupported query output" {
