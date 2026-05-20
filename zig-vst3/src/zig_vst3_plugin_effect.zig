@@ -32,6 +32,7 @@ const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
 const vst_component_handler = @import("vst_component_handler.zig");
+const vst_host_context = @import("vst_host_context.zig");
 const vst_index = @import("vst_index.zig");
 const vst_message = @import("vst_message.zig");
 const vst_parameter_changes = @import("vst_parameter_changes.zig");
@@ -1457,6 +1458,16 @@ fn disconnectConnectionPeer(slot: *?*ivstmessage.IConnectionPoint, peer: ?*ivstm
     return types.kResultFalse;
 }
 
+fn failOpenedDataExchangeQueue(out: *ivstdataexchange.DataExchangeQueueID, result: types.tresult) types.tresult {
+    out.* = ivstdataexchange.InvalidDataExchangeQueueID;
+    return result;
+}
+
+fn failLockedDataExchangeBlock(block: *ivstdataexchange.DataExchangeBlock, result: types.tresult) types.tresult {
+    block.* = .{ .blockID = ivstdataexchange.InvalidDataExchangeBlockID };
+    return result;
+}
+
 fn releaseComponentHandlers(controller: anytype) void {
     releaseOptionalInterface(ivstunits.IUnitHandler2, &controller.unit_handler2);
     releaseOptionalInterface(ivstunits.IUnitHandler, &controller.unit_handler);
@@ -1664,6 +1675,67 @@ test "simple stereo effect ignores parameter changes when process data is malfor
     try std.testing.expectEqualSlices(f32, &.{ 9.0, 9.0 }, &output_samples);
 }
 
+test "simple stereo effect clears failed data exchange outputs" {
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const TestEffect = SimpleStereoEffect(struct {
+        pub const component_name = "FailedDataExchangeOutputs";
+        pub const controller_cid = tuid.inlineUid(0x87654321, 0x87654321, 0x87654321, 0x87654321);
+        pub const Processor = struct {
+            pub fn process(_: @This(), comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+                _ = context;
+            }
+        };
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+        pub fn readState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultOk;
+        }
+        pub fn writeState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultOk;
+        }
+        pub fn applyParameterChanges(_: plug_process.ParameterChanges) void {}
+    });
+    const Host = vst_host_context.DataExchangeHost("Failed Data Exchange Host", struct {
+        pub fn openQueue(_: anytype, _: ?*ivstaudioprocessor.IAudioProcessor, _: types.uint32, _: types.uint32, _: types.uint32, _: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
+            out.* = 44;
+            return types.kResultFalse;
+        }
+
+        pub fn lockBlock(_: anytype, _: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
+            block.* = .{
+                .blockID = 99,
+                .size = 128,
+                .data = @ptrFromInt(0x1000),
+            };
+            return types.kResultFalse;
+        }
+    });
+    var host = Host{};
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestEffect.create(@ptrCast(&ivstcomponent.icomponent_iid), &component_out));
+    try std.testing.expect(component_out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(component_out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+    defer _ = component_iface.vtable.terminate(component_iface);
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
+
+    var queue_id: ivstdataexchange.DataExchangeQueueID = 88;
+    try std.testing.expectEqual(types.kResultFalse, TestEffect.openDataExchangeQueue(128, 2, 8, 77, &queue_id));
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
+
+    var block = ivstdataexchange.DataExchangeBlock{
+        .blockID = 1,
+        .size = 64,
+        .data = @ptrFromInt(0x2000),
+    };
+    try std.testing.expectEqual(types.kResultFalse, TestEffect.lockDataExchangeBlock(44, &block));
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeBlockID, block.blockID);
+    try std.testing.expectEqual(@as(types.uint32, 0), block.size);
+    try std.testing.expectEqual(@as(?*anyopaque, null), block.data);
+}
+
 test "simple stereo effect releases replaced connection peers" {
     const EmptyParams = struct {};
     const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
@@ -1768,12 +1840,11 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         pub fn openDataExchangeQueue(block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
-            out.* = ivstdataexchange.InvalidDataExchangeQueueID;
             const handler = component.data_exchange_handler orelse {
-                return types.kResultFalse;
+                return failOpenedDataExchangeQueue(out, types.kResultFalse);
             };
             const result = handler.vtable.openQueue(handler, &component.processor, block_size, num_blocks, alignment, user_context_id, out);
-            if (result != types.kResultOk) out.* = ivstdataexchange.InvalidDataExchangeQueueID;
+            if (result != types.kResultOk) return failOpenedDataExchangeQueue(out, result);
             return result;
         }
 
@@ -1783,12 +1854,11 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         pub fn lockDataExchangeBlock(queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
-            block.* = .{ .blockID = ivstdataexchange.InvalidDataExchangeBlockID };
             const handler = component.data_exchange_handler orelse {
-                return types.kResultFalse;
+                return failLockedDataExchangeBlock(block, types.kResultFalse);
             };
             const result = handler.vtable.lockBlock(handler, queue_id, block);
-            if (result != types.kResultOk) block.* = .{ .blockID = ivstdataexchange.InvalidDataExchangeBlockID };
+            if (result != types.kResultOk) return failLockedDataExchangeBlock(block, result);
             return result;
         }
 
