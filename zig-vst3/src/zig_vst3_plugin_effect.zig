@@ -655,28 +655,12 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromConnectionPoint(ptr);
-            const connection_peer = peer orelse return types.kInvalidArgument;
-            const next_peer = retainConnectionPeer(connection_peer);
-            releaseConnectionPeer(&self.connected_peer);
-            self.connected_peer = next_peer;
-            return types.kResultOk;
+            return replaceConnectionPeer(&self.connected_peer, peer);
         }
 
         fn disconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromConnectionPoint(ptr);
-            const connection_peer = peer orelse {
-                releaseConnectionPeer(&self.connected_peer);
-                return types.kResultOk;
-            };
-            const connected_peer = self.connected_peer orelse {
-                releaseConnectionPeer(&self.connected_peer);
-                return types.kResultOk;
-            };
-            if (connected_peer == connection_peer) {
-                releaseConnectionPeer(&self.connected_peer);
-                return types.kResultOk;
-            }
-            return types.kResultFalse;
+            return disconnectConnectionPeer(&self.connected_peer, peer);
         }
 
         fn notify(_: *anyopaque, _: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
@@ -1449,6 +1433,30 @@ fn releaseConnectionPeer(peer: *?*ivstmessage.IConnectionPoint) void {
     releaseOptionalInterface(ivstmessage.IConnectionPoint, peer);
 }
 
+fn replaceConnectionPeer(slot: *?*ivstmessage.IConnectionPoint, peer: ?*ivstmessage.IConnectionPoint) types.tresult {
+    const connection_peer = peer orelse return types.kInvalidArgument;
+    const next_peer = retainConnectionPeer(connection_peer);
+    releaseConnectionPeer(slot);
+    slot.* = next_peer;
+    return types.kResultOk;
+}
+
+fn disconnectConnectionPeer(slot: *?*ivstmessage.IConnectionPoint, peer: ?*ivstmessage.IConnectionPoint) types.tresult {
+    const connection_peer = peer orelse {
+        releaseConnectionPeer(slot);
+        return types.kResultOk;
+    };
+    const connected_peer = slot.* orelse {
+        releaseConnectionPeer(slot);
+        return types.kResultOk;
+    };
+    if (connected_peer == connection_peer) {
+        releaseConnectionPeer(slot);
+        return types.kResultOk;
+    }
+    return types.kResultFalse;
+}
+
 fn releaseComponentHandlers(controller: anytype) void {
     releaseOptionalInterface(ivstunits.IUnitHandler2, &controller.unit_handler2);
     releaseOptionalInterface(ivstunits.IUnitHandler, &controller.unit_handler);
@@ -2064,28 +2072,12 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn componentConnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
-            const connection_peer = peer orelse return types.kInvalidArgument;
-            const next_peer = retainConnectionPeer(connection_peer);
-            releaseConnectionPeer(&self.connected_peer);
-            self.connected_peer = next_peer;
-            return types.kResultOk;
+            return replaceConnectionPeer(&self.connected_peer, peer);
         }
 
         fn componentDisconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
-            const connection_peer = peer orelse {
-                releaseConnectionPeer(&self.connected_peer);
-                return types.kResultOk;
-            };
-            const connected_peer = self.connected_peer orelse {
-                releaseConnectionPeer(&self.connected_peer);
-                return types.kResultOk;
-            };
-            if (connected_peer == connection_peer) {
-                releaseConnectionPeer(&self.connected_peer);
-                return types.kResultOk;
-            }
-            return types.kResultFalse;
+            return disconnectConnectionPeer(&self.connected_peer, peer);
         }
 
         fn componentNotify(_: *anyopaque, _: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
