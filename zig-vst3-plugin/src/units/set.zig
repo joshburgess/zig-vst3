@@ -1249,9 +1249,11 @@ pub fn UnitSet(comptime config: Config) type {
         fn validateUnit(self: Self, item: Unit) !void {
             if (item.id == no_parent_unit_id) return error.ReservedUnitId;
             try validateRequiredUnitName(item.name);
-            if (item.id != root_unit_id and self.unitById(item.parent_id) == null) return error.InvalidUnitParent;
-            if (item.program_list_id != no_program_list_id and self.programListById(item.program_list_id) == null) {
-                return error.InvalidUnitProgramList;
+            if (item.id != root_unit_id) {
+                if (self.unitById(item.parent_id) == null) return error.InvalidUnitParent;
+            }
+            if (item.program_list_id != no_program_list_id) {
+                if (self.programListById(item.program_list_id) == null) return error.InvalidUnitProgramList;
             }
             if (self.unitParentIsCyclic(item)) return error.CyclicUnitParent;
         }
