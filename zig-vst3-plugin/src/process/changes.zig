@@ -37,6 +37,10 @@ fn changeAtOrAfter(candidate: ParameterChange, current: ParameterChange) bool {
     return candidate.sample_offset >= current.sample_offset;
 }
 
+fn changeAtOrBeforeOffset(candidate: ParameterChange, sample_offset: usize) bool {
+    return candidate.sample_offset <= sample_offset;
+}
+
 fn indexedChangeBefore(candidate: IndexedParameterChange, current: IndexedParameterChange) bool {
     return changeBefore(candidate.item, current.item) or
         (candidate.item.sample_offset == current.item.sample_offset and candidate.index < current.index);
@@ -483,9 +487,9 @@ pub const ParameterChanges = struct {
         var result: ?ParameterChange = null;
         for (self.items) |item| {
             if (!item.isForId(id)) continue;
-            if (item.sample_offset > sample_offset) continue;
+            if (!changeAtOrBeforeOffset(item, sample_offset)) continue;
             if (result) |current| {
-                if (item.sample_offset >= current.sample_offset) result = item;
+                if (changeAtOrAfter(item, current)) result = item;
             } else {
                 result = item;
             }
