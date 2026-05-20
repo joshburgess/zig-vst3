@@ -1,5 +1,6 @@
 const std = @import("std");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
+const interface_map = @import("interface_map.zig");
 const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
@@ -1270,10 +1271,7 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter change
             return .{ .id = id, .points = points };
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstparameterchanges.IParamValueQueue = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstparameterchanges.IParamValueQueue, "iface");
 
         fn queryInterface(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             out.* = null;
@@ -1328,10 +1326,7 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter change
 
         const Self = @This();
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstparameterchanges.IParameterChanges = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstparameterchanges.IParameterChanges, "iface");
 
         fn queryInterface(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             out.* = null;

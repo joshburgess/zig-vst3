@@ -2,6 +2,7 @@ const std = @import("std");
 const base = @import("../base/types.zig");
 const audio_processor = @import("ivstaudioprocessor.zig");
 const events = @import("ivstevents.zig");
+const interface_map = @import("../../interface_map.zig");
 const parameter_changes = @import("ivstparameterchanges.zig");
 const vsttypes = @import("vsttypes.zig");
 
@@ -719,10 +720,7 @@ const TestEventList = struct {
         return .{ .items = items, .fail_index = fail_index };
     }
 
-    fn owner(ptr: *anyopaque) *TestEventList {
-        const iface: *events.IEventList = @ptrCast(@alignCast(ptr));
-        return @fieldParentPtr("iface", iface);
-    }
+    const owner = interface_map.ownerFromField(TestEventList, events.IEventList, "iface");
 
     fn queryInterface(_: *anyopaque, _: *const @import("../../tuid.zig").TUID, out: *?*anyopaque) callconv(.c) base.tresult {
         out.* = null;
@@ -786,10 +784,7 @@ const TestParamValueQueue = struct {
         return .{ .param_id = param_id, .points = points };
     }
 
-    fn owner(ptr: *anyopaque) *TestParamValueQueue {
-        const iface: *parameter_changes.IParamValueQueue = @ptrCast(@alignCast(ptr));
-        return @fieldParentPtr("iface", iface);
-    }
+    const owner = interface_map.ownerFromField(TestParamValueQueue, parameter_changes.IParamValueQueue, "iface");
 
     fn queryInterface(_: *anyopaque, _: *const @import("../../tuid.zig").TUID, out: *?*anyopaque) callconv(.c) base.tresult {
         out.* = null;
@@ -854,10 +849,7 @@ const TestParameterChanges = struct {
         return .{ .queues = queues };
     }
 
-    fn owner(ptr: *anyopaque) *TestParameterChanges {
-        const iface: *parameter_changes.IParameterChanges = @ptrCast(@alignCast(ptr));
-        return @fieldParentPtr("iface", iface);
-    }
+    const owner = interface_map.ownerFromField(TestParameterChanges, parameter_changes.IParameterChanges, "iface");
 
     fn queryInterface(_: *anyopaque, _: *const @import("../../tuid.zig").TUID, out: *?*anyopaque) callconv(.c) base.tresult {
         out.* = null;

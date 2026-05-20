@@ -50,10 +50,7 @@ pub fn ComponentHandler(comptime Config: type) type {
             self.last_restart_flags = flags;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "iface");
 
         fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
