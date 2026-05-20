@@ -1429,11 +1429,13 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         pub fn openDataExchangeQueue(block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
+            out.* = ivstdataexchange.InvalidDataExchangeQueueID;
             const handler = component.data_exchange_handler orelse {
-                out.* = ivstdataexchange.InvalidDataExchangeQueueID;
                 return types.kResultFalse;
             };
-            return handler.vtable.openQueue(handler, &component.processor, block_size, num_blocks, alignment, user_context_id, out);
+            const result = handler.vtable.openQueue(handler, &component.processor, block_size, num_blocks, alignment, user_context_id, out);
+            if (result != types.kResultOk) out.* = ivstdataexchange.InvalidDataExchangeQueueID;
+            return result;
         }
 
         pub fn closeDataExchangeQueue(queue_id: ivstdataexchange.DataExchangeQueueID) types.tresult {
@@ -1442,11 +1444,13 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         pub fn lockDataExchangeBlock(queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
+            block.* = .{ .blockID = ivstdataexchange.InvalidDataExchangeBlockID };
             const handler = component.data_exchange_handler orelse {
-                block.* = .{ .blockID = ivstdataexchange.InvalidDataExchangeBlockID };
                 return types.kResultFalse;
             };
-            return handler.vtable.lockBlock(handler, queue_id, block);
+            const result = handler.vtable.lockBlock(handler, queue_id, block);
+            if (result != types.kResultOk) block.* = .{ .blockID = ivstdataexchange.InvalidDataExchangeBlockID };
+            return result;
         }
 
         pub fn freeDataExchangeBlock(queue_id: ivstdataexchange.DataExchangeQueueID, block_id: ivstdataexchange.DataExchangeBlockID, send_to_receiver: types.TBool) types.tresult {

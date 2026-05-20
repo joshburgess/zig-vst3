@@ -64,6 +64,10 @@ pub fn closeDataExchangeQueue(queue_id: ivstdataexchange.DataExchangeQueueID) ty
     return Effect.closeDataExchangeQueue(queue_id);
 }
 
+pub fn lockDataExchangeBlock(queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
+    return Effect.lockDataExchangeBlock(queue_id, block);
+}
+
 test "gain component can be created as IComponent" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
@@ -615,6 +619,44 @@ test "gain component stores data exchange handler" {
 
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.terminate(component_iface));
     try std.testing.expectEqual(@as(types.uint32, 2), host.release_count);
+}
+
+test "gain component clears failed data exchange outputs" {
+    const std = @import("std");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+
+    const HostContext = vst_host_context.DataExchangeHost("Failing Host", struct {
+        pub fn openQueue(_: anytype, _: ?*ivstaudioprocessor.IAudioProcessor, _: types.uint32, _: types.uint32, _: types.uint32, _: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
+            out.* = 44;
+            return types.kResultFalse;
+        }
+
+        pub fn lockBlock(_: anytype, _: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
+            block.* = .{ .blockID = 12, .size = 64, .data = @ptrFromInt(0x1000) };
+            return types.kResultFalse;
+        }
+    });
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    try std.testing.expect(out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var host = HostContext{};
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
+    defer _ = component_iface.vtable.terminate(component_iface);
+
+    var queue_id: ivstdataexchange.DataExchangeQueueID = 1;
+    try std.testing.expectEqual(types.kResultFalse, openDataExchangeQueue(128, 2, 8, 77, &queue_id));
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
+
+    var block = ivstdataexchange.DataExchangeBlock{ .blockID = 7, .size = 8, .data = @ptrFromInt(0x2000) };
+    try std.testing.expectEqual(types.kResultFalse, lockDataExchangeBlock(44, &block));
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeBlockID, block.blockID);
+    try std.testing.expectEqual(@as(types.uint32, 0), block.size);
+    try std.testing.expectEqual(@as(?*anyopaque, null), block.data);
 }
 
 test "gain component round-trips gain state through host callbacks" {
