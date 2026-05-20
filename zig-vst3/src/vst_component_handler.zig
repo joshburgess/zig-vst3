@@ -179,15 +179,8 @@ pub fn ComponentHandler2(comptime Config: type) type {
             self.last_editor_name = name;
         }
 
-        fn ownerFromHandler(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler", iface);
-        }
-
-        fn ownerFromHandler2(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler2 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler2", iface);
-        }
+        const ownerFromHandler = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "handler");
+        const ownerFromHandler2 = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler2, "handler2");
 
         fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
@@ -362,15 +355,8 @@ pub fn ComponentHandler3(comptime Config: type) type {
             if (param_id) |id| self.last_param_id = id.*;
         }
 
-        fn ownerFromHandler(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler", iface);
-        }
-
-        fn ownerFromHandler3(ptr: *anyopaque) *Self {
-            const iface: *ivstcontextmenu.IComponentHandler3 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler3", iface);
-        }
+        const ownerFromHandler = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "handler");
+        const ownerFromHandler3 = interface_map.ownerFromField(Self, ivstcontextmenu.IComponentHandler3, "handler3");
 
         fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
@@ -549,20 +535,9 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
             self.last_system_time = value;
         }
 
-        fn ownerFromHandler(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler", iface);
-        }
-
-        fn ownerFromBus(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandlerBusActivation = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("bus_activation", iface);
-        }
-
-        fn ownerFromTime(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandlerSystemTime = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("system_time", iface);
-        }
+        const ownerFromHandler = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "handler");
+        const ownerFromBus = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandlerBusActivation, "bus_activation");
+        const ownerFromTime = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandlerSystemTime, "system_time");
 
         fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
@@ -786,15 +761,8 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
             self.last_id = id;
         }
 
-        fn ownerFromHandler(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler", iface);
-        }
-
-        fn ownerFromProgress(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IProgress = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("progress", iface);
-        }
+        const ownerFromHandler = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "handler");
+        const ownerFromProgress = interface_map.ownerFromField(Self, ivsteditcontroller.IProgress, "progress");
 
         fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
@@ -990,20 +958,9 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
             self.last_program_index = program_index;
         }
 
-        fn ownerFromHandler(ptr: *anyopaque) *Self {
-            const iface: *ivsteditcontroller.IComponentHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("handler", iface);
-        }
-
-        fn ownerFromUnit(ptr: *anyopaque) *Self {
-            const iface: *ivstunits.IUnitHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("unit_handler", iface);
-        }
-
-        fn ownerFromUnit2(ptr: *anyopaque) *Self {
-            const iface: *ivstunits.IUnitHandler2 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("unit_handler2", iface);
-        }
+        const ownerFromHandler = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "handler");
+        const ownerFromUnit = interface_map.ownerFromField(Self, ivstunits.IUnitHandler, "unit_handler");
+        const ownerFromUnit2 = interface_map.ownerFromField(Self, ivstunits.IUnitHandler2, "unit_handler2");
 
         fn queryFromHandler(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromHandler(ptr);
