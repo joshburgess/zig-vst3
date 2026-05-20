@@ -186,9 +186,11 @@ test "string result clears inactive encoding when switching text width" {
     const Result = StringResult(8, 8);
     var result = Result{};
     const iface = result.asString();
+    const legacy = result.asResult();
 
     iface.vtable.setText8(iface, "gain");
     try std.testing.expectEqualStrings("gain", result.text8Span());
+    try std.testing.expectEqualSlices(types.char16, &.{}, result.text16Span());
 
     const wide_value = [_:0]types.char16{ 'O', 'K' };
     iface.vtable.setText16(iface, &wide_value);
@@ -196,6 +198,12 @@ test "string result clears inactive encoding when switching text width" {
     try std.testing.expectEqualSlices(types.char16, &.{ 'O', 'K' }, result.text16Span());
     try std.testing.expect(iface.vtable.isWideString(iface));
 
+    legacy.vtable.setText(legacy, "pan");
+    try std.testing.expectEqualStrings("pan", result.text8Span());
+    try std.testing.expectEqualSlices(types.char16, &.{}, result.text16Span());
+    try std.testing.expect(!iface.vtable.isWideString(iface));
+
+    iface.vtable.setText16(iface, &wide_value);
     iface.vtable.setText8(iface, "mix");
     try std.testing.expectEqualStrings("mix", result.text8Span());
     try std.testing.expectEqualSlices(types.char16, &.{}, result.text16Span());
