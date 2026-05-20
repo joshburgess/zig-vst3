@@ -684,6 +684,55 @@ test "plugin instance applies program parameter snapshots" {
     try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
 }
 
+test "plugin instance rejects invalid program snapshots before changing values" {
+    const programs = [_]units_api.Program{
+        .{
+            .name = "Unknown Parameter",
+            .parameters = &.{
+                .{ .parameter_id = 1, .normalized = 0.25 },
+                .{ .parameter_id = 99, .normalized = 0.75 },
+            },
+        },
+        .{
+            .name = "Invalid Value",
+            .parameters = &.{
+                .{ .parameter_id = 1, .normalized = 0.25 },
+                .{ .parameter_id = 2, .normalized = 1.5 },
+            },
+        },
+    };
+    const Gain = struct {
+        pub const name = "Invalid Runtime Program Gain";
+        pub const vendor = "zig-vst3";
+        pub const units = units_api.Config{
+            .program_lists = &.{.{ .id = 7, .name = "Programs", .programs = &programs }},
+        };
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
+            mix: parameters.FloatParam = parameters.FloatParam.init(2, "Mix", 0.0, 1.0, 0.5),
+        };
+    };
+    const Instance = PluginInstance(Gain);
+    const Set = Instance.Spec.ParameterSet;
+    const Values = Instance.Spec.ParameterValues;
+    const set = Set.init(.{});
+    var instance = Instance{
+        .spec = .{
+            .parameter_set = set,
+            .values = Values.init(&set),
+        },
+        .plugin = .{},
+    };
+
+    try std.testing.expectError(error.UnknownProgramParameter, instance.applyProgramCount(7, 0));
+    try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("mix"));
+
+    try std.testing.expectError(error.ProgramParameterOutsideNormalizedRange, instance.applyProgramCount(7, 1));
+    try std.testing.expectEqual(@as(f64, 1.0), instance.loadParameterNormalized("gain"));
+    try std.testing.expectEqual(@as(f64, 0.5), instance.loadParameterNormalized("mix"));
+}
+
 test "plugin instance unit program accessors mirror unit set selectors" {
     const programs = [_]units_api.Program{
         .{
