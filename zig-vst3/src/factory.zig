@@ -76,10 +76,7 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
         }
 
         fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.c) types.tresult {
-            out.* = .{ .flags = info.flags };
-            fixed_string.copyAsciiZ(&out.vendor, info.vendor);
-            fixed_string.copyAsciiZ(&out.url, info.url);
-            fixed_string.copyAsciiZ(&out.email, info.email);
+            fillFactoryInfo(info, out);
             return types.kResultOk;
         }
 
@@ -92,12 +89,7 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
                 out.* = .{};
                 return types.kInvalidArgument;
             };
-            out.* = .{
-                .cid = class.cid,
-                .cardinality = class.cardinality,
-            };
-            fixed_string.copyAsciiZ(&out.category, class.category);
-            fixed_string.copyAsciiZ(&out.name, class.name);
+            fillClassInfo(class, out);
             return types.kResultOk;
         }
 
@@ -187,10 +179,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
         }
 
         fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.c) types.tresult {
-            out.* = .{ .flags = info.flags };
-            fixed_string.copyAsciiZ(&out.vendor, info.vendor);
-            fixed_string.copyAsciiZ(&out.url, info.url);
-            fixed_string.copyAsciiZ(&out.email, info.email);
+            fillFactoryInfo(info, out);
             return types.kResultOk;
         }
 
@@ -203,12 +192,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
                 out.* = .{};
                 return types.kInvalidArgument;
             };
-            out.* = .{
-                .cid = class.cid,
-                .cardinality = class.cardinality,
-            };
-            fixed_string.copyAsciiZ(&out.category, class.category);
-            fixed_string.copyAsciiZ(&out.name, class.name);
+            fillClassInfo(class, out);
             return types.kResultOk;
         }
 
@@ -233,17 +217,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
                 out.* = .{};
                 return types.kInvalidArgument;
             };
-            out.* = .{
-                .cid = class.cid,
-                .cardinality = class.cardinality,
-                .classFlags = class.class_flags,
-            };
-            fixed_string.copyAsciiZ(&out.category, class.category);
-            fixed_string.copyAsciiZ(&out.name, class.name);
-            fixed_string.copyAsciiZ(&out.subCategories, class.sub_categories);
-            fixed_string.copyAsciiZ(&out.vendor, if (class.vendor.len == 0) info.vendor else class.vendor);
-            fixed_string.copyAsciiZ(&out.version, class.version);
-            fixed_string.copyAsciiZ(&out.sdkVersion, class.sdk_version);
+            fillClassInfo2(info, class, out);
             return types.kResultOk;
         }
 
@@ -252,17 +226,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
                 out.* = .{};
                 return types.kInvalidArgument;
             };
-            out.* = .{
-                .cid = class.cid,
-                .cardinality = class.cardinality,
-                .classFlags = class.class_flags,
-            };
-            fixed_string.copyAsciiZ(&out.category, class.category);
-            fixed_string.copyAsciiToUtf16Z(&out.name, class.name);
-            fixed_string.copyAsciiZ(&out.subCategories, class.sub_categories);
-            fixed_string.copyAsciiToUtf16Z(&out.vendor, if (class.vendor.len == 0) info.vendor else class.vendor);
-            fixed_string.copyAsciiToUtf16Z(&out.version, class.version);
-            fixed_string.copyAsciiToUtf16Z(&out.sdkVersion, class.sdk_version);
+            fillClassInfoUnicode(info, class, out);
             return types.kResultOk;
         }
 
@@ -286,6 +250,54 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
 
 fn matchesClassId(cid: types.FIDString, class: ClassInfo) bool {
     return std.mem.eql(u8, cid[0..tuid.byte_count], &class.cid);
+}
+
+fn classVendor(info: FactoryInfo, class: ClassInfo) []const u8 {
+    return if (class.vendor.len == 0) info.vendor else class.vendor;
+}
+
+fn fillFactoryInfo(info: FactoryInfo, out: *ipluginbase.PFactoryInfo) void {
+    out.* = .{ .flags = info.flags };
+    fixed_string.copyAsciiZ(&out.vendor, info.vendor);
+    fixed_string.copyAsciiZ(&out.url, info.url);
+    fixed_string.copyAsciiZ(&out.email, info.email);
+}
+
+fn fillClassInfo(class: ClassInfo, out: *ipluginbase.PClassInfo) void {
+    out.* = .{
+        .cid = class.cid,
+        .cardinality = class.cardinality,
+    };
+    fixed_string.copyAsciiZ(&out.category, class.category);
+    fixed_string.copyAsciiZ(&out.name, class.name);
+}
+
+fn fillClassInfo2(info: FactoryInfo, class: ClassInfo, out: *ipluginbase.PClassInfo2) void {
+    out.* = .{
+        .cid = class.cid,
+        .cardinality = class.cardinality,
+        .classFlags = class.class_flags,
+    };
+    fixed_string.copyAsciiZ(&out.category, class.category);
+    fixed_string.copyAsciiZ(&out.name, class.name);
+    fixed_string.copyAsciiZ(&out.subCategories, class.sub_categories);
+    fixed_string.copyAsciiZ(&out.vendor, classVendor(info, class));
+    fixed_string.copyAsciiZ(&out.version, class.version);
+    fixed_string.copyAsciiZ(&out.sdkVersion, class.sdk_version);
+}
+
+fn fillClassInfoUnicode(info: FactoryInfo, class: ClassInfo, out: *ipluginbase.PClassInfoW) void {
+    out.* = .{
+        .cid = class.cid,
+        .cardinality = class.cardinality,
+        .classFlags = class.class_flags,
+    };
+    fixed_string.copyAsciiZ(&out.category, class.category);
+    fixed_string.copyAsciiToUtf16Z(&out.name, class.name);
+    fixed_string.copyAsciiZ(&out.subCategories, class.sub_categories);
+    fixed_string.copyAsciiToUtf16Z(&out.vendor, classVendor(info, class));
+    fixed_string.copyAsciiToUtf16Z(&out.version, class.version);
+    fixed_string.copyAsciiToUtf16Z(&out.sdkVersion, class.sdk_version);
 }
 
 test "static factory exposes metadata and class count" {
