@@ -82,6 +82,7 @@ pub fn delay(
     if (sample_frames <= 0 or buffer_size <= 0) return false;
     if (buffer_in_pos < 0 or buffer_in_pos >= buffer_size) return false;
     if (buffer_out_pos < 0 or buffer_out_pos >= buffer_size) return false;
+    if (buffer_in_pos == buffer_out_pos) return false;
 
     var remain = sample_frames;
     var input_index: base.int32 = 0;
@@ -319,6 +320,15 @@ test "delay processor clears output when ring state is invalid" {
     try std.testing.expectEqualSlices(f32, &.{ 0, 0 }, &output);
     try std.testing.expectEqual(@as(base.int32, -1), processor_delay.in_pos);
     try std.testing.expectEqual(@as(base.int32, 2), processor_delay.out_pos);
+
+    output = [_]f32{ 9, 9 };
+    processor_delay.in_pos = 1;
+    processor_delay.out_pos = 1;
+    const equal_positions_silent = processor_delay.process(&input, &output, input.len, false);
+    try std.testing.expect(equal_positions_silent);
+    try std.testing.expectEqualSlices(f32, &.{ 0, 0 }, &output);
+    try std.testing.expectEqual(@as(base.int32, 1), processor_delay.in_pos);
+    try std.testing.expectEqual(@as(base.int32, 1), processor_delay.out_pos);
 }
 
 test "bypass helpers reject invalid sizes and positions" {
@@ -328,6 +338,7 @@ test "bypass helpers reject invalid sizes and positions" {
     try std.testing.expect(!delay(f32, -1, &input, &output, &buffer, 2, 0, 0));
     try std.testing.expect(!delay(f32, 1, &input, &output, &buffer, 2, -1, 0));
     try std.testing.expect(!delay(f32, 1, &input, &output, &buffer, 2, 0, 2));
+    try std.testing.expect(!delay(f32, 1, &input, &output, &buffer, 2, 1, 1));
     try std.testing.expectEqual(@as(f32, 9), output[0]);
 
     var storage = [_]f32{0} ** 4;
