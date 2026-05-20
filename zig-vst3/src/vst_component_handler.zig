@@ -1257,6 +1257,68 @@ test "component handler 2 clears unsupported query outputs from both interfaces"
     try std.testing.expectEqual(@as(types.uint32, 0), handler.handler2_add_ref_count);
 }
 
+test "component handler secondary interfaces expose their own unknown identity" {
+    const Handler2 = ComponentHandler2(struct {});
+    const Handler3 = ComponentHandler3(struct {});
+    const BusAndTime = ComponentHandlerBusAndTime(struct {});
+    const Progress = ComponentHandlerProgress(struct {});
+    const Units = ComponentHandlerUnits(struct {});
+
+    var handler2 = Handler2{};
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, handler2.asHandler2().vtable.queryInterface(handler2.asHandler2(), &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, handler2.asHandler2()), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler2.handler2_add_ref_count);
+    const handler2_unknown: *ivsteditcontroller.IComponentHandler2 = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler2_unknown.vtable.release(handler2_unknown));
+
+    var handler3 = Handler3{};
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, handler3.asHandler3().vtable.queryInterface(handler3.asHandler3(), &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, handler3.asHandler3()), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler3.handler3_add_ref_count);
+    const handler3_unknown: *ivstcontextmenu.IComponentHandler3 = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler3_unknown.vtable.release(handler3_unknown));
+
+    var bus_and_time = BusAndTime{};
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, bus_and_time.asBusActivation().vtable.queryInterface(bus_and_time.asBusActivation(), &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, bus_and_time.asBusActivation()), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), bus_and_time.bus_add_ref_count);
+    const bus_unknown: *ivsteditcontroller.IComponentHandlerBusActivation = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), bus_unknown.vtable.release(bus_unknown));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, bus_and_time.asSystemTime().vtable.queryInterface(bus_and_time.asSystemTime(), &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, bus_and_time.asSystemTime()), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), bus_and_time.time_add_ref_count);
+    const time_unknown: *ivsteditcontroller.IComponentHandlerSystemTime = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), time_unknown.vtable.release(time_unknown));
+
+    var progress = Progress{};
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, progress.asProgress().vtable.queryInterface(progress.asProgress(), &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, progress.asProgress()), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), progress.progress_add_ref_count);
+    const progress_unknown: *ivsteditcontroller.IProgress = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), progress_unknown.vtable.release(progress_unknown));
+
+    var units = Units{};
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, units.asUnitHandler().vtable.queryInterface(units.asUnitHandler(), &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, units.asUnitHandler()), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), units.unit_add_ref_count);
+    const unit_unknown: *ivstunits.IUnitHandler = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), unit_unknown.vtable.release(unit_unknown));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, units.asUnitHandler2().vtable.queryInterface(units.asUnitHandler2(), &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, units.asUnitHandler2()), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), units.unit2_add_ref_count);
+    const unit2_unknown: *ivstunits.IUnitHandler2 = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), unit2_unknown.vtable.release(unit2_unknown));
+}
+
 test "component handler 3 exposes context menu extension" {
     const Handler = ComponentHandler3(struct {});
     var handler = Handler{};
