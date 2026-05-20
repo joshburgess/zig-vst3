@@ -169,3 +169,70 @@ test "queryWithAddRef returns first matching entry and retains once" {
     try std.testing.expectEqual(@as(?*anyopaque, @ptrCast(&first)), out);
     try std.testing.expectEqual(@as(funknown.uint32, 2), object.refCount());
 }
+
+test "ownerFromField recovers object from embedded interface" {
+    const Object = extern struct {
+        unknown: funknown.Header = funknown.Header.init(&funknown.test_vtable, null),
+        alternate: funknown.Header = funknown.Header.init(&funknown.test_vtable, null),
+    };
+    var object = Object{};
+    const ownerFromAlternate = ownerFromField(Object, funknown.Header, "alternate");
+
+    try std.testing.expectEqual(&object, ownerFromAlternate(&object.alternate));
+}
+
+test "delegated interface forwards through primary interface" {
+    const Object = extern struct {
+        const Self = @This();
+        unknown: funknown.Header = funknown.Header.init(&funknown.test_vtable, null),
+        alternate: funknown.Header = funknown.Header.init(&alternate_vtable, null),
+        delegated_add_ref_count: funknown.uint32 = 0,
+        delegated_release_count: funknown.uint32 = 0,
+
+        fn ownerFromAlternate(ptr: *anyopaque) *Self {
+            const alternate: *funknown.Header = @ptrCast(@alignCast(ptr));
+            return @fieldParentPtr("alternate", alternate);
+        }
+
+        fn primaryQuery(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
+            const unknown: *funknown.Header = @ptrCast(@alignCast(ptr));
+            const entries = [_]Entry{
+                .{ .iid = &funknown.iid, .ptr = unknown },
+            };
+            return queryWithAddRef(unknown, primaryAddRef, &entries, requested_iid, out);
+        }
+
+        fn primaryAddRef(ptr: *anyopaque) callconv(.c) funknown.uint32 {
+            const unknown: *funknown.Header = @ptrCast(@alignCast(ptr));
+            const self: *Self = @fieldParentPtr("unknown", unknown);
+            self.delegated_add_ref_count += 1;
+            return self.delegated_add_ref_count;
+        }
+
+        fn primaryRelease(ptr: *anyopaque) callconv(.c) funknown.uint32 {
+            const unknown: *funknown.Header = @ptrCast(@alignCast(ptr));
+            const self: *Self = @fieldParentPtr("unknown", unknown);
+            self.delegated_release_count += 1;
+            return self.delegated_release_count;
+        }
+
+        const Alternate = DelegatedInterface(Self, ownerFromAlternate, "unknown", primaryQuery, primaryAddRef, primaryRelease);
+        const alternate_vtable = funknown.VTable{
+            .queryInterface = Alternate.query,
+            .addRef = Alternate.addRef,
+            .release = Alternate.release,
+        };
+    };
+
+    var object = Object{};
+    var queried: ?*anyopaque = null;
+
+    try std.testing.expectEqual(funknown.kResultOk, object.alternate.vtable.queryInterface(&object.alternate, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, @ptrCast(&object.unknown)), queried);
+    try std.testing.expectEqual(@as(funknown.uint32, 1), object.delegated_add_ref_count);
+
+    try std.testing.expectEqual(@as(funknown.uint32, 2), object.alternate.vtable.addRef(&object.alternate));
+    try std.testing.expectEqual(@as(funknown.uint32, 1), object.alternate.vtable.release(&object.alternate));
+    try std.testing.expectEqual(@as(funknown.uint32, 2), object.delegated_add_ref_count);
+    try std.testing.expectEqual(@as(funknown.uint32, 1), object.delegated_release_count);
+}
