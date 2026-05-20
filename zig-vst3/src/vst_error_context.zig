@@ -40,10 +40,7 @@ pub fn ErrorContext(comptime max_message_bytes: usize) type {
             return self.shown;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ierrorcontext.IErrorContext = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ierrorcontext.IErrorContext, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{

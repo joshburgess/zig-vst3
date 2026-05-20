@@ -56,10 +56,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
             return self.points[point_index];
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstparameterchanges.IParamValueQueue = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstparameterchanges.IParamValueQueue, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
@@ -176,10 +173,7 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
             return &self.queues[queue_index];
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstparameterchanges.IParameterChanges = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstparameterchanges.IParameterChanges, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{

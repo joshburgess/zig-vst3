@@ -24,10 +24,7 @@ pub fn PlugFrame(comptime Config: type) type {
             self.last_rect = rect.*;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *iplugview.IPlugFrame = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, iplugview.IPlugFrame, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{

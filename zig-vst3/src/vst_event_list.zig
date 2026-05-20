@@ -49,10 +49,7 @@ pub fn EventList(comptime max_events: usize) type {
             return self.events[event_index];
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstevents.IEventList = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstevents.IEventList, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
