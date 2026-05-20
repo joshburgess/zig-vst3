@@ -343,74 +343,6 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn queryFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *Controller, ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
-            return query(&ownerFn(ptr).iface, requested_iid, out);
-        }
-
-        fn queryFromUnitInfo(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromUnitInfo, ptr, requested_iid, out);
-        }
-
-        fn queryFromProgramListData(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromProgramListData, ptr, requested_iid, out);
-        }
-
-        fn queryFromUnitData(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromUnitData, ptr, requested_iid, out);
-        }
-
-        fn queryFromController2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromController2, ptr, requested_iid, out);
-        }
-
-        fn queryFromConnectionPoint(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromConnectionPoint, ptr, requested_iid, out);
-        }
-
-        fn queryFromHostEditing(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromHostEditing, ptr, requested_iid, out);
-        }
-
-        fn queryFromMidiMapping(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromMidiMapping, ptr, requested_iid, out);
-        }
-
-        fn queryFromMidiLearn(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromMidiLearn, ptr, requested_iid, out);
-        }
-
-        fn queryFromMidiMapping2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromMidiMapping2, ptr, requested_iid, out);
-        }
-
-        fn queryFromMidiLearn2(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromMidiLearn2, ptr, requested_iid, out);
-        }
-
-        fn queryFromNoteExpression(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromNoteExpression, ptr, requested_iid, out);
-        }
-
-        fn queryFromKeyswitch(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromKeyswitch, ptr, requested_iid, out);
-        }
-
-        fn queryFromPhysicalUIMapping(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromPhysicalUIMapping, ptr, requested_iid, out);
-        }
-
-        fn queryFromParameterFunctionName(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromParameterFunctionName, ptr, requested_iid, out);
-        }
-
-        fn queryFromRemapParamID(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromRemapParamID, ptr, requested_iid, out);
-        }
-
-        fn queryFromXmlRepresentation(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromXmlRepresentation, ptr, requested_iid, out);
-        }
-
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
@@ -419,141 +351,22 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, Config.controller_name);
         }
 
-        fn addRefFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *Controller, ptr: *anyopaque) types.uint32 {
-            return addRef(&ownerFn(ptr).iface);
-        }
-
-        fn releaseFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *Controller, ptr: *anyopaque) types.uint32 {
-            return release(&ownerFn(ptr).iface);
-        }
-
-        fn addRefFromUnitInfo(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromUnitInfo, ptr);
-        }
-
-        fn releaseFromUnitInfo(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromUnitInfo, ptr);
-        }
-
-        fn addRefFromProgramListData(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromProgramListData, ptr);
-        }
-
-        fn releaseFromProgramListData(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromProgramListData, ptr);
-        }
-
-        fn addRefFromUnitData(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromUnitData, ptr);
-        }
-
-        fn releaseFromUnitData(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromUnitData, ptr);
-        }
-
-        fn addRefFromController2(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromController2, ptr);
-        }
-
-        fn releaseFromController2(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromController2, ptr);
-        }
-
-        fn addRefFromConnectionPoint(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromConnectionPoint, ptr);
-        }
-
-        fn releaseFromConnectionPoint(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromConnectionPoint, ptr);
-        }
-
-        fn addRefFromHostEditing(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromHostEditing, ptr);
-        }
-
-        fn releaseFromHostEditing(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromHostEditing, ptr);
-        }
-
-        fn addRefFromMidiMapping(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromMidiMapping, ptr);
-        }
-
-        fn releaseFromMidiMapping(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromMidiMapping, ptr);
-        }
-
-        fn addRefFromMidiLearn(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromMidiLearn, ptr);
-        }
-
-        fn releaseFromMidiLearn(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromMidiLearn, ptr);
-        }
-
-        fn addRefFromMidiMapping2(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromMidiMapping2, ptr);
-        }
-
-        fn releaseFromMidiMapping2(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromMidiMapping2, ptr);
-        }
-
-        fn addRefFromMidiLearn2(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromMidiLearn2, ptr);
-        }
-
-        fn releaseFromMidiLearn2(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromMidiLearn2, ptr);
-        }
-
-        fn addRefFromNoteExpression(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromNoteExpression, ptr);
-        }
-
-        fn releaseFromNoteExpression(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromNoteExpression, ptr);
-        }
-
-        fn addRefFromKeyswitch(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromKeyswitch, ptr);
-        }
-
-        fn releaseFromKeyswitch(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromKeyswitch, ptr);
-        }
-
-        fn addRefFromPhysicalUIMapping(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromPhysicalUIMapping, ptr);
-        }
-
-        fn releaseFromPhysicalUIMapping(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromPhysicalUIMapping, ptr);
-        }
-
-        fn addRefFromParameterFunctionName(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromParameterFunctionName, ptr);
-        }
-
-        fn releaseFromParameterFunctionName(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromParameterFunctionName, ptr);
-        }
-
-        fn addRefFromRemapParamID(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromRemapParamID, ptr);
-        }
-
-        fn releaseFromRemapParamID(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromRemapParamID, ptr);
-        }
-
-        fn addRefFromXmlRepresentation(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromXmlRepresentation, ptr);
-        }
-
-        fn releaseFromXmlRepresentation(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromXmlRepresentation, ptr);
-        }
+        const UnitInfoDelegate = interface_map.DelegatedInterface(Controller, ownerFromUnitInfo, "iface", query, addRef, release);
+        const ProgramListDataDelegate = interface_map.DelegatedInterface(Controller, ownerFromProgramListData, "iface", query, addRef, release);
+        const UnitDataDelegate = interface_map.DelegatedInterface(Controller, ownerFromUnitData, "iface", query, addRef, release);
+        const Controller2Delegate = interface_map.DelegatedInterface(Controller, ownerFromController2, "iface", query, addRef, release);
+        const ConnectionPointDelegate = interface_map.DelegatedInterface(Controller, ownerFromConnectionPoint, "iface", query, addRef, release);
+        const HostEditingDelegate = interface_map.DelegatedInterface(Controller, ownerFromHostEditing, "iface", query, addRef, release);
+        const MidiMappingDelegate = interface_map.DelegatedInterface(Controller, ownerFromMidiMapping, "iface", query, addRef, release);
+        const MidiLearnDelegate = interface_map.DelegatedInterface(Controller, ownerFromMidiLearn, "iface", query, addRef, release);
+        const MidiMapping2Delegate = interface_map.DelegatedInterface(Controller, ownerFromMidiMapping2, "iface", query, addRef, release);
+        const MidiLearn2Delegate = interface_map.DelegatedInterface(Controller, ownerFromMidiLearn2, "iface", query, addRef, release);
+        const NoteExpressionDelegate = interface_map.DelegatedInterface(Controller, ownerFromNoteExpression, "iface", query, addRef, release);
+        const KeyswitchDelegate = interface_map.DelegatedInterface(Controller, ownerFromKeyswitch, "iface", query, addRef, release);
+        const PhysicalUIMappingDelegate = interface_map.DelegatedInterface(Controller, ownerFromPhysicalUIMapping, "iface", query, addRef, release);
+        const ParameterFunctionNameDelegate = interface_map.DelegatedInterface(Controller, ownerFromParameterFunctionName, "iface", query, addRef, release);
+        const RemapParamIDDelegate = interface_map.DelegatedInterface(Controller, ownerFromRemapParamID, "iface", query, addRef, release);
+        const XmlRepresentationDelegate = interface_map.DelegatedInterface(Controller, ownerFromXmlRepresentation, "iface", query, addRef, release);
 
         fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
@@ -646,9 +459,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const connection_point_vtable = ivstmessage.IConnectionPointVTable{
-            .queryInterface = queryFromConnectionPoint,
-            .addRef = addRefFromConnectionPoint,
-            .release = releaseFromConnectionPoint,
+            .queryInterface = ConnectionPointDelegate.query,
+            .addRef = ConnectionPointDelegate.addRef,
+            .release = ConnectionPointDelegate.release,
             .connect = connect,
             .disconnect = disconnect,
             .notify = notify,
@@ -669,9 +482,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const controller2_vtable = ivsteditcontroller.IEditController2VTable{
-            .queryInterface = queryFromController2,
-            .addRef = addRefFromController2,
-            .release = releaseFromController2,
+            .queryInterface = Controller2Delegate.query,
+            .addRef = Controller2Delegate.addRef,
+            .release = Controller2Delegate.release,
             .setKnobMode = setKnobMode,
             .openHelp = openHelp,
             .openAboutBox = openAboutBox,
@@ -690,9 +503,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const host_editing_vtable = ivsteditcontroller.IEditControllerHostEditingVTable{
-            .queryInterface = queryFromHostEditing,
-            .addRef = addRefFromHostEditing,
-            .release = releaseFromHostEditing,
+            .queryInterface = HostEditingDelegate.query,
+            .addRef = HostEditingDelegate.addRef,
+            .release = HostEditingDelegate.release,
             .beginEditFromHost = beginEditFromHost,
             .endEditFromHost = endEditFromHost,
         };
@@ -706,9 +519,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const unit_info_vtable = ivstunits.IUnitInfoVTable{
-            .queryInterface = queryFromUnitInfo,
-            .addRef = addRefFromUnitInfo,
-            .release = releaseFromUnitInfo,
+            .queryInterface = UnitInfoDelegate.query,
+            .addRef = UnitInfoDelegate.addRef,
+            .release = UnitInfoDelegate.release,
             .getUnitCount = getUnitCount,
             .getUnitInfo = getUnitInfo,
             .getProgramListCount = getProgramListCount,
@@ -812,9 +625,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const program_list_data_vtable = ivstunits.IProgramListDataVTable{
-            .queryInterface = queryFromProgramListData,
-            .addRef = addRefFromProgramListData,
-            .release = releaseFromProgramListData,
+            .queryInterface = ProgramListDataDelegate.query,
+            .addRef = ProgramListDataDelegate.addRef,
+            .release = ProgramListDataDelegate.release,
             .programDataSupported = programDataSupported,
             .getProgramData = getProgramData,
             .setProgramData = setProgramData,
@@ -849,9 +662,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const unit_data_vtable = ivstunits.IUnitDataVTable{
-            .queryInterface = queryFromUnitData,
-            .addRef = addRefFromUnitData,
-            .release = releaseFromUnitData,
+            .queryInterface = UnitDataDelegate.query,
+            .addRef = UnitDataDelegate.addRef,
+            .release = UnitDataDelegate.release,
             .unitDataSupported = unitDataSupported,
             .getUnitData = getUnitData,
             .setUnitData = setUnitData,
@@ -870,9 +683,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const midi_mapping_vtable = ivsteditcontroller.IMidiMappingVTable{
-            .queryInterface = queryFromMidiMapping,
-            .addRef = addRefFromMidiMapping,
-            .release = releaseFromMidiMapping,
+            .queryInterface = MidiMappingDelegate.query,
+            .addRef = MidiMappingDelegate.addRef,
+            .release = MidiMappingDelegate.release,
             .getMidiControllerAssignment = getMidiControllerAssignment,
         };
 
@@ -882,9 +695,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const midi_learn_vtable = ivstmidilearn.IMidiLearnVTable{
-            .queryInterface = queryFromMidiLearn,
-            .addRef = addRefFromMidiLearn,
-            .release = releaseFromMidiLearn,
+            .queryInterface = MidiLearnDelegate.query,
+            .addRef = MidiLearnDelegate.addRef,
+            .release = MidiLearnDelegate.release,
             .onLiveMIDIControllerInput = onLiveMIDIControllerInput,
         };
 
@@ -893,9 +706,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const midi_mapping2_vtable = ivstmidimapping2.IMidiMapping2VTable{
-            .queryInterface = queryFromMidiMapping2,
-            .addRef = addRefFromMidiMapping2,
-            .release = releaseFromMidiMapping2,
+            .queryInterface = MidiMapping2Delegate.query,
+            .addRef = MidiMapping2Delegate.addRef,
+            .release = MidiMapping2Delegate.release,
             .getNumMidi2ControllerAssignments = getNumMidi2ControllerAssignments,
             .getMidi2ControllerAssignments = getMidi2ControllerAssignments,
             .getNumMidi1ControllerAssignments = getNumMidi1ControllerAssignments,
@@ -919,9 +732,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const midi_learn2_vtable = ivstmidimapping2.IMidiLearn2VTable{
-            .queryInterface = queryFromMidiLearn2,
-            .addRef = addRefFromMidiLearn2,
-            .release = releaseFromMidiLearn2,
+            .queryInterface = MidiLearn2Delegate.query,
+            .addRef = MidiLearn2Delegate.addRef,
+            .release = MidiLearn2Delegate.release,
             .onLiveMidi2ControllerInput = onLiveMidi2ControllerInput,
             .onLiveMidi1ControllerInput = onLiveMidi1ControllerInput,
         };
@@ -935,9 +748,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const note_expression_vtable = ivstnoteexpression.INoteExpressionControllerVTable{
-            .queryInterface = queryFromNoteExpression,
-            .addRef = addRefFromNoteExpression,
-            .release = releaseFromNoteExpression,
+            .queryInterface = NoteExpressionDelegate.query,
+            .addRef = NoteExpressionDelegate.addRef,
+            .release = NoteExpressionDelegate.release,
             .getNoteExpressionCount = getNoteExpressionCount,
             .getNoteExpressionInfo = getNoteExpressionInfo,
             .getNoteExpressionStringByValue = getNoteExpressionStringByValue,
@@ -964,9 +777,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const keyswitch_vtable = ivstnoteexpression.IKeyswitchControllerVTable{
-            .queryInterface = queryFromKeyswitch,
-            .addRef = addRefFromKeyswitch,
-            .release = releaseFromKeyswitch,
+            .queryInterface = KeyswitchDelegate.query,
+            .addRef = KeyswitchDelegate.addRef,
+            .release = KeyswitchDelegate.release,
             .getKeyswitchCount = getKeyswitchCount,
             .getKeyswitchInfo = getKeyswitchInfo,
         };
@@ -981,9 +794,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const physical_ui_mapping_vtable = ivstphysicalui.INoteExpressionPhysicalUIMappingVTable{
-            .queryInterface = queryFromPhysicalUIMapping,
-            .addRef = addRefFromPhysicalUIMapping,
-            .release = releaseFromPhysicalUIMapping,
+            .queryInterface = PhysicalUIMappingDelegate.query,
+            .addRef = PhysicalUIMappingDelegate.addRef,
+            .release = PhysicalUIMappingDelegate.release,
             .getPhysicalUIMapping = getPhysicalUIMapping,
         };
 
@@ -993,9 +806,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const parameter_function_name_vtable = ivstparameterfunctionname.IParameterFunctionNameVTable{
-            .queryInterface = queryFromParameterFunctionName,
-            .addRef = addRefFromParameterFunctionName,
-            .release = releaseFromParameterFunctionName,
+            .queryInterface = ParameterFunctionNameDelegate.query,
+            .addRef = ParameterFunctionNameDelegate.addRef,
+            .release = ParameterFunctionNameDelegate.release,
             .getParameterIDFromFunctionName = getParameterIDFromFunctionName,
         };
 
@@ -1005,9 +818,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const remap_param_id_vtable = ivstremapparamid.IRemapParamIDVTable{
-            .queryInterface = queryFromRemapParamID,
-            .addRef = addRefFromRemapParamID,
-            .release = releaseFromRemapParamID,
+            .queryInterface = RemapParamIDDelegate.query,
+            .addRef = RemapParamIDDelegate.addRef,
+            .release = RemapParamIDDelegate.release,
             .getCompatibleParamID = getCompatibleParamID,
         };
 
@@ -1017,9 +830,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         const xml_representation_vtable = ivstrepresentation.IXmlRepresentationControllerVTable{
-            .queryInterface = queryFromXmlRepresentation,
-            .addRef = addRefFromXmlRepresentation,
-            .release = releaseFromXmlRepresentation,
+            .queryInterface = XmlRepresentationDelegate.query,
+            .addRef = XmlRepresentationDelegate.addRef,
+            .release = XmlRepresentationDelegate.release,
             .getXmlRepresentationStream = getXmlRepresentationStream,
         };
 
@@ -1941,38 +1754,6 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
         }
 
-        fn queryFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *Component, ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
-            return query(&ownerFn(ptr).iface, requested_iid, out);
-        }
-
-        fn queryFromProcessor(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromProcessor, ptr, requested_iid, out);
-        }
-
-        fn queryFromComponentConnectionPoint(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromComponentConnectionPoint, ptr, requested_iid, out);
-        }
-
-        fn queryFromProcessContextRequirements(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromProcessContextRequirements, ptr, requested_iid, out);
-        }
-
-        fn queryFromAudioPresentationLatency(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromAudioPresentationLatency, ptr, requested_iid, out);
-        }
-
-        fn queryFromPlugInterfaceSupport(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromPlugInterfaceSupport, ptr, requested_iid, out);
-        }
-
-        fn queryFromPrefetchableSupport(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromPrefetchableSupport, ptr, requested_iid, out);
-        }
-
-        fn queryFromDataExchangeReceiver(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            return queryFromOwnedInterface(ownerFromDataExchangeReceiver, ptr, requested_iid, out);
-        }
-
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
         }
@@ -1980,6 +1761,14 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
             return funknown.decrementRefCount(&owner(ptr).ref_count, Config.component_name);
         }
+
+        const ProcessorDelegate = interface_map.DelegatedInterface(Component, ownerFromProcessor, "iface", query, addRef, release);
+        const ComponentConnectionPointDelegate = interface_map.DelegatedInterface(Component, ownerFromComponentConnectionPoint, "iface", query, addRef, release);
+        const ProcessContextRequirementsDelegate = interface_map.DelegatedInterface(Component, ownerFromProcessContextRequirements, "iface", query, addRef, release);
+        const AudioPresentationLatencyDelegate = interface_map.DelegatedInterface(Component, ownerFromAudioPresentationLatency, "iface", query, addRef, release);
+        const PlugInterfaceSupportDelegate = interface_map.DelegatedInterface(Component, ownerFromPlugInterfaceSupport, "iface", query, addRef, release);
+        const PrefetchableSupportDelegate = interface_map.DelegatedInterface(Component, ownerFromPrefetchableSupport, "iface", query, addRef, release);
+        const DataExchangeReceiverDelegate = interface_map.DelegatedInterface(Component, ownerFromDataExchangeReceiver, "iface", query, addRef, release);
 
         fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
@@ -2054,9 +1843,9 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         const processor_vtable = ivstaudioprocessor.IAudioProcessorVTable{
-            .queryInterface = queryFromProcessor,
-            .addRef = addRefFromProcessor,
-            .release = releaseFromProcessor,
+            .queryInterface = ProcessorDelegate.query,
+            .addRef = ProcessorDelegate.addRef,
+            .release = ProcessorDelegate.release,
             .setBusArrangements = setBusArrangements,
             .getBusArrangement = getBusArrangement,
             .canProcessSampleSize = canProcessSampleSize,
@@ -2067,74 +1856,10 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             .getTailSamples = getTailSamples,
         };
 
-        fn addRefFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *Component, ptr: *anyopaque) types.uint32 {
-            return addRef(&ownerFn(ptr).iface);
-        }
-
-        fn releaseFromOwnedInterface(comptime ownerFn: fn (*anyopaque) *Component, ptr: *anyopaque) types.uint32 {
-            return release(&ownerFn(ptr).iface);
-        }
-
-        fn addRefFromProcessor(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromProcessor, ptr);
-        }
-
-        fn releaseFromProcessor(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromProcessor, ptr);
-        }
-
-        fn addRefFromComponentConnectionPoint(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromComponentConnectionPoint, ptr);
-        }
-
-        fn releaseFromComponentConnectionPoint(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromComponentConnectionPoint, ptr);
-        }
-
-        fn addRefFromProcessContextRequirements(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromProcessContextRequirements, ptr);
-        }
-
-        fn releaseFromProcessContextRequirements(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromProcessContextRequirements, ptr);
-        }
-
-        fn addRefFromAudioPresentationLatency(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromAudioPresentationLatency, ptr);
-        }
-
-        fn releaseFromAudioPresentationLatency(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromAudioPresentationLatency, ptr);
-        }
-
-        fn addRefFromPlugInterfaceSupport(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromPlugInterfaceSupport, ptr);
-        }
-
-        fn releaseFromPlugInterfaceSupport(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromPlugInterfaceSupport, ptr);
-        }
-
-        fn addRefFromPrefetchableSupport(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromPrefetchableSupport, ptr);
-        }
-
-        fn releaseFromPrefetchableSupport(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromPrefetchableSupport, ptr);
-        }
-
-        fn addRefFromDataExchangeReceiver(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return addRefFromOwnedInterface(ownerFromDataExchangeReceiver, ptr);
-        }
-
-        fn releaseFromDataExchangeReceiver(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return releaseFromOwnedInterface(ownerFromDataExchangeReceiver, ptr);
-        }
-
         const component_connection_point_vtable = ivstmessage.IConnectionPointVTable{
-            .queryInterface = queryFromComponentConnectionPoint,
-            .addRef = addRefFromComponentConnectionPoint,
-            .release = releaseFromComponentConnectionPoint,
+            .queryInterface = ComponentConnectionPointDelegate.query,
+            .addRef = ComponentConnectionPointDelegate.addRef,
+            .release = ComponentConnectionPointDelegate.release,
             .connect = componentConnect,
             .disconnect = componentDisconnect,
             .notify = componentNotify,
@@ -2155,9 +1880,9 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         const process_context_requirements_vtable = ivstaudioprocessor.IProcessContextRequirementsVTable{
-            .queryInterface = queryFromProcessContextRequirements,
-            .addRef = addRefFromProcessContextRequirements,
-            .release = releaseFromProcessContextRequirements,
+            .queryInterface = ProcessContextRequirementsDelegate.query,
+            .addRef = ProcessContextRequirementsDelegate.addRef,
+            .release = ProcessContextRequirementsDelegate.release,
             .getProcessContextRequirements = getProcessContextRequirements,
         };
 
@@ -2166,9 +1891,9 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         const audio_presentation_latency_vtable = ivstaudioprocessor.IAudioPresentationLatencyVTable{
-            .queryInterface = queryFromAudioPresentationLatency,
-            .addRef = addRefFromAudioPresentationLatency,
-            .release = releaseFromAudioPresentationLatency,
+            .queryInterface = AudioPresentationLatencyDelegate.query,
+            .addRef = AudioPresentationLatencyDelegate.addRef,
+            .release = AudioPresentationLatencyDelegate.release,
             .setAudioPresentationLatencySamples = setAudioPresentationLatencySamples,
         };
 
@@ -2177,9 +1902,9 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         const plug_interface_support_vtable = ivstpluginterfacesupport.IPlugInterfaceSupportVTable{
-            .queryInterface = queryFromPlugInterfaceSupport,
-            .addRef = addRefFromPlugInterfaceSupport,
-            .release = releaseFromPlugInterfaceSupport,
+            .queryInterface = PlugInterfaceSupportDelegate.query,
+            .addRef = PlugInterfaceSupportDelegate.addRef,
+            .release = PlugInterfaceSupportDelegate.release,
             .isPlugInterfaceSupported = isPlugInterfaceSupported,
         };
 
@@ -2201,9 +1926,9 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         const prefetchable_support_vtable = ivstprefetchablesupport.IPrefetchableSupportVTable{
-            .queryInterface = queryFromPrefetchableSupport,
-            .addRef = addRefFromPrefetchableSupport,
-            .release = releaseFromPrefetchableSupport,
+            .queryInterface = PrefetchableSupportDelegate.query,
+            .addRef = PrefetchableSupportDelegate.addRef,
+            .release = PrefetchableSupportDelegate.release,
             .getPrefetchableSupport = getPrefetchableSupport,
         };
 
@@ -2213,9 +1938,9 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         const data_exchange_receiver_vtable = ivstdataexchange.IDataExchangeReceiverVTable{
-            .queryInterface = queryFromDataExchangeReceiver,
-            .addRef = addRefFromDataExchangeReceiver,
-            .release = releaseFromDataExchangeReceiver,
+            .queryInterface = DataExchangeReceiverDelegate.query,
+            .addRef = DataExchangeReceiverDelegate.addRef,
+            .release = DataExchangeReceiverDelegate.release,
             .queueOpened = dataExchangeQueueOpened,
             .queueClosed = dataExchangeQueueClosed,
             .onDataExchangeBlocksReceived = onDataExchangeBlocksReceived,

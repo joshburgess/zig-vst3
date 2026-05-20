@@ -46,6 +46,33 @@ pub fn queryWithAddRef(
     return funknown.kNoInterface;
 }
 
+pub fn DelegatedInterface(
+    comptime Owner: type,
+    comptime ownerFn: fn (*anyopaque) *Owner,
+    comptime primary_field: []const u8,
+    comptime queryFn: fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) funknown.tresult,
+    comptime addRefFn: fn (*anyopaque) callconv(.c) funknown.uint32,
+    comptime releaseFn: fn (*anyopaque) callconv(.c) funknown.uint32,
+) type {
+    return struct {
+        fn primary(ptr: *anyopaque) *anyopaque {
+            return @ptrCast(&@field(ownerFn(ptr), primary_field));
+        }
+
+        pub fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) funknown.tresult {
+            return queryFn(primary(ptr), requested_iid, out);
+        }
+
+        pub fn addRef(ptr: *anyopaque) callconv(.c) funknown.uint32 {
+            return addRefFn(primary(ptr));
+        }
+
+        pub fn release(ptr: *anyopaque) callconv(.c) funknown.uint32 {
+            return releaseFn(primary(ptr));
+        }
+    };
+}
+
 fn testAddRef(ptr: *anyopaque) callconv(.c) funknown.uint32 {
     const object: *funknown.TestObject = @ptrCast(@alignCast(ptr));
     return object.asUnknown().vtable.addRef(object.asUnknown());
