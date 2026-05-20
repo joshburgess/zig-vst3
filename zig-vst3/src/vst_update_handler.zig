@@ -19,10 +19,7 @@ pub fn Dependent(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *iupdatehandler.IDependent = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, iupdatehandler.IDependent, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
@@ -101,10 +98,7 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             return count;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *iupdatehandler.IUpdateHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, iupdatehandler.IUpdateHandler, "iface");
 
         fn findEntry(self: *Self, changed: ?*anyopaque, dependent: ?*iupdatehandler.IDependent) ?*Entry {
             for (&self.entries) |*entry| {

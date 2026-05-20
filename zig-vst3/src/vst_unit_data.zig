@@ -120,10 +120,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return values;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstunits.IUnitInfo = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstunits.IUnitInfo, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
