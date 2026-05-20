@@ -30,11 +30,6 @@ pub fn InterAppAudioHost(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn recordRemoteControlEvent(self: *Self, event_id: types.uint32) void {
-            self.remote_control_count +|= 1;
-            self.last_remote_control_event = event_id;
-        }
-
         fn recordPresetManagerRequest(self: *Self, uid: *const tuid.TUID) void {
             self.last_preset_uid = uid.*;
             self.has_last_preset_uid = true;
@@ -95,8 +90,12 @@ pub fn InterAppAudioHost(comptime Config: type) type {
 
         fn sendRemoteControlEvent(ptr: *anyopaque, event_id: types.uint32) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.recordRemoteControlEvent(event_id);
-            if (@hasDecl(Config, "sendRemoteControlEvent")) return Config.sendRemoteControlEvent(self, event_id);
+            self.remote_control_count +|= 1;
+            if (@hasDecl(Config, "sendRemoteControlEvent")) {
+                const result = Config.sendRemoteControlEvent(self, event_id);
+                if (result != types.kResultOk) return result;
+            }
+            self.last_remote_control_event = event_id;
             return types.kResultOk;
         }
 
@@ -432,10 +431,25 @@ test "inter-app audio host delegates remote control and preset manager creation"
 
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.sendRemoteControlEvent(iface, 0x1234));
     try std.testing.expectEqual(@as(types.uint32, 1), host.remote_control_count);
-    try std.testing.expectEqual(@as(types.uint32, 0x1234), host.last_remote_control_event);
+    try std.testing.expectEqual(@as(types.uint32, 0), host.last_remote_control_event);
     try std.testing.expectEqual(presets.asInterface(), iface.vtable.createPresetManager(iface, &preset_uid).?);
     try std.testing.expect(host.has_last_preset_uid);
     try std.testing.expectEqualSlices(u8, &preset_uid, &host.last_preset_uid);
+}
+
+test "inter-app audio host preserves last accepted remote control event on rejection" {
+    const Host = InterAppAudioHost(struct {
+        pub fn sendRemoteControlEvent(_: anytype, event_id: types.uint32) types.tresult {
+            return if (event_id == 42) types.kResultOk else types.kInvalidArgument;
+        }
+    });
+    var host = Host{};
+    const iface = host.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.sendRemoteControlEvent(iface, 42));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.sendRemoteControlEvent(iface, 99));
+    try std.testing.expectEqual(@as(types.uint32, 2), host.remote_control_count);
+    try std.testing.expectEqual(@as(types.uint32, 42), host.last_remote_control_event);
 }
 
 test "inter-app audio connection notification stores state" {
