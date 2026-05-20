@@ -334,6 +334,13 @@ test "update handler supports query interface" {
     try std.testing.expect(queried != null);
     const queried_handler: *iupdatehandler.IUpdateHandler = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_handler.vtable.release(queried_handler));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), handler.ref_count.load(.seq_cst));
+    const queried_unknown: *iupdatehandler.IUpdateHandler = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "update handler clears unsupported query output" {

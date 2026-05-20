@@ -227,6 +227,13 @@ test "wayland host supports query interface" {
     try std.testing.expect(queried != null);
     const queried_host: *iwaylandframe.IWaylandHost = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_host.vtable.release(queried_host));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), host.ref_count.load(.seq_cst));
+    const queried_unknown: *iwaylandframe.IWaylandHost = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "wayland host clears unsupported query output" {
@@ -309,6 +316,13 @@ test "wayland frame supports query interface" {
     try std.testing.expect(queried != null);
     const queried_frame: *iwaylandframe.IWaylandFrame = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_frame.vtable.release(queried_frame));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), frame.ref_count.load(.seq_cst));
+    const queried_unknown: *iwaylandframe.IWaylandFrame = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "wayland frame clears unsupported query output" {

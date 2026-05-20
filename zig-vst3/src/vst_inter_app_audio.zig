@@ -503,6 +503,13 @@ test "inter-app audio connection notification supports query interface" {
     try std.testing.expect(queried != null);
     const out: *ivstinterappaudio.IInterAppAudioConnectionNotification = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), out.vtable.release(out));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), notification.ref_count.load(.seq_cst));
+    const queried_unknown: *ivstinterappaudio.IInterAppAudioConnectionNotification = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "inter-app audio connection notification clears unsupported query output" {
@@ -561,6 +568,13 @@ test "inter-app audio preset manager supports query interface" {
     try std.testing.expect(queried != null);
     const out: *ivstinterappaudio.IInterAppAudioPresetManager = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), out.vtable.release(out));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), presets.ref_count.load(.seq_cst));
+    const queried_unknown: *ivstinterappaudio.IInterAppAudioPresetManager = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "inter-app audio preset manager clears unsupported query output" {
