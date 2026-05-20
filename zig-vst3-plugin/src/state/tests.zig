@@ -562,20 +562,33 @@ test "parameter state report generated helper invariants" {
 }
 
 test "parameter state report saturates overflowing accounted counts" {
+    const max = std.math.maxInt(usize);
     const report = ReadParameterStateReport{
         .entry_count = 3,
-        .restored_count = std.math.maxInt(usize),
+        .restored_count = max,
+        .ignored_count = 1,
+    };
+    const max_decoded = ReadParameterStateReport{
+        .entry_count = max,
+        .restored_count = max,
         .ignored_count = 1,
     };
 
-    try std.testing.expectEqual(std.math.maxInt(usize), report.accountedCount());
+    try std.testing.expectEqual(max, report.accountedCount());
     try std.testing.expectEqual(@as(usize, 0), report.unaccountedCount());
     try std.testing.expect(report.hasAccountedEntries());
     try std.testing.expect(report.hasMoreAccountedEntriesThan(3));
-    try std.testing.expectEqual(std.math.maxInt(usize) - 3, report.extraAccountedEntryCount(3));
+    try std.testing.expectEqual(max - 3, report.extraAccountedEntryCount(3));
     try std.testing.expect(!report.accountedAllEntries());
     try std.testing.expect(!report.fullyHandled());
     try std.testing.expectEqual(ReadParameterStateClassification.partial, report.classification());
+
+    try std.testing.expectEqual(max, max_decoded.accountedCount());
+    try std.testing.expectEqual(@as(usize, 0), max_decoded.unaccountedCount());
+    try std.testing.expect(max_decoded.accountedAllEntries());
+    try std.testing.expect(max_decoded.fullyHandled());
+    try std.testing.expect(max_decoded.restoredAndIgnoredEntries());
+    try std.testing.expectEqual(ReadParameterStateClassification.restored_and_ignored, max_decoded.classification());
 }
 
 test "parameter state round-trips generated normalized values" {
