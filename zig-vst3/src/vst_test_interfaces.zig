@@ -342,17 +342,31 @@ test "test result counts messages past fixed storage" {
     try std.testing.expectEqualSlices(types.char16, text[0..3], result.message(0));
 }
 
-test "test result ignores corrupted high message counts" {
+test "test result ignores corrupted high message and error counts" {
     const Result = TestResult(1, 4);
-    var result = Result{};
-    const iface = result.asInterface();
+    const Channel = enum { message, errors };
+    const channels = [_]Channel{ .message, .errors };
     const text = std.unicode.utf8ToUtf16LeStringLiteral("abc");
 
-    result.message_count = std.math.maxInt(types.uint32);
-    iface.vtable.addMessage(iface, text);
+    inline for (channels) |channel| {
+        var result = Result{};
+        const iface = result.asInterface();
 
-    try std.testing.expectEqual(std.math.maxInt(types.uint32), result.message_count);
-    try std.testing.expectEqualSlices(types.char16, &[_]types.char16{}, result.message(0));
+        switch (channel) {
+            .message => {
+                result.message_count = std.math.maxInt(types.uint32);
+                iface.vtable.addMessage(iface, text);
+                try std.testing.expectEqual(std.math.maxInt(types.uint32), result.message_count);
+                try std.testing.expectEqualSlices(types.char16, &[_]types.char16{}, result.message(0));
+            },
+            .errors => {
+                result.error_count = std.math.maxInt(types.uint32);
+                iface.vtable.addErrorMessage(iface, text);
+                try std.testing.expectEqual(std.math.maxInt(types.uint32), result.error_count);
+                try std.testing.expectEqualSlices(types.char16, &[_]types.char16{}, result.errorMessage(0));
+            },
+        }
+    }
 }
 
 test "test result records null messages as empty entries" {
