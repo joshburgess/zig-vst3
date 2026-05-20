@@ -579,6 +579,36 @@ test "data exchange host clears unsupported query outputs" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
 }
 
+test "host context secondary interfaces expose their own unknown identity" {
+    const ChannelHost = ChannelContextHost("Channel Host", struct {});
+    const AutomationHost = AutomationStateHost("Automation Host", struct {});
+    const DataHost = DataExchangeHost("Data Host", struct {});
+    var channel_host = ChannelHost{};
+    var automation_host = AutomationHost{};
+    var data_host = DataHost{};
+
+    var queried: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, channel_host.asInfoListener().vtable.queryInterface(channel_host.asInfoListener(), &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, channel_host.asInfoListener()), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), channel_host.info_add_ref_count);
+    const listener: *ivstchannelcontextinfo.IInfoListener = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), listener.vtable.release(listener));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, automation_host.asAutomationState().vtable.queryInterface(automation_host.asAutomationState(), &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, automation_host.asAutomationState()), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), automation_host.automation_add_ref_count);
+    const automation: *ivstautomationstate.IAutomationState = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), automation.vtable.release(automation));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, data_host.asDataExchangeHandler().vtable.queryInterface(data_host.asDataExchangeHandler(), &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, data_host.asDataExchangeHandler()), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), data_host.add_ref_count);
+    const data_exchange: *ivstdataexchange.IDataExchangeHandler = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), data_exchange.vtable.release(data_exchange));
+}
+
 test "data exchange host preserves last accepted close queue on rejection" {
     const Host = DataExchangeHost("Test Host", struct {
         pub fn closeQueue(_: anytype, queue_id: ivstdataexchange.DataExchangeQueueID) types.tresult {
