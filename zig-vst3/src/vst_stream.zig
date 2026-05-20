@@ -115,8 +115,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         const ownerFromStream = interface_map.ownerFromField(Self, ibstream.IBStream, "iface");
         const ownerFromSizeable = interface_map.ownerFromField(Self, ibstream.ISizeableStream, "sizeable_iface");
 
-        fn queryStream(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            const self = ownerFromStream(ptr);
+        fn query(self: *Self, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
             const entries = [_]interface_map.Entry{
                 .{ .iid = &funknown.iid, .ptr = &self.iface },
                 .{ .iid = &ibstream.ibstream_iid, .ptr = &self.iface },
@@ -125,14 +124,12 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return interface_map.queryWithAddRef(&self.iface, addRefStream, &entries, requested_iid, out);
         }
 
+        fn queryStream(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+            return query(ownerFromStream(ptr), requested_iid, out);
+        }
+
         fn querySizeable(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
-            const self = ownerFromSizeable(ptr);
-            const entries = [_]interface_map.Entry{
-                .{ .iid = &funknown.iid, .ptr = &self.iface },
-                .{ .iid = &ibstream.ibstream_iid, .ptr = &self.iface },
-                .{ .iid = &ibstream.isizeable_stream_iid, .ptr = &self.sizeable_iface },
-            };
-            return interface_map.queryWithAddRef(&self.iface, addRefStream, &entries, requested_iid, out);
+            return query(ownerFromSizeable(ptr), requested_iid, out);
         }
 
         fn addRefStream(ptr: *anyopaque) callconv(.c) types.uint32 {
