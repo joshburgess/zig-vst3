@@ -19,6 +19,16 @@ pub fn completedByteCountLen(count: types.int32, requested: types.int32) ?usize 
     return @intCast(count);
 }
 
+pub fn streamPosition(position: usize) ?types.int64 {
+    return std.math.cast(types.int64, position);
+}
+
+pub fn streamPositionLen(position: types.int64, capacity: usize) ?usize {
+    if (position < 0) return null;
+    const value: usize = @intCast(position);
+    return if (value <= capacity) value else null;
+}
+
 pub fn writeAll(stream: ?*ibstream.IBStream, bytes: []const u8) types.tresult {
     const out = stream orelse return types.kInvalidArgument;
     const byte_count_value = byteCount(bytes.len) orelse return types.kInvalidArgument;
@@ -87,7 +97,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         }
 
         fn seekTarget(base: usize, offset: types.int64) ?types.int64 {
-            const start = std.math.cast(types.int64, base) orelse return null;
+            const start = streamPosition(base) orelse return null;
             const next = @addWithOverflow(start, offset);
             return if (next[1] == 0) next[0] else null;
         }
@@ -186,32 +196,31 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
                     return failPosition(result, types.kInvalidArgument);
                 },
             };
-            if (next < 0 or next > self.boundedLen()) {
+            const position = streamPositionLen(next, self.boundedLen()) orelse {
                 return failPosition(result, types.kResultFalse);
-            }
-            self.pos = @intCast(next);
+            };
+            self.pos = position;
             if (result) |out| out.* = next;
             return types.kResultOk;
         }
 
         fn tell(ptr: *anyopaque, pos: *types.int64) callconv(.c) types.tresult {
-            pos.* = std.math.cast(types.int64, ownerFromStream(ptr).pos) orelse {
+            pos.* = streamPosition(ownerFromStream(ptr).pos) orelse {
                 return failPosition(pos, types.kResultFalse);
             };
             return types.kResultOk;
         }
 
         fn getStreamSize(ptr: *anyopaque, size: *types.int64) callconv(.c) types.tresult {
-            size.* = std.math.cast(types.int64, ownerFromSizeable(ptr).boundedLen()) orelse {
+            size.* = streamPosition(ownerFromSizeable(ptr).boundedLen()) orelse {
                 return failPosition(size, types.kResultFalse);
             };
             return types.kResultOk;
         }
 
         fn setStreamSize(ptr: *anyopaque, size: types.int64) callconv(.c) types.tresult {
-            if (size < 0 or size > capacity) return types.kResultFalse;
+            const next = streamPositionLen(size, capacity) orelse return types.kResultFalse;
             const self = ownerFromSizeable(ptr);
-            const next: usize = @intCast(size);
             const old_len = self.boundedLen();
             if (next > old_len) @memset(self.bytes[old_len..next], 0);
             self.len = next;
@@ -287,6 +296,15 @@ test "byte count length conversion rejects invalid stream counts" {
     try std.testing.expectEqual(@as(?usize, 3), completedByteCountLen(3, 4));
     try std.testing.expectEqual(@as(?usize, null), completedByteCountLen(5, 4));
     try std.testing.expectEqual(@as(?usize, null), completedByteCountLen(-1, 4));
+}
+
+test "stream position conversions reject invalid stream positions" {
+    try std.testing.expectEqual(@as(?types.int64, 0), streamPosition(0));
+    try std.testing.expectEqual(@as(?types.int64, 7), streamPosition(7));
+    try std.testing.expectEqual(@as(?usize, null), streamPositionLen(-1, 8));
+    try std.testing.expectEqual(@as(?usize, 0), streamPositionLen(0, 8));
+    try std.testing.expectEqual(@as(?usize, 8), streamPositionLen(8, 8));
+    try std.testing.expectEqual(@as(?usize, null), streamPositionLen(9, 8));
 }
 
 test "fixed buffer stream round-trips generated chunked IO" {
