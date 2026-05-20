@@ -487,6 +487,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
             const self = owner(ptr);
             self.recordRequest(bus_index, channel);
             const maps = self.physicalMaps();
+            if (maps.len == 0) return failPhysicalUIMapping(out, types.kResultFalse);
             out.* = .{
                 .count = @intCast(maps.len),
                 .map = maps.ptr,
@@ -496,7 +497,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
                 if (result != types.kResultOk) return failPhysicalUIMapping(out, result);
                 return result;
             }
-            return if (out.count == 0) types.kResultFalse else types.kResultOk;
+            return types.kResultOk;
         }
 
         const vtable = ivstphysicalui.INoteExpressionPhysicalUIMappingVTable{
@@ -844,7 +845,7 @@ test "physical UI mapping reports empty lists and supports query interface" {
 
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getPhysicalUIMapping(iface, 8, 9, &list));
     try std.testing.expectEqual(@as(types.uint32, 0), list.count);
-    try std.testing.expect(list.map != null);
+    try std.testing.expectEqual(@as(?[*]ivstphysicalui.PhysicalUIMap, null), list.map);
     try std.testing.expectEqual(@as(types.uint32, 1), mapping.request_count);
     try std.testing.expectEqual(@as(types.int32, 8), mapping.last_bus);
     try std.testing.expectEqual(@as(types.int16, 9), mapping.last_channel);
