@@ -319,7 +319,8 @@ fn nextMatchingEvent(items: []const Event, last_offset: ?usize, last_index: usiz
 fn nextMatchingSampleOffset(items: []const Event, after_sample_offset: usize, context: anytype, comptime matches: anytype) ?usize {
     var result: ?usize = null;
     for (items) |item| {
-        if (!matches(item, context) or item.sample_offset <= after_sample_offset) continue;
+        if (!matches(item, context)) continue;
+        if (item.sample_offset <= after_sample_offset) continue;
         if (result) |current| {
             if (item.sample_offset < current) result = item.sample_offset;
         } else {

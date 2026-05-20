@@ -138,7 +138,8 @@ fn nextMatchingChange(items: []const ParameterChange, last_offset: ?usize, last_
 fn nextMatchingSampleOffset(items: []const ParameterChange, after_sample_offset: usize, context: anytype, comptime matches: anytype) ?usize {
     var result: ?usize = null;
     for (items) |item| {
-        if (!matches(item, context) or item.sample_offset <= after_sample_offset) continue;
+        if (!matches(item, context)) continue;
+        if (item.sample_offset <= after_sample_offset) continue;
         if (result) |current| {
             if (item.sample_offset < current) result = item.sample_offset;
         } else {
@@ -466,7 +467,8 @@ pub const ParameterChanges = struct {
     pub fn latestAtOrBefore(self: ParameterChanges, id: u32, sample_offset: usize) ?ParameterChange {
         var result: ?ParameterChange = null;
         for (self.items) |item| {
-            if (!item.isForId(id) or item.sample_offset > sample_offset) continue;
+            if (!item.isForId(id)) continue;
+            if (item.sample_offset > sample_offset) continue;
             if (result) |current| {
                 if (item.sample_offset >= current.sample_offset) result = item;
             } else {
