@@ -22,6 +22,7 @@ const ivstparameterfunctionname = @import("pluginterfaces/vst/ivstparameterfunct
 const ivstphysicalui = @import("pluginterfaces/vst/ivstphysicalui.zig");
 const ivstpluginterfacesupport = @import("pluginterfaces/vst/ivstpluginterfacesupport.zig");
 const ivstprefetchablesupport = @import("pluginterfaces/vst/ivstprefetchablesupport.zig");
+const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
 const ivstremapparamid = @import("pluginterfaces/vst/ivstremapparamid.zig");
 const ivstrepresentation = @import("pluginterfaces/vst/ivstrepresentation.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
@@ -31,6 +32,7 @@ const tuid = @import("tuid.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
 const vst_index = @import("vst_index.zig");
+const vst_parameter_changes = @import("vst_parameter_changes.zig");
 const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_bridge = @import("zig_vst3_plugin_bridge.zig");
 
@@ -1454,6 +1456,88 @@ test "simple stereo effect processes with setup sample rate when process context
     try std.testing.expectEqual(@as(f32, 44_100.0), output_samples[1]);
 }
 
+var malformed_process_apply_count: usize = 0;
+var malformed_process_last_change_count: usize = 0;
+
+test "simple stereo effect ignores parameter changes when process data is malformed" {
+    const Config = struct {
+        pub const component_name = "MalformedProcess";
+        pub const controller_cid = tuid.inlineUid(0x33333333, 0x44444444, 0x55555555, 0x66666666);
+
+        pub const Processor = struct {
+            pub fn process(_: @This(), comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+                for (0..context.outputChannelCount()) |channel| {
+                    const output = context.outputChannel(channel) orelse continue;
+                    @memset(output, 0);
+                }
+            }
+        };
+
+        pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
+            malformed_process_apply_count += 1;
+            malformed_process_last_change_count = changes.changeCount();
+        }
+
+        pub fn readState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultFalse;
+        }
+
+        pub fn writeState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultFalse;
+        }
+    };
+    const TestEffect = SimpleStereoEffect(Config);
+
+    malformed_process_apply_count = 0;
+    malformed_process_last_change_count = 0;
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestEffect.create(@ptrCast(&ivstcomponent.icomponent_iid), &component_out));
+    try std.testing.expect(component_out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(component_out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &processor_out));
+    try std.testing.expect(processor_out != null);
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
+    defer _ = processor.vtable.release(processor);
+
+    const Changes = vst_parameter_changes.ParameterChanges(1, 1);
+    var changes = Changes{};
+    const queue = changes.addQueue(7).?;
+    try std.testing.expectEqual(types.kResultOk, queue.appendPoint(0, 0.5));
+
+    var input_samples = [_]f32{ 1.0, 2.0 };
+    var output_samples = [_]f32{ 9.0, 9.0 };
+    var input_channel_ptrs = [_][*]f32{&input_samples};
+    var output_channel_ptrs = [_][*]f32{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = -1,
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 48_000.0 };
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = input_samples.len,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .inputParameterChanges = changes.asInterface(),
+        .processContext = &process_context,
+    };
+
+    try std.testing.expectEqual(types.kInvalidArgument, processor.vtable.process(processor, &data));
+    try std.testing.expectEqual(@as(usize, 0), malformed_process_apply_count);
+    try std.testing.expectEqual(@as(usize, 0), malformed_process_last_change_count);
+    try std.testing.expectEqualSlices(f32, &.{ 9.0, 9.0 }, &output_samples);
+}
+
 pub fn SimpleStereoEffect(comptime Config: type) type {
     return struct {
         const Self = @This();
@@ -1959,14 +2043,21 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn process(ptr: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.c) types.tresult {
             const self = ownerFromProcessor(ptr);
+            const Processor = struct {
+                parameter_changes: plug_process.ParameterChanges,
+
+                pub fn process(processor: @This(), comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+                    Config.applyParameterChanges(processor.parameter_changes);
+                    (Config.Processor{}).process(Sample, context);
+                }
+            };
             var parameter_change_storage: [process_parameter_change_capacity]plug_process.ParameterChange = undefined;
             var event_storage: [process_event_capacity]plug_process.Event = undefined;
             var output_event_storage: [process_output_event_capacity]plug_process.Event = undefined;
             const parameter_changes = zig_vst3_plugin_bridge.collectInputParameterChanges(data, &parameter_change_storage);
             const events = zig_vst3_plugin_bridge.collectInputEvents(data, &event_storage);
             var output_events = plug_process.EventWriter.init(&output_event_storage, zig_vst3_plugin_bridge.frameCountOrZero(data));
-            Config.applyParameterChanges(parameter_changes);
-            const result = zig_vst3_plugin_bridge.processMainAudioConfiguredWithSampleRate(data, parameter_changes, events, &output_events, Config.Processor{}, bus_config, self.sample_rate);
+            const result = zig_vst3_plugin_bridge.processMainAudioConfiguredWithSampleRate(data, parameter_changes, events, &output_events, Processor{ .parameter_changes = parameter_changes }, bus_config, self.sample_rate);
             if (result != types.kResultOk) return result;
             return zig_vst3_plugin_bridge.writeOutputEvents(data, output_events.events());
         }
