@@ -298,6 +298,13 @@ test "parameter changes add parameter data and support query interface" {
     try std.testing.expect(queried != null);
     const queried_changes: *ivstparameterchanges.IParameterChanges = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_changes.vtable.release(queried_changes));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), changes.ref_count.load(.seq_cst));
+    const queried_unknown: *ivstparameterchanges.IParameterChanges = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "parameter changes reuse existing queues by id" {
@@ -324,6 +331,13 @@ test "parameter changes reuse existing queues by id" {
     try std.testing.expect(queried != null);
     const queried_queue: *ivstparameterchanges.IParamValueQueue = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_queue.vtable.release(queried_queue));
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, first_queue.vtable.queryInterface(first_queue, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, first_queue), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), changes.queues[0].ref_count.load(.seq_cst));
+    const queried_unknown: *ivstparameterchanges.IParamValueQueue = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
 }
 
 test "parameter value queue preserves contents when full" {
