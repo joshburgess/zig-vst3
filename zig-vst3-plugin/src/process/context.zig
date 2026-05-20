@@ -45,6 +45,10 @@ fn validateProcessFrameCounts(input_channel_count: usize, input_frame_count: usi
     }
 }
 
+fn framesToSeconds(frame_count: usize, sample_rate: f64) f64 {
+    return @as(f64, @floatFromInt(frame_count)) / sample_rate;
+}
+
 pub const ProcessBlockSegmentIterator = struct {
     parameter_changes: ParameterChanges,
     events: Events,
@@ -280,7 +284,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn blockDurationSeconds(self: *const @This()) f64 {
-            return @as(f64, @floatFromInt(self.frameCount())) / self.sample_rate;
+            return framesToSeconds(self.frameCount(), self.sample_rate);
         }
 
         pub fn blockSegment(self: *const @This()) BlockSegment {
@@ -288,7 +292,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn sampleOffsetSeconds(self: *const @This(), sample_offset: usize) f64 {
-            return @as(f64, @floatFromInt(sample_offset)) / self.sample_rate;
+            return framesToSeconds(sample_offset, self.sample_rate);
         }
 
         pub fn containsSampleOffset(self: *const @This(), sample_offset: usize) bool {
@@ -308,7 +312,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn remainingSecondsFromOffset(self: *const @This(), sample_offset: usize) f64 {
-            return @as(f64, @floatFromInt(self.remainingFramesFromOffset(sample_offset))) / self.sample_rate;
+            return framesToSeconds(self.remainingFramesFromOffset(sample_offset), self.sample_rate);
         }
 
         pub fn parameterChanges(self: *const @This()) ParameterChanges {
