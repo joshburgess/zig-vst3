@@ -450,7 +450,7 @@ pub fn collectInputParameterChanges(data: *ivstaudioprocessor.ProcessData, stora
         .frame_count = frameCountOrZero(data),
     };
     audio_processor_algo.forEachParameterChangesUntil(data.inputParameterChanges, &collector, collectParameterQueue);
-    return plug.process.ParameterChanges.init(storage[0..collector.count], collector.frame_count) catch .{};
+    return plug.process.ParameterChanges.init(collector.items(), collector.frame_count) catch .{};
 }
 
 pub fn collectInputEvents(data: *ivstaudioprocessor.ProcessData, storage: []plug.process.Event) plug.process.Events {
@@ -459,7 +459,7 @@ pub fn collectInputEvents(data: *ivstaudioprocessor.ProcessData, storage: []plug
         .frame_count = frameCountOrZero(data),
     };
     audio_processor_algo.forEachEventUntil(data.inputEvents, &collector, collectEvent);
-    return plug.process.Events.init(storage[0..collector.count], collector.frame_count) catch .{};
+    return plug.process.Events.init(collector.items(), collector.frame_count) catch .{};
 }
 
 pub fn writeOutputEvents(data: *ivstaudioprocessor.ProcessData, events: plug.process.Events) types.tresult {
@@ -814,35 +814,31 @@ fn boundedPairedAudioChannelCount(input: ivstaudioprocessor.AudioBusBuffers, out
     return @min(input_count, output_count);
 }
 
-const ParameterChangeCollector = struct {
-    storage: []plug.process.ParameterChange,
-    count: usize = 0,
-    frame_count: usize,
+fn BoundedCollector(comptime T: type) type {
+    return struct {
+        storage: []T,
+        count: usize = 0,
+        frame_count: usize,
 
-    fn append(self: *ParameterChangeCollector, change: plug.process.ParameterChange) bool {
-        if (self.count >= self.storage.len) return false;
-        self.storage[self.count] = change;
-        self.count +|= 1;
-        return true;
-    }
+        fn append(self: *@This(), item: T) bool {
+            if (!self.hasCapacity()) return false;
+            self.storage[self.count] = item;
+            self.count +|= 1;
+            return true;
+        }
 
-    fn hasCapacity(self: *const ParameterChangeCollector) bool {
-        return self.count < self.storage.len;
-    }
-};
+        fn hasCapacity(self: *const @This()) bool {
+            return self.count < self.storage.len;
+        }
 
-const EventCollector = struct {
-    storage: []plug.process.Event,
-    count: usize = 0,
-    frame_count: usize,
+        fn items(self: *const @This()) []const T {
+            return self.storage[0..@min(self.count, self.storage.len)];
+        }
+    };
+}
 
-    fn append(self: *EventCollector, event: plug.process.Event) bool {
-        if (self.count >= self.storage.len) return false;
-        self.storage[self.count] = event;
-        self.count +|= 1;
-        return true;
-    }
-};
+const ParameterChangeCollector = BoundedCollector(plug.process.ParameterChange);
+const EventCollector = BoundedCollector(plug.process.Event);
 
 fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *ivstparameterchanges.IParamValueQueue) bool {
     audio_processor_algo.forEachParamValueQueueUntil(queue, collector, collectParameterPoint);
