@@ -14,6 +14,11 @@ pub const ReadParameterStateReport = format.ReadParameterStateReport;
 const magic = format.magic;
 const format_version = format.format_version;
 
+const ParameterStateEntry = struct {
+    id: u32,
+    normalized: f64,
+};
+
 pub fn writeParameterState(
     comptime Params: type,
     set: *const parameters.ParameterSet(Params),
@@ -72,6 +77,40 @@ pub fn writeParameterStateJson(
     try writer.writeAll("]}");
 }
 
+fn readParameterStateEntry(reader: anytype) !ParameterStateEntry {
+    const id = try reader.takeInt(u32, .little);
+    const normalized: f64 = @bitCast(try reader.takeInt(u64, .little));
+    if (!common.isNormalized(normalized)) return error.ParameterStateOutsideNormalizedRange;
+    return .{
+        .id = id,
+        .normalized = normalized,
+    };
+}
+
+fn restoreParameterStateEntry(
+    comptime Params: type,
+    set: *const parameters.ParameterSet(Params),
+    values: *parameters.ParameterValues(Params),
+    seen_restored: []bool,
+    migrations: []const ParameterIdMigration,
+    entry: ParameterStateEntry,
+    report: *ReadParameterStateReport,
+) !void {
+    const restored_id = migrations_mod.migratedParameterId(entry.id, migrations);
+    const index = set.indexOfId(restored_id) orelse {
+        report.ignored_count +|= 1;
+        return;
+    };
+
+    if (comptime parameters.ParameterSet(Params).count > 0) {
+        if (seen_restored[index]) return error.DuplicateParameterStateEntry;
+        seen_restored[index] = true;
+    }
+
+    _ = values.store(index, entry.normalized);
+    report.restored_count +|= 1;
+}
+
 pub fn readParameterState(
     comptime Params: type,
     set: *const parameters.ParameterSet(Params),
@@ -119,19 +158,8 @@ pub fn readParameterStateWithMigrationsReport(
     };
     var seen_restored = [_]bool{false} ** parameters.ParameterSet(Params).count;
     for (0..header.entry_count) |_| {
-        const id = try reader.takeInt(u32, .little);
-        const normalized: f64 = @bitCast(try reader.takeInt(u64, .little));
-        if (!common.isNormalized(normalized)) return error.ParameterStateOutsideNormalizedRange;
-        if (set.indexOfId(migrations_mod.migratedParameterId(id, migrations))) |index| {
-            if (comptime parameters.ParameterSet(Params).count > 0) {
-                if (seen_restored[index]) return error.DuplicateParameterStateEntry;
-                seen_restored[index] = true;
-            }
-            _ = restored.store(index, normalized);
-            report.restored_count +|= 1;
-        } else {
-            report.ignored_count +|= 1;
-        }
+        const entry = try readParameterStateEntry(reader);
+        try restoreParameterStateEntry(Params, set, &restored, &seen_restored, migrations, entry, &report);
     }
     values.copyFrom(&restored);
     return report;
