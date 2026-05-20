@@ -29,6 +29,26 @@ const IndexedParameterChange = struct {
     index: usize,
 };
 
+fn changeBefore(candidate: ParameterChange, current: ParameterChange) bool {
+    return candidate.sample_offset < current.sample_offset;
+}
+
+fn changeAtOrAfter(candidate: ParameterChange, current: ParameterChange) bool {
+    return candidate.sample_offset >= current.sample_offset;
+}
+
+fn indexedChangeBefore(candidate: IndexedParameterChange, current: IndexedParameterChange) bool {
+    return changeBefore(candidate.item, current.item) or
+        (candidate.item.sample_offset == current.item.sample_offset and candidate.index < current.index);
+}
+
+fn indexedChangeAfterCursor(item: ParameterChange, index: usize, last_offset: ?usize, last_index: usize) bool {
+    const offset = last_offset orelse return true;
+    if (item.sample_offset < offset) return false;
+    if (item.sample_offset == offset and index <= last_index) return false;
+    return true;
+}
+
 const IdOffset = struct {
     id: u32,
     sample_offset: usize,
@@ -55,7 +75,7 @@ fn firstMatchingChange(items: []const ParameterChange, context: anytype, comptim
     for (items) |item| {
         if (!matches(item, context)) continue;
         if (result) |current| {
-            if (item.sample_offset < current.sample_offset) result = item;
+            if (changeBefore(item, current)) result = item;
         } else {
             result = item;
         }
@@ -68,7 +88,7 @@ fn latestMatchingChange(items: []const ParameterChange, context: anytype, compti
     for (items) |item| {
         if (!matches(item, context)) continue;
         if (result) |current| {
-            if (item.sample_offset >= current.sample_offset) result = item;
+            if (changeAtOrAfter(item, current)) result = item;
         } else {
             result = item;
         }
@@ -119,17 +139,12 @@ fn nextMatchingChange(items: []const ParameterChange, last_offset: ?usize, last_
     var result: ?IndexedParameterChange = null;
     for (items, 0..) |item, index| {
         if (!matches(item, context)) continue;
-        if (last_offset) |offset| {
-            if (item.sample_offset < offset) continue;
-            if (item.sample_offset == offset and index <= last_index) continue;
-        }
-        const replace = if (result) |current|
-            item.sample_offset < current.item.sample_offset or
-                (item.sample_offset == current.item.sample_offset and index < current.index)
-        else
-            true;
-        if (replace) {
-            result = .{ .item = item, .index = index };
+        if (!indexedChangeAfterCursor(item, index, last_offset, last_index)) continue;
+        const candidate = IndexedParameterChange{ .item = item, .index = index };
+        if (result) |current| {
+            if (indexedChangeBefore(candidate, current)) result = candidate;
+        } else {
+            result = candidate;
         }
     }
     return result;
