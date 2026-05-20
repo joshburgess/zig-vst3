@@ -159,6 +159,14 @@ test "connection point stores notified message and supports query interface" {
     const queried_point: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_point.vtable.release(queried_point));
     try std.testing.expectEqual(@as(types.uint32, 1), point.release_count);
+
+    queried = null;
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.queryInterface(iface, &funknown.iid, &queried));
+    try std.testing.expectEqual(@as(?*anyopaque, iface), queried);
+    try std.testing.expectEqual(@as(types.uint32, 2), point.add_ref_count);
+    const queried_unknown: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(queried.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
+    try std.testing.expectEqual(@as(types.uint32, 2), point.release_count);
 }
 
 test "connection point preserves last message when delegated notify fails" {

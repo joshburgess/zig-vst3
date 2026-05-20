@@ -557,11 +557,25 @@ test "test interfaces support query interface" {
     const queried_test_iface: *itest.ITest = @ptrCast(@alignCast(queried_test.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_test_iface.vtable.release(queried_test_iface));
 
+    queried_test = null;
+    try std.testing.expectEqual(types.kResultOk, object.asInterface().vtable.queryInterface(object.asInterface(), &funknown.iid, &queried_test));
+    try std.testing.expectEqual(@as(?*anyopaque, object.asInterface()), queried_test);
+    try std.testing.expectEqual(@as(types.uint32, 2), object.ref_count.load(.seq_cst));
+    const queried_test_unknown: *itest.ITest = @ptrCast(@alignCast(queried_test.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_test_unknown.vtable.release(queried_test_unknown));
+
     var queried_result: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, result.asInterface().vtable.queryInterface(result.asInterface(), &itest.itest_result_iid, &queried_result));
     try std.testing.expect(queried_result != null);
     const queried_result_iface: *itest.ITestResult = @ptrCast(@alignCast(queried_result.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_result_iface.vtable.release(queried_result_iface));
+
+    queried_result = null;
+    try std.testing.expectEqual(types.kResultOk, result.asInterface().vtable.queryInterface(result.asInterface(), &funknown.iid, &queried_result));
+    try std.testing.expectEqual(@as(?*anyopaque, result.asInterface()), queried_result);
+    try std.testing.expectEqual(@as(types.uint32, 2), result.ref_count.load(.seq_cst));
+    const queried_result_unknown: *itest.ITestResult = @ptrCast(@alignCast(queried_result.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_result_unknown.vtable.release(queried_result_unknown));
 
     var queried_suite: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, suite.asInterface().vtable.queryInterface(suite.asInterface(), &itest.itest_suite_iid, &queried_suite));
@@ -569,11 +583,25 @@ test "test interfaces support query interface" {
     const queried_suite_iface: *itest.ITestSuite = @ptrCast(@alignCast(queried_suite.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_suite_iface.vtable.release(queried_suite_iface));
 
+    queried_suite = null;
+    try std.testing.expectEqual(types.kResultOk, suite.asInterface().vtable.queryInterface(suite.asInterface(), &funknown.iid, &queried_suite));
+    try std.testing.expectEqual(@as(?*anyopaque, suite.asInterface()), queried_suite);
+    try std.testing.expectEqual(@as(types.uint32, 2), suite.ref_count.load(.seq_cst));
+    const queried_suite_unknown: *itest.ITestSuite = @ptrCast(@alignCast(queried_suite.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_suite_unknown.vtable.release(queried_suite_unknown));
+
     var queried_factory: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, factory.asInterface().vtable.queryInterface(factory.asInterface(), &itest.itest_factory_iid, &queried_factory));
     try std.testing.expect(queried_factory != null);
     const queried_factory_iface: *itest.ITestFactory = @ptrCast(@alignCast(queried_factory.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_factory_iface.vtable.release(queried_factory_iface));
+
+    queried_factory = null;
+    try std.testing.expectEqual(types.kResultOk, factory.asInterface().vtable.queryInterface(factory.asInterface(), &funknown.iid, &queried_factory));
+    try std.testing.expectEqual(@as(?*anyopaque, factory.asInterface()), queried_factory);
+    try std.testing.expectEqual(@as(types.uint32, 2), factory.ref_count.load(.seq_cst));
+    const queried_factory_unknown: *itest.ITestFactory = @ptrCast(@alignCast(queried_factory.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), queried_factory_unknown.vtable.release(queried_factory_unknown));
 }
 
 test "test interfaces clear unsupported query outputs" {
