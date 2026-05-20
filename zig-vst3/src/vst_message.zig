@@ -78,8 +78,11 @@ pub fn ConnectionPoint(comptime Config: type) type {
         fn notify(ptr: *anyopaque, message: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.notify_count +|= 1;
+            if (@hasDecl(Config, "notify")) {
+                const result = Config.notify(self, message);
+                if (result != types.kResultOk) return result;
+            }
             self.last_message = message;
-            if (@hasDecl(Config, "notify")) return Config.notify(self, message);
             return types.kResultOk;
         }
 
@@ -156,6 +159,24 @@ test "connection point stores notified message and supports query interface" {
     const queried_point: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_point.vtable.release(queried_point));
     try std.testing.expectEqual(@as(types.uint32, 1), point.release_count);
+}
+
+test "connection point preserves last message when delegated notify fails" {
+    const Point = ConnectionPoint(struct {
+        pub fn notify(_: anytype, message: ?*ivstmessage.IMessage) types.tresult {
+            return if (message == null) types.kInvalidArgument else types.kResultFalse;
+        }
+    });
+    const TestMessage = Message(16, 1, 4, 4);
+    var point = Point{};
+    var accepted = TestMessage{};
+    var rejected = TestMessage{};
+    point.last_message = accepted.asInterface();
+    const iface = point.asInterface();
+
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.notify(iface, rejected.asInterface()));
+    try std.testing.expectEqual(accepted.asInterface(), point.last_message.?);
+    try std.testing.expectEqual(@as(types.uint32, 1), point.notify_count);
 }
 
 test "connection point clears unsupported query output" {
