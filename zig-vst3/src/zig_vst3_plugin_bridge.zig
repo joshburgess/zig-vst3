@@ -1291,14 +1291,12 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter change
         }
 
         fn getPointCount(ptr: *anyopaque) callconv(.c) types.int32 {
-            return @intCast(owner(ptr).points.len);
+            return vst_index.int32Count(owner(ptr).points.len);
         }
 
         fn getPoint(ptr: *anyopaque, index: types.int32, sample_offset: *types.int32, value: *vsttypes.ParamValue) callconv(.c) types.tresult {
-            if (index < 0) return types.kInvalidArgument;
             const self = owner(ptr);
-            const point_index: usize = @intCast(index);
-            if (point_index >= self.points.len) return types.kInvalidArgument;
+            const point_index = vst_index.bounded(index, self.points.len) orelse return types.kInvalidArgument;
             const point = self.points[point_index];
             sample_offset.* = point.sample_offset;
             value.* = point.value;
@@ -1342,14 +1340,12 @@ test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter change
         }
 
         fn getParameterCount(ptr: *anyopaque) callconv(.c) types.int32 {
-            return @intCast(owner(ptr).queues.len);
+            return vst_index.int32Count(owner(ptr).queues.len);
         }
 
         fn getParameterData(ptr: *anyopaque, index: types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
-            if (index < 0) return null;
             const self = owner(ptr);
-            const queue_index: usize = @intCast(index);
-            if (queue_index >= self.queues.len) return null;
+            const queue_index = vst_index.bounded(index, self.queues.len) orelse return null;
             return self.queues[queue_index];
         }
 
