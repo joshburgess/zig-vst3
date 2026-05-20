@@ -284,12 +284,21 @@ pub fn ParameterValues(comptime Params: type) type {
             return self.resetToDefaultCount(set, set.indexOfField(field_name));
         }
 
+        const AppliedChange = struct {
+            changed: usize,
+        };
+
+        fn applyChange(self: *Self, set: *const Set, change: process.ParameterChange) ?AppliedChange {
+            if (!(set.canAutomateById(change.id) orelse false)) return null;
+            if (set.isReadOnlyById(change.id) orelse true) return null;
+            const changed = self.storeByIdCount(set, change.id, change.normalized) orelse return null;
+            return .{ .changed = changed };
+        }
+
         pub fn applyChangesCount(self: *Self, set: *const Set, changes: process.ParameterChanges) usize {
             var applied: usize = 0;
             for (changes.items) |change| {
-                if (!(set.canAutomateById(change.id) orelse false)) continue;
-                if (set.isReadOnlyById(change.id) orelse true) continue;
-                if (self.storeById(set, change.id, change.normalized)) applied +|= 1;
+                if (self.applyChange(set, change) != null) applied +|= 1;
             }
             return applied;
         }
@@ -297,9 +306,7 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn applyChangesChangedCount(self: *Self, set: *const Set, changes: process.ParameterChanges) usize {
             var changed: usize = 0;
             for (changes.items) |change| {
-                if (!(set.canAutomateById(change.id) orelse false)) continue;
-                if (set.isReadOnlyById(change.id) orelse true) continue;
-                changed +|= self.storeByIdCount(set, change.id, change.normalized) orelse 0;
+                if (self.applyChange(set, change)) |applied| changed +|= applied.changed;
             }
             return changed;
         }
