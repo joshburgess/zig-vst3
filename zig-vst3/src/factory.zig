@@ -54,10 +54,7 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
             .createInstance = createInstance,
         };
 
-        fn owner(ptr: *anyopaque) *Instance {
-            const iface: *ipluginbase.IPluginFactory = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Instance, ipluginbase.IPluginFactory, "iface");
 
         fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
@@ -141,10 +138,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
             .setHostContext = setHostContext,
         };
 
-        fn owner(ptr: *anyopaque) *Instance {
-            const iface: *ipluginbase.IPluginFactory3 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Instance, ipluginbase.IPluginFactory3, "iface");
 
         fn queryInterface(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{

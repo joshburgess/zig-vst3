@@ -71,10 +71,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             self.last_key_modifiers = modifiers;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *iplugview.IPlugView = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, iplugview.IPlugView, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
