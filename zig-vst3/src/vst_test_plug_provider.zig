@@ -31,15 +31,8 @@ pub fn TestPlugProvider(comptime Config: type) type {
             return &self.iface2;
         }
 
-        fn ownerFromProvider(ptr: *anyopaque) *Self {
-            const iface: *ivsttestplugprovider.ITestPlugProvider = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
-
-        fn ownerFromProvider2(ptr: *anyopaque) *Self {
-            const iface: *ivsttestplugprovider.ITestPlugProvider2 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface2", iface);
-        }
+        const ownerFromProvider = interface_map.ownerFromField(Self, ivsttestplugprovider.ITestPlugProvider, "iface");
+        const ownerFromProvider2 = interface_map.ownerFromField(Self, ivsttestplugprovider.ITestPlugProvider2, "iface2");
 
         fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
             const entries = [_]interface_map.Entry{

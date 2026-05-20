@@ -114,15 +114,8 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return &self.iface2;
         }
 
-        fn ownerFromAttributes(ptr: *anyopaque) *Self {
-            const iface: *ipersistent.IAttributes = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
-
-        fn ownerFromAttributes2(ptr: *anyopaque) *Self {
-            const iface: *ipersistent.IAttributes2 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface2", iface);
-        }
+        const ownerFromAttributes = interface_map.ownerFromField(Self, ipersistent.IAttributes, "iface");
+        const ownerFromAttributes2 = interface_map.ownerFromField(Self, ipersistent.IAttributes2, "iface2");
 
         fn findEntry(self: *Self, id: ipersistent.IAttrID) ?*Entry {
             const wanted = std.mem.span(id);

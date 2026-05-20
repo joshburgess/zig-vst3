@@ -278,15 +278,8 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return types.kResultOk;
         }
 
-        fn ownerFromMapping(ptr: *anyopaque) *Self {
-            const iface: *ivstmidimapping2.IMidiMapping2 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
-
-        fn ownerFromLearn(ptr: *anyopaque) *Self {
-            const iface: *ivstmidimapping2.IMidiLearn2 = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("learn_iface", iface);
-        }
+        const ownerFromMapping = interface_map.ownerFromField(Self, ivstmidimapping2.IMidiMapping2, "iface");
+        const ownerFromLearn = interface_map.ownerFromField(Self, ivstmidimapping2.IMidiLearn2, "learn_iface");
 
         fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
             const entries = [_]interface_map.Entry{
