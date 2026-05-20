@@ -546,8 +546,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
+            const next_host_application = queryHostApplication(context);
             releaseHostApplication(&self.host_application);
-            self.host_application = queryHostApplication(context);
+            self.host_application = next_host_application;
             return types.kResultOk;
         }
 
@@ -605,15 +606,24 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn setComponentHandler(ptr: *anyopaque, handler: ?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
+            const next_component_handler = retainComponentHandler(handler);
+            const next_component_handler2 = queryComponentHandler2(handler);
+            const next_component_handler3 = queryComponentHandler3(handler);
+            const next_component_handler_bus_activation = queryComponentHandlerBusActivation(handler);
+            const next_component_handler_system_time = queryComponentHandlerSystemTime(handler);
+            const next_progress = queryProgress(handler);
+            const next_unit_handler = queryUnitHandler(handler);
+            const next_unit_handler2 = queryUnitHandler2(handler);
+
             releaseComponentHandlers(self);
-            self.component_handler = retainComponentHandler(handler);
-            self.component_handler2 = queryComponentHandler2(handler);
-            self.component_handler3 = queryComponentHandler3(handler);
-            self.component_handler_bus_activation = queryComponentHandlerBusActivation(handler);
-            self.component_handler_system_time = queryComponentHandlerSystemTime(handler);
-            self.progress = queryProgress(handler);
-            self.unit_handler = queryUnitHandler(handler);
-            self.unit_handler2 = queryUnitHandler2(handler);
+            self.component_handler = next_component_handler;
+            self.component_handler2 = next_component_handler2;
+            self.component_handler3 = next_component_handler3;
+            self.component_handler_bus_activation = next_component_handler_bus_activation;
+            self.component_handler_system_time = next_component_handler_system_time;
+            self.progress = next_progress;
+            self.unit_handler = next_unit_handler;
+            self.unit_handler2 = next_unit_handler2;
             return types.kResultOk;
         }
 
@@ -636,8 +646,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
         fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromConnectionPoint(ptr);
             const connection_peer = peer orelse return types.kInvalidArgument;
+            const next_peer = retainConnectionPeer(connection_peer);
             releaseConnectionPeer(&self.connected_peer);
-            self.connected_peer = retainConnectionPeer(connection_peer);
+            self.connected_peer = next_peer;
             return types.kResultOk;
         }
 
@@ -1559,14 +1570,19 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
+            const next_host_application = queryHostApplication(context);
+            const next_info_listener = queryInfoListener(context);
+            const next_automation_state = queryAutomationState(context);
+            const next_data_exchange_handler = queryDataExchangeHandler(context);
+
             releaseDataExchangeHandler(&self.data_exchange_handler);
             releaseAutomationState(&self.automation_state);
             releaseInfoListener(&self.info_listener);
             releaseHostApplication(&self.host_application);
-            self.host_application = queryHostApplication(context);
-            self.info_listener = queryInfoListener(context);
-            self.automation_state = queryAutomationState(context);
-            self.data_exchange_handler = queryDataExchangeHandler(context);
+            self.host_application = next_host_application;
+            self.info_listener = next_info_listener;
+            self.automation_state = next_automation_state;
+            self.data_exchange_handler = next_data_exchange_handler;
             return types.kResultOk;
         }
 
@@ -1714,8 +1730,9 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         fn componentConnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
             const connection_peer = peer orelse return types.kInvalidArgument;
+            const next_peer = retainConnectionPeer(connection_peer);
             releaseConnectionPeer(&self.connected_peer);
-            self.connected_peer = retainConnectionPeer(connection_peer);
+            self.connected_peer = next_peer;
             return types.kResultOk;
         }
 

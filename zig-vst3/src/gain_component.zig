@@ -458,10 +458,13 @@ test "gain component exposes default connection point" {
     var peer = PeerConnection{};
     try std.testing.expectEqual(types.kResultOk, connection.vtable.connect(connection, peer.asInterface()));
     try std.testing.expectEqual(@as(types.uint32, 1), peer.add_ref_count);
-    try std.testing.expectEqual(types.kInvalidArgument, connection.vtable.connect(connection, null));
-    try std.testing.expectEqual(@as(types.uint32, 0), peer.release_count);
-    try std.testing.expectEqual(types.kResultOk, connection.vtable.disconnect(connection, peer.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.connect(connection, peer.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 2), peer.add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), peer.release_count);
+    try std.testing.expectEqual(types.kInvalidArgument, connection.vtable.connect(connection, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), peer.release_count);
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.disconnect(connection, peer.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 2), peer.release_count);
 }
 
 test "gain component exposes default processor capability interfaces" {

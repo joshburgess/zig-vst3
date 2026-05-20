@@ -193,6 +193,9 @@ test "gain controller stores component handler for automation callbacks" {
     var handler = HostHandler{};
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.add_ref_count);
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
+    try std.testing.expectEqual(@as(types.uint32, 2), handler.add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.release_count);
     try std.testing.expectEqual(types.kResultOk, beginEdit(gain_param_id));
     try std.testing.expectEqual(types.kResultOk, performEdit(gain_param_id, 0.25));
     try std.testing.expectEqual(types.kResultOk, endEdit(gain_param_id));
@@ -204,7 +207,7 @@ test "gain controller stores component handler for automation callbacks" {
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), gain());
 
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
-    try std.testing.expectEqual(@as(types.uint32, 1), handler.release_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), handler.release_count);
     try std.testing.expectEqual(types.kResultFalse, endEdit(gain_param_id));
 }
 
@@ -224,6 +227,9 @@ test "gain controller stores component handler 2 callbacks" {
 
     var handler = HostHandler{};
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
+    try std.testing.expectEqual(@as(types.uint32, 2), handler.handler2_add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.handler2_release_count);
     try std.testing.expectEqual(types.kResultOk, setDirty(1));
     try std.testing.expectEqual(types.kResultOk, requestOpenEditor(""));
     try std.testing.expectEqual(types.kResultOk, startGroupEdit());
@@ -234,7 +240,7 @@ test "gain controller stores component handler 2 callbacks" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.finish_group_count);
 
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
-    try std.testing.expectEqual(@as(types.uint32, 1), handler.handler2_release_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), handler.handler2_release_count);
     try std.testing.expectEqual(types.kResultFalse, setDirty(1));
 }
 
@@ -420,10 +426,13 @@ test "gain controller exposes default connection point" {
     var peer = PeerConnection{};
     try std.testing.expectEqual(types.kResultOk, connection.vtable.connect(connection, peer.asInterface()));
     try std.testing.expectEqual(@as(types.uint32, 1), peer.add_ref_count);
-    try std.testing.expectEqual(types.kInvalidArgument, connection.vtable.connect(connection, null));
-    try std.testing.expectEqual(@as(types.uint32, 0), peer.release_count);
-    try std.testing.expectEqual(types.kResultOk, connection.vtable.disconnect(connection, peer.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.connect(connection, peer.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 2), peer.add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), peer.release_count);
+    try std.testing.expectEqual(types.kInvalidArgument, connection.vtable.connect(connection, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), peer.release_count);
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.disconnect(connection, peer.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 2), peer.release_count);
 }
 
 test "gain controller exposes default root unit info" {
