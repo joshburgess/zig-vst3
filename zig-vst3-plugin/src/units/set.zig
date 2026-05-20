@@ -1246,6 +1246,16 @@ pub fn UnitSet(comptime config: Config) type {
             }
         }
 
+        fn validateUnit(self: Self, item: Unit) !void {
+            if (item.id == no_parent_unit_id) return error.ReservedUnitId;
+            try validateRequiredUnitName(item.name);
+            if (item.id != root_unit_id and self.unitById(item.parent_id) == null) return error.InvalidUnitParent;
+            if (item.program_list_id != no_program_list_id and self.programListById(item.program_list_id) == null) {
+                return error.InvalidUnitProgramList;
+            }
+            if (self.unitParentIsCyclic(item)) return error.CyclicUnitParent;
+        }
+
         pub fn validateUnits(self: Self) !void {
             if (config.units.len == 0) return error.MissingRootUnit;
             if (self.duplicateUnitId() != null) return error.DuplicateUnitId;
@@ -1254,13 +1264,29 @@ pub fn UnitSet(comptime config: Config) type {
             try validateRequiredUnitName(root.name);
             if (root.parent_id != no_parent_unit_id) return error.InvalidUnitParent;
             for (config.units) |item| {
-                if (item.id == no_parent_unit_id) return error.ReservedUnitId;
-                try validateRequiredUnitName(item.name);
-                if (item.id != root_unit_id and self.unitById(item.parent_id) == null) return error.InvalidUnitParent;
-                if (item.program_list_id != no_program_list_id and self.programListById(item.program_list_id) == null) {
-                    return error.InvalidUnitProgramList;
-                }
-                if (self.unitParentIsCyclic(item)) return error.CyclicUnitParent;
+                try self.validateUnit(item);
+            }
+        }
+
+        fn validateProgramList(self: Self, list: ProgramList) !void {
+            if (list.id == no_program_list_id) return error.ReservedProgramListId;
+            try validateRequiredProgramListName(list.name);
+            if (self.duplicateProgramName(list.id) != null) return error.DuplicateProgramName;
+            for (list.programs, 0..) |item, item_index| {
+                try self.validateProgram(list.id, item, item_index);
+            }
+        }
+
+        fn validateProgram(self: Self, list_id: i32, item: Program, item_index: usize) !void {
+            try validateRequiredProgramName(item.name);
+            if (self.duplicateProgramParameterId(list_id, item_index) != null) return error.DuplicateProgramParameter;
+            if (self.duplicateProgramInfoKey(list_id, item_index) != null) return error.DuplicateProgramInfoKey;
+            for (item.parameters) |parameter| {
+                try validateProgramParameterValue(parameter);
+            }
+            for (item.info) |info| {
+                try validateRequiredProgramInfoKey(info.key);
+                try validateProgramInfoValue(info.value);
             }
         }
 
@@ -1268,21 +1294,7 @@ pub fn UnitSet(comptime config: Config) type {
             if (self.duplicateProgramListId() != null) return error.DuplicateProgramListId;
             if (self.duplicateProgramListName() != null) return error.DuplicateProgramListName;
             for (config.program_lists) |list| {
-                if (list.id == no_program_list_id) return error.ReservedProgramListId;
-                try validateRequiredProgramListName(list.name);
-                if (self.duplicateProgramName(list.id) != null) return error.DuplicateProgramName;
-                for (list.programs, 0..) |item, item_index| {
-                    try validateRequiredProgramName(item.name);
-                    if (self.duplicateProgramParameterId(list.id, item_index) != null) return error.DuplicateProgramParameter;
-                    if (self.duplicateProgramInfoKey(list.id, item_index) != null) return error.DuplicateProgramInfoKey;
-                    for (item.parameters) |parameter| {
-                        try validateProgramParameterValue(parameter);
-                    }
-                    for (item.info) |info| {
-                        try validateRequiredProgramInfoKey(info.key);
-                        try validateProgramInfoValue(info.value);
-                    }
-                }
+                try self.validateProgramList(list);
             }
         }
 
