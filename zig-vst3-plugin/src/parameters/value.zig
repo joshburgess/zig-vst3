@@ -2,6 +2,8 @@ const std = @import("std");
 const common = @import("common.zig");
 
 const clampNormalized = common.clampNormalized;
+const normalizedFromBipolar = common.normalizedFromBipolar;
+const bipolarFromNormalized = common.bipolarFromNormalized;
 
 pub const NormalizedValue = struct {
     bits: std.atomic.Value(u64),
@@ -36,12 +38,11 @@ pub const ModulatedValue = struct {
     }
 
     pub fn storeModulation(self: *ModulatedValue, offset: f64) void {
-        const safe_offset = if (std.math.isNan(offset)) 0.0 else std.math.clamp(offset, -1.0, 1.0);
-        self.modulation.store((safe_offset + 1.0) * 0.5);
+        self.modulation.store(normalizedFromBipolar(offset));
     }
 
     pub fn loadModulation(self: *const ModulatedValue) f64 {
-        return self.modulation.load() * 2.0 - 1.0;
+        return bipolarFromNormalized(self.modulation.load());
     }
 
     pub fn load(self: *const ModulatedValue) f64 {
@@ -109,7 +110,7 @@ test "normalized and modulated values clamp generated inputs" {
         for (inputs) |modulation| {
             var value = ModulatedValue.init(base);
             const expected_base = if (std.math.isNan(base) or base < 0.0) 0.0 else if (base > 1.0) 1.0 else base;
-            const expected_modulation = if (std.math.isNan(modulation)) 0.0 else std.math.clamp(modulation, -1.0, 1.0);
+            const expected_modulation = common.clampBipolarNormalized(modulation);
 
             value.storeModulation(modulation);
 

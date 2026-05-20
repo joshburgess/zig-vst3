@@ -144,6 +144,7 @@ Applying process-time parameter changes ignores unknown, non-automatable, and re
 
 - `NormalizedValue`: atomic normalized storage for audio-thread reads.
 - `ModulatedValue`: atomic base value plus bipolar modulation offset, clamped to normalized range.
+- `normalizedFromBipolar` and `bipolarFromNormalized`: conversion helpers for `-1.0...1.0` modulation values.
 - `LinearSmoother`: sample-counted ramp between normalized values.
 - `ExponentialSmoother`: coefficient-based smoothing toward a normalized target.
 - `LogSmoother`: sample-counted multiplicative ramp for normalized values above zero.

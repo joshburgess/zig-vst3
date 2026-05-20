@@ -1,8 +1,14 @@
 const value = @import("parameters/value.zig");
+const common = @import("parameters/common.zig");
 const smoothing = @import("parameters/smoothing.zig");
 const descriptors = @import("parameters/descriptors.zig");
 const set_mod = @import("parameters/set.zig");
 const access = @import("parameters/access.zig");
+
+pub const clampNormalized = common.clampNormalized;
+pub const clampBipolarNormalized = common.clampBipolarNormalized;
+pub const normalizedFromBipolar = common.normalizedFromBipolar;
+pub const bipolarFromNormalized = common.bipolarFromNormalized;
 
 pub const NormalizedValue = value.NormalizedValue;
 pub const ModulatedValue = value.ModulatedValue;

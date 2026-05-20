@@ -19,6 +19,7 @@ test "zig-vst3-plugin sees zig-vst3" {
 
 test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(parameters, "FloatParam"));
+    try std.testing.expect(@hasDecl(parameters, "normalizedFromBipolar"));
     try std.testing.expect(@hasDecl(plugin, "PluginSpec"));
     try std.testing.expect(@hasDecl(process, "ProcessContext"));
     try std.testing.expect(@hasDecl(state, "writeParameterState"));
