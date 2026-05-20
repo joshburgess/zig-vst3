@@ -103,9 +103,15 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         pub fn performEdit(id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
             const handler = controller.component_handler orelse return types.kResultFalse;
+            const previous = parameters.getNormalized(id);
             const result = parameters.setNormalized(id, value);
             if (result != types.kResultOk) return result;
-            return handler.vtable.performEdit(handler, id, value);
+            const edit_result = handler.vtable.performEdit(handler, id, value);
+            if (edit_result != types.kResultOk) {
+                _ = parameters.setNormalized(id, previous);
+                return edit_result;
+            }
+            return types.kResultOk;
         }
 
         pub fn endEdit(id: vsttypes.ParamID) types.tresult {

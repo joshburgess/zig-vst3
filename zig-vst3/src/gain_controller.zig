@@ -211,6 +211,32 @@ test "gain controller stores component handler for automation callbacks" {
     try std.testing.expectEqual(types.kResultFalse, endEdit(gain_param_id));
 }
 
+test "gain controller rolls back perform edit when host rejects automation" {
+    const std = @import("std");
+    const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+
+    const HostHandler = vst_component_handler.ComponentHandler(struct {
+        pub fn performEdit(_: anytype, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+            return if (id == gain_param_id and value == 0.25) types.kResultFalse else types.kResultOk;
+        }
+    });
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    setGain(0.5);
+    var handler = HostHandler{};
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
+    defer _ = controller_iface.vtable.setComponentHandler(controller_iface, null);
+    try std.testing.expectEqual(types.kResultFalse, performEdit(gain_param_id, 0.25));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), gain());
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.perform_count);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.25), handler.last_value);
+}
+
 test "gain controller stores component handler 2 callbacks" {
     const std = @import("std");
     const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
