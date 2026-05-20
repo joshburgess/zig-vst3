@@ -92,15 +92,8 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return result;
         }
 
-        fn ownerFromStream(ptr: *anyopaque) *Self {
-            const iface: *ibstream.IBStream = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
-
-        fn ownerFromSizeable(ptr: *anyopaque) *Self {
-            const iface: *ibstream.ISizeableStream = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("sizeable_iface", iface);
-        }
+        const ownerFromStream = interface_map.ownerFromField(Self, ibstream.IBStream, "iface");
+        const ownerFromSizeable = interface_map.ownerFromField(Self, ibstream.ISizeableStream, "sizeable_iface");
 
         fn queryStream(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = ownerFromStream(ptr);

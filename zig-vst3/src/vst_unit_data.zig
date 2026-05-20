@@ -306,15 +306,8 @@ pub fn UnitProgramData(comptime Config: type) type {
             self.last_unit_id = unit_id;
         }
 
-        fn ownerFromProgram(ptr: *anyopaque) *Self {
-            const iface: *ivstunits.IProgramListData = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("program_iface", iface);
-        }
-
-        fn ownerFromUnit(ptr: *anyopaque) *Self {
-            const iface: *ivstunits.IUnitData = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("unit_iface", iface);
-        }
+        const ownerFromProgram = interface_map.ownerFromField(Self, ivstunits.IProgramListData, "program_iface");
+        const ownerFromUnit = interface_map.ownerFromField(Self, ivstunits.IUnitData, "unit_iface");
 
         fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
             const entries = [_]interface_map.Entry{

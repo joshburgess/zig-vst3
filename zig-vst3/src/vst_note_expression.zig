@@ -81,15 +81,8 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             return self.keyswitches[keyswitch_index];
         }
 
-        fn ownerFromNoteExpression(ptr: *anyopaque) *Self {
-            const iface: *ivstnoteexpression.INoteExpressionController = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("note_expression", iface);
-        }
-
-        fn ownerFromKeyswitch(ptr: *anyopaque) *Self {
-            const iface: *ivstnoteexpression.IKeyswitchController = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("keyswitch", iface);
-        }
+        const ownerFromNoteExpression = interface_map.ownerFromField(Self, ivstnoteexpression.INoteExpressionController, "note_expression");
+        const ownerFromKeyswitch = interface_map.ownerFromField(Self, ivstnoteexpression.IKeyswitchController, "keyswitch");
 
         fn queryCanonical(self: *Self, add_ref_ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
             const entries = [_]interface_map.Entry{

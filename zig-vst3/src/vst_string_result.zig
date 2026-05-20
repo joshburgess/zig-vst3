@@ -36,15 +36,8 @@ pub fn StringResult(comptime max_text8_bytes: usize, comptime max_text16_units: 
             return std.mem.sliceTo(&self.text16, 0);
         }
 
-        fn ownerFromResult(ptr: *anyopaque) *Self {
-            const iface: *istringresult.IStringResult = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("result_iface", iface);
-        }
-
-        fn ownerFromString(ptr: *anyopaque) *Self {
-            const iface: *istringresult.IString = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("string_iface", iface);
-        }
+        const ownerFromResult = interface_map.ownerFromField(Self, istringresult.IStringResult, "result_iface");
+        const ownerFromString = interface_map.ownerFromField(Self, istringresult.IString, "string_iface");
 
         fn copyText8(self: *Self, value: ?[*:0]const types.char8) void {
             @memset(&self.text16, 0);
