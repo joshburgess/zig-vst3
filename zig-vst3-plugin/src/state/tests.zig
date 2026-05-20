@@ -61,6 +61,17 @@ const FixedBufferStream = struct {
     }
 };
 
+fn writeStateEntry(writer: anytype, id: u32, normalized: f64) !void {
+    try writer.writeInt(u32, id, .little);
+    try writer.writeInt(u64, @bitCast(normalized), .little);
+}
+
+fn writeStateHeader(writer: anytype, version: u16, entry_count: u16) !void {
+    try writer.writeAll(magic);
+    try writer.writeInt(u16, version, .little);
+    try writer.writeInt(u16, entry_count, .little);
+}
+
 test "parameter state round-trips normalized values" {
     const Params = struct {
         gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
@@ -298,13 +309,9 @@ test "parameter state ignores unknown parameter ids" {
     var out_stream = FixedBufferStream.init(&bytes);
     const writer = out_stream.writer();
 
-    try writer.writeAll(magic);
-    try writer.writeInt(u16, format_version, .little);
-    try writer.writeInt(u16, 2, .little);
-    try writer.writeInt(u32, 999, .little);
-    try writer.writeInt(u64, @bitCast(@as(f64, 0.25)), .little);
-    try writer.writeInt(u32, 0, .little);
-    try writer.writeInt(u64, @bitCast(@as(f64, 0.75)), .little);
+    try writeStateHeader(writer, format_version, 2);
+    try writeStateEntry(writer, 999, 0.25);
+    try writeStateEntry(writer, 0, 0.75);
 
     var in_stream = FixedBufferStream.init(&bytes);
     const report = try readParameterStateReport(Params, &set, &values, in_stream.reader());
@@ -629,13 +636,9 @@ test "parameter state rejects duplicate restored parameter ids without partial u
     try std.testing.expect(values.storeField(&set, "gain", 0.8));
     try std.testing.expect(values.storeField(&set, "mix", 0.6));
 
-    try writer.writeAll(magic);
-    try writer.writeInt(u16, format_version, .little);
-    try writer.writeInt(u16, 2, .little);
-    try writer.writeInt(u32, 0, .little);
-    try writer.writeInt(u64, @bitCast(@as(f64, 0.25)), .little);
-    try writer.writeInt(u32, 0, .little);
-    try writer.writeInt(u64, @bitCast(@as(f64, 0.75)), .little);
+    try writeStateHeader(writer, format_version, 2);
+    try writeStateEntry(writer, 0, 0.25);
+    try writeStateEntry(writer, 0, 0.75);
 
     var in_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectError(error.DuplicateParameterStateEntry, readParameterState(Params, &set, &values, in_stream.reader()));
@@ -658,10 +661,8 @@ test "parameter state rejects malformed headers and unsupported versions" {
 
     var bad_version: [encoded_header_size]u8 = undefined;
     var out_stream = FixedBufferStream.init(&bad_version);
-    var bad_version_writer = out_stream.writer();
-    try bad_version_writer.writeAll(magic);
-    try bad_version_writer.writeInt(u16, format_version + 1, .little);
-    try bad_version_writer.writeInt(u16, 0, .little);
+    const bad_version_writer = out_stream.writer();
+    try writeStateHeader(bad_version_writer, format_version + 1, 0);
     var in_stream = FixedBufferStream.init(&bad_version);
     try std.testing.expectError(error.UnsupportedStateVersion, readParameterState(Params, &set, &values, in_stream.reader()));
 }
@@ -678,9 +679,7 @@ test "parameter state rejects truncated entries without changing defaults" {
     var out_stream = FixedBufferStream.init(&bytes);
 
     var writer = out_stream.writer();
-    try writer.writeAll(magic);
-    try writer.writeInt(u16, format_version, .little);
-    try writer.writeInt(u16, 1, .little);
+    try writeStateHeader(writer, format_version, 1);
     try writer.writeInt(u32, 0, .little);
 
     var in_stream = FixedBufferStream.init(&bytes);
@@ -704,11 +703,8 @@ test "parameter state rejects later truncated entries without partial updates" {
     try std.testing.expect(values.storeField(&set, "gain", 0.8));
     try std.testing.expect(values.storeField(&set, "mix", 0.6));
 
-    try writer.writeAll(magic);
-    try writer.writeInt(u16, format_version, .little);
-    try writer.writeInt(u16, 2, .little);
-    try writer.writeInt(u32, 0, .little);
-    try writer.writeInt(u64, @bitCast(@as(f64, 0.25)), .little);
+    try writeStateHeader(writer, format_version, 2);
+    try writeStateEntry(writer, 0, 0.25);
     try writer.writeInt(u32, 1, .little);
 
     var in_stream = FixedBufferStream.init(&bytes);
@@ -733,13 +729,9 @@ test "parameter state rejects normalized values outside range without partial up
     try std.testing.expect(values.storeField(&set, "gain", 0.8));
     try std.testing.expect(values.storeField(&set, "mix", 0.6));
 
-    try writer.writeAll(magic);
-    try writer.writeInt(u16, format_version, .little);
-    try writer.writeInt(u16, 2, .little);
-    try writer.writeInt(u32, 0, .little);
-    try writer.writeInt(u64, @bitCast(@as(f64, 0.25)), .little);
-    try writer.writeInt(u32, 1, .little);
-    try writer.writeInt(u64, @bitCast(@as(f64, 1.5)), .little);
+    try writeStateHeader(writer, format_version, 2);
+    try writeStateEntry(writer, 0, 0.25);
+    try writeStateEntry(writer, 1, 1.5);
 
     var in_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectError(error.ParameterStateOutsideNormalizedRange, readParameterState(Params, &set, &values, in_stream.reader()));
@@ -761,11 +753,8 @@ test "parameter state rejects non-finite normalized values without partial updat
 
     try std.testing.expect(values.storeField(&set, "gain", 0.8));
 
-    try writer.writeAll(magic);
-    try writer.writeInt(u16, format_version, .little);
-    try writer.writeInt(u16, 1, .little);
-    try writer.writeInt(u32, 0, .little);
-    try writer.writeInt(u64, @bitCast(std.math.nan(f64)), .little);
+    try writeStateHeader(writer, format_version, 1);
+    try writeStateEntry(writer, 0, std.math.nan(f64));
 
     var in_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectError(error.ParameterStateOutsideNormalizedRange, readParameterState(Params, &set, &values, in_stream.reader()));
@@ -773,11 +762,8 @@ test "parameter state rejects non-finite normalized values without partial updat
 
     try std.testing.expect(values.storeField(&set, "gain", 0.8));
     out_stream = FixedBufferStream.init(&bytes);
-    try writer.writeAll(magic);
-    try writer.writeInt(u16, format_version, .little);
-    try writer.writeInt(u16, 1, .little);
-    try writer.writeInt(u32, 0, .little);
-    try writer.writeInt(u64, @bitCast(std.math.inf(f64)), .little);
+    try writeStateHeader(writer, format_version, 1);
+    try writeStateEntry(writer, 0, std.math.inf(f64));
 
     in_stream = FixedBufferStream.init(&bytes);
     try std.testing.expectError(error.ParameterStateOutsideNormalizedRange, readParameterState(Params, &set, &values, in_stream.reader()));
