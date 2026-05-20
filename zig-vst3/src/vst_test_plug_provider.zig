@@ -270,6 +270,25 @@ test "test plug provider exposes provider2 and factory" {
     try std.testing.expectEqual(@as(types.uint32, 1), provider2.vtable.release(provider2));
 }
 
+test "test plug provider query interfaces share object refcount" {
+    const Provider = TestPlugProvider(struct {});
+    var provider = Provider{};
+
+    var queried_provider: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, provider.asProvider2().vtable.queryInterface(provider.asProvider2(), &ivsttestplugprovider.itest_plug_provider_iid, &queried_provider));
+    try std.testing.expectEqual(@as(?*anyopaque, provider.asProvider()), queried_provider);
+    try std.testing.expectEqual(@as(types.uint32, 2), provider.ref_count.load(.seq_cst));
+
+    var queried_unknown: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, provider.asProvider2().vtable.queryInterface(provider.asProvider2(), &funknown.iid, &queried_unknown));
+    try std.testing.expectEqual(@as(?*anyopaque, provider.asProvider()), queried_unknown);
+    try std.testing.expectEqual(@as(types.uint32, 3), provider.ref_count.load(.seq_cst));
+
+    const provider_iface: *ivsttestplugprovider.ITestPlugProvider = @ptrCast(@alignCast(queried_provider.?));
+    try std.testing.expectEqual(@as(types.uint32, 2), provider_iface.vtable.release(provider_iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), provider.asProvider().vtable.release(provider.asProvider()));
+}
+
 test "test plug provider clears unsupported query output from both interfaces" {
     const Provider = TestPlugProvider(struct {});
     var provider = Provider{};

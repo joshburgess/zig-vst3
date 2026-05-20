@@ -436,6 +436,26 @@ test "fixed buffer stream sizeable interface can query stream interface" {
     try std.testing.expectEqual(@as(types.uint32, 1), queried_stream.vtable.release(queried_stream));
 }
 
+test "fixed buffer stream query interfaces share object refcount" {
+    const Stream = FixedBufferStream(4);
+    var stream = Stream{};
+    const sizeable = stream.asSizeableStream();
+
+    var queried_stream: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, sizeable.vtable.queryInterface(sizeable, &ibstream.ibstream_iid, &queried_stream));
+    try std.testing.expectEqual(@as(?*anyopaque, stream.asStream()), queried_stream);
+    try std.testing.expectEqual(@as(types.uint32, 2), stream.ref_count.load(.seq_cst));
+
+    var queried_unknown: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, sizeable.vtable.queryInterface(sizeable, &funknown.iid, &queried_unknown));
+    try std.testing.expectEqual(@as(?*anyopaque, stream.asStream()), queried_unknown);
+    try std.testing.expectEqual(@as(types.uint32, 3), stream.ref_count.load(.seq_cst));
+
+    const stream_iface: *ibstream.IBStream = @ptrCast(@alignCast(queried_stream.?));
+    try std.testing.expectEqual(@as(types.uint32, 2), stream_iface.vtable.release(stream_iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), stream.asStream().vtable.release(stream.asStream()));
+}
+
 test "fixed buffer stream clears unsupported query output from both interfaces" {
     const Stream = FixedBufferStream(4);
     var stream = Stream{};
