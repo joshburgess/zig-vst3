@@ -4,9 +4,10 @@ const interface_map = @import("interface_map.zig");
 const scale_support = @import("pluginterfaces/gui/iplugviewcontentscalesupport.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vst_value = @import("vst_value.zig");
 
 fn isValidScaleFactor(factor: scale_support.ScaleFactor) bool {
-    return std.math.isFinite(factor) and factor > 0;
+    return vst_value.isPositiveFinite(factor);
 }
 
 pub fn ContentScaleSupport(comptime Config: type) type {
