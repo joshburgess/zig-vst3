@@ -304,6 +304,8 @@ test "linux run loop registers and triggers event handlers" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.ref_count.load(.monotonic));
     try std.testing.expectEqual(@as(?*Linux.IEventHandler, null), loop.event_handlers[0].handler);
     try std.testing.expectEqual(@as(Linux.FileDescriptor, -1), loop.event_handlers[0].fd);
+    try std.testing.expectEqual(types.kResultFalse, loop.triggerEvent(7));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.event_count);
 }
 
 test "linux event and timer handlers delegate callbacks and support query interface" {
@@ -417,6 +419,8 @@ test "linux run loop registers and triggers timer handlers" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.timer_count);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.unregisterTimer(iface, timer_handler));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.ref_count.load(.monotonic));
+    try std.testing.expectEqual(types.kResultFalse, loop.triggerTimer(timer_handler));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.timer_count);
 }
 
 test "linux run loop updates duplicate timers and rejects full storage" {

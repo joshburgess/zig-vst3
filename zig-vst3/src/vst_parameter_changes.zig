@@ -367,6 +367,10 @@ test "parameter value queue rejects invalid points" {
     try std.testing.expectEqual(@as(types.int32, -1), index);
 
     index = 42;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.addPoint(iface, 0, std.math.nan(vsttypes.ParamValue), &index));
+    try std.testing.expectEqual(@as(types.int32, -1), index);
+
+    index = 42;
     try std.testing.expectEqual(types.kResultOk, iface.vtable.addPoint(iface, 0, 1.0, &index));
     try std.testing.expectEqual(@as(types.int32, 0), index);
     try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getPointCount(iface));
