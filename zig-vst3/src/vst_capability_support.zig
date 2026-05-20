@@ -32,6 +32,10 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
             return vst_index.clampedCountU32(self.count, max_iids);
         }
 
+        pub fn supportedIids(self: *const Self) []const tuid.TUID {
+            return self.supported[0..self.safeCount()];
+        }
+
         fn appendSupportedIndex(self: *Self, iid: *const tuid.TUID) ?usize {
             const index = vst_index.appendIndexU32(self.count, max_iids) orelse return null;
             self.supported[index] = iid.*;
@@ -49,7 +53,7 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
         }
 
         pub fn supportedIndex(self: *const Self, iid: *const tuid.TUID) ?usize {
-            for (self.supported[0..self.safeCount()], 0..) |supported, supported_index| {
+            for (self.supportedIids(), 0..) |supported, supported_index| {
                 if (std.mem.eql(u8, &supported, iid)) return supported_index;
             }
             return null;
@@ -496,6 +500,7 @@ test "plug interface support stores supported IIDs" {
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.isPlugInterfaceSupported(iface, &ivstpluginterfacesupport.iplug_interface_support_iid));
     try std.testing.expectEqual(types.kResultOk, support.addSupported(&ivstpluginterfacesupport.iplug_interface_support_iid));
     try std.testing.expectEqual(types.kResultFalse, support.addSupported(&ivstprefetchablesupport.iprefetchable_support_iid));
+    try std.testing.expectEqual(@as(usize, 1), support.supportedIids().len);
     try std.testing.expect(support.supports(&ivstpluginterfacesupport.iplug_interface_support_iid));
     try std.testing.expectEqual(@as(?usize, 0), support.supportedIndex(&ivstpluginterfacesupport.iplug_interface_support_iid));
     try std.testing.expect(!support.supports(&ivstprefetchablesupport.iprefetchable_support_iid));
