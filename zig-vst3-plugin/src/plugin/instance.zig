@@ -71,7 +71,7 @@ pub fn PluginInstance(comptime Plugin: type) type {
         }
 
         pub fn hasProcessHook(_: *const Self) bool {
-            return Spec.has_process or Spec.has_process_with_parameter_view or Spec.has_process_with_parameters;
+            return Spec.has_process32_hook;
         }
 
         pub fn hasProcessFunctionHook(_: *const Self) bool {
@@ -87,7 +87,7 @@ pub fn PluginInstance(comptime Plugin: type) type {
         }
 
         pub fn hasProcess64Hook(_: *const Self) bool {
-            return Spec.has_process64 or Spec.has_process64_with_parameter_view or Spec.has_process64_with_parameters;
+            return Spec.has_process64_hook;
         }
 
         pub fn hasProcess64FunctionHook(_: *const Self) bool {
@@ -102,8 +102,8 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return Spec.has_process64_with_parameters;
         }
 
-        pub fn hasAnyProcessHook(self: *const Self) bool {
-            return self.hasProcessHook() or self.hasProcess64Hook();
+        pub fn hasAnyProcessHook(_: *const Self) bool {
+            return Spec.has_any_process_hook;
         }
 
         pub fn hasDeinitHook(_: *const Self) bool {

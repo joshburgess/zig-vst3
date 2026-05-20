@@ -978,6 +978,9 @@ test "plugin spec detects lifecycle declarations" {
     try std.testing.expect(Spec.has_process_with_parameters);
     try std.testing.expect(Spec.has_process64);
     try std.testing.expect(Spec.has_process64_with_parameters);
+    try std.testing.expect(Spec.has_process32_hook);
+    try std.testing.expect(Spec.has_process64_hook);
+    try std.testing.expect(Spec.has_any_process_hook);
     try std.testing.expect(Spec.has_deinit);
 }
 
@@ -1043,6 +1046,9 @@ test "plugin spec allows declaration-only plugin types" {
     try std.testing.expect(!Spec.has_process_with_parameters);
     try std.testing.expect(!Spec.has_process64);
     try std.testing.expect(!Spec.has_process64_with_parameters);
+    try std.testing.expect(!Spec.has_process32_hook);
+    try std.testing.expect(!Spec.has_process64_hook);
+    try std.testing.expect(!Spec.has_any_process_hook);
     try std.testing.expect(!Spec.has_deinit);
     try std.testing.expect(instance.hasAudioInput());
     try std.testing.expect(instance.hasAudioOutput());

@@ -46,6 +46,9 @@ pub fn PluginSpec(comptime Plugin: type) type {
         pub const has_process64 = @hasDecl(Plugin, "process64");
         pub const has_process64_with_parameter_view = @hasDecl(Plugin, "process64WithParameterView");
         pub const has_process64_with_parameters = @hasDecl(Plugin, "process64WithParameters");
+        pub const has_process32_hook = has_process or has_process_with_parameter_view or has_process_with_parameters;
+        pub const has_process64_hook = has_process64 or has_process64_with_parameter_view or has_process64_with_parameters;
+        pub const has_any_process_hook = has_process32_hook or has_process64_hook;
         pub const has_deinit = @hasDecl(Plugin, "deinit");
 
         parameter_set: ParameterSet,
