@@ -1755,6 +1755,8 @@ test "process context reports usable frame count" {
     try std.testing.expectEqual(@as(?f64, null), context.latestAnyParameterNormalized());
     try std.testing.expectEqual(@as(f64, 0.25), context.firstAnyParameterNormalizedOr(0.25));
     try std.testing.expectEqual(@as(f64, 0.75), context.latestAnyParameterNormalizedOr(0.75));
+    try std.testing.expectEqual(@as(f64, 0.0), context.firstAnyParameterNormalizedOr(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 1.0), context.latestAnyParameterNormalizedOr(1.5));
 
     context.fillOutputs(0.5);
     try std.testing.expectEqual(@as(f64, 0.5), out_left[0]);
