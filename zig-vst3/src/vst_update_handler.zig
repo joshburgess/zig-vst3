@@ -68,6 +68,18 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             deferred: bool = false,
             deferred_message: types.int32 = 0,
 
+            fn isEmpty(self: Entry) bool {
+                return self.dependent == null;
+            }
+
+            fn matches(self: Entry, changed: ?*anyopaque, dependent: ?*iupdatehandler.IDependent) bool {
+                return self.changed == changed and self.dependent == dependent;
+            }
+
+            fn matchesChanged(self: Entry, changed: ?*anyopaque) bool {
+                return !self.isEmpty() and self.changed == changed;
+            }
+
             fn set(self: *Entry, changed: ?*anyopaque, dependent: *iupdatehandler.IDependent) void {
                 self.changed = changed;
                 self.dependent = dependent;
@@ -93,7 +105,7 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
         pub fn dependentCount(self: *const Self) usize {
             var count: usize = 0;
             for (&self.entries) |*entry| {
-                if (entry.dependent != null) count += 1;
+                if (!entry.isEmpty()) count += 1;
             }
             return count;
         }
@@ -102,7 +114,7 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
 
         fn findEntry(self: *Self, changed: ?*anyopaque, dependent: ?*iupdatehandler.IDependent) ?*Entry {
             for (&self.entries) |*entry| {
-                if (entry.changed == changed and entry.dependent == dependent) return entry;
+                if (entry.matches(changed, dependent)) return entry;
             }
             return null;
         }
@@ -110,7 +122,7 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
         fn slotFor(self: *Self, changed: ?*anyopaque, dependent: ?*iupdatehandler.IDependent) ?*Entry {
             if (self.findEntry(changed, dependent)) |entry| return entry;
             for (&self.entries) |*entry| {
-                if (entry.dependent == null) {
+                if (entry.isEmpty()) {
                     const dep = dependent orelse return null;
                     entry.set(changed, dep);
                     return entry;
@@ -122,8 +134,7 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
         pub fn deferMatchingUpdates(self: *Self, changed: ?*anyopaque, message: types.int32) bool {
             var matched = false;
             for (&self.entries) |*entry| {
-                if (entry.dependent == null) continue;
-                if (entry.changed != changed) continue;
+                if (!entry.matchesChanged(changed)) continue;
                 entry.deferred = true;
                 entry.deferred_message = message;
                 matched = true;
@@ -135,7 +146,7 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             var matched = false;
             for (&self.entries) |*entry| {
                 if (entry.dependent) |dependent| {
-                    if (entry.changed != changed) continue;
+                    if (!entry.matchesChanged(changed)) continue;
                     dependent.vtable.update(dependent, changed, message);
                     entry.deferred = false;
                     entry.deferred_message = 0;
