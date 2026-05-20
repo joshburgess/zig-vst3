@@ -39,10 +39,16 @@ fn processFrameCount(input_channel_count: usize, input_frame_count: usize, outpu
     return input_frame_count;
 }
 
-fn validateProcessFrameCounts(input_channel_count: usize, input_frame_count: usize, output_channel_count: usize, output_frame_count: usize) !void {
-    if (input_channel_count != 0 and output_channel_count != 0 and input_frame_count != output_frame_count) {
-        return error.MismatchedFrameCount;
-    }
+fn validateProcessFrameCounts(
+    input_channel_count: usize,
+    input_frame_count: usize,
+    output_channel_count: usize,
+    output_frame_count: usize,
+) !void {
+    if (input_channel_count == 0) return;
+    if (output_channel_count == 0) return;
+    if (input_frame_count == output_frame_count) return;
+    return error.MismatchedFrameCount;
 }
 
 fn framesToSeconds(frame_count: usize, sample_rate: f64) f64 {
