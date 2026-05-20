@@ -56,6 +56,11 @@ fn pairedChannelCount(first: base.int32, second: base.int32) base.int32 {
     return @min(channelCount(first), channelCount(second));
 }
 
+fn iterationCount(count: base.int32) base.int32 {
+    if (count <= 0) return 0;
+    return count;
+}
+
 fn copySamples(
     comptime Sample: type,
     src_channels: [*][*]Sample,
@@ -233,7 +238,7 @@ pub fn forEachEvent(event_list: ?*events.IEventList, context: anytype, comptime 
 
 pub fn forEachEventUntil(event_list: ?*events.IEventList, context: anytype, comptime callback: anytype) void {
     const list = event_list orelse return;
-    const event_count = list.vtable.getEventCount(list);
+    const event_count = iterationCount(list.vtable.getEventCount(list));
     var event_index: base.int32 = 0;
     while (event_index < event_count) : (event_index += 1) {
         var event = events.Event{};
@@ -255,7 +260,7 @@ pub fn forEachParamValueQueue(param_queue: *parameter_changes.IParamValueQueue, 
 
 pub fn forEachParamValueQueueUntil(param_queue: *parameter_changes.IParamValueQueue, context: anytype, comptime callback: anytype) void {
     const param_id = param_queue.vtable.getParameterId(param_queue);
-    const num_points = param_queue.vtable.getPointCount(param_queue);
+    const num_points = iterationCount(param_queue.vtable.getPointCount(param_queue));
     var point_index: base.int32 = 0;
     while (point_index < num_points) : (point_index += 1) {
         var sample_offset: base.int32 = 0;
@@ -269,13 +274,23 @@ pub fn forEachParamValueQueueUntil(param_queue: *parameter_changes.IParamValueQu
 
 pub fn forEachLastParamValueQueue(param_queue: *parameter_changes.IParamValueQueue, context: anytype, comptime callback: anytype) void {
     const param_id = param_queue.vtable.getParameterId(param_queue);
-    const num_points = param_queue.vtable.getPointCount(param_queue);
-    if (num_points <= 0) return;
-    var sample_offset: base.int32 = 0;
-    var value: vsttypes.ParamValue = 0;
-    if (param_queue.vtable.getPoint(param_queue, num_points - 1, &sample_offset, &value) == base.kResultOk) {
-        callback(context, param_id, sample_offset, value);
+    const num_points = iterationCount(param_queue.vtable.getPointCount(param_queue));
+    var last_sample_offset: base.int32 = 0;
+    var last_value: vsttypes.ParamValue = 0;
+    var has_last = false;
+
+    var point_index: base.int32 = 0;
+    while (point_index < num_points) : (point_index += 1) {
+        var sample_offset: base.int32 = 0;
+        var value: vsttypes.ParamValue = 0;
+        const result = param_queue.vtable.getPoint(param_queue, point_index, &sample_offset, &value);
+        if (result == base.kInvalidArgument) break;
+        if (result != base.kResultOk) continue;
+        last_sample_offset = sample_offset;
+        last_value = value;
+        has_last = true;
     }
+    if (has_last) callback(context, param_id, last_sample_offset, last_value);
 }
 
 pub fn forEachParameterChanges(changes: ?*parameter_changes.IParameterChanges, context: anytype, comptime callback: anytype) void {
@@ -289,7 +304,7 @@ pub fn forEachParameterChanges(changes: ?*parameter_changes.IParameterChanges, c
 
 pub fn forEachParameterChangesUntil(changes: ?*parameter_changes.IParameterChanges, context: anytype, comptime callback: anytype) void {
     const parameter_changes_list = changes orelse return;
-    const param_count = parameter_changes_list.vtable.getParameterCount(parameter_changes_list);
+    const param_count = iterationCount(parameter_changes_list.vtable.getParameterCount(parameter_changes_list));
     var param_index: base.int32 = 0;
     while (param_index < param_count) : (param_index += 1) {
         const param_queue = parameter_changes_list.vtable.getParameterData(parameter_changes_list, param_index) orelse continue;
@@ -340,6 +355,14 @@ test "audio processor helpers clamp channel counts to supported range" {
     try std.testing.expectEqual(max_supported_channels, channelCount(max_supported_channels + 1));
     try std.testing.expectEqual(@as(base.int32, 2), pairedChannelCount(2, max_supported_channels + 1));
     try std.testing.expectEqual(@as(base.int32, 0), pairedChannelCount(-1, max_supported_channels + 1));
+}
+
+test "audio processor helper clamps reported iteration counts" {
+    try std.testing.expectEqual(@as(base.int32, 0), iterationCount(std.math.minInt(base.int32)));
+    try std.testing.expectEqual(@as(base.int32, 0), iterationCount(-1));
+    try std.testing.expectEqual(@as(base.int32, 0), iterationCount(0));
+    try std.testing.expectEqual(@as(base.int32, 7), iterationCount(7));
+    try std.testing.expectEqual(std.math.maxInt(base.int32), iterationCount(std.math.maxInt(base.int32)));
 }
 
 test "audio processor buffer helpers ignore invalid ranges" {
@@ -617,6 +640,24 @@ test "audio processor helper skips empty last parameter queues" {
     try std.testing.expectEqual(@as(vsttypes.ParamID, 9), collector.last_param_id);
     try std.testing.expectEqual(@as(base.int32, 8), collector.last_sample_offset);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), collector.last_param_value);
+}
+
+test "audio processor helper finds last valid point when count is overreported" {
+    const points = [_]TestParamPoint{
+        .{ .sample_offset = 4, .value = 0.25 },
+        .{ .sample_offset = 8, .value = 0.75 },
+    };
+    var queue = TestParamValueQueue.init(9, &points);
+    queue.reported_count = 1000;
+    var collector = EventCollector{};
+
+    forEachLastParamValueQueue(&queue.iface, &collector, collectParamValue);
+
+    try std.testing.expectEqual(@as(usize, 1), collector.count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 9), collector.last_param_id);
+    try std.testing.expectEqual(@as(base.int32, 8), collector.last_sample_offset);
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), collector.last_param_value);
+    try std.testing.expectEqual(@as(usize, 3), queue.read_count);
 }
 
 test "audio processor helpers treat negative reported counts as empty" {
