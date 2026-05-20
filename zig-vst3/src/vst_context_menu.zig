@@ -70,6 +70,14 @@ pub fn ContextMenu(comptime max_items: usize) type {
             item: ivstcontextmenu.IContextMenuItem = .{},
             target: ?*ivstcontextmenu.IContextMenuTarget = null,
 
+            fn isOccupied(self: Entry) bool {
+                return self.occupied;
+            }
+
+            fn matches(self: Entry, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) bool {
+                return self.isOccupied() and itemsEqual(self.item, item.*) and self.target == target;
+            }
+
             fn set(self: *Entry, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) void {
                 self.occupied = true;
                 self.item = item.*;
@@ -119,7 +127,7 @@ pub fn ContextMenu(comptime max_items: usize) type {
         pub fn occupiedCount(self: *const Self) usize {
             var count: usize = 0;
             for (&self.entries) |*entry| {
-                if (entry.occupied) count += 1;
+                if (entry.isOccupied()) count += 1;
             }
             return count;
         }
@@ -128,7 +136,7 @@ pub fn ContextMenu(comptime max_items: usize) type {
             const wanted_index = vst_index.bounded(index, self.occupiedCount()) orelse return null;
             var current: usize = 0;
             for (&self.entries) |*entry| {
-                if (entry.occupied) {
+                if (entry.isOccupied()) {
                     if (current == wanted_index) return entry;
                     current += 1;
                 }
@@ -152,7 +160,7 @@ pub fn ContextMenu(comptime max_items: usize) type {
 
         fn appendItem(self: *Self, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) ?*Entry {
             for (&self.entries) |*entry| {
-                if (!entry.occupied) {
+                if (!entry.isOccupied()) {
                     entry.set(item, target);
                     return entry;
                 }
@@ -171,14 +179,17 @@ pub fn ContextMenu(comptime max_items: usize) type {
                 std.mem.eql(vsttypes.TChar, std.mem.sliceTo(&a.name, 0), std.mem.sliceTo(&b.name, 0));
         }
 
-        fn removeItem(ptr: *anyopaque, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
-            for (&owner(ptr).entries) |*entry| {
-                if (entry.occupied and itemsEqual(entry.item, item.*) and entry.target == target) {
-                    entry.clear();
-                    return types.kResultOk;
-                }
+        fn matchingItem(self: *Self, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) ?*Entry {
+            for (&self.entries) |*entry| {
+                if (entry.matches(item, target)) return entry;
             }
-            return types.kResultFalse;
+            return null;
+        }
+
+        fn removeItem(ptr: *anyopaque, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
+            const entry = owner(ptr).matchingItem(item, target) orelse return types.kResultFalse;
+            entry.clear();
+            return types.kResultOk;
         }
 
         fn popup(ptr: *anyopaque, x: types.UCoord, y: types.UCoord) callconv(.c) types.tresult {
