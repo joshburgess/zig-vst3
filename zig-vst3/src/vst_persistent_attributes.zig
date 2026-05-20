@@ -94,6 +94,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
 
             fn resetValue(self: *Entry, value: fvariant.FVariant) void {
                 self.value = value;
+                self.queued = false;
                 @memset(&self.binary, 0);
                 self.binary_size = 0;
                 self.owns_binary = false;
@@ -452,6 +453,24 @@ test "persistent attributes queue and unqueue one value per attribute" {
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.unqueue(attrs, "answer", &out));
     try std.testing.expectEqual(@as(types.int64, 42), out.value.intValue);
     try std.testing.expectEqual(@as(types.int32, 0), attrs.vtable.getQueueItemCount(attrs, "answer"));
+}
+
+test "persistent attributes clear queue state on direct replacement" {
+    const Store = Attributes(1, 8);
+    var store = Store{};
+    const attrs = store.asAttributes();
+    const queued = fvariant.FVariant{ .type = fvariant.kInteger, .value = .{ .intValue = 42 } };
+    const direct = fvariant.FVariant{ .type = fvariant.kInteger, .value = .{ .intValue = 7 } };
+    var payload = [_]u8{ 1, 2, 3 };
+
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.queue(attrs, "value", &queued));
+    try std.testing.expectEqual(@as(types.int32, 1), attrs.vtable.getQueueItemCount(attrs, "value"));
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.set(attrs, "value", &direct));
+    try std.testing.expectEqual(@as(types.int32, 0), attrs.vtable.getQueueItemCount(attrs, "value"));
+
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.queue(attrs, "value", &queued));
+    try std.testing.expectEqual(types.kResultOk, attrs.vtable.setBinaryData(attrs, "value", &payload, payload.len, true));
+    try std.testing.expectEqual(@as(types.int32, 0), attrs.vtable.getQueueItemCount(attrs, "value"));
 }
 
 test "persistent attributes reset one queue or all queues" {
