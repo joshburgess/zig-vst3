@@ -1,9 +1,11 @@
 const std = @import("std");
+const fixed_string = @import("fixed_string.zig");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
 const ivstcontextmenu = @import("pluginterfaces/vst/ivstcontextmenu.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
+const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const vst_index = @import("vst_index.zig");
 
 pub fn ContextMenuTarget(comptime Config: type) type {
@@ -169,9 +171,15 @@ pub fn ContextMenu(comptime max_items: usize) type {
             return types.kResultOk;
         }
 
+        fn itemsEqual(a: ivstcontextmenu.IContextMenuItem, b: ivstcontextmenu.IContextMenuItem) bool {
+            return a.tag == b.tag and
+                a.flags == b.flags and
+                std.mem.eql(vsttypes.TChar, std.mem.sliceTo(&a.name, 0), std.mem.sliceTo(&b.name, 0));
+        }
+
         fn removeItem(ptr: *anyopaque, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
             for (&owner(ptr).entries) |*entry| {
-                if (entry.occupied and entry.item.tag == item.tag and entry.target == target) {
+                if (entry.occupied and itemsEqual(entry.item, item.*) and entry.target == target) {
                     entry.clear();
                     return types.kResultOk;
                 }
@@ -324,6 +332,35 @@ test "context menu indexes only occupied slots and reuses removed storage" {
     try std.testing.expectEqual(@as(types.int32, 3), iface.vtable.getItemCount(iface));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getItem(iface, 1, &out_item, &out_target));
     try std.testing.expectEqual(@as(types.int32, 40), out_item.tag);
+}
+
+test "context menu removal matches the full item payload" {
+    const Menu = ContextMenu(2);
+    var menu = Menu{};
+    const iface = menu.asInterface();
+    var first = ivstcontextmenu.IContextMenuItem{
+        .tag = 10,
+        .flags = ivstcontextmenu.IContextMenuItem.Flags.kIsChecked,
+    };
+    var second = ivstcontextmenu.IContextMenuItem{
+        .tag = 10,
+        .flags = ivstcontextmenu.IContextMenuItem.Flags.kIsDisabled,
+    };
+    fixed_string.copyAsciiToUtf16Z(&first.name, "first");
+    fixed_string.copyAsciiToUtf16Z(&second.name, "second");
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &first, null));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &second, null));
+
+    var mismatched = first;
+    mismatched.flags = second.flags;
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.removeItem(iface, &mismatched, null));
+    try std.testing.expectEqual(@as(types.int32, 2), iface.vtable.getItemCount(iface));
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.removeItem(iface, &second, null));
+    try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getItemCount(iface));
+    try std.testing.expectEqual(@as(types.int32, 10), menu.occupiedByIndex(0).?.item.tag);
+    try std.testing.expectEqual(ivstcontextmenu.IContextMenuItem.Flags.kIsChecked, menu.occupiedByIndex(0).?.item.flags);
 }
 
 test "context menu rejects negative item indexes without touching retained targets" {
