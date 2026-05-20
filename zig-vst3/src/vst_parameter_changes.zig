@@ -38,7 +38,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
         }
 
         fn appendPointIndex(self: *Self, sample_offset: types.int32, value: vsttypes.ParamValue) ?types.int32 {
-            if (sample_offset < 0) return null;
+            _ = vst_index.nonNegativeCount(sample_offset) orelse return null;
             if (!isNormalized(value)) return null;
             const index = vst_index.appendIndex(self.point_count, max_points) orelse return null;
             self.points[index] = .{ .sample_offset = sample_offset, .value = value };

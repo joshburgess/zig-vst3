@@ -61,7 +61,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         }
 
         fn appendProgramListIndex(self: *Self, id: vsttypes.ProgramListID, name: []const u8, program_count: types.int32) ?usize {
-            if (program_count < 0) return null;
+            _ = vst_index.nonNegativeCount(program_count) orelse return null;
             const index = vst_index.appendIndex(self.program_list_count, max_program_lists) orelse return null;
             self.program_lists[index] = .{
                 .id = id,
