@@ -66,6 +66,7 @@ pub const vst_test_interfaces = @import("vst_test_interfaces.zig");
 pub const vst_test_plug_provider = @import("vst_test_plug_provider.zig");
 pub const vst_unit_data = @import("vst_unit_data.zig");
 pub const vst_update_handler = @import("vst_update_handler.zig");
+pub const vst_value = @import("vst_value.zig");
 pub const vst_wayland_frame = @import("vst_wayland_frame.zig");
 pub const voice_mix_component = @import("voice_mix_component.zig");
 pub const voice_mix_controller = @import("voice_mix_controller.zig");
@@ -143,6 +144,7 @@ test {
     std.testing.refAllDecls(vst_test_interfaces);
     std.testing.refAllDecls(vst_test_plug_provider);
     std.testing.refAllDecls(vst_update_handler);
+    std.testing.refAllDecls(vst_value);
     std.testing.refAllDecls(vst_wayland_frame);
     std.testing.refAllDecls(voice_mix_component);
     std.testing.refAllDecls(voice_mix_controller);

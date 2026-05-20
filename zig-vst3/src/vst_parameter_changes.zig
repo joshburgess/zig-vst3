@@ -5,6 +5,7 @@ const ivstparameterchanges = @import("pluginterfaces/vst/ivstparameterchanges.zi
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_index = @import("vst_index.zig");
+const vst_value = @import("vst_value.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
 pub const ParamPoint = extern struct {
@@ -39,7 +40,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
 
         fn appendPointIndex(self: *Self, sample_offset: types.int32, value: vsttypes.ParamValue) ?types.int32 {
             _ = vst_index.nonNegativeCount(sample_offset) orelse return null;
-            if (!isNormalized(value)) return null;
+            if (!vst_value.isNormalized(value)) return null;
             const index = vst_index.appendIndex(self.point_count, max_points) orelse return null;
             self.points[index] = .{ .sample_offset = sample_offset, .value = value };
             self.point_count +|= 1;
@@ -117,10 +118,6 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
             .addPoint = addPoint,
         };
     };
-}
-
-fn isNormalized(value: vsttypes.ParamValue) bool {
-    return std.math.isFinite(value) and value >= 0.0 and value <= 1.0;
 }
 
 pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queue: usize) type {

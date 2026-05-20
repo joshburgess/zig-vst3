@@ -20,6 +20,7 @@ const tuid = @import("tuid.zig");
 const vst_event_list = @import("vst_event_list.zig");
 const vst_index = @import("vst_index.zig");
 const vst_parameter_changes = @import("vst_parameter_changes.zig");
+const vst_value = @import("vst_value.zig");
 const vst_stream = @import("vst_stream.zig");
 
 const max_audio_channels = plug.process.max_audio_channels;
@@ -434,7 +435,7 @@ fn validFrameCount(data: *const ivstaudioprocessor.ProcessData) !usize {
 }
 
 fn validSampleRate(value: f64) bool {
-    return std.math.isFinite(value) and value > 0.0;
+    return vst_value.isPositiveFinite(value);
 }
 
 fn processSampleRate(data: *const ivstaudioprocessor.ProcessData, fallback: f64) f64 {
@@ -914,7 +915,7 @@ fn vstSampleOffset(sample_offset: usize) ?types.int32 {
 }
 
 pub fn isNormalizedValue(value: anytype) bool {
-    return std.math.isFinite(value) and value >= 0.0 and value <= 1.0;
+    return vst_value.isNormalized(value);
 }
 
 fn isFiniteValue(value: anytype) bool {
