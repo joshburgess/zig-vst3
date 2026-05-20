@@ -347,8 +347,11 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
         fn closeQueue(ptr: *anyopaque, queue_id: ivstdataexchange.DataExchangeQueueID) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
             self.close_count +|= 1;
+            if (@hasDecl(Config, "closeQueue")) {
+                const result = Config.closeQueue(self, queue_id);
+                if (result != types.kResultOk) return result;
+            }
             self.last_queue_id = queue_id;
-            if (@hasDecl(Config, "closeQueue")) return Config.closeQueue(self, queue_id);
             return types.kResultOk;
         }
 
@@ -573,6 +576,25 @@ test "data exchange host clears unsupported query outputs" {
     queried = @ptrFromInt(0x20);
     try std.testing.expectEqual(types.kNoInterface, handler.vtable.queryInterface(handler, &tuid.zero, &queried));
     try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
+}
+
+test "data exchange host preserves last accepted close queue on rejection" {
+    const Host = DataExchangeHost("Test Host", struct {
+        pub fn closeQueue(_: anytype, queue_id: ivstdataexchange.DataExchangeQueueID) types.tresult {
+            return if (queue_id == 44) types.kResultOk else types.kInvalidArgument;
+        }
+    });
+    var host = Host{};
+    var queried: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.queryInterface(host.asHostApplication(), &ivstdataexchange.idata_exchange_handler_iid, &queried));
+    const handler: *ivstdataexchange.IDataExchangeHandler = @ptrCast(@alignCast(queried.?));
+
+    try std.testing.expectEqual(types.kResultOk, handler.vtable.closeQueue(handler, 44));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.vtable.closeQueue(handler, 99));
+    try std.testing.expectEqual(@as(types.uint32, 2), host.close_count);
+    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeQueueID, 44), host.last_queue_id);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
 }
 
