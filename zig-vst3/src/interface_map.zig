@@ -107,3 +107,25 @@ test "queryWithAddRef uses caller supplied canonical pointer" {
     try std.testing.expectEqual(@as(?*anyopaque, @ptrCast(&alternate)), out);
     try std.testing.expectEqual(@as(funknown.uint32, 2), object.refCount());
 }
+
+test "queryWithAddRef returns first matching entry and retains once" {
+    var object = funknown.TestObject{};
+    var first: funknown.Header = funknown.Header.init(&funknown.test_vtable, null);
+    var second: funknown.Header = funknown.Header.init(&funknown.test_vtable, null);
+    var out: ?*anyopaque = null;
+
+    const entries = [_]Entry{
+        .{
+            .iid = &funknown.iid,
+            .ptr = &first,
+        },
+        .{
+            .iid = &funknown.iid,
+            .ptr = &second,
+        },
+    };
+
+    try std.testing.expectEqual(funknown.kResultOk, queryWithAddRef(&object, testAddRef, &entries, &funknown.iid, &out));
+    try std.testing.expectEqual(@as(?*anyopaque, @ptrCast(&first)), out);
+    try std.testing.expectEqual(@as(funknown.uint32, 2), object.refCount());
+}
