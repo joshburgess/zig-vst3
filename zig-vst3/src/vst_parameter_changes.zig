@@ -43,7 +43,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
             const index = vst_index.appendIndex(self.point_count, max_points) orelse return null;
             self.points[index] = .{ .sample_offset = sample_offset, .value = value };
             self.point_count +|= 1;
-            return @intCast(index);
+            return vst_index.int32Count(index);
         }
 
         pub fn appendPoint(self: *Self, sample_offset: types.int32, value: vsttypes.ParamValue) types.tresult {
@@ -79,7 +79,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
         }
 
         fn getPointCount(ptr: *anyopaque) callconv(.c) types.int32 {
-            return @intCast(owner(ptr).safePointCount());
+            return vst_index.int32Count(owner(ptr).safePointCount());
         }
 
         fn failPoint(sample_offset: *types.int32, value: *vsttypes.ParamValue) types.tresult {
@@ -192,7 +192,7 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
         }
 
         fn getParameterCount(ptr: *anyopaque) callconv(.c) types.int32 {
-            return @intCast(owner(ptr).safeQueueCount());
+            return vst_index.int32Count(owner(ptr).safeQueueCount());
         }
 
         fn getParameterData(ptr: *anyopaque, index: types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
@@ -209,11 +209,11 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
         fn addParameterData(ptr: *anyopaque, id: *const vsttypes.ParamID, index: *types.int32) callconv(.c) ?*ivstparameterchanges.IParamValueQueue {
             const self = owner(ptr);
             if (self.findQueueIndex(id.*)) |queue_index| {
-                index.* = @intCast(queue_index);
+                index.* = vst_index.int32Count(queue_index);
                 return self.queues[queue_index].asInterface();
             }
             const queue_index = self.addQueueIndex(id.*) orelse return failAddedParameterData(index);
-            index.* = @intCast(queue_index);
+            index.* = vst_index.int32Count(queue_index);
             return self.queues[queue_index].asInterface();
         }
 

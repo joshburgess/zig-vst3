@@ -68,7 +68,7 @@ pub fn EventList(comptime max_events: usize) type {
         }
 
         fn getEventCount(ptr: *anyopaque) callconv(.c) types.int32 {
-            return @intCast(owner(ptr).safeCount());
+            return vst_index.int32Count(owner(ptr).safeCount());
         }
 
         fn failEvent(event: *ivstevents.Event, result: types.tresult) types.tresult {

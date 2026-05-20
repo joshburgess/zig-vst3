@@ -51,7 +51,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
                 .programListId = program_list_id,
             };
             string128.copy(&self.units[index].name, name);
-            self.unit_count = @intCast(index + 1);
+            self.unit_count = vst_index.int32NextCount(index);
             return index;
         }
 
@@ -68,7 +68,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
                 .programCount = program_count,
             };
             string128.copy(&self.program_lists[index].name, name);
-            self.program_list_count = @intCast(index + 1);
+            self.program_list_count = vst_index.int32NextCount(index);
             return index;
         }
 
@@ -139,7 +139,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         }
 
         fn getUnitCount(ptr: *anyopaque) callconv(.c) types.int32 {
-            return @intCast(owner(ptr).safeUnitCount());
+            return vst_index.int32Count(owner(ptr).safeUnitCount());
         }
 
         fn failUnitInfo(out: *ivstunits.UnitInfo) types.tresult {
@@ -154,7 +154,7 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
         }
 
         fn getProgramListCount(ptr: *anyopaque) callconv(.c) types.int32 {
-            return @intCast(owner(ptr).safeProgramListCount());
+            return vst_index.int32Count(owner(ptr).safeProgramListCount());
         }
 
         fn failProgramListInfo(out: *ivstunits.ProgramListInfo) types.tresult {

@@ -27,6 +27,15 @@ pub fn clampedCountU32(count: types.uint32, capacity: usize) usize {
     return @min(@as(usize, @intCast(count)), capacity);
 }
 
+pub fn int32Count(count: usize) types.int32 {
+    std.debug.assert(count <= std.math.maxInt(types.int32));
+    return @intCast(count);
+}
+
+pub fn int32NextCount(index: usize) types.int32 {
+    return int32Count(index + 1);
+}
+
 pub fn requireInt32Capacity(comptime capacity: usize, comptime name: []const u8) void {
     if (capacity > std.math.maxInt(types.int32)) {
         @compileError(name ++ " must fit in VST int32 counts");
@@ -82,6 +91,12 @@ test "clampedCountU32 converts host counts to storage bounds" {
     try std.testing.expectEqual(@as(usize, 0), clampedCountU32(0, 3));
     try std.testing.expectEqual(@as(usize, 2), clampedCountU32(2, 3));
     try std.testing.expectEqual(@as(usize, 3), clampedCountU32(4, 3));
+}
+
+test "int32 count conversions keep the VST boundary explicit" {
+    try std.testing.expectEqual(@as(types.int32, 0), int32Count(0));
+    try std.testing.expectEqual(@as(types.int32, 7), int32Count(7));
+    try std.testing.expectEqual(@as(types.int32, 8), int32NextCount(7));
 }
 
 test "int32 index helpers share generated boundary policy" {
