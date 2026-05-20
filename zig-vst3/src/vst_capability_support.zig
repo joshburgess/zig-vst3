@@ -354,7 +354,10 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             const count = assignments.len;
             if (count == 0) return types.kResultFalse;
             const out = list.map orelse return types.kInvalidArgument;
-            if (list.count < count) return types.kResultFalse;
+            if (list.count < count) {
+                @memset(out[0..list.count], .{});
+                return types.kResultFalse;
+            }
             @memcpy(out[0..count], assignments);
             return types.kResultOk;
         }
@@ -664,11 +667,13 @@ test "midi 2 mapping copies midi 1 and midi 2 assignment lists" {
 }
 
 test "midi 2 mapping reports invalid assignment outputs deterministically" {
-    const Mapping = Midi2Mapping(1, 1, struct {});
+    const Mapping = Midi2Mapping(2, 2, struct {});
     var mapping = Mapping{};
     const iface = mapping.asMapping();
     try std.testing.expectEqual(types.kResultOk, mapping.addMidi2(.{ .pId = 100 }));
+    try std.testing.expectEqual(types.kResultOk, mapping.addMidi2(.{ .pId = 101 }));
     try std.testing.expectEqual(types.kResultOk, mapping.addMidi1(.{ .pId = 200 }));
+    try std.testing.expectEqual(types.kResultOk, mapping.addMidi1(.{ .pId = 201 }));
 
     var empty_midi2 = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{}} ** 0;
     const short_midi2 = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = 0, .map = &empty_midi2 };
@@ -682,6 +687,16 @@ test "midi 2 mapping reports invalid assignment outputs deterministically" {
     const null_midi1 = ivstmidimapping2.Midi1ControllerParamIDAssignmentList{ .count = 1, .map = null };
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &short_midi1));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &null_midi1));
+
+    var short_stale_midi2 = [_]ivstmidimapping2.Midi2ControllerParamIDAssignment{.{ .pId = 999 }} ** 1;
+    const short_stale_midi2_list = ivstmidimapping2.Midi2ControllerParamIDAssignmentList{ .count = short_stale_midi2.len, .map = &short_stale_midi2 };
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi2ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &short_stale_midi2_list));
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 0), short_stale_midi2[0].pId);
+
+    var short_stale_midi1 = [_]ivstmidimapping2.Midi1ControllerParamIDAssignment{.{ .pId = 999 }} ** 1;
+    const short_stale_midi1_list = ivstmidimapping2.Midi1ControllerParamIDAssignmentList{ .count = short_stale_midi1.len, .map = &short_stale_midi1 };
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.getMidi1ControllerAssignments(iface, @intFromEnum(ivstcomponent.BusDirections.kInput), &short_stale_midi1_list));
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 0), short_stale_midi1[0].pId);
 }
 
 test "midi 2 mapping clamps inflated assignment counts" {
