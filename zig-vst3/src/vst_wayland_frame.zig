@@ -20,10 +20,7 @@ pub fn WaylandHost(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *iwaylandframe.IWaylandHost = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, iwaylandframe.IWaylandHost, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
@@ -93,10 +90,7 @@ pub fn WaylandFrame(comptime Config: type) type {
             self.last_parent_rect = rect.*;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *iwaylandframe.IWaylandFrame = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, iwaylandframe.IWaylandFrame, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{

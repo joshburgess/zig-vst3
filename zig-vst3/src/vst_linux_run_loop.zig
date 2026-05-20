@@ -20,10 +20,7 @@ pub fn EventHandler(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *Linux.IEventHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, Linux.IEventHandler, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
@@ -71,10 +68,7 @@ pub fn TimerHandler(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *Linux.ITimerHandler = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, Linux.ITimerHandler, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
@@ -174,10 +168,7 @@ pub fn RunLoop(comptime max_event_handlers: usize, comptime max_timer_handlers: 
             return types.kResultFalse;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *Linux.IRunLoop = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, Linux.IRunLoop, "iface");
 
         fn findEventEntry(self: *Self, handler: *Linux.IEventHandler) ?*EventEntry {
             for (&self.event_handlers) |*entry| {
