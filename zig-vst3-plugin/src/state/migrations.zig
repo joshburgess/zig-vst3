@@ -58,8 +58,11 @@ fn migrationTargetsAreAmbiguous(
     right: ParameterIdMigration,
     migrations: []const ParameterIdMigration,
 ) bool {
-    return migratedParameterId(left.old_id, migrations) == migratedParameterId(right.old_id, migrations) and
-        !migrationIdsShareChain(left.old_id, right.old_id, migrations);
+    const same_resolved_target = migratedParameterId(left.old_id, migrations) == migratedParameterId(right.old_id, migrations);
+    if (!same_resolved_target) return false;
+
+    const same_chain = migrationIdsShareChain(left.old_id, right.old_id, migrations);
+    return !same_chain;
 }
 
 fn migrationIdsShareChain(left_id: u32, right_id: u32, migrations: []const ParameterIdMigration) bool {
