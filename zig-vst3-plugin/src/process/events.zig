@@ -194,6 +194,26 @@ const IndexedEvent = struct {
     index: usize,
 };
 
+fn eventBefore(candidate: Event, current: Event) bool {
+    return candidate.sample_offset < current.sample_offset;
+}
+
+fn eventAtOrAfter(candidate: Event, current: Event) bool {
+    return candidate.sample_offset >= current.sample_offset;
+}
+
+fn indexedEventBefore(candidate: IndexedEvent, current: IndexedEvent) bool {
+    return eventBefore(candidate.item, current.item) or
+        (candidate.item.sample_offset == current.item.sample_offset and candidate.index < current.index);
+}
+
+fn indexedEventAfterCursor(item: Event, index: usize, last_offset: ?usize, last_index: usize) bool {
+    const offset = last_offset orelse return true;
+    if (item.sample_offset < offset) return false;
+    if (item.sample_offset == offset and index <= last_index) return false;
+    return true;
+}
+
 const BusChannel = struct {
     bus_index: i32,
     channel: i16,
@@ -245,7 +265,7 @@ fn firstMatchingEvent(items: []const Event, context: anytype, comptime matches: 
     for (items) |item| {
         if (!matches(item, context)) continue;
         if (result) |current| {
-            if (item.sample_offset < current.sample_offset) result = item;
+            if (eventBefore(item, current)) result = item;
         } else {
             result = item;
         }
@@ -258,7 +278,7 @@ fn latestMatchingEvent(items: []const Event, context: anytype, comptime matches:
     for (items) |item| {
         if (!matches(item, context)) continue;
         if (result) |current| {
-            if (item.sample_offset >= current.sample_offset) result = item;
+            if (eventAtOrAfter(item, current)) result = item;
         } else {
             result = item;
         }
@@ -309,17 +329,12 @@ fn nextMatchingEvent(items: []const Event, last_offset: ?usize, last_index: usiz
     var result: ?IndexedEvent = null;
     for (items, 0..) |item, index| {
         if (!matches(item, context)) continue;
-        if (last_offset) |offset| {
-            if (item.sample_offset < offset) continue;
-            if (item.sample_offset == offset and index <= last_index) continue;
-        }
-        const replace = if (result) |current|
-            item.sample_offset < current.item.sample_offset or
-                (item.sample_offset == current.item.sample_offset and index < current.index)
-        else
-            true;
-        if (replace) {
-            result = .{ .item = item, .index = index };
+        if (!indexedEventAfterCursor(item, index, last_offset, last_index)) continue;
+        const candidate = IndexedEvent{ .item = item, .index = index };
+        if (result) |current| {
+            if (indexedEventBefore(candidate, current)) result = candidate;
+        } else {
+            result = candidate;
         }
     }
     return result;
