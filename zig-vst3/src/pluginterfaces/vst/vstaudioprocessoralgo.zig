@@ -5,6 +5,8 @@ const events = @import("ivstevents.zig");
 const parameter_changes = @import("ivstparameterchanges.zig");
 const vsttypes = @import("vsttypes.zig");
 
+pub const max_supported_channels: base.int32 = 64;
+
 pub fn getChannelBuffersPointer(
     process_setup: *const audio_processor.ProcessSetup,
     buffers: *const audio_processor.AudioBusBuffers,
@@ -34,7 +36,7 @@ pub fn getSampleFramesSizeInBytes(
 }
 
 pub fn getChannelMask(num_channels: base.int32) base.uint64 {
-    if (num_channels >= 64) return @as(base.uint64, 0xFFFFFFFFFFFFFFFF);
+    if (num_channels >= max_supported_channels) return @as(base.uint64, 0xFFFFFFFFFFFFFFFF);
     if (num_channels <= 0) return 0;
     return (@as(base.uint64, 1) << @intCast(num_channels)) - 1;
 }
@@ -43,6 +45,15 @@ fn sampleRangeEnd(sample_count: base.int32, start_index: base.int32) ?base.int32
     if (sample_count <= 0 or start_index < 0) return null;
     const end = @addWithOverflow(start_index, sample_count);
     return if (end[1] == 0) end[0] else null;
+}
+
+fn channelCount(count: base.int32) base.int32 {
+    if (count <= 0) return 0;
+    return @min(count, max_supported_channels);
+}
+
+fn pairedChannelCount(first: base.int32, second: base.int32) base.int32 {
+    return @min(channelCount(first), channelCount(second));
 }
 
 pub fn copy32(
@@ -56,7 +67,7 @@ pub fn copy32(
     const dest_buffer = dest orelse return;
     const src_channels = src_buffer.channelBuffers.channelBuffers32 orelse return;
     const dest_channels = dest_buffer.channelBuffers.channelBuffers32 orelse return;
-    const num_channels = @min(src_buffer.numChannels, dest_buffer.numChannels);
+    const num_channels = pairedChannelCount(src_buffer.numChannels, dest_buffer.numChannels);
     var channel: base.int32 = 0;
     while (channel < num_channels) : (channel += 1) {
         const src_channel = src_channels[@intCast(channel)];
@@ -79,7 +90,7 @@ pub fn copy64(
     const dest_buffer = dest orelse return;
     const src_channels = src_buffer.channelBuffers.channelBuffers64 orelse return;
     const dest_channels = dest_buffer.channelBuffers.channelBuffers64 orelse return;
-    const num_channels = @min(src_buffer.numChannels, dest_buffer.numChannels);
+    const num_channels = pairedChannelCount(src_buffer.numChannels, dest_buffer.numChannels);
     var channel: base.int32 = 0;
     while (channel < num_channels) : (channel += 1) {
         const src_channel = src_channels[@intCast(channel)];
@@ -99,7 +110,8 @@ pub fn clear32(audio_bus_buffers: ?[*]audio_processor.AudioBusBuffers, sample_co
         const audio_buffer = &buses[@intCast(bus)];
         const channels = audio_buffer.channelBuffers.channelBuffers32 orelse continue;
         var channel: base.int32 = 0;
-        while (channel < audio_buffer.numChannels) : (channel += 1) {
+        const num_channels = channelCount(audio_buffer.numChannels);
+        while (channel < num_channels) : (channel += 1) {
             const channel_buffer = channels[@intCast(channel)];
             var sample: base.int32 = 0;
             while (sample < sample_count) : (sample += 1) {
@@ -117,7 +129,8 @@ pub fn clear64(audio_bus_buffers: ?[*]audio_processor.AudioBusBuffers, sample_co
         const audio_buffer = &buses[@intCast(bus)];
         const channels = audio_buffer.channelBuffers.channelBuffers64 orelse continue;
         var channel: base.int32 = 0;
-        while (channel < audio_buffer.numChannels) : (channel += 1) {
+        const num_channels = channelCount(audio_buffer.numChannels);
+        while (channel < num_channels) : (channel += 1) {
             const channel_buffer = channels[@intCast(channel)];
             var sample: base.int32 = 0;
             while (sample < sample_count) : (sample += 1) {
@@ -131,7 +144,7 @@ pub fn mix32(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.Audio
     if (sample_count <= 0) return;
     const src_channels = src.channelBuffers.channelBuffers32 orelse return;
     const dest_channels = dest.channelBuffers.channelBuffers32 orelse return;
-    const num_channels = @min(src.numChannels, dest.numChannels);
+    const num_channels = pairedChannelCount(src.numChannels, dest.numChannels);
     var channel: base.int32 = 0;
     while (channel < num_channels) : (channel += 1) {
         const src_channel = src_channels[@intCast(channel)];
@@ -147,7 +160,7 @@ pub fn mix64(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.Audio
     if (sample_count <= 0) return;
     const src_channels = src.channelBuffers.channelBuffers64 orelse return;
     const dest_channels = dest.channelBuffers.channelBuffers64 orelse return;
-    const num_channels = @min(src.numChannels, dest.numChannels);
+    const num_channels = pairedChannelCount(src.numChannels, dest.numChannels);
     var channel: base.int32 = 0;
     while (channel < num_channels) : (channel += 1) {
         const src_channel = src_channels[@intCast(channel)];
@@ -163,7 +176,7 @@ pub fn multiply32(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.
     if (sample_count <= 0) return;
     const src_channels = src.channelBuffers.channelBuffers32 orelse return;
     const dest_channels = dest.channelBuffers.channelBuffers32 orelse return;
-    const num_channels = @min(src.numChannels, dest.numChannels);
+    const num_channels = pairedChannelCount(src.numChannels, dest.numChannels);
     var channel: base.int32 = 0;
     while (channel < num_channels) : (channel += 1) {
         const src_channel = src_channels[@intCast(channel)];
@@ -179,7 +192,7 @@ pub fn multiply64(src: *audio_processor.AudioBusBuffers, dest: *audio_processor.
     if (sample_count <= 0) return;
     const src_channels = src.channelBuffers.channelBuffers64 orelse return;
     const dest_channels = dest.channelBuffers.channelBuffers64 orelse return;
-    const num_channels = @min(src.numChannels, dest.numChannels);
+    const num_channels = pairedChannelCount(src.numChannels, dest.numChannels);
     var channel: base.int32 = 0;
     while (channel < num_channels) : (channel += 1) {
         const src_channel = src_channels[@intCast(channel)];
@@ -195,7 +208,8 @@ pub fn isSilent32(audio_buffer: *audio_processor.AudioBusBuffers, sample_count: 
     const end = sampleRangeEnd(sample_count, start_index) orelse return true;
     const channels = audio_buffer.channelBuffers.channelBuffers32 orelse return true;
     var channel: base.int32 = 0;
-    while (channel < audio_buffer.numChannels) : (channel += 1) {
+    const num_channels = channelCount(audio_buffer.numChannels);
+    while (channel < num_channels) : (channel += 1) {
         const channel_buffer = channels[@intCast(channel)];
         var sample = start_index;
         while (sample < end) : (sample += 1) {
@@ -209,7 +223,8 @@ pub fn isSilent64(audio_buffer: *audio_processor.AudioBusBuffers, sample_count: 
     const end = sampleRangeEnd(sample_count, start_index) orelse return true;
     const channels = audio_buffer.channelBuffers.channelBuffers64 orelse return true;
     var channel: base.int32 = 0;
-    while (channel < audio_buffer.numChannels) : (channel += 1) {
+    const num_channels = channelCount(audio_buffer.numChannels);
+    while (channel < num_channels) : (channel += 1) {
         const channel_buffer = channels[@intCast(channel)];
         var sample = start_index;
         while (sample < end) : (sample += 1) {
@@ -328,6 +343,15 @@ test "audio processor helpers match expected core behavior" {
     try @import("std").testing.expectEqual(@as(base.uint32, 64), getSampleFramesSizeInBytes(&setup64, 8));
     try @import("std").testing.expectEqual(@as(base.uint64, 0x3f), getChannelMask(6));
     try @import("std").testing.expectEqual(@as(base.uint64, 0xFFFFFFFFFFFFFFFF), getChannelMask(64));
+}
+
+test "audio processor helpers clamp channel counts to supported range" {
+    try std.testing.expectEqual(@as(base.int32, 0), channelCount(-1));
+    try std.testing.expectEqual(@as(base.int32, 0), channelCount(0));
+    try std.testing.expectEqual(@as(base.int32, 2), channelCount(2));
+    try std.testing.expectEqual(max_supported_channels, channelCount(max_supported_channels + 1));
+    try std.testing.expectEqual(@as(base.int32, 2), pairedChannelCount(2, max_supported_channels + 1));
+    try std.testing.expectEqual(@as(base.int32, 0), pairedChannelCount(-1, max_supported_channels + 1));
 }
 
 test "audio processor buffer helpers ignore invalid ranges" {
