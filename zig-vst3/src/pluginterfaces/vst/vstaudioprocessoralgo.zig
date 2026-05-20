@@ -220,6 +220,15 @@ pub fn isSilent64(audio_buffer: *audio_processor.AudioBusBuffers, sample_count: 
 }
 
 pub fn forEachEvent(event_list: ?*events.IEventList, context: anytype, comptime callback: anytype) void {
+    forEachEventUntil(event_list, context, struct {
+        fn next(inner_context: @TypeOf(context), event: *const events.Event) bool {
+            callback(inner_context, event);
+            return true;
+        }
+    }.next);
+}
+
+pub fn forEachEventUntil(event_list: ?*events.IEventList, context: anytype, comptime callback: anytype) void {
     const list = event_list orelse return;
     const event_count = list.vtable.getEventCount(list);
     var event_index: base.int32 = 0;
@@ -228,11 +237,20 @@ pub fn forEachEvent(event_list: ?*events.IEventList, context: anytype, comptime 
         const result = list.vtable.getEvent(list, event_index, &event);
         if (result == base.kInvalidArgument) break;
         if (result != base.kResultOk) continue;
-        callback(context, &event);
+        if (!callback(context, &event)) break;
     }
 }
 
 pub fn forEachParamValueQueue(param_queue: *parameter_changes.IParamValueQueue, context: anytype, comptime callback: anytype) void {
+    forEachParamValueQueueUntil(param_queue, context, struct {
+        fn next(inner_context: @TypeOf(context), param_id: vsttypes.ParamID, sample_offset: base.int32, value: vsttypes.ParamValue) bool {
+            callback(inner_context, param_id, sample_offset, value);
+            return true;
+        }
+    }.next);
+}
+
+pub fn forEachParamValueQueueUntil(param_queue: *parameter_changes.IParamValueQueue, context: anytype, comptime callback: anytype) void {
     const param_id = param_queue.vtable.getParameterId(param_queue);
     const num_points = param_queue.vtable.getPointCount(param_queue);
     var point_index: base.int32 = 0;
@@ -242,7 +260,7 @@ pub fn forEachParamValueQueue(param_queue: *parameter_changes.IParamValueQueue, 
         const result = param_queue.vtable.getPoint(param_queue, point_index, &sample_offset, &value);
         if (result == base.kInvalidArgument) break;
         if (result != base.kResultOk) continue;
-        callback(context, param_id, sample_offset, value);
+        if (!callback(context, param_id, sample_offset, value)) break;
     }
 }
 
@@ -258,12 +276,21 @@ pub fn forEachLastParamValueQueue(param_queue: *parameter_changes.IParamValueQue
 }
 
 pub fn forEachParameterChanges(changes: ?*parameter_changes.IParameterChanges, context: anytype, comptime callback: anytype) void {
+    forEachParameterChangesUntil(changes, context, struct {
+        fn next(inner_context: @TypeOf(context), param_queue: *parameter_changes.IParamValueQueue) bool {
+            callback(inner_context, param_queue);
+            return true;
+        }
+    }.next);
+}
+
+pub fn forEachParameterChangesUntil(changes: ?*parameter_changes.IParameterChanges, context: anytype, comptime callback: anytype) void {
     const parameter_changes_list = changes orelse return;
     const param_count = parameter_changes_list.vtable.getParameterCount(parameter_changes_list);
     var param_index: base.int32 = 0;
     while (param_index < param_count) : (param_index += 1) {
         const param_queue = parameter_changes_list.vtable.getParameterData(parameter_changes_list, param_index) orelse continue;
-        callback(context, param_queue);
+        if (!callback(context, param_queue)) break;
     }
 }
 
@@ -453,6 +480,25 @@ test "audio processor helper stops event iteration at invalid reported boundary"
     try std.testing.expectEqual(@as(usize, 2), list.read_count);
 }
 
+test "audio processor helper can stop event iteration from callback" {
+    const event_items = [_]events.Event{
+        .{ .sampleOffset = 1, .type = @intFromEnum(events.Event.EventTypes.kNoteOnEvent) },
+        .{ .sampleOffset = 2, .type = @intFromEnum(events.Event.EventTypes.kNoteOffEvent) },
+    };
+    var list = TestEventList.init(&event_items, null);
+    var collector = EventCollector{};
+
+    forEachEventUntil(&list.iface, &collector, struct {
+        fn next(context: *EventCollector, event: *const events.Event) bool {
+            collectEvent(context, event);
+            return false;
+        }
+    }.next);
+
+    try std.testing.expectEqual(@as(usize, 1), collector.count);
+    try std.testing.expectEqual(@as(usize, 1), list.read_count);
+}
+
 test "audio processor helper stops parameter point iteration at invalid reported boundary" {
     const points = [_]TestParamPoint{
         .{ .sample_offset = 2, .value = 0.25 },
@@ -469,6 +515,26 @@ test "audio processor helper stops parameter point iteration at invalid reported
     try std.testing.expectEqual(@as(base.int32, 6), collector.last_sample_offset);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), collector.last_param_value);
     try std.testing.expectEqual(@as(usize, 3), queue.read_count);
+}
+
+test "audio processor helper can stop parameter point iteration from callback" {
+    const points = [_]TestParamPoint{
+        .{ .sample_offset = 2, .value = 0.25 },
+        .{ .sample_offset = 6, .value = 0.75 },
+    };
+    var queue = TestParamValueQueue.init(11, &points);
+    var collector = EventCollector{};
+
+    forEachParamValueQueueUntil(&queue.iface, &collector, struct {
+        fn next(context: *EventCollector, param_id: vsttypes.ParamID, sample_offset: base.int32, value: vsttypes.ParamValue) bool {
+            collectParamValue(context, param_id, sample_offset, value);
+            return false;
+        }
+    }.next);
+
+    try std.testing.expectEqual(@as(usize, 1), collector.count);
+    try std.testing.expectEqual(@as(base.int32, 2), collector.last_sample_offset);
+    try std.testing.expectEqual(@as(usize, 1), queue.read_count);
 }
 
 test "audio processor helper keeps SDK-compatible sparse parameter queue iteration" {
@@ -495,6 +561,30 @@ test "audio processor helper keeps SDK-compatible sparse parameter queue iterati
     try std.testing.expectEqual(@as(base.int32, 6), collector.last_sample_offset);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.75), collector.last_param_value);
     try std.testing.expectEqual(@as(usize, 3), changes.read_count);
+}
+
+test "audio processor helper can stop parameter queue iteration from callback" {
+    const first_points = [_]TestParamPoint{.{ .sample_offset = 2, .value = 0.25 }};
+    const second_points = [_]TestParamPoint{.{ .sample_offset = 6, .value = 0.75 }};
+    var first_queue = TestParamValueQueue.init(11, &first_points);
+    var second_queue = TestParamValueQueue.init(13, &second_points);
+    var queues = [_]?*parameter_changes.IParamValueQueue{
+        &first_queue.iface,
+        &second_queue.iface,
+    };
+    var changes = TestParameterChanges.init(&queues);
+    var collector = EventCollector{};
+
+    forEachParameterChangesUntil(&changes.iface, &collector, struct {
+        fn next(context: *EventCollector, queue: *parameter_changes.IParamValueQueue) bool {
+            collectLastParamQueue(context, queue);
+            return false;
+        }
+    }.next);
+
+    try std.testing.expectEqual(@as(usize, 1), collector.count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 11), collector.last_param_id);
+    try std.testing.expectEqual(@as(usize, 1), changes.read_count);
 }
 
 test "audio processor helper skips empty last parameter queues" {

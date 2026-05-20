@@ -437,7 +437,7 @@ pub fn collectInputParameterChanges(data: *ivstaudioprocessor.ProcessData, stora
         .storage = storage,
         .frame_count = frameCountOrZero(data),
     };
-    audio_processor_algo.forEachParameterChanges(data.inputParameterChanges, &collector, collectParameterQueue);
+    audio_processor_algo.forEachParameterChangesUntil(data.inputParameterChanges, &collector, collectParameterQueue);
     return plug.process.ParameterChanges.init(storage[0..collector.count], collector.frame_count) catch .{};
 }
 
@@ -446,7 +446,7 @@ pub fn collectInputEvents(data: *ivstaudioprocessor.ProcessData, storage: []plug
         .storage = storage,
         .frame_count = frameCountOrZero(data),
     };
-    audio_processor_algo.forEachEvent(data.inputEvents, &collector, collectEvent);
+    audio_processor_algo.forEachEventUntil(data.inputEvents, &collector, collectEvent);
     return plug.process.Events.init(storage[0..collector.count], collector.frame_count) catch .{};
 }
 
@@ -776,6 +776,10 @@ const ParameterChangeCollector = struct {
         self.count +|= 1;
         return true;
     }
+
+    fn hasCapacity(self: *const ParameterChangeCollector) bool {
+        return self.count < self.storage.len;
+    }
 };
 
 const EventCollector = struct {
@@ -791,22 +795,23 @@ const EventCollector = struct {
     }
 };
 
-fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *ivstparameterchanges.IParamValueQueue) void {
-    audio_processor_algo.forEachParamValueQueue(queue, collector, collectParameterPoint);
+fn collectParameterQueue(collector: *ParameterChangeCollector, queue: *ivstparameterchanges.IParamValueQueue) bool {
+    audio_processor_algo.forEachParamValueQueueUntil(queue, collector, collectParameterPoint);
+    return collector.hasCapacity();
 }
 
-fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.ParamID, sample_offset: types.int32, value: vsttypes.ParamValue) void {
-    const offset = sampleOffsetInBlock(sample_offset, collector.frame_count) orelse return;
-    if (!isNormalizedValue(value)) return;
-    _ = collector.append(.{
+fn collectParameterPoint(collector: *ParameterChangeCollector, id: vsttypes.ParamID, sample_offset: types.int32, value: vsttypes.ParamValue) bool {
+    const offset = sampleOffsetInBlock(sample_offset, collector.frame_count) orelse return true;
+    if (!isNormalizedValue(value)) return true;
+    return collector.append(.{
         .id = id,
         .sample_offset = offset,
         .normalized = value,
     });
 }
 
-fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void {
-    const offset = sampleOffsetInBlock(event.sampleOffset, collector.frame_count) orelse return;
+fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) bool {
+    const offset = sampleOffsetInBlock(event.sampleOffset, collector.frame_count) orelse return true;
     const converted: ?plug.process.Event = switch (event.type) {
         @intFromEnum(ivstevents.Event.EventTypes.kNoteOnEvent) => if (isNormalizedValue(event.data.noteOn.velocity))
             plug.process.Event.noteOn(offset, event.data.noteOn.channel, event.data.noteOn.pitch, event.data.noteOn.velocity).withBusIndex(event.busIndex)
@@ -833,9 +838,9 @@ fn collectEvent(collector: *EventCollector, event: *const ivstevents.Event) void
         @intFromEnum(ivstevents.Event.EventTypes.kNoteExpressionTextEvent) => plug.process.Event.noteExpressionText(offset, event.data.noteExpressionText.noteId, event.data.noteExpressionText.typeId).withBusIndex(event.busIndex),
         else => plug.process.Event.other(offset).withBusIndex(event.busIndex),
     };
-    const output = converted orelse return;
-    output.validate(collector.frame_count) catch return;
-    _ = collector.append(output);
+    const output = converted orelse return true;
+    output.validate(collector.frame_count) catch return true;
+    return collector.append(output);
 }
 
 fn collectLegacyMidiCcEvent(event: *const ivstevents.Event, offset: usize) plug.process.Event {
