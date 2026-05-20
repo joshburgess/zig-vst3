@@ -23,6 +23,10 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
 
     return extern struct {
         const Self = @This();
+        const ByteRange = struct {
+            start: usize,
+            len: usize,
+        };
 
         iface: ibstream.IBStream = .{ .vtable = &stream_vtable },
         sizeable_iface: ibstream.ISizeableStream = .{ .vtable = &sizeable_vtable },
@@ -56,26 +60,20 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return @min(self.write_limit, capacity);
         }
 
-        fn readableBytes(self: *const Self) usize {
-            const len = self.boundedLen();
-            const pos = @min(self.pos, len);
-            return len - pos;
-        }
-
-        fn writableBytes(self: *const Self) usize {
-            return self.boundedWriteLimit() -| self.boundedPos();
+        fn boundedRange(position: usize, limit: usize, requested: usize) ?ByteRange {
+            if (position > capacity or position > limit) return null;
+            if (requested > limit - position) return null;
+            return .{ .start = position, .len = requested };
         }
 
         fn readableSlice(self: *const Self, requested: usize) ?[]const u8 {
-            if (self.pos > self.boundedLen()) return null;
-            if (requested > self.readableBytes()) return null;
-            return self.bytes[self.pos..][0..requested];
+            const range = boundedRange(self.pos, self.boundedLen(), requested) orelse return null;
+            return self.bytes[range.start..][0..range.len];
         }
 
         fn writableSlice(self: *Self, requested: usize) ?[]u8 {
-            if (self.pos > capacity or self.pos > self.boundedWriteLimit()) return null;
-            if (requested > self.writableBytes()) return null;
-            return self.bytes[self.pos..][0..requested];
+            const range = boundedRange(self.pos, self.boundedWriteLimit(), requested) orelse return null;
+            return self.bytes[range.start..][0..range.len];
         }
 
         fn seekTarget(base: usize, offset: types.int64) ?types.int64 {
@@ -552,6 +550,56 @@ test "fixed buffer stream failed IO preserves cursor" {
     try std.testing.expectEqual(@as(types.int32, 0), count);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.tell(iface, &pos));
     try std.testing.expectEqual(@as(types.int64, 0), pos);
+}
+
+test "fixed buffer stream generated IO bounds match visible buffer limits" {
+    const Stream = FixedBufferStream(4);
+    const positions = [_]usize{ 0, 1, 3, 4, 5 };
+    const lengths = [_]usize{ 0, 1, 3, 4, 5 };
+    const requests = [_]types.int32{ 0, 1, 2, 4 };
+    var input = [_]u8{ 9, 8, 7, 6 };
+
+    for (positions) |position| {
+        for (lengths) |length| {
+            for (requests) |request| {
+                var stream = Stream{
+                    .bytes = [_]u8{ 1, 2, 3, 4 },
+                    .len = length,
+                    .pos = position,
+                };
+                const iface = stream.asStream();
+                var output = [_]u8{0} ** 4;
+                var count: types.int32 = -1;
+                const visible_len = @min(length, stream.bytes.len);
+                const readable = position <= visible_len and @as(usize, @intCast(request)) <= visible_len - position;
+                const expected = if (readable) types.kResultOk else types.kResultFalse;
+
+                try std.testing.expectEqual(expected, iface.vtable.read(iface, &output, request, &count));
+                try std.testing.expectEqual(if (readable) request else 0, count);
+                try std.testing.expectEqual(if (readable) position + @as(usize, @intCast(request)) else position, stream.pos);
+            }
+        }
+    }
+
+    for (positions) |position| {
+        for (lengths) |write_limit| {
+            for (requests) |request| {
+                var stream = Stream{
+                    .pos = position,
+                    .write_limit = write_limit,
+                };
+                const iface = stream.asStream();
+                var count: types.int32 = -1;
+                const visible_limit = @min(write_limit, stream.bytes.len);
+                const writable = position <= visible_limit and @as(usize, @intCast(request)) <= visible_limit - position;
+                const expected = if (writable) types.kResultOk else types.kResultFalse;
+
+                try std.testing.expectEqual(expected, iface.vtable.write(iface, &input, request, &count));
+                try std.testing.expectEqual(if (writable) request else 0, count);
+                try std.testing.expectEqual(if (writable) position + @as(usize, @intCast(request)) else position, stream.pos);
+            }
+        }
+    }
 }
 
 test "fixed buffer stream clamps corrupted cursors and sizes" {
