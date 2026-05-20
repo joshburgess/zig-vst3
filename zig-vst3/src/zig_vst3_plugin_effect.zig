@@ -33,6 +33,7 @@ const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
 const vst_component_handler = @import("vst_component_handler.zig");
 const vst_index = @import("vst_index.zig");
+const vst_message = @import("vst_message.zig");
 const vst_parameter_changes = @import("vst_parameter_changes.zig");
 const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_bridge = @import("zig_vst3_plugin_bridge.zig");
@@ -1156,6 +1157,44 @@ test "reflected edit controller releases replaced unit handler extensions" {
     try std.testing.expectEqual(types.kResultFalse, TestController.notifyUnitByBusChange());
 }
 
+test "reflected edit controller releases replaced connection peers" {
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "ConnectionLifecycleController";
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+    });
+    const Peer = vst_message.ConnectionPoint(struct {});
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    try std.testing.expect(controller_out != null);
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.queryInterface(controller_iface, &ivstmessage.iconnection_point_iid, &connection_out));
+    try std.testing.expect(connection_out != null);
+    const connection: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(connection_out.?));
+    defer _ = connection.vtable.release(connection);
+
+    var first = Peer{};
+    var second = Peer{};
+
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.connect(connection, first.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), first.add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), first.release_count);
+
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.connect(connection, second.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), first.release_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), second.add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), second.release_count);
+
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.disconnect(connection, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), second.release_count);
+}
+
 test "reflected edit controller exposes configured units and programs" {
     const programs = [_]plug_core.units.Program{
         .{ .name = "Clean", .info = &.{.{ .key = "category", .value = "Clean" }} },
@@ -1615,6 +1654,57 @@ test "simple stereo effect ignores parameter changes when process data is malfor
     try std.testing.expectEqual(@as(usize, 0), malformed_process_apply_count);
     try std.testing.expectEqual(@as(usize, 0), malformed_process_last_change_count);
     try std.testing.expectEqualSlices(f32, &.{ 9.0, 9.0 }, &output_samples);
+}
+
+test "simple stereo effect releases replaced connection peers" {
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const TestEffect = SimpleStereoEffect(struct {
+        pub const component_name = "ConnectionLifecycleComponent";
+        pub const controller_cid = tuid.inlineUid(0x12345678, 0x12345678, 0x12345678, 0x12345678);
+        pub const Processor = struct {
+            pub fn process(_: @This(), comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+                _ = context;
+            }
+        };
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+        pub fn readState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultOk;
+        }
+        pub fn writeState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultOk;
+        }
+        pub fn applyParameterChanges(_: plug_process.ParameterChanges) void {}
+    });
+    const Peer = vst_message.ConnectionPoint(struct {});
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestEffect.create(@ptrCast(&ivstcomponent.icomponent_iid), &component_out));
+    try std.testing.expect(component_out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(component_out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.queryInterface(component_iface, &ivstmessage.iconnection_point_iid, &connection_out));
+    try std.testing.expect(connection_out != null);
+    const connection: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(connection_out.?));
+    defer _ = connection.vtable.release(connection);
+
+    var first = Peer{};
+    var second = Peer{};
+
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.connect(connection, first.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), first.add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), first.release_count);
+
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.connect(connection, second.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), first.release_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), second.add_ref_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), second.release_count);
+
+    try std.testing.expectEqual(types.kResultOk, connection.vtable.disconnect(connection, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), second.release_count);
 }
 
 pub fn SimpleStereoEffect(comptime Config: type) type {
