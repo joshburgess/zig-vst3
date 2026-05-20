@@ -684,6 +684,131 @@ test "plugin instance applies program parameter snapshots" {
     try std.testing.expectEqual(@as(f64, 0.75), instance.loadParameterNormalized("gain"));
 }
 
+test "plugin instance unit program accessors mirror unit set selectors" {
+    const programs = [_]units_api.Program{
+        .{
+            .name = "Init",
+            .parameters = &.{
+                .{ .parameter_id = 1, .normalized = 0.25 },
+                .{ .parameter_id = 2, .normalized = 0.50 },
+            },
+            .info = &.{
+                .{ .key = "category", .value = "Clean" },
+                .{ .key = "author", .value = "Factory" },
+            },
+        },
+        .{
+            .name = "Bright",
+            .parameters = &.{.{ .parameter_id = 1, .normalized = 0.75 }},
+            .info = &.{.{ .key = "category", .value = "Lead" }},
+        },
+    };
+    const Synth = struct {
+        pub const name = "Selector Mirror";
+        pub const vendor = "zig-vst3";
+        pub const units = units_api.Config{
+            .units = &.{
+                units_api.Unit.root("Root"),
+                .{ .id = 1, .name = "Voice", .parent_id = units_api.root_unit_id, .program_list_id = 7 },
+            },
+            .program_lists = &.{.{ .id = 7, .name = "Voice Programs", .programs = &programs }},
+        };
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 1.0),
+            mix: parameters.FloatParam = parameters.FloatParam.init(2, "Mix", 0.0, 1.0, 0.5),
+        };
+    };
+    const instance = try PluginInstance(Synth).init(std.testing.allocator, .{});
+    const source = instance.spec.units;
+    const list_id: i32 = 7;
+    const list_name = "Voice Programs";
+    const unit_id: i32 = 1;
+    const unit_name = "Voice";
+    const program_names = [_][]const u8{ "Init", "Bright", "Missing" };
+    const parameter_ids = [_]u32{ 1, 2, 99 };
+    const info_keys = [_][]const u8{ "category", "author", "missing" };
+
+    for (0..programs.len + 1) |program_index| {
+        try std.testing.expectEqual(source.programName(list_id, program_index), instance.programName(list_id, program_index));
+        try std.testing.expectEqual(source.programNameByListName(list_name, program_index), instance.programNameByListName(list_name, program_index));
+        try std.testing.expectEqual(source.programNameForUnit(unit_id, program_index), instance.programNameForUnit(unit_id, program_index));
+        try std.testing.expectEqual(source.programNameForUnitName(unit_name, program_index), instance.programNameForUnitName(unit_name, program_index));
+        try std.testing.expectEqual(source.program(list_id, program_index), instance.program(list_id, program_index));
+        try std.testing.expectEqual(source.programByListName(list_name, program_index), instance.programByListName(list_name, program_index));
+        try std.testing.expectEqual(source.programForUnit(unit_id, program_index), instance.programForUnit(unit_id, program_index));
+        try std.testing.expectEqual(source.programForUnitName(unit_name, program_index), instance.programForUnitName(unit_name, program_index));
+
+        for (0..3) |parameter_index| {
+            try std.testing.expectEqual(source.programParameter(list_id, program_index, parameter_index), instance.programParameter(list_id, program_index, parameter_index));
+            try std.testing.expectEqual(source.programParameterByListName(list_name, program_index, parameter_index), instance.programParameterByListName(list_name, program_index, parameter_index));
+            try std.testing.expectEqual(source.programParameterForUnit(unit_id, program_index, parameter_index), instance.programParameterForUnit(unit_id, program_index, parameter_index));
+            try std.testing.expectEqual(source.programParameterForUnitName(unit_name, program_index, parameter_index), instance.programParameterForUnitName(unit_name, program_index, parameter_index));
+        }
+
+        for (parameter_ids) |parameter_id| {
+            try std.testing.expectEqual(source.programParameterById(list_id, program_index, parameter_id), instance.programParameterById(list_id, program_index, parameter_id));
+            try std.testing.expectEqual(source.programParameterByIdForListName(list_name, program_index, parameter_id), instance.programParameterByIdForListName(list_name, program_index, parameter_id));
+            try std.testing.expectEqual(source.programParameterByIdForUnit(unit_id, program_index, parameter_id), instance.programParameterByIdForUnit(unit_id, program_index, parameter_id));
+            try std.testing.expectEqual(source.programParameterByIdForUnitName(unit_name, program_index, parameter_id), instance.programParameterByIdForUnitName(unit_name, program_index, parameter_id));
+            try std.testing.expectEqual(source.programParameterIndexOfId(list_id, program_index, parameter_id), instance.programParameterIndexOfId(list_id, program_index, parameter_id));
+            try std.testing.expectEqual(source.programParameterIndexOfIdByListName(list_name, program_index, parameter_id), instance.programParameterIndexOfIdByListName(list_name, program_index, parameter_id));
+            try std.testing.expectEqual(source.programParameterIndexOfIdForUnit(unit_id, program_index, parameter_id), instance.programParameterIndexOfIdForUnit(unit_id, program_index, parameter_id));
+            try std.testing.expectEqual(source.programParameterIndexOfIdForUnitName(unit_name, program_index, parameter_id), instance.programParameterIndexOfIdForUnitName(unit_name, program_index, parameter_id));
+        }
+
+        for (0..3) |info_index| {
+            try std.testing.expectEqual(source.programInfoEntry(list_id, program_index, info_index), instance.programInfoEntry(list_id, program_index, info_index));
+            try std.testing.expectEqual(source.programInfoEntryByListName(list_name, program_index, info_index), instance.programInfoEntryByListName(list_name, program_index, info_index));
+            try std.testing.expectEqual(source.programInfoEntryForUnit(unit_id, program_index, info_index), instance.programInfoEntryForUnit(unit_id, program_index, info_index));
+            try std.testing.expectEqual(source.programInfoEntryForUnitName(unit_name, program_index, info_index), instance.programInfoEntryForUnitName(unit_name, program_index, info_index));
+        }
+
+        for (info_keys) |key| {
+            try std.testing.expectEqual(source.programInfo(list_id, program_index, key), instance.programInfo(list_id, program_index, key));
+            try std.testing.expectEqual(source.programInfoByListName(list_name, program_index, key), instance.programInfoByListName(list_name, program_index, key));
+            try std.testing.expectEqual(source.programInfoForUnit(unit_id, program_index, key), instance.programInfoForUnit(unit_id, program_index, key));
+            try std.testing.expectEqual(source.programInfoForUnitName(unit_name, program_index, key), instance.programInfoForUnitName(unit_name, program_index, key));
+            try std.testing.expectEqual(source.programInfoEntryByKey(list_id, program_index, key), instance.programInfoEntryByKey(list_id, program_index, key));
+            try std.testing.expectEqual(source.programInfoEntryByKeyByListName(list_name, program_index, key), instance.programInfoEntryByKeyByListName(list_name, program_index, key));
+            try std.testing.expectEqual(source.programInfoEntryByKeyForUnit(unit_id, program_index, key), instance.programInfoEntryByKeyForUnit(unit_id, program_index, key));
+            try std.testing.expectEqual(source.programInfoEntryByKeyForUnitName(unit_name, program_index, key), instance.programInfoEntryByKeyForUnitName(unit_name, program_index, key));
+            try std.testing.expectEqual(source.programInfoIndexOfKey(list_id, program_index, key), instance.programInfoIndexOfKey(list_id, program_index, key));
+            try std.testing.expectEqual(source.programInfoIndexOfKeyByListName(list_name, program_index, key), instance.programInfoIndexOfKeyByListName(list_name, program_index, key));
+            try std.testing.expectEqual(source.programInfoIndexOfKeyForUnit(unit_id, program_index, key), instance.programInfoIndexOfKeyForUnit(unit_id, program_index, key));
+            try std.testing.expectEqual(source.programInfoIndexOfKeyForUnitName(unit_name, program_index, key), instance.programInfoIndexOfKeyForUnitName(unit_name, program_index, key));
+        }
+    }
+
+    for (program_names) |program_name| {
+        try std.testing.expectEqual(source.programByName(list_id, program_name), instance.programByName(list_id, program_name));
+        try std.testing.expectEqual(source.programByNameForListName(list_name, program_name), instance.programByNameForListName(list_name, program_name));
+        try std.testing.expectEqual(source.programByNameForUnit(unit_id, program_name), instance.programByNameForUnit(unit_id, program_name));
+        try std.testing.expectEqual(source.programByNameForUnitName(unit_name, program_name), instance.programByNameForUnitName(unit_name, program_name));
+        try std.testing.expectEqual(source.programIndexOfName(list_id, program_name), instance.programIndexOfName(list_id, program_name));
+        try std.testing.expectEqual(source.programIndexOfNameByListName(list_name, program_name), instance.programIndexOfNameByListName(list_name, program_name));
+        try std.testing.expectEqual(source.programIndexOfNameForUnit(unit_id, program_name), instance.programIndexOfNameForUnit(unit_id, program_name));
+        try std.testing.expectEqual(source.programIndexOfNameForUnitName(unit_name, program_name), instance.programIndexOfNameForUnitName(unit_name, program_name));
+
+        for (parameter_ids) |parameter_id| {
+            try std.testing.expectEqual(source.programParameterByNameAndId(list_id, program_name, parameter_id), instance.programParameterByNameAndId(list_id, program_name, parameter_id));
+            try std.testing.expectEqual(source.programParameterByNameAndIdForListName(list_name, program_name, parameter_id), instance.programParameterByNameAndIdForListName(list_name, program_name, parameter_id));
+            try std.testing.expectEqual(source.programParameterByNameAndIdForUnit(unit_id, program_name, parameter_id), instance.programParameterByNameAndIdForUnit(unit_id, program_name, parameter_id));
+            try std.testing.expectEqual(source.programParameterByNameAndIdForUnitName(unit_name, program_name, parameter_id), instance.programParameterByNameAndIdForUnitName(unit_name, program_name, parameter_id));
+        }
+
+        for (info_keys) |key| {
+            try std.testing.expectEqual(source.programInfoByName(list_id, program_name, key), instance.programInfoByName(list_id, program_name, key));
+            try std.testing.expectEqual(source.programInfoByNameForListName(list_name, program_name, key), instance.programInfoByNameForListName(list_name, program_name, key));
+            try std.testing.expectEqual(source.programInfoByNameForUnit(unit_id, program_name, key), instance.programInfoByNameForUnit(unit_id, program_name, key));
+            try std.testing.expectEqual(source.programInfoByNameForUnitName(unit_name, program_name, key), instance.programInfoByNameForUnitName(unit_name, program_name, key));
+            try std.testing.expectEqual(source.programInfoEntryByNameAndKey(list_id, program_name, key), instance.programInfoEntryByNameAndKey(list_id, program_name, key));
+            try std.testing.expectEqual(source.programInfoEntryByNameAndKeyForListName(list_name, program_name, key), instance.programInfoEntryByNameAndKeyForListName(list_name, program_name, key));
+            try std.testing.expectEqual(source.programInfoEntryByNameAndKeyForUnit(unit_id, program_name, key), instance.programInfoEntryByNameAndKeyForUnit(unit_id, program_name, key));
+            try std.testing.expectEqual(source.programInfoEntryByNameAndKeyForUnitName(unit_name, program_name, key), instance.programInfoEntryByNameAndKeyForUnitName(unit_name, program_name, key));
+        }
+    }
+}
+
 test "plugin spec rejects invalid program parameter snapshots" {
     const programs = [_]units_api.Program{
         .{
