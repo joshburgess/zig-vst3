@@ -35,10 +35,7 @@ pub fn InterAppAudioHost(comptime Config: type) type {
             self.has_last_preset_uid = true;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstinterappaudio.IInterAppAudioHost = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstinterappaudio.IInterAppAudioHost, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
@@ -165,10 +162,7 @@ pub fn InterAppAudioConnectionNotification(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstinterappaudio.IInterAppAudioConnectionNotification = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstinterappaudio.IInterAppAudioConnectionNotification, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{
@@ -219,10 +213,7 @@ pub fn InterAppAudioPresetManager(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ivstinterappaudio.IInterAppAudioPresetManager = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ivstinterappaudio.IInterAppAudioPresetManager, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const entries = [_]interface_map.Entry{

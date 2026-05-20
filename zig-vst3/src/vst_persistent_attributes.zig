@@ -20,10 +20,7 @@ pub fn Persistent(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn owner(ptr: *anyopaque) *Self {
-            const iface: *ipersistent.IPersistent = @ptrCast(@alignCast(ptr));
-            return @fieldParentPtr("iface", iface);
-        }
+        const owner = interface_map.ownerFromField(Self, ipersistent.IPersistent, "iface");
 
         fn classId() tuid.TUID {
             if (!@hasDecl(Config, "class_id")) @compileError("Persistent Config requires class_id");
