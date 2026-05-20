@@ -5,6 +5,25 @@ const config = @import("config.zig");
 
 pub const PrepareConfig = config.PrepareConfig;
 
+fn validateVoidHook(
+    comptime Plugin: type,
+    comptime hook_name: []const u8,
+    comptime hook_params: anytype,
+    comptime message: []const u8,
+) void {
+    if (!@hasDecl(Plugin, hook_name)) return;
+
+    const hook = @typeInfo(@TypeOf(@field(Plugin, hook_name))).@"fn";
+    if (hook.params.len != hook_params.len or hook.return_type.? != void) {
+        @compileError(message);
+    }
+    inline for (hook_params, 0..) |expected_type, index| {
+        if (hook.params[index].type.? != expected_type) {
+            @compileError(message);
+        }
+    }
+}
+
 pub fn validateLifecycle(comptime Plugin: type) void {
     if (@hasDecl(Plugin, "init")) {
         const init_info = @typeInfo(@TypeOf(Plugin.init)).@"fn";
@@ -17,74 +36,12 @@ pub fn validateLifecycle(comptime Plugin: type) void {
             @compileError("init must return !Plugin");
         }
     }
-    if (@hasDecl(Plugin, "prepare")) {
-        const prepare = @typeInfo(@TypeOf(Plugin.prepare)).@"fn";
-        if (prepare.params.len != 2 or prepare.params[0].type.? != *Plugin or prepare.params[1].type.? != PrepareConfig or prepare.return_type.? != void) {
-            @compileError("prepare must be fn (*Plugin, PrepareConfig) void");
-        }
-    }
-    if (@hasDecl(Plugin, "process")) {
-        const process = @typeInfo(@TypeOf(Plugin.process)).@"fn";
-        if (process.params.len != 2 or process.params[0].type.? != *Plugin or process.params[1].type.? != *process_api.ProcessContext(f32) or process.return_type.? != void) {
-            @compileError("process must be fn (*Plugin, *process.ProcessContext(f32)) void");
-        }
-    }
-    if (@hasDecl(Plugin, "processWithParameterView")) {
-        const process = @typeInfo(@TypeOf(Plugin.processWithParameterView)).@"fn";
-        if (process.params.len != 3 or
-            process.params[0].type.? != *Plugin or
-            process.params[1].type.? != *process_api.ProcessContext(f32) or
-            process.params[2].type.? != parameters.ParameterView(Plugin.Params) or
-            process.return_type.? != void)
-        {
-            @compileError("processWithParameterView must be fn (*Plugin, *process.ProcessContext(f32), ParameterView) void");
-        }
-    }
-    if (@hasDecl(Plugin, "processWithParameters")) {
-        const process = @typeInfo(@TypeOf(Plugin.processWithParameters)).@"fn";
-        if (process.params.len != 4 or
-            process.params[0].type.? != *Plugin or
-            process.params[1].type.? != *process_api.ProcessContext(f32) or
-            process.params[2].type.? != *const parameters.ParameterSet(Plugin.Params) or
-            process.params[3].type.? != *const parameters.ParameterValues(Plugin.Params) or
-            process.return_type.? != void)
-        {
-            @compileError("processWithParameters must be fn (*Plugin, *process.ProcessContext(f32), *const ParameterSet, *const ParameterValues) void");
-        }
-    }
-    if (@hasDecl(Plugin, "process64")) {
-        const process64 = @typeInfo(@TypeOf(Plugin.process64)).@"fn";
-        if (process64.params.len != 2 or process64.params[0].type.? != *Plugin or process64.params[1].type.? != *process_api.ProcessContext(f64) or process64.return_type.? != void) {
-            @compileError("process64 must be fn (*Plugin, *process.ProcessContext(f64)) void");
-        }
-    }
-    if (@hasDecl(Plugin, "process64WithParameterView")) {
-        const process64 = @typeInfo(@TypeOf(Plugin.process64WithParameterView)).@"fn";
-        if (process64.params.len != 3 or
-            process64.params[0].type.? != *Plugin or
-            process64.params[1].type.? != *process_api.ProcessContext(f64) or
-            process64.params[2].type.? != parameters.ParameterView(Plugin.Params) or
-            process64.return_type.? != void)
-        {
-            @compileError("process64WithParameterView must be fn (*Plugin, *process.ProcessContext(f64), ParameterView) void");
-        }
-    }
-    if (@hasDecl(Plugin, "process64WithParameters")) {
-        const process64 = @typeInfo(@TypeOf(Plugin.process64WithParameters)).@"fn";
-        if (process64.params.len != 4 or
-            process64.params[0].type.? != *Plugin or
-            process64.params[1].type.? != *process_api.ProcessContext(f64) or
-            process64.params[2].type.? != *const parameters.ParameterSet(Plugin.Params) or
-            process64.params[3].type.? != *const parameters.ParameterValues(Plugin.Params) or
-            process64.return_type.? != void)
-        {
-            @compileError("process64WithParameters must be fn (*Plugin, *process.ProcessContext(f64), *const ParameterSet, *const ParameterValues) void");
-        }
-    }
-    if (@hasDecl(Plugin, "deinit")) {
-        const deinit = @typeInfo(@TypeOf(Plugin.deinit)).@"fn";
-        if (deinit.params.len != 1 or deinit.params[0].type.? != *Plugin or deinit.return_type.? != void) {
-            @compileError("deinit must be fn (*Plugin) void");
-        }
-    }
+    validateVoidHook(Plugin, "prepare", .{ *Plugin, PrepareConfig }, "prepare must be fn (*Plugin, PrepareConfig) void");
+    validateVoidHook(Plugin, "process", .{ *Plugin, *process_api.ProcessContext(f32) }, "process must be fn (*Plugin, *process.ProcessContext(f32)) void");
+    validateVoidHook(Plugin, "processWithParameterView", .{ *Plugin, *process_api.ProcessContext(f32), parameters.ParameterView(Plugin.Params) }, "processWithParameterView must be fn (*Plugin, *process.ProcessContext(f32), ParameterView) void");
+    validateVoidHook(Plugin, "processWithParameters", .{ *Plugin, *process_api.ProcessContext(f32), *const parameters.ParameterSet(Plugin.Params), *const parameters.ParameterValues(Plugin.Params) }, "processWithParameters must be fn (*Plugin, *process.ProcessContext(f32), *const ParameterSet, *const ParameterValues) void");
+    validateVoidHook(Plugin, "process64", .{ *Plugin, *process_api.ProcessContext(f64) }, "process64 must be fn (*Plugin, *process.ProcessContext(f64)) void");
+    validateVoidHook(Plugin, "process64WithParameterView", .{ *Plugin, *process_api.ProcessContext(f64), parameters.ParameterView(Plugin.Params) }, "process64WithParameterView must be fn (*Plugin, *process.ProcessContext(f64), ParameterView) void");
+    validateVoidHook(Plugin, "process64WithParameters", .{ *Plugin, *process_api.ProcessContext(f64), *const parameters.ParameterSet(Plugin.Params), *const parameters.ParameterValues(Plugin.Params) }, "process64WithParameters must be fn (*Plugin, *process.ProcessContext(f64), *const ParameterSet, *const ParameterValues) void");
+    validateVoidHook(Plugin, "deinit", .{*Plugin}, "deinit must be fn (*Plugin) void");
 }
