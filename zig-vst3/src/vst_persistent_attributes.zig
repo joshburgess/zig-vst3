@@ -569,6 +569,37 @@ test "persistent attributes reject oversized copied binary without creating attr
     try std.testing.expectEqual(@as(types.int32, 0), attrs2.vtable.countAttributes(attrs2));
 }
 
+test "persistent attributes reject full storage without retaining new values" {
+    const Store = Attributes(1, 4);
+    const Operation = enum { set, queue, binary };
+    const operations = [_]Operation{ .set, .queue, .binary };
+    const existing = fvariant.FVariant{ .type = fvariant.kInteger, .value = .{ .intValue = 1 } };
+    const rejected = fvariant.FVariant{ .type = fvariant.kInteger, .value = .{ .intValue = 2 } };
+    var payload = [_]u8{ 9, 8, 7 };
+
+    inline for (operations) |operation| {
+        var store = Store{};
+        const attrs = store.asAttributes();
+        const attrs2 = store.asAttributes2();
+
+        try std.testing.expectEqual(types.kResultOk, attrs.vtable.set(attrs, "existing", &existing));
+        try std.testing.expectEqual(types.kResultFalse, switch (operation) {
+            .set => attrs.vtable.set(attrs, "rejected", &rejected),
+            .queue => attrs.vtable.queue(attrs, "rejected", &rejected),
+            .binary => attrs.vtable.setBinaryData(attrs, "rejected", &payload, payload.len, true),
+        });
+
+        try std.testing.expectEqual(@as(types.int32, 1), attrs2.vtable.countAttributes(attrs2));
+        try std.testing.expectEqualStrings("existing", std.mem.span(attrs2.vtable.getAttributeID(attrs2, 0)));
+        try std.testing.expectEqualStrings("", std.mem.span(attrs2.vtable.getAttributeID(attrs2, 1)));
+        try std.testing.expectEqual(@as(types.uint32, 0), attrs.vtable.getBinaryDataSize(attrs, "rejected"));
+
+        var out = fvariant.FVariant{};
+        try std.testing.expectEqual(types.kResultFalse, attrs.vtable.get(attrs, "rejected", &out));
+        try std.testing.expectEqual(fvariant.kEmpty, out.type);
+    }
+}
+
 test "persistent attributes enumerate invalid indexes as empty IDs" {
     const Store = Attributes(1, 8);
     var store = Store{};
