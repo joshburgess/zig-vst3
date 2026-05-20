@@ -2380,6 +2380,83 @@ test "zig-vst3-plugin bridge builds input-only main process context" {
     try std.testing.expectEqual(@as(f32, 1.0), context.inputChannel(1).?[1]);
 }
 
+test "zig-vst3-plugin bridge generated main bus configurations follow declared audio IO" {
+    const Case = struct {
+        config: StereoAudioBuses.Config,
+        expected_inputs: usize,
+        expected_outputs: usize,
+    };
+    const cases = [_]Case{
+        .{ .config = .{}, .expected_inputs = 2, .expected_outputs = 2 },
+        .{ .config = .{ .audio_input = false }, .expected_inputs = 0, .expected_outputs = 2 },
+        .{ .config = .{ .audio_output = false }, .expected_inputs = 2, .expected_outputs = 0 },
+        .{ .config = .{ .audio_input = false, .audio_output = false }, .expected_inputs = 0, .expected_outputs = 0 },
+    };
+
+    var in_left = [_]f32{ 0.25, 0.5 };
+    var in_right = [_]f32{ 0.75, 1.0 };
+    var out_left = [_]f32{ 0.0, 0.0 };
+    var out_right = [_]f32{ 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f32{ &in_left, &in_right };
+    var output_channel_ptrs = [_][*]f32{ &out_left, &out_right };
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = test_sample_rate };
+
+    for (cases) |case| {
+        var data = ivstaudioprocessor.ProcessData{
+            .numInputs = if (case.config.audio_input) 1 else -1,
+            .numOutputs = if (case.config.audio_output) 1 else -1,
+            .inputs = if (case.config.audio_input) &inputs else null,
+            .outputs = if (case.config.audio_output) &outputs else null,
+            .numSamples = 2,
+            .processContext = &process_context,
+        };
+
+        const context = try makeMainAudioProcessContextConfigured(f32, &data, .{}, .{}, null, case.config);
+
+        try std.testing.expectEqual(case.expected_inputs, context.inputChannelCount());
+        try std.testing.expectEqual(case.expected_outputs, context.outputChannelCount());
+        try std.testing.expectEqual(if (case.expected_inputs == 0 and case.expected_outputs == 0) @as(usize, 0) else @as(usize, 2), context.frameCount());
+    }
+
+    var empty_input = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 0,
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
+    }};
+    var empty_output = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 0,
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
+    }};
+    var missing_input_data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &empty_input,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .processContext = &process_context,
+    };
+    var missing_output_data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &empty_output,
+        .numSamples = 2,
+        .processContext = &process_context,
+    };
+
+    try std.testing.expectError(error.MissingMainAudioChannels, makeMainAudioProcessContextConfigured(f32, &missing_input_data, .{}, .{}, null, .{}));
+    try std.testing.expectError(error.MissingMainAudioChannels, makeMainAudioProcessContextConfigured(f32, &missing_output_data, .{}, .{}, null, .{}));
+    try std.testing.expect((try makeMainAudioProcessContextConfigured(f32, &missing_input_data, .{}, .{}, null, .{ .audio_input = false })).inputChannelsEmpty());
+    try std.testing.expect((try makeMainAudioProcessContextConfigured(f32, &missing_output_data, .{}, .{}, null, .{ .audio_output = false })).outputChannelsEmpty());
+}
+
 test "zig-vst3-plugin bridge dispatches main audio processing by sample size" {
     const Doubler = struct {
         pub fn process(_: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
