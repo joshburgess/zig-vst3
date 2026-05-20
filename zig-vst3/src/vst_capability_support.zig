@@ -165,13 +165,6 @@ pub fn MidiLearn(comptime Config: type) type {
             return &self.iface;
         }
 
-        fn recordInput(self: *Self, bus_index: types.int32, channel: types.int16, controller: vsttypes.CtrlNumber) void {
-            self.input_count +|= 1;
-            self.last_bus = bus_index;
-            self.last_channel = channel;
-            self.last_controller = controller;
-        }
-
         fn owner(ptr: *anyopaque) *Self {
             const iface: *ivstmidilearn.IMidiLearn = @ptrCast(@alignCast(ptr));
             return @fieldParentPtr("iface", iface);
@@ -195,10 +188,14 @@ pub fn MidiLearn(comptime Config: type) type {
 
         fn onLiveMIDIControllerInput(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, controller: vsttypes.CtrlNumber) callconv(.c) types.tresult {
             const self = owner(ptr);
-            self.recordInput(bus_index, channel, controller);
+            self.input_count +|= 1;
             if (@hasDecl(Config, "onLiveMIDIControllerInput")) {
-                return Config.onLiveMIDIControllerInput(self, bus_index, channel, controller);
+                const result = Config.onLiveMIDIControllerInput(self, bus_index, channel, controller);
+                if (result != types.kResultOk) return result;
             }
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            self.last_controller = controller;
             return types.kResultOk;
         }
 
@@ -239,20 +236,6 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         pub fn asLearn(self: *Self) *ivstmidimapping2.IMidiLearn2 {
             return &self.learn_iface;
-        }
-
-        fn recordMidi2Input(self: *Self, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) void {
-            self.midi2_input_count +|= 1;
-            self.last_bus = bus_index;
-            self.last_channel = channel;
-            self.last_midi2_controller = controller;
-        }
-
-        fn recordMidi1Input(self: *Self, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: vsttypes.CtrlNumber) void {
-            self.midi1_input_count +|= 1;
-            self.last_bus = bus_index;
-            self.last_channel = channel;
-            self.last_midi1_controller = controller;
         }
 
         fn safeMidi2Count(self: *const Self) usize {
@@ -379,15 +362,27 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         fn onLiveMidi2ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) callconv(.c) types.tresult {
             const self = ownerFromLearn(ptr);
-            self.recordMidi2Input(bus_index, channel, controller);
-            if (@hasDecl(Config, "onLiveMidi2ControllerInput")) return Config.onLiveMidi2ControllerInput(self, bus_index, channel, controller);
+            self.midi2_input_count +|= 1;
+            if (@hasDecl(Config, "onLiveMidi2ControllerInput")) {
+                const result = Config.onLiveMidi2ControllerInput(self, bus_index, channel, controller);
+                if (result != types.kResultOk) return result;
+            }
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            self.last_midi2_controller = controller;
             return types.kResultOk;
         }
 
         fn onLiveMidi1ControllerInput(ptr: *anyopaque, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: vsttypes.CtrlNumber) callconv(.c) types.tresult {
             const self = ownerFromLearn(ptr);
-            self.recordMidi1Input(bus_index, channel, controller);
-            if (@hasDecl(Config, "onLiveMidi1ControllerInput")) return Config.onLiveMidi1ControllerInput(self, bus_index, channel, controller);
+            self.midi1_input_count +|= 1;
+            if (@hasDecl(Config, "onLiveMidi1ControllerInput")) {
+                const result = Config.onLiveMidi1ControllerInput(self, bus_index, channel, controller);
+                if (result != types.kResultOk) return result;
+            }
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            self.last_midi1_controller = controller;
             return types.kResultOk;
         }
 
@@ -615,6 +610,23 @@ test "midi learn tracks live controller input and delegates result" {
     try std.testing.expectEqual(@as(vsttypes.CtrlNumber, 64), learn.last_controller);
 }
 
+test "midi learn preserves last accepted input when delegated input fails" {
+    const Learn = MidiLearn(struct {
+        pub fn onLiveMIDIControllerInput(_: anytype, bus_index: types.int32, _: types.int16, _: vsttypes.CtrlNumber) types.tresult {
+            return if (bus_index == 1) types.kResultOk else types.kInvalidArgument;
+        }
+    });
+    var learn = Learn{};
+    const iface = learn.asInterface();
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.onLiveMIDIControllerInput(iface, 1, 2, 64));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.onLiveMIDIControllerInput(iface, 9, 8, 7));
+    try std.testing.expectEqual(@as(types.uint32, 2), learn.input_count);
+    try std.testing.expectEqual(@as(types.int32, 1), learn.last_bus);
+    try std.testing.expectEqual(@as(types.int16, 2), learn.last_channel);
+    try std.testing.expectEqual(@as(vsttypes.CtrlNumber, 64), learn.last_controller);
+}
+
 test "midi learn clears unsupported query output" {
     const Learn = MidiLearn(struct {});
     var learn = Learn{};
@@ -773,6 +785,35 @@ test "midi learn 2 tracks midi 1 and midi 2 controller input" {
     try std.testing.expect(queried != null);
     const queried_learn: *ivstmidimapping2.IMidiLearn2 = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_learn.vtable.release(queried_learn));
+}
+
+test "midi learn 2 preserves last accepted inputs when delegated input fails" {
+    const Mapping = Midi2Mapping(1, 1, struct {
+        pub fn onLiveMidi2ControllerInput(_: anytype, bus_index: ivstmidimapping2.BusIndex, _: ivstmidimapping2.MidiChannel, _: ivstmidimapping2.Midi2Controller) types.tresult {
+            return if (bus_index == 1) types.kResultOk else types.kInvalidArgument;
+        }
+
+        pub fn onLiveMidi1ControllerInput(_: anytype, bus_index: ivstmidimapping2.BusIndex, _: ivstmidimapping2.MidiChannel, _: vsttypes.CtrlNumber) types.tresult {
+            return if (bus_index == 4) types.kResultOk else types.kInvalidArgument;
+        }
+    });
+    var mapping = Mapping{};
+    const learn = mapping.asLearn();
+    const accepted_midi2 = ivstmidimapping2.Midi2Controller{ .bank_registered = 3, .index_reserved = 7 };
+    const rejected_midi2 = ivstmidimapping2.Midi2Controller{ .bank_registered = 8, .index_reserved = 9 };
+
+    try std.testing.expectEqual(types.kResultOk, learn.vtable.onLiveMidi2ControllerInput(learn, 1, 2, accepted_midi2));
+    try std.testing.expectEqual(types.kInvalidArgument, learn.vtable.onLiveMidi2ControllerInput(learn, 9, 8, rejected_midi2));
+    try std.testing.expectEqual(@as(types.uint32, 2), mapping.midi2_input_count);
+    try std.testing.expectEqual(@as(ivstmidimapping2.BusIndex, 1), mapping.last_bus);
+    try std.testing.expectEqual(@as(ivstmidimapping2.MidiChannel, 2), mapping.last_channel);
+
+    try std.testing.expectEqual(types.kResultOk, learn.vtable.onLiveMidi1ControllerInput(learn, 4, 5, 6));
+    try std.testing.expectEqual(types.kInvalidArgument, learn.vtable.onLiveMidi1ControllerInput(learn, 8, 9, 10));
+    try std.testing.expectEqual(@as(types.uint32, 2), mapping.midi1_input_count);
+    try std.testing.expectEqual(@as(ivstmidimapping2.BusIndex, 4), mapping.last_bus);
+    try std.testing.expectEqual(@as(ivstmidimapping2.MidiChannel, 5), mapping.last_channel);
+    try std.testing.expectEqual(@as(vsttypes.CtrlNumber, 6), mapping.last_midi1_controller);
 }
 
 test "midi 2 mapping query interfaces share object refcount" {
