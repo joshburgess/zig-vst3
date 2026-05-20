@@ -1,6 +1,6 @@
-# Vtable Scaffolding Design
+# Vtable Design
 
-Phase 1 needs a way for Zig objects to expose VST3 COM-style interfaces with ABI-compatible vtables. The design must handle `FUnknown` first, then scale to multiple interfaces on one object.
+The raw API exposes VST3 COM-style interfaces with ABI-compatible vtables. The design starts from `FUnknown`, then uses the same machinery for objects that expose multiple interfaces.
 
 ## Option 1: Declarative Interface Descriptions
 
@@ -10,7 +10,7 @@ Pros:
 
 - One canonical metadata source can drive code, docs, and ABI tests
 - Future interface translations become data entry plus method bodies
-- Good fit for generated bindings later
+- Good fit for generated bindings
 
 Cons:
 
@@ -51,9 +51,9 @@ Each interface translation declares the ABI vtable struct explicitly. Helpers pr
 Pros:
 
 - ABI layout is visible in code review
-- Smallest viable starting point for Phase 1
+- Smallest viable starting point for the raw API
 - C++ fixture tests can map directly to explicit fields
-- User-facing helpers can improve ergonomics later without hiding the raw API
+- User-facing helpers can improve ergonomics without hiding the raw API
 
 Cons:
 
@@ -68,13 +68,13 @@ ABI risks:
 
 ## Recommendation
 
-Start with explicit vtable structs for the raw API. The raw bindings should make ABI layout obvious and testable, even if that means more boilerplate. Once P0/P1 interfaces are translated and tested, `zig-vst3-plugin` can build a more ergonomic API over the explicit raw API.
+Use explicit vtable structs for the raw API. The raw bindings make ABI layout obvious and testable, even when that means more boilerplate. `zig-vst3-plugin` builds a more ergonomic API over those explicit raw bindings.
 
-The initial implementation should:
+The implementation:
 
 - Define the exact `FUnknown` vtable layout
-- Provide an `FUnknown.Header` that can be embedded as the first field of prototype objects
-- Implement `queryInterface`, `addRef`, and `release` for a test object
+- Provide an `FUnknown.Header` that can be embedded in objects
+- Implement `queryInterface`, `addRef`, and `release` helpers
 - Store the reference count in the ABI header as `std.atomic.Value(u32)`
 - Call an optional destroy callback when `release` reaches zero
 
