@@ -671,7 +671,7 @@ const IBStreamReader = struct {
         const byte_count = vst_stream.byteCount(buffer.len) orelse return error.ReadFailed;
         var bytes_read: types.int32 = 0;
         const result = self.stream.vtable.read(self.stream, buffer.ptr, byte_count, &bytes_read);
-        if (bytes_read < 0) return error.ReadFailed;
+        if (bytes_read < 0 or bytes_read > byte_count) return error.ReadFailed;
         if (bytes_read == 0) return error.EndOfStream;
         if (result != types.kResultOk) return error.ReadFailed;
         return @intCast(bytes_read);
@@ -728,7 +728,7 @@ const IBStreamWriter = struct {
         const byte_count = vst_stream.byteCount(bytes.len) orelse return error.WriteFailed;
         var bytes_written: types.int32 = 0;
         const result = self.stream.vtable.write(self.stream, @constCast(bytes.ptr), byte_count, &bytes_written);
-        if (result != types.kResultOk or bytes_written < 0) return error.WriteFailed;
+        if (result != types.kResultOk or bytes_written < 0 or bytes_written > byte_count) return error.WriteFailed;
         return @intCast(bytes_written);
     }
 
@@ -1093,6 +1093,65 @@ test "zig-vst3-plugin bridge reports failed IBStream writes" {
     var stream = Stream{ .write_limit = 4 };
 
     try std.testing.expectEqual(types.kResultFalse, writeParameterState(Params, stream.asStream(), &set, &values));
+}
+
+test "zig-vst3-plugin bridge rejects overreported IBStream byte counts" {
+    const OverreportingStream = struct {
+        interface: ibstream.IBStream = .{ .vtable = &vtable },
+
+        const vtable = ibstream.IBStreamVTable{
+            .queryInterface = queryInterface,
+            .addRef = addRef,
+            .release = release,
+            .read = read,
+            .write = write,
+            .seek = seek,
+            .tell = tell,
+        };
+
+        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, obj: *?*anyopaque) callconv(.c) types.tresult {
+            obj.* = null;
+            return types.kNoInterface;
+        }
+
+        fn addRef(_: *anyopaque) callconv(.c) types.uint32 {
+            return 1;
+        }
+
+        fn release(_: *anyopaque) callconv(.c) types.uint32 {
+            return 1;
+        }
+
+        fn read(_: *anyopaque, _: ?*anyopaque, byte_count: types.int32, bytes_read: ?*types.int32) callconv(.c) types.tresult {
+            if (bytes_read) |out| out.* = byte_count + 1;
+            return types.kResultOk;
+        }
+
+        fn write(_: *anyopaque, _: ?*anyopaque, byte_count: types.int32, bytes_written: ?*types.int32) callconv(.c) types.tresult {
+            if (bytes_written) |out| out.* = byte_count + 1;
+            return types.kResultOk;
+        }
+
+        fn seek(_: *anyopaque, _: types.int64, _: types.int32, result: ?*types.int64) callconv(.c) types.tresult {
+            if (result) |out| out.* = 0;
+            return types.kResultOk;
+        }
+
+        fn tell(_: *anyopaque, pos: *types.int64) callconv(.c) types.tresult {
+            pos.* = 0;
+            return types.kResultOk;
+        }
+    };
+
+    var stream = OverreportingStream{};
+    var reader: IBStreamReader = undefined;
+    reader.init(&stream.interface);
+    var buffer: [4]u8 = undefined;
+    try std.testing.expectError(error.ReadFailed, reader.read(&buffer));
+
+    var writer: IBStreamWriter = undefined;
+    writer.init(&stream.interface);
+    try std.testing.expectError(error.WriteFailed, writer.write("abcd"));
 }
 
 test "zig-vst3-plugin bridge parameter state stores ids and persists streams" {
