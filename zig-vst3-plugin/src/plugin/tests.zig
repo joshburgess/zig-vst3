@@ -38,6 +38,19 @@ const FixedBufferStream = struct {
     }
 };
 
+fn expectMigrationErrorPreservesParameter(
+    instance: anytype,
+    bytes: []u8,
+    comptime field_name: []const u8,
+    expected_value: f64,
+    expected_error: anyerror,
+    migrations: []const state.ParameterIdMigration,
+) !void {
+    var in_stream = FixedBufferStream.init(bytes);
+    try std.testing.expectError(expected_error, instance.readParameterStateWithMigrations(in_stream.reader(), migrations));
+    try std.testing.expectEqual(expected_value, instance.loadParameterNormalized(field_name));
+}
+
 test "plugin spec exposes metadata and parameter defaults" {
     const Gain = struct {
         pub const name = "Gain";
@@ -2299,32 +2312,24 @@ test "plugin instance rejects invalid parameter state migrations before changing
     var out_stream = FixedBufferStream.init(&bytes);
     try old_instance.writeParameterState(out_stream.writer());
 
-    var duplicate_stream = FixedBufferStream.init(&bytes);
-    try std.testing.expectError(error.DuplicateParameterMigration, new_instance.readParameterStateWithMigrations(duplicate_stream.reader(), &.{
+    try expectMigrationErrorPreservesParameter(&new_instance, &bytes, "output", 0.8, error.DuplicateParameterMigration, &.{
         .{ .old_id = 7, .new_id = 9 },
         .{ .old_id = 7, .new_id = 11 },
-    }));
-    try std.testing.expectEqual(@as(f64, 0.8), new_instance.loadParameterNormalized("output"));
+    });
 
-    var ambiguous_stream = FixedBufferStream.init(&bytes);
-    try std.testing.expectError(error.AmbiguousParameterMigration, new_instance.readParameterStateWithMigrations(ambiguous_stream.reader(), &.{
+    try expectMigrationErrorPreservesParameter(&new_instance, &bytes, "output", 0.8, error.AmbiguousParameterMigration, &.{
         .{ .old_id = 7, .new_id = 11 },
         .{ .old_id = 9, .new_id = 11 },
-    }));
-    try std.testing.expectEqual(@as(f64, 0.8), new_instance.loadParameterNormalized("output"));
+    });
 
-    var identity_stream = FixedBufferStream.init(&bytes);
-    try std.testing.expectError(error.IdentityParameterMigration, new_instance.readParameterStateWithMigrations(identity_stream.reader(), &.{
+    try expectMigrationErrorPreservesParameter(&new_instance, &bytes, "output", 0.8, error.IdentityParameterMigration, &.{
         .{ .old_id = 7, .new_id = 7 },
-    }));
-    try std.testing.expectEqual(@as(f64, 0.8), new_instance.loadParameterNormalized("output"));
+    });
 
-    var cycle_stream = FixedBufferStream.init(&bytes);
-    try std.testing.expectError(error.CyclicParameterMigration, new_instance.readParameterStateWithMigrations(cycle_stream.reader(), &.{
+    try expectMigrationErrorPreservesParameter(&new_instance, &bytes, "output", 0.8, error.CyclicParameterMigration, &.{
         .{ .old_id = 7, .new_id = 9 },
         .{ .old_id = 9, .new_id = 7 },
-    }));
-    try std.testing.expectEqual(@as(f64, 0.8), new_instance.loadParameterNormalized("output"));
+    });
 }
 
 test "plugin instance exposes parameter migration diagnostics" {
