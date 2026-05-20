@@ -94,25 +94,11 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
         }
 
         fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
-            for (classes) |class| {
-                if (matchesClassId(cid, class)) {
-                    if (class.create) |create| {
-                        const result = create(requested_iid, out);
-                        if (result != types.kResultOk) out.* = null;
-                        return result;
-                    }
-                    break;
-                }
-            }
-
-            out.* = null;
-            return types.kNoInterface;
+            return createClassInstance(classes, cid, requested_iid, out);
         }
 
         fn classAt(index: types.int32) ?ClassInfo {
-            if (comptime classes.len == 0) return null;
-            const class_index = vst_index.bounded(index, classes.len) orelse return null;
-            return classes[class_index];
+            return classAtIndex(classes, index);
         }
 
         comptime {
@@ -197,19 +183,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
         }
 
         fn createInstance(_: *anyopaque, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
-            for (classes) |class| {
-                if (matchesClassId(cid, class)) {
-                    if (class.create) |create| {
-                        const result = create(requested_iid, out);
-                        if (result != types.kResultOk) out.* = null;
-                        return result;
-                    }
-                    break;
-                }
-            }
-
-            out.* = null;
-            return types.kNoInterface;
+            return createClassInstance(classes, cid, requested_iid, out);
         }
 
         fn getClassInfo2(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo2) callconv(.c) types.tresult {
@@ -236,9 +210,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
         }
 
         fn classAt(index: types.int32) ?ClassInfo {
-            if (comptime classes.len == 0) return null;
-            const class_index = vst_index.bounded(index, classes.len) orelse return null;
-            return classes[class_index];
+            return classAtIndex(classes, index);
         }
 
         comptime {
@@ -250,6 +222,28 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
 
 fn matchesClassId(cid: types.FIDString, class: ClassInfo) bool {
     return std.mem.eql(u8, cid[0..tuid.byte_count], &class.cid);
+}
+
+fn classAtIndex(comptime classes: []const ClassInfo, index: types.int32) ?ClassInfo {
+    if (comptime classes.len == 0) return null;
+    const class_index = vst_index.bounded(index, classes.len) orelse return null;
+    return classes[class_index];
+}
+
+fn createClassInstance(comptime classes: []const ClassInfo, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) types.tresult {
+    for (classes) |class| {
+        if (matchesClassId(cid, class)) {
+            if (class.create) |create| {
+                const result = create(requested_iid, out);
+                if (result != types.kResultOk) out.* = null;
+                return result;
+            }
+            break;
+        }
+    }
+
+    out.* = null;
+    return types.kNoInterface;
 }
 
 fn classVendor(info: FactoryInfo, class: ClassInfo) []const u8 {
@@ -539,6 +533,41 @@ test "static factory 3 clears missing query outputs" {
     var out: ?*anyopaque = @ptrFromInt(0x1);
 
     try std.testing.expectEqual(types.kNoInterface, factory.vtable.queryInterface(factory, &missing_iid, &out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), out);
+}
+
+test "static factory 3 dispatches and clears create outputs" {
+    const Create = struct {
+        fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
+            if (!std.mem.eql(u8, requested_iid[0..tuid.byte_count], &funknown.iid)) {
+                out.* = @ptrFromInt(0x1);
+                return types.kNoInterface;
+            }
+            out.* = @ptrFromInt(0x2);
+            return types.kResultOk;
+        }
+    };
+    const TestFactory = StaticFactory3(.{ .vendor = "Test Vendor" }, &.{
+        .{
+            .cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444),
+            .category = "Audio Module Class",
+            .name = "Test Plug-in",
+            .create = Create.create,
+        },
+    });
+    const factory = TestFactory.getPluginFactory3();
+    const cid = tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
+    const missing_cid = tuid.inlineUid(0x55555555, 0x66666666, 0x77777777, 0x88888888);
+    var out: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, factory.vtable.createInstance(factory, @ptrCast(&cid), @ptrCast(&funknown.iid), &out));
+    try std.testing.expectEqual(@as(?*anyopaque, @ptrFromInt(0x2)), out);
+
+    try std.testing.expectEqual(types.kNoInterface, factory.vtable.createInstance(factory, @ptrCast(&cid), @ptrCast(&ipluginbase.iplugin_factory_iid), &out));
+    try std.testing.expectEqual(@as(?*anyopaque, null), out);
+
+    out = @ptrFromInt(0x3);
+    try std.testing.expectEqual(types.kNoInterface, factory.vtable.createInstance(factory, @ptrCast(&missing_cid), @ptrCast(&funknown.iid), &out));
     try std.testing.expectEqual(@as(?*anyopaque, null), out);
 }
 
