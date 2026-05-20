@@ -11,7 +11,7 @@ const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 pub const cid = tuid.inlineUid(0x70E3A630, 0x5EE54F09, 0x94C968A8, 0x22947A9F);
 
 const NoteGateState = struct {
-    const midi_pitch_count = @as(usize, @intCast(plug_process.midi_pitch_max + 1));
+    const midi_pitch_count = midiPitchCount();
 
     open: bool = false,
     held_notes: [midi_pitch_count]bool = [_]bool{false} ** midi_pitch_count,
@@ -47,7 +47,7 @@ const NoteGateState = struct {
     }
 
     fn holdNote(self: *NoteGateState, pitch: i16) void {
-        const index = @as(usize, @intCast(pitch));
+        const index = midiPitchIndex(pitch) orelse return;
         if (!self.held_notes[index]) {
             self.held_notes[index] = true;
             self.held_note_count +|= 1;
@@ -56,7 +56,7 @@ const NoteGateState = struct {
     }
 
     fn releaseNote(self: *NoteGateState, pitch: i16) void {
-        const index = @as(usize, @intCast(pitch));
+        const index = midiPitchIndex(pitch) orelse return;
         if (self.held_notes[index]) {
             self.held_notes[index] = false;
             self.held_note_count -|= 1;
@@ -64,6 +64,15 @@ const NoteGateState = struct {
         self.open = self.held_note_count > 0;
     }
 };
+
+fn midiPitchCount() usize {
+    return @intCast(plug_process.midi_pitch_max - plug_process.midi_pitch_min + 1);
+}
+
+fn midiPitchIndex(pitch: i16) ?usize {
+    if (pitch < plug_process.midi_pitch_min or pitch > plug_process.midi_pitch_max) return null;
+    return @intCast(pitch - plug_process.midi_pitch_min);
+}
 
 var gate = NoteGateState{};
 
@@ -138,6 +147,20 @@ test "note gate processor follows event offsets inside a block" {
     try std.testing.expectEqual(@as(f32, 0.0), output[3]);
     try std.testing.expect(!local_gate.open);
     try std.testing.expectEqual(@as(usize, 0), local_gate.held_note_count);
+}
+
+test "note gate ignores out-of-range pitches" {
+    const std = @import("std");
+
+    var local_gate = NoteGateState{};
+    local_gate.holdNote(plug_process.midi_pitch_min - 1);
+    local_gate.holdNote(plug_process.midi_pitch_max + 1);
+
+    try std.testing.expect(!local_gate.open);
+    try std.testing.expectEqual(@as(usize, 0), local_gate.held_note_count);
+    try std.testing.expectEqual(@as(?usize, null), midiPitchIndex(plug_process.midi_pitch_min - 1));
+    try std.testing.expectEqual(@as(?usize, 0), midiPitchIndex(plug_process.midi_pitch_min));
+    try std.testing.expectEqual(@as(?usize, NoteGateState.midi_pitch_count - 1), midiPitchIndex(plug_process.midi_pitch_max));
 }
 
 test "note gate component gates host event list input through processor shell" {
