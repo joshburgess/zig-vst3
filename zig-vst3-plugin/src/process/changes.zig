@@ -1095,8 +1095,13 @@ test "parameter changes clamp defaulted normalized reads" {
     const changes = [_]ParameterChange{
         .{ .id = 7, .sample_offset = 2, .normalized = 0.5 },
     };
+    const empty = try ParameterChanges.init(&.{}, 4);
     const view = try ParameterChanges.init(&changes, 4);
 
+    try std.testing.expectEqual(@as(f64, 0.0), empty.firstAnyNormalizedOr(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 1.0), empty.latestAnyNormalizedOr(1.5));
+    try std.testing.expectEqual(@as(f64, 0.5), view.firstAnyNormalizedOr(1.5));
+    try std.testing.expectEqual(@as(f64, 0.5), view.latestAnyNormalizedOr(std.math.nan(f64)));
     try std.testing.expectEqual(@as(f64, 1.0), view.firstNormalizedOr(9, 1.5));
     try std.testing.expectEqual(@as(f64, 0.0), view.latestNormalizedOr(9, -0.25));
     try std.testing.expectEqual(@as(f64, 0.0), view.firstNormalizedAtOffsetOr(1, std.math.nan(f64)));
