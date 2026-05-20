@@ -77,16 +77,10 @@ pub const StereoAudioBuses = struct {
     }
 
     pub fn busCountConfigured(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, config: Config) types.int32 {
-        if (config.audio_input and media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) {
+        if (mediaIs(media_type, .kAudio) and hasConfiguredAudioBus(config, direction)) {
             return 1;
         }
-        if (config.audio_output and media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput)) {
-            return 1;
-        }
-        if (config.event_input and media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) {
-            return 1;
-        }
-        if (config.event_output and media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput)) {
+        if (mediaIs(media_type, .kEvent) and hasConfiguredEventBus(config, direction)) {
             return 1;
         }
         return 0;
@@ -105,10 +99,7 @@ pub const StereoAudioBuses = struct {
             return failBusInfo(out);
         }
 
-        const has_audio_bus =
-            (config.audio_input and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) or
-            (config.audio_output and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput));
-        if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) and has_audio_bus) {
+        if (mediaIs(media_type, .kAudio) and hasConfiguredAudioBus(config, direction)) {
             out.* = .{
                 .mediaType = media_type,
                 .direction = direction,
@@ -116,14 +107,11 @@ pub const StereoAudioBuses = struct {
                 .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
                 .flags = ivstcomponent.BusFlags.kDefaultActive,
             };
-            string128.copy(&out.name, if (direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) "Stereo In" else "Stereo Out");
+            string128.copy(&out.name, if (directionIs(direction, .kInput)) "Stereo In" else "Stereo Out");
             return types.kResultOk;
         }
 
-        if (media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent) and
-            ((config.event_input and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) or
-                (config.event_output and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput))))
-        {
+        if (mediaIs(media_type, .kEvent) and hasConfiguredEventBus(config, direction)) {
             out.* = .{
                 .mediaType = media_type,
                 .direction = direction,
@@ -131,11 +119,31 @@ pub const StereoAudioBuses = struct {
                 .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
                 .flags = ivstcomponent.BusFlags.kDefaultActive,
             };
-            string128.copy(&out.name, if (direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) "Event In" else "Event Out");
+            string128.copy(&out.name, if (directionIs(direction, .kInput)) "Event In" else "Event Out");
             return types.kResultOk;
         }
 
         return failBusInfo(out);
+    }
+
+    fn hasConfiguredAudioBus(config: Config, direction: vsttypes.BusDirection) bool {
+        if (config.audio_input and directionIs(direction, .kInput)) return true;
+        if (config.audio_output and directionIs(direction, .kOutput)) return true;
+        return false;
+    }
+
+    fn hasConfiguredEventBus(config: Config, direction: vsttypes.BusDirection) bool {
+        if (config.event_input and directionIs(direction, .kInput)) return true;
+        if (config.event_output and directionIs(direction, .kOutput)) return true;
+        return false;
+    }
+
+    fn mediaIs(media_type: vsttypes.MediaType, expected: ivstcomponent.MediaTypes) bool {
+        return media_type == @intFromEnum(expected);
+    }
+
+    fn directionIs(direction: vsttypes.BusDirection, expected: ivstcomponent.BusDirections) bool {
+        return direction == @intFromEnum(expected);
     }
 
     fn failBusInfo(out: *ivstcomponent.BusInfo) types.tresult {
@@ -584,7 +592,10 @@ pub fn makeMainAudioProcessContextConfiguredWithSampleRate(
         const outputs = data.outputs orelse return error.MissingMainAudioBus;
         break :output try fillOutputChannels(Sample, outputs[0], frame_count, &output_channels);
     } else 0;
-    if ((bus_config.audio_input and input_count == 0) or (bus_config.audio_output and output_count == 0)) {
+    if (bus_config.audio_input and input_count == 0) {
+        return error.MissingMainAudioChannels;
+    }
+    if (bus_config.audio_output and output_count == 0) {
         return error.MissingMainAudioChannels;
     }
     return try plug.process.ProcessContext(Sample).initWith(
