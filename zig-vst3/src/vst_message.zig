@@ -296,6 +296,12 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return size > 0 and value == null;
         }
 
+        fn validateBinaryInput(size: types.uint32, value: ?*const anyopaque) types.tresult {
+            if (size > max_binary_bytes) return types.kResultFalse;
+            if (missingBinaryInput(size, value)) return types.kInvalidArgument;
+            return types.kResultOk;
+        }
+
         fn setInt(ptr: *anyopaque, id: ivstattributes.AttrID, value: types.int64) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
             entry.reset(.int);
@@ -356,8 +362,8 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
         }
 
         fn setBinary(ptr: *anyopaque, id: ivstattributes.AttrID, value: ?*const anyopaque, size: types.uint32) callconv(.c) types.tresult {
-            if (size > max_binary_bytes) return types.kResultFalse;
-            if (missingBinaryInput(size, value)) return types.kInvalidArgument;
+            const input_result = validateBinaryInput(size, value);
+            if (input_result != types.kResultOk) return input_result;
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
             entry.reset(.binary);
             entry.binary_size = size;
