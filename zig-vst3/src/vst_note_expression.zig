@@ -124,7 +124,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             return vst_index.int32Count(self.safeExpressionCount());
         }
 
-        fn failNoteExpressionInfo(out: *ivstnoteexpression.NoteExpressionTypeInfo) types.tresult {
+        fn failInfo(out: anytype) types.tresult {
             out.* = .{};
             return types.kInvalidArgument;
         }
@@ -132,7 +132,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
         fn getNoteExpressionInfo(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, index: types.int32, out: *ivstnoteexpression.NoteExpressionTypeInfo) callconv(.c) types.tresult {
             const self = ownerFromNoteExpression(ptr);
             self.recordBusContext(bus_index, channel);
-            out.* = self.expressionByIndex(index) orelse return failNoteExpressionInfo(out);
+            out.* = self.expressionByIndex(index) orelse return failInfo(out);
             return types.kResultOk;
         }
 
@@ -176,15 +176,10 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
             return vst_index.int32Count(self.safeKeyswitchCount());
         }
 
-        fn failKeyswitchInfo(out: *ivstnoteexpression.KeyswitchInfo) types.tresult {
-            out.* = .{};
-            return types.kInvalidArgument;
-        }
-
         fn getKeyswitchInfo(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, index: types.int32, out: *ivstnoteexpression.KeyswitchInfo) callconv(.c) types.tresult {
             const self = ownerFromKeyswitch(ptr);
             self.recordBusContext(bus_index, channel);
-            out.* = self.keyswitchByIndex(index) orelse return failKeyswitchInfo(out);
+            out.* = self.keyswitchByIndex(index) orelse return failInfo(out);
             return types.kResultOk;
         }
 
