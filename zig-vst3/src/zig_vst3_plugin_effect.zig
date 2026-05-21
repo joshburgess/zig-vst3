@@ -43,6 +43,11 @@ const process_parameter_change_capacity = 64;
 const process_event_capacity = 64;
 const process_output_event_capacity = 64;
 
+fn failInfo(out: anytype) types.tresult {
+    out.* = .{};
+    return types.kInvalidArgument;
+}
+
 pub fn ReflectedEditController(comptime Config: type) type {
     return struct {
         const Self = @This();
@@ -474,14 +479,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getUnitInfo(_: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.c) types.tresult {
-            const unit_index = vst_index.bounded(index, UnitSet.unit_count) orelse {
-                out.* = .{};
-                return types.kInvalidArgument;
-            };
-            const reflected = units.unit(unit_index) orelse {
-                out.* = .{};
-                return types.kInvalidArgument;
-            };
+            const unit_index = vst_index.bounded(index, UnitSet.unit_count) orelse return failInfo(out);
+            const reflected = units.unit(unit_index) orelse return failInfo(out);
             out.* = .{
                 .id = reflected.id,
                 .parentUnitId = reflected.parent_id,
@@ -496,14 +495,8 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getProgramListInfo(_: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.c) types.tresult {
-            const list_index = vst_index.bounded(index, UnitSet.program_list_count) orelse {
-                out.* = .{};
-                return types.kInvalidArgument;
-            };
-            const reflected = units.programList(list_index) orelse {
-                out.* = .{};
-                return types.kInvalidArgument;
-            };
+            const list_index = vst_index.bounded(index, UnitSet.program_list_count) orelse return failInfo(out);
+            const reflected = units.programList(list_index) orelse return failInfo(out);
             out.* = .{
                 .id = reflected.id,
                 .programCount = countToInt32(reflected.programs.len),
