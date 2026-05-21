@@ -162,12 +162,10 @@ pub const StereoAudioBuses = struct {
             return types.kResultFalse;
         }
         if (config.audio_input) {
-            const input_arrangements = inputs orelse return types.kResultFalse;
-            if (input_arrangements[0] != stereo_arrangement) return types.kResultFalse;
+            if (!arrangementIsStereo(inputs)) return types.kResultFalse;
         }
         if (config.audio_output) {
-            const output_arrangements = outputs orelse return types.kResultFalse;
-            if (output_arrangements[0] != stereo_arrangement) return types.kResultFalse;
+            if (!arrangementIsStereo(outputs)) return types.kResultFalse;
         }
         return types.kResultOk;
     }
@@ -195,6 +193,11 @@ pub const StereoAudioBuses = struct {
 
     fn configuredBusCount(enabled: bool) types.int32 {
         return if (enabled) 1 else 0;
+    }
+
+    fn arrangementIsStereo(arrangements: ?[*]vsttypes.SpeakerArrangement) bool {
+        const values = arrangements orelse return false;
+        return values[0] == stereo_arrangement;
     }
 };
 
