@@ -28,6 +28,18 @@ pub fn ConnectionPoint(comptime Config: type) type {
             return &self.iface;
         }
 
+        fn acceptConnection(self: *Self, peer: ?*ivstmessage.IConnectionPoint) void {
+            self.connected_peer = peer;
+        }
+
+        fn acceptDisconnection(self: *Self, peer: ?*ivstmessage.IConnectionPoint) void {
+            if (self.connected_peer == peer) self.connected_peer = null;
+        }
+
+        fn acceptNotification(self: *Self, message: ?*ivstmessage.IMessage) void {
+            self.last_message = message;
+        }
+
         const owner = interface_map.ownerFromField(Self, ivstmessage.IConnectionPoint, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
@@ -57,7 +69,7 @@ pub fn ConnectionPoint(comptime Config: type) type {
                 const result = Config.connect(self, peer);
                 if (result != types.kResultOk) return result;
             }
-            self.connected_peer = peer;
+            self.acceptConnection(peer);
             return types.kResultOk;
         }
 
@@ -68,7 +80,7 @@ pub fn ConnectionPoint(comptime Config: type) type {
                 const result = Config.disconnect(self, peer);
                 if (result != types.kResultOk) return result;
             }
-            if (self.connected_peer == peer) self.connected_peer = null;
+            self.acceptDisconnection(peer);
             return types.kResultOk;
         }
 
@@ -79,7 +91,7 @@ pub fn ConnectionPoint(comptime Config: type) type {
                 const result = Config.notify(self, message);
                 if (result != types.kResultOk) return result;
             }
-            self.last_message = message;
+            self.acceptNotification(message);
             return types.kResultOk;
         }
 
