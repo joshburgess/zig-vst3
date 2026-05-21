@@ -8,9 +8,7 @@ pub const EventEcho = struct {
     pub const Params = struct {};
 
     pub fn process(_: *EventEcho, context: *plug.process.ProcessContext(f32)) void {
-        const events = context.inputEvents();
-        if (!context.canAppendOutputEventValues(events)) return;
-        context.appendOutputEvents(events) catch return;
+        _ = context.appendOutputEventsIfPossible(context.inputEvents());
     }
 };
 

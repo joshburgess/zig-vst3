@@ -20,10 +20,7 @@ const EventEchoProcessor = struct {
             }
         }
 
-        const input_events = context.inputEvents();
-        if (context.canAppendOutputEventValues(input_events)) {
-            context.appendOutputEvents(input_events) catch return;
-        }
+        _ = context.appendOutputEventsIfPossible(context.inputEvents());
     }
 };
 

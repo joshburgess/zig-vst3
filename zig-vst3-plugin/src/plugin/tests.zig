@@ -1757,7 +1757,7 @@ test "plugin instance passes output event writers to process hooks" {
         pub const Params = struct {};
 
         pub fn process(_: *@This(), context: *process_api.ProcessContext(f32)) void {
-            context.appendOutputEvent(process_api.Event.noteOff(1, 0, 64, 0.0)) catch {};
+            _ = context.appendOutputEventIfPossible(process_api.Event.noteOff(1, 0, 64, 0.0));
         }
     };
     const Instance = PluginInstance(Emitter);
@@ -1956,7 +1956,7 @@ test "plugin instance passes events to process64 hooks" {
             self.event_count = context.inputEventCount();
             if (context.firstEvent(.note_on)) |event| {
                 self.note_pitch = event.pitch;
-                context.appendOutputEvent(process_api.Event.noteOff(event.sample_offset + 1, event.channel, event.pitch, 0.0)) catch {};
+                _ = context.appendOutputEventIfPossible(process_api.Event.noteOff(event.sample_offset + 1, event.channel, event.pitch, 0.0));
             }
         }
     };

@@ -1094,6 +1094,11 @@ pub fn ProcessContext(comptime Sample: type) type {
             return writer.appendCount(event);
         }
 
+        pub fn appendOutputEventIfPossible(self: *@This(), event: Event) bool {
+            const writer = self.outputEventWriter() orelse return false;
+            return writer.appendIfPossible(event);
+        }
+
         pub fn appendOutputEvents(self: *@This(), events: Events) !void {
             _ = try self.appendOutputEventsCount(events);
         }
@@ -1101,6 +1106,11 @@ pub fn ProcessContext(comptime Sample: type) type {
         pub fn appendOutputEventsCount(self: *@This(), events: Events) !usize {
             const writer = self.outputEventWriter() orelse return error.OutputEventsUnavailable;
             return writer.appendAllCount(events);
+        }
+
+        pub fn appendOutputEventsIfPossible(self: *@This(), events: Events) bool {
+            const writer = self.outputEventWriter() orelse return false;
+            return writer.appendAllIfPossible(events);
         }
 
         pub fn canAppendOutputEvent(self: *const @This()) bool {
@@ -2495,6 +2505,8 @@ test "process context exposes output event helpers" {
     try std.testing.expect(!context.outputEventsEmpty());
     try std.testing.expect(context.hasOutputEvents());
     try std.testing.expectEqual(@as(usize, 1), try context.appendOutputEventsCount(try Events.init(events[1..], input.len)));
+    try std.testing.expect(!context.appendOutputEventIfPossible(events[0]));
+    try std.testing.expect(!context.appendOutputEventsIfPossible(try Events.init(events[0..1], input.len)));
 
     try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
     try std.testing.expectEqual(@as(usize, 0), context.outputEventRemainingCapacity());
@@ -2678,6 +2690,8 @@ test "process context exposes output event helpers" {
     try std.testing.expect(!no_writer.canAppendOutputEvents(0));
     try std.testing.expect(!no_writer.canAppendOutputEventValue(events[0]));
     try std.testing.expect(!no_writer.canAppendOutputEventValues(try Events.init(&events, input.len)));
+    try std.testing.expect(!no_writer.appendOutputEventIfPossible(events[0]));
+    try std.testing.expect(!no_writer.appendOutputEventsIfPossible(try Events.init(&events, input.len)));
     try std.testing.expect(no_writer.outputEventsEmpty());
     try std.testing.expect(!no_writer.hasOutputEvents());
     try std.testing.expect(no_writer.outputEventsFull());

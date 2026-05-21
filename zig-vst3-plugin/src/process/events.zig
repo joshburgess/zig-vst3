@@ -1151,6 +1151,12 @@ pub const EventWriter = struct {
         return 1;
     }
 
+    pub fn appendIfPossible(self: *EventWriter, event: Event) bool {
+        if (!self.canAppendEvent(event)) return false;
+        self.appendValidated(event) catch return false;
+        return true;
+    }
+
     pub fn appendAll(self: *EventWriter, source: Events) !void {
         _ = try self.appendAllCount(source);
     }
@@ -1164,6 +1170,14 @@ pub const EventWriter = struct {
             try self.appendValidated(event);
         }
         return source.items.len;
+    }
+
+    pub fn appendAllIfPossible(self: *EventWriter, source: Events) bool {
+        if (!self.canAppendEvents(source)) return false;
+        for (source.items) |event| {
+            self.appendValidated(event) catch return false;
+        }
+        return true;
     }
 
     fn appendValidated(self: *EventWriter, event: Event) !void {
@@ -2900,16 +2914,19 @@ test "event writer appends event views atomically" {
     var full_storage: [1]Event = undefined;
     var full_writer = EventWriter.init(&full_storage, 4);
     try std.testing.expectEqual(@as(usize, 1), try full_writer.appendCount(items[0]));
+    try std.testing.expect(!full_writer.appendIfPossible(items[1]));
     try std.testing.expectError(error.EventStorageFull, full_writer.appendCount(items[1]));
     try std.testing.expectEqual(@as(usize, 1), full_writer.eventCount());
     full_writer.clear();
     try std.testing.expect(!full_writer.canAppend(items.len));
+    try std.testing.expect(!full_writer.appendAllIfPossible(try Events.init(&items, 4)));
     try std.testing.expectError(error.EventStorageFull, full_writer.appendAllCount(try Events.init(&items, 4)));
     try std.testing.expectEqual(@as(usize, 0), full_writer.eventCount());
 
     var existing_storage: [2]Event = undefined;
     var existing_writer = EventWriter.init(&existing_storage, 4);
     try existing_writer.append(items[0]);
+    try std.testing.expect(!existing_writer.appendAllIfPossible(try Events.init(&items, 4)));
     try std.testing.expectError(error.EventStorageFull, existing_writer.appendAllCount(try Events.init(&items, 4)));
     try std.testing.expectEqual(@as(usize, 1), existing_writer.eventCount());
     try std.testing.expectEqual(EventKind.note_on, existing_writer.events().items[0].kind);
@@ -2925,6 +2942,7 @@ test "event writer appends event views atomically" {
     var preserved_storage: [3]Event = undefined;
     var preserved_writer = EventWriter.init(&preserved_storage, 4);
     try preserved_writer.append(items[0]);
+    try std.testing.expect(!preserved_writer.appendAllIfPossible(.{ .items = &invalid_and_too_large }));
     try std.testing.expectError(error.InvalidEventPitch, preserved_writer.appendAllCount(.{ .items = &invalid_and_too_large }));
     try std.testing.expectEqual(@as(usize, 1), preserved_writer.eventCount());
     try std.testing.expectEqual(EventKind.note_on, preserved_writer.events().items[0].kind);
@@ -2933,6 +2951,7 @@ test "event writer appends event views atomically" {
     const outside = [_]Event{Event.noteOn(4, 0, 60, 1.0)};
     var outside_storage: [1]Event = undefined;
     var outside_writer = EventWriter.init(&outside_storage, 4);
+    try std.testing.expect(!outside_writer.appendIfPossible(outside[0]));
     try std.testing.expectError(error.EventOutsideBlock, outside_writer.appendAllCount(.{ .items = &outside }));
     try std.testing.expectEqual(@as(usize, 0), outside_writer.eventCount());
 

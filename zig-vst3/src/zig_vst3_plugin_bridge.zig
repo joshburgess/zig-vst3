@@ -2576,7 +2576,7 @@ test "zig-vst3-plugin bridge passes double precision process context inputs" {
             self.event_count.* = context.inputEventCount();
             if (context.firstEvent(.note_on)) |event| {
                 self.event_pitch.* = event.pitch;
-                context.appendOutputEvent(plug.process.Event.noteOff(event.sample_offset + 1, event.channel, event.pitch, 0.0)) catch {};
+                _ = context.appendOutputEventIfPossible(plug.process.Event.noteOff(event.sample_offset + 1, event.channel, event.pitch, 0.0));
             }
         }
     };
@@ -2868,7 +2868,7 @@ test "zig-vst3-plugin bridge processes input-only main audio" {
 test "zig-vst3-plugin bridge exposes output event writer to processors" {
     const EventEmitter = struct {
         pub fn process(_: @This(), comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
-            context.appendOutputEvent(plug.process.Event.noteOn(1, 0, 60, 0.75)) catch {};
+            _ = context.appendOutputEventIfPossible(plug.process.Event.noteOn(1, 0, 60, 0.75));
         }
     };
 
