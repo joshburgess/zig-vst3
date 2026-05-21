@@ -31,7 +31,7 @@ pub const FloatParam = struct {
             .name = name,
             .min = min,
             .max = max,
-            .default = (FloatParam{ .id = id, .name = name, .min = min, .max = max, .default = min }).clampPlain(default),
+            .default = clampPlainInRange(min, max, default),
         };
     }
 
@@ -79,6 +79,11 @@ pub const FloatParam = struct {
         const value = try std.fmt.parseFloat(f64, trimPlainText(text));
         return self.normalize(value);
     }
+
+    fn clampPlainInRange(min: f64, max: f64, plain: f64) f64 {
+        if (std.math.isNan(plain)) return min;
+        return std.math.clamp(plain, min, max);
+    }
 };
 
 pub const IntParam = struct {
@@ -105,7 +110,7 @@ pub const IntParam = struct {
             .name = name,
             .min = min,
             .max = max,
-            .default = (IntParam{ .id = id, .name = name, .min = min, .max = max, .default = min }).clampPlain(default),
+            .default = clampPlainInRange(min, max, default),
         };
     }
 
@@ -156,6 +161,10 @@ pub const IntParam = struct {
     pub fn parsePlain(self: IntParam, text: []const u8) !f64 {
         const value = try std.fmt.parseInt(i64, trimPlainText(text), 10);
         return self.normalize(value);
+    }
+
+    fn clampPlainInRange(min: i64, max: i64, plain: i64) i64 {
+        return std.math.clamp(plain, min, max);
     }
 };
 
