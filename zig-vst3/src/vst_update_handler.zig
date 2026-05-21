@@ -19,6 +19,12 @@ pub fn Dependent(comptime Config: type) type {
             return &self.iface;
         }
 
+        fn recordUpdate(self: *Self, changed: ?*anyopaque, message: types.int32) void {
+            self.last_changed = changed;
+            self.last_message = message;
+            self.update_count +|= 1;
+        }
+
         const owner = interface_map.ownerFromField(Self, iupdatehandler.IDependent, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
@@ -39,9 +45,7 @@ pub fn Dependent(comptime Config: type) type {
 
         fn update(ptr: *anyopaque, changed: ?*anyopaque, message: types.int32) callconv(.c) void {
             const self = owner(ptr);
-            self.last_changed = changed;
-            self.last_message = message;
-            self.update_count +|= 1;
+            self.recordUpdate(changed, message);
             if (@hasDecl(Config, "update")) {
                 Config.update(changed, message);
             }

@@ -310,10 +310,18 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             return result;
         }
 
+        fn recordOpenQueueRequest(self: *Self, user_context_id: ivstdataexchange.DataExchangeUserContextID) void {
+            self.last_user_context_id = user_context_id;
+        }
+
+        fn acceptClosedQueue(self: *Self, queue_id: ivstdataexchange.DataExchangeQueueID) void {
+            self.last_queue_id = queue_id;
+        }
+
         fn openQueue(ptr: *anyopaque, processor: ?*ivstaudioprocessor.IAudioProcessor, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) callconv(.c) types.tresult {
             const self = ownerFromDataExchange(ptr);
             self.open_count +|= 1;
-            self.last_user_context_id = user_context_id;
+            self.recordOpenQueueRequest(user_context_id);
             out.* = ivstdataexchange.InvalidDataExchangeQueueID;
             if (@hasDecl(Config, "openQueue")) {
                 const result = Config.openQueue(self, processor, block_size, num_blocks, alignment, user_context_id, out);
@@ -330,7 +338,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
                 const result = Config.closeQueue(self, queue_id);
                 if (result != types.kResultOk) return result;
             }
-            self.last_queue_id = queue_id;
+            self.acceptClosedQueue(queue_id);
             return types.kResultOk;
         }
 
