@@ -219,6 +219,11 @@ fn indexedEventAfterCursor(item: Event, index: usize, last_offset: ?usize, last_
     return ordered.afterCursor(item, index, last_offset, last_index);
 }
 
+fn eventSampleOffset(event: ?Event) ?usize {
+    const item = event orelse return null;
+    return item.sample_offset;
+}
+
 const BusChannel = struct {
     bus_index: i32,
     channel: i16,
@@ -834,53 +839,43 @@ pub const Events = struct {
     }
 
     pub fn firstSampleOffset(self: Events) ?usize {
-        const event = self.first() orelse return null;
-        return event.sample_offset;
+        return eventSampleOffset(self.first());
     }
 
     pub fn latestSampleOffset(self: Events) ?usize {
-        const event = latestMatchingEvent(self.items, {}, matchesAny) orelse return null;
-        return event.sample_offset;
+        return eventSampleOffset(latestMatchingEvent(self.items, {}, matchesAny));
     }
 
     pub fn firstSampleOffsetForKind(self: Events, kind: EventKind) ?usize {
-        const event = self.firstKind(kind) orelse return null;
-        return event.sample_offset;
+        return eventSampleOffset(self.firstKind(kind));
     }
 
     pub fn latestSampleOffsetForKind(self: Events, kind: EventKind) ?usize {
-        const event = self.latestKind(kind) orelse return null;
-        return event.sample_offset;
+        return eventSampleOffset(self.latestKind(kind));
     }
 
     pub fn firstSampleOffsetForBus(self: Events, bus_index: i32) ?usize {
-        const event = self.firstBus(bus_index) orelse return null;
-        return event.sample_offset;
+        return eventSampleOffset(self.firstBus(bus_index));
     }
 
     pub fn latestSampleOffsetForBus(self: Events, bus_index: i32) ?usize {
-        const event = self.latestBus(bus_index) orelse return null;
-        return event.sample_offset;
+        return eventSampleOffset(self.latestBus(bus_index));
     }
 
     pub fn firstSampleOffsetForChannel(self: Events, channel: i16) ?usize {
-        const event = self.firstChannel(channel) orelse return null;
-        return event.sample_offset;
+        return eventSampleOffset(self.firstChannel(channel));
     }
 
     pub fn latestSampleOffsetForChannel(self: Events, channel: i16) ?usize {
-        const event = self.latestChannel(channel) orelse return null;
-        return event.sample_offset;
+        return eventSampleOffset(self.latestChannel(channel));
     }
 
     pub fn firstSampleOffsetForBusChannel(self: Events, bus_index: i32, channel: i16) ?usize {
-        const event = self.firstBusChannel(bus_index, channel) orelse return null;
-        return event.sample_offset;
+        return eventSampleOffset(self.firstBusChannel(bus_index, channel));
     }
 
     pub fn latestSampleOffsetForBusChannel(self: Events, bus_index: i32, channel: i16) ?usize {
-        const event = self.latestBusChannel(bus_index, channel) orelse return null;
-        return event.sample_offset;
+        return eventSampleOffset(self.latestBusChannel(bus_index, channel));
     }
 
     pub fn first(self: Events) ?Event {

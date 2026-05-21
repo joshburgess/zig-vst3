@@ -58,6 +58,16 @@ fn indexedChangeAfterCursor(item: ParameterChange, index: usize, last_offset: ?u
     return ordered.afterCursor(item, index, last_offset, last_index);
 }
 
+fn changeSampleOffset(change: ?ParameterChange) ?usize {
+    const item = change orelse return null;
+    return item.sample_offset;
+}
+
+fn changeNormalized(change: ?ParameterChange) ?f64 {
+    const item = change orelse return null;
+    return item.normalized;
+}
+
 const IdOffset = struct {
     id: u32,
     sample_offset: usize,
@@ -321,13 +331,11 @@ pub const ParameterChanges = struct {
     }
 
     pub fn firstSampleOffset(self: ParameterChanges) ?usize {
-        const change = self.firstChange() orelse return null;
-        return change.sample_offset;
+        return changeSampleOffset(self.firstChange());
     }
 
     pub fn latestSampleOffset(self: ParameterChanges) ?usize {
-        const change = latestMatchingChange(self.items, {}, matchesAny) orelse return null;
-        return change.sample_offset;
+        return changeSampleOffset(latestMatchingChange(self.items, {}, matchesAny));
     }
 
     pub fn firstChange(self: ParameterChanges) ?ParameterChange {
@@ -339,13 +347,11 @@ pub const ParameterChanges = struct {
     }
 
     pub fn firstSampleOffsetForId(self: ParameterChanges, id: u32) ?usize {
-        const change = self.first(id) orelse return null;
-        return change.sample_offset;
+        return changeSampleOffset(self.first(id));
     }
 
     pub fn latestSampleOffsetForId(self: ParameterChanges, id: u32) ?usize {
-        const change = self.latest(id) orelse return null;
-        return change.sample_offset;
+        return changeSampleOffset(self.latest(id));
     }
 
     pub fn latest(self: ParameterChanges, id: u32) ?ParameterChange {
@@ -426,18 +432,15 @@ pub const ParameterChanges = struct {
     }
 
     pub fn latestNormalized(self: ParameterChanges, id: u32) ?f64 {
-        const change = self.latest(id) orelse return null;
-        return change.normalized;
+        return changeNormalized(self.latest(id));
     }
 
     pub fn firstAnyNormalized(self: ParameterChanges) ?f64 {
-        const change = self.firstChange() orelse return null;
-        return change.normalized;
+        return changeNormalized(self.firstChange());
     }
 
     pub fn latestAnyNormalized(self: ParameterChanges) ?f64 {
-        const change = self.latestChange() orelse return null;
-        return change.normalized;
+        return changeNormalized(self.latestChange());
     }
 
     pub fn firstAnyNormalizedOr(self: ParameterChanges, default: f64) f64 {
@@ -449,18 +452,15 @@ pub const ParameterChanges = struct {
     }
 
     pub fn firstNormalized(self: ParameterChanges, id: u32) ?f64 {
-        const change = self.first(id) orelse return null;
-        return change.normalized;
+        return changeNormalized(self.first(id));
     }
 
     pub fn firstNormalizedAtOffset(self: ParameterChanges, sample_offset: usize) ?f64 {
-        const change = self.firstAtOffset(sample_offset) orelse return null;
-        return change.normalized;
+        return changeNormalized(self.firstAtOffset(sample_offset));
     }
 
     pub fn latestNormalizedAtOffset(self: ParameterChanges, sample_offset: usize) ?f64 {
-        const change = self.latestAtOffset(sample_offset) orelse return null;
-        return change.normalized;
+        return changeNormalized(self.latestAtOffset(sample_offset));
     }
 
     pub fn firstNormalizedAtOffsetOr(self: ParameterChanges, sample_offset: usize, default: f64) f64 {
@@ -472,13 +472,11 @@ pub const ParameterChanges = struct {
     }
 
     pub fn firstNormalizedForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) ?f64 {
-        const change = self.firstForIdAtOffset(id, sample_offset) orelse return null;
-        return change.normalized;
+        return changeNormalized(self.firstForIdAtOffset(id, sample_offset));
     }
 
     pub fn latestNormalizedForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) ?f64 {
-        const change = self.latestForIdAtOffset(id, sample_offset) orelse return null;
-        return change.normalized;
+        return changeNormalized(self.latestForIdAtOffset(id, sample_offset));
     }
 
     pub fn firstNormalizedForIdAtOffsetOr(self: ParameterChanges, id: u32, sample_offset: usize, default: f64) f64 {
@@ -512,8 +510,7 @@ pub const ParameterChanges = struct {
     }
 
     pub fn latestNormalizedAtOrBefore(self: ParameterChanges, id: u32, sample_offset: usize) ?f64 {
-        const change = self.latestAtOrBefore(id, sample_offset) orelse return null;
-        return change.normalized;
+        return changeNormalized(self.latestAtOrBefore(id, sample_offset));
     }
 
     pub fn normalizedAtOrBeforeOr(self: ParameterChanges, id: u32, sample_offset: usize, default: f64) f64 {
