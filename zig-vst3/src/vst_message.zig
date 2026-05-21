@@ -228,6 +228,10 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
                 return self.kind == kind;
             }
 
+            fn hasBinaryPayload(self: Entry) bool {
+                return self.binary_size > 0;
+            }
+
             fn matchesId(self: Entry, wanted: []const u8) bool {
                 const existing = self.id orelse return false;
                 return std.mem.eql(u8, wanted, std.mem.span(existing));
@@ -286,6 +290,10 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
                 }
             }
             return null;
+        }
+
+        fn missingBinaryInput(size: types.uint32, value: ?*const anyopaque) bool {
+            return size > 0 and value == null;
         }
 
         fn setInt(ptr: *anyopaque, id: ivstattributes.AttrID, value: types.int64) callconv(.c) types.tresult {
@@ -349,11 +357,11 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn setBinary(ptr: *anyopaque, id: ivstattributes.AttrID, value: ?*const anyopaque, size: types.uint32) callconv(.c) types.tresult {
             if (size > max_binary_bytes) return types.kResultFalse;
-            if (size > 0 and value == null) return types.kInvalidArgument;
+            if (missingBinaryInput(size, value)) return types.kInvalidArgument;
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
             entry.reset(.binary);
             entry.binary_size = size;
-            if (size > 0) {
+            if (entry.hasBinaryPayload()) {
                 const source = value orelse return types.kInvalidArgument;
                 const bytes: [*]const u8 = @ptrCast(source);
                 @memcpy(entry.binary_value[0..size], bytes[0..size]);

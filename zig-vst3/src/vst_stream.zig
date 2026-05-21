@@ -112,6 +112,10 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return result;
         }
 
+        fn missingBufferForRequestedBytes(requested: usize, buffer: ?*anyopaque) bool {
+            return requested > 0 and buffer == null;
+        }
+
         const ownerFromStream = interface_map.ownerFromField(Self, ibstream.IBStream, "iface");
         const ownerFromSizeable = interface_map.ownerFromField(Self, ibstream.ISizeableStream, "sizeable_iface");
 
@@ -150,7 +154,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
 
         fn read(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_read: ?*types.int32) callconv(.c) types.tresult {
             const requested = byteCountLen(byte_count) orelse return failByteCount(bytes_read, types.kInvalidArgument);
-            if (requested > 0 and buffer == null) return failByteCount(bytes_read, types.kInvalidArgument);
+            if (missingBufferForRequestedBytes(requested, buffer)) return failByteCount(bytes_read, types.kInvalidArgument);
             const self = ownerFromStream(ptr);
             const source = self.readableSlice(requested) orelse return failByteCount(bytes_read, types.kResultFalse);
             if (requested > 0) {
@@ -165,7 +169,7 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
 
         fn write(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_written: ?*types.int32) callconv(.c) types.tresult {
             const requested = byteCountLen(byte_count) orelse return failByteCount(bytes_written, types.kInvalidArgument);
-            if (requested > 0 and buffer == null) return failByteCount(bytes_written, types.kInvalidArgument);
+            if (missingBufferForRequestedBytes(requested, buffer)) return failByteCount(bytes_written, types.kInvalidArgument);
             const self = ownerFromStream(ptr);
             const target = self.writableSlice(requested) orelse return failByteCount(bytes_written, types.kResultFalse);
             if (requested > 0) {
