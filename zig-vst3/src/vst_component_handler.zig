@@ -9,6 +9,27 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 
+fn recordBeginEditState(self: anytype, id: vsttypes.ParamID) void {
+    self.begin_count +|= 1;
+    self.last_param_id = id;
+}
+
+fn recordPerformEditState(self: anytype, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
+    self.perform_count +|= 1;
+    self.last_param_id = id;
+    self.last_value = value;
+}
+
+fn recordEndEditState(self: anytype, id: vsttypes.ParamID) void {
+    self.end_count +|= 1;
+    self.last_param_id = id;
+}
+
+fn recordRestartState(self: anytype, flags: types.int32) void {
+    self.restart_count +|= 1;
+    self.last_restart_flags = flags;
+}
+
 pub fn ComponentHandler(comptime Config: type) type {
     return extern struct {
         const Self = @This();
@@ -30,24 +51,19 @@ pub fn ComponentHandler(comptime Config: type) type {
         }
 
         fn recordBeginEdit(self: *Self, id: vsttypes.ParamID) void {
-            self.begin_count +|= 1;
-            self.last_param_id = id;
+            recordBeginEditState(self, id);
         }
 
         fn recordPerformEdit(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
-            self.perform_count +|= 1;
-            self.last_param_id = id;
-            self.last_value = value;
+            recordPerformEditState(self, id, value);
         }
 
         fn recordEndEdit(self: *Self, id: vsttypes.ParamID) void {
-            self.end_count +|= 1;
-            self.last_param_id = id;
+            recordEndEditState(self, id);
         }
 
         fn recordRestart(self: *Self, flags: types.int32) void {
-            self.restart_count +|= 1;
-            self.last_restart_flags = flags;
+            recordRestartState(self, flags);
         }
 
         const owner = interface_map.ownerFromField(Self, ivsteditcontroller.IComponentHandler, "iface");
@@ -138,24 +154,19 @@ pub fn ComponentHandler2(comptime Config: type) type {
         last_editor_name: types.FIDString = "",
 
         fn recordBeginEdit(self: *Self, id: vsttypes.ParamID) void {
-            self.begin_count +|= 1;
-            self.last_param_id = id;
+            recordBeginEditState(self, id);
         }
 
         fn recordPerformEdit(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
-            self.perform_count +|= 1;
-            self.last_param_id = id;
-            self.last_value = value;
+            recordPerformEditState(self, id, value);
         }
 
         fn recordEndEdit(self: *Self, id: vsttypes.ParamID) void {
-            self.end_count +|= 1;
-            self.last_param_id = id;
+            recordEndEditState(self, id);
         }
 
         fn recordRestart(self: *Self, flags: types.int32) void {
-            self.restart_count +|= 1;
-            self.last_restart_flags = flags;
+            recordRestartState(self, flags);
         }
 
         pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
@@ -319,24 +330,19 @@ pub fn ComponentHandler3(comptime Config: type) type {
         last_restart_flags: types.int32 = 0,
 
         fn recordBeginEdit(self: *Self, id: vsttypes.ParamID) void {
-            self.begin_count +|= 1;
-            self.last_param_id = id;
+            recordBeginEditState(self, id);
         }
 
         fn recordPerformEdit(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
-            self.perform_count +|= 1;
-            self.last_param_id = id;
-            self.last_value = value;
+            recordPerformEditState(self, id, value);
         }
 
         fn recordEndEdit(self: *Self, id: vsttypes.ParamID) void {
-            self.end_count +|= 1;
-            self.last_param_id = id;
+            recordEndEditState(self, id);
         }
 
         fn recordRestart(self: *Self, flags: types.int32) void {
-            self.restart_count +|= 1;
-            self.last_restart_flags = flags;
+            recordRestartState(self, flags);
         }
 
         pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
@@ -481,24 +487,19 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         last_system_time: types.int64 = 0,
 
         fn recordBeginEdit(self: *Self, id: vsttypes.ParamID) void {
-            self.begin_count +|= 1;
-            self.last_param_id = id;
+            recordBeginEditState(self, id);
         }
 
         fn recordPerformEdit(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
-            self.perform_count +|= 1;
-            self.last_param_id = id;
-            self.last_value = value;
+            recordPerformEditState(self, id, value);
         }
 
         fn recordEndEdit(self: *Self, id: vsttypes.ParamID) void {
-            self.end_count +|= 1;
-            self.last_param_id = id;
+            recordEndEditState(self, id);
         }
 
         fn recordRestart(self: *Self, flags: types.int32) void {
-            self.restart_count +|= 1;
-            self.last_restart_flags = flags;
+            recordRestartState(self, flags);
         }
 
         pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
@@ -706,24 +707,19 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         last_value: vsttypes.ParamValue = 0,
 
         fn recordBeginEdit(self: *Self, id: vsttypes.ParamID) void {
-            self.begin_count +|= 1;
-            self.last_param_id = id;
+            recordBeginEditState(self, id);
         }
 
         fn recordPerformEdit(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
-            self.perform_count +|= 1;
-            self.last_param_id = id;
-            self.last_value = value;
+            recordPerformEditState(self, id, value);
         }
 
         fn recordEndEdit(self: *Self, id: vsttypes.ParamID) void {
-            self.end_count +|= 1;
-            self.last_param_id = id;
+            recordEndEditState(self, id);
         }
 
         fn recordRestart(self: *Self, flags: types.int32) void {
-            self.restart_count +|= 1;
-            self.last_restart_flags = flags;
+            recordRestartState(self, flags);
         }
 
         pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
@@ -912,24 +908,19 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         last_program_index: types.int32 = 0,
 
         fn recordBeginEdit(self: *Self, id: vsttypes.ParamID) void {
-            self.begin_count +|= 1;
-            self.last_param_id = id;
+            recordBeginEditState(self, id);
         }
 
         fn recordPerformEdit(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
-            self.perform_count +|= 1;
-            self.last_param_id = id;
-            self.last_value = value;
+            recordPerformEditState(self, id, value);
         }
 
         fn recordEndEdit(self: *Self, id: vsttypes.ParamID) void {
-            self.end_count +|= 1;
-            self.last_param_id = id;
+            recordEndEditState(self, id);
         }
 
         fn recordRestart(self: *Self, flags: types.int32) void {
-            self.restart_count +|= 1;
-            self.last_restart_flags = flags;
+            recordRestartState(self, flags);
         }
 
         pub fn asHandler(self: *Self) *ivsteditcontroller.IComponentHandler {
