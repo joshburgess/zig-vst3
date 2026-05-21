@@ -544,7 +544,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn selectUnit(_: *anyopaque, id: vsttypes.UnitID) callconv(.c) types.tresult {
-            if (units.unitById(id) == null) return types.kInvalidArgument;
+            if (!units.hasUnit(id)) return types.kInvalidArgument;
             return types.kResultOk;
         }
 
@@ -569,7 +569,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         fn programDataSupported(_: *anyopaque, list_id: vsttypes.ProgramListID) callconv(.c) types.tresult {
             const count = units.programCount(list_id) orelse return types.kResultFalse;
             for (0..count) |program_index| {
-                if ((units.programParameterCount(list_id, program_index) orelse 0) != 0) return types.kResultOk;
+                if (units.programHasParameters(list_id, program_index)) return types.kResultOk;
             }
             return types.kResultFalse;
         }
@@ -578,7 +578,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             const count = units.programCount(list_id) orelse return types.kResultFalse;
             const index = vst_index.bounded(program_index, count) orelse return types.kInvalidArgument;
             const reflected = units.program(list_id, index) orelse return types.kInvalidArgument;
-            if (reflected.parameters.len == 0) return types.kResultFalse;
+            if (reflected.parametersEmpty()) return types.kResultFalse;
 
             var values = plug_core.parameters.ParameterValues(Params).init(Config.parameter_set);
             for (reflected.parameters) |parameter| {
