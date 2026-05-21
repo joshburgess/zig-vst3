@@ -133,7 +133,8 @@ pub fn ContextMenu(comptime max_items: usize) type {
         }
 
         pub fn occupiedByIndex(self: *Self, index: types.int32) ?*Entry {
-            const wanted_index = vst_index.bounded(index, self.occupiedCount()) orelse return null;
+            if (index < 0) return null;
+            const wanted_index: usize = @intCast(index);
             var current: usize = 0;
             for (&self.entries) |*entry| {
                 if (entry.isOccupied()) {
