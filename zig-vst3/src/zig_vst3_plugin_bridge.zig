@@ -177,10 +177,7 @@ pub const StereoAudioBuses = struct {
     }
 
     pub fn arrangementConfigured(direction: vsttypes.BusDirection, index: types.int32, out: *vsttypes.SpeakerArrangement, config: Config) types.tresult {
-        const has_audio_bus =
-            (config.audio_input and direction == @intFromEnum(ivstcomponent.BusDirections.kInput)) or
-            (config.audio_output and direction == @intFromEnum(ivstcomponent.BusDirections.kOutput));
-        if (index != 0 or !has_audio_bus) {
+        if (index != 0 or !hasConfiguredAudioBus(config, direction)) {
             out.* = empty_arrangement;
             return types.kInvalidArgument;
         }
