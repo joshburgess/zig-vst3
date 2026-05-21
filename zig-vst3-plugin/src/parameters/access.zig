@@ -288,9 +288,14 @@ pub fn ParameterValues(comptime Params: type) type {
             changed: usize,
         };
 
+        fn acceptsAutomatedChange(_: *Self, set: *const Set, change: process.ParameterChange) bool {
+            if (!(set.canAutomateById(change.id) orelse false)) return false;
+            if (set.isReadOnlyById(change.id) orelse true) return false;
+            return true;
+        }
+
         fn applyChange(self: *Self, set: *const Set, change: process.ParameterChange) ?AppliedChange {
-            if (!(set.canAutomateById(change.id) orelse false)) return null;
-            if (set.isReadOnlyById(change.id) orelse true) return null;
+            if (!self.acceptsAutomatedChange(set, change)) return null;
             const changed = self.storeByIdCount(set, change.id, change.normalized) orelse return null;
             return .{ .changed = changed };
         }
