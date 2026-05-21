@@ -203,12 +203,7 @@ pub const StereoAudioBuses = struct {
 
 pub const RealtimeProcessorDefaults = struct {
     pub fn canProcessSampleSize(symbolic_sample_size: types.int32) types.tresult {
-        if (symbolic_sample_size == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32) or
-            symbolic_sample_size == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample64))
-        {
-            return types.kResultOk;
-        }
-        return types.kResultFalse;
+        return if (supportsSampleSize(symbolic_sample_size)) types.kResultOk else types.kResultFalse;
     }
 
     pub fn validateProcessSetup(setup: *const ivstaudioprocessor.ProcessSetup) types.tresult {
@@ -231,6 +226,15 @@ pub const RealtimeProcessorDefaults = struct {
 
     pub fn tailSamples() types.uint32 {
         return ivstaudioprocessor.kNoTail;
+    }
+
+    fn supportsSampleSize(symbolic_sample_size: types.int32) bool {
+        return sampleSizeIs(symbolic_sample_size, .kSample32) or
+            sampleSizeIs(symbolic_sample_size, .kSample64);
+    }
+
+    fn sampleSizeIs(symbolic_sample_size: types.int32, expected: ivstaudioprocessor.SymbolicSampleSizes) bool {
+        return symbolic_sample_size == @intFromEnum(expected);
     }
 };
 
