@@ -151,13 +151,23 @@ pub fn WrapperMPESupport(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IVst3WrapperMPESupport");
         }
 
+        fn acceptMPEInputProcessing(self: *Self, state: types.TBool) void {
+            self.mpe_input_enabled = state;
+        }
+
+        fn acceptMPEInputDeviceSettings(self: *Self, master_channel: types.int32, member_begin_channel: types.int32, member_end_channel: types.int32) void {
+            self.master_channel = master_channel;
+            self.member_begin_channel = member_begin_channel;
+            self.member_end_channel = member_end_channel;
+        }
+
         fn enableMPEInputProcessing(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
             const self = owner(ptr);
             if (@hasDecl(Config, "enableMPEInputProcessing")) {
                 const result = Config.enableMPEInputProcessing(self, state);
                 if (result != types.kResultOk) return result;
             }
-            self.mpe_input_enabled = state;
+            self.acceptMPEInputProcessing(state);
             return types.kResultOk;
         }
 
@@ -167,9 +177,7 @@ pub fn WrapperMPESupport(comptime Config: type) type {
                 const result = Config.setMPEInputDeviceSettings(self, master_channel, member_begin_channel, member_end_channel);
                 if (result != types.kResultOk) return result;
             }
-            self.master_channel = master_channel;
-            self.member_begin_channel = member_begin_channel;
-            self.member_end_channel = member_end_channel;
+            self.acceptMPEInputDeviceSettings(master_channel, member_begin_channel, member_end_channel);
             return types.kResultOk;
         }
 

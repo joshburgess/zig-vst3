@@ -35,6 +35,10 @@ pub fn InterAppAudioHost(comptime Config: type) type {
             self.has_last_preset_uid = true;
         }
 
+        fn acceptRemoteControlEvent(self: *Self, event_id: types.uint32) void {
+            self.last_remote_control_event = event_id;
+        }
+
         const owner = interface_map.ownerFromField(Self, ivstinterappaudio.IInterAppAudioHost, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
@@ -92,7 +96,7 @@ pub fn InterAppAudioHost(comptime Config: type) type {
                 const result = Config.sendRemoteControlEvent(self, event_id);
                 if (result != types.kResultOk) return result;
             }
-            self.last_remote_control_event = event_id;
+            self.acceptRemoteControlEvent(event_id);
             return types.kResultOk;
         }
 
