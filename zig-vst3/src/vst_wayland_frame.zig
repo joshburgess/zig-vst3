@@ -20,6 +20,10 @@ pub fn WaylandHost(comptime Config: type) type {
             return &self.iface;
         }
 
+        fn acceptClose(self: *Self, display: ?*iwaylandframe.wl_display) void {
+            self.last_closed_display = display;
+        }
+
         const owner = interface_map.ownerFromField(Self, iwaylandframe.IWaylandHost, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
@@ -52,7 +56,7 @@ pub fn WaylandHost(comptime Config: type) type {
                 const result = Config.closeWaylandConnection(self, display);
                 if (result != types.kResultOk) return result;
             }
-            self.last_closed_display = display;
+            self.acceptClose(display);
             return types.kResultOk;
         }
 
