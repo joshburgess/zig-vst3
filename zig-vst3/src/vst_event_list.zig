@@ -31,7 +31,7 @@ pub fn EventList(comptime max_events: usize) type {
         fn appendIndex(self: *Self, event: ivstevents.Event) ?usize {
             const index = vst_index.appendIndex(self.count, max_events) orelse return null;
             self.events[index] = event;
-            self.count +|= 1;
+            self.count = vst_index.int32NextCount(index);
             return index;
         }
 
