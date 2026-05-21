@@ -659,7 +659,7 @@ pub fn processMainAudioConfiguredWithSampleRate(
     const sample_size_result = RealtimeProcessorDefaults.canProcessSampleSize(data.symbolicSampleSize);
     if (sample_size_result != types.kResultOk) return sample_size_result;
 
-    if (data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32)) {
+    if (processDataUses32BitSamples(data)) {
         var context = makeMainAudioProcessContextConfiguredWithSampleRate(f32, data, parameter_changes, events, output_events, bus_config, fallback_sample_rate) catch |err| return processContextErrorResult(err);
         processor.process(f32, &context);
     } else {
@@ -667,6 +667,10 @@ pub fn processMainAudioConfiguredWithSampleRate(
         processor.process(f64, &context);
     }
     return types.kResultOk;
+}
+
+fn processDataUses32BitSamples(data: *const ivstaudioprocessor.ProcessData) bool {
+    return data.symbolicSampleSize == @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32);
 }
 
 fn processContextErrorResult(err: anyerror) types.tresult {
