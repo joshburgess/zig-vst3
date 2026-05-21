@@ -281,6 +281,10 @@ pub fn ProcessContext(comptime Sample: type) type {
             return self.output_events;
         }
 
+        fn requireOutputEventWriter(self: *const @This()) !*EventWriter {
+            return self.outputEventWriter() orelse error.OutputEventsUnavailable;
+        }
+
         pub fn sampleRate(self: *const @This()) f64 {
             return self.sample_rate;
         }
@@ -1090,8 +1094,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn appendOutputEventCount(self: *@This(), event: Event) !usize {
-            const writer = self.outputEventWriter() orelse return error.OutputEventsUnavailable;
-            return writer.appendCount(event);
+            return (try self.requireOutputEventWriter()).appendCount(event);
         }
 
         pub fn appendOutputEventIfPossible(self: *@This(), event: Event) bool {
@@ -1104,8 +1107,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn appendOutputEventsCount(self: *@This(), events: Events) !usize {
-            const writer = self.outputEventWriter() orelse return error.OutputEventsUnavailable;
-            return writer.appendAllCount(events);
+            return (try self.requireOutputEventWriter()).appendAllCount(events);
         }
 
         pub fn appendOutputEventsIfPossible(self: *@This(), events: Events) bool {
@@ -1168,13 +1170,11 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn firstOutputEventOffset(self: *const @This()) ?usize {
-            const writer = self.outputEventWriter() orelse return null;
-            return writer.firstSampleOffset();
+            return self.writtenOutputEvents().firstSampleOffset();
         }
 
         pub fn latestOutputEventOffset(self: *const @This()) ?usize {
-            const writer = self.outputEventWriter() orelse return null;
-            return writer.latestSampleOffset();
+            return self.writtenOutputEvents().latestSampleOffset();
         }
 
         pub fn firstWrittenOutputEvent(self: *const @This()) ?Event {
@@ -1194,43 +1194,35 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn firstOutputEventOffsetForKind(self: *const @This(), kind: EventKind) ?usize {
-            const writer = self.outputEventWriter() orelse return null;
-            return writer.firstSampleOffsetForKind(kind);
+            return self.writtenOutputEvents().firstSampleOffsetForKind(kind);
         }
 
         pub fn latestOutputEventOffsetForKind(self: *const @This(), kind: EventKind) ?usize {
-            const writer = self.outputEventWriter() orelse return null;
-            return writer.latestSampleOffsetForKind(kind);
+            return self.writtenOutputEvents().latestSampleOffsetForKind(kind);
         }
 
         pub fn firstOutputEventOffsetForBus(self: *const @This(), bus_index: i32) ?usize {
-            const writer = self.outputEventWriter() orelse return null;
-            return writer.firstSampleOffsetForBus(bus_index);
+            return self.writtenOutputEvents().firstSampleOffsetForBus(bus_index);
         }
 
         pub fn latestOutputEventOffsetForBus(self: *const @This(), bus_index: i32) ?usize {
-            const writer = self.outputEventWriter() orelse return null;
-            return writer.latestSampleOffsetForBus(bus_index);
+            return self.writtenOutputEvents().latestSampleOffsetForBus(bus_index);
         }
 
         pub fn firstOutputEventOffsetForChannel(self: *const @This(), channel: i16) ?usize {
-            const writer = self.outputEventWriter() orelse return null;
-            return writer.firstSampleOffsetForChannel(channel);
+            return self.writtenOutputEvents().firstSampleOffsetForChannel(channel);
         }
 
         pub fn latestOutputEventOffsetForChannel(self: *const @This(), channel: i16) ?usize {
-            const writer = self.outputEventWriter() orelse return null;
-            return writer.latestSampleOffsetForChannel(channel);
+            return self.writtenOutputEvents().latestSampleOffsetForChannel(channel);
         }
 
         pub fn firstOutputEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?usize {
-            const writer = self.outputEventWriter() orelse return null;
-            return writer.firstSampleOffsetForBusChannel(bus_index, channel);
+            return self.writtenOutputEvents().firstSampleOffsetForBusChannel(bus_index, channel);
         }
 
         pub fn latestOutputEventOffsetForBusChannel(self: *const @This(), bus_index: i32, channel: i16) ?usize {
-            const writer = self.outputEventWriter() orelse return null;
-            return writer.latestSampleOffsetForBusChannel(bus_index, channel);
+            return self.writtenOutputEvents().latestSampleOffsetForBusChannel(bus_index, channel);
         }
 
         pub fn firstOutputEvent(self: *const @This(), kind: EventKind) ?Event {
@@ -1443,8 +1435,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn outputEventCount(self: *const @This()) usize {
-            const writer = self.outputEventWriter() orelse return 0;
-            return writer.eventCount();
+            return self.writtenOutputEvents().eventCount();
         }
 
         pub fn outputEventCapacity(self: *const @This()) usize {
