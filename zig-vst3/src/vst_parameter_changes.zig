@@ -43,7 +43,7 @@ pub fn ParamValueQueue(comptime max_points: usize) type {
             if (!vst_value.isNormalized(value)) return null;
             const index = vst_index.appendIndex(self.point_count, max_points) orelse return null;
             self.points[index] = .{ .sample_offset = sample_offset, .value = value };
-            self.point_count +|= 1;
+            self.point_count = vst_index.int32NextCount(index);
             return vst_index.int32Count(index);
         }
 
@@ -144,7 +144,7 @@ pub fn ParameterChanges(comptime max_queues: usize, comptime max_points_per_queu
         fn addQueueIndex(self: *Self, id: vsttypes.ParamID) ?usize {
             const index = vst_index.appendIndex(self.queue_count, max_queues) orelse return null;
             self.queues[index] = Queue.init(id);
-            self.queue_count +|= 1;
+            self.queue_count = vst_index.int32NextCount(index);
             return index;
         }
 
