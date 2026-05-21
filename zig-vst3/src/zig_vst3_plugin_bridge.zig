@@ -851,7 +851,7 @@ fn BoundedCollector(comptime T: type) type {
         fn append(self: *@This(), item: T) bool {
             if (!self.hasCapacity()) return false;
             self.storage[self.count] = item;
-            self.count +|= 1;
+            self.count += 1;
             return true;
         }
 
@@ -860,7 +860,8 @@ fn BoundedCollector(comptime T: type) type {
         }
 
         fn items(self: *const @This()) []const T {
-            return self.storage[0..@min(self.count, self.storage.len)];
+            std.debug.assert(self.count <= self.storage.len);
+            return self.storage[0..self.count];
         }
     };
 }
@@ -2912,9 +2913,6 @@ test "bridge bounded collector caps appended items" {
     try std.testing.expect(!collector.append(3));
     try std.testing.expectEqualSlices(u8, &.{ 1, 2 }, collector.items());
     try std.testing.expect(!collector.hasCapacity());
-
-    collector.count = 99;
-    try std.testing.expectEqualSlices(u8, &.{ 1, 2 }, collector.items());
 }
 
 fn expectString128(expected: []const u8, actual: *const vsttypes.String128) !void {
