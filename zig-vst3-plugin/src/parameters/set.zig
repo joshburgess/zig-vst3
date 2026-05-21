@@ -59,7 +59,7 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn hasDuplicateIds(self: *const Self) bool {
-            return self.duplicateId() != null;
+            return self.duplicateIdIndex() != null;
         }
 
         pub fn validateUniqueIds(self: *const Self) !void {
@@ -89,7 +89,7 @@ pub fn ParameterSet(comptime Params: type) type {
         }
 
         pub fn hasDuplicateNames(self: *const Self) bool {
-            return self.duplicateName() != null;
+            return self.duplicateNameIndex() != null;
         }
 
         pub fn validateUniqueNames(self: *const Self) !void {

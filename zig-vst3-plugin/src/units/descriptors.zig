@@ -102,7 +102,7 @@ pub const Program = struct {
     }
 
     pub fn hasDuplicateParameterIds(self: Program) bool {
-        return self.duplicateParameterId() != null;
+        return self.duplicateParameterIdIndex() != null;
     }
 
     pub fn duplicateInfoKey(self: Program) ?[]const u8 {
@@ -115,7 +115,7 @@ pub const Program = struct {
     }
 
     pub fn hasDuplicateInfoKeys(self: Program) bool {
-        return self.duplicateInfoKey() != null;
+        return self.duplicateInfoKeyIndex() != null;
     }
 
     pub fn parameter(self: Program, index: usize) ?ProgramParameter {
@@ -197,7 +197,7 @@ pub const ProgramList = struct {
     }
 
     pub fn hasDuplicateProgramNames(self: ProgramList) bool {
-        return self.duplicateProgramName() != null;
+        return self.duplicateProgramNameIndex() != null;
     }
 
     pub fn program(self: ProgramList, index: usize) ?Program {
