@@ -113,6 +113,22 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
                 self.binary_size = 0;
                 self.owns_binary = false;
             }
+
+            fn setCopiedBinary(self: *Entry, data: ?*anyopaque, size: types.uint32) void {
+                self.resetValue(.{ .type = fvariant.kObject, .value = .{ .object = &self.binary } });
+                if (size > 0) {
+                    const source = data.?;
+                    const bytes: [*]const u8 = @ptrCast(source);
+                    @memcpy(self.binary[0..size], bytes[0..size]);
+                }
+                self.binary_size = size;
+                self.owns_binary = true;
+            }
+
+            fn setBorrowedBinary(self: *Entry, data: ?*anyopaque, size: types.uint32) void {
+                self.resetValue(.{ .type = fvariant.kObject, .value = .{ .object = data } });
+                self.binary_size = size;
+            }
         };
 
         iface: ipersistent.IAttributes = .{ .vtable = &attributes_vtable },
@@ -226,17 +242,9 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             if (copy and size > max_binary_bytes) return types.kResultFalse;
             const entry = ownerFromAttributes(ptr).slotFor(id) orelse return types.kResultFalse;
             if (copy) {
-                entry.resetValue(.{ .type = fvariant.kObject, .value = .{ .object = &entry.binary } });
-                if (size > 0) {
-                    const source = data orelse return types.kInvalidArgument;
-                    const bytes: [*]const u8 = @ptrCast(source);
-                    @memcpy(entry.binary[0..size], bytes[0..size]);
-                }
-                entry.binary_size = size;
-                entry.owns_binary = true;
+                entry.setCopiedBinary(data, size);
             } else {
-                entry.resetValue(.{ .type = fvariant.kObject, .value = .{ .object = data } });
-                entry.binary_size = size;
+                entry.setBorrowedBinary(data, size);
             }
             return types.kResultOk;
         }
