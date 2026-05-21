@@ -89,6 +89,23 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             binary_size: types.uint32 = 0,
             owns_binary: bool = false,
 
+            fn isOccupied(self: *const Entry) bool {
+                return self.id != null;
+            }
+
+            fn matchesID(self: *const Entry, id: ipersistent.IAttrID) bool {
+                const existing = self.id orelse return false;
+                return std.mem.eql(u8, std.mem.span(existing), std.mem.span(id));
+            }
+
+            fn hasBinaryPayload(self: *const Entry) bool {
+                return self.binary_size > 0;
+            }
+
+            fn needsBinaryOutputBuffer(self: *const Entry, out: ?*anyopaque) bool {
+                return self.hasBinaryPayload() and out == null;
+            }
+
             fn resetValue(self: *Entry, value: fvariant.FVariant) void {
                 self.value = value;
                 self.queued = false;
@@ -115,11 +132,8 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
         const ownerFromAttributes2 = interface_map.ownerFromField(Self, ipersistent.IAttributes2, "iface2");
 
         fn findEntry(self: *Self, id: ipersistent.IAttrID) ?*Entry {
-            const wanted = std.mem.span(id);
             for (&self.entries) |*entry| {
-                if (entry.id) |existing| {
-                    if (std.mem.eql(u8, wanted, std.mem.span(existing))) return entry;
-                }
+                if (entry.matchesID(id)) return entry;
             }
             return null;
         }
@@ -127,7 +141,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
         fn slotFor(self: *Self, id: ipersistent.IAttrID) ?*Entry {
             if (self.findEntry(id)) |entry| return entry;
             for (&self.entries) |*entry| {
-                if (entry.id == null) {
+                if (!entry.isOccupied()) {
                     entry.id = id;
                     return entry;
                 }
@@ -135,10 +149,14 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             return null;
         }
 
+        fn missingInputBuffer(size: types.uint32, data: ?*anyopaque) bool {
+            return size > 0 and data == null;
+        }
+
         pub fn attributeCount(self: *const Self) usize {
             var count: usize = 0;
             for (&self.entries) |*entry| {
-                if (entry.id != null) count += 1;
+                if (entry.isOccupied()) count += 1;
             }
             return count;
         }
@@ -204,7 +222,7 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
         }
 
         fn setBinaryData(ptr: *anyopaque, id: ipersistent.IAttrID, data: ?*anyopaque, size: types.uint32, copy: bool) callconv(.c) types.tresult {
-            if (size > 0 and data == null) return types.kInvalidArgument;
+            if (missingInputBuffer(size, data)) return types.kInvalidArgument;
             if (copy and size > max_binary_bytes) return types.kResultFalse;
             const entry = ownerFromAttributes(ptr).slotFor(id) orelse return types.kResultFalse;
             if (copy) {
@@ -273,8 +291,8 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
             clearBinaryOutput(out, size);
             const entry = ownerFromAttributes(ptr).findEntry(id) orelse return types.kResultFalse;
             if (entry.binary_size > size) return types.kResultFalse;
-            if (entry.binary_size > 0 and out == null) return types.kInvalidArgument;
-            if (entry.binary_size > 0) {
+            if (entry.needsBinaryOutputBuffer(out)) return types.kInvalidArgument;
+            if (entry.hasBinaryPayload()) {
                 const buffer = out orelse return types.kInvalidArgument;
                 const bytes: [*]u8 = @ptrCast(buffer);
                 if (entry.owns_binary) {
