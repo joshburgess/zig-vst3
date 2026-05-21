@@ -155,14 +155,14 @@ pub fn Attributes(comptime max_entries: usize, comptime max_binary_bytes: usize)
         }
 
         fn slotFor(self: *Self, id: ipersistent.IAttrID) ?*Entry {
-            if (self.findEntry(id)) |entry| return entry;
+            var empty_slot: ?*Entry = null;
             for (&self.entries) |*entry| {
-                if (!entry.isOccupied()) {
-                    entry.id = id;
-                    return entry;
-                }
+                if (entry.matchesID(id)) return entry;
+                if (empty_slot == null and !entry.isOccupied()) empty_slot = entry;
             }
-            return null;
+            const entry = empty_slot orelse return null;
+            entry.id = id;
+            return entry;
         }
 
         fn missingInputBuffer(size: types.uint32, data: ?*anyopaque) bool {

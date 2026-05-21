@@ -319,14 +319,15 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
         }
 
         fn slotFor(self: *Self, id: ivstattributes.AttrID) ?*Entry {
-            if (self.findEntry(id)) |entry| return entry;
+            const wanted = std.mem.span(id);
+            var empty_slot: ?*Entry = null;
             for (&self.entries) |*entry| {
-                if (entry.isEmpty()) {
-                    entry.id = id;
-                    return entry;
-                }
+                if (entry.matchesId(wanted)) return entry;
+                if (empty_slot == null and entry.isEmpty()) empty_slot = entry;
             }
-            return null;
+            const entry = empty_slot orelse return null;
+            entry.id = id;
+            return entry;
         }
 
         fn missingBinaryInput(size: types.uint32, value: ?*const anyopaque) bool {
