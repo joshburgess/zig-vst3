@@ -71,6 +71,22 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             self.last_key_modifiers = modifiers;
         }
 
+        fn acceptWheel(self: *Self, distance: f32) void {
+            self.last_wheel_distance = distance;
+        }
+
+        fn acceptSize(self: *Self, rect: *const iplugview.ViewRect) void {
+            self.rect = rect.*;
+        }
+
+        fn acceptFocus(self: *Self, state: types.TBool) void {
+            self.has_focus = state != 0;
+        }
+
+        fn acceptFrame(self: *Self, frame: ?*iplugview.IPlugFrame) void {
+            self.frame = frame;
+        }
+
         const owner = interface_map.ownerFromField(Self, iplugview.IPlugView, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
@@ -126,7 +142,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
                 const result = Config.onWheel(self, distance);
                 if (result != types.kResultOk) return result;
             }
-            self.last_wheel_distance = distance;
+            self.acceptWheel(distance);
             return types.kResultOk;
         }
 
@@ -162,7 +178,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
                 const result = Config.onSize(owner(ptr), rect);
                 if (result != types.kResultOk) return result;
             }
-            owner(ptr).rect = rect.*;
+            owner(ptr).acceptSize(rect);
             return types.kResultOk;
         }
 
@@ -173,7 +189,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
                 const result = Config.onFocus(self, state);
                 if (result != types.kResultOk) return result;
             }
-            self.has_focus = state != 0;
+            self.acceptFocus(state);
             return types.kResultOk;
         }
 
@@ -182,7 +198,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
                 const result = Config.setFrame(owner(ptr), frame);
                 if (result != types.kResultOk) return result;
             }
-            owner(ptr).frame = frame;
+            owner(ptr).acceptFrame(frame);
             return types.kResultOk;
         }
 
