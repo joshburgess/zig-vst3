@@ -82,10 +82,7 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
         }
 
         fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.c) types.tresult {
-            const class = classAt(index) orelse {
-                out.* = .{};
-                return types.kInvalidArgument;
-            };
+            const class = classAt(index) orelse return failClassInfo(out);
             fillClassInfo(class, out);
             return types.kResultOk;
         }
@@ -168,10 +165,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
         }
 
         fn getClassInfo(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo) callconv(.c) types.tresult {
-            const class = classAt(index) orelse {
-                out.* = .{};
-                return types.kInvalidArgument;
-            };
+            const class = classAt(index) orelse return failClassInfo(out);
             fillClassInfo(class, out);
             return types.kResultOk;
         }
@@ -181,19 +175,13 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
         }
 
         fn getClassInfo2(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfo2) callconv(.c) types.tresult {
-            const class = classAt(index) orelse {
-                out.* = .{};
-                return types.kInvalidArgument;
-            };
+            const class = classAt(index) orelse return failClassInfo(out);
             fillClassInfo2(info, class, out);
             return types.kResultOk;
         }
 
         fn getClassInfoUnicode(_: *anyopaque, index: types.int32, out: *ipluginbase.PClassInfoW) callconv(.c) types.tresult {
-            const class = classAt(index) orelse {
-                out.* = .{};
-                return types.kInvalidArgument;
-            };
+            const class = classAt(index) orelse return failClassInfo(out);
             fillClassInfoUnicode(info, class, out);
             return types.kResultOk;
         }
@@ -222,6 +210,11 @@ fn classAtIndex(comptime classes: []const ClassInfo, index: types.int32) ?ClassI
     if (comptime classes.len == 0) return null;
     const class_index = vst_index.bounded(index, classes.len) orelse return null;
     return classes[class_index];
+}
+
+fn failClassInfo(out: anytype) types.tresult {
+    out.* = .{};
+    return types.kInvalidArgument;
 }
 
 fn createClassInstance(comptime classes: []const ClassInfo, cid: types.FIDString, requested_iid: types.FIDString, out: *?*anyopaque) types.tresult {
