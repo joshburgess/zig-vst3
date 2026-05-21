@@ -39,7 +39,7 @@ pub fn PlugInterfaceSupport(comptime max_iids: usize) type {
         fn appendSupportedIndex(self: *Self, iid: *const tuid.TUID) ?usize {
             const index = vst_index.appendIndexU32(self.count, max_iids) orelse return null;
             self.supported[index] = iid.*;
-            self.count +|= 1;
+            self.count = vst_index.uint32NextCount(index);
             return index;
         }
 
@@ -268,7 +268,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
         fn appendMidi2Index(self: *Self, assignment: ivstmidimapping2.Midi2ControllerParamIDAssignment) ?usize {
             const index = vst_index.appendIndexU32(self.midi2_count, max_midi2) orelse return null;
             self.midi2[index] = assignment;
-            self.midi2_count +|= 1;
+            self.midi2_count = vst_index.uint32NextCount(index);
             return index;
         }
 
@@ -280,7 +280,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
         fn appendMidi1Index(self: *Self, assignment: ivstmidimapping2.Midi1ControllerParamIDAssignment) ?usize {
             const index = vst_index.appendIndexU32(self.midi1_count, max_midi1) orelse return null;
             self.midi1[index] = assignment;
-            self.midi1_count +|= 1;
+            self.midi1_count = vst_index.uint32NextCount(index);
             return index;
         }
 
@@ -458,7 +458,7 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
         fn appendMapIndex(self: *Self, map: ivstphysicalui.PhysicalUIMap) ?usize {
             const index = vst_index.appendIndexU32(self.map_count, max_maps) orelse return null;
             self.maps[index] = map;
-            self.map_count +|= 1;
+            self.map_count = vst_index.uint32NextCount(index);
             return index;
         }
 

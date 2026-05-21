@@ -51,6 +51,10 @@ pub fn uint32Count(count: usize) types.uint32 {
     return @intCast(count);
 }
 
+pub fn uint32NextCount(index: usize) types.uint32 {
+    return uint32Count(index + 1);
+}
+
 pub fn requireInt32Capacity(comptime capacity: usize, comptime name: []const u8) void {
     if (capacity > std.math.maxInt(types.int32)) {
         @compileError(name ++ " must fit in VST int32 counts");
@@ -129,6 +133,7 @@ test "int32 count conversions keep the VST boundary explicit" {
 test "uint32 count conversions keep the VST boundary explicit" {
     try std.testing.expectEqual(@as(types.uint32, 0), uint32Count(0));
     try std.testing.expectEqual(@as(types.uint32, 7), uint32Count(7));
+    try std.testing.expectEqual(@as(types.uint32, 8), uint32NextCount(7));
 }
 
 test "int32 index helpers share generated boundary policy" {

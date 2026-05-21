@@ -58,6 +58,8 @@ pub fn TestResult(comptime max_messages: usize, comptime max_chars: usize) type 
         fn store(target: *[max_messages][max_chars]types.char16, count: *types.uint32, text: ?[*:0]const types.char16) void {
             if (vst_index.appendIndexU32(count.*, max_messages)) |index| {
                 fixed_string.copyUtf16Z(&target[index], fixed_string.spanUtf16Z(text));
+                count.* = vst_index.uint32NextCount(index);
+                return;
             }
             count.* +|= 1;
         }
@@ -205,7 +207,7 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
             const index = vst_index.appendIndexU32(self.test_count, max_tests) orelse return null;
             if (test_iface) |value| _ = value.vtable.addRef(value);
             self.tests[index] = .{ .name = name, .test_iface = test_iface };
-            self.test_count +|= 1;
+            self.test_count = vst_index.uint32NextCount(index);
             return index;
         }
 
@@ -219,7 +221,7 @@ pub fn TestSuite(comptime max_tests: usize, comptime max_suites: usize) type {
             const index = vst_index.appendIndexU32(self.suite_count, max_suites) orelse return null;
             if (suite_iface) |value| _ = value.vtable.addRef(value);
             self.suites[index] = .{ .name = name, .suite = suite_iface };
-            self.suite_count +|= 1;
+            self.suite_count = vst_index.uint32NextCount(index);
             return index;
         }
 

@@ -50,7 +50,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
         fn appendExpressionIndex(self: *Self, info: ivstnoteexpression.NoteExpressionTypeInfo) ?usize {
             const index = vst_index.appendIndexU32(self.expression_count, max_expressions) orelse return null;
             self.expressions[index] = info;
-            self.expression_count +|= 1;
+            self.expression_count = vst_index.uint32NextCount(index);
             return index;
         }
 
@@ -62,7 +62,7 @@ pub fn NoteExpressionController(comptime max_expressions: usize, comptime max_ke
         fn appendKeyswitchIndex(self: *Self, info: ivstnoteexpression.KeyswitchInfo) ?usize {
             const index = vst_index.appendIndexU32(self.keyswitch_count, max_keyswitches) orelse return null;
             self.keyswitches[index] = info;
-            self.keyswitch_count +|= 1;
+            self.keyswitch_count = vst_index.uint32NextCount(index);
             return index;
         }
 
