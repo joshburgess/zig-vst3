@@ -257,6 +257,31 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
                 @memset(&self.binary_value, 0);
                 self.binary_size = 0;
             }
+
+            fn setInt(self: *Entry, value: types.int64) void {
+                self.reset(.int);
+                self.int_value = value;
+            }
+
+            fn setFloat(self: *Entry, value: f64) void {
+                self.reset(.float);
+                self.float_value = value;
+            }
+
+            fn setString(self: *Entry, value: [*:0]const vsttypes.TChar) void {
+                self.reset(.string);
+                fixed_string.copyUtf16Z(&self.string_value, std.mem.span(value));
+            }
+
+            fn setBinary(self: *Entry, value: ?*const anyopaque, size: types.uint32) void {
+                self.reset(.binary);
+                self.binary_size = size;
+                if (self.hasBinaryPayload()) {
+                    const source = value.?;
+                    const bytes: [*]const u8 = @ptrCast(source);
+                    @memcpy(self.binary_value[0..size], bytes[0..size]);
+                }
+            }
         };
 
         iface: ivstattributes.IAttributeList = .{ .vtable = &attribute_vtable },
@@ -316,8 +341,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn setInt(ptr: *anyopaque, id: ivstattributes.AttrID, value: types.int64) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.reset(.int);
-            entry.int_value = value;
+            entry.setInt(value);
             return types.kResultOk;
         }
 
@@ -335,8 +359,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn setFloat(ptr: *anyopaque, id: ivstattributes.AttrID, value: f64) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.reset(.float);
-            entry.float_value = value;
+            entry.setFloat(value);
             return types.kResultOk;
         }
 
@@ -354,8 +377,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
 
         fn setString(ptr: *anyopaque, id: ivstattributes.AttrID, value: [*:0]const vsttypes.TChar) callconv(.c) types.tresult {
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.reset(.string);
-            fixed_string.copyUtf16Z(&entry.string_value, std.mem.span(value));
+            entry.setString(value);
             return types.kResultOk;
         }
 
@@ -377,13 +399,7 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             const input_result = validateBinaryInput(size, value);
             if (input_result != types.kResultOk) return input_result;
             const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.reset(.binary);
-            entry.binary_size = size;
-            if (entry.hasBinaryPayload()) {
-                const source = value orelse return types.kInvalidArgument;
-                const bytes: [*]const u8 = @ptrCast(source);
-                @memcpy(entry.binary_value[0..size], bytes[0..size]);
-            }
+            entry.setBinary(value, size);
             return types.kResultOk;
         }
 
