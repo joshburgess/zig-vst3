@@ -41,6 +41,14 @@ fn changeAtOrBeforeOffset(candidate: ParameterChange, sample_offset: usize) bool
     return candidate.sample_offset <= sample_offset;
 }
 
+fn changeAfterOffset(candidate: ParameterChange, sample_offset: usize) bool {
+    return candidate.sample_offset > sample_offset;
+}
+
+fn changeOffsetBefore(candidate: ParameterChange, current_offset: usize) bool {
+    return candidate.sample_offset < current_offset;
+}
+
 fn indexedChangeBefore(candidate: IndexedParameterChange, current: IndexedParameterChange) bool {
     return changeBefore(candidate.item, current.item) or
         (candidate.item.sample_offset == current.item.sample_offset and candidate.index < current.index);
@@ -158,9 +166,9 @@ fn nextMatchingSampleOffset(items: []const ParameterChange, after_sample_offset:
     var result: ?usize = null;
     for (items) |item| {
         if (!matches(item, context)) continue;
-        if (item.sample_offset <= after_sample_offset) continue;
+        if (!changeAfterOffset(item, after_sample_offset)) continue;
         if (result) |current| {
-            if (item.sample_offset < current) result = item.sample_offset;
+            if (changeOffsetBefore(item, current)) result = item.sample_offset;
         } else {
             result = item.sample_offset;
         }

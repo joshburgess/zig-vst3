@@ -202,6 +202,14 @@ fn eventAtOrAfter(candidate: Event, current: Event) bool {
     return candidate.sample_offset >= current.sample_offset;
 }
 
+fn eventAfterOffset(candidate: Event, sample_offset: usize) bool {
+    return candidate.sample_offset > sample_offset;
+}
+
+fn eventOffsetBefore(candidate: Event, current_offset: usize) bool {
+    return candidate.sample_offset < current_offset;
+}
+
 fn indexedEventBefore(candidate: IndexedEvent, current: IndexedEvent) bool {
     return eventBefore(candidate.item, current.item) or
         (candidate.item.sample_offset == current.item.sample_offset and candidate.index < current.index);
@@ -344,9 +352,9 @@ fn nextMatchingSampleOffset(items: []const Event, after_sample_offset: usize, co
     var result: ?usize = null;
     for (items) |item| {
         if (!matches(item, context)) continue;
-        if (item.sample_offset <= after_sample_offset) continue;
+        if (!eventAfterOffset(item, after_sample_offset)) continue;
         if (result) |current| {
-            if (item.sample_offset < current) result = item.sample_offset;
+            if (eventOffsetBefore(item, current)) result = item.sample_offset;
         } else {
             result = item.sample_offset;
         }
