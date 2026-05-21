@@ -116,6 +116,12 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
             return requested > 0 and buffer == null;
         }
 
+        fn validateIoRequest(byte_count: types.int32, buffer: ?*anyopaque, count_out: ?*types.int32, requested: *usize) types.tresult {
+            requested.* = byteCountLen(byte_count) orelse return failByteCount(count_out, types.kInvalidArgument);
+            if (missingBufferForRequestedBytes(requested.*, buffer)) return failByteCount(count_out, types.kInvalidArgument);
+            return types.kResultOk;
+        }
+
         const ownerFromStream = interface_map.ownerFromField(Self, ibstream.IBStream, "iface");
         const ownerFromSizeable = interface_map.ownerFromField(Self, ibstream.ISizeableStream, "sizeable_iface");
 
@@ -153,8 +159,9 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         }
 
         fn read(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_read: ?*types.int32) callconv(.c) types.tresult {
-            const requested = byteCountLen(byte_count) orelse return failByteCount(bytes_read, types.kInvalidArgument);
-            if (missingBufferForRequestedBytes(requested, buffer)) return failByteCount(bytes_read, types.kInvalidArgument);
+            var requested: usize = 0;
+            const request_result = validateIoRequest(byte_count, buffer, bytes_read, &requested);
+            if (request_result != types.kResultOk) return request_result;
             const self = ownerFromStream(ptr);
             const source = self.readableSlice(requested) orelse return failByteCount(bytes_read, types.kResultFalse);
             if (requested > 0) {
@@ -168,8 +175,9 @@ pub fn FixedBufferStream(comptime capacity: usize) type {
         }
 
         fn write(ptr: *anyopaque, buffer: ?*anyopaque, byte_count: types.int32, bytes_written: ?*types.int32) callconv(.c) types.tresult {
-            const requested = byteCountLen(byte_count) orelse return failByteCount(bytes_written, types.kInvalidArgument);
-            if (missingBufferForRequestedBytes(requested, buffer)) return failByteCount(bytes_written, types.kInvalidArgument);
+            var requested: usize = 0;
+            const request_result = validateIoRequest(byte_count, buffer, bytes_written, &requested);
+            if (request_result != types.kResultOk) return request_result;
             const self = ownerFromStream(ptr);
             const target = self.writableSlice(requested) orelse return failByteCount(bytes_written, types.kResultFalse);
             if (requested > 0) {
