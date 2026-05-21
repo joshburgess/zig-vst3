@@ -315,6 +315,14 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
             return direction == @intFromEnum(ivstcomponent.BusDirections.kInput);
         }
 
+        fn assignmentCount(assignments: anytype) usize {
+            return assignments.len;
+        }
+
+        fn hasAssignments(assignments: anytype) bool {
+            return assignmentCount(assignments) != 0;
+        }
+
         fn getNumMidi2ControllerAssignments(ptr: *anyopaque, direction: vsttypes.BusDirection) callconv(.c) types.uint32 {
             const self = ownerFromMapping(ptr);
             return if (acceptsDirection(direction)) vst_index.uint32Count(self.midi2Assignments().len) else 0;
@@ -322,8 +330,8 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         fn copyAssignments(direction: vsttypes.BusDirection, list: anytype, assignments: anytype) types.tresult {
             if (!acceptsDirection(direction)) return types.kResultFalse;
-            const count = assignments.len;
-            if (count == 0) return types.kResultFalse;
+            if (!hasAssignments(assignments)) return types.kResultFalse;
+            const count = assignmentCount(assignments);
             const out = list.map orelse return types.kInvalidArgument;
             if (list.count < count) {
                 @memset(out[0..list.count], .{});
@@ -431,6 +439,10 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
             return self.maps[0..self.safeMapCount()];
         }
 
+        fn hasPhysicalMaps(self: *const Self) bool {
+            return self.safeMapCount() != 0;
+        }
+
         fn appendMapIndex(self: *Self, map: ivstphysicalui.PhysicalUIMap) ?usize {
             const index = vst_index.appendIndexU32(self.map_count, max_maps) orelse return null;
             self.maps[index] = map;
@@ -469,8 +481,8 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
         fn getPhysicalUIMapping(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, out: *ivstphysicalui.PhysicalUIMapList) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.recordRequest(bus_index, channel);
+            if (!self.hasPhysicalMaps()) return failPhysicalUIMapping(out, types.kResultFalse);
             const maps = self.physicalMaps();
-            if (maps.len == 0) return failPhysicalUIMapping(out, types.kResultFalse);
             out.* = .{
                 .count = vst_index.uint32Count(maps.len),
                 .map = maps.ptr,
