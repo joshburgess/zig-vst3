@@ -10,6 +10,11 @@ const vst_index = @import("vst_index.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const string128 = @import("string128.zig");
 
+fn failInfo(out: anytype) types.tresult {
+    out.* = .{};
+    return types.kInvalidArgument;
+}
+
 pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, comptime Config: type) type {
     if (max_units == 0) @compileError("UnitInfo requires at least one unit slot");
     vst_index.requireInt32Capacity(max_units, "UnitInfo unit capacity");
@@ -142,14 +147,9 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return vst_index.int32Count(owner(ptr).safeUnitCount());
         }
 
-        fn failUnitInfo(out: *ivstunits.UnitInfo) types.tresult {
-            out.* = .{};
-            return types.kInvalidArgument;
-        }
-
         fn getUnitInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.c) types.tresult {
             const self = owner(ptr);
-            out.* = self.unitByIndex(index) orelse return failUnitInfo(out);
+            out.* = self.unitByIndex(index) orelse return failInfo(out);
             return types.kResultOk;
         }
 
@@ -157,15 +157,10 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return vst_index.int32Count(owner(ptr).safeProgramListCount());
         }
 
-        fn failProgramListInfo(out: *ivstunits.ProgramListInfo) types.tresult {
-            out.* = .{};
-            return types.kInvalidArgument;
-        }
-
         fn getProgramListInfo(ptr: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.c) types.tresult {
-            if (max_program_lists == 0) return failProgramListInfo(out);
+            if (max_program_lists == 0) return failInfo(out);
             const self = owner(ptr);
-            out.* = self.programListByIndex(index) orelse return failProgramListInfo(out);
+            out.* = self.programListByIndex(index) orelse return failInfo(out);
             return types.kResultOk;
         }
 
