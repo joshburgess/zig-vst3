@@ -1,5 +1,6 @@
 const std = @import("std");
 const common = @import("../common.zig");
+const ordered = @import("ordered.zig");
 
 pub const ParameterChange = struct {
     id: u32,
@@ -30,11 +31,11 @@ const IndexedParameterChange = struct {
 };
 
 fn changeBefore(candidate: ParameterChange, current: ParameterChange) bool {
-    return candidate.sample_offset < current.sample_offset;
+    return ordered.before(candidate, current);
 }
 
 fn changeAtOrAfter(candidate: ParameterChange, current: ParameterChange) bool {
-    return candidate.sample_offset >= current.sample_offset;
+    return ordered.atOrAfter(candidate, current);
 }
 
 fn changeAtOrBeforeOffset(candidate: ParameterChange, sample_offset: usize) bool {
@@ -42,23 +43,19 @@ fn changeAtOrBeforeOffset(candidate: ParameterChange, sample_offset: usize) bool
 }
 
 fn changeAfterOffset(candidate: ParameterChange, sample_offset: usize) bool {
-    return candidate.sample_offset > sample_offset;
+    return ordered.afterOffset(candidate, sample_offset);
 }
 
 fn changeOffsetBefore(candidate: ParameterChange, current_offset: usize) bool {
-    return candidate.sample_offset < current_offset;
+    return ordered.beforeOffset(candidate, current_offset);
 }
 
 fn indexedChangeBefore(candidate: IndexedParameterChange, current: IndexedParameterChange) bool {
-    return changeBefore(candidate.item, current.item) or
-        (candidate.item.sample_offset == current.item.sample_offset and candidate.index < current.index);
+    return ordered.indexedBefore(candidate, current);
 }
 
 fn indexedChangeAfterCursor(item: ParameterChange, index: usize, last_offset: ?usize, last_index: usize) bool {
-    const offset = last_offset orelse return true;
-    if (item.sample_offset < offset) return false;
-    if (item.sample_offset == offset and index <= last_index) return false;
-    return true;
+    return ordered.afterCursor(item, index, last_offset, last_index);
 }
 
 const IdOffset = struct {

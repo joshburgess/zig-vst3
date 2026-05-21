@@ -1,6 +1,7 @@
 const std = @import("std");
 const common = @import("../common.zig");
 const changes = @import("changes.zig");
+const ordered = @import("ordered.zig");
 
 pub const BlockSegment = changes.BlockSegment;
 
@@ -195,31 +196,27 @@ const IndexedEvent = struct {
 };
 
 fn eventBefore(candidate: Event, current: Event) bool {
-    return candidate.sample_offset < current.sample_offset;
+    return ordered.before(candidate, current);
 }
 
 fn eventAtOrAfter(candidate: Event, current: Event) bool {
-    return candidate.sample_offset >= current.sample_offset;
+    return ordered.atOrAfter(candidate, current);
 }
 
 fn eventAfterOffset(candidate: Event, sample_offset: usize) bool {
-    return candidate.sample_offset > sample_offset;
+    return ordered.afterOffset(candidate, sample_offset);
 }
 
 fn eventOffsetBefore(candidate: Event, current_offset: usize) bool {
-    return candidate.sample_offset < current_offset;
+    return ordered.beforeOffset(candidate, current_offset);
 }
 
 fn indexedEventBefore(candidate: IndexedEvent, current: IndexedEvent) bool {
-    return eventBefore(candidate.item, current.item) or
-        (candidate.item.sample_offset == current.item.sample_offset and candidate.index < current.index);
+    return ordered.indexedBefore(candidate, current);
 }
 
 fn indexedEventAfterCursor(item: Event, index: usize, last_offset: ?usize, last_index: usize) bool {
-    const offset = last_offset orelse return true;
-    if (item.sample_offset < offset) return false;
-    if (item.sample_offset == offset and index <= last_index) return false;
-    return true;
+    return ordered.afterCursor(item, index, last_offset, last_index);
 }
 
 const BusChannel = struct {
