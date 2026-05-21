@@ -156,8 +156,8 @@ pub const StereoAudioBuses = struct {
     }
 
     pub fn setArrangementsConfigured(inputs: ?[*]vsttypes.SpeakerArrangement, num_inputs: types.int32, outputs: ?[*]vsttypes.SpeakerArrangement, num_outputs: types.int32, config: Config) types.tresult {
-        const expected_inputs: types.int32 = if (config.audio_input) 1 else 0;
-        const expected_outputs: types.int32 = if (config.audio_output) 1 else 0;
+        const expected_inputs = configuredAudioInputCount(config);
+        const expected_outputs = configuredAudioOutputCount(config);
         if (num_inputs != expected_inputs or num_outputs != expected_outputs) {
             return types.kResultFalse;
         }
@@ -183,6 +183,18 @@ pub const StereoAudioBuses = struct {
         }
         out.* = stereo_arrangement;
         return types.kResultOk;
+    }
+
+    fn configuredAudioInputCount(config: Config) types.int32 {
+        return configuredBusCount(config.audio_input);
+    }
+
+    fn configuredAudioOutputCount(config: Config) types.int32 {
+        return configuredBusCount(config.audio_output);
+    }
+
+    fn configuredBusCount(enabled: bool) types.int32 {
+        return if (enabled) 1 else 0;
     }
 };
 
