@@ -2842,6 +2842,17 @@ test "event writer appends event views atomically" {
     try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
     writer.clear();
 
+    try std.testing.expect(writer.appendIfPossible(items[0]));
+    try std.testing.expectEqual(@as(usize, 1), writer.eventCount());
+    try std.testing.expectEqual(EventKind.note_on, writer.events().items[0].kind);
+    writer.clear();
+
+    try std.testing.expect(writer.appendAllIfPossible(try Events.init(&items, 4)));
+    try std.testing.expectEqual(@as(usize, 2), writer.eventCount());
+    try std.testing.expectEqual(EventKind.note_on, writer.events().items[0].kind);
+    try std.testing.expectEqual(EventKind.note_off, writer.events().items[1].kind);
+    writer.clear();
+
     try std.testing.expectEqual(@as(usize, 2), try writer.appendAllCount(try Events.init(&items, 4)));
     try std.testing.expectEqual(@as(usize, 2), writer.eventCount());
     try std.testing.expect(writer.canAppend(0));

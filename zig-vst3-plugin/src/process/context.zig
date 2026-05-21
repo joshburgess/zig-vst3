@@ -2620,6 +2620,18 @@ test "process context exposes output event helpers" {
     try std.testing.expectEqual(@as(?usize, null), context.nextOutputEventOffsetForBusChannel(0, 1, 0));
     try std.testing.expectEqual(@as(usize, 2), context.clearOutputEventsCount());
     try std.testing.expectEqual(@as(usize, 0), context.clearOutputEventsCount());
+
+    try std.testing.expect(context.appendOutputEventIfPossible(events[0]));
+    try std.testing.expectEqual(@as(usize, 1), context.outputEventCount());
+    try std.testing.expectEqual(EventKind.note_on, context.outputEvents().items[0].kind);
+    context.clearOutputEvents();
+
+    try std.testing.expect(context.appendOutputEventsIfPossible(try Events.init(&events, input.len)));
+    try std.testing.expectEqual(@as(usize, 2), context.outputEventCount());
+    try std.testing.expectEqual(EventKind.note_on, context.outputEvents().items[0].kind);
+    try std.testing.expectEqual(EventKind.note_off, context.outputEvents().items[1].kind);
+    context.clearOutputEvents();
+
     try context.appendOutputEvent(events[0]);
     context.clearOutputEvents();
     try std.testing.expectEqual(@as(usize, 0), context.outputEventCount());
