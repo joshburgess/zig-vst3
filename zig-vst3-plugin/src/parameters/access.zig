@@ -288,15 +288,16 @@ pub fn ParameterValues(comptime Params: type) type {
             changed: usize,
         };
 
-        fn acceptsAutomatedChange(_: *Self, set: *const Set, change: process.ParameterChange) bool {
-            if (!(set.canAutomateById(change.id) orelse false)) return false;
-            if (set.isReadOnlyById(change.id) orelse true) return false;
-            return true;
+        fn automatedChangeIndex(_: *Self, set: *const Set, change: process.ParameterChange) ?usize {
+            const index = set.indexOfId(change.id) orelse return null;
+            if (!(set.canAutomate(index) orelse false)) return null;
+            if (set.isReadOnly(index) orelse true) return null;
+            return index;
         }
 
         fn applyChange(self: *Self, set: *const Set, change: process.ParameterChange) ?AppliedChange {
-            if (!self.acceptsAutomatedChange(set, change)) return null;
-            const changed = self.storeByIdCount(set, change.id, change.normalized) orelse return null;
+            const index = self.automatedChangeIndex(set, change) orelse return null;
+            const changed = self.storeCount(index, change.normalized) orelse return null;
             return .{ .changed = changed };
         }
 
