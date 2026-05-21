@@ -147,6 +147,14 @@ fn hasMatchingChange(items: []const ParameterChange, context: anytype, comptime 
     return false;
 }
 
+fn onlyMatchingChange(items: []const ParameterChange, context: anytype, comptime matches: anytype) bool {
+    if (items.len == 0) return false;
+    for (items) |item| {
+        if (!matches(item, context)) return false;
+    }
+    return true;
+}
+
 fn nextMatchingChange(items: []const ParameterChange, last_offset: ?usize, last_index: usize, context: anytype, comptime matches: anytype) ?IndexedParameterChange {
     var result: ?IndexedParameterChange = null;
     for (items, 0..) |item, index| {
@@ -408,15 +416,16 @@ pub const ParameterChanges = struct {
     }
 
     pub fn only(self: ParameterChanges, id: u32) bool {
-        return self.hasChanges() and self.count(id) == self.items.len;
+        return onlyMatchingChange(self.items, id, matchesId);
     }
 
     pub fn onlyAtOffset(self: ParameterChanges, sample_offset: usize) bool {
-        return self.hasChanges() and self.countAtOffset(sample_offset) == self.items.len;
+        return onlyMatchingChange(self.items, sample_offset, matchesOffset);
     }
 
     pub fn onlyForIdAtOffset(self: ParameterChanges, id: u32, sample_offset: usize) bool {
-        return self.hasChanges() and self.countForIdAtOffset(id, sample_offset) == self.items.len;
+        const context = IdOffset{ .id = id, .sample_offset = sample_offset };
+        return onlyMatchingChange(self.items, context, matchesIdOffset);
     }
 
     pub fn latestNormalized(self: ParameterChanges, id: u32) ?f64 {

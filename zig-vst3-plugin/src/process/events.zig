@@ -333,6 +333,14 @@ fn hasMatchingEvent(items: []const Event, context: anytype, comptime matches: an
     return false;
 }
 
+fn onlyMatchingEvent(items: []const Event, context: anytype, comptime matches: anytype) bool {
+    if (items.len == 0) return false;
+    for (items) |item| {
+        if (!matches(item, context)) return false;
+    }
+    return true;
+}
+
 fn nextMatchingEvent(items: []const Event, last_offset: ?usize, last_index: usize, context: anytype, comptime matches: anytype) ?IndexedEvent {
     var result: ?IndexedEvent = null;
     for (items, 0..) |item, index| {
@@ -1039,35 +1047,37 @@ pub const Events = struct {
     }
 
     pub fn onlyAtOffset(self: Events, sample_offset: usize) bool {
-        return self.hasEvents() and self.countAtOffset(sample_offset) == self.items.len;
+        return onlyMatchingEvent(self.items, sample_offset, matchesOffset);
     }
 
     pub fn onlyKindAtOffset(self: Events, kind: EventKind, sample_offset: usize) bool {
-        return self.hasEvents() and self.countKindAtOffset(kind, sample_offset) == self.items.len;
+        const context = KindOffset{ .kind = kind, .sample_offset = sample_offset };
+        return onlyMatchingEvent(self.items, context, matchesKindOffset);
     }
 
     pub fn onlyKind(self: Events, kind: EventKind) bool {
-        return self.hasEvents() and self.countKind(kind) == self.items.len;
+        return onlyMatchingEvent(self.items, kind, matchesKind);
     }
 
     pub fn onlyNoteAttacks(self: Events) bool {
-        return self.hasEvents() and self.countNoteAttacks() == self.items.len;
+        return onlyMatchingEvent(self.items, {}, matchesNoteAttack);
     }
 
     pub fn onlyNoteReleases(self: Events) bool {
-        return self.hasEvents() and self.countNoteReleases() == self.items.len;
+        return onlyMatchingEvent(self.items, {}, matchesNoteRelease);
     }
 
     pub fn onlyBus(self: Events, bus_index: i32) bool {
-        return self.hasEvents() and self.countBus(bus_index) == self.items.len;
+        return onlyMatchingEvent(self.items, bus_index, matchesBus);
     }
 
     pub fn onlyChannel(self: Events, channel: i16) bool {
-        return self.hasEvents() and self.countChannel(channel) == self.items.len;
+        return onlyMatchingEvent(self.items, channel, matchesChannel);
     }
 
     pub fn onlyBusChannel(self: Events, bus_index: i32, channel: i16) bool {
-        return self.hasEvents() and self.countBusChannel(bus_index, channel) == self.items.len;
+        const context = BusChannel{ .bus_index = bus_index, .channel = channel };
+        return onlyMatchingEvent(self.items, context, matchesBusChannel);
     }
 
     pub fn nextSampleOffset(self: Events, after_sample_offset: usize) ?usize {
