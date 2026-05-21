@@ -123,12 +123,11 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
             return null;
         }
 
-        fn slotFor(self: *Self, changed: ?*anyopaque, dependent: ?*iupdatehandler.IDependent) ?*Entry {
+        fn slotFor(self: *Self, changed: ?*anyopaque, dependent: *iupdatehandler.IDependent) ?*Entry {
             if (self.findEntry(changed, dependent)) |entry| return entry;
             for (&self.entries) |*entry| {
                 if (entry.isEmpty()) {
-                    const dep = dependent orelse return null;
-                    entry.set(changed, dep);
+                    entry.set(changed, dependent);
                     return entry;
                 }
             }
@@ -179,7 +178,6 @@ pub fn UpdateHandler(comptime max_dependents: usize) type {
         fn addDependent(ptr: *anyopaque, changed: ?*anyopaque, dependent: ?*iupdatehandler.IDependent) callconv(.c) types.tresult {
             const dep = dependent orelse return types.kInvalidArgument;
             const self = owner(ptr);
-            if (self.findEntry(changed, dep) != null) return types.kResultOk;
             _ = self.slotFor(changed, dep) orelse return types.kResultFalse;
             return types.kResultOk;
         }
