@@ -1250,10 +1250,10 @@ pub fn UnitSet(comptime config: Config) type {
             if (item.id == no_parent_unit_id) return error.ReservedUnitId;
             try validateRequiredUnitName(item.name);
             if (item.id != root_unit_id) {
-                if (self.unitById(item.parent_id) == null) return error.InvalidUnitParent;
+                if (!self.hasUnit(item.parent_id)) return error.InvalidUnitParent;
             }
             if (item.program_list_id != no_program_list_id) {
-                if (self.programListById(item.program_list_id) == null) return error.InvalidUnitProgramList;
+                if (!self.hasProgramList(item.program_list_id)) return error.InvalidUnitProgramList;
             }
             if (self.unitParentIsCyclic(item)) return error.CyclicUnitParent;
         }
@@ -1309,7 +1309,7 @@ pub fn UnitSet(comptime config: Config) type {
             for (config.program_lists) |list| {
                 for (list.programs) |item| {
                     for (item.parameters) |parameter| {
-                        if (parameter_set.indexOfId(parameter.parameter_id) == null) return error.UnknownProgramParameter;
+                        if (!parameter_set.hasId(parameter.parameter_id)) return error.UnknownProgramParameter;
                     }
                 }
             }
