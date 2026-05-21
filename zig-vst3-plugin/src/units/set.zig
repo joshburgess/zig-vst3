@@ -422,12 +422,12 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn programCount(self: Self, list_id: i32) ?usize {
             const list = self.programListById(list_id) orelse return null;
-            return list.programs.len;
+            return list.programCount();
         }
 
         pub fn programCountByName(self: Self, list_name: []const u8) ?usize {
             const list = self.programListByName(list_name) orelse return null;
-            return list.programs.len;
+            return list.programCount();
         }
 
         pub fn programCountForUnit(self: Self, unit_id: i32) ?usize {
@@ -1256,8 +1256,8 @@ pub fn UnitSet(comptime config: Config) type {
 
         pub fn validateUnits(self: Self) !void {
             if (config.units.len == 0) return error.MissingRootUnit;
-            if (self.duplicateUnitId() != null) return error.DuplicateUnitId;
-            if (self.duplicateUnitName() != null) return error.DuplicateUnitName;
+            if (self.hasDuplicateUnitIds()) return error.DuplicateUnitId;
+            if (self.hasDuplicateUnitNames()) return error.DuplicateUnitName;
             const root = self.unitById(root_unit_id) orelse return error.MissingRootUnit;
             try validateRequiredUnitName(root.name);
             if (root.parent_id != no_parent_unit_id) return error.InvalidUnitParent;
@@ -1269,7 +1269,7 @@ pub fn UnitSet(comptime config: Config) type {
         fn validateProgramList(self: Self, list: ProgramList) !void {
             if (list.id == no_program_list_id) return error.ReservedProgramListId;
             try validateRequiredProgramListName(list.name);
-            if (self.duplicateProgramName(list.id) != null) return error.DuplicateProgramName;
+            if (self.hasDuplicateProgramNames(list.id)) return error.DuplicateProgramName;
             for (list.programs, 0..) |item, item_index| {
                 try self.validateProgram(list.id, item, item_index);
             }
@@ -1277,8 +1277,8 @@ pub fn UnitSet(comptime config: Config) type {
 
         fn validateProgram(self: Self, list_id: i32, item: Program, item_index: usize) !void {
             try validateRequiredProgramName(item.name);
-            if (self.duplicateProgramParameterId(list_id, item_index) != null) return error.DuplicateProgramParameter;
-            if (self.duplicateProgramInfoKey(list_id, item_index) != null) return error.DuplicateProgramInfoKey;
+            if (self.hasDuplicateProgramParameterIds(list_id, item_index)) return error.DuplicateProgramParameter;
+            if (self.hasDuplicateProgramInfoKeys(list_id, item_index)) return error.DuplicateProgramInfoKey;
             for (item.parameters) |parameter| {
                 try validateProgramParameterValue(parameter);
             }
@@ -1289,8 +1289,8 @@ pub fn UnitSet(comptime config: Config) type {
         }
 
         pub fn validateProgramLists(self: Self) !void {
-            if (self.duplicateProgramListId() != null) return error.DuplicateProgramListId;
-            if (self.duplicateProgramListName() != null) return error.DuplicateProgramListName;
+            if (self.hasDuplicateProgramListIds()) return error.DuplicateProgramListId;
+            if (self.hasDuplicateProgramListNames()) return error.DuplicateProgramListName;
             for (config.program_lists) |list| {
                 try self.validateProgramList(list);
             }
