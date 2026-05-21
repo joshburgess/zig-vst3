@@ -163,6 +163,12 @@ pub fn MidiLearn(comptime Config: type) type {
             return &self.iface;
         }
 
+        fn recordAcceptedInput(self: *Self, bus_index: types.int32, channel: types.int16, controller: vsttypes.CtrlNumber) void {
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            self.last_controller = controller;
+        }
+
         const owner = interface_map.ownerFromField(Self, ivstmidilearn.IMidiLearn, "iface");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
@@ -188,9 +194,7 @@ pub fn MidiLearn(comptime Config: type) type {
                 const result = Config.onLiveMIDIControllerInput(self, bus_index, channel, controller);
                 if (result != types.kResultOk) return result;
             }
-            self.last_bus = bus_index;
-            self.last_channel = channel;
-            self.last_controller = controller;
+            self.recordAcceptedInput(bus_index, channel, controller);
             return types.kResultOk;
         }
 
@@ -231,6 +235,18 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
 
         pub fn asLearn(self: *Self) *ivstmidimapping2.IMidiLearn2 {
             return &self.learn_iface;
+        }
+
+        fn recordAcceptedMidi2Input(self: *Self, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: ivstmidimapping2.Midi2Controller) void {
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            self.last_midi2_controller = controller;
+        }
+
+        fn recordAcceptedMidi1Input(self: *Self, bus_index: ivstmidimapping2.BusIndex, channel: ivstmidimapping2.MidiChannel, controller: vsttypes.CtrlNumber) void {
+            self.last_bus = bus_index;
+            self.last_channel = channel;
+            self.last_midi1_controller = controller;
         }
 
         fn safeMidi2Count(self: *const Self) usize {
@@ -363,9 +379,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
                 const result = Config.onLiveMidi2ControllerInput(self, bus_index, channel, controller);
                 if (result != types.kResultOk) return result;
             }
-            self.last_bus = bus_index;
-            self.last_channel = channel;
-            self.last_midi2_controller = controller;
+            self.recordAcceptedMidi2Input(bus_index, channel, controller);
             return types.kResultOk;
         }
 
@@ -376,9 +390,7 @@ pub fn Midi2Mapping(comptime max_midi2: usize, comptime max_midi1: usize, compti
                 const result = Config.onLiveMidi1ControllerInput(self, bus_index, channel, controller);
                 if (result != types.kResultOk) return result;
             }
-            self.last_bus = bus_index;
-            self.last_channel = channel;
-            self.last_midi1_controller = controller;
+            self.recordAcceptedMidi1Input(bus_index, channel, controller);
             return types.kResultOk;
         }
 
