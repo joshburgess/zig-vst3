@@ -2,6 +2,7 @@ const std = @import("std");
 const common = @import("../common.zig");
 const changes_mod = @import("changes.zig");
 const events_mod = @import("events.zig");
+const ordered = @import("ordered.zig");
 
 pub const max_audio_channels = 64;
 
@@ -86,10 +87,7 @@ pub const ProcessBlockSegmentIterator = struct {
         if (self.next_start >= self.frame_count) return null;
         const next_parameter_offset = self.parameter_changes.nextSampleOffset(self.next_start);
         const next_event_offset = self.events.nextSampleOffset(self.next_start);
-        const boundary = if (next_parameter_offset) |parameter_offset|
-            if (next_event_offset) |event_offset| @min(parameter_offset, event_offset) else parameter_offset
-        else
-            next_event_offset orelse self.frame_count;
+        const boundary = ordered.earliestOffset(next_parameter_offset, next_event_offset, self.frame_count);
         return changes_mod.advanceBlockSegment(&self.next_start, self.frame_count, boundary);
     }
 };

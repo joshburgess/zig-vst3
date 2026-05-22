@@ -38,6 +38,12 @@ pub fn afterCursor(item: anytype, index: usize, last_offset: ?usize, last_index:
     return true;
 }
 
+pub fn earliestOffset(first: ?usize, second: ?usize, fallback: usize) usize {
+    const a = first orelse return second orelse fallback;
+    const b = second orelse return a;
+    return @min(a, b);
+}
+
 pub fn Matchers(comptime Item: type) type {
     return struct {
         pub const Indexed = struct {
@@ -176,4 +182,9 @@ test "sample-offset ordering handles stored-order ties" {
     try std.testing.expect(afterCursor(.{ .sample_offset = 4 }, 3, 4, 2));
     try std.testing.expect(!afterCursor(.{ .sample_offset = 4 }, 2, 4, 2));
     try std.testing.expect(!afterCursor(.{ .sample_offset = 3 }, 3, 4, 2));
+    try std.testing.expectEqual(@as(usize, 2), earliestOffset(2, 5, 9));
+    try std.testing.expectEqual(@as(usize, 2), earliestOffset(5, 2, 9));
+    try std.testing.expectEqual(@as(usize, 5), earliestOffset(5, null, 9));
+    try std.testing.expectEqual(@as(usize, 5), earliestOffset(null, 5, 9));
+    try std.testing.expectEqual(@as(usize, 9), earliestOffset(null, null, 9));
 }
