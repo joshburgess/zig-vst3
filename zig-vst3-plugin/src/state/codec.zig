@@ -107,7 +107,8 @@ fn restoreParameterStateEntry(
         seen_restored[index] = true;
     }
 
-    _ = values.store(index, entry.normalized);
+    const stored = values.store(index, entry.normalized);
+    std.debug.assert(stored);
     report.restored_count += 1;
 }
 
