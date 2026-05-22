@@ -75,6 +75,7 @@ fn validateProcessFrameCounts(
 }
 
 fn framesToSeconds(frame_count: usize, sample_rate: f64) f64 {
+    std.debug.assert(sample_rate > 0.0);
     return @as(f64, @floatFromInt(frame_count)) / sample_rate;
 }
 
@@ -305,7 +306,7 @@ pub fn ProcessContext(comptime Sample: type) type {
         }
 
         pub fn sampleDurationSeconds(self: *const @This()) f64 {
-            return 1.0 / self.sample_rate;
+            return framesToSeconds(1, self.sample_rate);
         }
 
         pub fn blockDurationSeconds(self: *const @This()) f64 {
