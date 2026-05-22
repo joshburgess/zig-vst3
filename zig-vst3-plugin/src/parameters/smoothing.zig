@@ -4,6 +4,10 @@ const common = @import("common.zig");
 const clampNormalized = common.clampNormalized;
 const clampNormalizedNonZero = common.clampNormalizedNonZero;
 
+fn withinTolerance(target_delta: f64, tolerance: f64) bool {
+    return target_delta <= @max(0.0, tolerance);
+}
+
 pub const LinearSmoother = struct {
     current: f64,
     target: f64,
@@ -40,7 +44,7 @@ pub const LinearSmoother = struct {
     }
 
     pub fn atTarget(self: LinearSmoother, tolerance: f64) bool {
-        return self.targetDelta() <= @max(0.0, tolerance);
+        return withinTolerance(self.targetDelta(), tolerance);
     }
 
     pub fn needsSmoothing(self: LinearSmoother, tolerance: f64) bool {
@@ -115,7 +119,7 @@ pub const ExponentialSmoother = struct {
     }
 
     pub fn atTarget(self: ExponentialSmoother, tolerance: f64) bool {
-        return self.targetDelta() <= @max(0.0, tolerance);
+        return withinTolerance(self.targetDelta(), tolerance);
     }
 
     pub fn needsSmoothing(self: ExponentialSmoother, tolerance: f64) bool {
@@ -172,7 +176,7 @@ pub const LogSmoother = struct {
     }
 
     pub fn atTarget(self: LogSmoother, tolerance: f64) bool {
-        return self.targetDelta() <= @max(0.0, tolerance);
+        return withinTolerance(self.targetDelta(), tolerance);
     }
 
     pub fn needsSmoothing(self: LogSmoother, tolerance: f64) bool {
