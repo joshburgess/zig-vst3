@@ -858,7 +858,7 @@ test "parameter changes generated queries match reference scans" {
             for (items) |item| {
                 if (!itemMatchesId(item, id)) continue;
                 if (result) |current| {
-                    if (item.sample_offset < current.sample_offset) result = item;
+                    if (changeBefore(item, current)) result = item;
                 } else {
                     result = item;
                 }
@@ -871,7 +871,7 @@ test "parameter changes generated queries match reference scans" {
             for (items) |item| {
                 if (!itemMatchesId(item, id)) continue;
                 if (result) |current| {
-                    if (item.sample_offset >= current.sample_offset) result = item;
+                    if (changeAtOrAfter(item, current)) result = item;
                 } else {
                     result = item;
                 }
@@ -882,9 +882,9 @@ test "parameter changes generated queries match reference scans" {
         fn nextAnyOffset(items: []const ParameterChange, after_sample_offset: usize) ?usize {
             var result: ?usize = null;
             for (items) |item| {
-                if (item.sample_offset <= after_sample_offset) continue;
+                if (changeAtOrBeforeOffset(item, after_sample_offset)) continue;
                 if (result) |current| {
-                    if (item.sample_offset < current) result = item.sample_offset;
+                    if (changeOffsetBefore(item, current)) result = item.sample_offset;
                 } else {
                     result = item.sample_offset;
                 }
@@ -895,9 +895,9 @@ test "parameter changes generated queries match reference scans" {
         fn nextOffset(items: []const ParameterChange, id: u32, after_sample_offset: usize) ?usize {
             var result: ?usize = null;
             for (items) |item| {
-                if (!itemMatchesId(item, id) or item.sample_offset <= after_sample_offset) continue;
+                if (!itemMatchesId(item, id) or changeAtOrBeforeOffset(item, after_sample_offset)) continue;
                 if (result) |current| {
-                    if (item.sample_offset < current) result = item.sample_offset;
+                    if (changeOffsetBefore(item, current)) result = item.sample_offset;
                 } else {
                     result = item.sample_offset;
                 }
