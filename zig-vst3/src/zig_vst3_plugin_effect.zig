@@ -475,7 +475,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         };
 
         fn getUnitCount(_: *anyopaque) callconv(.c) types.int32 {
-            return countToInt32(UnitSet.unit_count);
+            return vst_index.int32Count(UnitSet.unit_count);
         }
 
         fn getUnitInfo(_: *anyopaque, index: types.int32, out: *ivstunits.UnitInfo) callconv(.c) types.tresult {
@@ -491,7 +491,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn getProgramListCount(_: *anyopaque) callconv(.c) types.int32 {
-            return countToInt32(UnitSet.program_list_count);
+            return vst_index.int32Count(UnitSet.program_list_count);
         }
 
         fn getProgramListInfo(_: *anyopaque, index: types.int32, out: *ivstunits.ProgramListInfo) callconv(.c) types.tresult {
@@ -499,7 +499,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             const reflected = units.programList(list_index) orelse return failInfo(out);
             out.* = .{
                 .id = reflected.id,
-                .programCount = countToInt32(reflected.programs.len),
+                .programCount = vst_index.int32Count(reflected.programs.len),
             };
             string128.copy(&out.name, reflected.name);
             return types.kResultOk;
@@ -769,10 +769,6 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return types.kResultFalse;
         }
     };
-}
-
-fn countToInt32(count: usize) types.int32 {
-    return std.math.cast(types.int32, count) orelse std.math.maxInt(types.int32);
 }
 
 test "reflected edit controller clears unsupported query outputs" {
