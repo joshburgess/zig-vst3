@@ -34,6 +34,29 @@ fn validateAudioChannels(channels: anytype) !usize {
     return frame_count;
 }
 
+fn boundedAudioChannelCount(channel_count: usize) usize {
+    return @min(channel_count, max_audio_channels);
+}
+
+fn AudioChannelType(comptime ChannelsPointer: type) type {
+    return @typeInfo(@typeInfo(ChannelsPointer).pointer.child).array.child;
+}
+
+fn AudioSampleType(comptime ChannelsPointer: type) type {
+    return @typeInfo(AudioChannelType(ChannelsPointer)).pointer.child;
+}
+
+fn audioChannel(channels: anytype, channel_count: usize, index: usize) ?AudioChannelType(@TypeOf(channels)) {
+    if (index >= boundedAudioChannelCount(channel_count)) return null;
+    return channels[index];
+}
+
+fn audioSample(channels: anytype, channel_count: usize, channel_index: usize, frame_index: usize) ?AudioSampleType(@TypeOf(channels)) {
+    const channel_samples = audioChannel(channels, channel_count, channel_index) orelse return null;
+    if (frame_index >= channel_samples.len) return null;
+    return channel_samples[frame_index];
+}
+
 fn processFrameCount(input_channel_count: usize, input_frame_count: usize, output_frame_count: usize) usize {
     if (input_channel_count == 0) return output_frame_count;
     return input_frame_count;
@@ -94,14 +117,11 @@ pub fn AudioInputs(comptime Sample: type) type {
         }
 
         pub fn channel(self: *const Self, index: usize) ?[]const Sample {
-            if (index >= self.channelCount()) return null;
-            return self.channels[index];
+            return audioChannel(&self.channels, self.channel_count, index);
         }
 
         pub fn sample(self: *const Self, channel_index: usize, frame_index: usize) ?Sample {
-            const channel_samples = self.channel(channel_index) orelse return null;
-            if (frame_index >= channel_samples.len) return null;
-            return channel_samples[frame_index];
+            return audioSample(&self.channels, self.channel_count, channel_index, frame_index);
         }
 
         pub fn hasChannel(self: *const Self, index: usize) bool {
@@ -113,7 +133,7 @@ pub fn AudioInputs(comptime Sample: type) type {
         }
 
         pub fn channelCount(self: *const Self) usize {
-            return @min(self.channel_count, max_audio_channels);
+            return boundedAudioChannelCount(self.channel_count);
         }
 
         pub fn isEmpty(self: *const Self) bool {
@@ -149,14 +169,11 @@ pub fn AudioOutputs(comptime Sample: type) type {
         }
 
         pub fn channel(self: *const Self, index: usize) ?[]Sample {
-            if (index >= self.channelCount()) return null;
-            return self.channels[index];
+            return audioChannel(&self.channels, self.channel_count, index);
         }
 
         pub fn sample(self: *const Self, channel_index: usize, frame_index: usize) ?Sample {
-            const channel_samples = self.channel(channel_index) orelse return null;
-            if (frame_index >= channel_samples.len) return null;
-            return channel_samples[frame_index];
+            return audioSample(&self.channels, self.channel_count, channel_index, frame_index);
         }
 
         pub fn setSample(self: *const Self, channel_index: usize, frame_index: usize, value: Sample) bool {
@@ -175,7 +192,7 @@ pub fn AudioOutputs(comptime Sample: type) type {
         }
 
         pub fn channelCount(self: *const Self) usize {
-            return @min(self.channel_count, max_audio_channels);
+            return boundedAudioChannelCount(self.channel_count);
         }
 
         pub fn isEmpty(self: *const Self) bool {
