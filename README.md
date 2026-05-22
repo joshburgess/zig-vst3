@@ -49,6 +49,28 @@ Native macOS and Linux validator jobs run the bundled examples in CI. Windows bu
 
 See [docs/toolchain.md](docs/toolchain.md) for the exact pinned versions.
 
+## Install
+
+Zig has no central package registry, so `zig-vst3` is fetched by URL from a released tag. Add it to your project with `zig fetch`, pointing at the tag tarball:
+
+```sh
+zig fetch --save=zig_vst3 https://github.com/joshburgess/zig-vst3/archive/refs/tags/zig-vst3-0.1.0.tar.gz
+```
+
+That records the dependency and its content hash in your `build.zig.zon`. Then wire the module you need into your `build.zig`:
+
+```zig
+const dep = b.dependency("zig_vst3", .{ .target = target, .optimize = optimize });
+
+// Raw VST3 bindings:
+exe.root_module.addImport("zig-vst3", dep.module("zig-vst3"));
+
+// Or the higher-level plugin framework:
+exe.root_module.addImport("zig-vst3-plugin", dep.module("zig-vst3-plugin"));
+```
+
+Import them in your code as `@import("zig-vst3")` or `@import("zig-vst3-plugin")`. The framework module also exposes a smaller `zig-vst3-plugin-core` module for core-only use.
+
 ## Quick Start
 
 Run the basic checks:
