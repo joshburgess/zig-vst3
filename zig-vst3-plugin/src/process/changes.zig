@@ -245,7 +245,10 @@ pub const BlockSegment = struct {
 /// Advance a block-segment cursor up to `boundary`, clamp it to the block, and return the spanned segment.
 pub fn advanceBlockSegment(next_start: *usize, frame_count: usize, boundary: usize) BlockSegment {
     const start = next_start.*;
+    std.debug.assert(start < frame_count);
+    std.debug.assert(boundary > start);
     next_start.* = @min(boundary, frame_count);
+    std.debug.assert(next_start.* > start and next_start.* <= frame_count);
     return .{ .start_offset = start, .end_offset = next_start.* };
 }
 
