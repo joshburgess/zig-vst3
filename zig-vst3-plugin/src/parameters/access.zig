@@ -290,8 +290,8 @@ pub fn ParameterValues(comptime Params: type) type {
 
         fn automatedChangeIndex(_: *Self, set: *const Set, change: process.ParameterChange) ?usize {
             const index = set.indexOfId(change.id) orelse return null;
-            if (!(set.canAutomate(index) orelse false)) return null;
-            if (set.isReadOnly(index) orelse true) return null;
+            if (!(set.canAutomate(index) orelse unreachable)) return null;
+            if (set.isReadOnly(index) orelse unreachable) return null;
             return index;
         }
 
