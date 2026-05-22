@@ -1175,7 +1175,7 @@ pub const EventWriter = struct {
     fn appendValidated(self: *EventWriter, event: Event) !void {
         if (self.count >= self.storage.len) return error.EventStorageFull;
         self.storage[self.count] = event;
-        self.count +|= 1;
+        self.count += 1;
     }
 
     pub fn canAppend(self: *const EventWriter, event_count: usize) bool {
@@ -1205,7 +1205,8 @@ pub const EventWriter = struct {
     }
 
     pub fn eventCount(self: *const EventWriter) usize {
-        return @min(self.count, self.storage.len);
+        std.debug.assert(self.count <= self.storage.len);
+        return self.count;
     }
 
     pub fn isEmpty(self: *const EventWriter) bool {
@@ -2968,25 +2969,4 @@ test "event writer appends event views atomically" {
     };
     try std.testing.expectError(error.DataEventTooLarge, outside_writer.appendAllCount(.{ .items = &oversized_data }));
     try std.testing.expectEqual(@as(usize, 0), outside_writer.eventCount());
-}
-
-test "event writer clamps corrupted counts" {
-    var storage = [_]Event{
-        Event.noteOn(0, 0, 60, 1.0),
-        Event.noteOff(1, 0, 60, 0.0),
-    };
-    var writer = EventWriter.init(&storage, 4);
-    writer.count = storage.len + 10;
-
-    try std.testing.expectEqual(@as(usize, storage.len), writer.eventCount());
-    try std.testing.expectEqual(@as(usize, 0), writer.remainingCapacity());
-    try std.testing.expect(writer.isFull());
-    try std.testing.expect(writer.hasEvents());
-    try std.testing.expect(!writer.isEmpty());
-    try std.testing.expect(!writer.canAppend(1));
-    try std.testing.expectError(error.EventStorageFull, writer.append(Event.other(2)));
-    try std.testing.expectError(error.EventStorageFull, writer.appendAll(.{ .items = &[_]Event{Event.other(2)} }));
-    try std.testing.expectEqual(@as(usize, storage.len), writer.events().eventCount());
-    try std.testing.expectEqual(@as(usize, storage.len), writer.clearCount());
-    try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
 }
