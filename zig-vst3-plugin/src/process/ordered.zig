@@ -14,6 +14,10 @@ pub fn beforeOffset(candidate: anytype, sample_offset: usize) bool {
     return candidate.sample_offset < sample_offset;
 }
 
+pub fn atOrBeforeOffset(candidate: anytype, sample_offset: usize) bool {
+    return candidate.sample_offset <= sample_offset;
+}
+
 pub fn indexedBefore(candidate: anytype, current: anytype) bool {
     return before(candidate.item, current.item) or
         (candidate.item.sample_offset == current.item.sample_offset and candidate.index < current.index);
@@ -38,6 +42,8 @@ test "sample-offset ordering handles stored-order ties" {
     try std.testing.expect(atOrAfter(.{ .sample_offset = 2 }, .{ .sample_offset = 2 }));
     try std.testing.expect(afterOffset(.{ .sample_offset = 3 }, 2));
     try std.testing.expect(beforeOffset(.{ .sample_offset = 1 }, 2));
+    try std.testing.expect(atOrBeforeOffset(.{ .sample_offset = 2 }, 2));
+    try std.testing.expect(!atOrBeforeOffset(.{ .sample_offset = 3 }, 2));
     try std.testing.expect(indexedBefore(
         Indexed{ .item = .{ .sample_offset = 4 }, .index = 2 },
         Indexed{ .item = .{ .sample_offset = 4 }, .index = 3 },

@@ -39,7 +39,7 @@ fn changeAtOrAfter(candidate: ParameterChange, current: ParameterChange) bool {
 }
 
 fn changeAtOrBeforeOffset(candidate: ParameterChange, sample_offset: usize) bool {
-    return candidate.sample_offset <= sample_offset;
+    return ordered.atOrBeforeOffset(candidate, sample_offset);
 }
 
 fn changeAfterOffset(candidate: ParameterChange, sample_offset: usize) bool {
