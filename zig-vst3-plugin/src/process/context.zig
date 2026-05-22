@@ -34,10 +34,6 @@ fn validateAudioChannels(channels: anytype) !usize {
     return frame_count;
 }
 
-fn boundedAudioChannelCount(channel_count: usize) usize {
-    return @min(channel_count, max_audio_channels);
-}
-
 fn AudioChannelType(comptime ChannelsPointer: type) type {
     return @typeInfo(@typeInfo(ChannelsPointer).pointer.child).array.child;
 }
@@ -47,7 +43,8 @@ fn AudioSampleType(comptime ChannelsPointer: type) type {
 }
 
 fn audioChannel(channels: anytype, channel_count: usize, index: usize) ?AudioChannelType(@TypeOf(channels)) {
-    if (index >= boundedAudioChannelCount(channel_count)) return null;
+    std.debug.assert(channel_count <= max_audio_channels);
+    if (index >= channel_count) return null;
     return channels[index];
 }
 
@@ -132,7 +129,8 @@ pub fn AudioInputs(comptime Sample: type) type {
         }
 
         pub fn channelCount(self: *const Self) usize {
-            return boundedAudioChannelCount(self.channel_count);
+            std.debug.assert(self.channel_count <= max_audio_channels);
+            return self.channel_count;
         }
 
         pub fn isEmpty(self: *const Self) bool {
@@ -191,7 +189,8 @@ pub fn AudioOutputs(comptime Sample: type) type {
         }
 
         pub fn channelCount(self: *const Self) usize {
-            return boundedAudioChannelCount(self.channel_count);
+            std.debug.assert(self.channel_count <= max_audio_channels);
+            return self.channel_count;
         }
 
         pub fn isEmpty(self: *const Self) bool {
@@ -1622,29 +1621,6 @@ test "audio views reject too many channels" {
 
     try std.testing.expectError(error.TooManyChannels, AudioInputs(f32).init(&input_channels));
     try std.testing.expectError(error.TooManyChannels, AudioOutputs(f32).init(&output_channels));
-}
-
-test "audio views clamp corrupted channel counts" {
-    const input_samples = [_]f32{ 0.1, 0.2 };
-    var output_samples = [_]f32{ 0.3, 0.4 };
-    const input_channels = [_][]const f32{&input_samples};
-    const output_channels = [_][]f32{&output_samples};
-
-    var inputs = try AudioInputs(f32).init(&input_channels);
-    inputs.channel_count = max_audio_channels + 1;
-    try std.testing.expectEqual(@as(usize, max_audio_channels), inputs.channelCount());
-    try std.testing.expect(inputs.hasChannels());
-    try std.testing.expectEqual(@as(usize, 0), inputs.channel(1).?.len);
-    try std.testing.expectEqual(@as(?[]const f32, null), inputs.channel(max_audio_channels));
-
-    var outputs = try AudioOutputs(f32).init(&output_channels);
-    outputs.channel_count = max_audio_channels + 1;
-    try std.testing.expectEqual(@as(usize, max_audio_channels), outputs.channelCount());
-    try std.testing.expect(outputs.hasChannels());
-    try std.testing.expectEqual(@as(usize, 0), outputs.channel(1).?.len);
-    try std.testing.expectEqual(@as(?[]f32, null), outputs.channel(max_audio_channels));
-    outputs.fill(0.5);
-    try std.testing.expectEqual(@as(f32, 0.5), output_samples[0]);
 }
 
 test "audio output view rejects mismatched channel frame counts" {
