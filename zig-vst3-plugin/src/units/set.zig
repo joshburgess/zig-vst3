@@ -1212,24 +1212,25 @@ pub fn UnitSet(comptime config: Config) type {
             return self.rootUnit().name;
         }
 
+        fn validateRequiredMetadataText(text: []const u8, comptime empty_error: anyerror, comptime invalid_error: anyerror) !void {
+            if (text.len == 0) return empty_error;
+            if (common.containsNul(text)) return invalid_error;
+        }
+
         fn validateRequiredUnitName(name: []const u8) !void {
-            if (name.len == 0) return error.EmptyUnitName;
-            if (common.containsNul(name)) return error.InvalidUnitMetadata;
+            return validateRequiredMetadataText(name, error.EmptyUnitName, error.InvalidUnitMetadata);
         }
 
         fn validateRequiredProgramListName(name: []const u8) !void {
-            if (name.len == 0) return error.EmptyProgramListName;
-            if (common.containsNul(name)) return error.InvalidProgramListMetadata;
+            return validateRequiredMetadataText(name, error.EmptyProgramListName, error.InvalidProgramListMetadata);
         }
 
         fn validateRequiredProgramName(name: []const u8) !void {
-            if (name.len == 0) return error.EmptyProgramName;
-            if (common.containsNul(name)) return error.InvalidProgramMetadata;
+            return validateRequiredMetadataText(name, error.EmptyProgramName, error.InvalidProgramMetadata);
         }
 
         fn validateRequiredProgramInfoKey(key: []const u8) !void {
-            if (key.len == 0) return error.EmptyProgramInfoKey;
-            if (common.containsNul(key)) return error.InvalidProgramInfoMetadata;
+            return validateRequiredMetadataText(key, error.EmptyProgramInfoKey, error.InvalidProgramInfoMetadata);
         }
 
         fn validateProgramInfoValue(value: []const u8) !void {
