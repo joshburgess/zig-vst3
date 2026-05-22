@@ -379,10 +379,8 @@ pub const EventBlockSegmentIterator = struct {
 
     pub fn next(self: *EventBlockSegmentIterator) ?BlockSegment {
         if (self.next_start >= self.frame_count) return null;
-        const start = self.next_start;
-        const end = self.events.nextSampleOffset(start) orelse self.frame_count;
-        self.next_start = @min(end, self.frame_count);
-        return .{ .start_offset = start, .end_offset = self.next_start };
+        const boundary = self.events.nextSampleOffset(self.next_start) orelse self.frame_count;
+        return changes.advanceBlockSegment(&self.next_start, self.frame_count, boundary);
     }
 };
 

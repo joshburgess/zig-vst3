@@ -86,15 +86,13 @@ pub const ProcessBlockSegmentIterator = struct {
 
     pub fn next(self: *ProcessBlockSegmentIterator) ?BlockSegment {
         if (self.next_start >= self.frame_count) return null;
-        const start = self.next_start;
-        const next_parameter_offset = self.parameter_changes.nextSampleOffset(start);
-        const next_event_offset = self.events.nextSampleOffset(start);
-        const end = if (next_parameter_offset) |parameter_offset|
+        const next_parameter_offset = self.parameter_changes.nextSampleOffset(self.next_start);
+        const next_event_offset = self.events.nextSampleOffset(self.next_start);
+        const boundary = if (next_parameter_offset) |parameter_offset|
             if (next_event_offset) |event_offset| @min(parameter_offset, event_offset) else parameter_offset
         else
             next_event_offset orelse self.frame_count;
-        self.next_start = @min(end, self.frame_count);
-        return .{ .start_offset = start, .end_offset = self.next_start };
+        return changes_mod.advanceBlockSegment(&self.next_start, self.frame_count, boundary);
     }
 };
 

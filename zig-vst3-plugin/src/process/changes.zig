@@ -242,6 +242,13 @@ pub const BlockSegment = struct {
     }
 };
 
+/// Advance a block-segment cursor up to `boundary`, clamp it to the block, and return the spanned segment.
+pub fn advanceBlockSegment(next_start: *usize, frame_count: usize, boundary: usize) BlockSegment {
+    const start = next_start.*;
+    next_start.* = @min(boundary, frame_count);
+    return .{ .start_offset = start, .end_offset = next_start.* };
+}
+
 pub const BlockSegmentIterator = struct {
     changes: ParameterChanges,
     frame_count: usize,
@@ -249,10 +256,8 @@ pub const BlockSegmentIterator = struct {
 
     pub fn next(self: *BlockSegmentIterator) ?BlockSegment {
         if (self.next_start >= self.frame_count) return null;
-        const start = self.next_start;
-        const end = self.changes.nextSampleOffset(start) orelse self.frame_count;
-        self.next_start = @min(end, self.frame_count);
-        return .{ .start_offset = start, .end_offset = self.next_start };
+        const boundary = self.changes.nextSampleOffset(self.next_start) orelse self.frame_count;
+        return advanceBlockSegment(&self.next_start, self.frame_count, boundary);
     }
 };
 
