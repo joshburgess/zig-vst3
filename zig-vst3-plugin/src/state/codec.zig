@@ -98,7 +98,7 @@ fn restoreParameterStateEntry(
 ) !void {
     const restored_id = migrations_mod.migratedParameterId(entry.id, migrations);
     const index = set.indexOfId(restored_id) orelse {
-        report.ignored_count +|= 1;
+        report.ignored_count += 1;
         return;
     };
 
@@ -108,7 +108,7 @@ fn restoreParameterStateEntry(
     }
 
     _ = values.store(index, entry.normalized);
-    report.restored_count +|= 1;
+    report.restored_count += 1;
 }
 
 pub fn readParameterState(

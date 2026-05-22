@@ -323,7 +323,7 @@ fn nextStoredMatchingEvent(items: []const Event, next_index: *usize, context: an
 fn countMatchingEvents(items: []const Event, context: anytype, comptime matches: anytype) usize {
     var count: usize = 0;
     for (items) |item| {
-        if (matches(item, context)) count +|= 1;
+        if (matches(item, context)) count += 1;
     }
     return count;
 }

@@ -98,7 +98,7 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn copyFromCount(self: *Self, source: *const Self) usize {
             var changed: usize = 0;
             inline for (0..Set.count) |index| {
-                changed +|= self.storeNormalizedAt(index, source.values[index].load());
+                changed += self.storeNormalizedAt(index, source.values[index].load());
             }
             return changed;
         }
@@ -110,7 +110,7 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn resetToDefaultsCount(self: *Self, set: *const Set) usize {
             var changed: usize = 0;
             inline for (0..Set.count) |index| {
-                changed +|= self.storeNormalizedAt(index, set.defaultNormalizedAt(index));
+                changed += self.storeNormalizedAt(index, set.defaultNormalizedAt(index));
             }
             return changed;
         }
@@ -189,7 +189,7 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn nonDefaultCount(self: *const Self, set: *const Set) usize {
             var count: usize = 0;
             inline for (0..Set.count) |index| {
-                if (self.values[index].load() != set.defaultNormalizedAt(index)) count +|= 1;
+                if (self.values[index].load() != set.defaultNormalizedAt(index)) count += 1;
             }
             return count;
         }
@@ -304,7 +304,7 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn applyChangesCount(self: *Self, set: *const Set, changes: process.ParameterChanges) usize {
             var applied: usize = 0;
             for (changes.items) |change| {
-                if (self.applyChange(set, change) != null) applied +|= 1;
+                if (self.applyChange(set, change) != null) applied += 1;
             }
             return applied;
         }
@@ -312,7 +312,7 @@ pub fn ParameterValues(comptime Params: type) type {
         pub fn applyChangesChangedCount(self: *Self, set: *const Set, changes: process.ParameterChanges) usize {
             var changed: usize = 0;
             for (changes.items) |change| {
-                if (self.applyChange(set, change)) |applied| changed +|= applied.changed;
+                if (self.applyChange(set, change)) |applied| changed += applied.changed;
             }
             return changed;
         }

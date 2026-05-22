@@ -142,7 +142,7 @@ fn nextStoredMatchingChange(items: []const ParameterChange, next_index: *usize, 
 fn countMatchingChanges(items: []const ParameterChange, context: anytype, comptime matches: anytype) usize {
     var result: usize = 0;
     for (items) |item| {
-        if (matches(item, context)) result +|= 1;
+        if (matches(item, context)) result += 1;
     }
     return result;
 }
