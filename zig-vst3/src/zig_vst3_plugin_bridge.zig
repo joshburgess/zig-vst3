@@ -433,7 +433,7 @@ pub fn normalizedParamToPlain(
     normalized: vsttypes.ParamValue,
 ) vsttypes.ParamValue {
     const index = set.indexOfId(id) orelse return 0;
-    return set.plainFromNormalized(index, normalized) orelse 0;
+    return set.plainFromNormalized(index, normalized) orelse unreachable;
 }
 
 pub fn plainParamToNormalized(
@@ -443,7 +443,7 @@ pub fn plainParamToNormalized(
     plain: vsttypes.ParamValue,
 ) vsttypes.ParamValue {
     const index = set.indexOfId(id) orelse return 0;
-    return set.normalizedFromPlain(index, plain) orelse 0;
+    return set.normalizedFromPlain(index, plain) orelse unreachable;
 }
 
 pub fn frameCountOrZero(data: *const ivstaudioprocessor.ProcessData) usize {
