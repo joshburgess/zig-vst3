@@ -38,6 +38,117 @@ pub fn afterCursor(item: anytype, index: usize, last_offset: ?usize, last_index:
     return true;
 }
 
+pub fn Matchers(comptime Item: type) type {
+    return struct {
+        pub const Indexed = struct {
+            item: Item,
+            index: usize,
+        };
+
+        pub fn first(items: []const Item, context: anytype, comptime matches: anytype) ?Item {
+            var result: ?Item = null;
+            for (items) |item| {
+                if (!matches(item, context)) continue;
+                if (result) |current| {
+                    if (before(item, current)) result = item;
+                } else {
+                    result = item;
+                }
+            }
+            return result;
+        }
+
+        pub fn latest(items: []const Item, context: anytype, comptime matches: anytype) ?Item {
+            var result: ?Item = null;
+            for (items) |item| {
+                if (!matches(item, context)) continue;
+                if (result) |current| {
+                    if (atOrAfter(item, current)) result = item;
+                } else {
+                    result = item;
+                }
+            }
+            return result;
+        }
+
+        pub fn firstStored(items: []const Item, context: anytype, comptime matches: anytype) ?Item {
+            for (items) |item| {
+                if (matches(item, context)) return item;
+            }
+            return null;
+        }
+
+        pub fn latestStored(items: []const Item, context: anytype, comptime matches: anytype) ?Item {
+            var result: ?Item = null;
+            for (items) |item| {
+                if (matches(item, context)) result = item;
+            }
+            return result;
+        }
+
+        pub fn nextStored(items: []const Item, next_index: *usize, context: anytype, comptime matches: anytype) ?Item {
+            while (next_index.* < items.len) {
+                const item = items[next_index.*];
+                next_index.* += 1;
+                if (matches(item, context)) return item;
+            }
+            return null;
+        }
+
+        pub fn count(items: []const Item, context: anytype, comptime matches: anytype) usize {
+            var result: usize = 0;
+            for (items) |item| {
+                if (matches(item, context)) result += 1;
+            }
+            return result;
+        }
+
+        pub fn has(items: []const Item, context: anytype, comptime matches: anytype) bool {
+            for (items) |item| {
+                if (matches(item, context)) return true;
+            }
+            return false;
+        }
+
+        pub fn only(items: []const Item, context: anytype, comptime matches: anytype) bool {
+            if (items.len == 0) return false;
+            for (items) |item| {
+                if (!matches(item, context)) return false;
+            }
+            return true;
+        }
+
+        pub fn nextIndexed(items: []const Item, last_offset: ?usize, last_index: usize, context: anytype, comptime matches: anytype) ?Indexed {
+            var result: ?Indexed = null;
+            for (items, 0..) |item, index| {
+                if (!matches(item, context)) continue;
+                if (!afterCursor(item, index, last_offset, last_index)) continue;
+                const candidate = Indexed{ .item = item, .index = index };
+                if (result) |current| {
+                    if (indexedBefore(candidate, current)) result = candidate;
+                } else {
+                    result = candidate;
+                }
+            }
+            return result;
+        }
+
+        pub fn nextOffset(items: []const Item, after_sample_offset: usize, context: anytype, comptime matches: anytype) ?usize {
+            var result: ?usize = null;
+            for (items) |item| {
+                if (!matches(item, context)) continue;
+                if (!afterOffset(item, after_sample_offset)) continue;
+                if (result) |current| {
+                    if (beforeOffset(item, current)) result = item.sample_offset;
+                } else {
+                    result = item.sample_offset;
+                }
+            }
+            return result;
+        }
+    };
+}
+
 test "sample-offset ordering handles stored-order ties" {
     const std = @import("std");
     const Indexed = struct {

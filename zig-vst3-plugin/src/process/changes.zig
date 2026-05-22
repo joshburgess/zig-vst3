@@ -25,11 +25,6 @@ pub const ParameterChange = struct {
     }
 };
 
-const IndexedParameterChange = struct {
-    item: ParameterChange,
-    index: usize,
-};
-
 fn changeBefore(candidate: ParameterChange, current: ParameterChange) bool {
     return ordered.before(candidate, current);
 }
@@ -42,20 +37,8 @@ fn changeAtOrBeforeOffset(candidate: ParameterChange, sample_offset: usize) bool
     return ordered.atOrBeforeOffset(candidate, sample_offset);
 }
 
-fn changeAfterOffset(candidate: ParameterChange, sample_offset: usize) bool {
-    return ordered.afterOffset(candidate, sample_offset);
-}
-
 fn changeOffsetBefore(candidate: ParameterChange, current_offset: usize) bool {
     return ordered.beforeOffset(candidate, current_offset);
-}
-
-fn indexedChangeBefore(candidate: IndexedParameterChange, current: IndexedParameterChange) bool {
-    return ordered.indexedBefore(candidate, current);
-}
-
-fn indexedChangeAfterCursor(item: ParameterChange, index: usize, last_offset: ?usize, last_index: usize) bool {
-    return ordered.afterCursor(item, index, last_offset, last_index);
 }
 
 fn changeSampleOffset(change: ?ParameterChange) ?usize {
@@ -89,107 +72,18 @@ fn matchesIdOffset(item: ParameterChange, context: IdOffset) bool {
     return item.isForIdAtOffset(context.id, context.sample_offset);
 }
 
-fn firstMatchingChange(items: []const ParameterChange, context: anytype, comptime matches: anytype) ?ParameterChange {
-    var result: ?ParameterChange = null;
-    for (items) |item| {
-        if (!matches(item, context)) continue;
-        if (result) |current| {
-            if (changeBefore(item, current)) result = item;
-        } else {
-            result = item;
-        }
-    }
-    return result;
-}
+const ChangeMatchers = ordered.Matchers(ParameterChange);
 
-fn latestMatchingChange(items: []const ParameterChange, context: anytype, comptime matches: anytype) ?ParameterChange {
-    var result: ?ParameterChange = null;
-    for (items) |item| {
-        if (!matches(item, context)) continue;
-        if (result) |current| {
-            if (changeAtOrAfter(item, current)) result = item;
-        } else {
-            result = item;
-        }
-    }
-    return result;
-}
-
-fn firstStoredMatchingChange(items: []const ParameterChange, context: anytype, comptime matches: anytype) ?ParameterChange {
-    for (items) |item| {
-        if (matches(item, context)) return item;
-    }
-    return null;
-}
-
-fn latestStoredMatchingChange(items: []const ParameterChange, context: anytype, comptime matches: anytype) ?ParameterChange {
-    var result: ?ParameterChange = null;
-    for (items) |item| {
-        if (matches(item, context)) result = item;
-    }
-    return result;
-}
-
-fn nextStoredMatchingChange(items: []const ParameterChange, next_index: *usize, context: anytype, comptime matches: anytype) ?ParameterChange {
-    while (next_index.* < items.len) {
-        const item = items[next_index.*];
-        next_index.* += 1;
-        if (matches(item, context)) return item;
-    }
-    return null;
-}
-
-fn countMatchingChanges(items: []const ParameterChange, context: anytype, comptime matches: anytype) usize {
-    var result: usize = 0;
-    for (items) |item| {
-        if (matches(item, context)) result += 1;
-    }
-    return result;
-}
-
-fn hasMatchingChange(items: []const ParameterChange, context: anytype, comptime matches: anytype) bool {
-    for (items) |item| {
-        if (matches(item, context)) return true;
-    }
-    return false;
-}
-
-fn onlyMatchingChange(items: []const ParameterChange, context: anytype, comptime matches: anytype) bool {
-    if (items.len == 0) return false;
-    for (items) |item| {
-        if (!matches(item, context)) return false;
-    }
-    return true;
-}
-
-fn nextMatchingChange(items: []const ParameterChange, last_offset: ?usize, last_index: usize, context: anytype, comptime matches: anytype) ?IndexedParameterChange {
-    var result: ?IndexedParameterChange = null;
-    for (items, 0..) |item, index| {
-        if (!matches(item, context)) continue;
-        if (!indexedChangeAfterCursor(item, index, last_offset, last_index)) continue;
-        const candidate = IndexedParameterChange{ .item = item, .index = index };
-        if (result) |current| {
-            if (indexedChangeBefore(candidate, current)) result = candidate;
-        } else {
-            result = candidate;
-        }
-    }
-    return result;
-}
-
-fn nextMatchingSampleOffset(items: []const ParameterChange, after_sample_offset: usize, context: anytype, comptime matches: anytype) ?usize {
-    var result: ?usize = null;
-    for (items) |item| {
-        if (!matches(item, context)) continue;
-        if (!changeAfterOffset(item, after_sample_offset)) continue;
-        if (result) |current| {
-            if (changeOffsetBefore(item, current)) result = item.sample_offset;
-        } else {
-            result = item.sample_offset;
-        }
-    }
-    return result;
-}
+const firstMatchingChange = ChangeMatchers.first;
+const latestMatchingChange = ChangeMatchers.latest;
+const firstStoredMatchingChange = ChangeMatchers.firstStored;
+const latestStoredMatchingChange = ChangeMatchers.latestStored;
+const nextStoredMatchingChange = ChangeMatchers.nextStored;
+const countMatchingChanges = ChangeMatchers.count;
+const hasMatchingChange = ChangeMatchers.has;
+const onlyMatchingChange = ChangeMatchers.only;
+const nextMatchingChange = ChangeMatchers.nextIndexed;
+const nextMatchingSampleOffset = ChangeMatchers.nextOffset;
 
 pub const ParameterSegment = struct {
     start_offset: usize,

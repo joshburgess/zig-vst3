@@ -190,11 +190,6 @@ pub const EventBusChannelIterator = struct {
     }
 };
 
-const IndexedEvent = struct {
-    item: Event,
-    index: usize,
-};
-
 fn eventBefore(candidate: Event, current: Event) bool {
     return ordered.before(candidate, current);
 }
@@ -203,24 +198,12 @@ fn eventAtOrAfter(candidate: Event, current: Event) bool {
     return ordered.atOrAfter(candidate, current);
 }
 
-fn eventAfterOffset(candidate: Event, sample_offset: usize) bool {
-    return ordered.afterOffset(candidate, sample_offset);
-}
-
 fn eventOffsetBefore(candidate: Event, current_offset: usize) bool {
     return ordered.beforeOffset(candidate, current_offset);
 }
 
 fn eventAtOrBeforeOffset(candidate: Event, sample_offset: usize) bool {
     return ordered.atOrBeforeOffset(candidate, sample_offset);
-}
-
-fn indexedEventBefore(candidate: IndexedEvent, current: IndexedEvent) bool {
-    return ordered.indexedBefore(candidate, current);
-}
-
-fn indexedEventAfterCursor(item: Event, index: usize, last_offset: ?usize, last_index: usize) bool {
-    return ordered.afterCursor(item, index, last_offset, last_index);
 }
 
 fn eventSampleOffset(event: ?Event) ?usize {
@@ -274,107 +257,18 @@ fn matchesNoteRelease(item: Event, _: void) bool {
     return item.isNoteRelease();
 }
 
-fn firstMatchingEvent(items: []const Event, context: anytype, comptime matches: anytype) ?Event {
-    var result: ?Event = null;
-    for (items) |item| {
-        if (!matches(item, context)) continue;
-        if (result) |current| {
-            if (eventBefore(item, current)) result = item;
-        } else {
-            result = item;
-        }
-    }
-    return result;
-}
+const EventMatchers = ordered.Matchers(Event);
 
-fn latestMatchingEvent(items: []const Event, context: anytype, comptime matches: anytype) ?Event {
-    var result: ?Event = null;
-    for (items) |item| {
-        if (!matches(item, context)) continue;
-        if (result) |current| {
-            if (eventAtOrAfter(item, current)) result = item;
-        } else {
-            result = item;
-        }
-    }
-    return result;
-}
-
-fn firstStoredMatchingEvent(items: []const Event, context: anytype, comptime matches: anytype) ?Event {
-    for (items) |item| {
-        if (matches(item, context)) return item;
-    }
-    return null;
-}
-
-fn latestStoredMatchingEvent(items: []const Event, context: anytype, comptime matches: anytype) ?Event {
-    var result: ?Event = null;
-    for (items) |item| {
-        if (matches(item, context)) result = item;
-    }
-    return result;
-}
-
-fn nextStoredMatchingEvent(items: []const Event, next_index: *usize, context: anytype, comptime matches: anytype) ?Event {
-    while (next_index.* < items.len) {
-        const item = items[next_index.*];
-        next_index.* += 1;
-        if (matches(item, context)) return item;
-    }
-    return null;
-}
-
-fn countMatchingEvents(items: []const Event, context: anytype, comptime matches: anytype) usize {
-    var count: usize = 0;
-    for (items) |item| {
-        if (matches(item, context)) count += 1;
-    }
-    return count;
-}
-
-fn hasMatchingEvent(items: []const Event, context: anytype, comptime matches: anytype) bool {
-    for (items) |item| {
-        if (matches(item, context)) return true;
-    }
-    return false;
-}
-
-fn onlyMatchingEvent(items: []const Event, context: anytype, comptime matches: anytype) bool {
-    if (items.len == 0) return false;
-    for (items) |item| {
-        if (!matches(item, context)) return false;
-    }
-    return true;
-}
-
-fn nextMatchingEvent(items: []const Event, last_offset: ?usize, last_index: usize, context: anytype, comptime matches: anytype) ?IndexedEvent {
-    var result: ?IndexedEvent = null;
-    for (items, 0..) |item, index| {
-        if (!matches(item, context)) continue;
-        if (!indexedEventAfterCursor(item, index, last_offset, last_index)) continue;
-        const candidate = IndexedEvent{ .item = item, .index = index };
-        if (result) |current| {
-            if (indexedEventBefore(candidate, current)) result = candidate;
-        } else {
-            result = candidate;
-        }
-    }
-    return result;
-}
-
-fn nextMatchingSampleOffset(items: []const Event, after_sample_offset: usize, context: anytype, comptime matches: anytype) ?usize {
-    var result: ?usize = null;
-    for (items) |item| {
-        if (!matches(item, context)) continue;
-        if (!eventAfterOffset(item, after_sample_offset)) continue;
-        if (result) |current| {
-            if (eventOffsetBefore(item, current)) result = item.sample_offset;
-        } else {
-            result = item.sample_offset;
-        }
-    }
-    return result;
-}
+const firstMatchingEvent = EventMatchers.first;
+const latestMatchingEvent = EventMatchers.latest;
+const firstStoredMatchingEvent = EventMatchers.firstStored;
+const latestStoredMatchingEvent = EventMatchers.latestStored;
+const nextStoredMatchingEvent = EventMatchers.nextStored;
+const countMatchingEvents = EventMatchers.count;
+const hasMatchingEvent = EventMatchers.has;
+const onlyMatchingEvent = EventMatchers.only;
+const nextMatchingEvent = EventMatchers.nextIndexed;
+const nextMatchingSampleOffset = EventMatchers.nextOffset;
 
 pub const EventBlockSegmentIterator = struct {
     events: Events,
