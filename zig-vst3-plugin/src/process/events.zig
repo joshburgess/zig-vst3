@@ -211,6 +211,10 @@ fn eventOffsetBefore(candidate: Event, current_offset: usize) bool {
     return ordered.beforeOffset(candidate, current_offset);
 }
 
+fn eventAtOrBeforeOffset(candidate: Event, sample_offset: usize) bool {
+    return ordered.atOrBeforeOffset(candidate, sample_offset);
+}
+
 fn indexedEventBefore(candidate: IndexedEvent, current: IndexedEvent) bool {
     return ordered.indexedBefore(candidate, current);
 }
@@ -1834,7 +1838,7 @@ test "events generated queries match reference scans" {
             for (items) |item| {
                 if (!matches(item, context)) continue;
                 if (result) |current| {
-                    if (item.sample_offset < current.sample_offset) result = item;
+                    if (eventBefore(item, current)) result = item;
                 } else {
                     result = item;
                 }
@@ -1847,7 +1851,7 @@ test "events generated queries match reference scans" {
             for (items) |item| {
                 if (!matches(item, context)) continue;
                 if (result) |current| {
-                    if (item.sample_offset >= current.sample_offset) result = item;
+                    if (eventAtOrAfter(item, current)) result = item;
                 } else {
                     result = item;
                 }
@@ -1858,9 +1862,9 @@ test "events generated queries match reference scans" {
         fn nextOffsetMatching(items: []const Event, context: anytype, after_sample_offset: usize, comptime matches: anytype) ?usize {
             var result: ?usize = null;
             for (items) |item| {
-                if (!matches(item, context) or item.sample_offset <= after_sample_offset) continue;
+                if (!matches(item, context) or eventAtOrBeforeOffset(item, after_sample_offset)) continue;
                 if (result) |current| {
-                    if (item.sample_offset < current) result = item.sample_offset;
+                    if (eventOffsetBefore(item, current)) result = item.sample_offset;
                 } else {
                     result = item.sample_offset;
                 }
@@ -1871,9 +1875,9 @@ test "events generated queries match reference scans" {
         fn nextAnyOffset(items: []const Event, after_sample_offset: usize) ?usize {
             var result: ?usize = null;
             for (items) |item| {
-                if (item.sample_offset <= after_sample_offset) continue;
+                if (eventAtOrBeforeOffset(item, after_sample_offset)) continue;
                 if (result) |current| {
-                    if (item.sample_offset < current) result = item.sample_offset;
+                    if (eventOffsetBefore(item, current)) result = item.sample_offset;
                 } else {
                     result = item.sample_offset;
                 }
