@@ -18,6 +18,14 @@ pub fn atOrBeforeOffset(candidate: anytype, sample_offset: usize) bool {
     return candidate.sample_offset <= sample_offset;
 }
 
+pub fn frameSpan(range: anytype) usize {
+    return range.end_offset -| range.start_offset;
+}
+
+pub fn withinRange(range: anytype, sample_offset: usize) bool {
+    return sample_offset >= range.start_offset and sample_offset < range.end_offset;
+}
+
 pub fn indexedBefore(candidate: anytype, current: anytype) bool {
     return before(candidate.item, current.item) or
         (candidate.item.sample_offset == current.item.sample_offset and candidate.index < current.index);
@@ -36,6 +44,7 @@ test "sample-offset ordering handles stored-order ties" {
         item: struct { sample_offset: usize },
         index: usize,
     };
+    const Range = struct { start_offset: usize, end_offset: usize };
 
     try std.testing.expect(before(.{ .sample_offset = 1 }, .{ .sample_offset = 2 }));
     try std.testing.expect(!before(.{ .sample_offset = 2 }, .{ .sample_offset = 2 }));
@@ -44,6 +53,11 @@ test "sample-offset ordering handles stored-order ties" {
     try std.testing.expect(beforeOffset(.{ .sample_offset = 1 }, 2));
     try std.testing.expect(atOrBeforeOffset(.{ .sample_offset = 2 }, 2));
     try std.testing.expect(!atOrBeforeOffset(.{ .sample_offset = 3 }, 2));
+    try std.testing.expectEqual(@as(usize, 3), frameSpan(Range{ .start_offset = 2, .end_offset = 5 }));
+    try std.testing.expectEqual(@as(usize, 0), frameSpan(Range{ .start_offset = 5, .end_offset = 2 }));
+    try std.testing.expect(withinRange(Range{ .start_offset = 2, .end_offset = 5 }, 2));
+    try std.testing.expect(!withinRange(Range{ .start_offset = 2, .end_offset = 5 }, 5));
+    try std.testing.expect(!withinRange(Range{ .start_offset = 2, .end_offset = 5 }, 1));
     try std.testing.expect(indexedBefore(
         Indexed{ .item = .{ .sample_offset = 4 }, .index = 2 },
         Indexed{ .item = .{ .sample_offset = 4 }, .index = 3 },

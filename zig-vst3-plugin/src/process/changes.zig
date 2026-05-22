@@ -197,7 +197,7 @@ pub const ParameterSegment = struct {
     normalized: f64,
 
     pub fn frameCount(self: ParameterSegment) usize {
-        return self.end_offset -| self.start_offset;
+        return ordered.frameSpan(self);
     }
 
     pub fn isEmpty(self: ParameterSegment) bool {
@@ -205,7 +205,7 @@ pub const ParameterSegment = struct {
     }
 
     pub fn contains(self: ParameterSegment, sample_offset: usize) bool {
-        return sample_offset >= self.start_offset and sample_offset < self.end_offset;
+        return ordered.withinRange(self, sample_offset);
     }
 
     pub fn startsAt(self: ParameterSegment, sample_offset: usize) bool {
@@ -222,7 +222,7 @@ pub const BlockSegment = struct {
     end_offset: usize,
 
     pub fn frameCount(self: BlockSegment) usize {
-        return self.end_offset -| self.start_offset;
+        return ordered.frameSpan(self);
     }
 
     pub fn isEmpty(self: BlockSegment) bool {
@@ -230,7 +230,7 @@ pub const BlockSegment = struct {
     }
 
     pub fn contains(self: BlockSegment, sample_offset: usize) bool {
-        return sample_offset >= self.start_offset and sample_offset < self.end_offset;
+        return ordered.withinRange(self, sample_offset);
     }
 
     pub fn startsAt(self: BlockSegment, sample_offset: usize) bool {
