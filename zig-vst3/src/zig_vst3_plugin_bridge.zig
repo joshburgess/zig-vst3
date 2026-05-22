@@ -385,15 +385,15 @@ fn parameterInfoFlags(
     index: usize,
 ) types.int32 {
     var flags: types.int32 = 0;
-    addParameterFlag(&flags, set.canAutomate(index), ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate);
-    addParameterFlag(&flags, set.isReadOnly(index), ivsteditcontroller.ParameterInfo.ParameterFlags.kIsReadOnly);
-    addParameterFlag(&flags, set.isList(index), ivsteditcontroller.ParameterInfo.ParameterFlags.kIsList);
-    addParameterFlag(&flags, set.isBypass(index), ivsteditcontroller.ParameterInfo.ParameterFlags.kIsBypass);
+    addParameterFlag(&flags, set.canAutomate(index) orelse unreachable, ivsteditcontroller.ParameterInfo.ParameterFlags.kCanAutomate);
+    addParameterFlag(&flags, set.isReadOnly(index) orelse unreachable, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsReadOnly);
+    addParameterFlag(&flags, set.isList(index) orelse unreachable, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsList);
+    addParameterFlag(&flags, set.isBypass(index) orelse unreachable, ivsteditcontroller.ParameterInfo.ParameterFlags.kIsBypass);
     return flags;
 }
 
-fn addParameterFlag(flags: *types.int32, enabled: ?bool, flag: types.int32) void {
-    if (enabled orelse false) flags.* |= flag;
+fn addParameterFlag(flags: *types.int32, enabled: bool, flag: types.int32) void {
+    if (enabled) flags.* |= flag;
 }
 
 pub fn getParamStringByValue(
