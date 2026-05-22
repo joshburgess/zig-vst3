@@ -161,6 +161,7 @@ pub fn readParameterStateWithMigrationsReport(
         const entry = try readParameterStateEntry(reader);
         try restoreParameterStateEntry(Params, set, &restored, &seen_restored, migrations, entry, &report);
     }
+    std.debug.assert(report.accountedCount() == report.entry_count);
     values.copyFrom(&restored);
     return report;
 }
