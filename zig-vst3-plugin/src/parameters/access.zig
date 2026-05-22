@@ -322,6 +322,7 @@ pub fn ParameterValues(comptime Params: type) type {
         }
 
         fn storeNormalizedAt(self: *Self, index: usize, normalized: f64) usize {
+            std.debug.assert(index < Set.count);
             const changed: usize = if (self.values[index].load() != normalized) 1 else 0;
             self.values[index].store(normalized);
             return changed;
