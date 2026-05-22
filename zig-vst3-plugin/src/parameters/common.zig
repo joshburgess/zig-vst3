@@ -1,5 +1,6 @@
 const shared = @import("../common.zig");
 
+pub const isNormalized = shared.isNormalized;
 pub const clampNormalized = shared.clampNormalized;
 pub const clampBipolarNormalized = shared.clampBipolarNormalized;
 pub const clampNormalizedNonZero = shared.clampNormalizedNonZero;

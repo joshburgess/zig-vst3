@@ -13,7 +13,9 @@ pub const NormalizedValue = struct {
     }
 
     pub fn load(self: *const NormalizedValue) f64 {
-        return @bitCast(@constCast(&self.bits).load(.monotonic));
+        const value: f64 = @bitCast(@constCast(&self.bits).load(.monotonic));
+        std.debug.assert(common.isNormalized(value));
+        return value;
     }
 
     pub fn store(self: *NormalizedValue, value: f64) void {
