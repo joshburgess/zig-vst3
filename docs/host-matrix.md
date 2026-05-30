@@ -12,6 +12,7 @@ Tier 3 host smoke tests are release gates. Record only tests that were run in a 
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_event_echo.vst3` | Partial Pass | Scanned in REAPER, inserted on a track, audio pass-through confirmed, saved, reloaded; event output not directly observed. |
 | Deferred | REAPER | Pending | Pending | Pending | Pending | `zig_vst3_event_monitor.vst3` | Deferred | Needs an analyzer-style event inspection smoke test in a real host. |
 | Deferred | REAPER | Pending | Pending | Pending | Pending | `zig_vst3_sine_synth.vst3` | Deferred | Needs an instrument-style MIDI input smoke test in a real host. |
+| Deferred | REAPER | Pending | Pending | Pending | Pending | `zig_vst3_editor_smoke.vst3` | Deferred | Needs a real embedded editor smoke test. The view is protocol-only and has no visible toolkit UI. |
 
 ## Minimum Smoke Test
 
@@ -30,6 +31,7 @@ Run `zig build clean-bundles bundle-examples` before pointing a host at `zig-out
    - `zig_vst3_event_echo.vst3`: route event output and confirm input events are echoed. This is not an audio delay effect.
    - `zig_vst3_event_monitor.vst3`: route MIDI or other event input into the analyzer and confirm it scans and survives save/reload. Direct event-summary observation still needs a host harness.
    - `zig_vst3_sine_synth.vst3`: insert as a MIDI-driven instrument or output-only generator, send note input, move Level, and confirm generated audio follows note and level changes.
+   - `zig_vst3_editor_smoke.vst3`: open and close the editor, resize the plugin window if the host allows it, save, and reload.
 6. Save and reload the session, then confirm parameter state and scan status are preserved.
 
 ## REAPER Notes
@@ -39,6 +41,7 @@ Run `zig build clean-bundles bundle-examples` before pointing a host at `zig-out
 - `zig_vst3_event_echo.vst3`: this passes audio through and echoes VST3 events to the output event bus. It is not an audio delay effect.
 - `zig_vst3_event_monitor.vst3`: this is an input-only event analyzer. It has no audio output, so a basic REAPER pass should focus on scan/load/save/reload until a host-side event inspection harness exists.
 - `zig_vst3_sine_synth.vst3`: create a track with MIDI input armed, insert the plugin, send notes, and confirm the Level parameter controls generated output.
+- `zig_vst3_editor_smoke.vst3`: open the FX UI and close it while transport is stopped and running. It intentionally exposes a protocol-only editor, so a blank or host-generic container is acceptable as long as the host does not crash and save/reload survives.
 
 ## Recording Helper
 

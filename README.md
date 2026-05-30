@@ -39,6 +39,7 @@ The repository includes checked framework examples and bundled VST3 examples for
 - `event-echo`: input events echoed to an output event bus.
 - `event-monitor`: input-only analyzer topology and event inspection helpers.
 - `sine-synth`: output-only generator/instrument behavior driven by note input.
+- `editor-smoke`: protocol-only editor view for exercising `IPlugView` attach, resize, focus, and removal paths.
 
 Native macOS and Linux validator jobs run the bundled examples in CI. Windows bundle generation is covered by CI cross-builds; Windows validator and real-host rows are still future work.
 

@@ -91,6 +91,14 @@ pub fn build(b: *std.Build) void {
             .core_example_source_file = "examples/sine_synth_core.zig",
             .bundle_id = "dev.zig-vst3.sine-synth",
         },
+        .{
+            .short_name = "editor-smoke",
+            .display_name = "editor smoke",
+            .artifact_name = "zig_vst3_editor_smoke",
+            .root_source_file = "zig-vst3/src/editor_smoke_plugin.zig",
+            .core_example_source_file = "examples/editor_smoke_core.zig",
+            .bundle_id = "dev.zig-vst3.editor-smoke",
+        },
     };
 
     var example_plugins: [example_plugin_options.len]ExamplePluginSteps = undefined;
