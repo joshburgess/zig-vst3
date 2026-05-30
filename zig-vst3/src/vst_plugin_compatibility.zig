@@ -1,4 +1,5 @@
 const std = @import("std");
+const factory = @import("factory.zig");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
@@ -63,6 +64,82 @@ pub fn PluginCompatibility(comptime json: []const u8) type {
             .getCompatibilityJSON = getCompatibilityJSON,
         };
     };
+}
+
+pub fn StaticPluginCompatibility(comptime json: []const u8) type {
+    vst_index.requireInt32Length(json.len, "StaticPluginCompatibility JSON");
+
+    return struct {
+        const Self = @This();
+
+        const Instance = extern struct {
+            iface: iplugincompatibility.IPluginCompatibility = .{ .vtable = &vtable },
+            ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+        };
+
+        pub var instance = Instance{};
+
+        pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
+            return query(&instance.iface, @ptrCast(requested_iid), out);
+        }
+
+        const owner = interface_map.ownerFromField(Instance, iplugincompatibility.IPluginCompatibility, "iface");
+
+        fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+            const entries = [_]interface_map.Entry{
+                .{ .iid = &funknown.iid, .ptr = ptr },
+                .{ .iid = &iplugincompatibility.iplugin_compatibility_iid, .ptr = ptr },
+            };
+            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
+            return funknown.incrementRefCount(&owner(ptr).ref_count, "FUnknown");
+        }
+
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
+            return releaseStaticRef(&owner(ptr).ref_count);
+        }
+
+        fn getCompatibilityJSON(_: *anyopaque, stream: ?*ibstream.IBStream) callconv(.c) types.tresult {
+            return vst_stream.writeAll(stream, json);
+        }
+
+        const vtable = iplugincompatibility.IPluginCompatibilityVTable{
+            .queryInterface = query,
+            .addRef = addRef,
+            .release = release,
+            .getCompatibilityJSON = getCompatibilityJSON,
+        };
+
+        comptime {
+            _ = Self;
+        }
+    };
+}
+
+pub fn classInfo(comptime cid: tuid.TUID, comptime json: []const u8, comptime name: []const u8) factory.ClassInfo {
+    const Compatibility = StaticPluginCompatibility(json);
+    return .{
+        .cid = cid,
+        .category = "Plugin Compatibility Class",
+        .name = name,
+        .create = Compatibility.create,
+    };
+}
+
+fn releaseStaticRef(ref_count: *std.atomic.Value(types.uint32)) types.uint32 {
+    while (true) {
+        const previous = ref_count.load(.monotonic);
+        if (previous <= 1) return 1;
+
+        const next = previous - 1;
+        if (ref_count.cmpxchgWeak(previous, next, .release, .monotonic)) |_| {
+            continue;
+        }
+
+        return next;
+    }
 }
 
 test "plugin compatibility writes JSON to stream" {
@@ -136,4 +213,43 @@ test "plugin compatibility clears unsupported query output" {
     var queried: ?*anyopaque = @ptrFromInt(0x1000);
     try std.testing.expectEqual(types.kNoInterface, iface.vtable.queryInterface(iface, &tuid.zero, &queried));
     try std.testing.expectEqual(@as(?*anyopaque, null), queried);
+}
+
+test "plugin compatibility can be exposed as a factory class" {
+    const compatibility_cid = comptime tuid.inlineUid(0xF75D9631, 0x6A8D46AF, 0xA6DC3C63, 0x6F7D6D42);
+    const json =
+        \\[
+        \\  {
+        \\    "New": "A74E7A0D6B234163A0A83EBFD06F1401",
+        \\    "Old": ["11111111222222223333333344444444"]
+        \\  }
+        \\]
+    ;
+    const Factory = factory.StaticFactory3(
+        .{ .vendor = "zig-vst3" },
+        &[_]factory.ClassInfo{
+            classInfo(compatibility_cid, json, "zig-vst3 Compatibility"),
+        },
+    );
+    const Stream = vst_stream.FixedBufferStream(256);
+
+    const factory_iface = Factory.getPluginFactory3();
+    try std.testing.expectEqual(@as(types.int32, 1), factory_iface.vtable.countClasses(factory_iface));
+
+    var info = @import("pluginterfaces/base/ipluginbase.zig").PClassInfo{};
+    try std.testing.expectEqual(types.kResultOk, factory_iface.vtable.getClassInfo(factory_iface, 0, &info));
+    try std.testing.expectEqualStrings("Plugin Compatibility Class", std.mem.sliceTo(&info.category, 0));
+
+    var compatibility_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        factory_iface.vtable.createInstance(factory_iface, @ptrCast(&compatibility_cid), @ptrCast(&iplugincompatibility.iplugin_compatibility_iid), &compatibility_out),
+    );
+    try std.testing.expect(compatibility_out != null);
+    const compatibility: *iplugincompatibility.IPluginCompatibility = @ptrCast(@alignCast(compatibility_out.?));
+
+    var stream = Stream{};
+    try std.testing.expectEqual(types.kResultOk, compatibility.vtable.getCompatibilityJSON(compatibility, stream.asStream()));
+    try std.testing.expectEqualStrings(json, stream.data());
+    try std.testing.expectEqual(@as(types.uint32, 1), compatibility.vtable.release(compatibility));
 }

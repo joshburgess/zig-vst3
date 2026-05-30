@@ -4,6 +4,7 @@ const interface_map = @import("interface_map.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivstmidilearn = @import("pluginterfaces/vst/ivstmidilearn.zig");
 const ivstmidimapping2 = @import("pluginterfaces/vst/ivstmidimapping2.zig");
+const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
 const ivstphysicalui = @import("pluginterfaces/vst/ivstphysicalui.zig");
 const ivstpluginterfacesupport = @import("pluginterfaces/vst/ivstpluginterfacesupport.zig");
 const ivstprefetchablesupport = @import("pluginterfaces/vst/ivstprefetchablesupport.zig");
@@ -486,19 +487,29 @@ pub fn PhysicalUIMapping(comptime max_maps: usize, comptime Config: type) type {
         }
 
         fn failPhysicalUIMapping(out: *ivstphysicalui.PhysicalUIMapList, result: types.tresult) types.tresult {
-            out.* = .{};
+            if (out.map) |requested_maps| {
+                for (requested_maps[0..out.count]) |*requested| {
+                    requested.noteExpressionTypeID = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID);
+                }
+            }
             return result;
         }
 
         fn getPhysicalUIMapping(ptr: *anyopaque, bus_index: types.int32, channel: types.int16, out: *ivstphysicalui.PhysicalUIMapList) callconv(.c) types.tresult {
             const self = owner(ptr);
             self.recordRequest(bus_index, channel);
-            if (!self.hasPhysicalMaps()) return failPhysicalUIMapping(out, types.kResultFalse);
+            const requested_maps = out.map orelse return types.kInvalidArgument;
+            if (!self.hasPhysicalMaps() or out.count == 0) return failPhysicalUIMapping(out, types.kResultFalse);
             const maps = self.physicalMaps();
-            out.* = .{
-                .count = vst_index.uint32Count(maps.len),
-                .map = maps.ptr,
-            };
+            for (requested_maps[0..out.count]) |*requested| {
+                requested.noteExpressionTypeID = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID);
+                for (maps) |mapping| {
+                    if (mapping.physicalUITypeID == requested.physicalUITypeID) {
+                        requested.noteExpressionTypeID = mapping.noteExpressionTypeID;
+                        break;
+                    }
+                }
+            }
             if (@hasDecl(Config, "getPhysicalUIMapping")) {
                 const result = Config.getPhysicalUIMapping(self, bus_index, channel, out);
                 if (result != types.kResultOk) return failPhysicalUIMapping(out, result);
@@ -875,7 +886,7 @@ test "midi 2 mapping clears unsupported query outputs from both interfaces" {
 test "physical UI mapping exposes fixed map list and clears delegated failures" {
     const Mapping = PhysicalUIMapping(1, struct {
         pub fn getPhysicalUIMapping(_: anytype, _: types.int32, _: types.int16, out: *ivstphysicalui.PhysicalUIMapList) types.tresult {
-            out.* = .{ .count = 99, .map = @ptrFromInt(0x1000) };
+            out.map.?[0].noteExpressionTypeID = 99;
             return types.kResultFalse;
         }
     });
@@ -886,20 +897,24 @@ test "physical UI mapping exposes fixed map list and clears delegated failures" 
     try std.testing.expectEqual(@as(usize, 1), mapping.physicalMapsConst().len);
     try std.testing.expectEqual(@as(types.uint32, 12), mapping.physicalMapsConst()[0].noteExpressionTypeID);
 
-    var list = ivstphysicalui.PhysicalUIMapList{};
+    var requested = [_]ivstphysicalui.PhysicalUIMap{
+        .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 77 },
+    };
+    var list = ivstphysicalui.PhysicalUIMapList{ .count = requested.len, .map = &requested };
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getPhysicalUIMapping(iface, 3, 4, &list));
-    try std.testing.expectEqual(@as(types.uint32, 0), list.count);
-    try std.testing.expectEqual(@as(?[*]ivstphysicalui.PhysicalUIMap, null), list.map);
+    try std.testing.expectEqual(@as(types.uint32, 1), list.count);
+    try std.testing.expectEqual(@as(types.uint32, @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID)), requested[0].noteExpressionTypeID);
     try std.testing.expectEqual(@as(types.int32, 3), mapping.last_bus);
     try std.testing.expectEqual(@as(types.int16, 4), mapping.last_channel);
 
     const DefaultMapping = PhysicalUIMapping(1, struct {});
     var default_mapping = DefaultMapping{};
     try std.testing.expectEqual(types.kResultOk, default_mapping.addMap(.{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 12 }));
+    requested[0] = .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 0 };
     try std.testing.expectEqual(types.kResultOk, default_mapping.asInterface().vtable.getPhysicalUIMapping(default_mapping.asInterface(), 0, 1, &list));
     try std.testing.expectEqual(@as(types.uint32, 1), list.count);
-    try std.testing.expectEqual(@intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), list.map.?[0].physicalUITypeID);
-    try std.testing.expectEqual(@as(types.uint32, 12), list.map.?[0].noteExpressionTypeID);
+    try std.testing.expectEqual(@intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), requested[0].physicalUITypeID);
+    try std.testing.expectEqual(@as(types.uint32, 12), requested[0].noteExpressionTypeID);
 }
 
 test "physical UI mapping clamps inflated map counts" {
@@ -910,10 +925,14 @@ test "physical UI mapping clamps inflated map counts" {
     mapping.map_count = 99;
 
     try std.testing.expectEqual(@as(usize, 1), mapping.physicalMapsConst().len);
-    var list = ivstphysicalui.PhysicalUIMapList{};
+    var requested = [_]ivstphysicalui.PhysicalUIMap{
+        .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure) },
+    };
+    var list = ivstphysicalui.PhysicalUIMapList{ .count = requested.len, .map = &requested };
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getPhysicalUIMapping(iface, 0, 1, &list));
     try std.testing.expectEqual(@as(types.uint32, 1), list.count);
-    try std.testing.expectEqual(@intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), list.map.?[0].physicalUITypeID);
+    try std.testing.expectEqual(@intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), requested[0].physicalUITypeID);
+    try std.testing.expectEqual(@as(types.uint32, 12), requested[0].noteExpressionTypeID);
     try std.testing.expectEqual(types.kResultFalse, mapping.addMap(.{}));
 }
 
@@ -921,11 +940,14 @@ test "physical UI mapping reports empty lists and supports query interface" {
     const Mapping = PhysicalUIMapping(1, struct {});
     var mapping = Mapping{};
     const iface = mapping.asInterface();
-    var list = ivstphysicalui.PhysicalUIMapList{ .count = 99, .map = @ptrFromInt(0x1000) };
+    var requested = [_]ivstphysicalui.PhysicalUIMap{
+        .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), .noteExpressionTypeID = 77 },
+    };
+    var list = ivstphysicalui.PhysicalUIMapList{ .count = requested.len, .map = &requested };
 
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getPhysicalUIMapping(iface, 8, 9, &list));
-    try std.testing.expectEqual(@as(types.uint32, 0), list.count);
-    try std.testing.expectEqual(@as(?[*]ivstphysicalui.PhysicalUIMap, null), list.map);
+    try std.testing.expectEqual(@as(types.uint32, 1), list.count);
+    try std.testing.expectEqual(@as(types.uint32, @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID)), requested[0].noteExpressionTypeID);
     try std.testing.expectEqual(@as(types.uint32, 1), mapping.request_count);
     try std.testing.expectEqual(@as(types.int32, 8), mapping.last_bus);
     try std.testing.expectEqual(@as(types.int16, 9), mapping.last_channel);

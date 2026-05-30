@@ -2,6 +2,8 @@ const gain_spec = @import("gain_spec.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
 const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
+const ivstphysicalui = @import("pluginterfaces/vst/ivstphysicalui.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const plug_process = @import("zig-vst3-plugin-core").process;
 const string128 = @import("string128.zig");
@@ -19,6 +21,12 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const controller_name = "GainController";
     pub const Params = gain_spec.Spec.Params;
     pub const parameter_set = &gain_spec.parameter_set;
+    pub const physical_ui_maps = &[_]ivstphysicalui.PhysicalUIMap{
+        .{
+            .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure),
+            .noteExpressionTypeID = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kExpressionTypeID),
+        },
+    };
 });
 
 pub const create = Controller.create;
@@ -629,8 +637,6 @@ test "gain controller exposes default MIDI learn and MIDI 2 mapping interfaces" 
 test "gain controller exposes default note expression and keyswitch interfaces" {
     const std = @import("std");
     const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
-    const ivstnoteexpression = @import("pluginterfaces/vst/ivstnoteexpression.zig");
-    const ivstphysicalui = @import("pluginterfaces/vst/ivstphysicalui.zig");
 
     var controller_out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
@@ -693,13 +699,20 @@ test "gain controller exposes default note expression and keyswitch interfaces" 
     const physical: *ivstphysicalui.INoteExpressionPhysicalUIMapping = @ptrCast(@alignCast(physical_out.?));
     defer _ = physical.vtable.release(physical);
 
-    var physical_mapping: ivstphysicalui.PhysicalUIMapList = .{ .count = 99, .map = null };
+    var requested_physical_maps = [_]ivstphysicalui.PhysicalUIMap{
+        .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure) },
+        .{ .physicalUITypeID = @intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIXMovement) },
+    };
+    var physical_mapping: ivstphysicalui.PhysicalUIMapList = .{ .count = requested_physical_maps.len, .map = &requested_physical_maps };
     try std.testing.expectEqual(
-        types.kResultFalse,
+        types.kResultOk,
         physical.vtable.getPhysicalUIMapping(physical, 0, 0, &physical_mapping),
     );
-    try std.testing.expectEqual(@as(types.uint32, 0), physical_mapping.count);
-    try std.testing.expectEqual(@as(?[*]ivstphysicalui.PhysicalUIMap, null), physical_mapping.map);
+    try std.testing.expectEqual(@as(types.uint32, 2), physical_mapping.count);
+    try std.testing.expectEqual(@intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIPressure), requested_physical_maps[0].physicalUITypeID);
+    try std.testing.expectEqual(@intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kExpressionTypeID), requested_physical_maps[0].noteExpressionTypeID);
+    try std.testing.expectEqual(@intFromEnum(ivstphysicalui.PhysicalUITypeIDs.kPUIXMovement), requested_physical_maps[1].physicalUITypeID);
+    try std.testing.expectEqual(@intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID), requested_physical_maps[1].noteExpressionTypeID);
 }
 
 test "gain controller exposes default parameter helper interfaces" {

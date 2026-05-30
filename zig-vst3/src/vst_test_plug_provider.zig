@@ -79,8 +79,9 @@ pub fn TestPlugProvider(comptime Config: type) type {
         }
 
         fn componentFor(self: *Self) ?*ivstcomponent.IComponent {
-            if (@hasDecl(Config, "getComponent")) return Config.getComponent(self);
-            return self.component;
+            const component = if (@hasDecl(Config, "getComponent")) Config.getComponent(self) else self.component;
+            if (component) |value| _ = value.vtable.addRef(value);
+            return component;
         }
 
         fn getController(ptr: *anyopaque) callconv(.c) ?*ivsteditcontroller.IEditController {
@@ -94,8 +95,9 @@ pub fn TestPlugProvider(comptime Config: type) type {
         }
 
         fn controllerFor(self: *Self) ?*ivsteditcontroller.IEditController {
-            if (@hasDecl(Config, "getController")) return Config.getController(self);
-            return self.controller;
+            const controller = if (@hasDecl(Config, "getController")) Config.getController(self) else self.controller;
+            if (controller) |value| _ = value.vtable.addRef(value);
+            return controller;
         }
 
         fn releasePlugIn(ptr: *anyopaque, component: ?*ivstcomponent.IComponent, controller: ?*ivsteditcontroller.IEditController) callconv(.c) types.tresult {
@@ -110,8 +112,18 @@ pub fn TestPlugProvider(comptime Config: type) type {
             self.release_count +|= 1;
             self.last_released_component = component;
             self.last_released_controller = controller;
+            defer releaseComponent(component);
+            defer releaseController(controller);
             if (@hasDecl(Config, "releasePlugIn")) return Config.releasePlugIn(self, component, controller);
             return types.kResultOk;
+        }
+
+        fn releaseComponent(component: ?*ivstcomponent.IComponent) void {
+            if (component) |value| _ = value.vtable.release(value);
+        }
+
+        fn releaseController(controller: ?*ivsteditcontroller.IEditController) void {
+            if (controller) |value| _ = value.vtable.release(value);
         }
 
         fn getSubCategories(ptr: *anyopaque, out: *istringresult.IStringResult) callconv(.c) types.tresult {
@@ -202,39 +214,60 @@ test "test plug provider tracks released plugin pair" {
     const Provider = TestPlugProvider(struct {});
     var provider = Provider{};
     const iface = provider.asProvider();
-    const component: *ivstcomponent.IComponent = @ptrFromInt(0x1000);
-    const controller: *ivsteditcontroller.IEditController = @ptrFromInt(0x2000);
 
     try std.testing.expectEqual(@as(?*ivstcomponent.IComponent, null), iface.vtable.getComponent(iface));
     try std.testing.expectEqual(@as(?*ivsteditcontroller.IEditController, null), iface.vtable.getController(iface));
-    try std.testing.expectEqual(types.kResultOk, iface.vtable.releasePlugIn(iface, component, controller));
+
+    const gain_component = @import("gain_component.zig");
+    const gain_controller = @import("gain_controller.zig");
+    var component_out: ?*anyopaque = null;
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, gain_component.create(@ptrCast(&ivstcomponent.icomponent_iid), &component_out));
+    try std.testing.expectEqual(types.kResultOk, gain_controller.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    const component: *ivstcomponent.IComponent = @ptrCast(@alignCast(component_out.?));
+    const controller: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = component.vtable.release(component);
+    defer _ = controller.vtable.release(controller);
+
+    provider.component = component;
+    provider.controller = controller;
+    const retained_component = iface.vtable.getComponent(iface).?;
+    const retained_controller = iface.vtable.getController(iface).?;
+    try std.testing.expectEqual(component, retained_component);
+    try std.testing.expectEqual(controller, retained_controller);
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.releasePlugIn(iface, retained_component, retained_controller));
     try std.testing.expectEqual(@as(types.uint32, 1), provider.release_count);
     try std.testing.expectEqual(component, provider.last_released_component.?);
     try std.testing.expectEqual(controller, provider.last_released_controller.?);
 }
 
 test "test plug provider delegates component controller and release hooks through provider2" {
-    const component: *ivstcomponent.IComponent = @ptrFromInt(0x1000);
-    const controller: *ivsteditcontroller.IEditController = @ptrFromInt(0x2000);
+    const gain_component = @import("gain_component.zig");
+    const gain_controller = @import("gain_controller.zig");
+    var component_out: ?*anyopaque = null;
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, gain_component.create(@ptrCast(&ivstcomponent.icomponent_iid), &component_out));
+    try std.testing.expectEqual(types.kResultOk, gain_controller.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    const component: *ivstcomponent.IComponent = @ptrCast(@alignCast(component_out.?));
+    const controller: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = component.vtable.release(component);
+    defer _ = controller.vtable.release(controller);
+
     const Provider = TestPlugProvider(struct {
-        pub fn getComponent(_: anytype) ?*ivstcomponent.IComponent {
-            return component;
-        }
-
-        pub fn getController(_: anytype) ?*ivsteditcontroller.IEditController {
-            return controller;
-        }
-
         pub fn releasePlugIn(_: anytype, released_component: ?*ivstcomponent.IComponent, released_controller: ?*ivsteditcontroller.IEditController) types.tresult {
-            return if (released_component == component and released_controller == controller) types.kResultFalse else types.kInvalidArgument;
+            return if (released_component != null and released_controller != null) types.kResultFalse else types.kInvalidArgument;
         }
     });
     var provider = Provider{};
+    provider.component = component;
+    provider.controller = controller;
     const provider2 = provider.asProvider2();
 
-    try std.testing.expectEqual(component, provider2.vtable.getComponent(provider2).?);
-    try std.testing.expectEqual(controller, provider2.vtable.getController(provider2).?);
-    try std.testing.expectEqual(types.kResultFalse, provider2.vtable.releasePlugIn(provider2, component, controller));
+    const retained_component = provider2.vtable.getComponent(provider2).?;
+    const retained_controller = provider2.vtable.getController(provider2).?;
+    try std.testing.expectEqual(component, retained_component);
+    try std.testing.expectEqual(controller, retained_controller);
+    try std.testing.expectEqual(types.kResultFalse, provider2.vtable.releasePlugIn(provider2, retained_component, retained_controller));
     try std.testing.expectEqual(@as(types.uint32, 1), provider.release_count);
     try std.testing.expectEqual(component, provider.last_released_component.?);
     try std.testing.expectEqual(controller, provider.last_released_controller.?);

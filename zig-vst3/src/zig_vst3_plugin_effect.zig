@@ -43,6 +43,15 @@ const process_parameter_change_capacity = 64;
 const process_event_capacity = 64;
 const process_output_event_capacity = 64;
 
+var test_data_exchange_queue_opened_count: usize = 0;
+var test_data_exchange_queue_closed_count: usize = 0;
+var test_data_exchange_blocks_received_count: usize = 0;
+var test_data_exchange_last_user_context_id: ivstdataexchange.DataExchangeUserContextID = 0;
+var test_data_exchange_last_block_size: types.uint32 = 0;
+var test_data_exchange_last_num_blocks: types.uint32 = 0;
+var test_data_exchange_last_block_id: ivstdataexchange.DataExchangeBlockID = 0;
+var test_data_exchange_last_background_flag: types.TBool = 0;
+
 fn failInfo(out: anytype) types.tresult {
     out.* = .{};
     return types.kInvalidArgument;
@@ -55,6 +64,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
         const unit_config = if (@hasDecl(Config, "unit_config")) Config.unit_config else plug_core.units.Config{};
         const UnitSet = plug_core.units.UnitSet(unit_config);
         const units = UnitSet{};
+        const physical_ui_maps: []const ivstphysicalui.PhysicalUIMap = if (@hasDecl(Config, "physical_ui_maps"))
+            Config.physical_ui_maps
+        else
+            &.{};
 
         const Controller = extern struct {
             iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
@@ -727,8 +740,18 @@ pub fn ReflectedEditController(comptime Config: type) type {
         };
 
         fn getPhysicalUIMapping(_: *anyopaque, _: types.int32, _: types.int16, out: *ivstphysicalui.PhysicalUIMapList) callconv(.c) types.tresult {
-            out.* = .{};
-            return types.kResultFalse;
+            const requested_maps = out.map orelse return types.kInvalidArgument;
+            if (physical_ui_maps.len == 0 or out.count == 0) return types.kResultFalse;
+            for (requested_maps[0..out.count]) |*requested| {
+                requested.noteExpressionTypeID = @intFromEnum(ivstnoteexpression.NoteExpressionTypeIDs.kInvalidTypeID);
+                for (physical_ui_maps) |mapping| {
+                    if (mapping.physicalUITypeID == requested.physicalUITypeID) {
+                        requested.noteExpressionTypeID = mapping.noteExpressionTypeID;
+                        break;
+                    }
+                }
+            }
+            return types.kResultOk;
         }
 
         const parameter_function_name_vtable = ivstparameterfunctionname.IParameterFunctionNameVTable{
@@ -1410,7 +1433,93 @@ test "simple stereo effect ignores parameter changes when process data is malfor
     try std.testing.expectEqualSlices(f32, &.{ 9.0, 9.0 }, &output_samples);
 }
 
-test "simple stereo effect clears failed data exchange outputs" {
+test "simple stereo effect delegates data exchange receiver callbacks" {
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const TestEffect = SimpleStereoEffect(struct {
+        pub const component_name = "DataExchangeReceiverComponent";
+        pub const controller_cid = tuid.inlineUid(0xC0D66B7A, 0x56F24E07, 0x9B5A20B5, 0xE775D460);
+        pub const Processor = struct {
+            pub fn process(_: @This(), comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+                _ = context;
+            }
+        };
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+        pub fn readState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultOk;
+        }
+        pub fn writeState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultOk;
+        }
+        pub fn applyParameterChanges(_: plug_process.ParameterChanges) void {}
+
+        pub fn dataExchangeQueueOpened(user_context_id: ivstdataexchange.DataExchangeUserContextID, block_size: types.uint32) types.TBool {
+            test_data_exchange_queue_opened_count += 1;
+            test_data_exchange_last_user_context_id = user_context_id;
+            test_data_exchange_last_block_size = block_size;
+            return 1;
+        }
+
+        pub fn dataExchangeQueueClosed(user_context_id: ivstdataexchange.DataExchangeUserContextID) void {
+            test_data_exchange_queue_closed_count += 1;
+            test_data_exchange_last_user_context_id = user_context_id;
+        }
+
+        pub fn onDataExchangeBlocksReceived(user_context_id: ivstdataexchange.DataExchangeUserContextID, num_blocks: types.uint32, blocks: ?[*]ivstdataexchange.DataExchangeBlock, on_background_thread: types.TBool) void {
+            test_data_exchange_blocks_received_count += 1;
+            test_data_exchange_last_user_context_id = user_context_id;
+            test_data_exchange_last_num_blocks = num_blocks;
+            test_data_exchange_last_background_flag = on_background_thread;
+            if (blocks) |items| test_data_exchange_last_block_id = items[0].blockID;
+        }
+    });
+
+    test_data_exchange_queue_opened_count = 0;
+    test_data_exchange_queue_closed_count = 0;
+    test_data_exchange_blocks_received_count = 0;
+    test_data_exchange_last_user_context_id = 0;
+    test_data_exchange_last_block_size = 0;
+    test_data_exchange_last_num_blocks = 0;
+    test_data_exchange_last_block_id = 0;
+    test_data_exchange_last_background_flag = 0;
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestEffect.create(@ptrCast(&ivstcomponent.icomponent_iid), &component_out));
+    try std.testing.expect(component_out != null);
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(component_out.?));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var receiver_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, component_iface.vtable.queryInterface(component_iface, &ivstdataexchange.idata_exchange_receiver_iid, &receiver_out));
+    try std.testing.expect(receiver_out != null);
+    const receiver: *ivstdataexchange.IDataExchangeReceiver = @ptrCast(@alignCast(receiver_out.?));
+    defer _ = receiver.vtable.release(receiver);
+
+    var dispatch_on_background_thread: types.TBool = 0;
+    receiver.vtable.queueOpened(receiver, 77, 512, &dispatch_on_background_thread);
+    try std.testing.expectEqual(@as(types.TBool, 1), dispatch_on_background_thread);
+    try std.testing.expectEqual(@as(usize, 1), test_data_exchange_queue_opened_count);
+    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeUserContextID, 77), test_data_exchange_last_user_context_id);
+    try std.testing.expectEqual(@as(types.uint32, 512), test_data_exchange_last_block_size);
+
+    var blocks = [_]ivstdataexchange.DataExchangeBlock{.{
+        .data = @ptrFromInt(0x1000),
+        .size = 64,
+        .blockID = 22,
+    }};
+    receiver.vtable.onDataExchangeBlocksReceived(receiver, 77, blocks.len, &blocks, 1);
+    try std.testing.expectEqual(@as(usize, 1), test_data_exchange_blocks_received_count);
+    try std.testing.expectEqual(@as(types.uint32, blocks.len), test_data_exchange_last_num_blocks);
+    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeBlockID, 22), test_data_exchange_last_block_id);
+    try std.testing.expectEqual(@as(types.TBool, 1), test_data_exchange_last_background_flag);
+
+    receiver.vtable.queueClosed(receiver, 77);
+    try std.testing.expectEqual(@as(usize, 1), test_data_exchange_queue_closed_count);
+    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeUserContextID, 77), test_data_exchange_last_user_context_id);
+}
+
+test "simple stereo effect rejects invalid data exchange outputs" {
     const EmptyParams = struct {};
     const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
     const TestEffect = SimpleStereoEffect(struct {
@@ -1431,19 +1540,19 @@ test "simple stereo effect clears failed data exchange outputs" {
         }
         pub fn applyParameterChanges(_: plug_process.ParameterChanges) void {}
     });
-    const Host = vst_host_context.DataExchangeHost("Failed Data Exchange Host", struct {
+    const Host = vst_host_context.DataExchangeHost("Invalid Data Exchange Host", struct {
         pub fn openQueue(_: anytype, _: ?*ivstaudioprocessor.IAudioProcessor, _: types.uint32, _: types.uint32, _: types.uint32, _: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
-            out.* = 44;
-            return types.kResultFalse;
+            out.* = ivstdataexchange.InvalidDataExchangeQueueID;
+            return types.kResultOk;
         }
 
         pub fn lockBlock(_: anytype, _: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
             block.* = .{
-                .blockID = 99,
+                .blockID = 12,
                 .size = 128,
-                .data = @ptrFromInt(0x1000),
+                .data = null,
             };
-            return types.kResultFalse;
+            return types.kResultOk;
         }
     });
     var host = Host{};
@@ -1580,6 +1689,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             };
             const result = handler.vtable.openQueue(handler, &component.processor, block_size, num_blocks, alignment, user_context_id, out);
             if (result != types.kResultOk) return failOpenedDataExchangeQueue(out, result);
+            if (out.* == ivstdataexchange.InvalidDataExchangeQueueID) return failOpenedDataExchangeQueue(out, types.kResultFalse);
             return result;
         }
 
@@ -1594,6 +1704,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             };
             const result = handler.vtable.lockBlock(handler, queue_id, block);
             if (result != types.kResultOk) return failLockedDataExchangeBlock(block, result);
+            if (block.data == null or block.size == 0 or block.blockID == ivstdataexchange.InvalidDataExchangeBlockID) return failLockedDataExchangeBlock(block, types.kResultFalse);
             return result;
         }
 

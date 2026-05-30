@@ -22,6 +22,7 @@ fn createHostInstance(comptime Config: type, self: anytype, cid: *const tuid.TUI
     if (@hasDecl(Config, "createInstance")) {
         const result = Config.createInstance(self, cid, iid, out);
         if (result != types.kResultOk) return failCreatedInstance(out, result);
+        if (out.* == null) return failCreatedInstance(out, types.kResultFalse);
         return result;
     }
     return types.kResultFalse;
@@ -106,8 +107,11 @@ pub fn ChannelContextHost(comptime name: []const u8, comptime Config: type) type
         fn setChannelContextInfos(ptr: *anyopaque, attributes: ?*ivstattributes.IAttributeList) callconv(.c) types.tresult {
             const self = ownerFromInfo(ptr);
             self.channel_context_count +|= 1;
+            if (@hasDecl(Config, "setChannelContextInfos")) {
+                const result = Config.setChannelContextInfos(self, attributes);
+                if (result != types.kResultOk) return result;
+            }
             self.last_channel_context = attributes;
-            if (@hasDecl(Config, "setChannelContextInfos")) return Config.setChannelContextInfos(self, attributes);
             return types.kResultOk;
         }
 
@@ -326,6 +330,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             if (@hasDecl(Config, "openQueue")) {
                 const result = Config.openQueue(self, processor, block_size, num_blocks, alignment, user_context_id, out);
                 if (result != types.kResultOk) return failOpenedQueue(out, result);
+                if (out.* == ivstdataexchange.InvalidDataExchangeQueueID) return failOpenedQueue(out, types.kResultFalse);
                 return result;
             }
             return types.kResultFalse;
@@ -343,7 +348,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
         }
 
         fn failLockedBlock(block: *ivstdataexchange.DataExchangeBlock, result: types.tresult) types.tresult {
-            block.* = .{};
+            block.* = .{ .blockID = ivstdataexchange.InvalidDataExchangeBlockID };
             return result;
         }
 
@@ -353,6 +358,7 @@ pub fn DataExchangeHost(comptime name: []const u8, comptime Config: type) type {
             if (@hasDecl(Config, "lockBlock")) {
                 const result = Config.lockBlock(self, queue_id, block);
                 if (result != types.kResultOk) return failLockedBlock(block, result);
+                if (block.data == null or block.size == 0 or block.blockID == ivstdataexchange.InvalidDataExchangeBlockID) return failLockedBlock(block, types.kResultFalse);
                 return result;
             }
             return types.kResultOk;
@@ -404,6 +410,24 @@ test "channel context host exposes info listener and records callbacks" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.info_release_count);
 }
 
+test "channel context host preserves last accepted context on delegated rejection" {
+    const Host = ChannelContextHost("Test Host", struct {
+        pub fn setChannelContextInfos(_: anytype, attributes: ?*ivstattributes.IAttributeList) types.tresult {
+            return if (attributes == null) types.kResultOk else types.kResultFalse;
+        }
+    });
+    var host = Host{};
+    const listener = host.asInfoListener();
+    const accepted: ?*ivstattributes.IAttributeList = null;
+    const rejected: *ivstattributes.IAttributeList = @ptrFromInt(0x1000);
+
+    try std.testing.expectEqual(types.kResultOk, listener.vtable.setChannelContextInfos(listener, accepted));
+    try std.testing.expectEqual(accepted, host.last_channel_context);
+    try std.testing.expectEqual(types.kResultFalse, listener.vtable.setChannelContextInfos(listener, rejected));
+    try std.testing.expectEqual(accepted, host.last_channel_context);
+    try std.testing.expectEqual(@as(types.uint32, 2), host.channel_context_count);
+}
+
 test "channel context host clears unsupported query outputs" {
     const Host = ChannelContextHost("Test Host", struct {});
     var host = Host{};
@@ -432,6 +456,20 @@ test "channel context host clears failed delegated create-instance output" {
 
     var created: ?*anyopaque = @ptrFromInt(0x20);
     try std.testing.expectEqual(types.kNoInterface, host.asHostApplication().vtable.createInstance(host.asHostApplication(), &funknown.iid, &funknown.iid, &created));
+    try std.testing.expectEqual(@as(?*anyopaque, null), created);
+}
+
+test "channel context host rejects successful delegated create-instance with null output" {
+    const Host = ChannelContextHost("Test Host", struct {
+        pub fn createInstance(_: anytype, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            out.* = null;
+            return types.kResultOk;
+        }
+    });
+    var host = Host{};
+
+    var created: ?*anyopaque = @ptrFromInt(0x20);
+    try std.testing.expectEqual(types.kResultFalse, host.asHostApplication().vtable.createInstance(host.asHostApplication(), &funknown.iid, &funknown.iid, &created));
     try std.testing.expectEqual(@as(?*anyopaque, null), created);
 }
 
@@ -712,7 +750,41 @@ test "data exchange host clears failed delegated outputs" {
         .data = @ptrFromInt(0x2000),
     };
     try std.testing.expectEqual(types.kResultFalse, handler.vtable.lockBlock(handler, 44, &block));
-    try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeBlockID, 0), block.blockID);
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeBlockID, block.blockID);
+    try std.testing.expectEqual(@as(types.uint32, 0), block.size);
+    try std.testing.expectEqual(@as(?*anyopaque, null), block.data);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));
+}
+
+test "data exchange host rejects successful delegated invalid outputs" {
+    const Host = DataExchangeHost("Test Host", struct {
+        pub fn openQueue(_: anytype, _: ?*ivstaudioprocessor.IAudioProcessor, _: types.uint32, _: types.uint32, _: types.uint32, _: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
+            out.* = ivstdataexchange.InvalidDataExchangeQueueID;
+            return types.kResultOk;
+        }
+
+        pub fn lockBlock(_: anytype, _: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
+            block.* = .{
+                .blockID = 12,
+                .size = 128,
+                .data = null,
+            };
+            return types.kResultOk;
+        }
+    });
+    var host = Host{};
+    var queried: ?*anyopaque = null;
+
+    try std.testing.expectEqual(types.kResultOk, host.asHostApplication().vtable.queryInterface(host.asHostApplication(), &ivstdataexchange.idata_exchange_handler_iid, &queried));
+    const handler: *ivstdataexchange.IDataExchangeHandler = @ptrCast(@alignCast(queried.?));
+
+    var queue_id: ivstdataexchange.DataExchangeQueueID = 44;
+    try std.testing.expectEqual(types.kResultFalse, handler.vtable.openQueue(handler, null, 128, 2, 8, 77, &queue_id));
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
+
+    var block = ivstdataexchange.DataExchangeBlock{};
+    try std.testing.expectEqual(types.kResultFalse, handler.vtable.lockBlock(handler, 44, &block));
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeBlockID, block.blockID);
     try std.testing.expectEqual(@as(types.uint32, 0), block.size);
     try std.testing.expectEqual(@as(?*anyopaque, null), block.data);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.vtable.release(handler));

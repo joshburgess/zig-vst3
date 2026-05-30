@@ -62,6 +62,7 @@ pub fn HostApplication(comptime name: []const u8, comptime Config: type) type {
             if (@hasDecl(Config, "createInstance")) {
                 const result = Config.createInstance(self, cid, iid, out);
                 if (result != types.kResultOk) return failCreatedInstance(out, result);
+                if (out.* == null) return failCreatedInstance(out, types.kResultFalse);
                 return result;
             }
             return types.kResultFalse;
@@ -124,10 +125,10 @@ pub fn WrapperMPESupport(comptime Config: type) type {
 
         iface: ivsthostapplication.IVst3WrapperMPESupport = .{ .vtable = &vtable },
         ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        mpe_input_enabled: types.TBool = 0,
+        mpe_input_enabled: types.TBool = 1,
         master_channel: types.int32 = 0,
-        member_begin_channel: types.int32 = 0,
-        member_end_channel: types.int32 = 0,
+        member_begin_channel: types.int32 = 1,
+        member_end_channel: types.int32 = 14,
 
         pub fn asInterface(self: *Self) *ivsthostapplication.IVst3WrapperMPESupport {
             return &self.iface;
@@ -229,6 +230,22 @@ test "host application clears failed delegated create-instance output" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.create_instance_count);
 }
 
+test "host application rejects successful delegated create-instance with null output" {
+    const Host = HostApplication("Test Host", struct {
+        pub fn createInstance(_: anytype, _: *const tuid.TUID, _: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            out.* = null;
+            return types.kResultOk;
+        }
+    });
+    var host = Host{};
+    const iface = host.asInterface();
+
+    var created: ?*anyopaque = @ptrFromInt(0x20);
+    try std.testing.expectEqual(types.kResultFalse, iface.vtable.createInstance(iface, &funknown.iid, &funknown.iid, &created));
+    try std.testing.expectEqual(@as(?*anyopaque, null), created);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.create_instance_count);
+}
+
 test "host application clears unsupported query and default create-instance outputs" {
     const Host = HostApplication("Test Host", struct {});
     var host = Host{};
@@ -324,6 +341,16 @@ test "wrapper MPE support clears unsupported query output" {
     try std.testing.expectEqual(@as(?*anyopaque, null), queried);
 }
 
+test "wrapper MPE support uses SDK default input settings" {
+    const MPE = WrapperMPESupport(struct {});
+    const support = MPE{};
+
+    try std.testing.expectEqual(@as(types.TBool, 1), support.mpe_input_enabled);
+    try std.testing.expectEqual(@as(types.int32, 0), support.master_channel);
+    try std.testing.expectEqual(@as(types.int32, 1), support.member_begin_channel);
+    try std.testing.expectEqual(@as(types.int32, 14), support.member_end_channel);
+}
+
 test "wrapper MPE support stores latest settings" {
     const MPE = WrapperMPESupport(struct {});
     var support = MPE{};
@@ -351,9 +378,9 @@ test "wrapper MPE support preserves accepted state when delegated hooks reject c
     const iface = support.asInterface();
 
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.enableMPEInputProcessing(iface, 1));
-    try std.testing.expectEqual(@as(types.TBool, 0), support.mpe_input_enabled);
+    try std.testing.expectEqual(@as(types.TBool, 1), support.mpe_input_enabled);
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.setMPEInputDeviceSettings(iface, 1, 2, 15));
     try std.testing.expectEqual(@as(types.int32, 0), support.master_channel);
-    try std.testing.expectEqual(@as(types.int32, 0), support.member_begin_channel);
-    try std.testing.expectEqual(@as(types.int32, 0), support.member_end_channel);
+    try std.testing.expectEqual(@as(types.int32, 1), support.member_begin_channel);
+    try std.testing.expectEqual(@as(types.int32, 14), support.member_end_channel);
 }

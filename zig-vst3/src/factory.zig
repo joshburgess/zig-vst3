@@ -69,7 +69,7 @@ pub fn StaticFactory(comptime info: FactoryInfo, comptime classes: []const Class
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return funknown.decrementRefCount(&owner(ptr).ref_count, "IPluginFactory");
+            return releaseStaticRef(&owner(ptr).ref_count);
         }
 
         fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.c) types.tresult {
@@ -152,7 +152,7 @@ pub fn StaticFactory3(comptime info: FactoryInfo, comptime classes: []const Clas
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return funknown.decrementRefCount(&owner(ptr).ref_count, "IPluginFactory3");
+            return releaseStaticRef(&owner(ptr).ref_count);
         }
 
         fn getFactoryInfo(_: *anyopaque, out: *ipluginbase.PFactoryInfo) callconv(.c) types.tresult {
@@ -231,6 +231,20 @@ fn createClassInstance(comptime classes: []const ClassInfo, cid: types.FIDString
 
     out.* = null;
     return types.kNoInterface;
+}
+
+fn releaseStaticRef(ref_count: *std.atomic.Value(types.uint32)) types.uint32 {
+    while (true) {
+        const previous = ref_count.load(.monotonic);
+        if (previous <= 1) return 1;
+
+        const next = previous - 1;
+        if (ref_count.cmpxchgWeak(previous, next, .release, .monotonic)) |_| {
+            continue;
+        }
+
+        return next;
+    }
 }
 
 fn classVendor(info: FactoryInfo, class: ClassInfo) []const u8 {
@@ -467,6 +481,14 @@ test "static factory implements queryInterface for FUnknown and IPluginFactory" 
     try std.testing.expectEqual(@as(?*anyopaque, null), out);
 }
 
+test "static factory release keeps singleton alive" {
+    const TestFactory = StaticFactory(.{ .vendor = "Test Vendor" }, &.{});
+    const factory = TestFactory.getPluginFactory().?;
+
+    try std.testing.expectEqual(@as(types.uint32, 1), factory.vtable.release(factory));
+    try std.testing.expectEqual(@as(types.uint32, 1), factory.vtable.release(factory));
+}
+
 test "static factory 3 exposes factory2 and factory3 metadata" {
     const cid = comptime tuid.inlineUid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
     const TestFactory = StaticFactory3(.{
@@ -511,6 +533,14 @@ test "static factory 3 exposes factory2 and factory3 metadata" {
     try std.testing.expectEqual(types.kResultOk, factory.vtable.getClassInfoUnicode(factory, 0, &info_w));
     try std.testing.expectEqualSlices(types.char16, std.unicode.utf8ToUtf16LeStringLiteral("Test Plug-in"), std.mem.sliceTo(&info_w.name, 0));
     try std.testing.expectEqualSlices(types.char16, std.unicode.utf8ToUtf16LeStringLiteral("Test Vendor"), std.mem.sliceTo(&info_w.vendor, 0));
+}
+
+test "static factory 3 release keeps singleton alive" {
+    const TestFactory = StaticFactory3(.{ .vendor = "Test Vendor" }, &.{});
+    const factory = TestFactory.getPluginFactory3();
+
+    try std.testing.expectEqual(@as(types.uint32, 1), factory.vtable.release(factory));
+    try std.testing.expectEqual(@as(types.uint32, 1), factory.vtable.release(factory));
 }
 
 test "static factory 3 clears missing query outputs" {
