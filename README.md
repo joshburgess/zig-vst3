@@ -124,6 +124,20 @@ zig build raw-api-abi
 
 `raw-api-abi` compares Zig declarations against SDK-backed C++ fixture programs and entry-symbol checks.
 
+Run Tracktion pluginval against the native examples:
+
+```sh
+zig build pluginval-examples
+```
+
+For the stricter pluginval pass:
+
+```sh
+zig build pluginval-strict-examples
+```
+
+See [docs/pluginval.md](docs/pluginval.md) for `PLUGINVAL`, strictness, and headless CI options.
+
 ## Documentation
 
 - [docs/framework/plugin-interface.md](docs/framework/plugin-interface.md): framework plugin API.
@@ -131,6 +145,8 @@ zig build raw-api-abi
 - [docs/framework/state.md](docs/framework/state.md): binary state format, migration, restore reports, and debug JSON.
 - [docs/raw-api.md](docs/raw-api.md): raw VST3 API guide.
 - [docs/raw-api-coverage.md](docs/raw-api-coverage.md): raw API coverage map.
+- [docs/pluginval.md](docs/pluginval.md): Tracktion pluginval harness.
+- [docs/real-host-coverage.md](docs/real-host-coverage.md): remaining real-host GUI and advanced protocol coverage.
 - [docs/stability.md](docs/stability.md): current pre-release compatibility policy.
 - [docs/host-matrix.md](docs/host-matrix.md): real host smoke-test results.
 - [docs/roadmap.md](docs/roadmap.md): remaining work and validation tiers.

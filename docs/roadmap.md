@@ -18,6 +18,7 @@ Near-term work should stay focused on finishing release confidence before adding
 - Tier 0: `zig build` and `zig build test`.
 - Tier 1: `zig build raw-api-abi`.
 - Tier 2: `zig build validator` and `zig build validate-examples` on platforms where Steinberg validator support is available.
+- Tier 2 optional: `zig build pluginval-examples` and `zig build pluginval-strict-examples` when Tracktion pluginval is installed.
 - Tier 3: real host smoke tests recorded in `docs/host-matrix.md`.
 
 For normal code changes, run the smallest tier that covers the changed behavior. For release work, use `scripts/raw_api_release_check.sh` and the checklist in `docs/release-checklist.md`.

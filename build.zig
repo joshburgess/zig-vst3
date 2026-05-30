@@ -161,13 +161,24 @@ pub fn build(b: *std.Build) void {
     });
     addExamplePluginTestDependencies(b, test_step, &example_plugins);
 
+    const plugin_path_option = b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate");
+
     const validate_step = b.step("validate", "Run the VST3 SDK validator for -Dplugin=path/to/Plugin.vst3");
-    if (b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate")) |plugin_path| {
+    if (plugin_path_option) |plugin_path| {
         const validate = b.addSystemCommand(&.{ "scripts/validate.sh", plugin_path });
         validate_step.dependOn(&validate.step);
     } else {
         const missing_plugin = b.addFail("pass -Dplugin=path/to/Plugin.vst3");
         validate_step.dependOn(&missing_plugin.step);
+    }
+
+    const pluginval_step = b.step("pluginval", "Run pluginval for -Dplugin=path/to/Plugin.vst3");
+    if (plugin_path_option) |plugin_path| {
+        const pluginval = b.addSystemCommand(&.{ "scripts/pluginval.sh", plugin_path });
+        pluginval_step.dependOn(&pluginval.step);
+    } else {
+        const missing_plugin = b.addFail("pass -Dplugin=path/to/Plugin.vst3");
+        pluginval_step.dependOn(&missing_plugin.step);
     }
 
     var validate_example_steps: [example_plugin_options.len]*std.Build.Step = undefined;
@@ -180,6 +191,27 @@ pub fn build(b: *std.Build) void {
     }
     const validate_examples_step = b.step("validate-examples", "Build and validate all native VST3 example bundles");
     addStepDependencies(validate_examples_step, &validate_example_steps);
+
+    var pluginval_example_steps: [example_plugin_options.len]*std.Build.Step = undefined;
+    var pluginval_strict_example_steps: [example_plugin_options.len]*std.Build.Step = undefined;
+    for (example_plugin_options, example_plugins, 0..) |options, plugin, index| {
+        pluginval_example_steps[index] = addPluginvalStep(b, target, plugin.bundles.native, .{
+            .short_name = options.short_name,
+            .display_name = options.display_name,
+            .artifact_name = options.artifact_name,
+            .strictness = null,
+        });
+        pluginval_strict_example_steps[index] = addPluginvalStep(b, target, plugin.bundles.native, .{
+            .short_name = b.fmt("{s}-strict", .{options.short_name}),
+            .display_name = options.display_name,
+            .artifact_name = options.artifact_name,
+            .strictness = "10",
+        });
+    }
+    const pluginval_examples_step = b.step("pluginval-examples", "Build and run pluginval for all native VST3 example bundles");
+    addStepDependencies(pluginval_examples_step, &pluginval_example_steps);
+    const pluginval_strict_examples_step = b.step("pluginval-strict-examples", "Build and run pluginval strictness 10 for all native VST3 example bundles");
+    addStepDependencies(pluginval_strict_examples_step, &pluginval_strict_example_steps);
 
     const bundle_examples_step = b.step("bundle-examples", "Build native VST3 bundles for all example plugins");
     addVst3BundleDependencies(bundle_examples_step, &example_bundle_steps, .native);
@@ -392,6 +424,7 @@ const Vst3ValidationOptions = struct {
     short_name: []const u8,
     display_name: []const u8,
     artifact_name: []const u8,
+    strictness: ?[]const u8 = null,
 };
 
 fn addVst3ValidationStep(
@@ -414,6 +447,31 @@ fn addVst3ValidationStep(
         validate_step.dependOn(&b.addFail(b.fmt("{s} currently supports macOS and Linux targets", .{step_name})).step);
     }
     return validate_step;
+}
+
+fn addPluginvalStep(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    bundle_step: *std.Build.Step,
+    options: Vst3ValidationOptions,
+) *std.Build.Step {
+    const step_name = b.fmt("pluginval-{s}", .{options.short_name});
+    const pluginval_step = b.step(step_name, b.fmt("Build and run pluginval for the native {s} VST3 bundle", .{options.display_name}));
+    if (target.result.os.tag == .macos or target.result.os.tag == .linux or target.result.os.tag == .windows) {
+        pluginval_step.dependOn(bundle_step);
+        const pluginval = b.addSystemCommand(&.{
+            "scripts/pluginval.sh",
+            b.getInstallPath(.prefix, b.fmt("bundle/{s}.vst3", .{options.artifact_name})),
+        });
+        if (options.strictness) |strictness| {
+            pluginval.setEnvironmentVariable("PLUGINVAL_STRICTNESS", strictness);
+        }
+        pluginval.step.dependOn(bundle_step);
+        pluginval_step.dependOn(&pluginval.step);
+    } else {
+        pluginval_step.dependOn(&b.addFail(b.fmt("{s} currently supports macOS, Linux, and Windows targets", .{step_name})).step);
+    }
+    return pluginval_step;
 }
 
 const Vst3BundleOptions = struct {

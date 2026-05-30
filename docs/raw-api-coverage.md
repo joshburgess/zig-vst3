@@ -16,6 +16,7 @@ This map separates what is already gated from what remains future hardening. `do
 | Compatibility and wrapper metadata | ABI fixtures, wrapper helper tests, compatibility JSON streaming tests, basic metadata JSON fixture coverage, and factory-level `IPluginCompatibility` class creation coverage | Host-specific compatibility metadata fixtures as real wrapper needs appear |
 | Test provider APIs | ABI fixtures plus helper tests for provider creation, retained component/controller returns, release tracking, test result storage, test lifecycle delegation, suite registration, environment replacement, and factory delegation | Real use against Steinberg or host-provided test suites if external harnesses need it |
 | Validator | macOS and Linux validator runs in public CI against native VST3 bundles | Windows validator after the project has a runner that can build and execute Steinberg's validator reliably |
+| pluginval | Optional headless wrapper, native example build steps, and strictness 10 gate | Add pluginval to CI after choosing install/cache strategy per platform |
 | Host smoke | REAPER macOS rows for core audio examples | Event-echo output-event observation, deferred note-gate, event-monitor, and sine-synth rows, plus Linux/Windows hosts |
 
 ## Release Interpretation
