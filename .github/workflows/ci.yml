@@ -102,6 +102,28 @@ jobs:
           path: zig-out/bundle/
           if-no-files-found: error
 
+  pluginval:
+    name: pluginval (macos-latest)
+    runs-on: macos-latest
+    needs: test
+    env:
+      PLUGINVAL_VERSION: v1.0.4
+    steps:
+      - uses: actions/checkout@v6
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Install pluginval
+        run: |
+          curl -fL -o pluginval.zip \
+            "https://github.com/Tracktion/pluginval/releases/download/${PLUGINVAL_VERSION}/pluginval_macOS.zip"
+          unzip -q pluginval.zip -d pluginval-dist
+          echo "PLUGINVAL=$PWD/pluginval-dist/pluginval.app/Contents/MacOS/pluginval" >> "$GITHUB_ENV"
+      - name: Run pluginval
+        run: zig build pluginval-examples
+      - name: Run pluginval (strictness 10)
+        run: zig build pluginval-strict-examples
+
   cross-compile:
     name: Cross compile (${{ matrix.target }})
     runs-on: ubuntu-latest

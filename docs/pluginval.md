@@ -10,6 +10,14 @@ Download a release from:
 https://github.com/Tracktion/pluginval/releases
 ```
 
+On macOS you can also install it with Homebrew:
+
+```sh
+brew install --cask pluginval
+```
+
+The Homebrew cask installs `pluginval.app` into `/Applications`, which the wrapper already searches.
+
 The wrapper checks `pluginval` on `PATH` and common macOS app locations. Set `PLUGINVAL` when the binary lives elsewhere:
 
 ```sh
