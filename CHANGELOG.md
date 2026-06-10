@@ -1,5 +1,36 @@
 # Changelog
 
+## zig-vst3-0.2.0 - 2026-06-10
+
+### Release Notes
+
+- `zig-vst3-0.2.0` adds an editor protocol smoke example, a Tracktion pluginval harness, and broader host-context and capability regression coverage on top of the `0.1.0` preview. All changes are additive: no raw ABI declarations or checked helper behavior were removed.
+- The local release gate remains `scripts/raw_api_release_check.sh`. pluginval is available as an optional host-like gate through `zig build pluginval-examples` and `zig build pluginval-strict-examples`.
+- Zig 0.16.0 and VST3 SDK `v3.8.0_build_66` remain the toolchain pins.
+
+### Added
+
+- `editor-smoke` example plugin: a protocol-only `IPlugView` for exercising editor attach, resize, focus, and removal paths, exported as `editor_smoke_*` modules with native bundle and Steinberg validator coverage.
+- Tracktion pluginval harness: `pluginval`, `pluginval-examples`, and `pluginval-strict-examples` build steps, a wrapper script honoring `PLUGINVAL`, `PLUGINVAL_STRICTNESS`, and `PLUGINVAL_ARGS`, and a `docs/pluginval.md` guide.
+- Required macOS pluginval CI job running the example bundles at default strictness and strictness 10.
+- Combined host-context regression on the gain component covering channel context, automation state, and data exchange across initialization, delegation, block lifecycle, and termination release.
+- Data-exchange receiver dispatch coverage through a real component query path.
+- Validator-queryable pressure-to-expression physical UI map on the gain controller.
+- Factory-level `IPluginCompatibility` class creation through `IPluginFactory3`.
+- `docs/real-host-coverage.md` tracking remaining real-host GUI and advanced protocol coverage.
+
+### Changed
+
+- Test plug provider retains returned component and controller interfaces and balances them through `releasePlugIn`.
+- Host application factory reports deterministic null-success outputs, and wrapper MPE support uses the SDK defaults while preserving the last accepted settings on delegated failure.
+- README release framing now reflects the tagged preview line and drops the pre-tag release-status instructions.
+
+### Known Gaps
+
+- Real-host (Tier 3) smoke rows for note-gate, event-echo output observation, event-monitor, sine-synth, and the new editor-smoke editor remain deferred. The first manual host pass stays macOS REAPER-only.
+- pluginval CI is macOS-only. Linux and Windows pluginval coverage is deferred pending a headless install and display strategy per platform.
+- Windows validator execution remains deferred until the project has a runner that can build and execute Steinberg's validator reliably.
+
 ## zig-vst3-0.1.0 - 2026-05-22
 
 ### Release Notes

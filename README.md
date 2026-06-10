@@ -55,7 +55,7 @@ See [docs/toolchain.md](docs/toolchain.md) for the exact pinned versions.
 Zig has no central package registry, so `zig-vst3` is fetched by URL from a released tag. Add it to your project with `zig fetch`, pointing at the tag tarball:
 
 ```sh
-zig fetch --save=zig_vst3 https://github.com/joshburgess/zig-vst3/archive/refs/tags/zig-vst3-0.1.0.tar.gz
+zig fetch --save=zig_vst3 https://github.com/joshburgess/zig-vst3/archive/refs/tags/zig-vst3-0.2.0.tar.gz
 ```
 
 That records the dependency and its content hash in your `build.zig.zon`. Then wire the module you need into your `build.zig`:

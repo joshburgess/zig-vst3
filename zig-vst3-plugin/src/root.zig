@@ -7,14 +7,14 @@ pub const plugin = core.plugin;
 pub const process = core.process;
 pub const state = core.state;
 pub const units = core.units;
-pub const version = "0.1.0-dev";
+pub const version = "0.2.0-dev";
 
 pub fn backendVersion() []const u8 {
     return vst3.version;
 }
 
 test "zig-vst3-plugin sees zig-vst3" {
-    try std.testing.expectEqualStrings("0.1.0-dev", backendVersion());
+    try std.testing.expectEqualStrings("0.2.0-dev", backendVersion());
 }
 
 test "zig-vst3-plugin re-exports core modules" {

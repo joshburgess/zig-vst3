@@ -1,6 +1,6 @@
 # Release Checklist
 
-This checklist is for tagging `zig-vst3-0.1.0`. It tracks release gates for the raw VST3 API package only. `zig-vst3-plugin` can keep evolving after this tag.
+This checklist is for tagging raw API releases (most recently `zig-vst3-0.2.0`). It tracks release gates for the raw VST3 API package only. `zig-vst3-plugin` can keep evolving after a tag.
 
 The current release pins are Zig 0.16.0 and VST3 SDK `v3.8.0_build_66`. Keep [toolchain.md](toolchain.md), [stability.md](stability.md), and `CHANGELOG.md` aligned with any release-candidate change.
 
@@ -51,13 +51,13 @@ Record fresh Tier 3 host smoke tests in `docs/host-matrix.md` before tagging. Th
 - Event-monitor gets at least one scan/load/save/reload test, or the release notes explicitly defer analyzer manual host coverage
 - Sine-synth gets at least one MIDI instrument test, or the release notes explicitly defer instrument manual host coverage
 
-Linux and Windows host rows can remain follow-up work for `0.1.x` if CI bundles keep passing and the release notes call out that the first manual host pass was macOS-only. Do not describe deferred rows as host-proven.
+Linux and Windows host rows can remain follow-up work for `0.2.x` if CI bundles keep passing and the release notes call out that the first manual host pass was macOS-only. Do not describe deferred rows as host-proven.
 
 ## Tag
 
 After the required checks and host matrix rows are in place:
 
 ```sh
-git tag zig-vst3-0.1.0
-git push origin zig-vst3-0.1.0
+git tag zig-vst3-0.2.0
+git push origin zig-vst3-0.2.0
 ```

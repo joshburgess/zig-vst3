@@ -670,7 +670,7 @@ fn addVst3BundleSteps(
         bundle.addArgs(&.{
             b.getInstallPath(.prefix, b.fmt("bundle/{s}.vst3", .{options.artifact_name})),
             options.bundle_id,
-            "0.1.0",
+            "0.2.0",
             options.artifact_name,
         });
         native_step.dependOn(&bundle.step);
