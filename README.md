@@ -9,7 +9,7 @@ This repository has two packages:
 - `zig-vst3`: raw Zig bindings and helper objects for the VST3 COM API.
 - `zig-vst3-plugin`: a higher-level framework for writing plugins with reflected parameters, state, automation, events, and reusable VST3 shells.
 
-The project currently builds and validates example VST3 bundles for effects, analyzers, event processors, and a MIDI-driven synth. It is still pre-release, but the core path is already covered by unit tests, ABI checks, Steinberg validator runs, and CI on Linux, macOS, and Windows.
+The project currently builds and validates example VST3 bundles for effects, analyzers, event processors, and a MIDI-driven synth. The first preview release, `zig-vst3-0.1.0`, is tagged, and the core path is covered by unit tests, ABI checks, Steinberg validator runs, and CI on Linux, macOS, and Windows. The API is still early and may change before a public compatibility promise.
 
 ## Which Package Should I Use?
 
@@ -163,12 +163,8 @@ The public CI workflow currently runs:
 
 ## Current Limits
 
-- This is pre-release API. Expect some naming and organization changes before a public compatibility promise.
+- The API is early. Expect some naming and organization changes before a public compatibility promise.
 - Manual host coverage is currently macOS REAPER-heavy. MIDI-heavy and analyzer/instrument host smoke rows are still being filled in.
 - Windows bundle generation is covered in CI, but Windows validator execution is deferred until the project has a suitable runner.
 - There is no bundled GUI toolkit. The raw API exposes editor protocols and the framework can delegate editor creation, but plugin authors bring their own UI stack.
 - This project builds plugins, not hosts.
-
-## Release Status
-
-Before tagging `zig-vst3-0.1.0`, follow [docs/release-checklist.md](docs/release-checklist.md). The release checklist requires local gates, green CI, and fresh host smoke rows or explicit release-note deferrals for untested host scenarios.
