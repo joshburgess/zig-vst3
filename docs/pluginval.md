@@ -56,4 +56,4 @@ Pass extra command-line flags with `PLUGINVAL_ARGS`. For Linux CI without a disp
 PLUGINVAL_ARGS=--skip-gui-tests zig build pluginval-examples
 ```
 
-The bundled examples do not provide editors, so the headless command-line path is the expected workflow.
+The CI pluginval jobs run on macOS and Linux. The Linux job installs the pluginval runtime libraries, runs under `xvfb-run`, and sets `--skip-gui-tests` because the runners have no display server. Only `editor-smoke` exposes an editor, and it is a protocol-only view with no toolkit UI, so the headless command-line path stays the expected workflow.

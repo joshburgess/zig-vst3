@@ -103,9 +103,15 @@ jobs:
           if-no-files-found: error
 
   pluginval:
-    name: pluginval (macos-latest)
-    runs-on: macos-latest
+    name: pluginval (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
     env:
       PLUGINVAL_VERSION: v1.0.4
     steps:
@@ -113,16 +119,30 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
-      - name: Install pluginval
+      - name: Install pluginval (macOS)
+        if: runner.os == 'macOS'
         run: |
           curl -fL -o pluginval.zip \
             "https://github.com/Tracktion/pluginval/releases/download/${PLUGINVAL_VERSION}/pluginval_macOS.zip"
           unzip -q pluginval.zip -d pluginval-dist
           echo "PLUGINVAL=$PWD/pluginval-dist/pluginval.app/Contents/MacOS/pluginval" >> "$GITHUB_ENV"
+      - name: Install pluginval (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb libfreetype6 libfontconfig1 libx11-6 libxext6 \
+            libxinerama1 libxrandr2 libxcursor1 libgl1 libasound2t64 libcurl4
+          curl -fL -o pluginval.zip \
+            "https://github.com/Tracktion/pluginval/releases/download/${PLUGINVAL_VERSION}/pluginval_Linux.zip"
+          unzip -q pluginval.zip -d pluginval-dist
+          chmod +x pluginval-dist/pluginval
+          echo "PLUGINVAL=$PWD/pluginval-dist/pluginval" >> "$GITHUB_ENV"
+          echo "PLUGINVAL_ARGS=--skip-gui-tests" >> "$GITHUB_ENV"
       - name: Run pluginval
-        run: zig build pluginval-examples
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}zig build pluginval-examples
       - name: Run pluginval (strictness 10)
-        run: zig build pluginval-strict-examples
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}zig build pluginval-strict-examples
 
   cross-compile:
     name: Cross compile (${{ matrix.target }})
