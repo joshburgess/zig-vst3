@@ -179,3 +179,43 @@ jobs:
           name: vst3-bundles-${{ matrix.target }}
           path: zig-out/bundle/
           if-no-files-found: error
+
+  pluginval-windows:
+    name: pluginval (windows-latest)
+    runs-on: windows-latest
+    needs: cross-compile
+    env:
+      PLUGINVAL_VERSION: v1.0.4
+    steps:
+      - name: Download cross-built Windows bundles
+        uses: actions/download-artifact@v7
+        with:
+          name: vst3-bundles-x86_64-windows-gnu
+          path: bundles
+      - name: Install pluginval
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/Tracktion/pluginval/releases/download/${env:PLUGINVAL_VERSION}/pluginval_Windows.zip" -OutFile pluginval.zip
+          Expand-Archive -Path pluginval.zip -DestinationPath pluginval-dist
+          $exe = Get-ChildItem -Path pluginval-dist -Recurse -Filter pluginval.exe | Select-Object -First 1
+          if ($null -eq $exe) { Write-Error "pluginval.exe not found in release archive"; exit 1 }
+          "PLUGINVAL_EXE=$($exe.FullName)" >> $env:GITHUB_ENV
+      - name: Run pluginval
+        shell: pwsh
+        run: |
+          $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
+          if ($bundles.Count -eq 0) { Write-Error "no Windows VST3 bundles found in artifact"; exit 1 }
+          foreach ($bundle in $bundles) {
+            Write-Host "== $($bundle.Name) =="
+            & "$env:PLUGINVAL_EXE" --strictness-level 5 --skip-gui-tests "$($bundle.FullName)"
+            if ($LASTEXITCODE -ne 0) { Write-Error "pluginval failed for $($bundle.Name)"; exit $LASTEXITCODE }
+          }
+      - name: Run pluginval (strictness 10)
+        shell: pwsh
+        run: |
+          $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
+          foreach ($bundle in $bundles) {
+            Write-Host "== $($bundle.Name) (strictness 10) =="
+            & "$env:PLUGINVAL_EXE" --strictness-level 10 --skip-gui-tests "$($bundle.FullName)"
+            if ($LASTEXITCODE -ne 0) { Write-Error "pluginval strict failed for $($bundle.Name)"; exit $LASTEXITCODE }
+          }
