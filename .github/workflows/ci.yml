@@ -241,3 +241,35 @@ jobs:
           Invoke-Pluginval 5
           Invoke-Pluginval 10
           exit 0
+
+  validator-windows:
+    name: Validator (windows-latest)
+    runs-on: windows-latest
+    needs: cross-compile
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download cross-built Windows bundles
+        uses: actions/download-artifact@v7
+        with:
+          name: vst3-bundles-x86_64-windows-gnu
+          path: bundles
+      - name: Fetch pinned VST3 SDK
+        shell: bash
+        run: scripts/fetch_sdk.sh
+      - name: Build Steinberg validator
+        shell: bash
+        run: scripts/build_validator.sh
+      - name: Validate Windows bundles
+        shell: bash
+        run: |
+          set -eu
+          shopt -s nullglob
+          bundles=(bundles/*.vst3)
+          if [ "${#bundles[@]}" -eq 0 ]; then
+            echo "no Windows VST3 bundles found in artifact" >&2
+            exit 1
+          fi
+          for bundle in "${bundles[@]}"; do
+            echo "== $bundle =="
+            scripts/validate.sh "$bundle"
+          done
