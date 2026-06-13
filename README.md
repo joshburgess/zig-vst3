@@ -41,7 +41,7 @@ The repository includes checked framework examples and bundled VST3 examples for
 - `sine-synth`: output-only generator/instrument behavior driven by note input.
 - `editor-smoke`: protocol-only editor view for exercising `IPlugView` attach, resize, focus, and removal paths.
 
-Native macOS and Linux validator jobs run the bundled examples in CI. Windows bundle generation is covered by CI cross-builds; Windows validator and real-host rows are still future work.
+Native macOS and Linux validator jobs run the bundled examples in CI, and a Windows validator job runs the Steinberg validator against the cross-built Windows bundles. Real-host rows are still future work.
 
 ## Requirements
 
@@ -157,7 +157,7 @@ The public CI workflow currently runs:
 
 - Linux, macOS, and Windows build and test jobs.
 - Linux and macOS raw API ABI checks.
-- Linux and macOS Steinberg validator checks for bundled examples.
+- Linux, macOS, and Windows Steinberg validator checks for bundled examples.
 - macOS, Linux, and Windows pluginval checks for bundled examples, including a strictness 10 pass.
 - Linux, macOS, and Windows cross-bundle smoke checks.
 - Repository prose hygiene checks.
@@ -166,6 +166,6 @@ The public CI workflow currently runs:
 
 - The API is early. Expect some naming and organization changes before a public compatibility promise.
 - Manual host coverage is currently macOS REAPER-heavy. MIDI-heavy and analyzer/instrument host smoke rows are still being filled in.
-- Windows bundle generation is covered in CI, but Windows validator execution is deferred until the project has a suitable runner.
+- CI validates plugins headlessly with the Steinberg validator and pluginval, but real-host coverage in actual DAWs is still limited.
 - There is no bundled GUI toolkit. The raw API exposes editor protocols and the framework can delegate editor creation, but plugin authors bring their own UI stack.
 - This project builds plugins, not hosts.

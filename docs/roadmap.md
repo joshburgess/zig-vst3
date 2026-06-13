@@ -32,7 +32,7 @@ Highest priority:
 
 Medium priority:
 
-- Revisit Windows validator support after `0.1.0`; for now, CI covers Windows build and bundle generation, not native validator execution.
+- Windows validator support now runs in CI: the Steinberg validator builds with MSVC and validates the cross-built Windows bundles. Remaining Windows work is real-host coverage.
 - Broaden host smoke coverage beyond macOS REAPER when practical.
 - Expand raw `zig-vst3` docs when new direct-usage workflows appear.
 
