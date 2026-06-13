@@ -205,9 +205,11 @@ jobs:
         run: |
           # pluginval prints SUCCESS but its process exit code is unreliable on
           # Windows (a non-zero code leaks from JUCE app teardown after a clean
-          # run), so decide pass/fail from its output instead. Disable native
+          # run). Its console output also cannot be captured by redirecting the
+          # process streams, so let it keep the console for display and read the
+          # verdict from the --output-dir log file instead. Disable native
           # command error propagation so the non-zero exit does not abort the
-          # script before the output check runs.
+          # script before that check runs.
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
           function Invoke-Pluginval($strictness) {
@@ -215,9 +217,13 @@ jobs:
             if ($bundles.Count -eq 0) { Write-Error "no Windows VST3 bundles found in artifact"; exit 1 }
             foreach ($bundle in $bundles) {
               Write-Host "== $($bundle.Name) (strictness $strictness) =="
-              & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests "$($bundle.FullName)" *> pluginval-result.txt
-              $text = Get-Content pluginval-result.txt -Raw
-              Write-Host $text
+              $logdir = "pluginval-logs"
+              Remove-Item -Recurse -Force $logdir -ErrorAction SilentlyContinue
+              New-Item -ItemType Directory -Path $logdir | Out-Null
+              & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests --output-dir $logdir "$($bundle.FullName)"
+              $log = Get-ChildItem -Path $logdir -Filter *.txt | Select-Object -First 1
+              if ($null -eq $log) { Write-Error "no pluginval log produced for $($bundle.Name)"; exit 1 }
+              $text = Get-Content $log.FullName -Raw
               if (($text -match 'SUCCESS') -and ($text -notmatch 'FAILED')) {
                 Write-Host "pluginval passed for $($bundle.Name)"
               } else {
@@ -237,9 +243,13 @@ jobs:
             if ($bundles.Count -eq 0) { Write-Error "no Windows VST3 bundles found in artifact"; exit 1 }
             foreach ($bundle in $bundles) {
               Write-Host "== $($bundle.Name) (strictness $strictness) =="
-              & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests "$($bundle.FullName)" *> pluginval-result.txt
-              $text = Get-Content pluginval-result.txt -Raw
-              Write-Host $text
+              $logdir = "pluginval-logs"
+              Remove-Item -Recurse -Force $logdir -ErrorAction SilentlyContinue
+              New-Item -ItemType Directory -Path $logdir | Out-Null
+              & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests --output-dir $logdir "$($bundle.FullName)"
+              $log = Get-ChildItem -Path $logdir -Filter *.txt | Select-Object -First 1
+              if ($null -eq $log) { Write-Error "no pluginval log produced for $($bundle.Name)"; exit 1 }
+              $text = Get-Content $log.FullName -Raw
               if (($text -match 'SUCCESS') -and ($text -notmatch 'FAILED')) {
                 Write-Host "pluginval passed for $($bundle.Name)"
               } else {
