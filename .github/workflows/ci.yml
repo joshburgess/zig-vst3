@@ -203,15 +203,13 @@ jobs:
       - name: Run pluginval
         shell: pwsh
         run: |
-          # pluginval prints SUCCESS but its process exit code is unreliable on
-          # Windows (a non-zero code leaks from JUCE app teardown after a clean
-          # run). Its console output also cannot be captured by redirecting the
-          # process streams, so let it keep the console for display and read the
-          # verdict from the --output-dir log file (absolute path) instead.
-          # Disable native command error propagation so the non-zero exit does
-          # not abort the script before that check runs.
+          # pluginval is a Windows GUI-subsystem app: the PowerShell call
+          # operator does not block on it and its process exit code is
+          # unreliable (a non-zero code leaks from JUCE teardown after a clean
+          # run). Use Start-Process -Wait to block until it fully exits, then
+          # read the verdict from its --output-dir log file (absolute path)
+          # rather than trusting the exit code.
           $ErrorActionPreference = 'Continue'
-          $PSNativeCommandUseErrorActionPreference = $false
           $logroot = Join-Path (Get-Location).Path 'pluginval-logs'
           function Invoke-Pluginval($strictness) {
             $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
@@ -220,16 +218,18 @@ jobs:
               Write-Host "== $($bundle.Name) (strictness $strictness) =="
               Remove-Item -Recurse -Force $logroot -ErrorAction SilentlyContinue
               New-Item -ItemType Directory -Path $logroot | Out-Null
-              & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests --output-dir "$logroot" "$($bundle.FullName)"
+              $pvArgs = @(
+                '--validate-in-process',
+                '--strictness-level', "$strictness",
+                '--skip-gui-tests',
+                '--output-dir', "$logroot",
+                "$($bundle.FullName)"
+              )
+              Start-Process -FilePath "$env:PLUGINVAL_EXE" -ArgumentList $pvArgs -Wait -NoNewWindow
               $log = Get-ChildItem -Path $logroot -Recurse -Filter *.txt | Select-Object -First 1
-              if ($null -eq $log) {
-                Write-Host "working directory: $((Get-Location).Path)"
-                Write-Host "pluginval-logs contents:"
-                Get-ChildItem -Path $logroot -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
-                Write-Error "no pluginval log produced for $($bundle.Name)"
-                exit 1
-              }
+              if ($null -eq $log) { Write-Error "no pluginval log produced for $($bundle.Name)"; exit 1 }
               $text = Get-Content $log.FullName -Raw
+              Write-Host $text
               if (($text -match 'SUCCESS') -and ($text -notmatch 'FAILED')) {
                 Write-Host "pluginval passed for $($bundle.Name)"
               } else {
