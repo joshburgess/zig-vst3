@@ -271,5 +271,8 @@ jobs:
           fi
           for bundle in "${bundles[@]}"; do
             echo "== $bundle =="
-            scripts/validate.sh "$bundle"
+            # LoadLibraryW does not accept forward-slash separators, so pass a
+            # native absolute Windows path to the validator.
+            winpath="$(cygpath -w "$(pwd)/$bundle")"
+            scripts/validate.sh "$winpath"
           done
