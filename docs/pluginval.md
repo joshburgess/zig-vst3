@@ -56,4 +56,6 @@ Pass extra command-line flags with `PLUGINVAL_ARGS`. For Linux CI without a disp
 PLUGINVAL_ARGS=--skip-gui-tests zig build pluginval-examples
 ```
 
-The CI pluginval jobs run on macOS and Linux. The Linux job installs the pluginval runtime libraries, runs under `xvfb-run`, and sets `--skip-gui-tests` because the runners have no display server. Only `editor-smoke` exposes an editor, and it is a protocol-only view with no toolkit UI, so the headless command-line path stays the expected workflow.
+The CI pluginval jobs run on macOS, Linux, and Windows. The Linux job installs the pluginval runtime libraries, runs under `xvfb-run`, and sets `--skip-gui-tests` because the runners have no display server. Only `editor-smoke` exposes an editor, and it is a protocol-only view with no toolkit UI, so the headless command-line path stays the expected workflow.
+
+The Windows job validates the cross-built Windows bundles produced by the cross-compile job. pluginval is a GUI-subsystem application there, so the job launches it with `Start-Process -Wait` (the call does not otherwise block), runs with `--validate-in-process`, and reads the pass/fail result from the `--output-dir` log file rather than the process exit code, which is unreliable on Windows.

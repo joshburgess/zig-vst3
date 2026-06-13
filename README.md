@@ -158,7 +158,7 @@ The public CI workflow currently runs:
 - Linux, macOS, and Windows build and test jobs.
 - Linux and macOS raw API ABI checks.
 - Linux and macOS Steinberg validator checks for bundled examples.
-- macOS and Linux pluginval checks for bundled examples, including a strictness 10 pass.
+- macOS, Linux, and Windows pluginval checks for bundled examples, including a strictness 10 pass.
 - Linux, macOS, and Windows cross-bundle smoke checks.
 - Repository prose hygiene checks.
 

@@ -179,3 +179,65 @@ jobs:
           name: vst3-bundles-${{ matrix.target }}
           path: zig-out/bundle/
           if-no-files-found: error
+
+  pluginval-windows:
+    name: pluginval (windows-latest)
+    runs-on: windows-latest
+    needs: cross-compile
+    env:
+      PLUGINVAL_VERSION: v1.0.4
+    steps:
+      - name: Download cross-built Windows bundles
+        uses: actions/download-artifact@v7
+        with:
+          name: vst3-bundles-x86_64-windows-gnu
+          path: bundles
+      - name: Install pluginval
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/Tracktion/pluginval/releases/download/${env:PLUGINVAL_VERSION}/pluginval_Windows.zip" -OutFile pluginval.zip
+          Expand-Archive -Path pluginval.zip -DestinationPath pluginval-dist
+          $exe = Get-ChildItem -Path pluginval-dist -Recurse -Filter pluginval.exe | Select-Object -First 1
+          if ($null -eq $exe) { Write-Error "pluginval.exe not found in release archive"; exit 1 }
+          "PLUGINVAL_EXE=$($exe.FullName)" >> $env:GITHUB_ENV
+      - name: Run pluginval
+        shell: pwsh
+        run: |
+          # pluginval is a Windows GUI-subsystem app: the PowerShell call
+          # operator does not block on it and its process exit code is
+          # unreliable (a non-zero code leaks from JUCE teardown after a clean
+          # run). Use Start-Process -Wait to block until it fully exits, then
+          # read the verdict from its --output-dir log file (absolute path)
+          # rather than trusting the exit code.
+          $ErrorActionPreference = 'Continue'
+          $logroot = Join-Path (Get-Location).Path 'pluginval-logs'
+          function Invoke-Pluginval($strictness) {
+            $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
+            if ($bundles.Count -eq 0) { Write-Error "no Windows VST3 bundles found in artifact"; exit 1 }
+            foreach ($bundle in $bundles) {
+              Write-Host "== $($bundle.Name) (strictness $strictness) =="
+              Remove-Item -Recurse -Force $logroot -ErrorAction SilentlyContinue
+              New-Item -ItemType Directory -Path $logroot | Out-Null
+              $pvArgs = @(
+                '--validate-in-process',
+                '--strictness-level', "$strictness",
+                '--skip-gui-tests',
+                '--output-dir', "$logroot",
+                "$($bundle.FullName)"
+              )
+              Start-Process -FilePath "$env:PLUGINVAL_EXE" -ArgumentList $pvArgs -Wait -NoNewWindow
+              $log = Get-ChildItem -Path $logroot -Recurse -Filter *.txt | Select-Object -First 1
+              if ($null -eq $log) { Write-Error "no pluginval log produced for $($bundle.Name)"; exit 1 }
+              $text = Get-Content $log.FullName -Raw
+              Write-Host $text
+              if (($text -match 'SUCCESS') -and ($text -notmatch 'FAILED')) {
+                Write-Host "pluginval passed for $($bundle.Name)"
+              } else {
+                Write-Error "pluginval failed for $($bundle.Name)"
+                exit 1
+              }
+            }
+          }
+          Invoke-Pluginval 5
+          Invoke-Pluginval 10
+          exit 0
