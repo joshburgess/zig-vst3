@@ -207,7 +207,7 @@ jobs:
           if ($bundles.Count -eq 0) { Write-Error "no Windows VST3 bundles found in artifact"; exit 1 }
           foreach ($bundle in $bundles) {
             Write-Host "== $($bundle.Name) =="
-            & "$env:PLUGINVAL_EXE" --strictness-level 5 --skip-gui-tests "$($bundle.FullName)"
+            & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level 5 --skip-gui-tests "$($bundle.FullName)"
             if ($LASTEXITCODE -ne 0) { Write-Error "pluginval failed for $($bundle.Name)"; exit $LASTEXITCODE }
           }
       - name: Run pluginval (strictness 10)
@@ -216,6 +216,6 @@ jobs:
           $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
           foreach ($bundle in $bundles) {
             Write-Host "== $($bundle.Name) (strictness 10) =="
-            & "$env:PLUGINVAL_EXE" --strictness-level 10 --skip-gui-tests "$($bundle.FullName)"
+            & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level 10 --skip-gui-tests "$($bundle.FullName)"
             if ($LASTEXITCODE -ne 0) { Write-Error "pluginval strict failed for $($bundle.Name)"; exit $LASTEXITCODE }
           }
