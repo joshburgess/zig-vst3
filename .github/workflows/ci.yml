@@ -207,22 +207,28 @@ jobs:
           # Windows (a non-zero code leaks from JUCE app teardown after a clean
           # run). Its console output also cannot be captured by redirecting the
           # process streams, so let it keep the console for display and read the
-          # verdict from the --output-dir log file instead. Disable native
-          # command error propagation so the non-zero exit does not abort the
-          # script before that check runs.
+          # verdict from the --output-dir log file (absolute path) instead.
+          # Disable native command error propagation so the non-zero exit does
+          # not abort the script before that check runs.
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
+          $logroot = Join-Path (Get-Location).Path 'pluginval-logs'
           function Invoke-Pluginval($strictness) {
             $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
             if ($bundles.Count -eq 0) { Write-Error "no Windows VST3 bundles found in artifact"; exit 1 }
             foreach ($bundle in $bundles) {
               Write-Host "== $($bundle.Name) (strictness $strictness) =="
-              $logdir = "pluginval-logs"
-              Remove-Item -Recurse -Force $logdir -ErrorAction SilentlyContinue
-              New-Item -ItemType Directory -Path $logdir | Out-Null
-              & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests --output-dir $logdir "$($bundle.FullName)"
-              $log = Get-ChildItem -Path $logdir -Filter *.txt | Select-Object -First 1
-              if ($null -eq $log) { Write-Error "no pluginval log produced for $($bundle.Name)"; exit 1 }
+              Remove-Item -Recurse -Force $logroot -ErrorAction SilentlyContinue
+              New-Item -ItemType Directory -Path $logroot | Out-Null
+              & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests --output-dir "$logroot" "$($bundle.FullName)"
+              $log = Get-ChildItem -Path $logroot -Recurse -Filter *.txt | Select-Object -First 1
+              if ($null -eq $log) {
+                Write-Host "working directory: $((Get-Location).Path)"
+                Write-Host "pluginval-logs contents:"
+                Get-ChildItem -Path $logroot -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
+                Write-Error "no pluginval log produced for $($bundle.Name)"
+                exit 1
+              }
               $text = Get-Content $log.FullName -Raw
               if (($text -match 'SUCCESS') -and ($text -notmatch 'FAILED')) {
                 Write-Host "pluginval passed for $($bundle.Name)"
@@ -233,29 +239,5 @@ jobs:
             }
           }
           Invoke-Pluginval 5
-      - name: Run pluginval (strictness 10)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $PSNativeCommandUseErrorActionPreference = $false
-          function Invoke-Pluginval($strictness) {
-            $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
-            if ($bundles.Count -eq 0) { Write-Error "no Windows VST3 bundles found in artifact"; exit 1 }
-            foreach ($bundle in $bundles) {
-              Write-Host "== $($bundle.Name) (strictness $strictness) =="
-              $logdir = "pluginval-logs"
-              Remove-Item -Recurse -Force $logdir -ErrorAction SilentlyContinue
-              New-Item -ItemType Directory -Path $logdir | Out-Null
-              & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests --output-dir $logdir "$($bundle.FullName)"
-              $log = Get-ChildItem -Path $logdir -Filter *.txt | Select-Object -First 1
-              if ($null -eq $log) { Write-Error "no pluginval log produced for $($bundle.Name)"; exit 1 }
-              $text = Get-Content $log.FullName -Raw
-              if (($text -match 'SUCCESS') -and ($text -notmatch 'FAILED')) {
-                Write-Host "pluginval passed for $($bundle.Name)"
-              } else {
-                Write-Error "pluginval failed for $($bundle.Name)"
-                exit 1
-              }
-            }
-          }
           Invoke-Pluginval 10
+          exit 0
