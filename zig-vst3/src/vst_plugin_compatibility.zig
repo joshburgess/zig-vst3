@@ -122,7 +122,7 @@ pub fn classInfo(comptime cid: tuid.TUID, comptime json: []const u8, comptime na
     const Compatibility = StaticPluginCompatibility(json);
     return .{
         .cid = cid,
-        .category = "Plugin Compatibility Class",
+        .category = std.mem.span(iplugincompatibility.kPluginCompatibilityClass),
         .name = name,
         .create = Compatibility.create,
     };
