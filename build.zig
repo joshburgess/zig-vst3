@@ -695,7 +695,7 @@ fn addVst3BundleSteps(
         bundle_linux.addArgs(&.{
             b.getInstallPath(.prefix, b.fmt("bundle/{s}_linux.vst3", .{options.artifact_name})),
             linuxPlatformDir(target.result.cpu.arch),
-            options.artifact_name,
+            b.fmt("{s}_linux", .{options.artifact_name}),
         });
         linux_step.dependOn(&bundle_linux.step);
     } else {
@@ -710,7 +710,7 @@ fn addVst3BundleSteps(
         bundle_windows.addArgs(&.{
             b.getInstallPath(.prefix, b.fmt("bundle/{s}_windows.vst3", .{options.artifact_name})),
             windowsPlatformDir(target.result.cpu.arch),
-            options.artifact_name,
+            b.fmt("{s}_windows", .{options.artifact_name}),
         });
         windows_step.dependOn(&bundle_windows.step);
     } else {
