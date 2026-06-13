@@ -203,16 +203,20 @@ jobs:
       - name: Run pluginval
         shell: pwsh
         run: |
-          # pluginval prints SUCCESS but the process exit code is unreliable on
+          # pluginval prints SUCCESS but its process exit code is unreliable on
           # Windows (a non-zero code leaks from JUCE app teardown after a clean
-          # run), so decide pass/fail from its output instead.
+          # run), so decide pass/fail from its output instead. Disable native
+          # command error propagation so the non-zero exit does not abort the
+          # script before the output check runs.
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
           function Invoke-Pluginval($strictness) {
             $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
             if ($bundles.Count -eq 0) { Write-Error "no Windows VST3 bundles found in artifact"; exit 1 }
             foreach ($bundle in $bundles) {
               Write-Host "== $($bundle.Name) (strictness $strictness) =="
-              $output = & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests "$($bundle.FullName)" 2>&1
-              $text = ($output | Out-String)
+              & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests "$($bundle.FullName)" *> pluginval-result.txt
+              $text = Get-Content pluginval-result.txt -Raw
               Write-Host $text
               if (($text -match 'SUCCESS') -and ($text -notmatch 'FAILED')) {
                 Write-Host "pluginval passed for $($bundle.Name)"
@@ -226,13 +230,15 @@ jobs:
       - name: Run pluginval (strictness 10)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
           function Invoke-Pluginval($strictness) {
             $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
             if ($bundles.Count -eq 0) { Write-Error "no Windows VST3 bundles found in artifact"; exit 1 }
             foreach ($bundle in $bundles) {
               Write-Host "== $($bundle.Name) (strictness $strictness) =="
-              $output = & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests "$($bundle.FullName)" 2>&1
-              $text = ($output | Out-String)
+              & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests "$($bundle.FullName)" *> pluginval-result.txt
+              $text = Get-Content pluginval-result.txt -Raw
               Write-Host $text
               if (($text -match 'SUCCESS') -and ($text -notmatch 'FAILED')) {
                 Write-Host "pluginval passed for $($bundle.Name)"
