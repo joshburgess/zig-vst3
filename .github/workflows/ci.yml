@@ -203,19 +203,43 @@ jobs:
       - name: Run pluginval
         shell: pwsh
         run: |
-          $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
-          if ($bundles.Count -eq 0) { Write-Error "no Windows VST3 bundles found in artifact"; exit 1 }
-          foreach ($bundle in $bundles) {
-            Write-Host "== $($bundle.Name) =="
-            & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level 5 --skip-gui-tests "$($bundle.FullName)"
-            if ($LASTEXITCODE -ne 0) { Write-Error "pluginval failed for $($bundle.Name)"; exit $LASTEXITCODE }
+          # pluginval prints SUCCESS but the process exit code is unreliable on
+          # Windows (a non-zero code leaks from JUCE app teardown after a clean
+          # run), so decide pass/fail from its output instead.
+          function Invoke-Pluginval($strictness) {
+            $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
+            if ($bundles.Count -eq 0) { Write-Error "no Windows VST3 bundles found in artifact"; exit 1 }
+            foreach ($bundle in $bundles) {
+              Write-Host "== $($bundle.Name) (strictness $strictness) =="
+              $output = & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests "$($bundle.FullName)" 2>&1
+              $text = ($output | Out-String)
+              Write-Host $text
+              if (($text -match 'SUCCESS') -and ($text -notmatch 'FAILED')) {
+                Write-Host "pluginval passed for $($bundle.Name)"
+              } else {
+                Write-Error "pluginval failed for $($bundle.Name)"
+                exit 1
+              }
+            }
           }
+          Invoke-Pluginval 5
       - name: Run pluginval (strictness 10)
         shell: pwsh
         run: |
-          $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
-          foreach ($bundle in $bundles) {
-            Write-Host "== $($bundle.Name) (strictness 10) =="
-            & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level 10 --skip-gui-tests "$($bundle.FullName)"
-            if ($LASTEXITCODE -ne 0) { Write-Error "pluginval strict failed for $($bundle.Name)"; exit $LASTEXITCODE }
+          function Invoke-Pluginval($strictness) {
+            $bundles = Get-ChildItem -Path bundles -Directory -Filter *.vst3
+            if ($bundles.Count -eq 0) { Write-Error "no Windows VST3 bundles found in artifact"; exit 1 }
+            foreach ($bundle in $bundles) {
+              Write-Host "== $($bundle.Name) (strictness $strictness) =="
+              $output = & "$env:PLUGINVAL_EXE" --validate-in-process --strictness-level $strictness --skip-gui-tests "$($bundle.FullName)" 2>&1
+              $text = ($output | Out-String)
+              Write-Host $text
+              if (($text -match 'SUCCESS') -and ($text -notmatch 'FAILED')) {
+                Write-Host "pluginval passed for $($bundle.Name)"
+              } else {
+                Write-Error "pluginval failed for $($bundle.Name)"
+                exit 1
+              }
+            }
           }
+          Invoke-Pluginval 10
