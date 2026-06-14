@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Linux pluginval CI job running the example bundles under `xvfb` at default strictness and strictness 10.
+- Windows pluginval CI job validating the cross-built Windows bundles at default strictness and strictness 10.
+- Windows Steinberg validator CI job that builds the validator with MSVC and validates the cross-built Windows bundles.
+
+### Fixed
+
+- Cross-built Linux and Windows bundles now name the inner binary to match the bundle directory, as the VST3 specification requires. Earlier cross bundles kept the unsuffixed binary name inside a suffixed bundle directory, which the Steinberg validator rejected when loading the module.
+
+### Changed
+
+- Compatibility class registration uses the SDK `kPluginCompatibilityClass` constant instead of a hardcoded category string.
+
 ## zig-vst3-0.2.0 - 2026-06-10
 
 ### Release Notes
