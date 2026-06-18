@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## zig-vst3-0.2.1 - 2026-06-18
+
+### Release Notes
+
+- `zig-vst3-0.2.1` is a maintenance release on top of `0.2.0`. It extends headless validation to all three CI platforms and fixes the cross-built bundle layout so the Steinberg validator accepts the Windows and Linux bundles. There are no raw ABI or checked helper behavior removals.
+- The local release gate remains `scripts/raw_api_release_check.sh`. Zig 0.16.0 and VST3 SDK `v3.8.0_build_66` remain the toolchain pins.
 
 ### Added
 
@@ -15,6 +20,11 @@
 ### Changed
 
 - Compatibility class registration uses the SDK `kPluginCompatibilityClass` constant instead of a hardcoded category string.
+
+### Known Gaps
+
+- Real-host (Tier 3) smoke rows remain deferred: the manual host pass is still macOS REAPER-only, and MIDI-heavy, analyzer, and instrument rows are unfilled.
+- Windows and Linux CI validation covers the `x86_64` cross bundles. The `aarch64-windows-gnu` bundle is cross-built but not validated, since validation needs an ARM runner.
 
 ## zig-vst3-0.2.0 - 2026-06-10
 

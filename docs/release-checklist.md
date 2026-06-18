@@ -1,6 +1,6 @@
 # Release Checklist
 
-This checklist is for tagging raw API releases (most recently `zig-vst3-0.2.0`). It tracks release gates for the raw VST3 API package only. `zig-vst3-plugin` can keep evolving after a tag.
+This checklist is for tagging raw API releases (most recently `zig-vst3-0.2.1`). It tracks release gates for the raw VST3 API package only. `zig-vst3-plugin` can keep evolving after a tag.
 
 The current release pins are Zig 0.16.0 and VST3 SDK `v3.8.0_build_66`. Keep [toolchain.md](toolchain.md), [stability.md](stability.md), and `CHANGELOG.md` aligned with any release-candidate change.
 
@@ -38,7 +38,8 @@ Public CI currently covers:
 
 - Linux, macOS, and Windows build and test jobs
 - Linux and macOS raw API ABI checks
-- Linux and macOS Steinberg validator checks for bundled examples
+- Linux and macOS Steinberg validator checks for bundled examples, plus a Windows validator job against the cross-built bundles
+- Linux, macOS, and Windows pluginval checks, including a strictness 10 pass
 - Linux, macOS, and Windows cross-bundle smoke checks
 
 ## Host Matrix
@@ -58,6 +59,6 @@ Linux and Windows host rows can remain follow-up work for `0.2.x` if CI bundles 
 After the required checks and host matrix rows are in place:
 
 ```sh
-git tag zig-vst3-0.2.0
-git push origin zig-vst3-0.2.0
+git tag zig-vst3-0.2.1
+git push origin zig-vst3-0.2.1
 ```
