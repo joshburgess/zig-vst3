@@ -388,17 +388,26 @@ Completion evidence:
 
 ### Milestone 10: Author Documentation and Stability Review
 
-- [ ] Document the component gallery and one production-style editor.
-- [ ] Document theming, layout, parameter binding, telemetry, and custom drawing.
-- [ ] Mark experimental APIs clearly.
-- [ ] Test the API against a second editor with a different layout and theme.
-- [ ] Stabilize only the pieces used successfully by both editors.
+- [x] Document the component gallery and one production-style editor.
+- [x] Document theming, layout, parameter binding, telemetry, and custom drawing.
+- [x] Mark experimental APIs clearly.
+- [x] Test the API against a second editor with a different layout and theme.
+- [x] Stabilize only the pieces used successfully by both editors.
 
 Exit criteria:
 
 - A plugin author can build a multi-parameter editor without editing the adapter internals.
 - Standard components require no direct VST3 calls.
 - Custom components can reuse standard parameter behavior and theme resolution.
+
+Completion evidence:
+
+- `docs/framework/vstgui-components.md` starts from the public `@import("zig-vst3").vstgui` surface and documents a complete `createView`, the gallery, Voice Mix, themes, layouts, binding behavior, telemetry, assets, fonts, custom drawing, ownership, and verification commands.
+- Adapter ABI version 6 carries explicit default or alternate theme selection and adaptive or compact-strip layout selection in `Skin`. Invalid enum values reject editor creation.
+- The editor-smoke gallery uses the default theme and adaptive multi-parameter layout. Voice Mix calls the same `createMultiViewWithSkin` path with the alternate theme and compact-strip layout. Native tests assert that both explicit selections reach separate editor instances.
+- `Parameter`, `ControlKind`, `Theme`, `Layout`, the `create*View` functions, standard host binding, and per-instance lifecycle form the reviewed authoring surface because both editors exercise them. Meters, assets, fonts, custom drawing, and native accessibility bridges remain marked experimental because only the gallery exercises their current contract.
+- Standard controls keep all VST3 calls inside the controller bridge. Custom drawing remains a non-interactive overlay on the same parameter control, so it reuses gestures, automation playback, formatting, theme resolution, focus, and semantic metadata.
+- Native unit, interaction, visual, and warm-render tests pass. Zig tests, raw ABI checks, every Steinberg example validator, and Linux and Windows cross-target bundle builds pass. Voice Mix also completes pluginval strictness 5 in isolation, including editor automation and opening its editor while processing. The aggregate parallel pluginval run is deferred because the pluginval application produced repeated macOS crash dialogs during this pass.
 
 ## Component Gallery
 

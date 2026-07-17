@@ -133,11 +133,23 @@ typedef struct ZigVstguiDrawingCallbacks {
     );
 } ZigVstguiDrawingCallbacks;
 
+typedef enum ZigVstguiThemeKind {
+    ZIG_VSTGUI_THEME_DEFAULT = 0,
+    ZIG_VSTGUI_THEME_ALTERNATE = 1
+} ZigVstguiThemeKind;
+
+typedef enum ZigVstguiLayoutKind {
+    ZIG_VSTGUI_LAYOUT_ADAPTIVE = 0,
+    ZIG_VSTGUI_LAYOUT_COMPACT_STRIP = 1
+} ZigVstguiLayoutKind;
+
 typedef struct ZigVstguiSkinDescription {
     const ZigVstguiAssetDescription* assets;
     uint32_t asset_count;
     ZigVstguiFontDescription fonts;
     ZigVstguiDrawingCallbacks drawing;
+    ZigVstguiThemeKind theme;
+    ZigVstguiLayoutKind layout;
 } ZigVstguiSkinDescription;
 
 typedef struct ZigVstguiResizeCallbacks {

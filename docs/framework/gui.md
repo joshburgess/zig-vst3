@@ -64,11 +64,13 @@ The native adapter creation contract accepts 1–64 parameter descriptions. Each
 
 Each description also selects a presentation kind: `linear_slider`, `rotary_knob`, `toggle`, `enum_dropdown`, or `segmented_enum`. The control keeps reflected formatting, parsing, quantization, automation gestures, host playback, default reset, focus, and context-menu behavior regardless of presentation. Numeric controls include exact text entry. Labels append units when supplied. Editors provide both a compact/expand action and a draggable lower-right resize handle.
 
-The VSTGUI adapter resolves semantic color, spacing, typography, radius, and control-metric tokens through a component theme. Editor-wide and component-specific overrides compose with normal, hovered, pressed, focused, disabled, and editing states. The default dark theme preserves the reference editor appearance. Set `ZIG_VSTGUI_THEME=alternate` when launching a validator or host to exercise the alternate light theme against the same component tree.
+The VSTGUI adapter resolves semantic color, spacing, typography, radius, and control-metric tokens through a component theme. Editor-wide and component-specific overrides compose with normal, hovered, pressed, focused, disabled, and editing states. `Skin.theme` selects the default dark theme or alternate light theme. Set `ZIG_VSTGUI_THEME=alternate` when launching a validator or host to override an editor that requests the default theme during testing.
 
 The adapter also provides fixed-capacity row, column, and grid layout primitives. Stack items define minimum main-axis and cross-axis sizes plus flexible growth. Grid tracks define minimum sizes and flexible growth, and grid items can span rows or columns. Padding, gaps, and alignment use logical coordinates. VSTGUI applies display scaling after layout through the editor zoom factor.
 
-The multi-parameter editor uses a compact composition below 520 by 360 and an expanded composition at or above that size. Its supported range is 320 by 240 through 1000 by 700. Tab and Shift+Tab follow visible reading order: each parameter's primary control, its exact value field when present, and the resize action. Focus wraps at either end.
+The `.adaptive` layout uses a compact composition below 520 by 360 and an expanded composition at or above that size. The `.compact_strip` layout keeps dense label, control, and value rows for smaller production editors. Their supported range is 320 by 240 through 1000 by 700. Tab and Shift+Tab follow visible reading order: each parameter's primary control, its exact value field when present, and the resize action. Focus wraps at either end.
+
+See [VSTGUI Component Authoring](vstgui-components.md) for the public Zig declarations, the component gallery, a production-style editor, and the supported versus experimental API boundary.
 
 ### Assets, Fonts, and Custom Drawing
 

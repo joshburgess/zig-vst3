@@ -42,6 +42,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_with_skin(
     if (!parameters || parameter_count == 0 || parameter_count > ZIG_VSTGUI_MAX_PARAMETERS) return nullptr;
     if ((!meters && meter_count > 0) || meter_count > ZIG_VSTGUI_MAX_METERS) return nullptr;
     if ((!skin.assets && skin.asset_count > 0) || skin.asset_count > ZIG_VSTGUI_MAX_ASSETS) return nullptr;
+    if (skin.theme != ZIG_VSTGUI_THEME_DEFAULT && skin.theme != ZIG_VSTGUI_THEME_ALTERNATE) return nullptr;
+    if (skin.layout != ZIG_VSTGUI_LAYOUT_ADAPTIVE && skin.layout != ZIG_VSTGUI_LAYOUT_COMPACT_STRIP) return nullptr;
     auto* editor = new (std::nothrow) ZigVstguiEditor(
         parameters,
         parameter_count,

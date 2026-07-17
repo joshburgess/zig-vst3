@@ -20,6 +20,12 @@ Before `zig-vst3-0.1.0`, helper APIs can still change. After `zig-vst3-0.1.0`, r
 
 The intended direction is stable plugin declarations, reflected parameter metadata, state, automation, events, units, programs, and reusable VST3 shells. Until that promise is made, plugin authors should expect to update code across minor pre-1.0 releases.
 
+### VSTGUI component API
+
+The reviewed authoring surface is `@import("zig-vst3").vstgui`. Parameter descriptions, standard control kinds, explicit theme and layout selection, and the `create*View` functions are exercised by both the component gallery and the Voice Mix editor. Changes to that subset should update both editors and the author guide in the same commit.
+
+Meters, assets, font selection, custom drawing callbacks, and native accessibility bridges remain experimental. The gallery exercises their current implementation, but a second production editor has not yet established a compatibility-worthy contract for them. See [VSTGUI Component Authoring](framework/vstgui-components.md#api-status) for the exact boundary.
+
 ## Compatibility Expectations
 
 Every release should state:

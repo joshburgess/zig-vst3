@@ -45,6 +45,8 @@ struct ZigVstguiEditor {
     void setPlugFrame(void* frame);
     void setWaylandHost(void* host);
     void setResizeCallbacks(ZigVstguiResizeCallbacks callbacks);
+    ZigVstguiThemeKind themeKind() const;
+    ZigVstguiLayoutKind layoutKind() const;
 
 private:
     void buildFrame();
@@ -73,6 +75,8 @@ private:
     ZigVstguiDrawingCallbacks drawing_callbacks {};
     ZigVstgui::ResizeControl resize_control;
     ZigVstgui::ThemeResolver theme_resolver;
+    ZigVstguiThemeKind theme_kind {ZIG_VSTGUI_THEME_DEFAULT};
+    ZigVstguiLayoutKind layout_kind {ZIG_VSTGUI_LAYOUT_ADAPTIVE};
     uint32_t width {400};
     uint32_t height {300};
     void* plug_frame {nullptr};

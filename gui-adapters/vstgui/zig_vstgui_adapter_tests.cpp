@@ -632,6 +632,8 @@ int testAssetsAndFonts() {
     ZigVstguiSkinDescription valid_skin {};
     valid_skin.assets = valid_assets;
     valid_skin.asset_count = 2;
+    valid_skin.theme = ZIG_VSTGUI_THEME_ALTERNATE;
+    valid_skin.layout = ZIG_VSTGUI_LAYOUT_COMPACT_STRIP;
     auto* skinned_editor = zig_vstgui_editor_create_with_skin(
         &parameter,
         1,
@@ -642,13 +644,34 @@ int testAssetsAndFonts() {
         valid_skin
     );
     if (!skinned_editor) return 15;
+    if (skinned_editor->themeKind() != ZIG_VSTGUI_THEME_ALTERNATE) return 16;
+    if (skinned_editor->layoutKind() != ZIG_VSTGUI_LAYOUT_COMPACT_STRIP) return 17;
+    auto* default_editor = zig_vstgui_editor_create_with_skin(
+        &parameter,
+        1,
+        {},
+        nullptr,
+        0,
+        {},
+        {}
+    );
+    if (!default_editor || default_editor == skinned_editor) return 18;
+    if (default_editor->themeKind() != ZIG_VSTGUI_THEME_DEFAULT) return 19;
+    if (default_editor->layoutKind() != ZIG_VSTGUI_LAYOUT_ADAPTIVE) return 20;
+    zig_vstgui_editor_destroy(default_editor);
     zig_vstgui_editor_destroy(skinned_editor);
     ZigVstguiSkinDescription invalid_skin {};
     invalid_skin.asset_count = 1;
-    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 16;
+    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 21;
     invalid_skin.asset_count = ZIG_VSTGUI_MAX_ASSETS + 1;
     invalid_skin.assets = &svg_asset;
-    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 17;
+    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 22;
+    invalid_skin = {};
+    invalid_skin.theme = static_cast<ZigVstguiThemeKind>(99);
+    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 23;
+    invalid_skin = {};
+    invalid_skin.layout = static_cast<ZigVstguiLayoutKind>(99);
+    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 24;
     return 0;
 }
 

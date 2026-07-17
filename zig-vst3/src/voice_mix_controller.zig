@@ -19,13 +19,16 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const parameter_set = &voice_mix_spec.parameter_set;
 
     pub fn createView(controller: *edit_controller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
-        return single_parameter_editor.createView(Controller, controller, name, .{
+        return single_parameter_editor.createMultiViewWithSkin(Controller, controller, name, &.{.{
             .id = voices_param_id,
-            .title = "zig-vst3 Voice Mix",
+            .title = "Voices",
             .units = "voices",
             .step_count = 3,
             .default_normalized = 0.0,
             .control_kind = .segmented_enum,
+        }}, &.{}, .{
+            .theme = .alternate,
+            .layout = .compact_strip,
         });
     }
 });

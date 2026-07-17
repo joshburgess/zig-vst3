@@ -1,0 +1,117 @@
+# VSTGUI Component Authoring
+
+The reference component API is available as `@import("zig-vst3").vstgui`. A controller describes parameters, meters, and presentation choices in Zig. It does not include VSTGUI headers, allocate C++ widgets, or call VST3 gesture functions directly.
+
+The component gallery is the `zig_vst3_editor_smoke` example. The Voice Mix example is the smaller production-style editor used to verify that the same API works with a different composition and theme.
+
+## Build a Parameter Editor
+
+Add a `createView` function to a reflected edit controller. This example uses the compact alternate presentation from Voice Mix:
+
+```zig
+const iplugview = @import("pluginterfaces/gui/iplugview.zig");
+const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
+const types = @import("pluginterfaces/base/types.zig");
+const ui = @import("zig-vst3").vstgui;
+
+pub fn createView(
+    controller: *ivsteditcontroller.IEditController,
+    name: types.FIDString,
+) ?*iplugview.IPlugView {
+    return ui.createMultiViewWithSkin(Controller, controller, name, &.{.{
+        .id = voices_param_id,
+        .title = "Voices",
+        .units = "voices",
+        .step_count = 3,
+        .default_normalized = 0.0,
+        .control_kind = .segmented_enum,
+    }}, &.{}, .{
+        .theme = .alternate,
+        .layout = .compact_strip,
+    });
+}
+```
+
+Use `createView` for one default slider, `createMultiView` for standard parameter controls, `createMultiViewWithMeters` for telemetry, or `createMultiViewWithSkin` for explicit theme, layout, fonts, assets, and drawing.
+
+Each `Parameter` needs the stable parameter ID used by the controller, its display metadata, its step count, its normalized default, and a presentation kind:
+
+| Kind | Intended parameter | Exact entry |
+| --- | --- | --- |
+| `linear_slider` | Continuous or stepped scalar | Yes |
+| `rotary_knob` | Continuous scalar | Yes |
+| `toggle` | Boolean | No |
+| `enum_dropdown` | Enum with several choices | No |
+| `segmented_enum` | Small enum whose choices fit visibly | No |
+
+All five presentations use the same parameter attachment behavior. Pointer and keyboard gestures call the host in begin, perform, end order. Rejected changes roll back. Host automation updates the visible value without producing another gesture. Formatting, parsing, default reset, context menus, focus, and semantic metadata remain attached when the presentation changes.
+
+## Themes and Layouts
+
+`Skin.theme` selects `.default` or `.alternate`. The default is a dark theme and the alternate is a light theme. Both resolve semantic colors, typography, spacing, radii, and control metrics for each visual state. The `ZIG_VSTGUI_THEME=alternate` environment override remains useful for testing an editor that requests the default theme, but production editors should select their theme in `Skin`.
+
+`Skin.layout` selects one of two tested compositions:
+
+- `.adaptive` switches the full parameter editor between compact and expanded arrangements at 520 by 360. It is intended for multi-parameter editors and telemetry.
+- `.compact_strip` keeps a title and dense label, control, value rows. It is intended for small production editors that should not inherit the gallery's large single-control composition.
+
+Both layouts accept host resize requests from 320 by 240 through 1000 by 700, use logical coordinates, and keep Tab order aligned with visible reading order. The host can reject a requested size. The editor preserves its last accepted size when that happens.
+
+## Component Gallery
+
+`zig_vst3_editor_smoke` exercises the broad surface in one real plugin:
+
+| Gallery area | Components and behavior |
+| --- | --- |
+| Continuous | Rotary gain control and exact numeric entry |
+| Discrete | Bypass toggle, mode dropdown, and segmented voice count |
+| Telemetry | Peak, stereo, and gain-reduction meters |
+| Resources | Embedded PNG, deterministic SVG, font fallback, and custom overlay drawing |
+| Lifecycle | Adaptive breakpoint, resize action, drag handle, scaling, and independent editor instances |
+
+Use the gallery as a regression fixture and API example. It is intentionally denser than a production editor. The Voice Mix editor demonstrates the opposite case: one musical choice, the alternate palette, and the compact-strip composition.
+
+## Telemetry
+
+Meters consume scalar snapshots from `zig-vst3-plugin.gui_telemetry`. The audio thread publishes bounded atomic values. The editor's 33 millisecond timer applies ballistics, formats accessibility text, and invalidates only when the displayed result changes.
+
+Describe each `Meter` as `.peak`, `.stereo`, or `.gain_reduction` and assign its source IDs. Do not draw, allocate, lock, call the operating system, or request a repaint from the processor. `MeterBank` stops editor-only publication when all editors are closed.
+
+## Assets and Custom Drawing
+
+A `Skin` may own up to 16 PNG or supported SVG assets. Asset bytes are copied when the editor is created and remain owned by that editor across frame recreation. Each asset selects `pixel_exact`, `contain`, `cover`, or `stretch` scaling.
+
+The drawing callback receives a component kind, visual state, parameter ID, normalized value, logical size, scale factor, and opaque `Canvas`. Canvas operations provide rectangles, ellipses, lines, and registered assets. The callback adds a non-interactive overlay. The standard control underneath retains parameter gestures, keyboard input, exact entry, theme resolution, focus, and semantic metadata.
+
+Keep drawing callbacks deterministic, bounded, and allocation-free. Return a nonzero result when drawing cannot complete. An unknown asset ID paints a visible red crossed placeholder instead of leaving a blank interactive area. The supported SVG subset and font fallback rules are documented in [Plugin Editors](gui.md#assets-fonts-and-custom-drawing).
+
+## API Status
+
+The project remains pre-1.0, so even the supported surface does not yet carry a long-term compatibility promise. Milestone 10 narrows the component API according to evidence from both the gallery and Voice Mix editors.
+
+Supported authoring surface:
+
+- `Parameter`, `ControlKind`, `Theme`, `Layout`, and the four `create*View` functions.
+- Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
+- Theme and layout selection through `Skin`.
+
+Experimental extensions:
+
+- `Meter`, meter source wiring, and GUI telemetry presentation.
+- `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and `Canvas` drawing functions.
+- Native assistive-technology bridges. Toolkit-neutral semantics exist, but platform screen-reader exposure does not.
+- New analyzer, modulation, timeline, GPU, preset-browser, and drag-and-drop components.
+
+Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.
+
+## Verification
+
+Run the native adapter tests and example validation after changing a component declaration:
+
+```sh
+zig build vstgui-adapter
+zig build test raw-api-abi validate-examples
+zig build pluginval-examples
+```
+
+The native suite covers parameter routing, interaction, layout selection, theme selection, assets, accessibility semantics, visual references, and the warm-render budget. The example suites verify both editor styles through real plugin bundles.

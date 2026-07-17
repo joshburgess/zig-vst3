@@ -18,7 +18,8 @@ namespace {
 
 std::atomic<uint32_t> editor_count {0};
 
-const ZigVstgui::Theme& selectedTheme() {
+const ZigVstgui::Theme& selectedTheme(ZigVstguiThemeKind requested) {
+    if (requested == ZIG_VSTGUI_THEME_ALTERNATE) return ZigVstgui::alternateTheme();
     const char* name = std::getenv("ZIG_VSTGUI_THEME");
     return name && std::strcmp(name, "alternate") == 0
         ? ZigVstgui::alternateTheme()
@@ -39,7 +40,9 @@ ZigVstguiEditor::ZigVstguiEditor(
 : meter_count(value_meter_count),
   meter_callbacks(value_meter_callbacks),
   drawing_callbacks(skin.drawing),
-  theme_resolver(selectedTheme()) {
+  theme_resolver(selectedTheme(skin.theme)),
+  theme_kind(skin.theme),
+  layout_kind(skin.layout) {
     if (editor_count.fetch_add(1, std::memory_order_acq_rel) == 0) VSTGUI::init(nullptr);
     initialized = true;
     profile_enabled = std::getenv("ZIG_VSTGUI_PROFILE") != nullptr;
@@ -245,6 +248,14 @@ void ZigVstguiEditor::setResizeCallbacks(ZigVstguiResizeCallbacks callbacks) {
     resize_control.setCallbacks(callbacks);
 }
 
+ZigVstguiThemeKind ZigVstguiEditor::themeKind() const {
+    return theme_kind;
+}
+
+ZigVstguiLayoutKind ZigVstguiEditor::layoutKind() const {
+    return layout_kind;
+}
+
 void ZigVstguiEditor::buildFrame() {
     if (frame) return;
     const auto editor_style = theme_resolver.resolve(ZigVstgui::ComponentKind::editor);
@@ -343,6 +354,71 @@ void ZigVstguiEditor::layout() {
         theme.control_metrics.value_width,
         static_cast<double>(width) - margin * 2.0
     );
+    if (layout_kind == ZIG_VSTGUI_LAYOUT_COMPACT_STRIP) {
+        title_component.setVisible(true);
+        help_component.setVisible(false);
+        title_component.setBounds(VSTGUI::CRect(margin, 16, right, 52));
+        const double footer_top = static_cast<double>(height) - margin - theme.control_metrics.compact_control_height;
+        const double parameter_bottom = meter_count > 0
+            ? std::max(84.0, footer_top * 0.62)
+            : footer_top - theme.spacing.medium;
+        const double row_height = std::max(32.0, std::min(52.0, (parameter_bottom - 68.0) / parameter_count));
+        const double stack_height = row_height * parameter_count + theme.spacing.small * (parameter_count - 1);
+        double row_top = 68.0 + std::max(0.0, (parameter_bottom - 68.0 - stack_height) * 0.5);
+        const double label_width = std::min(96.0, (right - margin) * 0.25);
+        const double row_value_width = std::min(92.0, value_width);
+        for (uint32_t index = 0; index < parameter_count; ++index) {
+            const VSTGUI::CRect row(margin, row_top, right, row_top + row_height);
+            const ZigVstgui::GridTrack columns[] = {
+                {label_width, 0.0},
+                {64.0, 1.0},
+                {row_value_width, 0.0},
+            };
+            const ZigVstgui::GridTrack rows[] = {{24.0, 1.0}};
+            const ZigVstgui::GridItem items[] = {
+                {0, 0, 1, 1},
+                {1, 0, 1, 1},
+                {2, 0, 1, 1},
+            };
+            VSTGUI::CRect cells[3];
+            ZigVstgui::layoutGrid(
+                row,
+                {},
+                theme.spacing.small,
+                0.0,
+                columns,
+                3,
+                rows,
+                1,
+                items,
+                3,
+                cells
+            );
+            parameter_controls[index]->setBounds(cells[0], cells[1], cells[2]);
+            row_top += row_height + theme.spacing.small;
+        }
+        if (meter_count > 0) {
+            const double meters_top = parameter_bottom + theme.spacing.small;
+            const double meters_bottom = footer_top - theme.spacing.medium;
+            const double gap = theme.spacing.small;
+            const double meter_width = std::max(1.0, (right - margin - gap * (meter_count - 1)) / meter_count);
+            for (uint32_t index = 0; index < meter_count; ++index) {
+                const double left = margin + index * (meter_width + gap);
+                meter_controls[index]->setLabelVisible(true);
+                meter_controls[index]->setBounds(
+                    VSTGUI::CRect(left, meters_top, left + meter_width, meters_top + 18.0),
+                    VSTGUI::CRect(left, meters_top + 18.0, left + meter_width, meters_bottom)
+                );
+            }
+        }
+        resize_control.setBounds(VSTGUI::CRect(
+            right - theme.control_metrics.button_width,
+            footer_top,
+            right,
+            height - margin
+        ));
+        return;
+    }
     title_component.setBounds(VSTGUI::CRect(margin, 16, right, 52));
     help_component.setBounds(VSTGUI::CRect(margin, 54, right, 82));
     double meters_top = 92.0;

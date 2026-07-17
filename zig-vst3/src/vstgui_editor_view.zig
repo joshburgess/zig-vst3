@@ -144,10 +144,22 @@ pub const DrawingCallbacks = extern struct {
     draw_parameter: ?*const fn (?*anyopaque, *const DrawRequest, *Canvas) callconv(.c) types.int32 = null,
 };
 
+pub const Theme = enum(c_int) {
+    default,
+    alternate,
+};
+
+pub const Layout = enum(c_int) {
+    adaptive,
+    compact_strip,
+};
+
 pub const Skin = struct {
     assets: []const Asset = &.{},
     fonts: Fonts = .{},
     drawing: DrawingCallbacks = .{},
+    theme: Theme = .default,
+    layout: Layout = .adaptive,
 };
 
 const SkinDescription = extern struct {
@@ -155,6 +167,8 @@ const SkinDescription = extern struct {
     asset_count: types.uint32,
     fonts: Fonts,
     drawing: DrawingCallbacks,
+    theme: Theme,
+    layout: Layout,
 };
 
 pub const ObserverCallbacks = struct {
@@ -372,6 +386,8 @@ pub fn create(
             .asset_count = @intCast(skin.assets.len),
             .fonts = skin.fonts,
             .drawing = skin.drawing,
+            .theme = skin.theme,
+            .layout = skin.layout,
         },
     ) orelse {
         std.heap.page_allocator.destroy(telemetry);
