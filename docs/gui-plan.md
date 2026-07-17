@@ -4,6 +4,8 @@ This plan adds visible, useful plugin editors without turning `zig-vst3` into a 
 
 The first product milestone is a resizable gain editor that works in a real host, keeps multiple plugin instances independent, and reports automation gestures correctly. Cross-platform and analyzer support follow after that path is proven.
 
+Reusable controls, theming, layout, accessibility, and the component gallery continue in [gui-component-system-plan.md](gui-component-system-plan.md).
+
 ## Scope
 
 ### Goals

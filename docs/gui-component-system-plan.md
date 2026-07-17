@@ -1,0 +1,380 @@
+# Plugin GUI Component System Plan
+
+This plan extends the host integration work in [gui-plan.md](gui-plan.md). It builds a reusable, customizable component layer for plugin editors without turning `zig-vst3` into a general desktop GUI toolkit.
+
+The immediate target is a multi-parameter component gallery that runs through the existing VSTGUI adapter. The broader target is NIH-plug-level editor ergonomics with the plugin-focused parts of third-party framework's component and LookAndFeel model.
+
+## Current Position
+
+The framework already provides:
+
+- Per-instance editor and controller state
+- Parameter metadata, formatting, parsing, normalization, and quantization
+- Complete begin, perform, and end automation gestures
+- Host-to-editor parameter notifications
+- Host parameter context menus
+- Resize, scale, focus, and lifecycle handling
+- Scalar snapshots and bounded telemetry queues
+- Native VSTGUI attachment on macOS, Windows, X11, and Wayland
+
+The visible adapter remains a hard-coded single-parameter editor in `gui-adapters/vstgui/zig_vstgui_adapter.cpp`. Control construction, layout, styling, parameter behavior, and editor composition are coupled in that file. Adding controls directly to that implementation would produce a collection of one-off widgets instead of a component library.
+
+## Design Targets
+
+### NIH-plug parity
+
+Match the useful shape of NIH-plug's GUI support:
+
+- Keep editor lifecycle and parameter semantics independent of the rendering toolkit.
+- Let toolkit adapters provide their own component implementations.
+- Provide parameter-aware sliders, buttons, meters, generic panels, and resize controls.
+- Notify open editors about host value changes and bulk state changes.
+- Keep editor size and scale in logical coordinates.
+
+NIH-plug is a framework and adapter reference, not a complete widget toolkit. Its VIZIA adapter currently includes a generic UI, parameter base, parameter button, parameter slider, peak meter, and resize handle.
+
+### third-party framework-style customization
+
+Adopt the plugin-relevant parts of third-party framework's GUI design:
+
+- A component tree with bounds, visibility, enabled state, child ownership, focus, input, and invalidation
+- A separate theme and drawing policy comparable to third-party framework LookAndFeel
+- Standard controls that retain behavior when their appearance changes
+- Per-editor, per-container, and per-control style overrides
+- Semantic accessibility roles, names, values, and states
+
+Do not reproduce third-party framework's application windows, document model, networking, media, or other general desktop facilities.
+
+## Architecture
+
+```text
+Plugin editor declaration
+  |
+  v
+VSTGUI editor builder and component tree
+  |
+  +--> layout and focus order
+  +--> theme and component styles
+  +--> parameter-aware controls
+  +--> telemetry controls
+  |
+  v
+zig-vst3-plugin GUI context
+  |
+  +--> parameter attachments and gestures
+  +--> formatting, parsing, and metadata
+  +--> resize and host context menus
+  |
+  v
+VST3 host
+```
+
+The toolkit-neutral layer continues to own parameter semantics and host communication. The VSTGUI package owns the component tree, layout, input routing, drawing, and toolkit resources. Toolkit-specific types must not enter `zig-vst3-plugin`.
+
+## Component Contract
+
+Every visible component needs:
+
+- Logical bounds
+- Visible and enabled states
+- Optional focus participation and deterministic focus order
+- Invalidation when visual state changes
+- Pointer, wheel, and keyboard event handling where applicable
+- Semantic name, description, role, value, and state
+- Theme lookup with local overrides
+
+Every parameter control also needs:
+
+- One `ParameterAttachment`
+- Reflected name, units, default, step count, and text conversion
+- One active gesture at most
+- Host automation updates without creating a new gesture
+- Default reset
+- Fine adjustment
+- Exact entry when the value is numeric
+- Host context menu access
+- Normal, hovered, pressed, focused, disabled, and editing visual states
+
+## Theme and Drawing Model
+
+Use semantic tokens instead of colors and dimensions embedded in controls:
+
+```zig
+const theme = Theme{
+    .colors = .{
+        .surface = rgb(22, 25, 31),
+        .surface_raised = rgb(37, 42, 51),
+        .control_track = rgb(73, 82, 97),
+        .control_fill = rgb(17, 113, 91),
+        .text_primary = rgb(238, 241, 246),
+        .text_secondary = rgb(157, 166, 181),
+        .focus_ring = rgb(89, 201, 165),
+    },
+    .spacing = .{},
+    .typography = .{},
+    .radii = .{},
+    .control_metrics = .{},
+};
+```
+
+Resolve styles in this order:
+
+1. Library defaults
+2. Editor theme
+3. Container override
+4. Component-type override
+5. Component-instance override
+6. Interaction-state override
+
+Appearance changes must not replace parameter behavior. Advanced editors may provide component-specific drawing callbacks after the standard style path works.
+
+## Author-Facing API Direction
+
+The final spelling should follow implementation experience from the gallery. The intended shape is a declarative, adapter-specific builder:
+
+```zig
+var editor = try vstgui.Editor.init(allocator, .{
+    .size = .{ .width = 640, .height = 420 },
+    .theme = studio_theme,
+});
+
+try editor.add(.knob(.gain, .{
+    .label = "Gain",
+    .layout = .{ .column = 0, .row = 0 },
+}));
+
+try editor.add(.toggle(.bypass, .{
+    .label = "Bypass",
+    .layout = .{ .column = 1, .row = 0 },
+}));
+
+try editor.add(.choice(.mode, .{
+    .label = "Mode",
+    .layout = .{ .column = 0, .row = 1, .column_span = 2 },
+}));
+```
+
+Do not freeze this public API until the gallery uses every core parameter kind and survives a second editor design.
+
+## Work Plan
+
+Each milestone must leave the validator, pluginval, existing examples, and cross-target bundles passing. Real-host rows remain release evidence, but unavailable platform checks do not block component work that can be validated locally.
+
+### Milestone 1: Extract the Component Foundation
+
+- [ ] Split the VSTGUI adapter into lifecycle, component, control, theme, and editor-composition units.
+- [ ] Extract the current slider and numeric field from `ZigVstguiEditor`.
+- [ ] Define component bounds, visibility, enabled state, focus participation, and invalidation.
+- [ ] Define shared parameter-control gesture and host-update behavior.
+- [ ] Preserve the current gain editor appearance and confirmed interactions.
+- [ ] Add unit tests for state transitions and gesture ownership.
+
+Exit criteria:
+
+- The gain editor is composed from reusable components.
+- No control duplicates begin, perform, end, reset, parse, or host-update logic.
+- The existing REAPER behavior remains unchanged.
+
+### Milestone 2: Add Theme and Style Resolution
+
+- [ ] Define semantic color, spacing, typography, radius, and control-metric tokens.
+- [ ] Move all current literals into the default theme.
+- [ ] Add editor-wide and per-component overrides.
+- [ ] Define styles for normal, hovered, pressed, focused, disabled, and editing states.
+- [ ] Add one alternate theme that changes appearance without changing component code.
+
+Exit criteria:
+
+- The gain editor contains no embedded presentation colors or sizes outside layout specifications.
+- The default and alternate themes render the same component tree.
+
+### Milestone 3: Support Multi-parameter Editors
+
+- [ ] Replace the single-parameter C ABI creation contract with a bounded multi-parameter description or builder.
+- [ ] Route host updates to the matching attachment and component.
+- [ ] Cancel all active gestures safely during detach and destruction.
+- [ ] Preserve per-instance isolation with multiple parameters and multiple editors.
+- [ ] Support bulk refresh after project or preset state restoration.
+
+Exit criteria:
+
+- One editor binds continuous, integer, boolean, and enum parameters at the same time.
+- Host automation updates only the matching controls.
+- Two gallery instances remain isolated.
+
+### Milestone 4: Build Core Parameter Components
+
+Implement controls in this order:
+
+- [ ] Linear slider
+- [ ] Numeric value field
+- [ ] Rotary knob
+- [ ] Toggle button
+- [ ] Enum dropdown
+- [ ] Segmented enum control
+- [ ] Parameter label with units
+- [ ] Resize handle
+
+Each interactive control must pass:
+
+- [ ] Pointer interaction
+- [ ] Wheel interaction where appropriate
+- [ ] Keyboard interaction
+- [ ] Fine adjustment
+- [ ] Exact entry where appropriate
+- [ ] Default reset
+- [ ] Host context menu
+- [ ] Correct automation gesture boundaries
+- [ ] Host automation playback
+- [ ] Disabled-state behavior
+- [ ] Visible focus
+
+Exit criteria:
+
+- The component gallery demonstrates all four reflected parameter kinds.
+- A plugin author does not write custom gesture or normalization code to use a standard control.
+
+### Milestone 5: Add Layout and Focus Navigation
+
+- [ ] Add fixed bounds for art-directed interfaces.
+- [ ] Add row and column stacks.
+- [ ] Add grid layout with spans.
+- [ ] Add padding, gap, alignment, minimum size, and flexible growth.
+- [ ] Add compact and expanded layout breakpoints.
+- [ ] Add deterministic Tab and Shift+Tab traversal.
+- [ ] Keep layout coordinates logical and scale-independent.
+
+Exit criteria:
+
+- The gallery remains usable at its minimum and maximum supported sizes.
+- Resize does not overlap, clip, or strand interactive controls.
+- Focus traversal follows the visible reading order.
+
+### Milestone 6: Add Accessibility Semantics
+
+- [ ] Define semantic roles for sliders, buttons, toggles, choices, text fields, meters, and groups.
+- [ ] Expose accessible name, description, value text, range, and state.
+- [ ] Notify the platform accessibility layer when values or states change.
+- [ ] Ensure custom drawing does not remove native keyboard or accessibility behavior.
+- [ ] Document unsupported VSTGUI or platform accessibility paths explicitly.
+
+Exit criteria:
+
+- Every gallery control has a semantic name, role, value, and state.
+- Focus and value changes are observable through the platform accessibility API where VSTGUI supports it.
+
+### Milestone 7: Add Audio Visualization Components
+
+- [ ] Add a scalar peak meter using `gui_telemetry.ScalarSnapshot`.
+- [ ] Add peak hold and decay on the GUI thread.
+- [ ] Stop meter production and repaint requests when the editor closes.
+- [ ] Add stereo and gain-reduction meter variants.
+- [ ] Add an analyzer component only after defining a representative plugin and data rate.
+
+Exit criteria:
+
+- Meter updates allocate and lock nothing on the audio thread.
+- Overflow or coalescing affects only visual freshness.
+- Static editors retain no continuous repaint loop.
+
+### Milestone 8: Add Asset and Custom Drawing Support
+
+- [ ] Load bundled bitmap and SVG assets with explicit scale behavior.
+- [ ] Support custom fonts with documented licensing and fallback behavior.
+- [ ] Add component-specific drawing callbacks.
+- [ ] Add filmstrip or sprite controls only if a reference design requires them.
+- [ ] Define resource ownership and teardown across editor recreation.
+
+Exit criteria:
+
+- A plugin can create an art-directed skin without replacing parameter attachment behavior.
+- Missing assets fail visibly and do not create blank interactive regions.
+
+### Milestone 9: Visual and Interaction Regression Tests
+
+- [ ] Make the gallery render deterministically at fixed logical sizes.
+- [ ] Capture reference images for default, hover, pressed, focused, disabled, and editing states where automation permits.
+- [ ] Add image comparison with an explicit tolerance.
+- [ ] Add scripted gesture, keyboard, resize, and host-update tests.
+- [ ] Keep performance profiling available for static controls and active meters.
+
+Exit criteria:
+
+- Component appearance changes produce reviewable image diffs.
+- Interaction regressions fail before a real-host test.
+- Warm frame cost stays within the budget recorded in `docs/gui-baseline.md`.
+
+### Milestone 10: Author Documentation and Stability Review
+
+- [ ] Document the component gallery and one production-style editor.
+- [ ] Document theming, layout, parameter binding, telemetry, and custom drawing.
+- [ ] Mark experimental APIs clearly.
+- [ ] Test the API against a second editor with a different layout and theme.
+- [ ] Stabilize only the pieces used successfully by both editors.
+
+Exit criteria:
+
+- A plugin author can build a multi-parameter editor without editing the adapter internals.
+- Standard components require no direct VST3 calls.
+- Custom components can reuse standard parameter behavior and theme resolution.
+
+## Component Gallery
+
+The gallery is a real plugin example, not a standalone mockup. It should contain:
+
+| Area | Components | Data source |
+| --- | --- | --- |
+| Continuous | Linear slider, rotary knob, numeric field | Float parameter |
+| Discrete | Toggle, dropdown, segmented control | Boolean and enum parameters |
+| Stepped | Slider or stepper with exact value | Integer parameter |
+| Telemetry | Peak meter | Scalar snapshot |
+| Structure | Labels, groups, row, grid | Editor model |
+| Lifecycle | Resize handle and breakpoint change | Host resize contract |
+
+Keep one primary action or value per visual group. Large flat panels make control relationships harder to scan, so group the gallery by continuous, discrete, and telemetry behavior.
+
+## Deeper Capabilities After the Core Library
+
+Add these only when a reference plugin needs them:
+
+- XY pad and multi-parameter gestures
+- Modulation value overlays distinct from base parameter values
+- Transfer-function and envelope editors
+- Waveform and spectrum views
+- Piano keyboard and step sequencer
+- Tooltips, popovers, and richer host menus
+- Preset browser and editor-persistent non-parameter state
+- Drag-and-drop files
+- Animation timelines with activity-based repaint scheduling
+- GPU-backed custom views after profiling demonstrates a need
+
+## Validation Gates
+
+Run for each milestone:
+
+```sh
+env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache zig build test raw-api-abi validate-examples
+env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache zig build pluginval-examples
+env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache zig build bundle-examples-linux -Dtarget=aarch64-linux-gnu
+env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu
+```
+
+Also verify:
+
+- `git diff --check`
+- No continuous repaint for static controls
+- No audio-thread allocation, lock, operating-system call, or unbounded work
+- No shared mutable editor or parameter state across plugin instances
+- No toolkit-specific type in the toolkit-neutral API
+
+## References
+
+- [Existing zig-vst3 GUI plan](gui-plan.md)
+- [Existing framework GUI guide](framework/gui.md)
+- [NIH-plug repository and GUI overview](https://github.com/robbert-vdh/nih-plug)
+- [NIH-plug Editor contract](https://nih-plug.robbertvanderhelm.nl/nih_plug/editor/trait.Editor.html)
+- [NIH-plug VIZIA widgets](https://github.com/robbert-vdh/nih-plug/tree/master/nih_plug_vizia/src/widgets)
+- [third-party framework Component](https://docs.third-party framework.com/master/classthird-party framework_1_1Component.html)
+- [third-party framework LookAndFeel](https://docs.third-party framework.com/develop/classthird-party framework_1_1LookAndFeel.html)
+- [third-party framework Slider](https://docs.third-party framework.com/master/classthird-party framework_1_1Slider.html)
+- [third-party framework AccessibilityHandler](https://docs.third-party framework.com/master/classthird-party framework_1_1AccessibilityHandler.html)
