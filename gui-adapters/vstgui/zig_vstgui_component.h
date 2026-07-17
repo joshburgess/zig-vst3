@@ -1,20 +1,12 @@
 #ifndef ZIG_VSTGUI_COMPONENT_H
 #define ZIG_VSTGUI_COMPONENT_H
 
+#include "zig_vstgui_theme.h"
 #include "vstgui/lib/cviewcontainer.h"
 
 #include <cstdint>
 
 namespace ZigVstgui {
-
-enum class VisualState {
-    normal,
-    hovered,
-    pressed,
-    focused,
-    disabled,
-    editing,
-};
 
 struct ComponentState {
     bool visible {true};

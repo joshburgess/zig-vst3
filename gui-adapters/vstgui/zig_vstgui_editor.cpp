@@ -9,10 +9,18 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
 std::atomic<uint32_t> editor_count {0};
+
+const ZigVstgui::Theme& selectedTheme() {
+    const char* name = std::getenv("ZIG_VSTGUI_THEME");
+    return name && std::strcmp(name, "alternate") == 0
+        ? ZigVstgui::alternateTheme()
+        : ZigVstgui::defaultTheme();
+}
 
 }
 
@@ -23,6 +31,7 @@ ZigVstguiEditor::ZigVstguiEditor(
     ZigVstguiCallbacks callbacks
 )
 : parameter_control(parameter_id, initial, callbacks),
+  theme_resolver(selectedTheme()),
   parameter_info(value_parameter_info) {
     if (editor_count.fetch_add(1, std::memory_order_acq_rel) == 0) VSTGUI::init(nullptr);
     profile_enabled = std::getenv("ZIG_VSTGUI_PROFILE") != nullptr;
@@ -101,27 +110,30 @@ void ZigVstguiEditor::setResizeCallbacks(ZigVstguiResizeCallbacks callbacks) {
 
 void ZigVstguiEditor::buildFrame() {
     if (frame) return;
-    const auto& theme = ZigVstgui::defaultTheme();
+    const auto editor_style = theme_resolver.resolve(ZigVstgui::ComponentKind::editor);
+    const auto title_style = theme_resolver.resolve(ZigVstgui::ComponentKind::title);
+    const auto help_style = theme_resolver.resolve(ZigVstgui::ComponentKind::help);
+    const auto& theme = theme_resolver.theme();
     frame = new VSTGUI::CFrame(VSTGUI::CRect(0, 0, width, height), nullptr);
-    frame->setBackgroundColor(theme.surface);
+    frame->setBackgroundColor(editor_style.background);
     frame->setFocusDrawingEnabled(true);
-    frame->setFocusColor(theme.focus_ring);
-    frame->setFocusWidth(2.0);
+    frame->setFocusColor(editor_style.accent);
+    frame->setFocusWidth(theme.control_metrics.focus_width);
     content = new ZigVstgui::ProfiledContainer(
         VSTGUI::CRect(0, 0, width, height),
         profile_enabled ? &metrics : nullptr
     );
-    content->setBackgroundColor(theme.surface);
+    content->setBackgroundColor(editor_style.background);
     frame->addView(content);
 
     title = new VSTGUI::CTextLabel(
         VSTGUI::CRect(),
         parameter_info.title ? parameter_info.title : "Parameter"
     );
-    title->setFont(VSTGUI::kNormalFontVeryBig);
-    title->setFontColor(theme.text_primary);
-    title->setBackColor(theme.surface);
-    title->setFrameColor(theme.surface);
+    title->setFont(theme.typography.title);
+    title->setFontColor(title_style.foreground);
+    title->setBackColor(title_style.background);
+    title->setFrameColor(title_style.border);
     content->addView(title);
     title_component.bind(title);
 
@@ -136,14 +148,15 @@ void ZigVstguiEditor::buildFrame() {
         "Drag | Arrows | Home/End | Control-click resets"
     );
 #endif
-    help->setFontColor(theme.text_secondary);
-    help->setBackColor(theme.surface);
-    help->setFrameColor(theme.surface);
+    help->setFont(theme.typography.body);
+    help->setFontColor(help_style.foreground);
+    help->setBackColor(help_style.background);
+    help->setFrameColor(help_style.border);
     content->addView(help);
     help_component.bind(help);
 
-    parameter_control.build(content, parameter_info, theme);
-    resize_control.build(content, theme);
+    parameter_control.build(content, parameter_info, theme_resolver);
+    resize_control.build(content, theme_resolver);
     resize_control.setSize(width, height);
     layout();
 }
@@ -158,21 +171,35 @@ void ZigVstguiEditor::clearFrameReferences() {
 void ZigVstguiEditor::layout() {
     if (!frame) return;
     if (content) content->setViewSize(VSTGUI::CRect(0, 0, width, height), true);
-    const double margin = 24.0;
+    const auto& theme = theme_resolver.theme();
+    const double margin = theme.spacing.large;
     const double right = std::max(margin + 1.0, static_cast<double>(width) - margin);
     const double track_top = std::clamp(
         static_cast<double>(height) * 0.42,
         92.0,
         static_cast<double>(height) - 116.0
     );
-    const double value_width = std::min(148.0, static_cast<double>(width) - margin * 2.0);
+    const double value_width = std::min(
+        theme.control_metrics.value_width,
+        static_cast<double>(width) - margin * 2.0
+    );
     title_component.setBounds(VSTGUI::CRect(margin, 16, right, 52));
     help_component.setBounds(VSTGUI::CRect(margin, 54, right, 82));
     parameter_control.setBounds(
-        VSTGUI::CRect(margin, track_top, right, track_top + 52),
-        VSTGUI::CRect(margin, height - 64.0, margin + value_width, height - 24.0)
+        VSTGUI::CRect(margin, track_top, right, track_top + theme.control_metrics.control_height),
+        VSTGUI::CRect(
+            margin,
+            height - margin - theme.control_metrics.compact_control_height,
+            margin + value_width,
+            height - margin
+        )
     );
-    resize_control.setBounds(VSTGUI::CRect(right - 112.0, height - 64.0, right, height - 24.0));
+    resize_control.setBounds(VSTGUI::CRect(
+        right - theme.control_metrics.button_width,
+        height - margin - theme.control_metrics.compact_control_height,
+        right,
+        height - margin
+    ));
 }
 
 void ZigVstguiEditor::reportMetrics() const {

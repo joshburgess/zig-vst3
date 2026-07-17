@@ -184,16 +184,24 @@ Completion evidence:
 
 ### Milestone 2: Add Theme and Style Resolution
 
-- [ ] Define semantic color, spacing, typography, radius, and control-metric tokens.
-- [ ] Move all current literals into the default theme.
-- [ ] Add editor-wide and per-component overrides.
-- [ ] Define styles for normal, hovered, pressed, focused, disabled, and editing states.
-- [ ] Add one alternate theme that changes appearance without changing component code.
+- [x] Define semantic color, spacing, typography, radius, and control-metric tokens.
+- [x] Move all current literals into the default theme.
+- [x] Add editor-wide and per-component overrides.
+- [x] Define styles for normal, hovered, pressed, focused, disabled, and editing states.
+- [x] Add one alternate theme that changes appearance without changing component code.
 
 Exit criteria:
 
 - The gain editor contains no embedded presentation colors or sizes outside layout specifications.
 - The default and alternate themes render the same component tree.
+
+Completion evidence:
+
+- `Theme` groups semantic colors, spacing, typography, radii, and control metrics. Editor composition and controls resolve presentation through `ThemeResolver`.
+- Resolution tests prove editor overrides, component overrides, and interaction-state overrides apply in the documented order.
+- The slider resolves normal, hovered, pressed, focused, disabled, and editing states at draw time.
+- The alternate theme changes the full palette while retaining the same component styles, metrics, editor composition, and behavior.
+- The default and alternate themes pass native adapter tests and pluginval editor checks. Unit tests, raw ABI checks, all example validators, the full default-theme pluginval suite, and Linux and Windows cross-target bundles pass.
 
 ### Milestone 3: Support Multi-parameter Editors
 

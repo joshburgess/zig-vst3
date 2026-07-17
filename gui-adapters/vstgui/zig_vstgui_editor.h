@@ -4,6 +4,7 @@
 #include "zig_vstgui_adapter.h"
 #include "zig_vstgui_component.h"
 #include "zig_vstgui_controls.h"
+#include "zig_vstgui_theme.h"
 
 #include "vstgui/lib/cframe.h"
 #include "vstgui/lib/controls/ctextlabel.h"
@@ -42,6 +43,7 @@ private:
     ZigVstgui::Component help_component;
     ZigVstgui::ParameterControl parameter_control;
     ZigVstgui::ResizeControl resize_control;
+    ZigVstgui::ThemeResolver theme_resolver;
     uint32_t width {400};
     uint32_t height {300};
     void* plug_frame {nullptr};

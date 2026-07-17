@@ -43,15 +43,24 @@ public:
         const VSTGUI::CRect& size,
         VSTGUI::IControlListener* listener,
         int32_t tag,
-        const Theme& theme
+        const ThemeResolver& styles
     );
 
     bool handleKey(uint16_t key, int16_t key_code, int16_t modifiers);
     void draw(VSTGUI::CDrawContext* context) override;
+    void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override;
+    void onMouseUpEvent(VSTGUI::MouseUpEvent& event) override;
+    void onMouseCancelEvent(VSTGUI::MouseCancelEvent& event) override;
+    void onMouseEnterEvent(VSTGUI::MouseEnterEvent& event) override;
+    void onMouseExitEvent(VSTGUI::MouseExitEvent& event) override;
     void onKeyboardEvent(VSTGUI::KeyboardEvent& event) override;
 
 private:
-    const Theme& theme;
+    VisualState visualState() const;
+
+    const ThemeResolver& styles;
+    bool hovered {false};
+    bool pressed {false};
 };
 
 class ParameterControl final : public VSTGUI::IControlListener {
@@ -59,7 +68,11 @@ public:
     ParameterControl(uint32_t parameter_id, double initial, ZigVstguiCallbacks callbacks);
     ~ParameterControl() override;
 
-    void build(VSTGUI::CViewContainer* parent, ZigVstguiParameterInfo parameter_info, const Theme& theme);
+    void build(
+        VSTGUI::CViewContainer* parent,
+        ZigVstguiParameterInfo parameter_info,
+        const ThemeResolver& styles
+    );
     void clear();
     void setValue(double value);
     void setBounds(const VSTGUI::CRect& slider_bounds, const VSTGUI::CRect& value_bounds);
@@ -84,7 +97,7 @@ private:
 
 class ResizeControl final : public VSTGUI::IControlListener {
 public:
-    void build(VSTGUI::CViewContainer* parent, const Theme& theme);
+    void build(VSTGUI::CViewContainer* parent, const ThemeResolver& styles);
     void clear();
     void setBounds(const VSTGUI::CRect& bounds);
     void setSize(uint32_t width, uint32_t height);

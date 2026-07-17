@@ -39,6 +39,13 @@ bool closeEnough(double left, double right) {
     return std::abs(left - right) < 0.000001;
 }
 
+bool sameColor(const VSTGUI::CColor& left, const VSTGUI::CColor& right) {
+    return left.red == right.red &&
+        left.green == right.green &&
+        left.blue == right.blue &&
+        left.alpha == right.alpha;
+}
+
 int testComponentState() {
     ZigVstgui::ComponentState state;
     if (state.visualState() != ZigVstgui::VisualState::normal) return 1;
@@ -97,11 +104,48 @@ int testActiveGestureCleanup() {
     return state.begin_count == 1 && state.end_count == 1 ? 0 : 2;
 }
 
+int testThemeResolution() {
+    const auto& default_theme = ZigVstgui::defaultTheme();
+    const auto& alternate_theme = ZigVstgui::alternateTheme();
+    ZigVstgui::ThemeResolver styles(default_theme);
+
+    const auto normal = styles.resolve(ZigVstgui::ComponentKind::slider);
+    if (!sameColor(normal.background, default_theme.colors.surface_raised)) return 1;
+    if (!closeEnough(normal.thumb_radius, default_theme.control_metrics.thumb_radius)) return 2;
+
+    const auto hovered = styles.resolve(
+        ZigVstgui::ComponentKind::slider,
+        ZigVstgui::VisualState::hovered
+    );
+    if (!sameColor(hovered.accent, default_theme.colors.control_fill_highlighted)) return 3;
+
+    ZigVstgui::StyleOverride editor_override;
+    editor_override.background = VSTGUI::CColor(1, 2, 3, 255);
+    styles.setEditorOverride(editor_override);
+    ZigVstgui::StyleOverride slider_override;
+    slider_override.background = VSTGUI::CColor(4, 5, 6, 255);
+    slider_override.border = VSTGUI::CColor(7, 8, 9, 255);
+    styles.setComponentOverride(ZigVstgui::ComponentKind::slider, slider_override);
+    const auto focused = styles.resolve(
+        ZigVstgui::ComponentKind::slider,
+        ZigVstgui::VisualState::focused
+    );
+    if (!sameColor(focused.background, *slider_override.background)) return 4;
+    if (!sameColor(focused.border, default_theme.colors.focus_ring)) return 5;
+
+    ZigVstgui::ThemeResolver alternate_styles(alternate_theme);
+    const auto alternate_slider = alternate_styles.resolve(ZigVstgui::ComponentKind::slider);
+    if (sameColor(alternate_slider.background, normal.background)) return 6;
+    if (!closeEnough(alternate_slider.thumb_radius, normal.thumb_radius)) return 7;
+    return 0;
+}
+
 }
 
 int main() {
     if (const int result = testComponentState(); result != 0) return 10 + result;
     if (const int result = testGestureOwnership(); result != 0) return 30 + result;
     if (const int result = testActiveGestureCleanup(); result != 0) return 50 + result;
+    if (const int result = testThemeResolution(); result != 0) return 70 + result;
     return 0;
 }
