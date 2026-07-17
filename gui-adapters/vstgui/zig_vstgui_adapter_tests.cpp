@@ -204,6 +204,32 @@ int testParameterContextMenu() {
 int testThemeResolution() {
     const auto& default_theme = ZigVstgui::defaultTheme();
     const auto& alternate_theme = ZigVstgui::alternateTheme();
+    const ZigVstgui::ColorTokens expected_default {
+        VSTGUI::CColor(22, 25, 31, 255),
+        VSTGUI::CColor(37, 42, 51, 255),
+        VSTGUI::CColor(73, 82, 97, 255),
+        VSTGUI::CColor(17, 113, 91, 255),
+        VSTGUI::CColor(124, 232, 197, 255),
+        VSTGUI::CColor(238, 241, 246, 255),
+        VSTGUI::CColor(157, 166, 181, 255),
+        VSTGUI::CColor(89, 201, 165, 255),
+        VSTGUI::CColor(29, 83, 70, 255),
+        VSTGUI::CColor(22, 62, 53, 255),
+        VSTGUI::CColor(39, 125, 101, 255),
+        VSTGUI::CColor(29, 83, 70, 255),
+    };
+    if (!sameColor(default_theme.colors.surface, expected_default.surface) ||
+        !sameColor(default_theme.colors.surface_raised, expected_default.surface_raised) ||
+        !sameColor(default_theme.colors.control_track, expected_default.control_track) ||
+        !sameColor(default_theme.colors.control_fill, expected_default.control_fill) ||
+        !sameColor(default_theme.colors.control_fill_highlighted, expected_default.control_fill_highlighted) ||
+        !sameColor(default_theme.colors.text_primary, expected_default.text_primary) ||
+        !sameColor(default_theme.colors.text_secondary, expected_default.text_secondary) ||
+        !sameColor(default_theme.colors.focus_ring, expected_default.focus_ring) ||
+        !sameColor(default_theme.colors.button_top, expected_default.button_top) ||
+        !sameColor(default_theme.colors.button_bottom, expected_default.button_bottom) ||
+        !sameColor(default_theme.colors.button_top_highlighted, expected_default.button_top_highlighted) ||
+        !sameColor(default_theme.colors.button_bottom_highlighted, expected_default.button_bottom_highlighted)) return 8;
     ZigVstgui::ThemeResolver styles(default_theme);
 
     const auto normal = styles.resolve(ZigVstgui::ComponentKind::slider);
@@ -285,6 +311,15 @@ int testMultiParameterRouting() {
     if (first.meterAccessibility(3) || first.tickMeter(3, 0.0)) return 30;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 0) || first.focusPosition() != 0) return 12;
     if (!slider_accessibility->state().focused) return 23;
+    const auto begin_before_key = state.begin_count;
+    const auto perform_before_key = state.perform_count;
+    const auto end_before_key = state.end_count;
+    if (!first.keyDown(0, Steinberg::KEY_RIGHT, 0)) return 31;
+    if (state.begin_count != begin_before_key + 1 ||
+        state.perform_count != perform_before_key + 1 ||
+        state.end_count != end_before_key + 1) return 32;
+    double keyboard_value = 0.0;
+    if (!first.parameterValue(10, keyboard_value) || keyboard_value <= 0.25) return 33;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 0) || first.focusPosition() != 1) return 13;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 0) || first.focusPosition() != 2) return 14;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 1) || first.focusPosition() != 1) return 15;
@@ -318,6 +353,7 @@ int testMultiParameterRouting() {
     };
     ZigVstguiEditor duplicate_editor(duplicates, 2, callbacks);
     if (duplicate_editor.valid()) return 11;
+    if (!first.resize(640, 360) || first.resize(319, 360) || first.resize(640, 239)) return 34;
     return 0;
 }
 

@@ -128,6 +128,11 @@ bool GainSlider::handleKey(uint16_t key, int16_t key_code, int16_t modifiers) {
     return event.consumed;
 }
 
+void GainSlider::forceVisualStateForTesting(std::optional<VisualState> state) {
+    forced_state = state;
+    invalid();
+}
+
 void GainSlider::draw(VSTGUI::CDrawContext* context) {
     const auto style = styles.resolve(ComponentKind::slider, visualState());
     setAlphaValueNoInvalidate(style.alpha);
@@ -197,6 +202,7 @@ void GainSlider::onKeyboardEvent(VSTGUI::KeyboardEvent& event) {
 }
 
 VisualState GainSlider::visualState() const {
+    if (forced_state) return *forced_state;
     if (!getMouseEnabled()) return VisualState::disabled;
     if (isEditing()) return VisualState::editing;
     if (pressed) return VisualState::pressed;

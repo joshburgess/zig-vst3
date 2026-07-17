@@ -17,6 +17,7 @@
 #include "vstgui/lib/iviewlistener.h"
 
 #include <string>
+#include <optional>
 
 namespace ZigVstgui {
 
@@ -57,6 +58,7 @@ public:
     );
 
     bool handleKey(uint16_t key, int16_t key_code, int16_t modifiers);
+    void forceVisualStateForTesting(std::optional<VisualState> state);
     void draw(VSTGUI::CDrawContext* context) override;
     void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override;
     void onMouseUpEvent(VSTGUI::MouseUpEvent& event) override;
@@ -71,6 +73,7 @@ private:
     const ThemeResolver& styles;
     bool hovered {false};
     bool pressed {false};
+    std::optional<VisualState> forced_state;
 };
 
 class ParameterControl final :

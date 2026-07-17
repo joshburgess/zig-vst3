@@ -59,3 +59,27 @@ add_custom_target(zig_vstgui_adapter_tests_run
     COMMAND $<TARGET_FILE:zig_vstgui_adapter_tests>
     DEPENDS zig_vstgui_adapter_tests
 )
+
+add_executable(zig_vstgui_visual_tests zig_vstgui_visual_tests.cpp)
+target_compile_features(zig_vstgui_visual_tests PRIVATE cxx_std_17)
+target_compile_definitions(zig_vstgui_visual_tests PRIVATE VSTGUI_ENABLE_XML_PARSER=0)
+target_include_directories(zig_vstgui_visual_tests PRIVATE
+    "${VSTGUI_SOURCE_DIR}"
+    "${CMAKE_CURRENT_LIST_DIR}/../../.vst3-sdk/vst3sdk"
+)
+target_link_libraries(zig_vstgui_visual_tests PRIVATE zig_vstgui_adapter)
+
+add_custom_target(zig_vstgui_visual_tests_run
+    COMMAND $<TARGET_FILE:zig_vstgui_visual_tests>
+        "${CMAKE_CURRENT_LIST_DIR}/testdata/visual"
+        "${CMAKE_BINARY_DIR}/visual-regression"
+    DEPENDS zig_vstgui_visual_tests
+)
+
+add_custom_target(zig_vstgui_visual_tests_update
+    COMMAND $<TARGET_FILE:zig_vstgui_visual_tests>
+        "${CMAKE_CURRENT_LIST_DIR}/testdata/visual"
+        "${CMAKE_BINARY_DIR}/visual-regression"
+        --update
+    DEPENDS zig_vstgui_visual_tests
+)

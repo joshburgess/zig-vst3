@@ -91,6 +91,20 @@ The drawing callback receives a toolkit-neutral component kind, visual state, pa
 
 Filmstrip and sprite controls are not part of the current skin API. No accepted reference design requires them, and the vector, bitmap, and primitive drawing paths already cover the gallery. Add a multi-frame abstraction only when a production control defines its frame layout, scale behavior, and interaction states.
 
+### Visual Regression Tests
+
+The native adapter test build renders fixed headless references through VSTGUI. `control-states-1x.png` and `control-states-2x.png` show normal, hovered, pressed, focused, disabled, and editing slider states from left to right. `meters-assets.png` covers SVG, the visible missing-asset placeholder, and peak, stereo, and gain-reduction meters. The PNG asset is also decoded and validated by the native resource tests.
+
+Each run compares decoded pixels with a channel tolerance of 80 and allows at most 2 percent of pixels to exceed it. The broad channel tolerance absorbs macOS display-profile conversion while exact theme token colors remain covered by unit tests. Geometry, missing regions, large color changes, and state changes still fail the image comparison. A failure writes the actual image and a magenta difference mask under `.vst3-sdk/vstgui-adapter-build/visual-regression`.
+
+`zig build vstgui-adapter` runs interaction tests and visual comparisons. After intentionally reviewing an appearance change, update the references with:
+
+```sh
+cmake --build .vst3-sdk/vstgui-adapter-build --target zig_vstgui_visual_tests_update
+```
+
+The same harness measures repeated warm drawing of a live slider and active peak meter. It fails above the 300 microsecond warm-frame budget recorded in `docs/gui-baseline.md`.
+
 ### Accessibility Semantics
 
 Every VSTGUI component carries toolkit-neutral accessibility metadata. Semantic roles cover sliders, buttons, toggles, choices, text fields, meters, and groups. Nodes also expose a name, description, formatted value, optional range, enabled state, focus state, toggle state, selection state, and read-only state. Value, focus, and state changes invoke an optional backend observer, so a future native bridge can forward the changes without changing parameter controls.

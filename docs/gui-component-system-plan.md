@@ -365,17 +365,26 @@ Completion evidence:
 
 ### Milestone 9: Visual and Interaction Regression Tests
 
-- [ ] Make the gallery render deterministically at fixed logical sizes.
-- [ ] Capture reference images for default, hover, pressed, focused, disabled, and editing states where automation permits.
-- [ ] Add image comparison with an explicit tolerance.
-- [ ] Add scripted gesture, keyboard, resize, and host-update tests.
-- [ ] Keep performance profiling available for static controls and active meters.
+- [x] Make the gallery render deterministically at fixed logical sizes.
+- [x] Capture reference images for default, hover, pressed, focused, disabled, and editing states where automation permits.
+- [x] Add image comparison with an explicit tolerance.
+- [x] Add scripted gesture, keyboard, resize, and host-update tests.
+- [x] Keep performance profiling available for static controls and active meters.
 
 Exit criteria:
 
 - Component appearance changes produce reviewable image diffs.
 - Interaction regressions fail before a real-host test.
 - Warm frame cost stays within the budget recorded in `docs/gui-baseline.md`.
+
+Completion evidence:
+
+- A headless VSTGUI harness renders fixed 384 by 64 control-state images at 1x and 2x plus a 320 by 112 meter and asset image. The control reference presents normal, hovered, pressed, focused, disabled, and editing states in a fixed order.
+- Committed PNG references are decoded before comparison. Each channel allows a difference of 80 and no more than 2 percent of pixels may exceed that threshold. The channel tolerance accounts for display-profile conversion; exact semantic theme colors remain asserted separately. Failures write the actual image and a magenta difference mask in the adapter build directory.
+- The meter and asset reference covers SVG drawing, an unknown-asset sentinel, and peak, stereo, and gain-reduction rendering. Native resource tests separately decode the embedded PNG because the one-pixel fixture is not a useful visual specimen.
+- Native interaction tests script Tab and Shift+Tab traversal, an arrow-key parameter gesture with exact begin, perform, and end counts, host parameter updates, atomic bulk refresh, instance isolation, accepted resize, and rejected undersize requests. Pluginval continues to exercise editor automation and editor open and close while processing.
+- The existing opt-in full-editor profiler remains available. The headless harness also repeats warm draws of a live slider and active peak meter, reports the average, and fails above 300 microseconds. The measured local average is 17 microseconds.
+- `scripts/build_vstgui.sh` and its PowerShell counterpart run native unit, interaction, visual, and warm-render tests. The full Zig and raw ABI suites, every VST3 validator suite, strictness-5 pluginval across all examples, and Linux and Windows cross-bundles remain passing.
 
 ### Milestone 10: Author Documentation and Stability Review
 

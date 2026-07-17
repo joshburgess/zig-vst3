@@ -78,6 +78,8 @@ A strictness-5 pluginval run repeated 50 times completed successfully. A three-s
 
 The opt-in VSTGUI profiler was then exercised with three strictness-5 pluginval repetitions. Editor automation produced 65–67 parameter updates and 67–70 content draws per repetition. Average measured content draw time was 44.9–51.3 microseconds, with a maximum of 282.1 microseconds. Ordinary editor-open tests produced two or three initial draws. After the first cold draw, their maximum was below 300 microseconds. The cold-run maximum was 2.60 milliseconds.
 
+The headless visual regression harness adds a smaller repeated warm-draw check containing one live slider and one active peak meter. On the same macOS development machine it averaged 17 microseconds across 200 draws. The test budget remains 300 microseconds per warm draw. This is a regression ceiling, not a claim that every production editor will have the same cost.
+
 Run the repeatable timing check with:
 
 ```sh
