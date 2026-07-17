@@ -1,6 +1,8 @@
 #include "zig_vstgui_adapter.h"
 
 #include "vstgui/lib/cframe.h"
+#include "vstgui/lib/cdrawcontext.h"
+#include "vstgui/lib/cgradient.h"
 #include "vstgui/lib/controls/cbuttons.h"
 #include "vstgui/lib/controls/cslider.h"
 #include "vstgui/lib/controls/ctextedit.h"
@@ -8,6 +10,8 @@
 #include "vstgui/lib/controls/icontrollistener.h"
 #include "vstgui/lib/events.h"
 #include "vstgui/lib/vstguiinit.h"
+
+#include "pluginterfaces/base/keycodes.h"
 
 #include <algorithm>
 #include <atomic>
@@ -87,10 +91,12 @@ struct EditorListener final : IControlListener {
     ZigVstguiCallbacks callbacks;
     CSlider* slider {nullptr};
     CTextEdit* value_edit {nullptr};
+    CTextButton* resize_button {nullptr};
     ZigVstguiResizeCallbacks resize_callbacks {};
-    bool large_size {false};
     bool updating {false};
     double accepted_value {0.0};
+    uint32_t current_width {400};
+    uint32_t current_height {300};
 
     EditorListener(uint32_t id, ZigVstguiCallbacks value_callbacks)
     : parameter_id(id), callbacks(value_callbacks) {}
@@ -102,14 +108,13 @@ struct EditorListener final : IControlListener {
     void valueChanged(CControl* control) override {
         if (updating) return;
         if (control->getTag() == kResizeTag) {
-            large_size = !large_size;
+            if (control->getValue() != control->getMax()) return;
+            const bool expanded = current_width >= 520 || current_height >= 360;
+            const uint32_t requested_width = expanded ? 400 : 640;
+            const uint32_t requested_height = expanded ? 300 : 420;
             if (!resize_callbacks.request_resize ||
-                resize_callbacks.request_resize(
-                    resize_callbacks.userdata,
-                    large_size ? 640 : 400,
-                    large_size ? 420 : 300
-                ) != 0) {
-                large_size = !large_size;
+                resize_callbacks.request_resize(resize_callbacks.userdata, requested_width, requested_height) != 0) {
+                if (resize_button) resize_button->setTitle("Resize unavailable");
             }
             return;
         }
@@ -139,10 +144,55 @@ struct EditorListener final : IControlListener {
         }
         updating = false;
     }
+
+    void setSize(uint32_t width, uint32_t height) {
+        current_width = width;
+        current_height = height;
+        if (resize_button) {
+            const bool expanded = width >= 520 || height >= 360;
+            resize_button->setTitle(expanded ? "Compact" : "Expand");
+        }
+    }
 };
 
 struct GainSlider final : CSlider {
     using CSlider::CSlider;
+
+    bool handleKey(uint16_t key, int16_t key_code, int16_t modifiers) {
+        VirtualKey virtual_key = VirtualKey::None;
+        switch (key_code) {
+            case Steinberg::KEY_END: virtual_key = VirtualKey::End; break;
+            case Steinberg::KEY_HOME: virtual_key = VirtualKey::Home; break;
+            case Steinberg::KEY_LEFT: virtual_key = VirtualKey::Left; break;
+            case Steinberg::KEY_UP: virtual_key = VirtualKey::Up; break;
+            case Steinberg::KEY_RIGHT: virtual_key = VirtualKey::Right; break;
+            case Steinberg::KEY_DOWN: virtual_key = VirtualKey::Down; break;
+            default: return false;
+        }
+        KeyboardEvent event;
+        event.type = EventType::KeyDown;
+        event.character = key;
+        event.virt = virtual_key;
+        if ((modifiers & 1) != 0) event.modifiers.add(ModifierKey::Shift);
+        if ((modifiers & 2) != 0) event.modifiers.add(ModifierKey::Alt);
+        if ((modifiers & 4) != 0) event.modifiers.add(ModifierKey::Control);
+        if ((modifiers & 8) != 0) event.modifiers.add(ModifierKey::Super);
+        onKeyboardEvent(event);
+        return event.consumed;
+    }
+
+    void draw(CDrawContext* context) override {
+        CSlider::draw(context);
+        const auto bounds = getViewSize();
+        const auto center_x = bounds.left + bounds.getWidth() * getValueNormalized();
+        const auto center_y = bounds.top + bounds.getHeight() / 2.0;
+        CRect thumb(center_x - 8.0, center_y - 8.0, center_x + 8.0, center_y + 8.0);
+        context->setDrawMode(kAntiAliasing);
+        context->setLineWidth(2.0);
+        context->setFrameColor(CColor(17, 113, 91, 255));
+        context->setFillColor(CColor(238, 241, 246, 255));
+        context->drawEllipse(thumb, kDrawFilledAndStroked);
+    }
 
     void onKeyboardEvent(KeyboardEvent& event) override {
         if (event.type == EventType::KeyDown && (event.virt == VirtualKey::Home || event.virt == VirtualKey::End)) {
@@ -305,7 +355,6 @@ struct ZigVstguiEditor {
     EditorListener listener;
     CTextLabel* title {nullptr};
     CTextLabel* help {nullptr};
-    CTextLabel* track {nullptr};
     CSlider* slider {nullptr};
     CTextEdit* value_edit {nullptr};
     CTextButton* resize_button {nullptr};
@@ -329,6 +378,9 @@ struct ZigVstguiEditor {
         if (frame) return;
         frame = new CFrame(CRect(0, 0, width, height), nullptr);
         frame->setBackgroundColor(CColor(22, 25, 31, 255));
+        frame->setFocusDrawingEnabled(true);
+        frame->setFocusColor(CColor(89, 201, 165, 255));
+        frame->setFocusWidth(2.0);
         content = new ProfiledContainer(CRect(0, 0, width, height), profile_enabled ? &metrics : nullptr);
         content->setBackgroundColor(CColor(22, 25, 31, 255));
         frame->addView(content);
@@ -340,18 +392,15 @@ struct ZigVstguiEditor {
         title->setFrameColor(CColor(22, 25, 31, 255));
         content->addView(title);
 
+#if defined(__APPLE__)
+        help = new CTextLabel(CRect(), "Drag | Arrows | Fn+Left/Right limits | Command-click resets");
+#else
         help = new CTextLabel(CRect(), "Drag | Arrows | Home/End | Control-click resets");
+#endif
         help->setFontColor(CColor(157, 166, 181, 255));
         help->setBackColor(CColor(22, 25, 31, 255));
         help->setFrameColor(CColor(22, 25, 31, 255));
         content->addView(help);
-
-        track = new CTextLabel(CRect(), parameter_info.title ? parameter_info.title : "Parameter");
-        track->setFontColor(CColor(89, 201, 165, 255));
-        track->setBackColor(CColor(37, 42, 51, 255));
-        track->setFrameColor(CColor(89, 201, 165, 255));
-        track->setRoundRectRadius(10);
-        content->addView(track);
 
         slider = new GainSlider(
             CRect(),
@@ -366,6 +415,11 @@ struct ZigVstguiEditor {
         slider->setMax(1.f);
         slider->setDefaultValue(static_cast<float>(clampNormalized(parameter_info.default_normalized)));
         slider->setWheelInc(parameter_info.step_count > 0 ? 1.f / static_cast<float>(parameter_info.step_count) : 0.01f);
+        slider->setDrawStyle(CSlider::kDrawFrame | CSlider::kDrawBack | CSlider::kDrawValue);
+        slider->setFrameWidth(2.0);
+        slider->setFrameColor(CColor(73, 82, 97, 255));
+        slider->setBackColor(CColor(37, 42, 51, 255));
+        slider->setValueColor(CColor(17, 113, 91, 255));
         slider->setWantsFocus(true);
         content->addView(slider);
 
@@ -407,15 +461,20 @@ struct ZigVstguiEditor {
         });
         content->addView(value_edit);
 
-        resize_button = new CTextButton(CRect(), &listener, kResizeTag, "Toggle Size");
+        resize_button = new CTextButton(CRect(), &listener, kResizeTag, "Expand");
         resize_button->setTextColor(CColor(238, 241, 246, 255));
-        resize_button->setTextColorHighlighted(CColor(18, 22, 28, 255));
+        resize_button->setTextColorHighlighted(CColor(238, 241, 246, 255));
         resize_button->setFrameColor(CColor(89, 201, 165, 255));
+        resize_button->setFrameColorHighlighted(CColor(124, 232, 197, 255));
+        resize_button->setGradient(owned(CGradient::create(0, 1, CColor(29, 83, 70, 255), CColor(22, 62, 53, 255))));
+        resize_button->setGradientHighlighted(owned(CGradient::create(0, 1, CColor(39, 125, 101, 255), CColor(29, 83, 70, 255))));
         resize_button->setRoundRadius(8);
         content->addView(resize_button);
 
         listener.slider = slider;
         listener.value_edit = value_edit;
+        listener.resize_button = resize_button;
+        listener.setSize(width, height);
         layout();
         listener.setValue(listener.accepted_value);
     }
@@ -498,12 +557,12 @@ struct ZigVstguiEditor {
         content = nullptr;
         title = nullptr;
         help = nullptr;
-        track = nullptr;
         slider = nullptr;
         value_edit = nullptr;
         resize_button = nullptr;
         listener.slider = nullptr;
         listener.value_edit = nullptr;
+        listener.resize_button = nullptr;
     }
 
     void layout() {
@@ -516,7 +575,6 @@ struct ZigVstguiEditor {
         const double value_left = margin;
         if (title) title->setViewSize(CRect(margin, 16, right, 52), true);
         if (help) help->setViewSize(CRect(margin, 54, right, 82), true);
-        if (track) track->setViewSize(CRect(margin, track_top, right, track_top + 52), true);
         if (slider) {
             slider->setViewSize(CRect(margin, track_top, right, track_top + 52), true);
         }
@@ -552,6 +610,7 @@ extern "C" int32_t zig_vstgui_editor_resize(ZigVstguiEditor* editor, uint32_t wi
     editor->height = height;
     if (!editor->frame->setSize(width, height)) return -1;
     editor->metrics.resize_count += 1;
+    editor->listener.setSize(width, height);
     editor->layout();
     return 0;
 }
@@ -568,6 +627,24 @@ extern "C" void zig_vstgui_editor_set_parameter(ZigVstguiEditor* editor, double 
         editor->metrics.parameter_update_count += 1;
         editor->listener.setValue(normalized);
     }
+}
+
+extern "C" int32_t zig_vstgui_editor_key_down(
+    ZigVstguiEditor* editor,
+    uint16_t key,
+    int16_t key_code,
+    int16_t modifiers
+) {
+    if (!editor || !editor->frame || !editor->slider) return -1;
+    auto* slider = static_cast<GainSlider*>(editor->slider);
+    if (!slider->handleKey(key, key_code, modifiers)) return -1;
+    editor->frame->setFocusView(editor->slider);
+    return 0;
+}
+
+extern "C" void zig_vstgui_editor_set_focus(ZigVstguiEditor* editor, int32_t focused) {
+    if (!editor || !editor->frame) return;
+    editor->frame->onActivate(focused != 0);
 }
 
 extern "C" void zig_vstgui_editor_set_frame(ZigVstguiEditor* editor, void* plug_frame) {

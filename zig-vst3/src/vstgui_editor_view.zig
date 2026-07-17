@@ -48,6 +48,8 @@ extern fn zig_vstgui_editor_destroy(*Editor) void;
 extern fn zig_vstgui_editor_resize(*Editor, types.uint32, types.uint32) types.int32;
 extern fn zig_vstgui_editor_set_scale(*Editor, f64) types.int32;
 extern fn zig_vstgui_editor_set_parameter(*Editor, f64) void;
+extern fn zig_vstgui_editor_key_down(*Editor, types.char16, types.int16, types.int16) types.int32;
+extern fn zig_vstgui_editor_set_focus(*Editor, types.int32) void;
 extern fn zig_vstgui_editor_set_frame(*Editor, ?*iplugview.IPlugFrame) void;
 extern fn zig_vstgui_editor_set_wayland_host(*Editor, ?*anyopaque) void;
 extern fn zig_vstgui_editor_set_resize_callbacks(*Editor, ResizeCallbacks) void;
@@ -97,6 +99,33 @@ const View = vst_plug_view.PlugView(1, struct {
             std.log.err("VSTGUI editor rejected size {d}x{d}", .{ width, height });
             return types.kResultFalse;
         }
+        return types.kResultOk;
+    }
+
+    pub fn onKeyDown(self: anytype, key: types.char16, key_code: types.int16, modifiers: types.int16) types.tresult {
+        const state = binding(self) orelse return types.kResultFalse;
+        return if (zig_vstgui_editor_key_down(state.editor, key, key_code, modifiers) == 0)
+            types.kResultOk
+        else
+            types.kResultFalse;
+    }
+
+    pub fn onKeyUp(_: anytype, _: types.char16, key_code: types.int16, _: types.int16) types.tresult {
+        return switch (key_code) {
+            iplugview.VirtualKeyCode.end,
+            iplugview.VirtualKeyCode.home,
+            iplugview.VirtualKeyCode.left,
+            iplugview.VirtualKeyCode.up,
+            iplugview.VirtualKeyCode.right,
+            iplugview.VirtualKeyCode.down,
+            => types.kResultOk,
+            else => types.kResultFalse,
+        };
+    }
+
+    pub fn onFocus(self: anytype, state: types.TBool) types.tresult {
+        const editor_state = binding(self) orelse return types.kResultFalse;
+        zig_vstgui_editor_set_focus(editor_state.editor, state);
         return types.kResultOk;
     }
 

@@ -58,7 +58,7 @@ zig build validate-gain
 zig build pluginval-gain
 ```
 
-The current visible reference control supports pointer dragging, arrow keys, Home and End, exact text entry, Control-click reset, resize constraints, and content scale. Host parameter changes are broadcast through a bounded per-controller observer list, so open views follow automation and restored state without producing a new gesture.
+The current visible reference control supports pointer dragging, arrow keys, Home and End, exact text entry, resize constraints, and content scale. Default reset uses Command-click on macOS and Control-click on Windows and Linux. Host parameter changes are broadcast through a bounded per-controller observer list, so open views follow automation and restored state without producing a new gesture.
 
 VSTGUI dependencies remain optional at the package boundary. A plugin can implement the same framework adapter with another toolkit or a custom renderer.
 

@@ -23,6 +23,15 @@ pub const PlatformType = struct {
     pub const kPlatformTypeWaylandSurfaceID: base_types.FIDString = "WaylandSurfaceID";
 };
 
+pub const VirtualKeyCode = struct {
+    pub const end: base_types.int16 = 9;
+    pub const home: base_types.int16 = 10;
+    pub const left: base_types.int16 = 11;
+    pub const up: base_types.int16 = 12;
+    pub const right: base_types.int16 = 13;
+    pub const down: base_types.int16 = 14;
+};
+
 pub const IPlugViewVTable = extern struct {
     queryInterface: *const fn (*anyopaque, *const tuid.TUID, *?*anyopaque) callconv(.c) base_types.tresult,
     addRef: *const fn (*anyopaque) callconv(.c) base_types.uint32,
