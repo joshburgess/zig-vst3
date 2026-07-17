@@ -20,11 +20,28 @@ pub const Parameter = struct {
     control_kind: vstgui_editor_view.ControlKind = .linear_slider,
 };
 
+pub const Meter = struct {
+    title: [*:0]const u8,
+    kind: vstgui_editor_view.MeterKind,
+    first_source_id: types.uint32,
+    second_source_id: types.uint32 = 0,
+};
+
 pub fn createView(comptime Controller: type, controller: *ivsteditcontroller.IEditController, name: types.FIDString, parameter: Parameter) ?*iplugview.IPlugView {
     return createMultiView(Controller, controller, name, &.{parameter});
 }
 
 pub fn createMultiView(comptime Controller: type, controller: *ivsteditcontroller.IEditController, name: types.FIDString, parameters: []const Parameter) ?*iplugview.IPlugView {
+    return createMultiViewWithMeters(Controller, controller, name, parameters, &.{});
+}
+
+pub fn createMultiViewWithMeters(
+    comptime Controller: type,
+    controller: *ivsteditcontroller.IEditController,
+    name: types.FIDString,
+    parameters: []const Parameter,
+    meters: []const Meter,
+) ?*iplugview.IPlugView {
     if (!std.mem.eql(u8, std.mem.span(name), std.mem.span(ivsteditcontroller.ViewType.kEditor))) return null;
     if (comptime vstgui_adapter_enabled) {
         const Bridge = NativeBridge(Controller);
@@ -51,7 +68,17 @@ pub fn createMultiView(comptime Controller: type, controller: *ivsteditcontrolle
                 .default_normalized = parameter.default_normalized,
             } };
         }
-        return vstgui_editor_view.create(controller, bindings[0..parameters.len], .{
+        if (meters.len > vstgui_editor_view.max_meters) return null;
+        var meter_descriptions: [vstgui_editor_view.max_meters]vstgui_editor_view.MeterDescription = undefined;
+        for (meters, 0..) |meter, index| {
+            meter_descriptions[index] = .{
+                .title = meter.title,
+                .kind = meter.kind,
+                .first_source_id = meter.first_source_id,
+                .second_source_id = meter.second_source_id,
+            };
+        }
+        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
             .perform_edit = Bridge.performEdit,

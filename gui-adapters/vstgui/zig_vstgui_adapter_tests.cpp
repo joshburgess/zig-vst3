@@ -2,6 +2,7 @@
 #include "zig_vstgui_controls.h"
 #include "zig_vstgui_editor.h"
 #include "zig_vstgui_layout.h"
+#include "zig_vstgui_meters.h"
 
 #include "pluginterfaces/base/keycodes.h"
 
@@ -20,6 +21,7 @@ struct CallbackState {
     uint32_t context_menu_count {0};
     int32_t context_x {0};
     int32_t context_y {0};
+    double meter_values[4] {0.0, 0.0, 0.0, 0.0};
 };
 
 struct AccessibilityObserverState {
@@ -60,6 +62,11 @@ int32_t showContextMenu(void* userdata, uint32_t parameter_id, int32_t x, int32_
     state->context_x = x;
     state->context_y = y;
     return 0;
+}
+
+double loadMeter(void* userdata, uint32_t source_id) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    return source_id < 4 ? state->meter_values[source_id] : 0.0;
 }
 
 bool closeEnough(double left, double right) {
@@ -239,8 +246,12 @@ int testMultiParameterRouting() {
         {30, 0.00, {"Boolean", "", 1, 0.0}, ZIG_VSTGUI_CONTROL_TOGGLE},
         {40, 1.00, {"Enum", "", 2, 0.0}, ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN},
     };
-
-    ZigVstguiEditor first(descriptions, 4, callbacks);
+    const ZigVstguiMeterDescription meters[] = {
+        {"Peak", ZIG_VSTGUI_METER_PEAK, 0, 0},
+        {"Stereo", ZIG_VSTGUI_METER_STEREO, 1, 2},
+        {"Reduction", ZIG_VSTGUI_METER_GAIN_REDUCTION, 3, 0},
+    };
+    ZigVstguiEditor first(descriptions, 4, callbacks, meters, 3, {&state, loadMeter});
     ZigVstguiEditor second(descriptions, 4, callbacks);
     if (!first.valid() || !second.valid()) return 1;
     const auto* slider_accessibility = first.parameterAccessibility(10, false);
@@ -254,6 +265,20 @@ int testMultiParameterRouting() {
     if (!toggle_accessibility || toggle_accessibility->role() != ZigVstgui::AccessibilityRole::toggle) return 20;
     if (first.parameterAccessibility(30, true) || first.parameterAccessibility(99, false)) return 21;
     if (first.resizeAccessibility().role() != ZigVstgui::AccessibilityRole::button) return 22;
+    state.meter_values[0] = 0.8;
+    state.meter_values[1] = 0.6;
+    state.meter_values[2] = 0.4;
+    state.meter_values[3] = 0.25;
+    for (uint32_t index = 0; index < 3; ++index) {
+        const auto* accessibility = first.meterAccessibility(index);
+        if (!accessibility || accessibility->role() != ZigVstgui::AccessibilityRole::meter ||
+            !accessibility->state().read_only) return 25;
+        if (!first.tickMeter(index, 0.0)) return 26;
+    }
+    if (!closeEnough(first.meterLevel(0, 0), 0.8)) return 27;
+    if (!closeEnough(first.meterLevel(1, 0), 0.6) || !closeEnough(first.meterLevel(1, 1), 0.4)) return 28;
+    if (!closeEnough(first.meterLevel(2, 0), 0.25)) return 29;
+    if (first.meterAccessibility(3) || first.tickMeter(3, 0.0)) return 30;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 0) || first.focusPosition() != 0) return 12;
     if (!slider_accessibility->state().focused) return 23;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 0) || first.focusPosition() != 1) return 13;
@@ -355,6 +380,7 @@ int testLayoutSolvers() {
 int testGalleryLayoutExtents() {
     const auto& theme = ZigVstgui::defaultTheme();
     constexpr uint32_t parameter_count = 4;
+    constexpr uint32_t meter_count = 3;
     const uint32_t sizes[][2] = {{320, 240}, {1000, 700}};
     for (const auto& size : sizes) {
         const double width = size[0];
@@ -431,7 +457,58 @@ int testGalleryLayoutExtents() {
         );
         if (row_bounds[parameter_count - 1].bottom > footer.top) return 7;
         if (footer.left < margin || footer.right > right || footer.bottom > height) return 8;
+        const double meter_top = row_bounds[parameter_count - 1].bottom + theme.spacing.small;
+        const double meter_bottom = controls_bottom;
+        const double meter_gap = theme.spacing.small;
+        const double meter_width = (right - margin - meter_gap * (meter_count - 1)) / meter_count;
+        if (meter_top >= meter_bottom || meter_width <= 0.0) return 9;
+        double previous_right = margin;
+        for (uint32_t index = 0; index < meter_count; ++index) {
+            const double left = margin + index * (meter_width + meter_gap);
+            const double meter_right = left + meter_width;
+            if (left < margin || meter_right > right || left < previous_right) return 10;
+            previous_right = meter_right;
+        }
+        if (meter_bottom > footer.top) return 11;
     }
+    return 0;
+}
+
+int testMeterAbi() {
+    if (zig_vstgui_adapter_version() != 4) return 1;
+    const ZigVstguiParameterDescription parameter {
+        1,
+        0.5,
+        {"Gain", "dB", 0, 0.5},
+        ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+    };
+    if (zig_vstgui_editor_create_with_meters(&parameter, 1, {}, nullptr, 1, {})) return 2;
+    ZigVstguiMeterDescription meters[ZIG_VSTGUI_MAX_METERS + 1] {};
+    if (zig_vstgui_editor_create_with_meters(
+            &parameter,
+            1,
+            {},
+            meters,
+            ZIG_VSTGUI_MAX_METERS + 1,
+            {}
+        )) return 3;
+    return 0;
+}
+
+int testMeterBallistics() {
+    ZigVstgui::MeterBallistics meter(500.0, 1.5);
+    if (!meter.update(0.8, 0.0)) return 1;
+    if (!closeEnough(meter.level(), 0.8) || !closeEnough(meter.peak(), 0.8)) return 2;
+    if (!meter.update(0.2, 100.0)) return 3;
+    if (!closeEnough(meter.level(), 0.65) || !closeEnough(meter.peak(), 0.8)) return 4;
+    if (!meter.update(0.2, 400.0)) return 5;
+    if (!closeEnough(meter.level(), 0.2) || !closeEnough(meter.peak(), 0.8)) return 6;
+    if (!meter.update(0.2, 100.0)) return 7;
+    if (!closeEnough(meter.level(), 0.2) || !closeEnough(meter.peak(), 0.65)) return 8;
+    if (!meter.update(2.0, 0.0) || !closeEnough(meter.level(), 1.0)) return 9;
+    if (!meter.update(std::nan(""), 1000.0) || !closeEnough(meter.level(), 0.0)) return 10;
+    meter.reset();
+    if (!closeEnough(meter.level(), 0.0) || !closeEnough(meter.peak(), 0.0)) return 11;
     return 0;
 }
 
@@ -448,5 +525,7 @@ int main() {
     if (const int result = testMultiParameterRouting(); result != 0) return 90 + result;
     if (const int result = testLayoutSolvers(); result != 0) return 110 + result;
     if (const int result = testGalleryLayoutExtents(); result != 0) return 130 + result;
+    if (const int result = testMeterBallistics(); result != 0) return 150 + result;
+    if (const int result = testMeterAbi(); result != 0) return 170 + result;
     return 0;
 }

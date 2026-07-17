@@ -97,6 +97,47 @@ pub const EditorActivity = struct {
     }
 };
 
+/// Fixed scalar meter sources whose producer is disabled while no editor is open.
+pub fn MeterBank(comptime Float: type, comptime source_count: usize) type {
+    if (source_count == 0) @compileError("MeterBank source count must be positive");
+    const Snapshot = ScalarSnapshot(Float);
+
+    return struct {
+        snapshots: [source_count]Snapshot,
+        activity: EditorActivity = .{},
+
+        pub fn init(initial: Float) @This() {
+            var bank: @This() = undefined;
+            for (&bank.snapshots) |*snapshot| snapshot.* = Snapshot.init(initial);
+            bank.activity = .{};
+            return bank;
+        }
+
+        pub fn editorOpened(self: *@This()) void {
+            self.activity.opened();
+        }
+
+        pub fn editorClosed(self: *@This()) void {
+            self.activity.closed();
+        }
+
+        pub fn publish(self: *@This(), source: usize, value: Float) bool {
+            if (source >= source_count or !self.activity.active()) return false;
+            self.snapshots[source].store(value);
+            return true;
+        }
+
+        pub fn load(self: *const @This(), source: usize) ?Float {
+            if (source >= source_count) return null;
+            return self.snapshots[source].load();
+        }
+
+        pub fn producing(self: *const @This()) bool {
+            return self.activity.active();
+        }
+    };
+}
+
 test "scalar snapshot preserves the latest value" {
     var snapshot = ScalarSnapshot(f64).init(0.25);
     try std.testing.expectEqual(@as(f64, 0.25), snapshot.load());
@@ -133,4 +174,21 @@ test "editor activity tracks multiple views without underflow" {
     activity.closed();
     activity.closed();
     try std.testing.expect(!activity.active());
+}
+
+test "meter bank gates lock-free production by editor activity" {
+    var meters = MeterBank(f32, 2).init(0.0);
+    try std.testing.expect(!meters.publish(0, 0.5));
+    meters.editorOpened();
+    try std.testing.expect(meters.producing());
+    try std.testing.expect(meters.publish(0, 0.5));
+    try std.testing.expect(meters.publish(1, 0.25));
+    try std.testing.expect(!meters.publish(2, 1.0));
+    try std.testing.expectEqual(@as(?f32, 0.5), meters.load(0));
+    try std.testing.expectEqual(@as(?f32, 0.25), meters.load(1));
+    try std.testing.expectEqual(@as(?f32, null), meters.load(2));
+    meters.editorClosed();
+    try std.testing.expect(!meters.producing());
+    try std.testing.expect(!meters.publish(0, 1.0));
+    try std.testing.expectEqual(@as(?f32, 0.5), meters.load(0));
 }

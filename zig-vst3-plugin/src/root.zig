@@ -3,7 +3,7 @@ const vst3 = @import("zig-vst3");
 
 pub const core = @import("zig-vst3-plugin-core");
 pub const gui = @import("gui.zig");
-pub const gui_telemetry = @import("gui_telemetry.zig");
+pub const gui_telemetry = core.gui_telemetry;
 pub const parameters = core.parameters;
 pub const plugin = core.plugin;
 pub const process = core.process;

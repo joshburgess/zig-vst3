@@ -31,6 +31,7 @@ enum class ComponentKind : std::size_t {
     segmented,
     value_field,
     resize_button,
+    meter,
     count,
 };
 

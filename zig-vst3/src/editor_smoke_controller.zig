@@ -22,11 +22,15 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const parameter_set = &editor_smoke_spec.parameter_set;
 
     pub fn createView(controller: *ivsteditcontroller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
-        return parameter_editor.createMultiView(Controller, controller, name, &.{
+        return parameter_editor.createMultiViewWithMeters(Controller, controller, name, &.{
             .{ .id = gain_param_id, .title = "Gain", .units = "x", .step_count = 0, .default_normalized = 1.0, .control_kind = .rotary_knob },
             .{ .id = voices_param_id, .title = "Voices", .units = "voices", .step_count = 3, .default_normalized = 0.0, .control_kind = .segmented_enum },
             .{ .id = bypass_param_id, .title = "Bypass", .step_count = 1, .default_normalized = 0.0, .control_kind = .toggle },
             .{ .id = mode_param_id, .title = "Mode", .step_count = 2, .default_normalized = 0.0, .control_kind = .enum_dropdown },
+        }, &.{
+            .{ .title = "Peak", .kind = .peak, .first_source_id = 0 },
+            .{ .title = "Stereo", .kind = .stereo, .first_source_id = 1, .second_source_id = 2 },
+            .{ .title = "Reduction", .kind = .gain_reduction, .first_source_id = 3 },
         });
     }
 });

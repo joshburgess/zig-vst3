@@ -77,6 +77,16 @@ Theme makeTheme(const ColorTokens& colors) {
         theme.radii.button,
         0.0,
     };
+    theme.component_styles[index(ComponentKind::meter)] = {
+        colors.surface_raised,
+        colors.text_primary,
+        colors.control_track,
+        colors.control_fill_highlighted,
+        1.f,
+        theme.control_metrics.frame_width,
+        theme.radii.control,
+        0.0,
+    };
 
     for (std::size_t kind = 0; kind < index(ComponentKind::count); ++kind) {
         theme.state_overrides[kind][index(VisualState::hovered)].accent = colors.control_fill_highlighted;

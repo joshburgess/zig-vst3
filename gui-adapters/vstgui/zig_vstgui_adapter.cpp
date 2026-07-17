@@ -8,8 +8,27 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create(
     uint32_t parameter_count,
     ZigVstguiCallbacks callbacks
 ) {
+    return zig_vstgui_editor_create_with_meters(parameters, parameter_count, callbacks, nullptr, 0, {});
+}
+
+extern "C" ZigVstguiEditor* zig_vstgui_editor_create_with_meters(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks
+) {
     if (!parameters || parameter_count == 0 || parameter_count > ZIG_VSTGUI_MAX_PARAMETERS) return nullptr;
-    auto* editor = new (std::nothrow) ZigVstguiEditor(parameters, parameter_count, callbacks);
+    if ((!meters && meter_count > 0) || meter_count > ZIG_VSTGUI_MAX_METERS) return nullptr;
+    auto* editor = new (std::nothrow) ZigVstguiEditor(
+        parameters,
+        parameter_count,
+        callbacks,
+        meters,
+        meter_count,
+        meter_callbacks
+    );
     if (editor && !editor->valid()) {
         delete editor;
         return nullptr;
@@ -90,5 +109,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 3;
+    return 4;
 }

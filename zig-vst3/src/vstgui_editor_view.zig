@@ -5,6 +5,7 @@ const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_plug_view = @import("vst_plug_view.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+const gui_telemetry = @import("zig-vst3-plugin-core").gui_telemetry;
 
 const Editor = opaque {};
 
@@ -53,6 +54,26 @@ pub const ParameterValue = extern struct {
 };
 
 pub const max_parameters = 64;
+pub const max_meters = 8;
+pub const max_meter_sources = 16;
+
+pub const MeterKind = enum(c_int) {
+    peak,
+    stereo,
+    gain_reduction,
+};
+
+pub const MeterDescription = extern struct {
+    title: [*:0]const u8,
+    kind: MeterKind,
+    first_source_id: types.uint32,
+    second_source_id: types.uint32,
+};
+
+const MeterCallbacks = extern struct {
+    userdata: ?*anyopaque,
+    load: *const fn (?*anyopaque, types.uint32) callconv(.c) f64,
+};
 
 pub const ObserverCallbacks = struct {
     userdata: *anyopaque,
@@ -66,6 +87,14 @@ const ResizeCallbacks = extern struct {
 };
 
 extern fn zig_vstgui_editor_create([*]const ParameterDescription, types.uint32, Callbacks) ?*Editor;
+extern fn zig_vstgui_editor_create_with_meters(
+    [*]const ParameterDescription,
+    types.uint32,
+    Callbacks,
+    ?[*]const MeterDescription,
+    types.uint32,
+    MeterCallbacks,
+) ?*Editor;
 extern fn zig_vstgui_editor_open(*Editor, ?*anyopaque, Platform) types.int32;
 extern fn zig_vstgui_editor_close(*Editor) void;
 extern fn zig_vstgui_editor_destroy(*Editor) void;
@@ -83,6 +112,18 @@ const Binding = struct {
     editor: *Editor,
     controller: *ivsteditcontroller.IEditController,
     observer_callbacks: ObserverCallbacks,
+    telemetry: *TelemetryState,
+    attached: bool = false,
+};
+
+const MeterBank = gui_telemetry.MeterBank(f64, max_meter_sources);
+
+const TelemetryState = struct {
+    meters: MeterBank,
+
+    fn init() TelemetryState {
+        return .{ .meters = MeterBank.init(0.0) };
+    }
 };
 
 fn binding(self: anytype) ?*Binding {
@@ -106,11 +147,19 @@ const View = vst_plug_view.PlugView(1, struct {
             std.log.err("VSTGUI editor attachment failed for {s}", .{@tagName(platform)});
             return types.kResultFalse;
         }
+        if (!state.attached) {
+            state.telemetry.meters.editorOpened();
+            state.attached = true;
+        }
         return types.kResultOk;
     }
 
     pub fn removed(self: anytype) types.tresult {
         const state = binding(self) orelse return types.kResultFalse;
+        if (state.attached) {
+            state.telemetry.meters.editorClosed();
+            state.attached = false;
+        }
         zig_vstgui_editor_close(state.editor);
         return types.kResultOk;
     }
@@ -179,18 +228,27 @@ const View = vst_plug_view.PlugView(1, struct {
     pub fn destroy(self: anytype) void {
         if (self.context) |context| {
             const state: *Binding = @ptrCast(@alignCast(context));
+            if (state.attached) state.telemetry.meters.editorClosed();
             state.observer_callbacks.unsubscribe(state.observer_callbacks.userdata, state.editor);
             zig_vstgui_editor_destroy(state.editor);
             _ = state.controller.vtable.release(state.controller);
+            std.heap.page_allocator.destroy(state.telemetry);
             std.heap.page_allocator.destroy(state);
             self.context = null;
         }
     }
 });
 
-pub fn create(controller: *ivsteditcontroller.IEditController, parameters: []const ParameterInfoBinding, callbacks: Callbacks, observer_callbacks: ObserverCallbacks, wayland_host: ?*anyopaque) ?*iplugview.IPlugView {
+pub fn create(
+    controller: *ivsteditcontroller.IEditController,
+    parameters: []const ParameterInfoBinding,
+    meters: []const MeterDescription,
+    callbacks: Callbacks,
+    observer_callbacks: ObserverCallbacks,
+    wayland_host: ?*anyopaque,
+) ?*iplugview.IPlugView {
     if (builtin.os.tag != .macos and builtin.os.tag != .windows and builtin.os.tag != .linux) return null;
-    if (parameters.len == 0 or parameters.len > max_parameters) return null;
+    if (parameters.len == 0 or parameters.len > max_parameters or meters.len > max_meters) return null;
     var descriptions: [max_parameters]ParameterDescription = undefined;
     for (parameters, 0..) |parameter, index| {
         descriptions[index] = .{
@@ -200,21 +258,41 @@ pub fn create(controller: *ivsteditcontroller.IEditController, parameters: []con
             .control_kind = parameter.control_kind,
         };
     }
-    const editor = zig_vstgui_editor_create(&descriptions, @intCast(parameters.len), callbacks) orelse return null;
+    const telemetry = std.heap.page_allocator.create(TelemetryState) catch return null;
+    telemetry.* = TelemetryState.init();
+    const editor = zig_vstgui_editor_create_with_meters(
+        &descriptions,
+        @intCast(parameters.len),
+        callbacks,
+        if (meters.len == 0) null else meters.ptr,
+        @intCast(meters.len),
+        .{ .userdata = telemetry, .load = loadMeter },
+    ) orelse {
+        std.heap.page_allocator.destroy(telemetry);
+        return null;
+    };
     zig_vstgui_editor_set_wayland_host(editor, wayland_host);
     const state = std.heap.page_allocator.create(Binding) catch {
         zig_vstgui_editor_destroy(editor);
+        std.heap.page_allocator.destroy(telemetry);
         return null;
     };
-    state.* = .{ .editor = editor, .controller = controller, .observer_callbacks = observer_callbacks };
+    state.* = .{
+        .editor = editor,
+        .controller = controller,
+        .observer_callbacks = observer_callbacks,
+        .telemetry = telemetry,
+    };
     if (!observer_callbacks.subscribe(observer_callbacks.userdata, editor)) {
         std.heap.page_allocator.destroy(state);
+        std.heap.page_allocator.destroy(telemetry);
         zig_vstgui_editor_destroy(editor);
         return null;
     }
     const view = View.create() orelse {
         observer_callbacks.unsubscribe(observer_callbacks.userdata, editor);
         std.heap.page_allocator.destroy(state);
+        std.heap.page_allocator.destroy(telemetry);
         zig_vstgui_editor_destroy(editor);
         return null;
     };
@@ -238,6 +316,11 @@ pub fn create(controller: *ivsteditcontroller.IEditController, parameters: []con
         return null;
     }
     return view.asInterface();
+}
+
+fn loadMeter(userdata: ?*anyopaque, source_id: types.uint32) callconv(.c) f64 {
+    const state: *TelemetryState = @ptrCast(@alignCast(userdata orelse return 0.0));
+    return state.meters.load(source_id) orelse 0.0;
 }
 
 fn requestEditorResize(userdata: ?*anyopaque, width: types.uint32, height: types.uint32) callconv(.c) types.int32 {

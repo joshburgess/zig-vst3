@@ -46,6 +46,26 @@ typedef struct ZigVstguiParameterValue {
 
 enum { ZIG_VSTGUI_MAX_PARAMETERS = 64 };
 
+typedef enum ZigVstguiMeterKind {
+    ZIG_VSTGUI_METER_PEAK = 0,
+    ZIG_VSTGUI_METER_STEREO = 1,
+    ZIG_VSTGUI_METER_GAIN_REDUCTION = 2
+} ZigVstguiMeterKind;
+
+typedef struct ZigVstguiMeterDescription {
+    const char* title;
+    ZigVstguiMeterKind kind;
+    uint32_t first_source_id;
+    uint32_t second_source_id;
+} ZigVstguiMeterDescription;
+
+typedef struct ZigVstguiMeterCallbacks {
+    void* userdata;
+    double (*load)(void* userdata, uint32_t source_id);
+} ZigVstguiMeterCallbacks;
+
+enum { ZIG_VSTGUI_MAX_METERS = 8 };
+
 typedef struct ZigVstguiResizeCallbacks {
     void* userdata;
     int32_t (*request_resize)(void* userdata, uint32_t width, uint32_t height);
@@ -64,6 +84,14 @@ ZigVstguiEditor* zig_vstgui_editor_create(
     const ZigVstguiParameterDescription* parameters,
     uint32_t parameter_count,
     ZigVstguiCallbacks callbacks
+);
+ZigVstguiEditor* zig_vstgui_editor_create_with_meters(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks
 );
 int32_t zig_vstgui_editor_open(ZigVstguiEditor* editor, void* parent, ZigVstguiPlatform platform);
 void zig_vstgui_editor_close(ZigVstguiEditor* editor);

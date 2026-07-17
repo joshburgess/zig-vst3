@@ -98,8 +98,15 @@ Parameter controls do not need an audio-to-GUI message queue. For meters and ana
 - `SpscQueue(T, capacity)` transports bounded visualization records from one producer to one consumer. A full queue drops new records and counts them.
 - `RepaintCoalescer` allows only one pending repaint request.
 - `EditorActivity` lets the processor skip editor-only analysis while every editor is closed.
+- `MeterBank(Float, count)` combines fixed scalar snapshots with editor activity. `publish` is a bounded atomic store while any editor is open and a no-op while all editors are closed.
+
+The VSTGUI adapter provides peak, stereo, and gain-reduction meters. Meter descriptions select one or two scalar source IDs. A 33 millisecond GUI timer loads the latest snapshots, applies peak hold and decay, updates semantic value text, and invalidates only when the displayed state changes. The timer starts after attachment and stops before removal. Editors without meters create no timer.
+
+Peak and gain-reduction sources use normalized values from 0 to 1. Stereo meters use two independent normalized sources. Audio-thread publishers should compute one bounded scalar per source and call `MeterBank.publish`; all ballistics, formatting, drawing, and repaint work stays on the GUI thread.
 
 Overflow is a visual quality loss, never a reason to wait on the audio thread. The processor must not allocate, lock a GUI mutex, call the operating system, or perform unbounded work for an editor.
+
+Spectrum analyzers are intentionally not part of the current component set. Define a representative plugin, bin count, update rate, queue capacity, and overflow behavior before adding one.
 
 ## Lifecycle Checklist
 

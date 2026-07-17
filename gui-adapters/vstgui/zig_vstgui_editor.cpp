@@ -29,9 +29,12 @@ const ZigVstgui::Theme& selectedTheme() {
 ZigVstguiEditor::ZigVstguiEditor(
     const ZigVstguiParameterDescription* parameters,
     uint32_t value_parameter_count,
-    ZigVstguiCallbacks callbacks
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t value_meter_count,
+    ZigVstguiMeterCallbacks value_meter_callbacks
 )
-: theme_resolver(selectedTheme()) {
+: meter_count(value_meter_count), meter_callbacks(value_meter_callbacks), theme_resolver(selectedTheme()) {
     if (editor_count.fetch_add(1, std::memory_order_acq_rel) == 0) VSTGUI::init(nullptr);
     initialized = true;
     profile_enabled = std::getenv("ZIG_VSTGUI_PROFILE") != nullptr;
@@ -47,6 +50,12 @@ ZigVstguiEditor::ZigVstguiEditor(
         parameter_info[index] = parameters[index].info;
         parameter_control_kinds[index] = parameters[index].control_kind;
         parameter_count += 1;
+    }
+    for (uint32_t index = 0; index < meter_count; ++index) {
+        if (!meters[index].title) return;
+        meter_descriptions[index] = meters[index];
+        meter_controls[index].reset(new (std::nothrow) ZigVstgui::MeterControl());
+        if (!meter_controls[index]) return;
     }
     buildFrame();
 }
@@ -67,13 +76,16 @@ bool ZigVstguiEditor::open(void* parent, ZigVstguiPlatform platform) {
     if (!frame) buildFrame();
     if (!ZigVstgui::openFrame(frame, parent, platform, plug_frame, wayland_host)) return false;
     metrics.open_count += 1;
+    for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->start();
     return true;
 }
 
 void ZigVstguiEditor::close() {
+    for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->stop();
     if (!frame || !frame->getPlatformFrame()) return;
     for (uint32_t index = 0; index < parameter_count; ++index) parameter_controls[index]->clear();
     resize_control.clear();
+    for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->clear();
     title_component.clear();
     help_component.clear();
     metrics.close_count += 1;
@@ -138,6 +150,19 @@ const ZigVstgui::AccessibilityNode* ZigVstguiEditor::parameterAccessibility(
 
 const ZigVstgui::AccessibilityNode& ZigVstguiEditor::resizeAccessibility() const {
     return resize_control.buttonAccessibility();
+}
+
+const ZigVstgui::AccessibilityNode* ZigVstguiEditor::meterAccessibility(uint32_t index) const {
+    return index < meter_count ? &meter_controls[index]->accessibilityNode() : nullptr;
+}
+
+bool ZigVstguiEditor::tickMeter(uint32_t index, double elapsed_ms) {
+    return index < meter_count && meter_controls[index]->tick(elapsed_ms);
+}
+
+double ZigVstguiEditor::meterLevel(uint32_t index, uint32_t channel) const {
+    if (index >= meter_count || !meter_controls[index]->meterView()) return 0.0;
+    return meter_controls[index]->meterView()->level(channel);
 }
 
 int32_t ZigVstguiEditor::focusPosition() const {
@@ -272,6 +297,21 @@ void ZigVstguiEditor::buildFrame() {
             theme_resolver
         );
     }
+    for (uint32_t index = 0; index < meter_count; ++index) {
+        const auto& description = meter_descriptions[index];
+        ZigVstgui::MeterVariant variant = ZigVstgui::MeterVariant::peak;
+        if (description.kind == ZIG_VSTGUI_METER_STEREO) variant = ZigVstgui::MeterVariant::stereo;
+        if (description.kind == ZIG_VSTGUI_METER_GAIN_REDUCTION) variant = ZigVstgui::MeterVariant::gain_reduction;
+        meter_controls[index]->build(
+            content,
+            description.title,
+            variant,
+            description.first_source_id,
+            description.second_source_id,
+            {meter_callbacks.userdata, meter_callbacks.load},
+            theme_resolver
+        );
+    }
     resize_control.build(content, theme_resolver);
     resize_control.setSize(width, height);
     layout();
@@ -296,6 +336,7 @@ void ZigVstguiEditor::layout() {
     );
     title_component.setBounds(VSTGUI::CRect(margin, 16, right, 52));
     help_component.setBounds(VSTGUI::CRect(margin, 54, right, 82));
+    double meters_top = 92.0;
     if (parameter_count == 1) {
         title_component.setVisible(true);
         help_component.setVisible(true);
@@ -314,6 +355,7 @@ void ZigVstguiEditor::layout() {
                 height - margin
             )
         );
+        meters_top = track_top + theme.control_metrics.control_height + theme.spacing.small;
     } else {
         const auto mode = ZigVstgui::layoutMode(width, height);
         const bool expanded = mode == ZigVstgui::LayoutMode::expanded;
@@ -373,6 +415,26 @@ void ZigVstguiEditor::layout() {
                 cells[0],
                 cells[1],
                 cells[2]
+            );
+        }
+        meters_top = row_bounds[parameter_count - 1].bottom + theme.spacing.small;
+    }
+    if (meter_count > 0) {
+        const bool expanded = ZigVstgui::layoutMode(width, height) == ZigVstgui::LayoutMode::expanded;
+        const double meters_bottom = static_cast<double>(height) - margin -
+            theme.control_metrics.compact_control_height - theme.spacing.medium;
+        const double available_height = std::max(1.0, meters_bottom - meters_top);
+        const double meter_gap = theme.spacing.small;
+        const double available_width = right - margin - meter_gap * (meter_count - 1);
+        const double meter_width = std::max(1.0, available_width / meter_count);
+        const double label_height = std::min(expanded ? 24.0 : 12.0, available_height * 0.4);
+        for (uint32_t index = 0; index < meter_count; ++index) {
+            const double left = margin + index * (meter_width + meter_gap);
+            const double meter_right = left + meter_width;
+            meter_controls[index]->setLabelVisible(true);
+            meter_controls[index]->setBounds(
+                VSTGUI::CRect(left, meters_top, meter_right, meters_top + label_height),
+                VSTGUI::CRect(left, meters_top + label_height, meter_right, meters_bottom)
             );
         }
     }

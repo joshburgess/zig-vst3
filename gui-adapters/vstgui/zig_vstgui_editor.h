@@ -4,6 +4,7 @@
 #include "zig_vstgui_adapter.h"
 #include "zig_vstgui_component.h"
 #include "zig_vstgui_controls.h"
+#include "zig_vstgui_meters.h"
 #include "zig_vstgui_theme.h"
 
 #include "vstgui/lib/cframe.h"
@@ -16,7 +17,10 @@ struct ZigVstguiEditor {
     ZigVstguiEditor(
         const ZigVstguiParameterDescription* parameters,
         uint32_t parameter_count,
-        ZigVstguiCallbacks callbacks
+        ZigVstguiCallbacks callbacks,
+        const ZigVstguiMeterDescription* meters = nullptr,
+        uint32_t meter_count = 0,
+        ZigVstguiMeterCallbacks meter_callbacks = {}
     );
     ~ZigVstguiEditor();
 
@@ -30,6 +34,9 @@ struct ZigVstguiEditor {
     bool parameterValue(uint32_t parameter_id, double& value) const;
     const ZigVstgui::AccessibilityNode* parameterAccessibility(uint32_t parameter_id, bool exact_value) const;
     const ZigVstgui::AccessibilityNode& resizeAccessibility() const;
+    const ZigVstgui::AccessibilityNode* meterAccessibility(uint32_t index) const;
+    bool tickMeter(uint32_t index, double elapsed_ms);
+    double meterLevel(uint32_t index, uint32_t channel) const;
     int32_t focusPosition() const;
     bool keyDown(uint16_t key, int16_t key_code, int16_t modifiers);
     void setFocus(bool focused);
@@ -56,6 +63,10 @@ private:
     std::array<ZigVstguiParameterInfo, ZIG_VSTGUI_MAX_PARAMETERS> parameter_info {};
     std::array<ZigVstguiControlKind, ZIG_VSTGUI_MAX_PARAMETERS> parameter_control_kinds {};
     uint32_t parameter_count {0};
+    std::array<std::unique_ptr<ZigVstgui::MeterControl>, ZIG_VSTGUI_MAX_METERS> meter_controls;
+    std::array<ZigVstguiMeterDescription, ZIG_VSTGUI_MAX_METERS> meter_descriptions {};
+    uint32_t meter_count {0};
+    ZigVstguiMeterCallbacks meter_callbacks {};
     ZigVstgui::ResizeControl resize_control;
     ZigVstgui::ThemeResolver theme_resolver;
     uint32_t width {400};

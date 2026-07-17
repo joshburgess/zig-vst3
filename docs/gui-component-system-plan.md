@@ -314,17 +314,28 @@ Completion evidence:
 
 ### Milestone 7: Add Audio Visualization Components
 
-- [ ] Add a scalar peak meter using `gui_telemetry.ScalarSnapshot`.
-- [ ] Add peak hold and decay on the GUI thread.
-- [ ] Stop meter production and repaint requests when the editor closes.
-- [ ] Add stereo and gain-reduction meter variants.
-- [ ] Add an analyzer component only after defining a representative plugin and data rate.
+- [x] Add a scalar peak meter using `gui_telemetry.ScalarSnapshot`.
+- [x] Add peak hold and decay on the GUI thread.
+- [x] Stop meter production and repaint requests when the editor closes.
+- [x] Add stereo and gain-reduction meter variants.
+- [x] Add an analyzer component only after defining a representative plugin and data rate. No analyzer is added yet because those prerequisites are not defined.
 
 Exit criteria:
 
 - Meter updates allocate and lock nothing on the audio thread.
 - Overflow or coalescing affects only visual freshness.
 - Static editors retain no continuous repaint loop.
+
+Completion evidence:
+
+- `gui_telemetry.MeterBank` composes a fixed array of `ScalarSnapshot` values with `EditorActivity`. Publishing performs one bounded index check and one atomic store only while an editor is active. Closed editors reject production without changing the last snapshot.
+- Adapter ABI version 4 accepts up to eight meter descriptions and a latest-value loader. The loader reads scalar snapshots without a lock, allocation, queue, or call into VSTGUI.
+- The shared VSTGUI meter component samples sources on a 33 millisecond GUI timer. GUI-thread ballistics clamp invalid input, apply attack, decay, and a 500 millisecond peak hold, update read-only meter semantics, and invalidate only when a displayed value changes.
+- Peak, stereo, and gain-reduction variants share the source and ballistics path. Stereo uses two source IDs. Gain reduction changes its value formatting and drawing direction without changing transport.
+- Meter timers start only after native attachment succeeds. They stop before editor removal or destruction. Static editors create no meter controls and retain no periodic timer.
+- The editor-smoke gallery contains all three meter variants at compact and expanded sizes. Native tests cover attack, hold, decay, clamping, invalid samples, reset, source routing, stereo independence, gain-reduction routing, semantic values, and invalid meter indices.
+- An analyzer remains deferred. No representative plugin, spectrum resolution, update rate, or transport budget has been accepted, so adding a queue and continuous high-rate drawing would be premature.
+- The full Zig and raw ABI suites pass. Every example passes the VST3 validator and strictness-5 pluginval, including editor open and close while processing, and the Linux and Windows bundle sets cross-compile successfully.
 
 ### Milestone 8: Add Asset and Custom Drawing Support
 
