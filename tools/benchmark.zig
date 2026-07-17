@@ -73,6 +73,7 @@ pub fn main() !void {
     (try benchFrameworkProcess()).print();
     (try benchParameterUpdates()).print();
     (try benchStateSaveLoad()).print();
+    (try benchGuiScalarSnapshot()).print();
 }
 
 fn benchRawStream() !Benchmark {
@@ -171,6 +172,20 @@ fn benchStateSaveLoad() !Benchmark {
     }
     std.mem.doNotOptimizeAway(restored);
     return .{ .name = "state save/load", .iterations = iterations, .elapsed_ns = try timer.read() };
+}
+
+fn benchGuiScalarSnapshot() !Benchmark {
+    var snapshot = plug.gui_telemetry.ScalarSnapshot(f64).init(0.0);
+
+    var timer = try Timer.start();
+    var checksum: u64 = 0;
+    for (0..iterations) |index| {
+        const value = @as(f64, @floatFromInt(index % 1000)) / 1000.0;
+        snapshot.store(value);
+        checksum +%= @bitCast(snapshot.load());
+    }
+    std.mem.doNotOptimizeAway(checksum);
+    return .{ .name = "GUI scalar snapshot store/load", .iterations = iterations, .elapsed_ns = try timer.read() };
 }
 
 fn fillInput(buffer: []f32, scale: f32) void {

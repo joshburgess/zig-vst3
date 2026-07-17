@@ -35,6 +35,7 @@ Medium priority:
 - Windows validator support now runs in CI: the Steinberg validator builds with MSVC and validates the cross-built Windows bundles. Remaining Windows work is real-host coverage.
 - Broaden host smoke coverage beyond macOS REAPER when practical.
 - Expand raw `zig-vst3` docs when new direct-usage workflows appear.
+- Finish the platform and real-host rows in [the plugin GUI plan](gui-plan.md). The per-instance object refactor, toolkit-neutral API, macOS reference adapter, and telemetry primitives are implemented.
 
 Release polish:
 
@@ -59,5 +60,5 @@ Do not add aliases only to make every type expose every spelling. Add new API on
 
 - Hosting plugins. This project builds plugins, not hosts.
 - VST2 compatibility.
-- A bundled GUI toolkit. The raw API exposes GUI/editor protocols and the framework can delegate editor creation, but users bring their own toolkit.
+- A mandatory GUI toolkit. VSTGUI is an optional reference adapter, and users can provide another toolkit.
 - Plugin sandboxing or out-of-process hosting.

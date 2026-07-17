@@ -54,6 +54,17 @@ Record fresh Tier 3 host smoke tests in `docs/host-matrix.md` before tagging. Th
 
 Linux and Windows host rows can remain follow-up work for `0.2.x` if CI bundles keep passing and the release notes call out that the first manual host pass was macOS-only. Do not describe deferred rows as host-proven.
 
+For every release containing GUI changes, record these editor lifecycle checks for at least the reference gain editor:
+
+- Open, close, and reopen while transport is stopped and running.
+- Resize from both the host and the editor, including the minimum and maximum constraints.
+- Exercise pointer, keyboard, exact text entry, reset, and host automation playback.
+- Save and reload with the editor open, then repeat with it closed.
+- Open two plugin instances and verify their parameters and windows remain isolated.
+- Move the editor between display scales when the host and platform allow it.
+- Confirm closing the editor stops editor-only timers, repaint requests, and telemetry production.
+- Record the host, host version, operating system, architecture, display scale, and result in `docs/host-matrix.md`.
+
 ## Tag
 
 After the required checks and host matrix rows are in place:

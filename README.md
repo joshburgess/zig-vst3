@@ -39,7 +39,8 @@ The repository includes checked framework examples and bundled VST3 examples for
 - `event-echo`: input events echoed to an output event bus.
 - `event-monitor`: input-only analyzer topology and event inspection helpers.
 - `sine-synth`: output-only generator/instrument behavior driven by note input.
-- `editor-smoke`: protocol-only editor view for exercising `IPlugView` attach, resize, focus, and removal paths.
+- `gain`, `bypass`, `mode-gain`, and `voice-mix`: visible native VSTGUI parameter editors on native builds, with protocol-only fallbacks for cross-target bundles.
+- `editor-smoke`: protocol-only editor lifecycle and platform-identifier coverage without a GUI toolkit dependency.
 
 Native macOS and Linux validator jobs run the bundled examples in CI, and a Windows validator job runs the Steinberg validator against the cross-built Windows bundles. Real-host rows are still future work.
 
@@ -143,10 +144,15 @@ See [docs/pluginval.md](docs/pluginval.md) for `PLUGINVAL`, strictness, and head
 - [docs/framework/plugin-interface.md](docs/framework/plugin-interface.md): framework plugin API.
 - [docs/framework/parameters.md](docs/framework/parameters.md): parameters, plain/normalized values, smoothing, metadata, and editors.
 - [docs/framework/state.md](docs/framework/state.md): binary state format, migration, restore reports, and debug JSON.
+- [docs/framework/gui.md](docs/framework/gui.md): toolkit-neutral editor API, VSTGUI adapter, parameter bindings, and telemetry.
 - [docs/raw-api.md](docs/raw-api.md): raw VST3 API guide.
 - [docs/raw-api-coverage.md](docs/raw-api-coverage.md): raw API coverage map.
 - [docs/pluginval.md](docs/pluginval.md): Tracktion pluginval harness.
 - [docs/real-host-coverage.md](docs/real-host-coverage.md): remaining real-host GUI and advanced protocol coverage.
+- [docs/gui-plan.md](docs/gui-plan.md): phased plan for per-instance editors, GUI adapters, platform embedding, and rendering performance.
+- [docs/gui-baseline.md](docs/gui-baseline.md): pre-implementation GUI validation and performance baseline.
+- [docs/gui-adapter-evaluation.md](docs/gui-adapter-evaluation.md): VSTGUI and custom-renderer spike results and constraints.
+- [docs/adr/0001-gui-adapter-boundary.md](docs/adr/0001-gui-adapter-boundary.md): GUI toolkit and adapter boundary decision.
 - [docs/stability.md](docs/stability.md): current pre-release compatibility policy.
 - [docs/host-matrix.md](docs/host-matrix.md): real host smoke-test results.
 - [docs/roadmap.md](docs/roadmap.md): remaining work and validation tiers.
@@ -167,5 +173,5 @@ The public CI workflow currently runs:
 - The API is early. Expect some naming and organization changes before a public compatibility promise.
 - Manual host coverage is currently macOS REAPER-heavy. MIDI-heavy and analyzer/instrument host smoke rows are still being filled in.
 - CI validates plugins headlessly with the Steinberg validator and pluginval, but real-host coverage in actual DAWs is still limited.
-- There is no bundled GUI toolkit. The raw API exposes editor protocols and the framework can delegate editor creation, but plugin authors bring their own UI stack.
+- The reference editor can build the pinned VSTGUI adapter on native macOS, Windows, and Linux systems. Other toolkits remain optional adapters.
 - This project builds plugins, not hosts.

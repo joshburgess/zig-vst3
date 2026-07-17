@@ -42,6 +42,12 @@ const zig_vst3_plugin_bridge = @import("zig_vst3_plugin_bridge.zig");
 const process_parameter_change_capacity = 64;
 const process_event_capacity = 64;
 const process_output_event_capacity = 64;
+const parameter_observer_capacity = 8;
+
+pub const ParameterObserver = struct {
+    userdata: *anyopaque,
+    changed: *const fn (*anyopaque, vsttypes.ParamID, vsttypes.ParamValue) callconv(.c) void,
+};
 
 var test_data_exchange_queue_opened_count: usize = 0;
 var test_data_exchange_queue_closed_count: usize = 0;
@@ -69,7 +75,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
         else
             &.{};
 
-        const Controller = extern struct {
+        const ParameterState = zig_vst3_plugin_bridge.ParameterState(Params);
+        const ParameterController = zig_vst3_plugin_bridge.ParameterController(Params);
+
+        const Controller = struct {
             iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
             connection_point: ivstmessage.IConnectionPoint = .{ .vtable = &connection_point_vtable },
             controller2: ivsteditcontroller.IEditController2 = .{ .vtable = &controller2_vtable },
@@ -97,136 +106,180 @@ pub fn ReflectedEditController(comptime Config: type) type {
             unit_handler: ?*ivstunits.IUnitHandler = null,
             unit_handler2: ?*ivstunits.IUnitHandler2 = null,
             host_application: ?*ivsthostapplication.IHostApplication = null,
+            parameter_state: ParameterState,
+            parameters: ParameterController,
+            parameter_observers: [parameter_observer_capacity]?ParameterObserver = @splat(null),
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
-        };
 
-        var controller = Controller{};
-        var parameter_state = zig_vst3_plugin_bridge.ParameterState(Params).init(Config.parameter_set);
-        var parameters = zig_vst3_plugin_bridge.ParameterController(Params){
-            .set = Config.parameter_set,
-            .state = &parameter_state,
+            fn init(self: *Controller) void {
+                self.* = .{
+                    .parameter_state = ParameterState.init(Config.parameter_set),
+                    .parameters = undefined,
+                };
+                self.parameters = .{
+                    .set = Config.parameter_set,
+                    .state = &self.parameter_state,
+                };
+            }
         };
 
         pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&controller.iface, @ptrCast(requested_iid), out);
+            out.* = null;
+            const controller = std.heap.page_allocator.create(Controller) catch return types.kResultFalse;
+            controller.init();
+            const result = query(&controller.iface, @ptrCast(requested_iid), out);
+            _ = release(&controller.iface);
+            return result;
         }
 
-        pub fn getNormalized(id: vsttypes.ParamID) vsttypes.ParamValue {
-            return parameters.getNormalized(id);
+        fn instance(iface: *ivsteditcontroller.IEditController) *Controller {
+            return owner(iface);
         }
 
-        pub fn setNormalized(id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
-            return parameters.setNormalized(id, value);
+        pub fn getNormalized(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID) vsttypes.ParamValue {
+            return instance(iface).parameters.getNormalized(id);
         }
 
-        pub fn beginEdit(id: vsttypes.ParamID) types.tresult {
-            const handler = controller.component_handler orelse return types.kResultFalse;
+        pub fn setNormalized(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+            return setNormalizedAndNotify(instance(iface), id, value);
+        }
+
+        pub fn addParameterObserver(iface: *ivsteditcontroller.IEditController, observer: ParameterObserver) bool {
+            const self = instance(iface);
+            for (&self.parameter_observers) |*slot| {
+                if (slot.* == null) {
+                    slot.* = observer;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        pub fn removeParameterObserver(iface: *ivsteditcontroller.IEditController, userdata: *anyopaque) void {
+            const self = instance(iface);
+            for (&self.parameter_observers) |*slot| {
+                if (slot.*) |observer| {
+                    if (observer.userdata == userdata) slot.* = null;
+                }
+            }
+        }
+
+        pub fn createHostInstance(iface: *ivsteditcontroller.IEditController, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            out.* = null;
+            const host = instance(iface).host_application orelse return types.kResultFalse;
+            return host.vtable.createInstance(host, cid, iid, out);
+        }
+
+        pub fn beginEdit(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID) types.tresult {
+            const handler = instance(iface).component_handler orelse return types.kResultFalse;
             return handler.vtable.beginEdit(handler, id);
         }
 
-        pub fn performEdit(id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
-            const handler = controller.component_handler orelse return types.kResultFalse;
-            const previous = parameters.getNormalized(id);
-            const result = parameters.setNormalized(id, value);
+        pub fn performEdit(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+            const self = instance(iface);
+            const handler = self.component_handler orelse return types.kResultFalse;
+            const previous = self.parameters.getNormalized(id);
+            const result = self.parameters.setNormalized(id, value);
             if (result != types.kResultOk) return result;
             const edit_result = handler.vtable.performEdit(handler, id, value);
             if (edit_result != types.kResultOk) {
-                _ = parameters.setNormalized(id, previous);
+                _ = self.parameters.setNormalized(id, previous);
                 return edit_result;
             }
+            notifyParameterObservers(self, id, value);
             return types.kResultOk;
         }
 
-        pub fn endEdit(id: vsttypes.ParamID) types.tresult {
-            const handler = controller.component_handler orelse return types.kResultFalse;
+        pub fn endEdit(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID) types.tresult {
+            const handler = instance(iface).component_handler orelse return types.kResultFalse;
             return handler.vtable.endEdit(handler, id);
         }
 
-        pub fn setDirty(state: types.TBool) types.tresult {
-            const handler = controller.component_handler2 orelse return types.kResultFalse;
+        pub fn setDirty(iface: *ivsteditcontroller.IEditController, state: types.TBool) types.tresult {
+            const handler = instance(iface).component_handler2 orelse return types.kResultFalse;
             return handler.vtable.setDirty(handler, state);
         }
 
-        pub fn requestOpenEditor(name: types.FIDString) types.tresult {
-            const handler = controller.component_handler2 orelse return types.kResultFalse;
+        pub fn requestOpenEditor(iface: *ivsteditcontroller.IEditController, name: types.FIDString) types.tresult {
+            const handler = instance(iface).component_handler2 orelse return types.kResultFalse;
             return handler.vtable.requestOpenEditor(handler, name);
         }
 
-        pub fn startGroupEdit() types.tresult {
-            const handler = controller.component_handler2 orelse return types.kResultFalse;
+        pub fn startGroupEdit(iface: *ivsteditcontroller.IEditController) types.tresult {
+            const handler = instance(iface).component_handler2 orelse return types.kResultFalse;
             return handler.vtable.startGroupEdit(handler);
         }
 
-        pub fn finishGroupEdit() types.tresult {
-            const handler = controller.component_handler2 orelse return types.kResultFalse;
+        pub fn finishGroupEdit(iface: *ivsteditcontroller.IEditController) types.tresult {
+            const handler = instance(iface).component_handler2 orelse return types.kResultFalse;
             return handler.vtable.finishGroupEdit(handler);
         }
 
-        pub fn createContextMenu(view: ?*iplugview.IPlugView, param_id: ?*const vsttypes.ParamID) ?*ivstcontextmenu.IContextMenu {
-            const handler = controller.component_handler3 orelse return null;
+        pub fn createContextMenu(iface: *ivsteditcontroller.IEditController, view: ?*iplugview.IPlugView, param_id: ?*const vsttypes.ParamID) ?*ivstcontextmenu.IContextMenu {
+            const handler = instance(iface).component_handler3 orelse return null;
             return handler.vtable.createContextMenu(handler, view, param_id);
         }
 
-        pub fn requestBusActivation(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, state: types.TBool) types.tresult {
-            const handler = controller.component_handler_bus_activation orelse return types.kResultFalse;
+        pub fn requestBusActivation(iface: *ivsteditcontroller.IEditController, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, state: types.TBool) types.tresult {
+            const handler = instance(iface).component_handler_bus_activation orelse return types.kResultFalse;
             return handler.vtable.requestBusActivation(handler, media_type, direction, index, state);
         }
 
-        pub fn getSystemTime(out: *types.int64) types.tresult {
-            const handler = controller.component_handler_system_time orelse {
+        pub fn getSystemTime(iface: *ivsteditcontroller.IEditController, out: *types.int64) types.tresult {
+            const handler = instance(iface).component_handler_system_time orelse {
                 out.* = 0;
                 return types.kResultFalse;
             };
             return handler.vtable.getSystemTime(handler, out);
         }
 
-        pub fn startProgress(progress_type: types.uint32, title: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) types.tresult {
-            const progress = controller.progress orelse {
+        pub fn startProgress(iface: *ivsteditcontroller.IEditController, progress_type: types.uint32, title: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) types.tresult {
+            const progress = instance(iface).progress orelse {
                 out.* = 0;
                 return types.kResultFalse;
             };
             return progress.vtable.start(progress, progress_type, title, out);
         }
 
-        pub fn updateProgress(id: ivsteditcontroller.ProgressID, value: vsttypes.ParamValue) types.tresult {
-            const progress = controller.progress orelse return types.kResultFalse;
+        pub fn updateProgress(iface: *ivsteditcontroller.IEditController, id: ivsteditcontroller.ProgressID, value: vsttypes.ParamValue) types.tresult {
+            const progress = instance(iface).progress orelse return types.kResultFalse;
             return progress.vtable.update(progress, id, value);
         }
 
-        pub fn finishProgress(id: ivsteditcontroller.ProgressID) types.tresult {
-            const progress = controller.progress orelse return types.kResultFalse;
+        pub fn finishProgress(iface: *ivsteditcontroller.IEditController, id: ivsteditcontroller.ProgressID) types.tresult {
+            const progress = instance(iface).progress orelse return types.kResultFalse;
             return progress.vtable.finish(progress, id);
         }
 
-        pub fn notifyUnitSelection(unit_id: vsttypes.UnitID) types.tresult {
-            const handler = controller.unit_handler orelse return types.kResultFalse;
+        pub fn notifyUnitSelection(iface: *ivsteditcontroller.IEditController, unit_id: vsttypes.UnitID) types.tresult {
+            const handler = instance(iface).unit_handler orelse return types.kResultFalse;
             return handler.vtable.notifyUnitSelection(handler, unit_id);
         }
 
-        pub fn notifyProgramListChange(list_id: vsttypes.ProgramListID, program_index: types.int32) types.tresult {
-            const handler = controller.unit_handler orelse return types.kResultFalse;
+        pub fn notifyProgramListChange(iface: *ivsteditcontroller.IEditController, list_id: vsttypes.ProgramListID, program_index: types.int32) types.tresult {
+            const handler = instance(iface).unit_handler orelse return types.kResultFalse;
             return handler.vtable.notifyProgramListChange(handler, list_id, program_index);
         }
 
-        pub fn notifyUnitByBusChange() types.tresult {
-            const handler = controller.unit_handler2 orelse return types.kResultFalse;
+        pub fn notifyUnitByBusChange(iface: *ivsteditcontroller.IEditController) types.tresult {
+            const handler = instance(iface).unit_handler2 orelse return types.kResultFalse;
             return handler.vtable.notifyUnitByBusChange(handler);
         }
 
-        pub fn openView(name: types.FIDString) ?*iplugview.IPlugView {
-            return createView(&controller.iface, name);
+        pub fn openView(iface: *ivsteditcontroller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
+            return createView(iface, name);
         }
 
-        pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
-            parameters.applyChanges(changes);
+        pub fn applyParameterChanges(iface: *ivsteditcontroller.IEditController, changes: plug_process.ParameterChanges) void {
+            instance(iface).parameters.applyChanges(changes);
         }
 
-        pub fn readState(state: ?*ibstream.IBStream) types.tresult {
-            return parameters.readState(state);
+        pub fn readState(iface: *ivsteditcontroller.IEditController, state: ?*ibstream.IBStream) types.tresult {
+            return readStateAndNotify(instance(iface), state);
         }
 
-        pub fn writeState(state: ?*ibstream.IBStream) types.tresult {
-            return parameters.writeState(state);
+        pub fn writeState(iface: *ivsteditcontroller.IEditController, state: ?*ibstream.IBStream) types.tresult {
+            return instance(iface).parameters.writeState(state);
         }
 
         const controller_vtable = ivsteditcontroller.IEditControllerVTable{
@@ -299,7 +352,16 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return funknown.decrementRefCount(&owner(ptr).ref_count, Config.controller_name);
+            const self = owner(ptr);
+            const next = funknown.decrementRefCount(&self.ref_count, Config.controller_name);
+            if (next == 0) {
+                _ = self.ref_count.load(.acquire);
+                releaseConnectionPeer(&self.connected_peer);
+                releaseComponentHandlers(self);
+                releaseHostApplication(&self.host_application);
+                std.heap.page_allocator.destroy(self);
+            }
+            return next;
         }
 
         const UnitInfoDelegate = interface_map.DelegatedInterface(Controller, ownerFromUnitInfo, "iface", query, addRef, release);
@@ -335,48 +397,73 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn setComponentState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
-            return Self.readState(state);
+        fn setComponentState(ptr: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
+            return readStateAndNotify(owner(ptr), state);
         }
 
-        fn setState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
-            return Self.readState(state);
+        fn setState(ptr: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
+            return readStateAndNotify(owner(ptr), state);
         }
 
-        fn getState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
-            return Self.writeState(state);
+        fn getState(ptr: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
+            return owner(ptr).parameters.writeState(state);
         }
 
-        fn getParameterCount(_: *anyopaque) callconv(.c) types.int32 {
-            return parameters.parameterCount();
+        fn getParameterCount(ptr: *anyopaque) callconv(.c) types.int32 {
+            return owner(ptr).parameters.parameterCount();
         }
 
-        fn getParameterInfo(_: *anyopaque, index: types.int32, out: *ivsteditcontroller.ParameterInfo) callconv(.c) types.tresult {
-            return parameters.parameterInfo(index, out);
+        fn getParameterInfo(ptr: *anyopaque, index: types.int32, out: *ivsteditcontroller.ParameterInfo) callconv(.c) types.tresult {
+            return owner(ptr).parameters.parameterInfo(index, out);
         }
 
-        fn getParamStringByValue(_: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
-            return parameters.stringByValue(id, value, out);
+        fn getParamStringByValue(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
+            return owner(ptr).parameters.stringByValue(id, value, out);
         }
 
-        fn getParamValueByString(_: *anyopaque, id: vsttypes.ParamID, text: [*]vsttypes.TChar, out: *vsttypes.ParamValue) callconv(.c) types.tresult {
-            return parameters.valueByString(id, text, out);
+        fn getParamValueByString(ptr: *anyopaque, id: vsttypes.ParamID, text: [*]vsttypes.TChar, out: *vsttypes.ParamValue) callconv(.c) types.tresult {
+            return owner(ptr).parameters.valueByString(id, text, out);
         }
 
-        fn normalizedParamToPlain(_: *anyopaque, id: vsttypes.ParamID, normalized: vsttypes.ParamValue) callconv(.c) vsttypes.ParamValue {
-            return parameters.plainFromNormalized(id, normalized);
+        fn normalizedParamToPlain(ptr: *anyopaque, id: vsttypes.ParamID, normalized: vsttypes.ParamValue) callconv(.c) vsttypes.ParamValue {
+            return owner(ptr).parameters.plainFromNormalized(id, normalized);
         }
 
-        fn plainParamToNormalized(_: *anyopaque, id: vsttypes.ParamID, plain: vsttypes.ParamValue) callconv(.c) vsttypes.ParamValue {
-            return parameters.normalizedFromPlain(id, plain);
+        fn plainParamToNormalized(ptr: *anyopaque, id: vsttypes.ParamID, plain: vsttypes.ParamValue) callconv(.c) vsttypes.ParamValue {
+            return owner(ptr).parameters.normalizedFromPlain(id, plain);
         }
 
-        fn getParamNormalized(_: *anyopaque, id: vsttypes.ParamID) callconv(.c) vsttypes.ParamValue {
-            return parameters.getNormalized(id);
+        fn getParamNormalized(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) vsttypes.ParamValue {
+            return owner(ptr).parameters.getNormalized(id);
         }
 
-        fn setParamNormalized(_: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
-            return parameters.setNormalized(id, value);
+        fn setParamNormalized(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            return setNormalizedAndNotify(owner(ptr), id, value);
+        }
+
+        fn setNormalizedAndNotify(self: *Controller, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+            const result = self.parameters.setNormalized(id, value);
+            if (result == types.kResultOk) notifyParameterObservers(self, id, self.parameters.getNormalized(id));
+            return result;
+        }
+
+        fn readStateAndNotify(self: *Controller, state: ?*ibstream.IBStream) types.tresult {
+            const result = self.parameters.readState(state);
+            if (result != types.kResultOk) return result;
+            var index: types.int32 = 0;
+            while (index < self.parameters.parameterCount()) : (index += 1) {
+                var info: ivsteditcontroller.ParameterInfo = undefined;
+                if (self.parameters.parameterInfo(index, &info) == types.kResultOk) {
+                    notifyParameterObservers(self, info.id, self.parameters.getNormalized(info.id));
+                }
+            }
+            return result;
+        }
+
+        fn notifyParameterObservers(self: *Controller, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {
+            for (self.parameter_observers) |slot| {
+                if (slot) |observer| observer.changed(observer.userdata, id, value);
+            }
         }
 
         fn setComponentHandler(ptr: *anyopaque, handler: ?*anyopaque) callconv(.c) types.tresult {
@@ -402,9 +489,11 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn createView(_: *anyopaque, name: types.FIDString) callconv(.c) ?*iplugview.IPlugView {
+        fn createView(ptr: *anyopaque, name: types.FIDString) callconv(.c) ?*iplugview.IPlugView {
             if (@hasDecl(Config, "createView")) {
-                return Config.createView(name);
+                const parameter_count = @typeInfo(@TypeOf(Config.createView)).@"fn".params.len;
+                if (comptime parameter_count == 1) return Config.createView(name);
+                return Config.createView(&owner(ptr).iface, name);
             }
             return null;
         }
@@ -850,13 +939,13 @@ test "reflected edit controller releases replaced component handlers" {
     try std.testing.expectEqual(@as(types.uint32, 1), second.add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 0), second.release_count);
 
-    try std.testing.expectEqual(types.kResultOk, TestController.beginEdit(7));
+    try std.testing.expectEqual(types.kResultOk, TestController.beginEdit(controller_iface, 7));
     try std.testing.expectEqual(@as(types.uint32, 1), second.begin_count);
     try std.testing.expectEqual(@as(vsttypes.ParamID, 7), second.last_param_id);
 
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
     try std.testing.expectEqual(@as(types.uint32, 1), second.release_count);
-    try std.testing.expectEqual(types.kResultFalse, TestController.beginEdit(7));
+    try std.testing.expectEqual(types.kResultFalse, TestController.beginEdit(controller_iface, 7));
 }
 
 test "reflected edit controller releases replaced unit handler extensions" {
@@ -888,16 +977,16 @@ test "reflected edit controller releases replaced unit handler extensions" {
     try std.testing.expectEqual(@as(types.uint32, 1), second.unit_add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), second.unit2_add_ref_count);
 
-    try std.testing.expectEqual(types.kResultOk, TestController.notifyUnitSelection(ivstunits.kRootUnitId));
-    try std.testing.expectEqual(types.kResultOk, TestController.notifyUnitByBusChange());
+    try std.testing.expectEqual(types.kResultOk, TestController.notifyUnitSelection(controller_iface, ivstunits.kRootUnitId));
+    try std.testing.expectEqual(types.kResultOk, TestController.notifyUnitByBusChange(controller_iface));
     try std.testing.expectEqual(@as(types.uint32, 1), second.unit_selection_count);
     try std.testing.expectEqual(@as(types.uint32, 1), second.unit_by_bus_count);
 
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, null));
     try std.testing.expectEqual(@as(types.uint32, 1), second.unit_release_count);
     try std.testing.expectEqual(@as(types.uint32, 1), second.unit2_release_count);
-    try std.testing.expectEqual(types.kResultFalse, TestController.notifyUnitSelection(ivstunits.kRootUnitId));
-    try std.testing.expectEqual(types.kResultFalse, TestController.notifyUnitByBusChange());
+    try std.testing.expectEqual(types.kResultFalse, TestController.notifyUnitSelection(controller_iface, ivstunits.kRootUnitId));
+    try std.testing.expectEqual(types.kResultFalse, TestController.notifyUnitByBusChange(controller_iface));
 }
 
 test "reflected edit controller releases replaced connection peers" {
@@ -1099,6 +1188,108 @@ test "reflected edit controller round-trips parameter state through host callbac
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setState(controller_iface, stream.asStream()));
     try std.testing.expectApproxEqAbs(@as(vsttypes.ParamValue, 0.75), controller_iface.vtable.getParamNormalized(controller_iface, 1), 0.000001);
+}
+
+test "reflected edit controller notifies and removes parameter observers" {
+    const Fixture = struct {
+        const Params = struct {
+            gain: plug_core.parameters.FloatParam = plug_core.parameters.FloatParam.init(1, "Gain", 0.0, 1.0, 0.25),
+        };
+        const ParameterSet = plug_core.parameters.ParameterSet(Params);
+        const parameter_set = ParameterSet.init(.{});
+        const Tracker = struct {
+            count: usize = 0,
+            id: vsttypes.ParamID = vsttypes.kNoParamId,
+            value: vsttypes.ParamValue = 0.0,
+
+            fn changed(userdata: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) void {
+                const self: *@This() = @ptrCast(@alignCast(userdata));
+                self.count += 1;
+                self.id = id;
+                self.value = value;
+            }
+        };
+    };
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "ObserverController";
+        pub const Params = Fixture.Params;
+        pub const parameter_set = &Fixture.parameter_set;
+    });
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var tracker = Fixture.Tracker{};
+    try std.testing.expect(TestController.addParameterObserver(controller_iface, .{ .userdata = &tracker, .changed = Fixture.Tracker.changed }));
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setParamNormalized(controller_iface, 1, 0.75));
+    try std.testing.expectEqual(@as(usize, 1), tracker.count);
+    try std.testing.expectEqual(@as(vsttypes.ParamID, 1), tracker.id);
+    try std.testing.expectApproxEqAbs(@as(vsttypes.ParamValue, 0.75), tracker.value, 0.000001);
+
+    const Stream = vst_stream.FixedBufferStream(plug_core.state.encodedSize(Fixture.Params));
+    var stream = Stream{};
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.getState(controller_iface, stream.asStream()));
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setParamNormalized(controller_iface, 1, 0.5));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setState(controller_iface, stream.asStream()));
+    try std.testing.expectEqual(@as(usize, 3), tracker.count);
+    try std.testing.expectApproxEqAbs(@as(vsttypes.ParamValue, 0.75), tracker.value, 0.000001);
+
+    TestController.removeParameterObserver(controller_iface, &tracker);
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setParamNormalized(controller_iface, 1, 0.5));
+    try std.testing.expectEqual(@as(usize, 3), tracker.count);
+}
+
+test "reflected edit controller delegates host instance creation" {
+    const Fixture = struct {
+        const Params = struct {};
+        const ParameterSet = plug_core.parameters.ParameterSet(Params);
+        const parameter_set = ParameterSet.init(.{});
+    };
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "HostInstanceController";
+        pub const Params = Fixture.Params;
+        pub const parameter_set = &Fixture.parameter_set;
+    });
+    const Host = vst_host_context.ChannelContextHost("Host Instance Test", struct {
+        pub fn createInstance(self: anytype, cid: *const tuid.TUID, iid: *const tuid.TUID, out: *?*anyopaque) types.tresult {
+            if (!std.mem.eql(u8, cid, &ivstchannelcontextinfo.iinfo_listener_iid) or
+                !std.mem.eql(u8, iid, &ivstchannelcontextinfo.iinfo_listener_iid)) return types.kNoInterface;
+            out.* = self.asInfoListener();
+            _ = self.asInfoListener().vtable.addRef(self.asInfoListener());
+            return types.kResultOk;
+        }
+    });
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    var unavailable: ?*anyopaque = @ptrFromInt(1);
+    try std.testing.expectEqual(types.kResultFalse, TestController.createHostInstance(
+        controller_iface,
+        &ivstchannelcontextinfo.iinfo_listener_iid,
+        &ivstchannelcontextinfo.iinfo_listener_iid,
+        &unavailable,
+    ));
+    try std.testing.expectEqual(@as(?*anyopaque, null), unavailable);
+
+    var host = Host{};
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.initialize(controller_iface, host.asHostApplication()));
+    defer _ = controller_iface.vtable.terminate(controller_iface);
+
+    var created: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.createHostInstance(
+        controller_iface,
+        &ivstchannelcontextinfo.iinfo_listener_iid,
+        &ivstchannelcontextinfo.iinfo_listener_iid,
+        &created,
+    ));
+    const info: *ivstchannelcontextinfo.IInfoListener = @ptrCast(@alignCast(created.?));
+    try std.testing.expectEqual(@as(types.uint32, 1), info.vtable.release(info));
 }
 
 fn queryInterfaceAs(comptime Base: type, comptime Interface: type, source: ?*anyopaque, iid: *const tuid.TUID) ?*Interface {
@@ -1566,7 +1757,7 @@ test "simple stereo effect rejects invalid data exchange outputs" {
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
 
     var queue_id: ivstdataexchange.DataExchangeQueueID = 88;
-    try std.testing.expectEqual(types.kResultFalse, TestEffect.openDataExchangeQueue(128, 2, 8, 77, &queue_id));
+    try std.testing.expectEqual(types.kResultFalse, TestEffect.openDataExchangeQueue(component_iface, 128, 2, 8, 77, &queue_id));
     try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
 
     var block = ivstdataexchange.DataExchangeBlock{
@@ -1574,7 +1765,7 @@ test "simple stereo effect rejects invalid data exchange outputs" {
         .size = 64,
         .data = @ptrFromInt(0x2000),
     };
-    try std.testing.expectEqual(types.kResultFalse, TestEffect.lockDataExchangeBlock(44, &block));
+    try std.testing.expectEqual(types.kResultFalse, TestEffect.lockDataExchangeBlock(component_iface, 44, &block));
     try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeBlockID, block.blockID);
     try std.testing.expectEqual(@as(types.uint32, 0), block.size);
     try std.testing.expectEqual(@as(?*anyopaque, null), block.data);
@@ -1633,7 +1824,11 @@ test "simple stereo effect releases replaced connection peers" {
 
 pub fn SimpleStereoEffect(comptime Config: type) type {
     return struct {
-        const Self = @This();
+        const Params = if (@hasDecl(Config, "Params")) Config.Params else struct {};
+        const DefaultParameterSet = plug_core.parameters.ParameterSet(Params);
+        const default_parameter_set = DefaultParameterSet.init(.{});
+        const parameter_set = if (@hasDecl(Config, "parameter_set")) Config.parameter_set else &default_parameter_set;
+        const ParameterState = zig_vst3_plugin_bridge.ParameterState(Params);
         const event_output = @hasDecl(Config, "event_output") and Config.event_output;
         const event_input = !@hasDecl(Config, "event_input") or Config.event_input;
         const audio_input = !@hasDecl(Config, "audio_input") or Config.audio_input;
@@ -1649,7 +1844,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         else
             0;
 
-        const Component = extern struct {
+        const Component = struct {
             iface: ivstcomponent.IComponent = .{ .vtable = &component_vtable },
             connection_point: ivstmessage.IConnectionPoint = .{ .vtable = &component_connection_point_vtable },
             processor: ivstaudioprocessor.IAudioProcessor = .{ .vtable = &processor_vtable },
@@ -1663,43 +1858,67 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             info_listener: ?*ivstchannelcontextinfo.IInfoListener = null,
             automation_state: ?*ivstautomationstate.IAutomationState = null,
             data_exchange_handler: ?*ivstdataexchange.IDataExchangeHandler = null,
+            parameter_state: ParameterState,
+            processor_impl: Config.Processor = .{},
             sample_rate: f64 = 0,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
+
+            fn init(self: *Component) void {
+                self.* = .{
+                    .parameter_state = ParameterState.init(parameter_set),
+                };
+            }
         };
 
-        var component = Component{};
-
         pub fn create(requested_iid: types.FIDString, out: *?*anyopaque) callconv(.c) types.tresult {
-            return query(&component.iface, @ptrCast(requested_iid), out);
+            out.* = null;
+            const component = std.heap.page_allocator.create(Component) catch return types.kResultFalse;
+            component.init();
+            const result = query(&component.iface, @ptrCast(requested_iid), out);
+            _ = release(&component.iface);
+            return result;
         }
 
-        pub fn setChannelContextInfos(attributes: ?*ivstattributes.IAttributeList) types.tresult {
-            const info_listener = component.info_listener orelse return types.kResultFalse;
+        pub fn getParameterNormalized(iface: *ivstcomponent.IComponent, id: vsttypes.ParamID) vsttypes.ParamValue {
+            return owner(iface).parameter_state.getNormalizedById(id);
+        }
+
+        pub fn setParameterNormalized(iface: *ivstcomponent.IComponent, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+            return owner(iface).parameter_state.setNormalizedById(id, value);
+        }
+
+        pub fn processorInstance(iface: *ivstcomponent.IComponent) *Config.Processor {
+            return &owner(iface).processor_impl;
+        }
+
+        pub fn setChannelContextInfos(iface: *ivstcomponent.IComponent, attributes: ?*ivstattributes.IAttributeList) types.tresult {
+            const info_listener = owner(iface).info_listener orelse return types.kResultFalse;
             return info_listener.vtable.setChannelContextInfos(info_listener, attributes);
         }
 
-        pub fn setAutomationState(state: types.int32) types.tresult {
-            const automation_state = component.automation_state orelse return types.kResultFalse;
+        pub fn setAutomationState(iface: *ivstcomponent.IComponent, state: types.int32) types.tresult {
+            const automation_state = owner(iface).automation_state orelse return types.kResultFalse;
             return automation_state.vtable.setAutomationState(automation_state, state);
         }
 
-        pub fn openDataExchangeQueue(block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
-            const handler = component.data_exchange_handler orelse {
+        pub fn openDataExchangeQueue(iface: *ivstcomponent.IComponent, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
+            const self = owner(iface);
+            const handler = self.data_exchange_handler orelse {
                 return failOpenedDataExchangeQueue(out, types.kResultFalse);
             };
-            const result = handler.vtable.openQueue(handler, &component.processor, block_size, num_blocks, alignment, user_context_id, out);
+            const result = handler.vtable.openQueue(handler, &self.processor, block_size, num_blocks, alignment, user_context_id, out);
             if (result != types.kResultOk) return failOpenedDataExchangeQueue(out, result);
             if (out.* == ivstdataexchange.InvalidDataExchangeQueueID) return failOpenedDataExchangeQueue(out, types.kResultFalse);
             return result;
         }
 
-        pub fn closeDataExchangeQueue(queue_id: ivstdataexchange.DataExchangeQueueID) types.tresult {
-            const handler = component.data_exchange_handler orelse return types.kResultFalse;
+        pub fn closeDataExchangeQueue(iface: *ivstcomponent.IComponent, queue_id: ivstdataexchange.DataExchangeQueueID) types.tresult {
+            const handler = owner(iface).data_exchange_handler orelse return types.kResultFalse;
             return handler.vtable.closeQueue(handler, queue_id);
         }
 
-        pub fn lockDataExchangeBlock(queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
-            const handler = component.data_exchange_handler orelse {
+        pub fn lockDataExchangeBlock(iface: *ivstcomponent.IComponent, queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
+            const handler = owner(iface).data_exchange_handler orelse {
                 return failLockedDataExchangeBlock(block, types.kResultFalse);
             };
             const result = handler.vtable.lockBlock(handler, queue_id, block);
@@ -1708,8 +1927,8 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return result;
         }
 
-        pub fn freeDataExchangeBlock(queue_id: ivstdataexchange.DataExchangeQueueID, block_id: ivstdataexchange.DataExchangeBlockID, send_to_receiver: types.TBool) types.tresult {
-            const handler = component.data_exchange_handler orelse return types.kResultFalse;
+        pub fn freeDataExchangeBlock(iface: *ivstcomponent.IComponent, queue_id: ivstdataexchange.DataExchangeQueueID, block_id: ivstdataexchange.DataExchangeBlockID, send_to_receiver: types.TBool) types.tresult {
+            const handler = owner(iface).data_exchange_handler orelse return types.kResultFalse;
             return handler.vtable.freeBlock(handler, queue_id, block_id, send_to_receiver);
         }
 
@@ -1761,7 +1980,18 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return funknown.decrementRefCount(&owner(ptr).ref_count, Config.component_name);
+            const self = owner(ptr);
+            const next = funknown.decrementRefCount(&self.ref_count, Config.component_name);
+            if (next == 0) {
+                _ = self.ref_count.load(.acquire);
+                releaseConnectionPeer(&self.connected_peer);
+                releaseDataExchangeHandler(&self.data_exchange_handler);
+                releaseAutomationState(&self.automation_state);
+                releaseInfoListener(&self.info_listener);
+                releaseHostApplication(&self.host_application);
+                std.heap.page_allocator.destroy(self);
+            }
+            return next;
         }
 
         const ProcessorDelegate = interface_map.DelegatedInterface(Component, ownerFromProcessor, "iface", query, addRef, release);
@@ -1825,23 +2055,23 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn resetProcessState() void {
-            if (@hasDecl(Config, "resetProcessState")) {
-                Config.resetProcessState();
+        fn resetProcessState(self: *Component) void {
+            if (@hasDecl(Config.Processor, "reset")) {
+                self.processor_impl.reset();
             }
         }
 
-        fn setActive(_: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
-            if (state == 0) resetProcessState();
+        fn setActive(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
+            if (state == 0) resetProcessState(owner(ptr));
             return types.kResultOk;
         }
 
-        fn setState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
-            return Config.readState(state);
+        fn setState(ptr: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
+            return owner(ptr).parameter_state.readFromStream(state);
         }
 
-        fn getState(_: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
-            return Config.writeState(state);
+        fn getState(ptr: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
+            return owner(ptr).parameter_state.writeToStream(state);
         }
 
         const processor_vtable = ivstaudioprocessor.IAudioProcessorVTable{
@@ -1990,23 +2220,29 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             if (setup_result != types.kResultOk) return setup_result;
 
             self.sample_rate = setup.sampleRate;
-            resetProcessState();
+            resetProcessState(self);
             return types.kResultOk;
         }
 
-        fn setProcessing(_: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
-            if (state == 0) resetProcessState();
+        fn setProcessing(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
+            if (state == 0) resetProcessState(ownerFromProcessor(ptr));
             return types.kResultOk;
         }
 
         fn process(ptr: *anyopaque, data: *ivstaudioprocessor.ProcessData) callconv(.c) types.tresult {
             const self = ownerFromProcessor(ptr);
             const Processor = struct {
+                component: *Component,
                 parameter_changes: plug_process.ParameterChanges,
 
                 pub fn process(processor: @This(), comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-                    Config.applyParameterChanges(processor.parameter_changes);
-                    (Config.Processor{}).process(Sample, context);
+                    processor.component.parameter_state.applyChanges(processor.parameter_changes);
+                    const process_parameter_count = @typeInfo(@TypeOf(Config.Processor.process)).@"fn".params.len;
+                    if (comptime process_parameter_count == 3) {
+                        processor.component.processor_impl.process(Sample, context);
+                    } else {
+                        processor.component.processor_impl.process(&processor.component.parameter_state, Sample, context);
+                    }
                 }
             };
             var parameter_change_storage: [process_parameter_change_capacity]plug_process.ParameterChange = undefined;
@@ -2015,7 +2251,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             const parameter_changes = zig_vst3_plugin_bridge.collectInputParameterChanges(data, &parameter_change_storage);
             const events = zig_vst3_plugin_bridge.collectInputEvents(data, &event_storage);
             var output_events = plug_process.EventWriter.init(&output_event_storage, zig_vst3_plugin_bridge.frameCountOrZero(data));
-            const result = zig_vst3_plugin_bridge.processMainAudioConfiguredWithSampleRate(data, parameter_changes, events, &output_events, Processor{ .parameter_changes = parameter_changes }, bus_config, self.sample_rate);
+            const result = zig_vst3_plugin_bridge.processMainAudioConfiguredWithSampleRate(data, parameter_changes, events, &output_events, Processor{ .component = self, .parameter_changes = parameter_changes }, bus_config, self.sample_rate);
             if (result != types.kResultOk) return result;
             return zig_vst3_plugin_bridge.writeOutputEvents(data, output_events.events());
         }

@@ -1,0 +1,633 @@
+const std = @import("std");
+
+pub const ParameterId = u32;
+pub const NormalizedValue = f64;
+
+pub const Size = struct {
+    width: u32,
+    height: u32,
+};
+
+pub const Scale = struct {
+    x: f64 = 1.0,
+    y: f64 = 1.0,
+
+    pub fn valid(self: Scale) bool {
+        return std.math.isFinite(self.x) and std.math.isFinite(self.y) and self.x > 0 and self.y > 0;
+    }
+};
+
+pub const ResizePolicy = union(enum) {
+    fixed: Size,
+    resizable: struct {
+        minimum: Size,
+        maximum: Size,
+    },
+};
+
+pub const Platform = enum {
+    macos,
+    windows,
+    x11,
+    wayland,
+};
+
+pub const NativeParent = struct {
+    platform: Platform,
+    handle: ?*anyopaque,
+};
+
+pub const ParameterMetadata = struct {
+    id: ParameterId,
+    name: []const u8,
+    short_name: []const u8,
+    units: []const u8,
+    minimum_plain: f64 = 0.0,
+    maximum_plain: f64 = 1.0,
+    default_normalized: NormalizedValue,
+    step_count: i32,
+    kind: ParameterKind = .float,
+};
+
+pub const ParameterKind = enum {
+    float,
+    integer,
+    boolean,
+    enumeration,
+};
+
+pub const Error = error{
+    InvalidParameter,
+    Rejected,
+    NotAttached,
+    AlreadyAttached,
+    InvalidScale,
+};
+
+/// Calls supplied by the plugin controller. All calls run on the host GUI thread.
+pub const Context = struct {
+    userdata: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        begin_edit: *const fn (*anyopaque, ParameterId) Error!void,
+        perform_edit: *const fn (*anyopaque, ParameterId, NormalizedValue) Error!void,
+        end_edit: *const fn (*anyopaque, ParameterId) void,
+        value: *const fn (*anyopaque, ParameterId) ?NormalizedValue,
+        metadata: *const fn (*anyopaque, ParameterId) ?ParameterMetadata,
+        format: *const fn (*anyopaque, ParameterId, NormalizedValue, []u8) Error!usize,
+        parse: *const fn (*anyopaque, ParameterId, []const u8) Error!NormalizedValue,
+        request_resize: *const fn (*anyopaque, Size) Error!Size,
+        request_repaint: *const fn (*anyopaque) void,
+        open_context_menu: *const fn (*anyopaque, ParameterId, i32, i32) Error!void,
+    };
+
+    pub fn value(self: Context, id: ParameterId) ?NormalizedValue {
+        return self.vtable.value(self.userdata, id);
+    }
+
+    pub fn metadata(self: Context, id: ParameterId) ?ParameterMetadata {
+        return self.vtable.metadata(self.userdata, id);
+    }
+
+    pub fn beginGesture(self: Context, id: ParameterId) Error!Gesture {
+        const initial = self.value(id) orelse return error.InvalidParameter;
+        try self.vtable.begin_edit(self.userdata, id);
+        return .{
+            .context = self,
+            .id = id,
+            .initial = initial,
+            .accepted = initial,
+        };
+    }
+
+    pub fn format(self: Context, id: ParameterId, value_to_format: NormalizedValue, buffer: []u8) Error![]const u8 {
+        const length = try self.vtable.format(self.userdata, id, value_to_format, buffer);
+        if (length > buffer.len) return error.Rejected;
+        return buffer[0..length];
+    }
+
+    pub fn parse(self: Context, id: ParameterId, text: []const u8) Error!NormalizedValue {
+        return self.vtable.parse(self.userdata, id, text);
+    }
+
+    pub fn requestRepaint(self: Context) void {
+        self.vtable.request_repaint(self.userdata);
+    }
+
+    pub fn openContextMenu(self: Context, id: ParameterId, x: i32, y: i32) Error!void {
+        try self.vtable.open_context_menu(self.userdata, id, x, y);
+    }
+};
+
+pub const Gesture = struct {
+    context: Context,
+    id: ParameterId,
+    initial: NormalizedValue,
+    accepted: NormalizedValue,
+    active: bool = true,
+
+    pub fn set(self: *Gesture, value: NormalizedValue) Error!void {
+        if (!self.active) return error.Rejected;
+        try self.context.vtable.perform_edit(self.context.userdata, self.id, value);
+        self.accepted = value;
+    }
+
+    pub fn finish(self: *Gesture) void {
+        if (!self.active) return;
+        self.context.vtable.end_edit(self.context.userdata, self.id);
+        self.active = false;
+    }
+
+    pub fn cancel(self: *Gesture) void {
+        if (!self.active) return;
+        self.context.vtable.perform_edit(self.context.userdata, self.id, self.initial) catch {};
+        self.context.vtable.end_edit(self.context.userdata, self.id);
+        self.accepted = self.initial;
+        self.active = false;
+    }
+};
+
+pub const ParameterAttachment = struct {
+    context: Context,
+    metadata: ParameterMetadata,
+    value: NormalizedValue,
+    gesture: ?Gesture = null,
+
+    pub fn init(context: Context, id: ParameterId) Error!ParameterAttachment {
+        return .{
+            .context = context,
+            .metadata = context.metadata(id) orelse return error.InvalidParameter,
+            .value = context.value(id) orelse return error.InvalidParameter,
+        };
+    }
+
+    pub fn begin(self: *ParameterAttachment) Error!void {
+        if (self.gesture != null) return error.Rejected;
+        self.gesture = try self.context.beginGesture(self.metadata.id);
+    }
+
+    pub fn set(self: *ParameterAttachment, value: NormalizedValue) Error!void {
+        if (self.gesture) |*gesture| {
+            const normalized = quantized(self.metadata, value);
+            try gesture.set(normalized);
+            self.value = normalized;
+            return;
+        }
+        return error.Rejected;
+    }
+
+    pub fn finish(self: *ParameterAttachment) void {
+        if (self.gesture) |*gesture| gesture.finish();
+        self.gesture = null;
+    }
+
+    pub fn cancel(self: *ParameterAttachment) void {
+        if (self.gesture) |*gesture| {
+            gesture.cancel();
+            self.value = gesture.accepted;
+        }
+        self.gesture = null;
+    }
+
+    pub fn resetToDefault(self: *ParameterAttachment) Error!void {
+        try self.begin();
+        errdefer self.cancel();
+        try self.set(self.metadata.default_normalized);
+        self.finish();
+    }
+
+    pub fn hostChanged(self: *ParameterAttachment, value: NormalizedValue) void {
+        self.value = quantized(self.metadata, value);
+    }
+
+    pub fn adjust(self: *ParameterAttachment, delta: f64, fine: bool) Error!void {
+        const multiplier: f64 = if (fine) 0.1 else 1.0;
+        try self.set(self.value + delta * multiplier);
+    }
+
+    pub fn format(self: *const ParameterAttachment, buffer: []u8) Error![]const u8 {
+        return self.context.format(self.metadata.id, self.value, buffer);
+    }
+
+    pub fn parseAndSet(self: *ParameterAttachment, text: []const u8) Error!void {
+        const parsed = try self.context.parse(self.metadata.id, text);
+        if (self.gesture == null) try self.begin();
+        errdefer self.cancel();
+        try self.set(parsed);
+        self.finish();
+    }
+};
+
+/// A fixed-size development panel built entirely from reflected parameter IDs.
+pub fn ParameterPanel(comptime parameter_count: usize) type {
+    return struct {
+        attachments: [parameter_count]ParameterAttachment,
+
+        pub fn init(context: Context, ids: [parameter_count]ParameterId) Error!@This() {
+            var panel: @This() = undefined;
+            var initialized: usize = 0;
+            errdefer for (panel.attachments[0..initialized]) |*attachment| attachment.cancel();
+            for (ids, 0..) |id, index| {
+                panel.attachments[index] = try ParameterAttachment.init(context, id);
+                initialized += 1;
+            }
+            return panel;
+        }
+
+        pub fn hostChanged(self: *@This(), id: ParameterId, value: NormalizedValue) void {
+            for (&self.attachments) |*attachment| {
+                if (attachment.metadata.id == id) attachment.hostChanged(value);
+            }
+        }
+
+        pub fn cancelGestures(self: *@This()) void {
+            for (&self.attachments) |*attachment| attachment.cancel();
+        }
+    };
+}
+
+pub fn quantized(metadata: ParameterMetadata, value: NormalizedValue) NormalizedValue {
+    const clamped = std.math.clamp(value, 0.0, 1.0);
+    if (metadata.step_count <= 0) return clamped;
+    const steps: f64 = @floatFromInt(metadata.step_count);
+    return @round(clamped * steps) / steps;
+}
+
+/// Toolkit adapters receive lifecycle calls on the host GUI thread.
+pub const Adapter = struct {
+    userdata: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        attach: *const fn (*anyopaque, NativeParent, Size, Scale) Error!void,
+        detach: *const fn (*anyopaque) void,
+        resize: *const fn (*anyopaque, Size) Error!void,
+        scale: *const fn (*anyopaque, Scale) Error!void,
+        focus: *const fn (*anyopaque, bool) void,
+        parameter_changed: *const fn (*anyopaque, ParameterId, NormalizedValue) void,
+        destroy: *const fn (*anyopaque) void,
+    };
+};
+
+pub const Editor = struct {
+    context: Context,
+    adapter: Adapter,
+    size: Size,
+    scale: Scale = .{},
+    resize_policy: ResizePolicy,
+    attached: bool = false,
+    active_gesture: ?Gesture = null,
+
+    pub fn attach(self: *Editor, parent: NativeParent) Error!void {
+        if (self.attached) return error.AlreadyAttached;
+        try self.adapter.vtable.attach(self.adapter.userdata, parent, self.size, self.scale);
+        self.attached = true;
+    }
+
+    pub fn detach(self: *Editor) void {
+        if (self.active_gesture) |*gesture| gesture.cancel();
+        self.active_gesture = null;
+        if (!self.attached) return;
+        self.adapter.vtable.detach(self.adapter.userdata);
+        self.attached = false;
+    }
+
+    pub fn deinit(self: *Editor) void {
+        self.detach();
+        self.adapter.vtable.destroy(self.adapter.userdata);
+    }
+
+    pub fn beginGesture(self: *Editor, id: ParameterId) Error!void {
+        if (!self.attached) return error.NotAttached;
+        if (self.active_gesture != null) return error.Rejected;
+        self.active_gesture = try self.context.beginGesture(id);
+    }
+
+    pub fn setGestureValue(self: *Editor, value: NormalizedValue) Error!void {
+        if (self.active_gesture) |*gesture| {
+            try gesture.set(value);
+            return;
+        }
+        return error.Rejected;
+    }
+
+    pub fn endGesture(self: *Editor) void {
+        if (self.active_gesture) |*gesture| gesture.finish();
+        self.active_gesture = null;
+    }
+
+    pub fn requestResize(self: *Editor, requested: Size) Error!void {
+        const accepted = try self.context.vtable.request_resize(self.context.userdata, constrained(self.resize_policy, requested));
+        try self.acceptSize(accepted);
+    }
+
+    pub fn hostResize(self: *Editor, accepted: Size) Error!void {
+        try self.acceptSize(accepted);
+    }
+
+    pub fn setScale(self: *Editor, scale: Scale) Error!void {
+        if (!scale.valid()) return error.InvalidScale;
+        try self.adapter.vtable.scale(self.adapter.userdata, scale);
+        self.scale = scale;
+    }
+
+    pub fn setFocus(self: *Editor, focused: bool) void {
+        self.adapter.vtable.focus(self.adapter.userdata, focused);
+    }
+
+    pub fn hostParameterChanged(self: *Editor, id: ParameterId, value: NormalizedValue) void {
+        self.adapter.vtable.parameter_changed(self.adapter.userdata, id, value);
+    }
+
+    fn acceptSize(self: *Editor, accepted: Size) Error!void {
+        try self.adapter.vtable.resize(self.adapter.userdata, accepted);
+        self.size = accepted;
+    }
+};
+
+pub fn constrained(policy: ResizePolicy, requested: Size) Size {
+    return switch (policy) {
+        .fixed => |size| size,
+        .resizable => |bounds| .{
+            .width = std.math.clamp(requested.width, bounds.minimum.width, bounds.maximum.width),
+            .height = std.math.clamp(requested.height, bounds.minimum.height, bounds.maximum.height),
+        },
+    };
+}
+
+const Fake = struct {
+    value: NormalizedValue = 0.5,
+    reject_edit: bool = false,
+    reject_resize: bool = false,
+    reject_scale: bool = false,
+    calls: [16]u8 = undefined,
+    call_count: usize = 0,
+    attach_count: usize = 0,
+    detach_count: usize = 0,
+    destroy_count: usize = 0,
+    repaint_count: usize = 0,
+    parameter_change_count: usize = 0,
+    last_size: Size = .{ .width = 400, .height = 300 },
+    last_scale: Scale = .{},
+
+    fn record(self: *Fake, call: u8) void {
+        self.calls[self.call_count] = call;
+        self.call_count += 1;
+    }
+
+    fn context(self: *Fake) Context {
+        return .{ .userdata = self, .vtable = &context_vtable };
+    }
+
+    fn adapter(self: *Fake) Adapter {
+        return .{ .userdata = self, .vtable = &adapter_vtable };
+    }
+
+    fn from(ptr: *anyopaque) *Fake {
+        return @ptrCast(@alignCast(ptr));
+    }
+
+    fn begin(ptr: *anyopaque, _: ParameterId) Error!void {
+        from(ptr).record('b');
+    }
+
+    fn perform(ptr: *anyopaque, _: ParameterId, value: NormalizedValue) Error!void {
+        const self = from(ptr);
+        self.record('p');
+        if (self.reject_edit) return error.Rejected;
+        self.value = value;
+    }
+
+    fn end(ptr: *anyopaque, _: ParameterId) void {
+        from(ptr).record('e');
+    }
+
+    fn getValue(ptr: *anyopaque, id: ParameterId) ?NormalizedValue {
+        return if (id == 7) from(ptr).value else null;
+    }
+
+    fn getMetadata(_: *anyopaque, id: ParameterId) ?ParameterMetadata {
+        if (id != 7) return null;
+        return .{ .id = id, .name = "Gain", .short_name = "Gain", .units = "dB", .default_normalized = 0.5, .step_count = 0 };
+    }
+
+    fn formatValue(_: *anyopaque, id: ParameterId, value: NormalizedValue, buffer: []u8) Error!usize {
+        if (id != 7) return error.InvalidParameter;
+        const text = std.fmt.bufPrint(buffer, "{d:.3} dB", .{value}) catch return error.Rejected;
+        return text.len;
+    }
+
+    fn parseValue(_: *anyopaque, id: ParameterId, text: []const u8) Error!NormalizedValue {
+        if (id != 7) return error.InvalidParameter;
+        const value_end = std.mem.indexOfScalar(u8, text, ' ') orelse text.len;
+        return std.fmt.parseFloat(f64, text[0..value_end]) catch return error.Rejected;
+    }
+
+    fn requestResize(ptr: *anyopaque, size: Size) Error!Size {
+        const self = from(ptr);
+        if (self.reject_resize) return error.Rejected;
+        return size;
+    }
+
+    fn repaint(ptr: *anyopaque) void {
+        from(ptr).repaint_count += 1;
+    }
+
+    fn contextMenu(_: *anyopaque, id: ParameterId, _: i32, _: i32) Error!void {
+        if (id != 7) return error.InvalidParameter;
+    }
+
+    fn attach(ptr: *anyopaque, _: NativeParent, _: Size, _: Scale) Error!void {
+        from(ptr).attach_count += 1;
+    }
+
+    fn detach(ptr: *anyopaque) void {
+        from(ptr).detach_count += 1;
+    }
+
+    fn resize(ptr: *anyopaque, size: Size) Error!void {
+        const self = from(ptr);
+        self.last_size = size;
+    }
+
+    fn setScale(ptr: *anyopaque, scale: Scale) Error!void {
+        const self = from(ptr);
+        if (self.reject_scale) return error.Rejected;
+        self.last_scale = scale;
+    }
+
+    fn focus(_: *anyopaque, _: bool) void {}
+
+    fn parameterChanged(ptr: *anyopaque, _: ParameterId, _: NormalizedValue) void {
+        from(ptr).parameter_change_count += 1;
+    }
+
+    fn destroy(ptr: *anyopaque) void {
+        from(ptr).destroy_count += 1;
+    }
+
+    const context_vtable = Context.VTable{
+        .begin_edit = begin,
+        .perform_edit = perform,
+        .end_edit = end,
+        .value = getValue,
+        .metadata = getMetadata,
+        .format = formatValue,
+        .parse = parseValue,
+        .request_resize = requestResize,
+        .request_repaint = repaint,
+        .open_context_menu = contextMenu,
+    };
+
+    const adapter_vtable = Adapter.VTable{
+        .attach = attach,
+        .detach = detach,
+        .resize = resize,
+        .scale = setScale,
+        .focus = focus,
+        .parameter_changed = parameterChanged,
+        .destroy = destroy,
+    };
+};
+
+fn fakeEditor(fake: *Fake) Editor {
+    return .{
+        .context = fake.context(),
+        .adapter = fake.adapter(),
+        .size = .{ .width = 400, .height = 300 },
+        .resize_policy = .{ .resizable = .{
+            .minimum = .{ .width = 200, .height = 150 },
+            .maximum = .{ .width = 800, .height = 600 },
+        } },
+    };
+}
+
+test "editor orders complete parameter gestures" {
+    var fake = Fake{};
+    var editor = fakeEditor(&fake);
+    try editor.attach(.{ .platform = .macos, .handle = null });
+    try editor.beginGesture(7);
+    try editor.setGestureValue(0.75);
+    editor.endGesture();
+
+    try std.testing.expectEqualStrings("bpe", fake.calls[0..fake.call_count]);
+    try std.testing.expectEqual(@as(NormalizedValue, 0.75), fake.value);
+}
+
+test "rejected edits preserve the last accepted value" {
+    var fake = Fake{};
+    var editor = fakeEditor(&fake);
+    try editor.attach(.{ .platform = .macos, .handle = null });
+    try editor.beginGesture(7);
+    try editor.setGestureValue(0.75);
+    fake.reject_edit = true;
+    try std.testing.expectError(error.Rejected, editor.setGestureValue(0.25));
+    try std.testing.expectEqual(@as(NormalizedValue, 0.75), editor.active_gesture.?.accepted);
+    try std.testing.expectEqual(@as(NormalizedValue, 0.75), fake.value);
+}
+
+test "detach cancels an active gesture and destroys once" {
+    var fake = Fake{};
+    var editor = fakeEditor(&fake);
+    try editor.attach(.{ .platform = .macos, .handle = null });
+    try editor.beginGesture(7);
+    try editor.setGestureValue(0.9);
+    editor.deinit();
+
+    try std.testing.expectEqual(@as(NormalizedValue, 0.5), fake.value);
+    try std.testing.expectEqual(@as(usize, 1), fake.detach_count);
+    try std.testing.expectEqual(@as(usize, 1), fake.destroy_count);
+}
+
+test "host parameter changes do not start gestures" {
+    var fake = Fake{};
+    var editor = fakeEditor(&fake);
+    editor.hostParameterChanged(7, 0.25);
+
+    try std.testing.expectEqual(@as(usize, 1), fake.parameter_change_count);
+    try std.testing.expectEqual(@as(usize, 0), fake.call_count);
+}
+
+test "rejected size and scale changes preserve accepted state" {
+    var fake = Fake{};
+    var editor = fakeEditor(&fake);
+    fake.reject_resize = true;
+    try std.testing.expectError(error.Rejected, editor.requestResize(.{ .width = 700, .height = 500 }));
+    try std.testing.expectEqual(Size{ .width = 400, .height = 300 }, editor.size);
+
+    fake.reject_scale = true;
+    try std.testing.expectError(error.Rejected, editor.setScale(.{ .x = 2.0, .y = 2.0 }));
+    try std.testing.expectEqual(Scale{}, editor.scale);
+}
+
+test "resize requests are constrained before reaching the host" {
+    var fake = Fake{};
+    var editor = fakeEditor(&fake);
+    try editor.requestResize(.{ .width = 1_000, .height = 100 });
+    try std.testing.expectEqual(Size{ .width = 800, .height = 150 }, editor.size);
+    try std.testing.expectEqual(editor.size, fake.last_size);
+}
+
+test "parameter attachment owns gestures and exact text entry" {
+    var fake = Fake{};
+    var attachment = try ParameterAttachment.init(fake.context(), 7);
+    try attachment.parseAndSet("0.625 dB");
+    try std.testing.expectEqual(@as(NormalizedValue, 0.625), attachment.value);
+    try std.testing.expectEqualStrings("bpe", fake.calls[0..fake.call_count]);
+
+    var buffer: [32]u8 = undefined;
+    try std.testing.expectEqualStrings("0.625 dB", try attachment.format(&buffer));
+}
+
+test "parameter attachment rejects invalid IDs and rejected values" {
+    var fake = Fake{};
+    try std.testing.expectError(error.InvalidParameter, ParameterAttachment.init(fake.context(), 99));
+
+    var attachment = try ParameterAttachment.init(fake.context(), 7);
+    try attachment.begin();
+    fake.reject_edit = true;
+    try std.testing.expectError(error.Rejected, attachment.set(0.75));
+    try std.testing.expectEqual(@as(NormalizedValue, 0.5), attachment.value);
+    attachment.cancel();
+}
+
+test "parameter attachment quantizes boolean integer and enum values" {
+    const base = ParameterMetadata{
+        .id = 1,
+        .name = "Value",
+        .short_name = "Value",
+        .units = "",
+        .default_normalized = 0,
+        .step_count = 1,
+        .kind = .boolean,
+    };
+    try std.testing.expectEqual(@as(f64, 1.0), quantized(base, 0.75));
+    try std.testing.expectEqual(@as(f64, 0.0), quantized(base, 0.25));
+
+    var integer = base;
+    integer.kind = .integer;
+    integer.step_count = 3;
+    try std.testing.expectApproxEqAbs(@as(f64, 2.0 / 3.0), quantized(integer, 0.6), 0.000001);
+
+    var enumeration = integer;
+    enumeration.kind = .enumeration;
+    try std.testing.expectApproxEqAbs(@as(f64, 1.0 / 3.0), quantized(enumeration, 0.4), 0.000001);
+}
+
+test "host automation updates attachments without emitting gestures" {
+    var fake = Fake{};
+    var attachment = try ParameterAttachment.init(fake.context(), 7);
+    attachment.hostChanged(0.25);
+    try std.testing.expectEqual(@as(NormalizedValue, 0.25), attachment.value);
+    try std.testing.expectEqual(@as(usize, 0), fake.call_count);
+}
+
+test "parameter panel builds controls from reflected IDs" {
+    var fake = Fake{};
+    var panel = try ParameterPanel(1).init(fake.context(), .{7});
+    try std.testing.expectEqualStrings("Gain", panel.attachments[0].metadata.name);
+    panel.hostChanged(7, 0.875);
+    try std.testing.expectEqual(@as(NormalizedValue, 0.875), panel.attachments[0].value);
+    try std.testing.expectEqual(@as(usize, 0), fake.call_count);
+}

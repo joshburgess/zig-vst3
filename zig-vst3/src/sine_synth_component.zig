@@ -16,7 +16,7 @@ const SineSynthState = struct {
     note: i16 = 69,
     phase: f64 = 0.0,
 
-    fn process(self: *SineSynthState, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+    fn process(self: *SineSynthState, default_level: f64, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
         context.clearOutputs();
 
         var segments = context.processBlockSegments();
@@ -27,7 +27,7 @@ const SineSynthState = struct {
             const level: Sample = @floatCast(context.parameterNormalizedAtOrBeforeOr(
                 sine_synth_controller.level_param_id,
                 segment.start_offset,
-                sine_synth_controller.level(),
+                default_level,
             ));
             const step = midiFrequency(self.note) / context.sample_rate;
             for (segment.start_offset..segment.end_offset) |sample| {
@@ -60,15 +60,15 @@ const SineSynthState = struct {
     }
 };
 
-var synth = SineSynthState{};
-
-fn resetSineSynthState() void {
-    synth = .{};
-}
-
 const SineSynthProcessor = struct {
-    pub fn process(_: SineSynthProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-        synth.process(Sample, context);
+    state: SineSynthState = .{},
+
+    pub fn reset(self: *SineSynthProcessor) void {
+        self.state = .{};
+    }
+
+    pub fn process(self: *SineSynthProcessor, parameters: anytype, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+        self.state.process(parameters.getNormalizedById(sine_synth_controller.level_param_id), Sample, context);
     }
 };
 
@@ -77,23 +77,9 @@ const Effect = zig_vst3_plugin_effect.SimpleStereoEffect(struct {
     pub const controller_cid = sine_synth_controller.cid;
     pub const event_input = sine_synth_spec.Spec.event_input;
     pub const audio_input = sine_synth_spec.Spec.audio_input;
+    pub const Params = sine_synth_spec.Spec.Params;
+    pub const parameter_set = &sine_synth_spec.parameter_set;
     pub const Processor = SineSynthProcessor;
-
-    pub fn resetProcessState() void {
-        resetSineSynthState();
-    }
-
-    pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
-        sine_synth_controller.applyParameterChanges(changes);
-    }
-
-    pub fn readState(state: ?*ibstream.IBStream) types.tresult {
-        return sine_synth_controller.readState(state);
-    }
-
-    pub fn writeState(state: ?*ibstream.IBStream) types.tresult {
-        return sine_synth_controller.writeState(state);
-    }
 });
 
 pub const create = Effect.create;
@@ -109,7 +95,7 @@ test "sine synth component can be created as IComponent" {
     try std.testing.expectEqual(@as(types.int32, 0), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput)));
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kOutput)));
     try std.testing.expectEqual(@as(types.int32, 1), component_iface.vtable.getBusCount(component_iface, @intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput)));
-    try std.testing.expect(component_iface.vtable.release(component_iface) >= 1);
+    try std.testing.expectEqual(@as(types.uint32, 0), component_iface.vtable.release(component_iface));
 }
 
 test "sine synth processor responds to note events and level automation" {
@@ -128,7 +114,7 @@ test "sine synth processor responds to note events and level automation" {
         .parameter_changes = &changes,
     });
 
-    local_synth.process(f32, &context);
+    local_synth.process(1.0, f32, &context);
 
     try std.testing.expectEqual(@as(f32, 0.0), output[0]);
     try std.testing.expect(output[1] > 0.0);
@@ -144,10 +130,6 @@ test "sine synth component renders host event list input through processor shell
     const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
     const vst_event_list = @import("vst_event_list.zig");
     const vst_parameter_changes = @import("vst_parameter_changes.zig");
-
-    resetSineSynthState();
-    sine_synth_controller.setLevel(0.0);
-    defer sine_synth_controller.setLevel(sine_synth_spec.default_level);
 
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
@@ -218,8 +200,8 @@ test "sine synth component renders host event list input through processor shell
     try std.testing.expect(left[2] > left[1]);
     try std.testing.expectEqual(@as(f32, 0.0), left[3]);
     try std.testing.expectEqualSlices(f32, &left, &right);
-    try std.testing.expect(!synth.active);
-    try std.testing.expectEqual(@as(f64, 1.0), sine_synth_controller.level());
+    try std.testing.expect(!Effect.processorInstance(component_iface).state.active);
+    try std.testing.expectEqual(@as(f64, 1.0), Effect.getParameterNormalized(component_iface, sine_synth_controller.level_param_id));
 }
 
 test "sine synth component renders host event list input through double precision processor shell" {
@@ -229,10 +211,6 @@ test "sine synth component renders host event list input through double precisio
     const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
     const vst_event_list = @import("vst_event_list.zig");
     const vst_parameter_changes = @import("vst_parameter_changes.zig");
-
-    resetSineSynthState();
-    sine_synth_controller.setLevel(0.0);
-    defer sine_synth_controller.setLevel(sine_synth_spec.default_level);
 
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
@@ -303,8 +281,8 @@ test "sine synth component renders host event list input through double precisio
     try std.testing.expect(left[2] > left[1]);
     try std.testing.expectEqual(@as(f64, 0.0), left[3]);
     try std.testing.expectEqualSlices(f64, &left, &right);
-    try std.testing.expect(!synth.active);
-    try std.testing.expectEqual(@as(f64, 1.0), sine_synth_controller.level());
+    try std.testing.expect(!Effect.processorInstance(component_iface).state.active);
+    try std.testing.expectEqual(@as(f64, 1.0), Effect.getParameterNormalized(component_iface, sine_synth_controller.level_param_id));
 }
 
 test "sine synth processor treats zero-velocity note-on as note-off" {
@@ -320,7 +298,7 @@ test "sine synth processor treats zero-velocity note-on as note-off" {
         .events = &events,
     });
 
-    local_synth.process(f32, &context);
+    local_synth.process(1.0, f32, &context);
 
     try std.testing.expectEqual(@as(f32, 0.0), output[0]);
     try std.testing.expect(output[1] > 0.0);
@@ -336,7 +314,6 @@ test "sine synth component uses spec default level" {
 test "sine synth component resets process state when deactivated" {
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 
-    resetSineSynthState();
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
@@ -352,36 +329,33 @@ test "sine synth component resets process state when deactivated" {
     var context = try plug_process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
         .events = &events,
     });
-    (SineSynthProcessor{}).process(f32, &context);
-    try std.testing.expect(synth.active);
+    Effect.processorInstance(component_iface).state.process(1.0, f32, &context);
+    try std.testing.expect(Effect.processorInstance(component_iface).state.active);
 
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setActive(component_iface, 0));
-    try std.testing.expect(!synth.active);
-    try std.testing.expectEqual(@as(i16, 69), synth.note);
-    try std.testing.expectEqual(@as(f64, 0.0), synth.phase);
+    try std.testing.expect(!Effect.processorInstance(component_iface).state.active);
+    try std.testing.expectEqual(@as(i16, 69), Effect.processorInstance(component_iface).state.note);
+    try std.testing.expectEqual(@as(f64, 0.0), Effect.processorInstance(component_iface).state.phase);
 }
 
 test "sine synth component round-trips level state through host callbacks" {
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
-
-    resetSineSynthState();
-    sine_synth_controller.setLevel(0.75);
-    defer sine_synth_controller.setLevel(sine_synth_spec.default_level);
 
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
     defer _ = component_iface.vtable.release(component_iface);
+    try std.testing.expectEqual(types.kResultOk, Effect.setParameterNormalized(component_iface, sine_synth_controller.level_param_id, 0.75));
 
     const Stream = vst_stream.FixedBufferStream(plug_state.encodedSize(sine_synth_spec.Spec.Params));
     var stream = Stream{};
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getState(component_iface, stream.asStream()));
     try std.testing.expectEqual(@as(usize, plug_state.encodedSize(sine_synth_spec.Spec.Params)), stream.data().len);
 
-    sine_synth_controller.setLevel(0.0);
-    try std.testing.expectEqual(@as(f64, 0.0), sine_synth_controller.level());
+    try std.testing.expectEqual(types.kResultOk, Effect.setParameterNormalized(component_iface, sine_synth_controller.level_param_id, 0.0));
+    try std.testing.expectEqual(@as(f64, 0.0), Effect.getParameterNormalized(component_iface, sine_synth_controller.level_param_id));
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setState(component_iface, stream.asStream()));
-    try std.testing.expectApproxEqAbs(@as(f64, 0.75), sine_synth_controller.level(), 0.000001);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.75), Effect.getParameterNormalized(component_iface, sine_synth_controller.level_param_id), 0.000001);
 }

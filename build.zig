@@ -3,6 +3,10 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const native_vstgui = target.result.os.tag == b.graph.host.result.os.tag and
+        (target.result.os.tag == .macos or target.result.os.tag == .linux or target.result.os.tag == .windows);
+    const gui_options = b.addOptions();
+    gui_options.addOption(bool, "vstgui_adapter_enabled", native_vstgui);
 
     const zig_vst3 = b.addModule("zig-vst3", .{
         .root_source_file = b.path("zig-vst3/src/root.zig"),
@@ -15,6 +19,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     zig_vst3.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
+    zig_vst3.addOptions("zig-vst3-gui-options", gui_options);
 
     const zig_vst3_plugin = b.addModule("zig-vst3-plugin", .{
         .root_source_file = b.path("zig-vst3-plugin/src/root.zig"),
@@ -25,6 +30,14 @@ pub fn build(b: *std.Build) void {
     zig_vst3_plugin.addImport("zig-vst3", zig_vst3);
 
     const entry_symbols_step = b.step("entry-symbols", "Verify native VST3 module entry exports");
+    const vstgui_adapter_step = b.step("vstgui-adapter", "Build the optional VSTGUI adapter");
+    if (native_vstgui) {
+        const build_vstgui = if (target.result.os.tag == .windows)
+            b.addSystemCommand(&.{ "powershell", "-NoProfile", "-File", "scripts/build_vstgui.ps1" })
+        else
+            b.addSystemCommand(&.{"scripts/build_vstgui.sh"});
+        vstgui_adapter_step.dependOn(&build_vstgui.step);
+    }
 
     const example_plugin_options = [_]ExamplePluginOptions{
         .{
@@ -103,7 +116,7 @@ pub fn build(b: *std.Build) void {
 
     var example_plugins: [example_plugin_options.len]ExamplePluginSteps = undefined;
     for (example_plugin_options, 0..) |options, index| {
-        example_plugins[index] = addExamplePlugin(b, target, optimize, zig_vst3_plugin_core, zig_vst3_plugin, entry_symbols_step, options);
+        example_plugins[index] = addExamplePlugin(b, target, optimize, zig_vst3_plugin_core, zig_vst3_plugin, gui_options, native_vstgui, entry_symbols_step, vstgui_adapter_step, options);
     }
 
     var example_bundle_steps: [example_plugin_options.len]Vst3BundleSteps = undefined;
@@ -116,9 +129,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     vst3_test_module.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
+    vst3_test_module.addOptions("zig-vst3-gui-options", gui_options);
+    if (native_vstgui) addVstguiAdapter(vst3_test_module, target);
     const vst3_tests = b.addTest(.{
         .root_module = vst3_test_module,
     });
+    if (native_vstgui) vst3_tests.step.dependOn(vstgui_adapter_step);
 
     const zig_vst3_plugin_core_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -620,14 +636,33 @@ fn addExamplePlugin(
     optimize: std.builtin.OptimizeMode,
     zig_vst3_plugin_core: *std.Build.Module,
     zig_vst3_plugin: *std.Build.Module,
+    gui_options: *std.Build.Step.Options,
+    native_vstgui: bool,
     entry_symbols_step: *std.Build.Step,
+    vstgui_adapter_step: *std.Build.Step,
     options: ExamplePluginOptions,
 ) ExamplePluginSteps {
+    const has_reference_editor = std.mem.eql(u8, options.short_name, "gain") or
+        std.mem.eql(u8, options.short_name, "bypass") or
+        std.mem.eql(u8, options.short_name, "mode-gain") or
+        std.mem.eql(u8, options.short_name, "voice-mix");
     const library = addVst3PluginLibrary(b, target, optimize, zig_vst3_plugin_core, .{
         .artifact_name = options.artifact_name,
         .root_source_file = options.root_source_file,
     });
+    if (has_reference_editor) library.root_module.addOptions("zig-vst3-gui-options", gui_options);
+    if (native_vstgui and has_reference_editor) {
+        addVstguiAdapter(library.root_module, target);
+        library.step.dependOn(vstgui_adapter_step);
+    }
     addEntrySymbolsCheck(b, entry_symbols_step, library);
+
+    const plugin_tests = addZigVst3PluginCoreTest(b, target, optimize, zig_vst3_plugin_core, options.root_source_file);
+    if (has_reference_editor) plugin_tests.root_module.addOptions("zig-vst3-gui-options", gui_options);
+    if (native_vstgui and has_reference_editor) {
+        addVstguiAdapter(plugin_tests.root_module, target);
+        plugin_tests.step.dependOn(vstgui_adapter_step);
+    }
 
     return .{
         .library = library,
@@ -637,9 +672,40 @@ fn addExamplePlugin(
             .artifact_name = options.artifact_name,
             .bundle_id = options.bundle_id,
         }),
-        .plugin_tests = addZigVst3PluginCoreTest(b, target, optimize, zig_vst3_plugin_core, options.root_source_file),
+        .plugin_tests = plugin_tests,
         .core_example_tests = addZigVst3PluginTest(b, target, optimize, zig_vst3_plugin, options.core_example_source_file),
     };
+}
+
+fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget) void {
+    const b = module.owner;
+    const library_path = if (target.result.os.tag == .windows)
+        ".vst3-sdk/vstgui-adapter-build/Release/libs/vstgui.lib"
+    else
+        ".vst3-sdk/vstgui-adapter-build/Release/libs/libvstgui.a";
+    const adapter_library_path = if (target.result.os.tag == .windows)
+        ".vst3-sdk/vstgui-adapter-build/Release/libs/zig_vstgui_adapter.lib"
+    else
+        ".vst3-sdk/vstgui-adapter-build/Release/libs/libzig_vstgui_adapter.a";
+    module.addObjectFile(b.path(adapter_library_path));
+    module.addObjectFile(b.path(library_path));
+    module.linkSystemLibrary("c++", .{});
+    if (target.result.os.tag == .macos) {
+        module.linkFramework("Cocoa", .{});
+        module.linkFramework("QuartzCore", .{});
+        module.linkFramework("Accelerate", .{});
+        module.linkFramework("UniformTypeIdentifiers", .{});
+    } else if (target.result.os.tag == .linux) {
+        for ([_][]const u8{
+            "X11",            "freetype2",      "xcb",         "xcb-util",       "xcb-cursor", "xcb-keysyms", "xcb-xkb",
+            "xkbcommon",      "xkbcommon-x11",  "glib-2.0",    "cairo",          "pangocairo", "pangoft2",    "fontconfig",
+            "wayland-client", "wayland-cursor", "wayland-egl", "wayland-server", "pthread",    "dl",
+        }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .yes });
+    } else if (target.result.os.tag == .windows) {
+        for ([_][]const u8{
+            "comctl32", "d2d1", "dwrite", "gdi32", "ole32", "shell32", "shlwapi", "user32", "uuid", "windowscodecs",
+        }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .no });
+    }
 }
 
 fn addVst3BundleDependencies(

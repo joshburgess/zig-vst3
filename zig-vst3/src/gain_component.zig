@@ -4,6 +4,7 @@ const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ivstattributes = @import("pluginterfaces/vst/ivstattributes.zig");
 const ivstautomationstate = @import("pluginterfaces/vst/ivstautomationstate.zig");
 const ivstdataexchange = @import("pluginterfaces/vst/ivstdataexchange.zig");
+const component_api = @import("pluginterfaces/vst/ivstcomponent.zig");
 const plug_process = @import("zig-vst3-plugin-core").process;
 const plug_state = @import("zig-vst3-plugin-core").state;
 const tuid = @import("tuid.zig");
@@ -16,8 +17,8 @@ const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 pub const cid = tuid.inlineUid(0xA74E7A0D, 0x6B234163, 0xA0A83EBF, 0xD06F1401);
 
 const GainProcessor = struct {
-    pub fn process(_: GainProcessor, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-        const gain: Sample = @floatCast(gain_controller.gain());
+    pub fn process(_: *GainProcessor, parameters: anytype, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+        const gain: Sample = @floatCast(parameters.getNormalizedById(gain_controller.gain_param_id));
         for (0..context.outputChannelCount()) |channel| {
             const input = context.inputChannel(channel) orelse continue;
             const output = context.outputChannel(channel) orelse continue;
@@ -31,45 +32,35 @@ const GainProcessor = struct {
 const Effect = zig_vst3_plugin_effect.SimpleStereoEffect(struct {
     pub const component_name = "GainComponent";
     pub const controller_cid = gain_controller.cid;
+    pub const Params = gain_spec.Spec.Params;
+    pub const parameter_set = &gain_spec.parameter_set;
     pub const Processor = GainProcessor;
-
-    pub fn applyParameterChanges(changes: plug_process.ParameterChanges) void {
-        gain_controller.applyParameterChanges(changes);
-    }
-
-    pub fn readState(state: ?*ibstream.IBStream) types.tresult {
-        return gain_controller.readGainState(state);
-    }
-
-    pub fn writeState(state: ?*ibstream.IBStream) types.tresult {
-        return gain_controller.writeGainState(state);
-    }
 });
 
 pub const create = Effect.create;
 
-pub fn setChannelContextInfos(attributes: ?*ivstattributes.IAttributeList) types.tresult {
-    return Effect.setChannelContextInfos(attributes);
+pub fn setChannelContextInfos(iface: *component_api.IComponent, attributes: ?*ivstattributes.IAttributeList) types.tresult {
+    return Effect.setChannelContextInfos(iface, attributes);
 }
 
-pub fn setAutomationState(state: types.int32) types.tresult {
-    return Effect.setAutomationState(state);
+pub fn setAutomationState(iface: *component_api.IComponent, state: types.int32) types.tresult {
+    return Effect.setAutomationState(iface, state);
 }
 
-pub fn openDataExchangeQueue(block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
-    return Effect.openDataExchangeQueue(block_size, num_blocks, alignment, user_context_id, out);
+pub fn openDataExchangeQueue(iface: *component_api.IComponent, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
+    return Effect.openDataExchangeQueue(iface, block_size, num_blocks, alignment, user_context_id, out);
 }
 
-pub fn closeDataExchangeQueue(queue_id: ivstdataexchange.DataExchangeQueueID) types.tresult {
-    return Effect.closeDataExchangeQueue(queue_id);
+pub fn closeDataExchangeQueue(iface: *component_api.IComponent, queue_id: ivstdataexchange.DataExchangeQueueID) types.tresult {
+    return Effect.closeDataExchangeQueue(iface, queue_id);
 }
 
-pub fn lockDataExchangeBlock(queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
-    return Effect.lockDataExchangeBlock(queue_id, block);
+pub fn lockDataExchangeBlock(iface: *component_api.IComponent, queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
+    return Effect.lockDataExchangeBlock(iface, queue_id, block);
 }
 
-pub fn freeDataExchangeBlock(queue_id: ivstdataexchange.DataExchangeQueueID, block_id: ivstdataexchange.DataExchangeBlockID, send_to_receiver: types.TBool) types.tresult {
-    return Effect.freeDataExchangeBlock(queue_id, block_id, send_to_receiver);
+pub fn freeDataExchangeBlock(iface: *component_api.IComponent, queue_id: ivstdataexchange.DataExchangeQueueID, block_id: ivstdataexchange.DataExchangeBlockID, send_to_receiver: types.TBool) types.tresult {
+    return Effect.freeDataExchangeBlock(iface, queue_id, block_id, send_to_receiver);
 }
 
 test "gain component can be created as IComponent" {
@@ -99,6 +90,34 @@ test "gain component can be created as IComponent" {
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getControllerClassId(component_iface, &controller_cid));
     try std.testing.expectEqualSlices(u8, &gain_controller.cid, &controller_cid);
     _ = component_iface.vtable.release(component_iface);
+}
+
+test "gain component instances isolate parameter state" {
+    const std = @import("std");
+
+    var first_out: ?*anyopaque = null;
+    var second_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&component_api.icomponent_iid), &first_out));
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&component_api.icomponent_iid), &second_out));
+    const first: *component_api.IComponent = @ptrCast(@alignCast(first_out.?));
+    defer _ = first.vtable.release(first);
+    const second: *component_api.IComponent = @ptrCast(@alignCast(second_out.?));
+    defer _ = second.vtable.release(second);
+
+    try std.testing.expectEqual(types.kResultOk, Effect.setParameterNormalized(first, gain_controller.gain_param_id, 0.25));
+    try std.testing.expectEqual(@as(f64, 0.25), Effect.getParameterNormalized(first, gain_controller.gain_param_id));
+    try std.testing.expectEqual(@as(f64, 1.0), Effect.getParameterNormalized(second, gain_controller.gain_param_id));
+}
+
+test "gain components can be repeatedly created and destroyed" {
+    const std = @import("std");
+
+    for (0..64) |_| {
+        var out: ?*anyopaque = null;
+        try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&component_api.icomponent_iid), &out));
+        const component_iface: *component_api.IComponent = @ptrCast(@alignCast(out.?));
+        try std.testing.expectEqual(@as(types.uint32, 0), component_iface.vtable.release(component_iface));
+    }
 }
 
 test "gain component reports deterministic component bus defaults" {
@@ -248,7 +267,6 @@ test "gain component applies host parameter changes through processor shell" {
     const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
     const vst_parameter_changes = @import("vst_parameter_changes.zig");
 
-    gain_controller.setGain(1.0);
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
@@ -295,7 +313,7 @@ test "gain component applies host parameter changes through processor shell" {
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqualSlices(f32, &.{ 0.5, -0.25, 0.125 }, &output_samples);
-    try std.testing.expectEqual(@as(f64, 0.5), gain_controller.gain());
+    try std.testing.expectEqual(@as(f64, 0.5), Effect.getParameterNormalized(component_iface, gain_controller.gain_param_id));
 }
 
 test "gain component applies host parameter changes through double precision processor shell" {
@@ -304,9 +322,6 @@ test "gain component applies host parameter changes through double precision pro
     const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
     const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
     const vst_parameter_changes = @import("vst_parameter_changes.zig");
-
-    gain_controller.setGain(1.0);
-    defer gain_controller.setGain(1.0);
 
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
@@ -354,7 +369,7 @@ test "gain component applies host parameter changes through double precision pro
 
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqualSlices(f64, &.{ 0.5, -0.25, 0.125 }, &output_samples);
-    try std.testing.expectEqual(@as(f64, 0.5), gain_controller.gain());
+    try std.testing.expectEqual(@as(f64, 0.5), Effect.getParameterNormalized(component_iface, gain_controller.gain_param_id));
 }
 
 test "gain component queries host application during initialize" {
@@ -394,12 +409,12 @@ test "gain component stores channel context info listener" {
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
     defer _ = component_iface.vtable.release(component_iface);
 
-    try std.testing.expectEqual(types.kResultFalse, setChannelContextInfos(null));
+    try std.testing.expectEqual(types.kResultFalse, setChannelContextInfos(component_iface, null));
 
     var host = HostContext{};
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
     try std.testing.expectEqual(@as(types.uint32, 1), host.info_add_ref_count);
-    try std.testing.expectEqual(types.kResultOk, setChannelContextInfos(null));
+    try std.testing.expectEqual(types.kResultOk, setChannelContextInfos(component_iface, null));
     try std.testing.expectEqual(@as(types.uint32, 1), host.channel_context_count);
 
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
@@ -422,12 +437,12 @@ test "gain component stores automation state host interface" {
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
     defer _ = component_iface.vtable.release(component_iface);
 
-    try std.testing.expectEqual(types.kResultFalse, setAutomationState(ivstautomationstate.AutomationStates.kReadState));
+    try std.testing.expectEqual(types.kResultFalse, setAutomationState(component_iface, ivstautomationstate.AutomationStates.kReadState));
 
     var host = HostContext{};
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
     try std.testing.expectEqual(@as(types.uint32, 1), host.automation_add_ref_count);
-    try std.testing.expectEqual(types.kResultOk, setAutomationState(ivstautomationstate.AutomationStates.kReadWriteState));
+    try std.testing.expectEqual(types.kResultOk, setAutomationState(component_iface, ivstautomationstate.AutomationStates.kReadWriteState));
     try std.testing.expectEqual(ivstautomationstate.AutomationStates.kReadWriteState, host.last_state);
 
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
@@ -566,7 +581,7 @@ test "gain component exposes default data exchange receiver" {
     try std.testing.expectEqual(types.kResultOk, support.vtable.isPlugInterfaceSupported(support, &ivstdataexchange.idata_exchange_receiver_iid));
 
     var queue_id: ivstdataexchange.DataExchangeQueueID = 0;
-    try std.testing.expectEqual(types.kResultFalse, openDataExchangeQueue(128, 2, 8, 9, &queue_id));
+    try std.testing.expectEqual(types.kResultFalse, openDataExchangeQueue(component_iface, 128, 2, 8, 9, &queue_id));
     try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
 }
 
@@ -610,10 +625,10 @@ test "gain component stores data exchange handler" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.add_ref_count);
 
     var queue_id: ivstdataexchange.DataExchangeQueueID = 0;
-    try std.testing.expectEqual(types.kResultOk, openDataExchangeQueue(128, 2, 8, 77, &queue_id));
+    try std.testing.expectEqual(types.kResultOk, openDataExchangeQueue(component_iface, 128, 2, 8, 77, &queue_id));
     try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeQueueID, 44), queue_id);
     try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeUserContextID, 77), host.last_user_context_id);
-    try std.testing.expectEqual(types.kResultOk, closeDataExchangeQueue(queue_id));
+    try std.testing.expectEqual(types.kResultOk, closeDataExchangeQueue(component_iface, queue_id));
     try std.testing.expectEqual(@as(types.uint32, 1), host.open_count);
     try std.testing.expectEqual(@as(types.uint32, 1), host.close_count);
 
@@ -859,24 +874,24 @@ test "gain component delegates combined advanced host integration lifecycle" {
     try std.testing.expectEqual(@as(types.uint32, 1), host.automation_add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), host.data_exchange_add_ref_count);
 
-    try std.testing.expectEqual(types.kResultOk, setChannelContextInfos(null));
+    try std.testing.expectEqual(types.kResultOk, setChannelContextInfos(component_iface, null));
     try std.testing.expectEqual(@as(types.uint32, 1), host.channel_context_count);
-    try std.testing.expectEqual(types.kResultOk, setAutomationState(ivstautomationstate.AutomationStates.kReadWriteState));
+    try std.testing.expectEqual(types.kResultOk, setAutomationState(component_iface, ivstautomationstate.AutomationStates.kReadWriteState));
     try std.testing.expectEqual(ivstautomationstate.AutomationStates.kReadWriteState, host.last_automation_state);
 
     var queue_id: ivstdataexchange.DataExchangeQueueID = ivstdataexchange.InvalidDataExchangeQueueID;
-    try std.testing.expectEqual(types.kResultOk, openDataExchangeQueue(256, 3, 16, 99, &queue_id));
+    try std.testing.expectEqual(types.kResultOk, openDataExchangeQueue(component_iface, 256, 3, 16, 99, &queue_id));
     try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeQueueID, 44), queue_id);
     try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeUserContextID, 99), host.last_user_context_id);
 
     var block = ivstdataexchange.DataExchangeBlock{};
-    try std.testing.expectEqual(types.kResultOk, lockDataExchangeBlock(queue_id, &block));
+    try std.testing.expectEqual(types.kResultOk, lockDataExchangeBlock(component_iface, queue_id, &block));
     try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeBlockID, 12), block.blockID);
     try std.testing.expectEqual(@as(types.uint32, 256), block.size);
     try std.testing.expectEqual(@as(?*anyopaque, @ptrFromInt(0x1000)), block.data);
-    try std.testing.expectEqual(types.kResultOk, freeDataExchangeBlock(queue_id, block.blockID, 1));
+    try std.testing.expectEqual(types.kResultOk, freeDataExchangeBlock(component_iface, queue_id, block.blockID, 1));
     try std.testing.expectEqual(@as(ivstdataexchange.DataExchangeBlockID, 12), host.freed_block_id);
-    try std.testing.expectEqual(types.kResultOk, closeDataExchangeQueue(queue_id));
+    try std.testing.expectEqual(types.kResultOk, closeDataExchangeQueue(component_iface, queue_id));
     try std.testing.expectEqual(@as(types.uint32, 1), host.open_count);
     try std.testing.expectEqual(@as(types.uint32, 1), host.close_count);
 
@@ -915,11 +930,11 @@ test "gain component clears failed data exchange outputs" {
     defer _ = component_iface.vtable.terminate(component_iface);
 
     var queue_id: ivstdataexchange.DataExchangeQueueID = 1;
-    try std.testing.expectEqual(types.kResultFalse, openDataExchangeQueue(128, 2, 8, 77, &queue_id));
+    try std.testing.expectEqual(types.kResultFalse, openDataExchangeQueue(component_iface, 128, 2, 8, 77, &queue_id));
     try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
 
     var block = ivstdataexchange.DataExchangeBlock{ .blockID = 7, .size = 8, .data = @ptrFromInt(0x2000) };
-    try std.testing.expectEqual(types.kResultFalse, lockDataExchangeBlock(44, &block));
+    try std.testing.expectEqual(types.kResultFalse, lockDataExchangeBlock(component_iface, 44, &block));
     try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeBlockID, block.blockID);
     try std.testing.expectEqual(@as(types.uint32, 0), block.size);
     try std.testing.expectEqual(@as(?*anyopaque, null), block.data);
@@ -929,23 +944,21 @@ test "gain component round-trips gain state through host callbacks" {
     const std = @import("std");
     const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 
-    gain_controller.setGain(0.5);
-    defer gain_controller.setGain(1.0);
-
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
     try std.testing.expect(out != null);
     const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out.?));
     defer _ = component_iface.vtable.release(component_iface);
+    try std.testing.expectEqual(types.kResultOk, Effect.setParameterNormalized(component_iface, gain_controller.gain_param_id, 0.5));
 
     const Stream = vst_stream.FixedBufferStream(plug_state.encodedSize(gain_spec.Spec.Params));
     var stream = Stream{};
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.getState(component_iface, stream.asStream()));
     try std.testing.expectEqual(@as(usize, plug_state.encodedSize(gain_spec.Spec.Params)), stream.data().len);
 
-    gain_controller.setGain(1.0);
-    try std.testing.expectEqual(@as(f64, 1.0), gain_controller.gain());
+    try std.testing.expectEqual(types.kResultOk, Effect.setParameterNormalized(component_iface, gain_controller.gain_param_id, 1.0));
+    try std.testing.expectEqual(@as(f64, 1.0), Effect.getParameterNormalized(component_iface, gain_controller.gain_param_id));
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.setState(component_iface, stream.asStream()));
-    try std.testing.expectApproxEqAbs(@as(f64, 0.5), gain_controller.gain(), 0.000001);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.5), Effect.getParameterNormalized(component_iface, gain_controller.gain_param_id), 0.000001);
 }

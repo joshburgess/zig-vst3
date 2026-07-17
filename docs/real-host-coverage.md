@@ -19,8 +19,11 @@ zig build pluginval-strict-examples
 Current state:
 
 - Raw GUI interfaces and helpers are ABI-tested and unit-tested.
-- `editor-smoke` exposes a protocol-only `IPlugView` for automated attach, remove, resize, and focus smoke coverage.
-- There is no bundled GUI toolkit.
+- `gain`, `bypass`, `mode-gain`, and `voice-mix` expose visible VSTGUI editors in native builds and protocol-only fallbacks in cross-target builds.
+- `editor-smoke` remains toolkit-free and covers the editor protocol on all four platform identifiers.
+- The Steinberg validator and pluginval pass editor-open, open-while-processing, automation, and editor-automation tests on macOS.
+- Real DAW rows for the visible editor have not been recorded yet.
+- An isolated REAPER command-line attempt on macOS reached the host process but did not reach its ReaScript test before unattended startup was blocked by host UI. No host result was inferred from that attempt. Complete one interactive first-launch and scan pass before using the scripted procedure.
 
 Useful next slices:
 
@@ -30,7 +33,8 @@ Useful next slices:
   - Linux X11: a host using `X11EmbedWindowID`.
   - Linux Wayland: a host using `WaylandSurfaceID` and `IWaylandFrame`.
 
-The editor smoke example should be protocol-focused. A visible, useful editor belongs in a separate GUI-toolkit integration.
+The editor smoke example is protocol-focused. The visible editors use the separate VSTGUI integration.
+See [the plugin GUI plan](gui-plan.md) for the implementation sequence and platform exit criteria.
 
 ## Advanced Host-Integration Coverage
 
