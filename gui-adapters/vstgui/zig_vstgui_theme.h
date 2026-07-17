@@ -35,6 +35,13 @@ enum class ComponentKind : std::size_t {
     count,
 };
 
+enum class TypographyRole : std::size_t {
+    title,
+    body,
+    value,
+    count,
+};
+
 struct ColorTokens {
     VSTGUI::CColor surface;
     VSTGUI::CColor surface_raised;
@@ -118,12 +125,18 @@ public:
     explicit ThemeResolver(const Theme& theme);
 
     const Theme& theme() const;
+    VSTGUI::CFontRef font(TypographyRole role) const;
     ComponentStyle resolve(ComponentKind kind, VisualState state = VisualState::normal) const;
+    void setFontOverride(TypographyRole role, VSTGUI::SharedPointer<VSTGUI::CFontDesc> font);
     void setEditorOverride(const StyleOverride& style);
     void setComponentOverride(ComponentKind kind, const StyleOverride& style);
 
 private:
     const Theme* selected_theme;
+    std::array<
+        VSTGUI::SharedPointer<VSTGUI::CFontDesc>,
+        static_cast<std::size_t>(TypographyRole::count)
+    > font_overrides;
     StyleOverride editor_override;
     std::array<StyleOverride, static_cast<std::size_t>(ComponentKind::count)> component_overrides;
 };

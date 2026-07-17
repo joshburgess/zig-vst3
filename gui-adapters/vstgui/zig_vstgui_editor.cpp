@@ -1,5 +1,6 @@
 #include "zig_vstgui_editor.h"
 
+#include "zig_vstgui_fonts.h"
 #include "zig_vstgui_layout.h"
 #include "zig_vstgui_platform.h"
 #include "zig_vstgui_theme.h"
@@ -32,12 +33,18 @@ ZigVstguiEditor::ZigVstguiEditor(
     ZigVstguiCallbacks callbacks,
     const ZigVstguiMeterDescription* meters,
     uint32_t value_meter_count,
-    ZigVstguiMeterCallbacks value_meter_callbacks
+    ZigVstguiMeterCallbacks value_meter_callbacks,
+    ZigVstguiSkinDescription skin
 )
-: meter_count(value_meter_count), meter_callbacks(value_meter_callbacks), theme_resolver(selectedTheme()) {
+: meter_count(value_meter_count),
+  meter_callbacks(value_meter_callbacks),
+  drawing_callbacks(skin.drawing),
+  theme_resolver(selectedTheme()) {
     if (editor_count.fetch_add(1, std::memory_order_acq_rel) == 0) VSTGUI::init(nullptr);
     initialized = true;
     profile_enabled = std::getenv("ZIG_VSTGUI_PROFILE") != nullptr;
+    if (!asset_store.load(skin.assets, skin.asset_count)) return;
+    ZigVstgui::applyFontDescription(skin.fonts, theme_resolver);
     for (uint32_t index = 0; index < value_parameter_count; ++index) {
         if (!parameters[index].info.title || findControl(parameters[index].parameter_id)) return;
         auto* control = new (std::nothrow) ZigVstgui::ParameterControl(
@@ -258,7 +265,7 @@ void ZigVstguiEditor::buildFrame() {
 
     const char* editor_title = parameter_count == 1 ? parameter_info[0].title : "zig-vst3 Parameters";
     title = new VSTGUI::CTextLabel(VSTGUI::CRect(), editor_title);
-    title->setFont(theme.typography.title);
+    title->setFont(theme_resolver.font(ZigVstgui::TypographyRole::title));
     title->setFontColor(title_style.foreground);
     title->setBackColor(title_style.background);
     title->setFrameColor(title_style.border);
@@ -279,7 +286,7 @@ void ZigVstguiEditor::buildFrame() {
         "Drag | Arrows | Home/End | Control-click resets"
     );
 #endif
-    help->setFont(theme.typography.body);
+    help->setFont(theme_resolver.font(ZigVstgui::TypographyRole::body));
     help->setFontColor(help_style.foreground);
     help->setBackColor(help_style.background);
     help->setFrameColor(help_style.border);
@@ -294,7 +301,9 @@ void ZigVstguiEditor::buildFrame() {
             content,
             parameter_info[index],
             parameter_control_kinds[index],
-            theme_resolver
+            theme_resolver,
+            &asset_store,
+            drawing_callbacks
         );
     }
     for (uint32_t index = 0; index < meter_count; ++index) {

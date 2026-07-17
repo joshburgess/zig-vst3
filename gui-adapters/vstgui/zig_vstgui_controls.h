@@ -3,6 +3,7 @@
 
 #include "zig_vstgui_adapter.h"
 #include "zig_vstgui_component.h"
+#include "zig_vstgui_drawing.h"
 #include "zig_vstgui_theme.h"
 
 #include "vstgui/lib/controls/cbuttons.h"
@@ -84,7 +85,9 @@ public:
         VSTGUI::CViewContainer* parent,
         ZigVstguiParameterInfo parameter_info,
         ZigVstguiControlKind control_kind,
-        const ThemeResolver& styles
+        const ThemeResolver& styles,
+        const AssetStore* assets = nullptr,
+        ZigVstguiDrawingCallbacks drawing = {}
     );
     void clear();
     void setValue(double value);
@@ -116,7 +119,9 @@ private:
         VSTGUI::CViewContainer* parent,
         ZigVstguiParameterInfo parameter_info,
         ZigVstguiControlKind control_kind,
-        const ThemeResolver& styles
+        const ThemeResolver& styles,
+        const AssetStore* assets,
+        ZigVstguiDrawingCallbacks drawing
     );
     std::string formattedValue(double normalized) const;
     void syncViews();
@@ -134,6 +139,9 @@ private:
     VSTGUI::CSegmentButton* segmented {nullptr};
     VSTGUI::CControl* primary_control {nullptr};
     VSTGUI::CTextEdit* value_edit {nullptr};
+    DrawingOverlay* drawing_overlay {nullptr};
+    bool primary_hovered {false};
+    bool primary_pressed {false};
     Component label_component;
     Component primary_component;
     Component value_component;

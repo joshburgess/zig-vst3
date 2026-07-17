@@ -1,6 +1,8 @@
 #include "zig_vstgui_component.h"
 #include "zig_vstgui_controls.h"
+#include "zig_vstgui_assets.h"
 #include "zig_vstgui_editor.h"
+#include "zig_vstgui_fonts.h"
 #include "zig_vstgui_layout.h"
 #include "zig_vstgui_meters.h"
 
@@ -8,6 +10,8 @@
 
 #include <cmath>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -475,7 +479,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 4) return 1;
+    if (zig_vstgui_adapter_version() != 5) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -492,6 +496,123 @@ int testMeterAbi() {
             ZIG_VSTGUI_MAX_METERS + 1,
             {}
         )) return 3;
+    return 0;
+}
+
+int testAssetsAndFonts() {
+    const auto contain = ZigVstgui::placeAsset(
+        VSTGUI::CRect(0.0, 0.0, 200.0, 100.0),
+        100.0,
+        100.0,
+        ZIG_VSTGUI_ASSET_CONTAIN
+    );
+    if (!closeEnough(contain.destination.left, 50.0) ||
+        !closeEnough(contain.destination.getWidth(), 100.0)) return 1;
+    const auto cover = ZigVstgui::placeAsset(
+        VSTGUI::CRect(0.0, 0.0, 200.0, 100.0),
+        100.0,
+        100.0,
+        ZIG_VSTGUI_ASSET_COVER
+    );
+    if (!closeEnough(cover.destination.top, -50.0) ||
+        !closeEnough(cover.destination.getHeight(), 200.0)) return 2;
+    const auto exact = ZigVstgui::placeAsset(
+        VSTGUI::CRect(0.0, 0.0, 200.0, 100.0),
+        20.0,
+        10.0,
+        ZIG_VSTGUI_ASSET_PIXEL_EXACT
+    );
+    if (!closeEnough(exact.destination.left, 90.0) ||
+        !closeEnough(exact.destination.top, 45.0)) return 3;
+    const auto stretch = ZigVstgui::placeAsset(
+        VSTGUI::CRect(0.0, 0.0, 200.0, 100.0),
+        20.0,
+        20.0,
+        ZIG_VSTGUI_ASSET_STRETCH
+    );
+    if (!closeEnough(stretch.scale_x, 10.0) || !closeEnough(stretch.scale_y, 5.0)) return 4;
+
+    constexpr char svg[] =
+        "<svg viewBox=\"0 0 24 24\">"
+        "<path d=\"M2 12 L9 19 L22 4 Z\" fill=\"#59c9a5\"/>"
+        "<path d=\"M4 4 C8 1 16 1 20 4\" fill=\"none\" stroke=\"#ffffff\" stroke-width=\"2\"/>"
+        "</svg>";
+    ZigVstgui::SvgDocument document;
+    if (!document.parse(reinterpret_cast<const uint8_t*>(svg), sizeof(svg) - 1)) return 5;
+    if (!document.valid() || document.pathCount() != 2 ||
+        !closeEnough(document.width(), 24.0) || !closeEnough(document.height(), 24.0)) return 6;
+    constexpr char unsupported[] =
+        "<svg viewBox=\"0 0 10 10\"><path d=\"M1 1 A2 2 0 0 0 5 5\"/></svg>";
+    if (document.parse(reinterpret_cast<const uint8_t*>(unsupported), sizeof(unsupported) - 1)) return 7;
+    constexpr char incomplete[] =
+        "<svg viewBox=\"0 0 10 10\"><path d=\"M1 1 L5\"/></svg>";
+    if (document.parse(reinterpret_cast<const uint8_t*>(incomplete), sizeof(incomplete) - 1) || document.valid()) return 8;
+    constexpr char transformed[] =
+        "<svg viewBox=\"0 0 10 10\"><path transform=\"scale(2)\" d=\"M1 1 L5 5\"/></svg>";
+    if (document.parse(reinterpret_cast<const uint8_t*>(transformed), sizeof(transformed) - 1)) return 9;
+
+    const ZigVstguiAssetDescription svg_asset {
+        7,
+        reinterpret_cast<const uint8_t*>(svg),
+        sizeof(svg) - 1,
+        ZIG_VSTGUI_ASSET_SVG,
+        ZIG_VSTGUI_ASSET_CONTAIN,
+    };
+    constexpr uint8_t png[] = {
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+        0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41,
+        0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0xf0, 0x1f,
+        0x00, 0x05, 0x00, 0x01, 0xff, 0x89, 0x99, 0x3d,
+        0x1d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+        0x44, 0xae, 0x42, 0x60, 0x82,
+    };
+    const ZigVstguiAssetDescription png_asset {
+        8,
+        png,
+        sizeof(png),
+        ZIG_VSTGUI_ASSET_PNG,
+        ZIG_VSTGUI_ASSET_PIXEL_EXACT,
+    };
+    ZigVstgui::AssetStore assets;
+    if (!assets.load(&svg_asset, 1) || assets.count() != 1 || !assets.find(7)) return 10;
+    const ZigVstguiAssetDescription duplicate_assets[] = {svg_asset, svg_asset};
+    if (assets.load(duplicate_assets, 2)) return 11;
+
+    const std::vector<std::string> families {"Fallback Sans", "Preferred Sans"};
+    if (ZigVstgui::chooseFontFamily("Preferred Sans", "Fallback Sans", families) != "Preferred Sans") return 12;
+    if (ZigVstgui::chooseFontFamily("Missing", "Fallback Sans", families) != "Fallback Sans") return 13;
+    if (!ZigVstgui::chooseFontFamily("Missing", "Also Missing", families).empty()) return 14;
+
+    const ZigVstguiParameterDescription parameter {
+        1,
+        0.5,
+        {"Gain", "dB", 0, 0.5},
+        ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+    };
+    const ZigVstguiAssetDescription valid_assets[] = {svg_asset, png_asset};
+    ZigVstguiSkinDescription valid_skin {};
+    valid_skin.assets = valid_assets;
+    valid_skin.asset_count = 2;
+    auto* skinned_editor = zig_vstgui_editor_create_with_skin(
+        &parameter,
+        1,
+        {},
+        nullptr,
+        0,
+        {},
+        valid_skin
+    );
+    if (!skinned_editor) return 15;
+    zig_vstgui_editor_destroy(skinned_editor);
+    ZigVstguiSkinDescription invalid_skin {};
+    invalid_skin.asset_count = 1;
+    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 16;
+    invalid_skin.asset_count = ZIG_VSTGUI_MAX_ASSETS + 1;
+    invalid_skin.assets = &svg_asset;
+    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 17;
     return 0;
 }
 
@@ -527,5 +648,6 @@ int main() {
     if (const int result = testGalleryLayoutExtents(); result != 0) return 130 + result;
     if (const int result = testMeterBallistics(); result != 0) return 150 + result;
     if (const int result = testMeterAbi(); result != 0) return 170 + result;
+    if (const int result = testAssetsAndFonts(); result != 0) return 190 + result;
     return 0;
 }

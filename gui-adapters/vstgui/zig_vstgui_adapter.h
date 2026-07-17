@@ -66,6 +66,80 @@ typedef struct ZigVstguiMeterCallbacks {
 
 enum { ZIG_VSTGUI_MAX_METERS = 8 };
 
+typedef enum ZigVstguiAssetFormat {
+    ZIG_VSTGUI_ASSET_PNG = 0,
+    ZIG_VSTGUI_ASSET_SVG = 1
+} ZigVstguiAssetFormat;
+
+typedef enum ZigVstguiAssetScale {
+    ZIG_VSTGUI_ASSET_PIXEL_EXACT = 0,
+    ZIG_VSTGUI_ASSET_CONTAIN = 1,
+    ZIG_VSTGUI_ASSET_COVER = 2,
+    ZIG_VSTGUI_ASSET_STRETCH = 3
+} ZigVstguiAssetScale;
+
+typedef struct ZigVstguiAssetDescription {
+    uint32_t asset_id;
+    const uint8_t* data;
+    uint32_t data_size;
+    ZigVstguiAssetFormat format;
+    ZigVstguiAssetScale scale;
+} ZigVstguiAssetDescription;
+
+enum { ZIG_VSTGUI_MAX_ASSETS = 16 };
+
+typedef struct ZigVstguiFontDescription {
+    const char* title_family;
+    const char* body_family;
+    const char* value_family;
+    const char* fallback_family;
+} ZigVstguiFontDescription;
+
+typedef enum ZigVstguiDrawingComponent {
+    ZIG_VSTGUI_DRAW_SLIDER = 0,
+    ZIG_VSTGUI_DRAW_KNOB = 1,
+    ZIG_VSTGUI_DRAW_TOGGLE = 2,
+    ZIG_VSTGUI_DRAW_DROPDOWN = 3,
+    ZIG_VSTGUI_DRAW_SEGMENTED = 4
+} ZigVstguiDrawingComponent;
+
+typedef enum ZigVstguiDrawingState {
+    ZIG_VSTGUI_DRAW_NORMAL = 0,
+    ZIG_VSTGUI_DRAW_HOVERED = 1,
+    ZIG_VSTGUI_DRAW_PRESSED = 2,
+    ZIG_VSTGUI_DRAW_FOCUSED = 3,
+    ZIG_VSTGUI_DRAW_DISABLED = 4,
+    ZIG_VSTGUI_DRAW_EDITING = 5
+} ZigVstguiDrawingState;
+
+typedef struct ZigVstguiDrawRequest {
+    uint32_t parameter_id;
+    ZigVstguiDrawingComponent component;
+    ZigVstguiDrawingState state;
+    double normalized;
+    double width;
+    double height;
+    double scale_factor;
+} ZigVstguiDrawRequest;
+
+typedef struct ZigVstguiCanvas ZigVstguiCanvas;
+
+typedef struct ZigVstguiDrawingCallbacks {
+    void* userdata;
+    int32_t (*draw_parameter)(
+        void* userdata,
+        const ZigVstguiDrawRequest* request,
+        ZigVstguiCanvas* canvas
+    );
+} ZigVstguiDrawingCallbacks;
+
+typedef struct ZigVstguiSkinDescription {
+    const ZigVstguiAssetDescription* assets;
+    uint32_t asset_count;
+    ZigVstguiFontDescription fonts;
+    ZigVstguiDrawingCallbacks drawing;
+} ZigVstguiSkinDescription;
+
 typedef struct ZigVstguiResizeCallbacks {
     void* userdata;
     int32_t (*request_resize)(void* userdata, uint32_t width, uint32_t height);
@@ -92,6 +166,58 @@ ZigVstguiEditor* zig_vstgui_editor_create_with_meters(
     const ZigVstguiMeterDescription* meters,
     uint32_t meter_count,
     ZigVstguiMeterCallbacks meter_callbacks
+);
+ZigVstguiEditor* zig_vstgui_editor_create_with_skin(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    ZigVstguiSkinDescription skin
+);
+void zig_vstgui_canvas_fill_rect(
+    ZigVstguiCanvas* canvas,
+    double left,
+    double top,
+    double right,
+    double bottom,
+    uint32_t rgba
+);
+void zig_vstgui_canvas_stroke_rect(
+    ZigVstguiCanvas* canvas,
+    double left,
+    double top,
+    double right,
+    double bottom,
+    uint32_t rgba,
+    double width
+);
+void zig_vstgui_canvas_fill_ellipse(
+    ZigVstguiCanvas* canvas,
+    double left,
+    double top,
+    double right,
+    double bottom,
+    uint32_t rgba
+);
+void zig_vstgui_canvas_line(
+    ZigVstguiCanvas* canvas,
+    double start_x,
+    double start_y,
+    double end_x,
+    double end_y,
+    uint32_t rgba,
+    double width
+);
+int32_t zig_vstgui_canvas_draw_asset(
+    ZigVstguiCanvas* canvas,
+    uint32_t asset_id,
+    double left,
+    double top,
+    double right,
+    double bottom,
+    float alpha
 );
 int32_t zig_vstgui_editor_open(ZigVstguiEditor* editor, void* parent, ZigVstguiPlatform platform);
 void zig_vstgui_editor_close(ZigVstguiEditor* editor);

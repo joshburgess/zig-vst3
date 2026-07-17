@@ -2,6 +2,7 @@
 #define ZIG_VSTGUI_EDITOR_H
 
 #include "zig_vstgui_adapter.h"
+#include "zig_vstgui_assets.h"
 #include "zig_vstgui_component.h"
 #include "zig_vstgui_controls.h"
 #include "zig_vstgui_meters.h"
@@ -20,7 +21,8 @@ struct ZigVstguiEditor {
         ZigVstguiCallbacks callbacks,
         const ZigVstguiMeterDescription* meters = nullptr,
         uint32_t meter_count = 0,
-        ZigVstguiMeterCallbacks meter_callbacks = {}
+        ZigVstguiMeterCallbacks meter_callbacks = {},
+        ZigVstguiSkinDescription skin = {}
     );
     ~ZigVstguiEditor();
 
@@ -67,6 +69,8 @@ private:
     std::array<ZigVstguiMeterDescription, ZIG_VSTGUI_MAX_METERS> meter_descriptions {};
     uint32_t meter_count {0};
     ZigVstguiMeterCallbacks meter_callbacks {};
+    ZigVstgui::AssetStore asset_store;
+    ZigVstguiDrawingCallbacks drawing_callbacks {};
     ZigVstgui::ResizeControl resize_control;
     ZigVstgui::ThemeResolver theme_resolver;
     uint32_t width {400};

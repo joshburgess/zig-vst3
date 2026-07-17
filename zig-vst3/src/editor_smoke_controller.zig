@@ -16,13 +16,58 @@ pub const voices_param_id: vsttypes.ParamID = editor_smoke_spec.voices_param_id;
 pub const bypass_param_id: vsttypes.ParamID = editor_smoke_spec.bypass_param_id;
 pub const mode_param_id: vsttypes.ParamID = editor_smoke_spec.mode_param_id;
 
+const checkmark_asset_id: types.uint32 = 1;
+const pixel_asset_id: types.uint32 = 2;
+const checkmark_svg =
+    "<svg viewBox=\"0 0 24 24\">" ++
+    "<path d=\"M2 12 L9 19 L22 4\" fill=\"none\" stroke=\"#7ce8c5\" stroke-width=\"3\"/>" ++
+    "</svg>";
+const accent_pixel = [_]u8{
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+    0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41,
+    0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0xf0,
+    0x1f, 0x00, 0x05, 0x00, 0x01, 0xff, 0x89, 0x99,
+    0x3d, 0x1d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+    0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+};
+
+fn drawGalleryParameter(
+    _: ?*anyopaque,
+    request: *const parameter_editor.DrawRequest,
+    canvas: *parameter_editor.Canvas,
+) callconv(.c) types.int32 {
+    switch (request.component) {
+        .knob => {
+            const side = @min(request.width, request.height);
+            parameter_editor.fillEllipse(canvas, 2.0, 2.0, side - 2.0, side - 2.0, 0x192029ff);
+            _ = parameter_editor.drawAsset(canvas, checkmark_asset_id, side * 0.25, side * 0.25, side * 0.75, side * 0.75, 1.0);
+        },
+        .dropdown => {
+            _ = parameter_editor.drawAsset(
+                canvas,
+                pixel_asset_id,
+                request.width - 10.0,
+                4.0,
+                request.width - 4.0,
+                10.0,
+                1.0,
+            );
+        },
+        else => {},
+    }
+    return 0;
+}
+
 const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const controller_name = "EditorSmokeController";
     pub const Params = editor_smoke_spec.Spec.Params;
     pub const parameter_set = &editor_smoke_spec.parameter_set;
 
     pub fn createView(controller: *ivsteditcontroller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
-        return parameter_editor.createMultiViewWithMeters(Controller, controller, name, &.{
+        return parameter_editor.createMultiViewWithSkin(Controller, controller, name, &.{
             .{ .id = gain_param_id, .title = "Gain", .units = "x", .step_count = 0, .default_normalized = 1.0, .control_kind = .rotary_knob },
             .{ .id = voices_param_id, .title = "Voices", .units = "voices", .step_count = 3, .default_normalized = 0.0, .control_kind = .segmented_enum },
             .{ .id = bypass_param_id, .title = "Bypass", .step_count = 1, .default_normalized = 0.0, .control_kind = .toggle },
@@ -31,6 +76,18 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
             .{ .title = "Peak", .kind = .peak, .first_source_id = 0 },
             .{ .title = "Stereo", .kind = .stereo, .first_source_id = 1, .second_source_id = 2 },
             .{ .title = "Reduction", .kind = .gain_reduction, .first_source_id = 3 },
+        }, .{
+            .assets = &.{
+                .{ .id = checkmark_asset_id, .data = checkmark_svg, .format = .svg, .scale = .contain },
+                .{ .id = pixel_asset_id, .data = &accent_pixel, .format = .png, .scale = .stretch },
+            },
+            .fonts = .{
+                .title_family = "zig-vst3 Gallery Sans",
+                .body_family = "zig-vst3 Gallery Sans",
+                .value_family = "zig-vst3 Gallery Mono",
+                .fallback_family = "Arial",
+            },
+            .drawing = .{ .draw_parameter = drawGalleryParameter },
         });
     }
 });

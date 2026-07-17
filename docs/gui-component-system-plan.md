@@ -339,16 +339,29 @@ Completion evidence:
 
 ### Milestone 8: Add Asset and Custom Drawing Support
 
-- [ ] Load bundled bitmap and SVG assets with explicit scale behavior.
-- [ ] Support custom fonts with documented licensing and fallback behavior.
-- [ ] Add component-specific drawing callbacks.
-- [ ] Add filmstrip or sprite controls only if a reference design requires them.
-- [ ] Define resource ownership and teardown across editor recreation.
+- [x] Load bundled bitmap and SVG assets with explicit scale behavior.
+- [x] Support custom fonts with documented licensing and fallback behavior.
+- [x] Add component-specific drawing callbacks.
+- [x] Add filmstrip or sprite controls only if a reference design requires them. No reference design currently requires them, so none are added.
+- [x] Define resource ownership and teardown across editor recreation.
 
 Exit criteria:
 
 - A plugin can create an art-directed skin without replacing parameter attachment behavior.
 - Missing assets fail visibly and do not create blank interactive regions.
+
+Completion evidence:
+
+- Adapter ABI version 5 accepts up to 16 PNG or SVG assets. Editor creation copies the source bytes, validates unique IDs, decodes PNG through VSTGUI, and parses SVG into editor-owned vector commands.
+- `pixel_exact`, `contain`, `cover`, and `stretch` placement rules use logical coordinates. SVG paths remain vector-rendered at the active content scale. PNG interpolation uses VSTGUI's high-quality platform path.
+- The documented SVG subset requires a `viewBox` and supports path commands `M`, `L`, `H`, `V`, `C`, and `Z`, solid fill and stroke colors, and stroke width. Unsupported features reject the asset instead of rendering an incomplete result.
+- A skin selects preferred title, body, and value font families plus a fallback family. Resolution checks operating-system font families and falls back to the existing theme font if neither requested family exists. The guide documents licensing responsibility and makes clear that the adapter does not register font files.
+- Toolkit-neutral drawing callbacks receive component, state, parameter, normalized value, logical size, and scale. The opaque canvas provides rectangles, ellipses, lines, and asset drawing. Non-interactive overlays preserve the underlying parameter control, gestures, text entry, keyboard behavior, focus, and semantic metadata.
+- Invalid asset bytes reject editor creation. Unknown IDs paint a red crossed placeholder and report failure to the callback, so a missing image cannot silently create a blank control.
+- Asset bytes, decoded bitmaps, vector commands, font descriptors, and callbacks belong to one editor. Views may be torn down and recreated while those resources remain valid, and all resources are released after the final frame closes.
+- The editor-smoke gallery embeds one PNG and one SVG, selects missing preferred families to exercise explicit font fallback, and draws through the Zig canvas callback. Native tests cover scaling geometry, SVG acceptance and rejection, PNG decoding, duplicate IDs, font selection, asset limits, and editor-owned teardown.
+- Filmstrip controls remain deferred because the gallery and current production examples have no multi-frame reference artwork or frame-state contract.
+- The full Zig and raw ABI suites pass. Every example passes the VST3 validator and strictness-5 pluginval, including the skinned editor while processing. Linux and Windows example bundle sets cross-compile successfully with native canvas symbols excluded from the protocol-only fallback.
 
 ### Milestone 9: Visual and Interaction Regression Tests
 

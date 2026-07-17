@@ -70,6 +70,27 @@ The adapter also provides fixed-capacity row, column, and grid layout primitives
 
 The multi-parameter editor uses a compact composition below 520 by 360 and an expanded composition at or above that size. Its supported range is 320 by 240 through 1000 by 700. Tab and Shift+Tab follow visible reading order: each parameter's primary control, its exact value field when present, and the resize action. Focus wraps at either end.
 
+### Assets, Fonts, and Custom Drawing
+
+`createMultiViewWithSkin` accepts the ordinary parameter and meter descriptions plus a `Skin`. A skin can provide up to 16 immutable assets, font-family preferences, and a component drawing callback. The adapter copies every asset byte during editor creation. The editor owns the decoded PNGs, parsed SVG paths, font descriptors, and drawing overlays until that editor is destroyed. Reopening an editor rebuilds its views against the same owned resources, so callbacks never depend on temporary Zig slices or a previous native frame.
+
+PNG is the portable bitmap format. Each bitmap or SVG selects one scale rule:
+
+- `pixel_exact` keeps one asset unit per logical GUI unit and centers the result.
+- `contain` preserves aspect ratio and fits the whole asset inside the destination.
+- `cover` preserves aspect ratio and fills the destination, clipping the excess.
+- `stretch` maps the asset directly to the destination on both axes.
+
+VSTGUI does not provide a portable SVG loader in the pinned revision. The adapter therefore parses a deterministic vector subset itself. SVG files must provide a `viewBox` and one or more `path` elements. Path data supports absolute and relative `M`, `L`, `H`, `V`, `C`, and `Z` commands. Fill and stroke accept `#RRGGBB`, `#RRGGBBAA`, or `none`; `stroke-width` is supported. Arcs, transforms, filters, text, external references, scripts, and animation are rejected during editor creation. Convert unsupported artwork to cubic paths or PNG before embedding it.
+
+Invalid asset data rejects editor creation. A drawing callback that requests an unknown asset ID receives `false`, and the adapter paints a red crossed placeholder in the requested bounds. Missing artwork therefore cannot leave an invisible interactive control.
+
+Font preferences are family names for title, body, and value text, plus one fallback family. The adapter uses the preferred family when the operating system reports it, then the fallback family, then the theme's system font. It does not register font files or bypass operating-system font rules. Plugin authors are responsible for confirming that a font license permits the intended use and redistribution before packaging a font outside this API.
+
+The drawing callback receives a toolkit-neutral component kind, visual state, parameter ID, normalized value, logical dimensions, scale factor, and opaque canvas. Canvas functions draw rectangles, ellipses, lines, and registered assets. The canvas is valid only for that synchronous callback. Returning a nonzero result paints the missing-art placeholder. The overlay is non-interactive and leaves the standard parameter control, host gesture attachment, keyboard input, exact entry, focus, and accessibility metadata in place. Keep callbacks bounded and allocation-free during drawing.
+
+Filmstrip and sprite controls are not part of the current skin API. No accepted reference design requires them, and the vector, bitmap, and primitive drawing paths already cover the gallery. Add a multi-frame abstraction only when a production control defines its frame layout, scale behavior, and interaction states.
+
 ### Accessibility Semantics
 
 Every VSTGUI component carries toolkit-neutral accessibility metadata. Semantic roles cover sliders, buttons, toggles, choices, text fields, meters, and groups. Nodes also expose a name, description, formatted value, optional range, enabled state, focus state, toggle state, selection state, and read-only state. Value, focus, and state changes invoke an optional backend observer, so a future native bridge can forward the changes without changing parameter controls.

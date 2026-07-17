@@ -155,7 +155,7 @@ void MeterControl::build(
     if (!parent || label || meter) return;
     const auto label_style = styles.resolve(ComponentKind::title);
     label = new VSTGUI::CTextLabel(VSTGUI::CRect(), title ? title : "Meter");
-    label->setFont(styles.theme().typography.body);
+    label->setFont(styles.font(TypographyRole::body));
     label->setFontColor(label_style.foreground);
     label->setBackColor(label_style.background);
     label->setFrameColor(label_style.border);

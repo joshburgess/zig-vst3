@@ -6,8 +6,10 @@ const types = @import("pluginterfaces/base/types.zig");
 const vst_plug_view = @import("vst_plug_view.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const gui_telemetry = @import("zig-vst3-plugin-core").gui_telemetry;
+const vstgui_adapter_enabled = @import("zig-vst3-gui-options").vstgui_adapter_enabled;
 
 const Editor = opaque {};
+pub const Canvas = opaque {};
 
 const Platform = enum(c_int) {
     macos,
@@ -56,6 +58,7 @@ pub const ParameterValue = extern struct {
 pub const max_parameters = 64;
 pub const max_meters = 8;
 pub const max_meter_sources = 16;
+pub const max_assets = 16;
 
 pub const MeterKind = enum(c_int) {
     peak,
@@ -75,6 +78,85 @@ const MeterCallbacks = extern struct {
     load: *const fn (?*anyopaque, types.uint32) callconv(.c) f64,
 };
 
+pub const AssetFormat = enum(c_int) {
+    png,
+    svg,
+};
+
+pub const AssetScale = enum(c_int) {
+    pixel_exact,
+    contain,
+    cover,
+    stretch,
+};
+
+pub const Asset = struct {
+    id: types.uint32,
+    data: []const u8,
+    format: AssetFormat,
+    scale: AssetScale = .contain,
+};
+
+const AssetDescription = extern struct {
+    asset_id: types.uint32,
+    data: [*]const u8,
+    data_size: types.uint32,
+    format: AssetFormat,
+    scale: AssetScale,
+};
+
+pub const Fonts = extern struct {
+    title_family: ?[*:0]const u8 = null,
+    body_family: ?[*:0]const u8 = null,
+    value_family: ?[*:0]const u8 = null,
+    fallback_family: ?[*:0]const u8 = null,
+};
+
+pub const DrawingComponent = enum(c_int) {
+    slider,
+    knob,
+    toggle,
+    dropdown,
+    segmented,
+};
+
+pub const DrawingState = enum(c_int) {
+    normal,
+    hovered,
+    pressed,
+    focused,
+    disabled,
+    editing,
+};
+
+pub const DrawRequest = extern struct {
+    parameter_id: vsttypes.ParamID,
+    component: DrawingComponent,
+    state: DrawingState,
+    normalized: f64,
+    width: f64,
+    height: f64,
+    scale_factor: f64,
+};
+
+pub const DrawingCallbacks = extern struct {
+    userdata: ?*anyopaque = null,
+    draw_parameter: ?*const fn (?*anyopaque, *const DrawRequest, *Canvas) callconv(.c) types.int32 = null,
+};
+
+pub const Skin = struct {
+    assets: []const Asset = &.{},
+    fonts: Fonts = .{},
+    drawing: DrawingCallbacks = .{},
+};
+
+const SkinDescription = extern struct {
+    assets: ?[*]const AssetDescription,
+    asset_count: types.uint32,
+    fonts: Fonts,
+    drawing: DrawingCallbacks,
+};
+
 pub const ObserverCallbacks = struct {
     userdata: *anyopaque,
     subscribe: *const fn (*anyopaque, *anyopaque) bool,
@@ -86,15 +168,20 @@ const ResizeCallbacks = extern struct {
     request_resize: *const fn (?*anyopaque, types.uint32, types.uint32) callconv(.c) types.int32,
 };
 
-extern fn zig_vstgui_editor_create([*]const ParameterDescription, types.uint32, Callbacks) ?*Editor;
-extern fn zig_vstgui_editor_create_with_meters(
+extern fn zig_vstgui_editor_create_with_skin(
     [*]const ParameterDescription,
     types.uint32,
     Callbacks,
     ?[*]const MeterDescription,
     types.uint32,
     MeterCallbacks,
+    SkinDescription,
 ) ?*Editor;
+extern fn zig_vstgui_canvas_fill_rect(*Canvas, f64, f64, f64, f64, types.uint32) void;
+extern fn zig_vstgui_canvas_stroke_rect(*Canvas, f64, f64, f64, f64, types.uint32, f64) void;
+extern fn zig_vstgui_canvas_fill_ellipse(*Canvas, f64, f64, f64, f64, types.uint32) void;
+extern fn zig_vstgui_canvas_line(*Canvas, f64, f64, f64, f64, types.uint32, f64) void;
+extern fn zig_vstgui_canvas_draw_asset(*Canvas, types.uint32, f64, f64, f64, f64, f32) types.int32;
 extern fn zig_vstgui_editor_open(*Editor, ?*anyopaque, Platform) types.int32;
 extern fn zig_vstgui_editor_close(*Editor) void;
 extern fn zig_vstgui_editor_destroy(*Editor) void;
@@ -243,12 +330,14 @@ pub fn create(
     controller: *ivsteditcontroller.IEditController,
     parameters: []const ParameterInfoBinding,
     meters: []const MeterDescription,
+    skin: Skin,
     callbacks: Callbacks,
     observer_callbacks: ObserverCallbacks,
     wayland_host: ?*anyopaque,
 ) ?*iplugview.IPlugView {
     if (builtin.os.tag != .macos and builtin.os.tag != .windows and builtin.os.tag != .linux) return null;
-    if (parameters.len == 0 or parameters.len > max_parameters or meters.len > max_meters) return null;
+    if (parameters.len == 0 or parameters.len > max_parameters or
+        meters.len > max_meters or skin.assets.len > max_assets) return null;
     var descriptions: [max_parameters]ParameterDescription = undefined;
     for (parameters, 0..) |parameter, index| {
         descriptions[index] = .{
@@ -258,15 +347,32 @@ pub fn create(
             .control_kind = parameter.control_kind,
         };
     }
+    var assets: [max_assets]AssetDescription = undefined;
+    for (skin.assets, 0..) |asset, index| {
+        if (asset.data.len == 0 or asset.data.len > std.math.maxInt(types.uint32)) return null;
+        assets[index] = .{
+            .asset_id = asset.id,
+            .data = asset.data.ptr,
+            .data_size = @intCast(asset.data.len),
+            .format = asset.format,
+            .scale = asset.scale,
+        };
+    }
     const telemetry = std.heap.page_allocator.create(TelemetryState) catch return null;
     telemetry.* = TelemetryState.init();
-    const editor = zig_vstgui_editor_create_with_meters(
+    const editor = zig_vstgui_editor_create_with_skin(
         &descriptions,
         @intCast(parameters.len),
         callbacks,
         if (meters.len == 0) null else meters.ptr,
         @intCast(meters.len),
         .{ .userdata = telemetry, .load = loadMeter },
+        .{
+            .assets = if (skin.assets.len == 0) null else &assets,
+            .asset_count = @intCast(skin.assets.len),
+            .fonts = skin.fonts,
+            .drawing = skin.drawing,
+        },
     ) orelse {
         std.heap.page_allocator.destroy(telemetry);
         return null;
@@ -353,4 +459,59 @@ pub fn refreshParameters(observer_userdata: *anyopaque, parameters: []const Para
     if (parameters.len > max_parameters) return false;
     const editor: *Editor = @ptrCast(@alignCast(observer_userdata));
     return zig_vstgui_editor_refresh_parameters(editor, parameters.ptr, @intCast(parameters.len)) == 0;
+}
+
+pub fn fillRect(canvas: *Canvas, left: f64, top: f64, right: f64, bottom: f64, rgba: types.uint32) void {
+    if (comptime vstgui_adapter_enabled) {
+        zig_vstgui_canvas_fill_rect(canvas, left, top, right, bottom, rgba);
+    }
+}
+
+pub fn strokeRect(
+    canvas: *Canvas,
+    left: f64,
+    top: f64,
+    right: f64,
+    bottom: f64,
+    rgba: types.uint32,
+    width: f64,
+) void {
+    if (comptime vstgui_adapter_enabled) {
+        zig_vstgui_canvas_stroke_rect(canvas, left, top, right, bottom, rgba, width);
+    }
+}
+
+pub fn fillEllipse(canvas: *Canvas, left: f64, top: f64, right: f64, bottom: f64, rgba: types.uint32) void {
+    if (comptime vstgui_adapter_enabled) {
+        zig_vstgui_canvas_fill_ellipse(canvas, left, top, right, bottom, rgba);
+    }
+}
+
+pub fn line(
+    canvas: *Canvas,
+    start_x: f64,
+    start_y: f64,
+    end_x: f64,
+    end_y: f64,
+    rgba: types.uint32,
+    width: f64,
+) void {
+    if (comptime vstgui_adapter_enabled) {
+        zig_vstgui_canvas_line(canvas, start_x, start_y, end_x, end_y, rgba, width);
+    }
+}
+
+pub fn drawAsset(
+    canvas: *Canvas,
+    asset_id: types.uint32,
+    left: f64,
+    top: f64,
+    right: f64,
+    bottom: f64,
+    alpha: f32,
+) bool {
+    if (comptime vstgui_adapter_enabled) {
+        return zig_vstgui_canvas_draw_asset(canvas, asset_id, left, top, right, bottom, alpha) == 0;
+    }
+    return false;
 }

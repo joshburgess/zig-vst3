@@ -217,7 +217,9 @@ void ParameterControl::build(
     VSTGUI::CViewContainer* parent,
     ZigVstguiParameterInfo value_parameter_info,
     ZigVstguiControlKind value_control_kind,
-    const ThemeResolver& styles
+    const ThemeResolver& styles,
+    const AssetStore* assets,
+    ZigVstguiDrawingCallbacks drawing
 ) {
     if (!parent || label || primary_control || value_edit) return;
     parameter_info = value_parameter_info;
@@ -233,7 +235,7 @@ void ParameterControl::build(
         label_text += ")";
     }
     label = new VSTGUI::CTextLabel(VSTGUI::CRect(), label_text.c_str());
-    label->setFont(styles.theme().typography.body);
+    label->setFont(styles.font(TypographyRole::body));
     label->setFontColor(label_style.foreground);
     label->setBackColor(label_style.background);
     label->setFrameColor(label_style.border);
@@ -244,7 +246,7 @@ void ParameterControl::build(
     label_component.accessibility().setName(label_text);
     label_component.accessibility().setReadOnly(true);
 
-    buildPrimaryControl(parent, parameter_info, control_kind, styles);
+    buildPrimaryControl(parent, parameter_info, control_kind, styles, assets, drawing);
 
     if (control_kind == ZIG_VSTGUI_CONTROL_TOGGLE ||
         control_kind == ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN) {
@@ -255,7 +257,7 @@ void ParameterControl::build(
     value_edit->setMin(0.f);
     value_edit->setMax(1.f);
     value_edit->setDefaultValue(static_cast<float>(clampNormalized(parameter_info.default_normalized)));
-    value_edit->setFont(styles.theme().typography.value);
+    value_edit->setFont(styles.font(TypographyRole::value));
     value_edit->setFontColor(value_style.foreground);
     value_edit->setBackColor(value_style.background);
     value_edit->setFrameColor(value_style.border);
@@ -306,7 +308,9 @@ void ParameterControl::buildPrimaryControl(
     VSTGUI::CViewContainer* parent,
     ZigVstguiParameterInfo info,
     ZigVstguiControlKind kind,
-    const ThemeResolver& styles
+    const ThemeResolver& styles,
+    const AssetStore* assets,
+    ZigVstguiDrawingCallbacks drawing
 ) {
     const float default_value = static_cast<float>(clampNormalized(info.default_normalized));
     const float wheel_increment = info.step_count > 0 ? 1.f / static_cast<float>(info.step_count) : 0.01f;
@@ -336,7 +340,7 @@ void ParameterControl::buildPrimaryControl(
             const auto style = styles.resolve(component_kind);
             const auto pressed = styles.resolve(component_kind, VisualState::pressed);
             toggle = new VSTGUI::CTextButton(VSTGUI::CRect(), this, kParameterTag, "Off");
-            toggle->setFont(styles.theme().typography.body);
+            toggle->setFont(styles.font(TypographyRole::body));
             toggle->setTextColor(style.foreground);
             toggle->setTextColorHighlighted(pressed.foreground);
             toggle->setFrameColor(style.border);
@@ -350,7 +354,7 @@ void ParameterControl::buildPrimaryControl(
             component_kind = ComponentKind::dropdown;
             const auto style = styles.resolve(component_kind);
             dropdown = new VSTGUI::COptionMenu(VSTGUI::CRect(), this, kParameterTag);
-            dropdown->setFont(styles.theme().typography.body);
+            dropdown->setFont(styles.font(TypographyRole::body));
             dropdown->setFontColor(style.foreground);
             dropdown->setBackColor(style.background);
             dropdown->setFrameColor(style.border);
@@ -369,7 +373,7 @@ void ParameterControl::buildPrimaryControl(
             component_kind = ComponentKind::segmented;
             const auto style = styles.resolve(component_kind);
             segmented = new VSTGUI::CSegmentButton(VSTGUI::CRect(), this, kParameterTag);
-            segmented->setFont(styles.theme().typography.body);
+            segmented->setFont(styles.font(TypographyRole::body));
             segmented->setTextColor(style.foreground);
             segmented->setTextColorHighlighted(style.foreground);
             segmented->setFrameColor(style.border);
@@ -416,6 +420,21 @@ void ParameterControl::buildPrimaryControl(
     primary_component.accessibility().setRole(role);
     primary_component.accessibility().setName(label_text);
     primary_component.accessibility().setDescription("Plugin parameter");
+    if (drawing.draw_parameter) {
+        ZigVstguiDrawingComponent drawing_component = ZIG_VSTGUI_DRAW_SLIDER;
+        if (kind == ZIG_VSTGUI_CONTROL_ROTARY_KNOB) drawing_component = ZIG_VSTGUI_DRAW_KNOB;
+        if (kind == ZIG_VSTGUI_CONTROL_TOGGLE) drawing_component = ZIG_VSTGUI_DRAW_TOGGLE;
+        if (kind == ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN) drawing_component = ZIG_VSTGUI_DRAW_DROPDOWN;
+        if (kind == ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM) drawing_component = ZIG_VSTGUI_DRAW_SEGMENTED;
+        drawing_overlay = new DrawingOverlay(
+            control_model.parameterId(),
+            drawing_component,
+            primary_control,
+            assets,
+            drawing
+        );
+        parent->addView(drawing_overlay);
+    }
 }
 
 std::string ParameterControl::formattedValue(double normalized) const {
@@ -453,6 +472,9 @@ void ParameterControl::clear() {
     segmented = nullptr;
     primary_control = nullptr;
     value_edit = nullptr;
+    drawing_overlay = nullptr;
+    primary_hovered = false;
+    primary_pressed = false;
 }
 
 void ParameterControl::setValue(double value) {
@@ -465,6 +487,7 @@ void ParameterControl::setEnabled(bool enabled) {
     value_component.setEnabled(enabled);
     if (primary_control) primary_control->setAlphaValue(enabled ? 1.f : disabled_alpha);
     if (value_edit) value_edit->setAlphaValue(enabled ? 1.f : disabled_alpha);
+    if (drawing_overlay) drawing_overlay->invalid();
 }
 
 void ParameterControl::setBounds(
@@ -484,6 +507,10 @@ void ParameterControl::setBounds(
         ));
     } else {
         primary_component.setBounds(slider_bounds);
+    }
+    if (drawing_overlay && primary_control) {
+        drawing_overlay->setViewSize(primary_control->getViewSize(), true);
+        drawing_overlay->setMouseableArea(primary_control->getViewSize());
     }
     value_component.setBounds(value_bounds);
 }
@@ -527,6 +554,7 @@ VSTGUI::CControl* ParameterControl::valueFocusView() const {
 void ParameterControl::setFocusedView(VSTGUI::CView* view) {
     primary_component.setFocused(primary_control && view == primary_control);
     value_component.setFocused(value_edit && view == value_edit);
+    if (drawing_overlay) drawing_overlay->invalid();
 }
 
 bool ParameterControl::showContextMenu(int32_t x, int32_t y) {
@@ -551,6 +579,7 @@ void ParameterControl::controlBeginEdit(VSTGUI::CControl*) {
     if (control_model.beginGesture()) {
         primary_component.setEditing(true);
         value_component.setEditing(true);
+        if (drawing_overlay) drawing_overlay->invalid();
     }
 }
 
@@ -565,9 +594,28 @@ void ParameterControl::controlEndEdit(VSTGUI::CControl*) {
     control_model.endGesture();
     primary_component.setEditing(false);
     value_component.setEditing(false);
+    if (drawing_overlay) drawing_overlay->invalid();
 }
 
-void ParameterControl::viewOnEvent(VSTGUI::CView*, VSTGUI::Event& event) {
+void ParameterControl::viewOnEvent(VSTGUI::CView* view, VSTGUI::Event& event) {
+    if (view == primary_control && drawing_overlay) {
+        if (event.type == VSTGUI::EventType::MouseEnter) primary_hovered = true;
+        if (event.type == VSTGUI::EventType::MouseExit) {
+            primary_hovered = false;
+            primary_pressed = false;
+        }
+        if (event.type == VSTGUI::EventType::MouseDown) {
+            auto& mouse_event = VSTGUI::castMouseDownEvent(event);
+            if (mouse_event.buttonState.isLeft()) primary_pressed = true;
+        }
+        if (event.type == VSTGUI::EventType::MouseUp ||
+            event.type == VSTGUI::EventType::MouseCancel) primary_pressed = false;
+        drawing_overlay->setInteractionState(
+            primary_pressed ? ZIG_VSTGUI_DRAW_PRESSED :
+            primary_hovered ? ZIG_VSTGUI_DRAW_HOVERED :
+            ZIG_VSTGUI_DRAW_NORMAL
+        );
+    }
     if (event.type != VSTGUI::EventType::MouseDown) return;
     auto& mouse_event = VSTGUI::castMouseDownEvent(event);
     if (!mouse_event.buttonState.isRight()) return;
@@ -580,11 +628,13 @@ void ParameterControl::viewOnEvent(VSTGUI::CView*, VSTGUI::Event& event) {
 void ParameterControl::viewLostFocus(VSTGUI::CView* view) {
     if (view == primary_control) primary_component.setFocused(false);
     if (view == value_edit) value_component.setFocused(false);
+    if (drawing_overlay) drawing_overlay->invalid();
 }
 
 void ParameterControl::viewTookFocus(VSTGUI::CView* view) {
     if (view == primary_control) primary_component.setFocused(true);
     if (view == value_edit) value_component.setFocused(true);
+    if (drawing_overlay) drawing_overlay->invalid();
 }
 
 const ParameterControlModel& ParameterControl::model() const {
@@ -610,6 +660,7 @@ void ParameterControl::syncViews() {
         value_edit->setValueNormalized(normalized);
         value_edit->invalid();
     }
+    if (drawing_overlay) drawing_overlay->invalid();
 }
 
 ResizeHandle::ResizeHandle(
@@ -688,7 +739,7 @@ void ResizeControl::build(VSTGUI::CViewContainer* parent, const ThemeResolver& s
     const auto highlighted = styles.resolve(ComponentKind::resize_button, VisualState::pressed);
     const auto& colors = styles.theme().colors;
     button = new VSTGUI::CTextButton(VSTGUI::CRect(), this, kResizeTag, "Expand");
-    button->setFont(styles.theme().typography.body);
+    button->setFont(styles.font(TypographyRole::body));
     button->setTextColor(style.foreground);
     button->setTextColorHighlighted(highlighted.foreground);
     button->setFrameColor(style.border);

@@ -1,5 +1,7 @@
 #include "zig_vstgui_theme.h"
 
+#include <utility>
+
 namespace ZigVstgui {
 
 namespace {
@@ -107,6 +109,18 @@ const Theme& ThemeResolver::theme() const {
     return *selected_theme;
 }
 
+VSTGUI::CFontRef ThemeResolver::font(TypographyRole role) const {
+    const auto role_index = static_cast<std::size_t>(role);
+    if (font_overrides[role_index]) return font_overrides[role_index];
+    switch (role) {
+        case TypographyRole::title: return selected_theme->typography.title;
+        case TypographyRole::body: return selected_theme->typography.body;
+        case TypographyRole::value: return selected_theme->typography.value;
+        case TypographyRole::count: return selected_theme->typography.body;
+    }
+    return selected_theme->typography.body;
+}
+
 ComponentStyle ThemeResolver::resolve(ComponentKind kind, VisualState state) const {
     const auto kind_index = index(kind);
     ComponentStyle result = selected_theme->component_styles[kind_index];
@@ -114,6 +128,13 @@ ComponentStyle ThemeResolver::resolve(ComponentKind kind, VisualState state) con
     apply(result, component_overrides[kind_index]);
     apply(result, selected_theme->state_overrides[kind_index][index(state)]);
     return result;
+}
+
+void ThemeResolver::setFontOverride(
+    TypographyRole role,
+    VSTGUI::SharedPointer<VSTGUI::CFontDesc> font
+) {
+    font_overrides[static_cast<std::size_t>(role)] = std::move(font);
 }
 
 void ThemeResolver::setEditorOverride(const StyleOverride& style) {
