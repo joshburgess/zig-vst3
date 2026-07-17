@@ -14,4 +14,4 @@ cmake -S "$source_dir" -B "$build_dir" \
   -DVSTGUI_UISCRIPTING=OFF \
   -DVSTGUI_ENABLE_OPENGL_SUPPORT=OFF \
   -DVSTGUI_ENABLE_XMLPARSER=OFF
-cmake --build "$build_dir" --target zig_vstgui_adapter --parallel
+cmake --build "$build_dir" --target zig_vstgui_adapter zig_vstgui_adapter_tests_run --parallel

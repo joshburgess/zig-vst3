@@ -162,18 +162,25 @@ Each milestone must leave the validator, pluginval, existing examples, and cross
 
 ### Milestone 1: Extract the Component Foundation
 
-- [ ] Split the VSTGUI adapter into lifecycle, component, control, theme, and editor-composition units.
-- [ ] Extract the current slider and numeric field from `ZigVstguiEditor`.
-- [ ] Define component bounds, visibility, enabled state, focus participation, and invalidation.
-- [ ] Define shared parameter-control gesture and host-update behavior.
-- [ ] Preserve the current gain editor appearance and confirmed interactions.
-- [ ] Add unit tests for state transitions and gesture ownership.
+- [x] Split the VSTGUI adapter into lifecycle, component, control, theme, and editor-composition units.
+- [x] Extract the current slider and numeric field from `ZigVstguiEditor`.
+- [x] Define component bounds, visibility, enabled state, focus participation, and invalidation.
+- [x] Define shared parameter-control gesture and host-update behavior.
+- [x] Preserve the current gain editor appearance and confirmed interactions.
+- [x] Add unit tests for state transitions and gesture ownership.
 
 Exit criteria:
 
 - The gain editor is composed from reusable components.
 - No control duplicates begin, perform, end, reset, parse, or host-update logic.
 - The existing REAPER behavior remains unchanged.
+
+Completion evidence:
+
+- `zig_vstgui_adapter.cpp` now contains only the public C ABI. Editor composition, platform attachment, component state, parameter controls, profiling, and theme values live in separate units.
+- `ParameterControlModel` owns accepted values and gesture lifetime. `ParameterControl` binds that model to the reusable slider and numeric field.
+- Native adapter tests cover visual-state precedence, single-gesture ownership, rejected values, clamping, idempotent completion, and teardown during an active gesture.
+- Unit tests, raw ABI checks, all example validators, pluginval editor and automation checks, and Linux and Windows cross-target bundles pass.
 
 ### Milestone 2: Add Theme and Style Resolution
 
