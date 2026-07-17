@@ -4,6 +4,7 @@ Tier 3 host smoke tests are release gates. Record only tests that were run in a 
 
 | Date | Host | Host Version | OS | CPU | Plugin Build | Bundle | Result | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-07-17 | REAPER | 7.36/macOS-arm64 | macOS 15.4.1 | arm64 | 9ddc409 | `zig_vst3_gain.vst3` | Partial Pass | Two visible editor windows opened with isolated values. Open, close, and reopen passed with transport stopped and running. Two-instance state survived project save/reload, both restored editors reopened, and the project saved with editors closed. Host resize scripting was unavailable because JS_ReaScriptAPI was not installed. Display-scale changes and pointer/keyboard automation recording remain untested. |
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_gain.vst3` | Pass | Scanned in REAPER, inserted on a track, Gain parameter behavior confirmed, saved, reloaded. |
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_bypass.vst3` | Pass | Scanned in REAPER, inserted on a track, Bypass behavior confirmed, saved, reloaded. |
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_mode_gain.vst3` | Pass | Scanned in REAPER, inserted on a track, Mode parameter behavior confirmed, saved, reloaded. |
@@ -42,6 +43,15 @@ Run `zig build clean-bundles bundle-examples` before pointing a host at `zig-out
 - `zig_vst3_event_monitor.vst3`: this is an input-only event analyzer. It has no audio output, so a basic REAPER pass should focus on scan/load/save/reload until a host-side event inspection harness exists.
 - `zig_vst3_sine_synth.vst3`: create a track with MIDI input armed, insert the plugin, send notes, and confirm the Level parameter controls generated output.
 - `zig_vst3_editor_smoke.vst3`: open the FX UI and close it while transport is stopped and running. It intentionally exposes a protocol-only editor, so a blank or host-generic container is acceptable as long as the host does not crash and save/reload survives.
+
+## Visible GUI Platform Coverage
+
+| Platform | Status | Remaining real-host work |
+| --- | --- | --- |
+| macOS | Partial Pass | Exercise editor-initiated resize, change display scale, and record pointer and keyboard automation in REAPER or Cubase. |
+| Windows | Pending | Run the gain bundle in a native Windows VST3 host, including DPI changes and two instances. |
+| Linux X11 | Pending | Run the gain bundle in a native X11 VST3 host and verify host run-loop cleanup. |
+| Linux Wayland | Pending | Run the gain bundle in a native Wayland VST3 host that implements the required Wayland interfaces. |
 
 ## Recording Helper
 

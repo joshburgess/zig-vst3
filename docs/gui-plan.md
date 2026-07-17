@@ -218,12 +218,12 @@ UX acceptance criteria:
 
 Host tests:
 
-- [ ] Open, close, and reopen the editor while transport is stopped and running.
+- [x] Open, close, and reopen the editor while transport is stopped and running.
 - [ ] Resize from the host and from the editor.
 - [ ] Change display scale or move between displays when the host permits it.
 - [ ] Record automation from pointer and keyboard edits, then play it back.
-- [ ] Save and restore the project with the editor open and closed.
-- [ ] Repeat with two plugin instances open at once.
+- [x] Save and restore the project with the editor open and closed.
+- [x] Repeat with two plugin instances open at once.
 
 Exit criteria:
 

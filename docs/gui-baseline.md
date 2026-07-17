@@ -89,4 +89,4 @@ At the 400 by 300 reference size, these results are well below a 16.67 milliseco
 
 The adapter owns no GPU device, texture upload path, or custom swap chain. VSTGUI owns surface creation and recreation. Consequently, texture, draw-call, and surface-loss metrics do not apply to this reference backend. Repeated open and close operations remain covered by pluginval and the editor lifecycle tests.
 
-No real DAW editor row has been recorded. Automated host-like checks do not replace that row.
+A partial real DAW row is recorded for REAPER 7.36 on macOS. It covers stopped and running editor recreation, two instances, isolated values, save/reload, restored editor opening, and saving with editors closed. Host resize, display-scale changes, and pointer or keyboard automation recording remain open, so automated host-like checks still do not replace those interactions.
