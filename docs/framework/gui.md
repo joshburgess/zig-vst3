@@ -70,6 +70,12 @@ The adapter also provides fixed-capacity row, column, and grid layout primitives
 
 The multi-parameter editor uses a compact composition below 520 by 360 and an expanded composition at or above that size. Its supported range is 320 by 240 through 1000 by 700. Tab and Shift+Tab follow visible reading order: each parameter's primary control, its exact value field when present, and the resize action. Focus wraps at either end.
 
+### Accessibility Semantics
+
+Every VSTGUI component carries toolkit-neutral accessibility metadata. Semantic roles cover sliders, buttons, toggles, choices, text fields, meters, and groups. Nodes also expose a name, description, formatted value, optional range, enabled state, focus state, toggle state, selection state, and read-only state. Value, focus, and state changes invoke an optional backend observer, so a future native bridge can forward the changes without changing parameter controls.
+
+The pinned VSTGUI revision does not expose a native semantic accessibility API or screen-reader notification bridge on macOS, Windows, X11, or Wayland. The reference adapter therefore cannot make its internal nodes visible to VoiceOver, Narrator, Orca, or other platform assistive technology. Keyboard operation, visible focus, labels, exact entry, and semantic metadata are implemented, but they are not a substitute for native screen-reader access. Native platform bridges and screen-reader verification remain required before claiming accessible release support.
+
 VSTGUI dependencies remain optional at the package boundary. A plugin can implement the same framework adapter with another toolkit or a custom renderer.
 
 ### Rendering Measurements

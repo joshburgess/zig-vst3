@@ -38,6 +38,7 @@ void Component::setVisible(bool visible) {
 
 void Component::setEnabled(bool enabled) {
     component_state.enabled = enabled;
+    accessibility_node.setEnabled(enabled);
     applyState();
 }
 
@@ -48,6 +49,7 @@ void Component::setFocusable(bool focusable) {
 
 void Component::setFocused(bool focused) {
     component_state.focused = focused;
+    accessibility_node.setFocused(focused);
     invalidate();
 }
 
@@ -64,6 +66,14 @@ void Component::setPressed(bool pressed) {
 void Component::setEditing(bool editing) {
     component_state.editing = editing;
     invalidate();
+}
+
+AccessibilityNode& Component::accessibility() {
+    return accessibility_node;
+}
+
+const AccessibilityNode& Component::accessibility() const {
+    return accessibility_node;
 }
 
 void Component::invalidate() {

@@ -72,7 +72,10 @@ private:
     bool pressed {false};
 };
 
-class ParameterControl final : public VSTGUI::IControlListener, public VSTGUI::IViewEventListener {
+class ParameterControl final :
+    public VSTGUI::IControlListener,
+    public VSTGUI::IViewEventListener,
+    public VSTGUI::ViewListenerAdapter {
 public:
     ParameterControl(uint32_t parameter_id, double initial, ZigVstguiCallbacks callbacks);
     ~ParameterControl() override;
@@ -94,12 +97,17 @@ public:
     bool handleKey(uint16_t key, int16_t key_code, int16_t modifiers);
     VSTGUI::CControl* focusView() const;
     VSTGUI::CControl* valueFocusView() const;
+    void setFocusedView(VSTGUI::CView* view);
     bool showContextMenu(int32_t x, int32_t y);
+    const AccessibilityNode& primaryAccessibility() const;
+    const AccessibilityNode* valueAccessibility() const;
 
     void controlBeginEdit(VSTGUI::CControl* control) override;
     void valueChanged(VSTGUI::CControl* control) override;
     void controlEndEdit(VSTGUI::CControl* control) override;
     void viewOnEvent(VSTGUI::CView* view, VSTGUI::Event& event) override;
+    void viewLostFocus(VSTGUI::CView* view) override;
+    void viewTookFocus(VSTGUI::CView* view) override;
 
     const ParameterControlModel& model() const;
 
@@ -155,7 +163,7 @@ private:
     bool dragging {false};
 };
 
-class ResizeControl final : public VSTGUI::IControlListener {
+class ResizeControl final : public VSTGUI::IControlListener, public VSTGUI::ViewListenerAdapter {
 public:
     void build(VSTGUI::CViewContainer* parent, const ThemeResolver& styles);
     void clear();
@@ -164,8 +172,13 @@ public:
     void setCallbacks(ZigVstguiResizeCallbacks callbacks);
     bool requestResize(uint32_t width, uint32_t height);
     VSTGUI::CControl* focusView() const;
+    void setFocusedView(VSTGUI::CView* view);
+    const AccessibilityNode& buttonAccessibility() const;
+    const AccessibilityNode& handleAccessibility() const;
 
     void valueChanged(VSTGUI::CControl* control) override;
+    void viewLostFocus(VSTGUI::CView* view) override;
+    void viewTookFocus(VSTGUI::CView* view) override;
 
 private:
     VSTGUI::CTextButton* button {nullptr};

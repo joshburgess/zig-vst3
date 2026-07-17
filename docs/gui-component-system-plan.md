@@ -291,16 +291,26 @@ Completion evidence:
 
 ### Milestone 6: Add Accessibility Semantics
 
-- [ ] Define semantic roles for sliders, buttons, toggles, choices, text fields, meters, and groups.
-- [ ] Expose accessible name, description, value text, range, and state.
-- [ ] Notify the platform accessibility layer when values or states change.
-- [ ] Ensure custom drawing does not remove native keyboard or accessibility behavior.
-- [ ] Document unsupported VSTGUI or platform accessibility paths explicitly.
+- [x] Define semantic roles for sliders, buttons, toggles, choices, text fields, meters, and groups.
+- [x] Expose accessible name, description, value text, range, and state.
+- [x] Notify the platform accessibility layer when values or states change where the backend supports it.
+- [x] Ensure custom drawing does not remove native keyboard or accessibility behavior.
+- [x] Document unsupported VSTGUI or platform accessibility paths explicitly.
 
 Exit criteria:
 
 - Every gallery control has a semantic name, role, value, and state.
 - Focus and value changes are observable through the platform accessibility API where VSTGUI supports it.
+
+Completion evidence:
+
+- Each component owns a semantic node with a role, name, description, formatted value, optional numeric range, enabled state, focus state, toggle state, selection state, and read-only state. The role vocabulary covers the current controls plus meters and groups needed by later milestones.
+- Slider and knob controls expose slider semantics. Toggles expose checked state, dropdowns and segmented controls expose choice semantics, exact entry exposes text-field semantics, and both resize interactions expose button semantics. Labels and editor headings provide read-only group context.
+- Accepted user edits and host updates refresh semantic value text, range, and state through the same synchronization path used by visible controls. Focus listeners and deterministic keyboard traversal refresh semantic focus. Changes increment a generation and invoke an optional backend observer without affecting the audio thread.
+- Custom-drawn sliders and resize handles retain the existing keyboard path, visible focus, exact value entry, and equivalent resize button action. No semantic behavior depends on color or drawing output.
+- The pinned VSTGUI revision has no native semantic accessibility or screen-reader bridge on macOS, Windows, X11, or Wayland. The adapter therefore preserves complete internal semantics and change notifications, but it cannot expose them to platform assistive technology until a backend bridge exists. Native screen-reader verification remains a release gate rather than a claimed pass.
+- Native tests cover semantic change notifications, stable no-op updates, every gallery role, value and range updates, checked state, enabled and read-only state, focus changes, missing exact fields, and resize semantics.
+- The complete Zig and raw ABI suites pass. Every example passes the VST3 validator and strictness-5 pluginval, and the Linux and Windows bundle sets cross-compile successfully with the semantic layer linked into native editors.
 
 ### Milestone 7: Add Audio Visualization Components
 

@@ -22,6 +22,17 @@ struct CallbackState {
     int32_t context_y {0};
 };
 
+struct AccessibilityObserverState {
+    uint32_t count {0};
+    ZigVstgui::AccessibilityChange last {ZigVstgui::AccessibilityChange::role};
+};
+
+void accessibilityChanged(void* userdata, ZigVstgui::AccessibilityChange change) {
+    auto* state = static_cast<AccessibilityObserverState*>(userdata);
+    state->count += 1;
+    state->last = change;
+}
+
 void beginEdit(void* userdata, uint32_t parameter_id) {
     auto* state = static_cast<CallbackState*>(userdata);
     state->begin_count += 1;
@@ -75,6 +86,35 @@ int testComponentState() {
     if (state.visualState() != ZigVstgui::VisualState::editing) return 5;
     state.enabled = false;
     if (state.visualState() != ZigVstgui::VisualState::disabled) return 6;
+    return 0;
+}
+
+int testAccessibilityNode() {
+    AccessibilityObserverState observer;
+    ZigVstgui::AccessibilityNode node;
+    node.setObserver(&observer, accessibilityChanged);
+    node.setRole(ZigVstgui::AccessibilityRole::meter);
+    node.setName("Output level");
+    node.setDescription("Stereo peak level");
+    node.setValueText("-12 dB");
+    node.setRange(-60.0, 6.0, -12.0);
+    node.setEnabled(false);
+    node.setFocused(true);
+    node.setChecked(true);
+    node.setSelected(true);
+    node.setReadOnly(true);
+    if (node.role() != ZigVstgui::AccessibilityRole::meter) return 1;
+    if (node.name() != "Output level" || node.description() != "Stereo peak level") return 2;
+    if (node.valueText() != "-12 dB") return 3;
+    if (!node.range().present || !closeEnough(node.range().current, -12.0)) return 4;
+    if (node.state().enabled || !node.state().focused || !node.state().checked ||
+        !node.state().selected || !node.state().read_only) return 5;
+    if (observer.count != node.generation() || observer.last != ZigVstgui::AccessibilityChange::state) return 6;
+    const auto generation = node.generation();
+    node.setValueText("-12 dB");
+    if (node.generation() != generation) return 7;
+    node.clearRange();
+    if (node.range().present || observer.last != ZigVstgui::AccessibilityChange::range) return 8;
     return 0;
 }
 
@@ -203,11 +243,24 @@ int testMultiParameterRouting() {
     ZigVstguiEditor first(descriptions, 4, callbacks);
     ZigVstguiEditor second(descriptions, 4, callbacks);
     if (!first.valid() || !second.valid()) return 1;
+    const auto* slider_accessibility = first.parameterAccessibility(10, false);
+    const auto* exact_accessibility = first.parameterAccessibility(10, true);
+    const auto* choice_accessibility = first.parameterAccessibility(20, false);
+    const auto* toggle_accessibility = first.parameterAccessibility(30, false);
+    if (!slider_accessibility || slider_accessibility->role() != ZigVstgui::AccessibilityRole::slider) return 16;
+    if (slider_accessibility->name() != "Continuous (x)" || !slider_accessibility->range().present) return 17;
+    if (!exact_accessibility || exact_accessibility->role() != ZigVstgui::AccessibilityRole::text_field) return 18;
+    if (!choice_accessibility || choice_accessibility->role() != ZigVstgui::AccessibilityRole::choice) return 19;
+    if (!toggle_accessibility || toggle_accessibility->role() != ZigVstgui::AccessibilityRole::toggle) return 20;
+    if (first.parameterAccessibility(30, true) || first.parameterAccessibility(99, false)) return 21;
+    if (first.resizeAccessibility().role() != ZigVstgui::AccessibilityRole::button) return 22;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 0) || first.focusPosition() != 0) return 12;
+    if (!slider_accessibility->state().focused) return 23;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 0) || first.focusPosition() != 1) return 13;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 0) || first.focusPosition() != 2) return 14;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 1) || first.focusPosition() != 1) return 15;
     if (!first.setParameter(30, 1.0)) return 2;
+    if (!toggle_accessibility->state().checked || toggle_accessibility->valueText().empty()) return 24;
     double value = 0.0;
     if (!first.parameterValue(30, value) || !closeEnough(value, 1.0)) return 3;
     if (!first.parameterValue(20, value) || !closeEnough(value, 4.0 / 7.0)) return 4;
@@ -386,6 +439,7 @@ int testGalleryLayoutExtents() {
 
 int main() {
     if (const int result = testComponentState(); result != 0) return 10 + result;
+    if (const int result = testAccessibilityNode(); result != 0) return 20 + result;
     if (const int result = testGestureOwnership(); result != 0) return 30 + result;
     if (const int result = testActiveGestureCleanup(); result != 0) return 50 + result;
     if (const int result = testSteppedGestureQuantization(); result != 0) return 55 + result;

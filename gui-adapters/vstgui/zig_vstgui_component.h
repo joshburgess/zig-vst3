@@ -1,6 +1,7 @@
 #ifndef ZIG_VSTGUI_COMPONENT_H
 #define ZIG_VSTGUI_COMPONENT_H
 
+#include "zig_vstgui_accessibility.h"
 #include "zig_vstgui_theme.h"
 #include "vstgui/lib/cviewcontainer.h"
 
@@ -35,6 +36,8 @@ public:
     void setHovered(bool hovered);
     void setPressed(bool pressed);
     void setEditing(bool editing);
+    AccessibilityNode& accessibility();
+    const AccessibilityNode& accessibility() const;
     void invalidate();
 
     VSTGUI::CView* view() const;
@@ -45,6 +48,7 @@ private:
 
     VSTGUI::CView* bound_view {nullptr};
     ComponentState component_state {};
+    AccessibilityNode accessibility_node;
 };
 
 struct RenderMetrics {

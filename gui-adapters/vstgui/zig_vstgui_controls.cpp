@@ -1,5 +1,7 @@
 #include "zig_vstgui_controls.h"
 
+#include "zig_vstgui_layout.h"
+
 #include "pluginterfaces/base/keycodes.h"
 #include "vstgui/lib/cframe.h"
 #include "vstgui/lib/cdrawcontext.h"
@@ -238,6 +240,9 @@ void ParameterControl::build(
     label->setHoriAlign(VSTGUI::kLeftText);
     parent->addView(label);
     label_component.bind(label);
+    label_component.accessibility().setRole(AccessibilityRole::group);
+    label_component.accessibility().setName(label_text);
+    label_component.accessibility().setReadOnly(true);
 
     buildPrimaryControl(parent, parameter_info, control_kind, styles);
 
@@ -288,8 +293,12 @@ void ParameterControl::build(
     });
     parent->addView(value_edit);
     value_edit->registerViewEventListener(this);
+    value_edit->registerViewListener(this);
     value_component.bind(value_edit);
     value_component.setFocusable(true);
+    value_component.accessibility().setRole(AccessibilityRole::text_field);
+    value_component.accessibility().setName(label_text + " value");
+    value_component.accessibility().setDescription("Enter an exact value");
     syncViews();
 }
 
@@ -397,8 +406,16 @@ void ParameterControl::buildPrimaryControl(
     primary_control->setWheelInc(wheel_increment);
     parent->addView(primary_control);
     primary_control->registerViewEventListener(this);
+    primary_control->registerViewListener(this);
     primary_component.bind(primary_control);
     primary_component.setFocusable(true);
+    AccessibilityRole role = AccessibilityRole::slider;
+    if (kind == ZIG_VSTGUI_CONTROL_TOGGLE) role = AccessibilityRole::toggle;
+    if (kind == ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN ||
+        kind == ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM) role = AccessibilityRole::choice;
+    primary_component.accessibility().setRole(role);
+    primary_component.accessibility().setName(label_text);
+    primary_component.accessibility().setDescription("Plugin parameter");
 }
 
 std::string ParameterControl::formattedValue(double normalized) const {
@@ -417,8 +434,14 @@ std::string ParameterControl::formattedValue(double normalized) const {
 
 void ParameterControl::clear() {
     control_model.cancelGesture();
-    if (primary_control) primary_control->unregisterViewEventListener(this);
-    if (value_edit) value_edit->unregisterViewEventListener(this);
+    if (primary_control) {
+        primary_control->unregisterViewEventListener(this);
+        primary_control->unregisterViewListener(this);
+    }
+    if (value_edit) {
+        value_edit->unregisterViewEventListener(this);
+        value_edit->unregisterViewListener(this);
+    }
     label_component.clear();
     primary_component.clear();
     value_component.clear();
@@ -501,6 +524,11 @@ VSTGUI::CControl* ParameterControl::valueFocusView() const {
     return value_edit;
 }
 
+void ParameterControl::setFocusedView(VSTGUI::CView* view) {
+    primary_component.setFocused(primary_control && view == primary_control);
+    value_component.setFocused(value_edit && view == value_edit);
+}
+
 bool ParameterControl::showContextMenu(int32_t x, int32_t y) {
     const auto& callbacks = control_model.callbacks();
     return callbacks.show_context_menu && callbacks.show_context_menu(
@@ -509,6 +537,14 @@ bool ParameterControl::showContextMenu(int32_t x, int32_t y) {
         x,
         y
     ) == 0;
+}
+
+const AccessibilityNode& ParameterControl::primaryAccessibility() const {
+    return primary_component.accessibility();
+}
+
+const AccessibilityNode* ParameterControl::valueAccessibility() const {
+    return value_edit ? &value_component.accessibility() : nullptr;
 }
 
 void ParameterControl::controlBeginEdit(VSTGUI::CControl*) {
@@ -541,18 +577,36 @@ void ParameterControl::viewOnEvent(VSTGUI::CView*, VSTGUI::Event& event) {
         )) event.consumed = true;
 }
 
+void ParameterControl::viewLostFocus(VSTGUI::CView* view) {
+    if (view == primary_control) primary_component.setFocused(false);
+    if (view == value_edit) value_component.setFocused(false);
+}
+
+void ParameterControl::viewTookFocus(VSTGUI::CView* view) {
+    if (view == primary_control) primary_component.setFocused(true);
+    if (view == value_edit) value_component.setFocused(true);
+}
+
 const ParameterControlModel& ParameterControl::model() const {
     return control_model;
 }
 
 void ParameterControl::syncViews() {
     const float normalized = static_cast<float>(control_model.acceptedValue());
+    const auto value_text = formattedValue(normalized);
+    primary_component.accessibility().setValueText(value_text);
+    primary_component.accessibility().setRange(0.0, 1.0, normalized);
+    primary_component.accessibility().setChecked(
+        control_kind == ZIG_VSTGUI_CONTROL_TOGGLE && normalized >= 0.5f
+    );
     if (primary_control) {
         primary_control->setValueNormalized(normalized);
-        if (toggle) toggle->setTitle(formattedValue(normalized).c_str());
+        if (toggle) toggle->setTitle(value_text.c_str());
         primary_control->invalid();
     }
     if (value_edit) {
+        value_component.accessibility().setValueText(value_text);
+        value_component.accessibility().setRange(0.0, 1.0, normalized);
         value_edit->setValueNormalized(normalized);
         value_edit->invalid();
     }
@@ -649,15 +703,23 @@ void ResizeControl::build(VSTGUI::CViewContainer* parent, const ThemeResolver& s
     )));
     button->setRoundRadius(style.radius);
     parent->addView(button);
+    button->registerViewListener(this);
     button_component.bind(button);
     button_component.setFocusable(true);
+    button_component.accessibility().setRole(AccessibilityRole::button);
+    button_component.accessibility().setName("Editor size");
+    button_component.accessibility().setDescription("Toggle compact and expanded editor size");
     handle = new ResizeHandle(VSTGUI::CRect(), this, styles);
     parent->addView(handle);
     handle_component.bind(handle);
+    handle_component.accessibility().setRole(AccessibilityRole::button);
+    handle_component.accessibility().setName("Resize editor");
+    handle_component.accessibility().setDescription("Drag to resize the editor window");
     setSize(current_width, current_height);
 }
 
 void ResizeControl::clear() {
+    if (button) button->unregisterViewListener(this);
     button_component.clear();
     handle_component.clear();
     button = nullptr;
@@ -685,8 +747,9 @@ void ResizeControl::setSize(uint32_t width, uint32_t height) {
     current_height = height;
     if (handle) handle->setCurrentSize(width, height);
     if (!button) return;
-    const bool expanded = width >= 520 || height >= 360;
+    const bool expanded = layoutMode(width, height) == LayoutMode::expanded;
     button->setTitle(expanded ? "Compact" : "Expand");
+    button_component.accessibility().setValueText(expanded ? "Expanded" : "Compact");
 }
 
 void ResizeControl::setCallbacks(ZigVstguiResizeCallbacks value_callbacks) {
@@ -699,7 +762,7 @@ bool ResizeControl::requestResize(uint32_t width, uint32_t height) {
 
 void ResizeControl::valueChanged(VSTGUI::CControl* control) {
     if (!control || control->getValue() != control->getMax()) return;
-    const bool expanded = current_width >= 520 || current_height >= 360;
+    const bool expanded = layoutMode(current_width, current_height) == LayoutMode::expanded;
     const uint32_t requested_width = expanded ? 400 : 640;
     const uint32_t requested_height = expanded ? 300 : 420;
     if (!requestResize(requested_width, requested_height)) {
@@ -709,6 +772,26 @@ void ResizeControl::valueChanged(VSTGUI::CControl* control) {
 
 VSTGUI::CControl* ResizeControl::focusView() const {
     return button;
+}
+
+void ResizeControl::setFocusedView(VSTGUI::CView* view) {
+    button_component.setFocused(button && view == button);
+}
+
+const AccessibilityNode& ResizeControl::buttonAccessibility() const {
+    return button_component.accessibility();
+}
+
+const AccessibilityNode& ResizeControl::handleAccessibility() const {
+    return handle_component.accessibility();
+}
+
+void ResizeControl::viewLostFocus(VSTGUI::CView* view) {
+    if (view == button) button_component.setFocused(false);
+}
+
+void ResizeControl::viewTookFocus(VSTGUI::CView* view) {
+    if (view == button) button_component.setFocused(true);
 }
 
 }

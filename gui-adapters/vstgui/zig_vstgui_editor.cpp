@@ -127,6 +127,19 @@ bool ZigVstguiEditor::parameterValue(uint32_t parameter_id, double& value) const
     return true;
 }
 
+const ZigVstgui::AccessibilityNode* ZigVstguiEditor::parameterAccessibility(
+    uint32_t parameter_id,
+    bool exact_value
+) const {
+    const auto* control = findControl(parameter_id);
+    if (!control) return nullptr;
+    return exact_value ? control->valueAccessibility() : &control->primaryAccessibility();
+}
+
+const ZigVstgui::AccessibilityNode& ZigVstguiEditor::resizeAccessibility() const {
+    return resize_control.buttonAccessibility();
+}
+
 int32_t ZigVstguiEditor::focusPosition() const {
     return focus_position;
 }
@@ -167,13 +180,25 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
     const uint32_t next = current == focus_count
         ? (reverse ? focus_count - 1 : 0)
         : (reverse ? (current + focus_count - 1) % focus_count : (current + 1) % focus_count);
-    frame->setFocusView(focus_order[next]);
+    auto* next_view = focus_order[next];
+    frame->setFocusView(next_view);
+    for (uint32_t index = 0; index < parameter_count; ++index) {
+        parameter_controls[index]->setFocusedView(next_view);
+    }
+    resize_control.setFocusedView(next_view);
     focus_position = static_cast<int32_t>(next);
     return true;
 }
 
 void ZigVstguiEditor::setFocus(bool focused) {
-    if (frame) frame->onActivate(focused);
+    if (!frame) return;
+    frame->onActivate(focused);
+    if (!focused) {
+        for (uint32_t index = 0; index < parameter_count; ++index) {
+            parameter_controls[index]->setFocusedView(nullptr);
+        }
+        resize_control.setFocusedView(nullptr);
+    }
 }
 
 void ZigVstguiEditor::setPlugFrame(void* value_frame) {
@@ -214,6 +239,9 @@ void ZigVstguiEditor::buildFrame() {
     title->setFrameColor(title_style.border);
     content->addView(title);
     title_component.bind(title);
+    title_component.accessibility().setRole(ZigVstgui::AccessibilityRole::group);
+    title_component.accessibility().setName(editor_title);
+    title_component.accessibility().setReadOnly(true);
 
 #if defined(__APPLE__)
     help = new VSTGUI::CTextLabel(
@@ -232,6 +260,9 @@ void ZigVstguiEditor::buildFrame() {
     help->setFrameColor(help_style.border);
     content->addView(help);
     help_component.bind(help);
+    help_component.accessibility().setRole(ZigVstgui::AccessibilityRole::group);
+    help_component.accessibility().setName("Editor keyboard instructions");
+    help_component.accessibility().setReadOnly(true);
 
     for (uint32_t index = 0; index < parameter_count; ++index) {
         parameter_controls[index]->build(

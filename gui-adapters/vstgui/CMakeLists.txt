@@ -21,6 +21,7 @@ set_target_properties(vstgui PROPERTIES
 
 add_library(zig_vstgui_adapter STATIC
     zig_vstgui_adapter.cpp
+    zig_vstgui_accessibility.cpp
     zig_vstgui_component.cpp
     zig_vstgui_controls.cpp
     zig_vstgui_editor.cpp
