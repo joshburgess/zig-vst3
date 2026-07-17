@@ -14,6 +14,9 @@ struct CallbackState {
     uint32_t last_parameter_id {0};
     double last_value {0.0};
     bool reject {false};
+    uint32_t context_menu_count {0};
+    int32_t context_x {0};
+    int32_t context_y {0};
 };
 
 void beginEdit(void* userdata, uint32_t parameter_id) {
@@ -34,6 +37,15 @@ void endEdit(void* userdata, uint32_t parameter_id) {
     auto* state = static_cast<CallbackState*>(userdata);
     state->end_count += 1;
     state->last_parameter_id = parameter_id;
+}
+
+int32_t showContextMenu(void* userdata, uint32_t parameter_id, int32_t x, int32_t y) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->context_menu_count += 1;
+    state->last_parameter_id = parameter_id;
+    state->context_x = x;
+    state->context_y = y;
+    return 0;
 }
 
 bool closeEnough(double left, double right) {
@@ -105,6 +117,36 @@ int testActiveGestureCleanup() {
     return state.begin_count == 1 && state.end_count == 1 ? 0 : 2;
 }
 
+int testSteppedGestureQuantization() {
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.begin_edit = beginEdit;
+    callbacks.perform_edit = performEdit;
+    callbacks.end_edit = endEdit;
+    ZigVstgui::ParameterControlModel model(8, 0.0, callbacks);
+    model.setStepCount(3);
+    if (!model.beginGesture() || !model.performEdit(0.49)) return 1;
+    if (!closeEnough(model.acceptedValue(), 1.0 / 3.0)) return 2;
+    if (!closeEnough(state.last_value, 1.0 / 3.0)) return 3;
+    model.endGesture();
+    model.hostChanged(0.84);
+    if (!closeEnough(model.acceptedValue(), 1.0)) return 4;
+    return 0;
+}
+
+int testParameterContextMenu() {
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.show_context_menu = showContextMenu;
+    ZigVstgui::ParameterControl control(77, 0.0, callbacks);
+    if (!control.showContextMenu(12, 34)) return 1;
+    if (state.context_menu_count != 1 || state.last_parameter_id != 77) return 2;
+    if (state.context_x != 12 || state.context_y != 34) return 3;
+    return 0;
+}
+
 int testThemeResolution() {
     const auto& default_theme = ZigVstgui::defaultTheme();
     const auto& alternate_theme = ZigVstgui::alternateTheme();
@@ -149,10 +191,10 @@ int testMultiParameterRouting() {
     callbacks.perform_edit = performEdit;
     callbacks.end_edit = endEdit;
     const ZigVstguiParameterDescription descriptions[] = {
-        {10, 0.25, {"Continuous", 0, 0.5}},
-        {20, 0.50, {"Integer", 7, 3.0 / 7.0}},
-        {30, 0.00, {"Boolean", 1, 0.0}},
-        {40, 1.00, {"Enum", 2, 0.0}},
+        {10, 0.25, {"Continuous", "x", 0, 0.5}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER},
+        {20, 0.50, {"Integer", "voices", 7, 3.0 / 7.0}, ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM},
+        {30, 0.00, {"Boolean", "", 1, 0.0}, ZIG_VSTGUI_CONTROL_TOGGLE},
+        {40, 1.00, {"Enum", "", 2, 0.0}, ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN},
     };
 
     ZigVstguiEditor first(descriptions, 4, callbacks);
@@ -161,7 +203,7 @@ int testMultiParameterRouting() {
     if (!first.setParameter(30, 1.0)) return 2;
     double value = 0.0;
     if (!first.parameterValue(30, value) || !closeEnough(value, 1.0)) return 3;
-    if (!first.parameterValue(20, value) || !closeEnough(value, 0.5)) return 4;
+    if (!first.parameterValue(20, value) || !closeEnough(value, 4.0 / 7.0)) return 4;
     if (!second.parameterValue(30, value) || !closeEnough(value, 0.0)) return 5;
     if (first.setParameter(99, 0.5)) return 6;
 
@@ -196,6 +238,8 @@ int main() {
     if (const int result = testComponentState(); result != 0) return 10 + result;
     if (const int result = testGestureOwnership(); result != 0) return 30 + result;
     if (const int result = testActiveGestureCleanup(); result != 0) return 50 + result;
+    if (const int result = testSteppedGestureQuantization(); result != 0) return 55 + result;
+    if (const int result = testParameterContextMenu(); result != 0) return 60 + result;
     if (const int result = testThemeResolution(); result != 0) return 70 + result;
     if (const int result = testMultiParameterRouting(); result != 0) return 90 + result;
     return 0;

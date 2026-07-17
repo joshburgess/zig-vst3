@@ -43,6 +43,7 @@ ZigVstguiEditor::ZigVstguiEditor(
         if (!control) return;
         parameter_controls[index].reset(control);
         parameter_info[index] = parameters[index].info;
+        parameter_control_kinds[index] = parameters[index].control_kind;
         parameter_count += 1;
     }
     buildFrame();
@@ -198,7 +199,12 @@ void ZigVstguiEditor::buildFrame() {
     help_component.bind(help);
 
     for (uint32_t index = 0; index < parameter_count; ++index) {
-        parameter_controls[index]->build(content, parameter_info[index], theme_resolver);
+        parameter_controls[index]->build(
+            content,
+            parameter_info[index],
+            parameter_control_kinds[index],
+            theme_resolver
+        );
     }
     resize_control.build(content, theme_resolver);
     resize_control.setSize(width, height);

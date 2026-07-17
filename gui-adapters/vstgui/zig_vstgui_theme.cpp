@@ -53,6 +53,10 @@ Theme makeTheme(const ColorTokens& colors) {
         theme.radii.control,
         theme.control_metrics.thumb_radius,
     };
+    theme.component_styles[index(ComponentKind::knob)] = theme.component_styles[index(ComponentKind::slider)];
+    theme.component_styles[index(ComponentKind::toggle)] = theme.component_styles[index(ComponentKind::slider)];
+    theme.component_styles[index(ComponentKind::dropdown)] = theme.component_styles[index(ComponentKind::slider)];
+    theme.component_styles[index(ComponentKind::segmented)] = theme.component_styles[index(ComponentKind::slider)];
     theme.component_styles[index(ComponentKind::value_field)] = {
         colors.surface_raised,
         colors.text_primary,

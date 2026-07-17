@@ -14,8 +14,10 @@ const ProtocolView = vst_plug_view.PlugView(4, struct {});
 pub const Parameter = struct {
     id: vsttypes.ParamID,
     title: [*:0]const u8,
+    units: [*:0]const u8 = "",
     step_count: types.int32,
     default_normalized: f64,
+    control_kind: vstgui_editor_view.ControlKind = .linear_slider,
 };
 
 pub fn createView(comptime Controller: type, controller: *ivsteditcontroller.IEditController, name: types.FIDString, parameter: Parameter) ?*iplugview.IPlugView {
@@ -42,8 +44,9 @@ pub fn createMultiView(comptime Controller: type, controller: *ivsteditcontrolle
         if (parameters.len == 0 or parameters.len > vstgui_editor_view.max_parameters) return null;
         var bindings: [vstgui_editor_view.max_parameters]vstgui_editor_view.ParameterInfoBinding = undefined;
         for (parameters, 0..) |parameter, index| {
-            bindings[index] = .{ .id = parameter.id, .info = .{
+            bindings[index] = .{ .id = parameter.id, .control_kind = parameter.control_kind, .info = .{
                 .title = parameter.title,
+                .units = parameter.units,
                 .step_count = parameter.step_count,
                 .default_normalized = parameter.default_normalized,
             } };
@@ -55,6 +58,7 @@ pub fn createMultiView(comptime Controller: type, controller: *ivsteditcontrolle
             .end_edit = Bridge.endEdit,
             .format_value = Bridge.formatValue,
             .parse_value = Bridge.parseValue,
+            .show_context_menu = Bridge.showContextMenu,
         }, .{
             .userdata = controller,
             .subscribe = Bridge.subscribe,
@@ -110,6 +114,13 @@ fn NativeBridge(comptime Controller: type) type {
             utf16[written] = 0;
             const iface = controller(userdata) orelse return -1;
             return if (iface.vtable.getParamValueByString(iface, parameter_id, &utf16, normalized) == types.kResultOk) 0 else -1;
+        }
+
+        fn showContextMenu(userdata: ?*anyopaque, parameter_id: vsttypes.ParamID, x: types.int32, y: types.int32) callconv(.c) types.int32 {
+            const iface = controller(userdata) orelse return -1;
+            const menu = Controller.createContextMenu(iface, null, &parameter_id) orelse return -1;
+            defer _ = menu.vtable.release(menu);
+            return if (menu.vtable.popup(menu, @intCast(@max(0, x)), @intCast(@max(0, y))) == types.kResultOk) 0 else -1;
         }
 
         fn subscribe(userdata: *anyopaque, editor: *anyopaque) bool {

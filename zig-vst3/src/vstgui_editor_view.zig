@@ -22,10 +22,12 @@ pub const Callbacks = extern struct {
     end_edit: *const fn (?*anyopaque, vsttypes.ParamID) callconv(.c) void,
     format_value: *const fn (?*anyopaque, vsttypes.ParamID, f64, [*]u8, types.uint32) callconv(.c) types.int32,
     parse_value: *const fn (?*anyopaque, vsttypes.ParamID, [*:0]const u8, *f64) callconv(.c) types.int32,
+    show_context_menu: *const fn (?*anyopaque, vsttypes.ParamID, types.int32, types.int32) callconv(.c) types.int32,
 };
 
 pub const ParameterInfo = extern struct {
     title: [*:0]const u8,
+    units: [*:0]const u8,
     step_count: types.int32,
     default_normalized: f64,
 };
@@ -34,6 +36,15 @@ pub const ParameterDescription = extern struct {
     parameter_id: vsttypes.ParamID,
     initial_normalized: f64,
     info: ParameterInfo,
+    control_kind: ControlKind,
+};
+
+pub const ControlKind = enum(c_int) {
+    linear_slider,
+    rotary_knob,
+    toggle,
+    enum_dropdown,
+    segmented_enum,
 };
 
 pub const ParameterValue = extern struct {
@@ -185,6 +196,7 @@ pub fn create(controller: *ivsteditcontroller.IEditController, parameters: []con
             .parameter_id = parameter.id,
             .initial_normalized = controller.vtable.getParamNormalized(controller, parameter.id),
             .info = parameter.info,
+            .control_kind = parameter.control_kind,
         };
     }
     const editor = zig_vstgui_editor_create(&descriptions, @intCast(parameters.len), callbacks) orelse return null;
@@ -245,6 +257,7 @@ fn requestEditorResize(userdata: ?*anyopaque, width: types.uint32, height: types
 pub const ParameterInfoBinding = struct {
     id: vsttypes.ParamID,
     info: ParameterInfo,
+    control_kind: ControlKind,
 };
 
 pub fn setParameter(observer_userdata: *anyopaque, parameter_id: vsttypes.ParamID, value: f64) void {

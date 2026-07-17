@@ -23,6 +23,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
             .title = "zig-vst3 Mode Gain",
             .step_count = 2,
             .default_normalized = 0.0,
+            .control_kind = .enum_dropdown,
         });
     }
 });

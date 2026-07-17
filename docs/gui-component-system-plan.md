@@ -229,33 +229,41 @@ Completion evidence:
 
 Implement controls in this order:
 
-- [ ] Linear slider
-- [ ] Numeric value field
-- [ ] Rotary knob
-- [ ] Toggle button
-- [ ] Enum dropdown
-- [ ] Segmented enum control
-- [ ] Parameter label with units
-- [ ] Resize handle
+- [x] Linear slider
+- [x] Numeric value field
+- [x] Rotary knob
+- [x] Toggle button
+- [x] Enum dropdown
+- [x] Segmented enum control
+- [x] Parameter label with units
+- [x] Resize handle
 
 Each interactive control must pass:
 
-- [ ] Pointer interaction
-- [ ] Wheel interaction where appropriate
-- [ ] Keyboard interaction
-- [ ] Fine adjustment
-- [ ] Exact entry where appropriate
-- [ ] Default reset
-- [ ] Host context menu
-- [ ] Correct automation gesture boundaries
-- [ ] Host automation playback
-- [ ] Disabled-state behavior
-- [ ] Visible focus
+- [x] Pointer interaction
+- [x] Wheel interaction where appropriate
+- [x] Keyboard interaction
+- [x] Fine adjustment
+- [x] Exact entry where appropriate
+- [x] Default reset
+- [x] Host context menu
+- [x] Correct automation gesture boundaries
+- [x] Host automation playback
+- [x] Disabled-state behavior
+- [x] Visible focus
 
 Exit criteria:
 
 - The component gallery demonstrates all four reflected parameter kinds.
 - A plugin author does not write custom gesture or normalization code to use a standard control.
+
+Completion evidence:
+
+- Adapter ABI version 3 adds an explicit presentation kind without coupling widget choice to reflected parameter type. Existing single-parameter declarations default to a linear slider.
+- The shared parameter control builds sliders, knobs, toggles, dropdowns, and segmented choices from one attachment model. Numeric entry, formatted labels, units, default reset, fine adjustment, focus, disabled state, host updates, and automation gestures remain shared behavior.
+- Right-click events request the host parameter context menu through `IComponentHandler3`. A draggable corner handle and the existing compact/expand action use the same bounded host resize callback.
+- Native tests cover gesture boundaries, stepped quantization, rejected edits, host updates, context-menu routing, bulk refresh, and instance isolation. The editor-smoke fixture constructs the knob, toggle, dropdown, and segmented variants together.
+- The typed gallery passes VST3 validation and pluginval editor, processing, state, automation, and editor-automation checks.
 
 ### Milestone 5: Add Layout and Focus Navigation
 

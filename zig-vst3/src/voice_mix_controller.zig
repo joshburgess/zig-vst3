@@ -22,8 +22,10 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
         return single_parameter_editor.createView(Controller, controller, name, .{
             .id = voices_param_id,
             .title = "zig-vst3 Voice Mix",
+            .units = "voices",
             .step_count = 3,
             .default_normalized = 0.0,
+            .control_kind = .segmented_enum,
         });
     }
 });

@@ -34,6 +34,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
         return single_parameter_editor.createView(Controller, controller, name, .{
             .id = gain_param_id,
             .title = "zig-vst3 Gain",
+            .units = "x",
             .step_count = 0,
             .default_normalized = 1.0,
         });

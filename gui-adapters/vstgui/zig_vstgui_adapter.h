@@ -14,18 +14,29 @@ typedef struct ZigVstguiCallbacks {
     void (*end_edit)(void* userdata, uint32_t parameter_id);
     int32_t (*format_value)(void* userdata, uint32_t parameter_id, double normalized, char* output, uint32_t capacity);
     int32_t (*parse_value)(void* userdata, uint32_t parameter_id, const char* text, double* normalized);
+    int32_t (*show_context_menu)(void* userdata, uint32_t parameter_id, int32_t x, int32_t y);
 } ZigVstguiCallbacks;
 
 typedef struct ZigVstguiParameterInfo {
     const char* title;
+    const char* units;
     int32_t step_count;
     double default_normalized;
 } ZigVstguiParameterInfo;
+
+typedef enum ZigVstguiControlKind {
+    ZIG_VSTGUI_CONTROL_LINEAR_SLIDER = 0,
+    ZIG_VSTGUI_CONTROL_ROTARY_KNOB = 1,
+    ZIG_VSTGUI_CONTROL_TOGGLE = 2,
+    ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN = 3,
+    ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM = 4
+} ZigVstguiControlKind;
 
 typedef struct ZigVstguiParameterDescription {
     uint32_t parameter_id;
     double initial_normalized;
     ZigVstguiParameterInfo info;
+    ZigVstguiControlKind control_kind;
 } ZigVstguiParameterDescription;
 
 typedef struct ZigVstguiParameterValue {

@@ -50,6 +50,7 @@ private:
     ZigVstgui::Component help_component;
     std::array<std::unique_ptr<ZigVstgui::ParameterControl>, ZIG_VSTGUI_MAX_PARAMETERS> parameter_controls;
     std::array<ZigVstguiParameterInfo, ZIG_VSTGUI_MAX_PARAMETERS> parameter_info {};
+    std::array<ZigVstguiControlKind, ZIG_VSTGUI_MAX_PARAMETERS> parameter_control_kinds {};
     uint32_t parameter_count {0};
     ZigVstgui::ResizeControl resize_control;
     ZigVstgui::ThemeResolver theme_resolver;

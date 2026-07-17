@@ -23,6 +23,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
             .title = "zig-vst3 Bypass",
             .step_count = 1,
             .default_normalized = 0.0,
+            .control_kind = .toggle,
         });
     }
 });
