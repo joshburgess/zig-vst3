@@ -24,6 +24,7 @@ pub const PlatformType = struct {
 };
 
 pub const VirtualKeyCode = struct {
+    pub const tab: base_types.int16 = 2;
     pub const end: base_types.int16 = 9;
     pub const home: base_types.int16 = 10;
     pub const left: base_types.int16 = 11;

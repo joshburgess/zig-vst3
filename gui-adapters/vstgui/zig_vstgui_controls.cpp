@@ -497,6 +497,10 @@ VSTGUI::CControl* ParameterControl::focusView() const {
     return primary_control;
 }
 
+VSTGUI::CControl* ParameterControl::valueFocusView() const {
+    return value_edit;
+}
+
 bool ParameterControl::showContextMenu(int32_t x, int32_t y) {
     const auto& callbacks = control_model.callbacks();
     return callbacks.show_context_menu && callbacks.show_context_menu(
@@ -701,6 +705,10 @@ void ResizeControl::valueChanged(VSTGUI::CControl* control) {
     if (!requestResize(requested_width, requested_height)) {
         if (button) button->setTitle("Resize unavailable");
     }
+}
+
+VSTGUI::CControl* ResizeControl::focusView() const {
+    return button;
 }
 
 }

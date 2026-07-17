@@ -28,6 +28,7 @@ struct ZigVstguiEditor {
     bool setParameter(uint32_t parameter_id, double normalized);
     bool refreshParameters(const ZigVstguiParameterValue* parameters, uint32_t parameter_count);
     bool parameterValue(uint32_t parameter_id, double& value) const;
+    int32_t focusPosition() const;
     bool keyDown(uint16_t key, int16_t key_code, int16_t modifiers);
     void setFocus(bool focused);
     void setPlugFrame(void* frame);
@@ -39,6 +40,7 @@ private:
     void clearFrameReferences();
     void layout();
     void reportMetrics() const;
+    bool focusNext(bool reverse);
     ZigVstgui::ParameterControl* findControl(uint32_t parameter_id);
     const ZigVstgui::ParameterControl* findControl(uint32_t parameter_id) const;
 
@@ -61,6 +63,7 @@ private:
     ZigVstgui::RenderMetrics metrics;
     bool profile_enabled {false};
     bool initialized {false};
+    int32_t focus_position {-1};
 };
 
 #endif

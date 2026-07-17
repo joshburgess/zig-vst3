@@ -1,8 +1,10 @@
 #include "zig_vstgui_editor.h"
 
+#include "zig_vstgui_layout.h"
 #include "zig_vstgui_platform.h"
 #include "zig_vstgui_theme.h"
 
+#include "pluginterfaces/base/keycodes.h"
 #include "vstgui/lib/vstguiinit.h"
 
 #include <algorithm>
@@ -125,8 +127,13 @@ bool ZigVstguiEditor::parameterValue(uint32_t parameter_id, double& value) const
     return true;
 }
 
+int32_t ZigVstguiEditor::focusPosition() const {
+    return focus_position;
+}
+
 bool ZigVstguiEditor::keyDown(uint16_t key, int16_t key_code, int16_t modifiers) {
     if (!frame) return false;
+    if (key_code == Steinberg::KEY_TAB) return focusNext((modifiers & 1) != 0);
     const auto* focused = frame->getFocusView();
     for (uint32_t index = 0; index < parameter_count; ++index) {
         auto& control = *parameter_controls[index];
@@ -134,6 +141,34 @@ bool ZigVstguiEditor::keyDown(uint16_t key, int16_t key_code, int16_t modifiers)
     }
     if (parameter_count == 0 || !parameter_controls[0]->handleKey(key, key_code, modifiers)) return false;
     frame->setFocusView(parameter_controls[0]->focusView());
+    return true;
+}
+
+bool ZigVstguiEditor::focusNext(bool reverse) {
+    if (!frame) return false;
+    std::array<VSTGUI::CView*, ZIG_VSTGUI_MAX_PARAMETERS * 2 + 1> focus_order {};
+    uint32_t focus_count = 0;
+    for (uint32_t index = 0; index < parameter_count; ++index) {
+        if (auto* primary = parameter_controls[index]->focusView()) focus_order[focus_count++] = primary;
+        if (auto* value = parameter_controls[index]->valueFocusView()) focus_order[focus_count++] = value;
+    }
+    if (auto* resize = resize_control.focusView()) focus_order[focus_count++] = resize;
+    if (focus_count == 0) return false;
+    const auto* focused = frame->getFocusView();
+    uint32_t current = focus_count;
+    for (uint32_t index = 0; index < focus_count; ++index) {
+        if (focus_order[index] == focused) {
+            current = index;
+            break;
+        }
+    }
+    if (current == focus_count && focus_position >= 0 &&
+        static_cast<uint32_t>(focus_position) < focus_count) current = static_cast<uint32_t>(focus_position);
+    const uint32_t next = current == focus_count
+        ? (reverse ? focus_count - 1 : 0)
+        : (reverse ? (current + focus_count - 1) % focus_count : (current + 1) % focus_count);
+    frame->setFocusView(focus_order[next]);
+    focus_position = static_cast<int32_t>(next);
     return true;
 }
 
@@ -231,6 +266,8 @@ void ZigVstguiEditor::layout() {
     title_component.setBounds(VSTGUI::CRect(margin, 16, right, 52));
     help_component.setBounds(VSTGUI::CRect(margin, 54, right, 82));
     if (parameter_count == 1) {
+        title_component.setVisible(true);
+        help_component.setVisible(true);
         const double track_top = std::clamp(
             static_cast<double>(height) * 0.42,
             92.0,
@@ -247,27 +284,64 @@ void ZigVstguiEditor::layout() {
             )
         );
     } else {
-        const double controls_top = 92.0;
+        const auto mode = ZigVstgui::layoutMode(width, height);
+        const bool expanded = mode == ZigVstgui::LayoutMode::expanded;
+        title_component.setVisible(expanded);
+        help_component.setVisible(expanded);
+        const double controls_top = expanded ? 92.0 : theme.spacing.medium;
         const double controls_bottom = static_cast<double>(height) - margin - theme.control_metrics.compact_control_height - theme.spacing.medium;
-        const double row_height = std::max(1.0, (controls_bottom - controls_top) / parameter_count);
-        const double label_width = std::min(96.0, (right - margin) * 0.25);
-        const double row_value_width = std::min(value_width, 90.0);
+        const double row_gap = mode == ZigVstgui::LayoutMode::expanded ? theme.spacing.small : 0.0;
+        std::array<ZigVstgui::StackItem, ZIG_VSTGUI_MAX_PARAMETERS> row_items {};
+        std::array<VSTGUI::CRect, ZIG_VSTGUI_MAX_PARAMETERS> row_bounds {};
         for (uint32_t index = 0; index < parameter_count; ++index) {
-            const double row_top = controls_top + row_height * index;
-            const double control_top = row_top + theme.spacing.small;
-            const double control_bottom = std::min(
-                row_top + row_height - theme.spacing.small,
-                control_top + theme.control_metrics.compact_control_height
+            row_items[index] = {
+                expanded ? theme.control_metrics.compact_control_height : 32.0,
+                right - margin,
+                0.0,
+            };
+        }
+        ZigVstgui::layoutStack(
+            VSTGUI::CRect(margin, controls_top, right, controls_bottom),
+            ZigVstgui::Axis::vertical,
+            ZigVstgui::Alignment::stretch,
+            {},
+            row_gap,
+            row_items.data(),
+            parameter_count,
+            row_bounds.data()
+        );
+        const double label_width = mode == ZigVstgui::LayoutMode::expanded ? 112.0 : 88.0;
+        const double row_value_width = mode == ZigVstgui::LayoutMode::expanded ? 104.0 : 80.0;
+        const ZigVstgui::GridTrack columns[] = {
+            {label_width, 0.0},
+            {64.0, 1.0},
+            {row_value_width, 0.0},
+        };
+        const ZigVstgui::GridTrack rows[] = {{24.0, 1.0}};
+        const ZigVstgui::GridItem items[] = {
+            {0, 0, 1, 1},
+            {1, 0, 1, 1},
+            {2, 0, 1, 1},
+        };
+        for (uint32_t index = 0; index < parameter_count; ++index) {
+            VSTGUI::CRect cells[3];
+            ZigVstgui::layoutGrid(
+                row_bounds[index],
+                {},
+                theme.spacing.small,
+                0.0,
+                columns,
+                3,
+                rows,
+                1,
+                items,
+                3,
+                cells
             );
             parameter_controls[index]->setBounds(
-                VSTGUI::CRect(margin, control_top, margin + label_width, control_bottom),
-                VSTGUI::CRect(
-                    margin + label_width + theme.spacing.medium,
-                    control_top,
-                    right - row_value_width - theme.spacing.medium,
-                    control_bottom
-                ),
-                VSTGUI::CRect(right - row_value_width, control_top, right, control_bottom)
+                cells[0],
+                cells[1],
+                cells[2]
             );
         }
     }

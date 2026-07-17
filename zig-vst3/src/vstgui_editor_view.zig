@@ -137,6 +137,7 @@ const View = vst_plug_view.PlugView(1, struct {
 
     pub fn onKeyUp(_: anytype, _: types.char16, key_code: types.int16, _: types.int16) types.tresult {
         return switch (key_code) {
+            iplugview.VirtualKeyCode.tab,
             iplugview.VirtualKeyCode.end,
             iplugview.VirtualKeyCode.home,
             iplugview.VirtualKeyCode.left,

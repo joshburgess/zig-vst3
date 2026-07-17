@@ -267,19 +267,27 @@ Completion evidence:
 
 ### Milestone 5: Add Layout and Focus Navigation
 
-- [ ] Add fixed bounds for art-directed interfaces.
-- [ ] Add row and column stacks.
-- [ ] Add grid layout with spans.
-- [ ] Add padding, gap, alignment, minimum size, and flexible growth.
-- [ ] Add compact and expanded layout breakpoints.
-- [ ] Add deterministic Tab and Shift+Tab traversal.
-- [ ] Keep layout coordinates logical and scale-independent.
+- [x] Add fixed bounds for art-directed interfaces.
+- [x] Add row and column stacks.
+- [x] Add grid layout with spans.
+- [x] Add padding, gap, alignment, minimum size, and flexible growth.
+- [x] Add compact and expanded layout breakpoints.
+- [x] Add deterministic Tab and Shift+Tab traversal.
+- [x] Keep layout coordinates logical and scale-independent.
 
 Exit criteria:
 
 - The gallery remains usable at its minimum and maximum supported sizes.
 - Resize does not overlap, clip, or strand interactive controls.
 - Focus traversal follows the visible reading order.
+
+Completion evidence:
+
+- The VSTGUI package provides bounded stack and grid solvers with fixed rectangles, horizontal and vertical axes, alignment, padding, gaps, minimum track sizes, flexible growth, and grid spans. The solvers use fixed-capacity scratch storage and do not allocate while laying out an editor.
+- The four-parameter gallery switches between compact and expanded compositions at a logical 520 by 360 breakpoint. Compact mode hides secondary headings and preserves all control rows at 320 by 240. Expanded mode restores the headings and roomier label, value, row, and gap measurements through 1000 by 700.
+- VSTGUI zoom remains the only conversion from logical coordinates to display scale. Layout inputs do not depend on backing pixels or platform scale factors.
+- Tab and Shift+Tab walk each visible row from its primary control to exact value entry, then reach the resize action and wrap. Native tests verify forward and reverse traversal.
+- Native extent tests run the gallery specifications at both supported size limits and verify row separation, grid containment, cell order, and footer separation. The full Zig test and raw ABI suites pass. Every example passes the VST3 validator and strictness-5 pluginval, and the Linux and Windows example bundle sets cross-compile successfully.
 
 ### Milestone 6: Add Accessibility Semantics
 

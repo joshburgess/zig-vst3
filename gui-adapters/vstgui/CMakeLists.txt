@@ -24,6 +24,7 @@ add_library(zig_vstgui_adapter STATIC
     zig_vstgui_component.cpp
     zig_vstgui_controls.cpp
     zig_vstgui_editor.cpp
+    zig_vstgui_layout.cpp
     zig_vstgui_platform.cpp
     zig_vstgui_theme.cpp
 )

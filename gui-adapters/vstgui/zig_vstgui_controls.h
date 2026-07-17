@@ -93,6 +93,7 @@ public:
     );
     bool handleKey(uint16_t key, int16_t key_code, int16_t modifiers);
     VSTGUI::CControl* focusView() const;
+    VSTGUI::CControl* valueFocusView() const;
     bool showContextMenu(int32_t x, int32_t y);
 
     void controlBeginEdit(VSTGUI::CControl* control) override;
@@ -162,6 +163,7 @@ public:
     void setSize(uint32_t width, uint32_t height);
     void setCallbacks(ZigVstguiResizeCallbacks callbacks);
     bool requestResize(uint32_t width, uint32_t height);
+    VSTGUI::CControl* focusView() const;
 
     void valueChanged(VSTGUI::CControl* control) override;
 
