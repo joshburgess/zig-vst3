@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cctype>
@@ -38,6 +39,44 @@ constexpr int32_t kValueTag = 2;
 constexpr int32_t kResizeTag = 3;
 
 std::atomic<uint32_t> editor_count {0};
+
+struct RenderMetrics {
+    uint64_t draw_count {0};
+    uint64_t draw_total_ns {0};
+    uint64_t draw_max_ns {0};
+    double invalidated_area {0.0};
+    uint64_t open_count {0};
+    uint64_t close_count {0};
+    uint64_t resize_count {0};
+    uint64_t scale_count {0};
+    uint64_t parameter_update_count {0};
+};
+
+class ProfiledContainer final : public CViewContainer {
+public:
+    ProfiledContainer(const CRect& size, RenderMetrics* value_metrics)
+    : CViewContainer(size), metrics(value_metrics) {}
+
+    void drawRect(CDrawContext* context, const CRect& update_rect) override {
+        if (!metrics) {
+            CViewContainer::drawRect(context, update_rect);
+            return;
+        }
+        const auto start = std::chrono::steady_clock::now();
+        CViewContainer::drawRect(context, update_rect);
+        const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - start
+        ).count();
+        const auto elapsed_ns = static_cast<uint64_t>(std::max<int64_t>(elapsed, 0));
+        metrics->draw_count += 1;
+        metrics->draw_total_ns += elapsed_ns;
+        metrics->draw_max_ns = std::max(metrics->draw_max_ns, elapsed_ns);
+        metrics->invalidated_area += std::max(0.0, update_rect.getWidth()) * std::max(0.0, update_rect.getHeight());
+    }
+
+private:
+    RenderMetrics* metrics;
+};
 
 double clampNormalized(double value) {
     return std::clamp(value, 0.0, 1.0);
@@ -262,6 +301,7 @@ private:
 
 struct ZigVstguiEditor {
     CFrame* frame {nullptr};
+    ProfiledContainer* content {nullptr};
     EditorListener listener;
     CTextLabel* title {nullptr};
     CTextLabel* help {nullptr};
@@ -274,10 +314,13 @@ struct ZigVstguiEditor {
     void* plug_frame {nullptr};
     void* wayland_host {nullptr};
     ZigVstguiParameterInfo parameter_info;
+    RenderMetrics metrics;
+    bool profile_enabled {false};
 
     ZigVstguiEditor(uint32_t parameter_id, double initial, ZigVstguiParameterInfo parameter_info, ZigVstguiCallbacks callbacks)
     : listener(parameter_id, callbacks), parameter_info(parameter_info) {
         if (editor_count.fetch_add(1, std::memory_order_acq_rel) == 0) VSTGUI::init(nullptr);
+        profile_enabled = std::getenv("ZIG_VSTGUI_PROFILE") != nullptr;
         listener.accepted_value = clampNormalized(initial);
         buildFrame();
     }
@@ -286,26 +329,29 @@ struct ZigVstguiEditor {
         if (frame) return;
         frame = new CFrame(CRect(0, 0, width, height), nullptr);
         frame->setBackgroundColor(CColor(22, 25, 31, 255));
+        content = new ProfiledContainer(CRect(0, 0, width, height), profile_enabled ? &metrics : nullptr);
+        content->setBackgroundColor(CColor(22, 25, 31, 255));
+        frame->addView(content);
 
         title = new CTextLabel(CRect(), parameter_info.title ? parameter_info.title : "Parameter");
         title->setFont(kNormalFontVeryBig);
         title->setFontColor(CColor(238, 241, 246, 255));
         title->setBackColor(CColor(22, 25, 31, 255));
         title->setFrameColor(CColor(22, 25, 31, 255));
-        frame->addView(title);
+        content->addView(title);
 
         help = new CTextLabel(CRect(), "Drag | Arrows | Home/End | Control-click resets");
         help->setFontColor(CColor(157, 166, 181, 255));
         help->setBackColor(CColor(22, 25, 31, 255));
         help->setFrameColor(CColor(22, 25, 31, 255));
-        frame->addView(help);
+        content->addView(help);
 
         track = new CTextLabel(CRect(), parameter_info.title ? parameter_info.title : "Parameter");
         track->setFontColor(CColor(89, 201, 165, 255));
         track->setBackColor(CColor(37, 42, 51, 255));
         track->setFrameColor(CColor(89, 201, 165, 255));
         track->setRoundRectRadius(10);
-        frame->addView(track);
+        content->addView(track);
 
         slider = new GainSlider(
             CRect(),
@@ -321,7 +367,7 @@ struct ZigVstguiEditor {
         slider->setDefaultValue(static_cast<float>(clampNormalized(parameter_info.default_normalized)));
         slider->setWheelInc(parameter_info.step_count > 0 ? 1.f / static_cast<float>(parameter_info.step_count) : 0.01f);
         slider->setWantsFocus(true);
-        frame->addView(slider);
+        content->addView(slider);
 
         value_edit = new CTextEdit(CRect(), &listener, kValueTag, "");
         value_edit->setMin(0.f);
@@ -359,14 +405,14 @@ struct ZigVstguiEditor {
             value = static_cast<float>(clampNormalized(parsed));
             return true;
         });
-        frame->addView(value_edit);
+        content->addView(value_edit);
 
         resize_button = new CTextButton(CRect(), &listener, kResizeTag, "Toggle Size");
         resize_button->setTextColor(CColor(238, 241, 246, 255));
         resize_button->setTextColorHighlighted(CColor(18, 22, 28, 255));
         resize_button->setFrameColor(CColor(89, 201, 165, 255));
         resize_button->setRoundRadius(8);
-        frame->addView(resize_button);
+        content->addView(resize_button);
 
         listener.slider = slider;
         listener.value_edit = value_edit;
@@ -377,6 +423,24 @@ struct ZigVstguiEditor {
     ~ZigVstguiEditor() {
         close();
         if (frame) frame->forget();
+        if (profile_enabled && (metrics.draw_count != 0 || metrics.open_count != 0)) {
+            const double average_us = metrics.draw_count == 0
+                ? 0.0
+                : static_cast<double>(metrics.draw_total_ns) / static_cast<double>(metrics.draw_count) / 1000.0;
+            std::fprintf(
+                stderr,
+                "zig-vstgui profile: draws=%llu average_us=%.3f max_us=%.3f invalidated_pixels=%.0f opens=%llu closes=%llu resizes=%llu scales=%llu parameter_updates=%llu\n",
+                static_cast<unsigned long long>(metrics.draw_count),
+                average_us,
+                static_cast<double>(metrics.draw_max_ns) / 1000.0,
+                metrics.invalidated_area,
+                static_cast<unsigned long long>(metrics.open_count),
+                static_cast<unsigned long long>(metrics.close_count),
+                static_cast<unsigned long long>(metrics.resize_count),
+                static_cast<unsigned long long>(metrics.scale_count),
+                static_cast<unsigned long long>(metrics.parameter_update_count)
+            );
+        }
 #if defined(LINUX)
         if (plug_frame) static_cast<Steinberg::FUnknown*>(plug_frame)->release();
         if (wayland_host) static_cast<Steinberg::FUnknown*>(wayland_host)->release();
@@ -401,7 +465,9 @@ struct ZigVstguiEditor {
             if (!run_loop->valid()) return false;
             X11::FrameConfig config;
             config.runLoop = run_loop;
-            return frame->open(parent, native_type, &config);
+            const bool opened = frame->open(parent, native_type, &config);
+            if (opened) metrics.open_count += 1;
+            return opened;
         }
 #if VSTGUI_ENABLE_WAYLAND_SUPPORT
         if (platform == ZIG_VSTGUI_PLATFORM_WAYLAND) {
@@ -413,17 +479,23 @@ struct ZigVstguiEditor {
             config.runLoop = run_loop;
             config.waylandHost = host;
             config.waylandFrame = host_frame;
-            return frame->open(&config, native_type, &config);
+            const bool opened = frame->open(&config, native_type, &config);
+            if (opened) metrics.open_count += 1;
+            return opened;
         }
 #endif
 #endif
-        return frame->open(parent, native_type);
+        const bool opened = frame->open(parent, native_type);
+        if (opened) metrics.open_count += 1;
+        return opened;
     }
 
     void close() {
         if (!frame || !frame->getPlatformFrame()) return;
+        metrics.close_count += 1;
         frame->close();
         frame = nullptr;
+        content = nullptr;
         title = nullptr;
         help = nullptr;
         track = nullptr;
@@ -436,6 +508,7 @@ struct ZigVstguiEditor {
 
     void layout() {
         if (!frame) return;
+        if (content) content->setViewSize(CRect(0, 0, width, height), true);
         const double margin = 24.0;
         const double right = std::max(margin + 1.0, static_cast<double>(width) - margin);
         const double track_top = std::clamp(static_cast<double>(height) * 0.42, 92.0, static_cast<double>(height) - 116.0);
@@ -478,17 +551,23 @@ extern "C" int32_t zig_vstgui_editor_resize(ZigVstguiEditor* editor, uint32_t wi
     editor->width = width;
     editor->height = height;
     if (!editor->frame->setSize(width, height)) return -1;
+    editor->metrics.resize_count += 1;
     editor->layout();
     return 0;
 }
 
 extern "C" int32_t zig_vstgui_editor_set_scale(ZigVstguiEditor* editor, double scale) {
     if (!editor || !editor->frame || scale <= 0.0) return -1;
-    return editor->frame->setZoom(scale) ? 0 : -1;
+    if (!editor->frame->setZoom(scale)) return -1;
+    editor->metrics.scale_count += 1;
+    return 0;
 }
 
 extern "C" void zig_vstgui_editor_set_parameter(ZigVstguiEditor* editor, double normalized) {
-    if (editor) editor->listener.setValue(normalized);
+    if (editor) {
+        editor->metrics.parameter_update_count += 1;
+        editor->listener.setValue(normalized);
+    }
 }
 
 extern "C" void zig_vstgui_editor_set_frame(ZigVstguiEditor* editor, void* plug_frame) {

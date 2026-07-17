@@ -62,6 +62,18 @@ The current visible reference control supports pointer dragging, arrow keys, Hom
 
 VSTGUI dependencies remain optional at the package boundary. A plugin can implement the same framework adapter with another toolkit or a custom renderer.
 
+### Rendering Measurements
+
+Set `ZIG_VSTGUI_PROFILE=1` in the host environment to emit one summary when each editor is destroyed:
+
+```sh
+ZIG_VSTGUI_PROFILE=1 pluginval --strictness-level 5 path/to/plugin.vst3
+```
+
+The summary reports content draw count, average and maximum draw time, total invalidated pixel area, successful opens and closes, accepted resizes and scale changes, and parameter updates. Timing is disabled unless the environment variable is present. The counters stay on the GUI thread and do not affect audio processing.
+
+Use these measurements before adding render threads, dirty-region bookkeeping, or multiple buffered frame states. The reference parameter editor has no continuous animation loop, texture uploads, or graphics device owned by the adapter. Those mechanisms should be introduced only when a representative editor demonstrates a measurable need.
+
 ## Real-time-safe Telemetry
 
 Parameter controls do not need an audio-to-GUI message queue. For meters and analyzers, use `plug.gui_telemetry`:

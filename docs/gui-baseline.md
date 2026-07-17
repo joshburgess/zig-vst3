@@ -72,4 +72,21 @@ After the per-instance refactor and reference adapter landed on the feature bran
 - `zig build bundle-gain-linux -Dtarget=aarch64-linux-gnu` passes with the protocol fallback.
 - The latest scalar telemetry snapshot result is 0.7 ns per store/load pair in the local microbenchmark. The latest framework process block result is 405.8 ns. These microbenchmarks vary across runs, so differences at this scale are not evidence of a regression or improvement without repeated samples.
 
+## Rendering Performance Evidence
+
+A strictness-5 pluginval run repeated 50 times completed successfully. A three-second macOS `sample` capture taken during that workload contained 2,461 samples. VSTGUI content drawing appeared in seven sampled milliseconds and did not appear among the dominant top-of-stack functions. The process was predominantly waiting in application event loops, worker queues, and condition variables.
+
+The opt-in VSTGUI profiler was then exercised with three strictness-5 pluginval repetitions. Editor automation produced 65–67 parameter updates and 67–70 content draws per repetition. Average measured content draw time was 44.9–51.3 microseconds, with a maximum of 282.1 microseconds. Ordinary editor-open tests produced two or three initial draws. After the first cold draw, their maximum was below 300 microseconds. The cold-run maximum was 2.60 milliseconds.
+
+Run the repeatable timing check with:
+
+```sh
+ZIG_VSTGUI_PROFILE=1 /Applications/pluginval.app/Contents/MacOS/pluginval \
+  --strictness-level 5 --repeat 3 zig-out/bundle/zig_vst3_gain.vst3
+```
+
+At the 400 by 300 reference size, these results are well below a 16.67 millisecond display interval. They do not justify a render thread, dirty-region bookkeeping beyond VSTGUI invalidation, or double and triple buffered frame state. The profiler remains available so this decision can be revisited for meters, analyzers, and larger editors.
+
+The adapter owns no GPU device, texture upload path, or custom swap chain. VSTGUI owns surface creation and recreation. Consequently, texture, draw-call, and surface-loss metrics do not apply to this reference backend. Repeated open and close operations remain covered by pluginval and the editor lifecycle tests.
+
 No real DAW editor row has been recorded. Automated host-like checks do not replace that row.

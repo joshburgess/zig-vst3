@@ -313,13 +313,13 @@ Apply Ghostty-inspired techniques only after measurements identify a cost.
 
 Deliverables:
 
-- [ ] Capture CPU profiles and frame timings with representative editors.
-- [ ] Track invalid regions or dirty widgets if full redraw is measurable.
-- [ ] Separate model snapshot creation from renderer submission.
-- [ ] Minimize lock hold time while building render state.
-- [ ] Add double or triple buffered frame state only if CPU/GPU overlap stalls are observed.
-- [ ] Record buffer growth, texture upload, draw-call, and frame pacing metrics.
-- [ ] Test surface loss and recreation under instrumentation.
+- [x] Capture CPU profiles and frame timings with representative editors. A 50-repeat pluginval stress run, a three-second macOS sample, and opt-in per-editor timing are recorded in `docs/gui-baseline.md`.
+- [x] Track invalid regions or dirty widgets if full redraw is measurable. Measured draws are under 0.3 milliseconds after the cold frame, so VSTGUI invalidation remains sufficient.
+- [x] Separate model snapshot creation from renderer submission. Parameter state remains in the toolkit-neutral editor model, and adapter callbacks submit accepted values on the GUI thread.
+- [x] Minimize lock hold time while building render state. The parameter editor render path holds no application lock. Telemetry uses atomic snapshots or a bounded SPSC queue.
+- [x] Add double or triple buffered frame state only if CPU/GPU overlap stalls are observed. No overlap stall was observed, so no additional buffering was retained.
+- [x] Record buffer growth, texture upload, draw-call, and frame pacing metrics. The opt-in profiler records draw pacing, invalidated area, lifecycle events, and parameter updates. Buffer growth, texture uploads, and custom draw calls do not exist in the VSTGUI reference path.
+- [x] Test surface loss and recreation under instrumentation. VSTGUI owns the platform surface, so repeated instrumented open, close, resize, and scale cycles are the applicable recreation test.
 
 Provisional budgets:
 
@@ -327,7 +327,7 @@ Provisional budgets:
 - Open static editor: no continuous repaint loop.
 - Parameter interaction: one coalesced repaint per display interval at most.
 - Audio thread: no regression outside benchmark noise when the editor is open but idle.
-- Frame building: comfortably below one display interval at the reference size. Phase 0 measurements should replace this with a numeric percentile target.
+- Frame building: below 4 milliseconds for the 400 by 300 reference editor. The measured cold maximum is 2.60 milliseconds, and measured warm maxima are below 0.3 milliseconds.
 
 Exit criteria:
 
