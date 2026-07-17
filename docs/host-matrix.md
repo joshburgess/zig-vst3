@@ -4,7 +4,7 @@ Tier 3 host smoke tests are release gates. Record only tests that were run in a 
 
 | Date | Host | Host Version | OS | CPU | Plugin Build | Bundle | Result | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-07-17 | REAPER | 7.36/macOS-arm64 | macOS 15.4.1 | arm64 | 9ddc409 | `zig_vst3_gain.vst3` | Partial Pass | Two visible editor windows opened with isolated values. Open, close, and reopen passed with transport stopped and running. Two-instance state survived project save/reload, both restored editors reopened, and the project saved with editors closed. Host resize scripting was unavailable because JS_ReaScriptAPI was not installed. Display-scale changes and pointer/keyboard automation recording remain untested. |
+| 2026-07-17 | REAPER | 7.36/macOS-arm64 | macOS 15.4.1 | arm64 | 041ec5f | `zig_vst3_gain.vst3` | Partial Pass | Visible slider feedback, pointer dragging, arrow keys, Fn+Left/Right limits, exact text entry, Command-click reset, focus movement, host and editor resize, two isolated instances, pointer and keyboard automation recording/playback, save/reload, and editor recreation while stopped and running passed. Display-scale migration remains untested because a second display was unavailable. |
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_gain.vst3` | Pass | Scanned in REAPER, inserted on a track, Gain parameter behavior confirmed, saved, reloaded. |
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_bypass.vst3` | Pass | Scanned in REAPER, inserted on a track, Bypass behavior confirmed, saved, reloaded. |
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_mode_gain.vst3` | Pass | Scanned in REAPER, inserted on a track, Mode parameter behavior confirmed, saved, reloaded. |
@@ -48,7 +48,7 @@ Run `zig build clean-bundles bundle-examples` before pointing a host at `zig-out
 
 | Platform | Status | Remaining real-host work |
 | --- | --- | --- |
-| macOS | Partial Pass | Exercise editor-initiated resize, change display scale, and record pointer and keyboard automation in REAPER or Cubase. |
+| macOS | Partial Pass | Change display scale or move the editor between displays in REAPER or Cubase. |
 | Windows | Pending | Run the gain bundle in a native Windows VST3 host, including DPI changes and two instances. |
 | Linux X11 | Pending | Run the gain bundle in a native X11 VST3 host and verify host run-loop cleanup. |
 | Linux Wayland | Pending | Run the gain bundle in a native Wayland VST3 host that implements the required Wayland interfaces. |
