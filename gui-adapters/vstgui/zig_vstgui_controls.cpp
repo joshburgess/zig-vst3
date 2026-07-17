@@ -203,9 +203,22 @@ void ParameterControl::build(
     ZigVstguiParameterInfo parameter_info,
     const ThemeResolver& styles
 ) {
-    if (!parent || slider || value_edit) return;
+    if (!parent || label || slider || value_edit) return;
+    const auto label_style = styles.resolve(ComponentKind::title);
     const auto slider_style = styles.resolve(ComponentKind::slider);
     const auto value_style = styles.resolve(ComponentKind::value_field);
+    label = new VSTGUI::CTextLabel(
+        VSTGUI::CRect(),
+        parameter_info.title ? parameter_info.title : "Parameter"
+    );
+    label->setFont(styles.theme().typography.body);
+    label->setFontColor(label_style.foreground);
+    label->setBackColor(label_style.background);
+    label->setFrameColor(label_style.border);
+    label->setHoriAlign(VSTGUI::kLeftText);
+    parent->addView(label);
+    label_component.bind(label);
+
     slider = new GainSlider(VSTGUI::CRect(), this, kParameterTag, styles);
     slider->setMin(0.f);
     slider->setMax(1.f);
@@ -268,8 +281,10 @@ void ParameterControl::build(
 
 void ParameterControl::clear() {
     control_model.cancelGesture();
+    label_component.clear();
     slider_component.clear();
     value_component.clear();
+    label = nullptr;
     slider = nullptr;
     value_edit = nullptr;
 }
@@ -280,9 +295,11 @@ void ParameterControl::setValue(double value) {
 }
 
 void ParameterControl::setBounds(
+    const VSTGUI::CRect& label_bounds,
     const VSTGUI::CRect& slider_bounds,
     const VSTGUI::CRect& value_bounds
 ) {
+    label_component.setBounds(label_bounds);
     slider_component.setBounds(slider_bounds);
     value_component.setBounds(value_bounds);
 }

@@ -60,6 +60,8 @@ zig build pluginval-gain
 
 The current visible reference control supports pointer dragging, arrow keys, Home and End, exact text entry, resize constraints, and content scale. Default reset uses Command-click on macOS and Control-click on Windows and Linux. Host parameter changes are broadcast through a bounded per-controller observer list, so open views follow automation and restored state without producing a new gesture.
 
+The native adapter creation contract accepts 1–64 parameter descriptions. Each description carries its parameter ID, initial normalized value, label, step count, and default. Host updates and bulk state refreshes are addressed by parameter ID. The adapter rejects duplicate IDs and validates a bulk refresh before changing any control. `zig_vst3_editor_smoke` is the multi-parameter integration fixture: one editor binds continuous, integer, boolean, and enum parameters.
+
 The VSTGUI adapter resolves semantic color, spacing, typography, radius, and control-metric tokens through a component theme. Editor-wide and component-specific overrides compose with normal, hovered, pressed, focused, disabled, and editing states. The default dark theme preserves the reference editor appearance. Set `ZIG_VSTGUI_THEME=alternate` when launching a validator or host to exercise the alternate light theme against the same component tree.
 
 VSTGUI dependencies remain optional at the package boundary. A plugin can implement the same framework adapter with another toolkit or a custom renderer.

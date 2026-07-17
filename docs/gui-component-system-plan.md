@@ -205,17 +205,25 @@ Completion evidence:
 
 ### Milestone 3: Support Multi-parameter Editors
 
-- [ ] Replace the single-parameter C ABI creation contract with a bounded multi-parameter description or builder.
-- [ ] Route host updates to the matching attachment and component.
-- [ ] Cancel all active gestures safely during detach and destruction.
-- [ ] Preserve per-instance isolation with multiple parameters and multiple editors.
-- [ ] Support bulk refresh after project or preset state restoration.
+- [x] Replace the single-parameter C ABI creation contract with a bounded multi-parameter description or builder.
+- [x] Route host updates to the matching attachment and component.
+- [x] Cancel all active gestures safely during detach and destruction.
+- [x] Preserve per-instance isolation with multiple parameters and multiple editors.
+- [x] Support bulk refresh after project or preset state restoration.
 
 Exit criteria:
 
 - One editor binds continuous, integer, boolean, and enum parameters at the same time.
 - Host automation updates only the matching controls.
 - Two gallery instances remain isolated.
+
+Completion evidence:
+
+- Adapter ABI version 2 accepts up to 64 parameter descriptions and addresses host updates by parameter ID.
+- The editor-smoke integration binds float, integer, boolean, and enum parameters in one editor. VST3 validation reports all four reflected parameter kinds.
+- Native routing tests verify matching-control updates, duplicate-ID rejection, two-editor isolation, and all-or-nothing bulk refresh.
+- Closing an attached editor clears every control and ends its active gesture. Destruction also cancels gestures for editors that were never attached or already detached.
+- The editor-smoke plugin passes pluginval editor, processing, state, automation, and editor-automation checks. Unit tests, raw ABI checks, all example validators, and Linux and Windows cross-target bundles pass.
 
 ### Milestone 4: Build Core Parameter Components
 

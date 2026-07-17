@@ -4,17 +4,17 @@
 #include <new>
 
 extern "C" ZigVstguiEditor* zig_vstgui_editor_create(
-    uint32_t parameter_id,
-    double initial_normalized,
-    ZigVstguiParameterInfo parameter_info,
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
     ZigVstguiCallbacks callbacks
 ) {
-    return new (std::nothrow) ZigVstguiEditor(
-        parameter_id,
-        initial_normalized,
-        parameter_info,
-        callbacks
-    );
+    if (!parameters || parameter_count == 0 || parameter_count > ZIG_VSTGUI_MAX_PARAMETERS) return nullptr;
+    auto* editor = new (std::nothrow) ZigVstguiEditor(parameters, parameter_count, callbacks);
+    if (editor && !editor->valid()) {
+        delete editor;
+        return nullptr;
+    }
+    return editor;
 }
 
 extern "C" int32_t zig_vstgui_editor_open(
@@ -45,8 +45,20 @@ extern "C" int32_t zig_vstgui_editor_set_scale(ZigVstguiEditor* editor, double s
     return editor && editor->setScale(scale) ? 0 : -1;
 }
 
-extern "C" void zig_vstgui_editor_set_parameter(ZigVstguiEditor* editor, double normalized) {
-    if (editor) editor->setParameter(normalized);
+extern "C" int32_t zig_vstgui_editor_set_parameter(
+    ZigVstguiEditor* editor,
+    uint32_t parameter_id,
+    double normalized
+) {
+    return editor && editor->setParameter(parameter_id, normalized) ? 0 : -1;
+}
+
+extern "C" int32_t zig_vstgui_editor_refresh_parameters(
+    ZigVstguiEditor* editor,
+    const ZigVstguiParameterValue* parameters,
+    uint32_t parameter_count
+) {
+    return editor && editor->refreshParameters(parameters, parameter_count) ? 0 : -1;
 }
 
 extern "C" int32_t zig_vstgui_editor_key_down(
@@ -78,5 +90,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 1;
+    return 2;
 }

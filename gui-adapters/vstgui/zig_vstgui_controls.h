@@ -8,6 +8,7 @@
 #include "vstgui/lib/controls/cbuttons.h"
 #include "vstgui/lib/controls/cslider.h"
 #include "vstgui/lib/controls/ctextedit.h"
+#include "vstgui/lib/controls/ctextlabel.h"
 #include "vstgui/lib/controls/icontrollistener.h"
 
 namespace ZigVstgui {
@@ -75,7 +76,11 @@ public:
     );
     void clear();
     void setValue(double value);
-    void setBounds(const VSTGUI::CRect& slider_bounds, const VSTGUI::CRect& value_bounds);
+    void setBounds(
+        const VSTGUI::CRect& label_bounds,
+        const VSTGUI::CRect& slider_bounds,
+        const VSTGUI::CRect& value_bounds
+    );
     bool handleKey(uint16_t key, int16_t key_code, int16_t modifiers);
     VSTGUI::CSlider* focusView() const;
 
@@ -89,8 +94,10 @@ private:
     void syncViews();
 
     ParameterControlModel control_model;
+    VSTGUI::CTextLabel* label {nullptr};
     GainSlider* slider {nullptr};
     VSTGUI::CTextEdit* value_edit {nullptr};
+    Component label_component;
     Component slider_component;
     Component value_component;
 };

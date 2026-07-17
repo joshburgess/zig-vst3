@@ -22,6 +22,19 @@ typedef struct ZigVstguiParameterInfo {
     double default_normalized;
 } ZigVstguiParameterInfo;
 
+typedef struct ZigVstguiParameterDescription {
+    uint32_t parameter_id;
+    double initial_normalized;
+    ZigVstguiParameterInfo info;
+} ZigVstguiParameterDescription;
+
+typedef struct ZigVstguiParameterValue {
+    uint32_t parameter_id;
+    double normalized;
+} ZigVstguiParameterValue;
+
+enum { ZIG_VSTGUI_MAX_PARAMETERS = 64 };
+
 typedef struct ZigVstguiResizeCallbacks {
     void* userdata;
     int32_t (*request_resize)(void* userdata, uint32_t width, uint32_t height);
@@ -37,9 +50,8 @@ typedef enum ZigVstguiPlatform {
 } ZigVstguiPlatform;
 
 ZigVstguiEditor* zig_vstgui_editor_create(
-    uint32_t parameter_id,
-    double initial_normalized,
-    ZigVstguiParameterInfo parameter_info,
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
     ZigVstguiCallbacks callbacks
 );
 int32_t zig_vstgui_editor_open(ZigVstguiEditor* editor, void* parent, ZigVstguiPlatform platform);
@@ -47,7 +59,12 @@ void zig_vstgui_editor_close(ZigVstguiEditor* editor);
 void zig_vstgui_editor_destroy(ZigVstguiEditor* editor);
 int32_t zig_vstgui_editor_resize(ZigVstguiEditor* editor, uint32_t width, uint32_t height);
 int32_t zig_vstgui_editor_set_scale(ZigVstguiEditor* editor, double scale);
-void zig_vstgui_editor_set_parameter(ZigVstguiEditor* editor, double normalized);
+int32_t zig_vstgui_editor_set_parameter(ZigVstguiEditor* editor, uint32_t parameter_id, double normalized);
+int32_t zig_vstgui_editor_refresh_parameters(
+    ZigVstguiEditor* editor,
+    const ZigVstguiParameterValue* parameters,
+    uint32_t parameter_count
+);
 int32_t zig_vstgui_editor_key_down(ZigVstguiEditor* editor, uint16_t key, int16_t key_code, int16_t modifiers);
 void zig_vstgui_editor_set_focus(ZigVstguiEditor* editor, int32_t focused);
 void zig_vstgui_editor_set_frame(ZigVstguiEditor* editor, void* plug_frame);

@@ -19,6 +19,10 @@ pub const Parameter = struct {
 };
 
 pub fn createView(comptime Controller: type, controller: *ivsteditcontroller.IEditController, name: types.FIDString, parameter: Parameter) ?*iplugview.IPlugView {
+    return createMultiView(Controller, controller, name, &.{parameter});
+}
+
+pub fn createMultiView(comptime Controller: type, controller: *ivsteditcontroller.IEditController, name: types.FIDString, parameters: []const Parameter) ?*iplugview.IPlugView {
     if (!std.mem.eql(u8, std.mem.span(name), std.mem.span(ivsteditcontroller.ViewType.kEditor))) return null;
     if (comptime vstgui_adapter_enabled) {
         const Bridge = NativeBridge(Controller);
@@ -35,11 +39,16 @@ pub fn createView(comptime Controller: type, controller: *ivsteditcontroller.IEd
             const iface: *iwaylandframe.IWaylandHost = @ptrCast(@alignCast(host));
             _ = iface.vtable.release(iface);
         };
-        return vstgui_editor_view.create(controller, parameter.id, .{
-            .title = parameter.title,
-            .step_count = parameter.step_count,
-            .default_normalized = parameter.default_normalized,
-        }, .{
+        if (parameters.len == 0 or parameters.len > vstgui_editor_view.max_parameters) return null;
+        var bindings: [vstgui_editor_view.max_parameters]vstgui_editor_view.ParameterInfoBinding = undefined;
+        for (parameters, 0..) |parameter, index| {
+            bindings[index] = .{ .id = parameter.id, .info = .{
+                .title = parameter.title,
+                .step_count = parameter.step_count,
+                .default_normalized = parameter.default_normalized,
+            } };
+        }
+        return vstgui_editor_view.create(controller, bindings[0..parameters.len], .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
             .perform_edit = Bridge.performEdit,
@@ -113,8 +122,8 @@ fn NativeBridge(comptime Controller: type) type {
             Controller.removeParameterObserver(iface, editor);
         }
 
-        fn parameterChanged(editor: *anyopaque, _: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) void {
-            vstgui_editor_view.setParameter(editor, value);
+        fn parameterChanged(editor: *anyopaque, parameter_id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) void {
+            vstgui_editor_view.setParameter(editor, parameter_id, value);
         }
     };
 }

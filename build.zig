@@ -645,7 +645,8 @@ fn addExamplePlugin(
     const has_reference_editor = std.mem.eql(u8, options.short_name, "gain") or
         std.mem.eql(u8, options.short_name, "bypass") or
         std.mem.eql(u8, options.short_name, "mode-gain") or
-        std.mem.eql(u8, options.short_name, "voice-mix");
+        std.mem.eql(u8, options.short_name, "voice-mix") or
+        std.mem.eql(u8, options.short_name, "editor-smoke");
     const library = addVst3PluginLibrary(b, target, optimize, zig_vst3_plugin_core, .{
         .artifact_name = options.artifact_name,
         .root_source_file = options.root_source_file,

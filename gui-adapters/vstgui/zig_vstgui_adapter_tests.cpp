@@ -1,5 +1,6 @@
 #include "zig_vstgui_component.h"
 #include "zig_vstgui_controls.h"
+#include "zig_vstgui_editor.h"
 
 #include <cmath>
 #include <cstdint>
@@ -140,6 +141,55 @@ int testThemeResolution() {
     return 0;
 }
 
+int testMultiParameterRouting() {
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.begin_edit = beginEdit;
+    callbacks.perform_edit = performEdit;
+    callbacks.end_edit = endEdit;
+    const ZigVstguiParameterDescription descriptions[] = {
+        {10, 0.25, {"Continuous", 0, 0.5}},
+        {20, 0.50, {"Integer", 7, 3.0 / 7.0}},
+        {30, 0.00, {"Boolean", 1, 0.0}},
+        {40, 1.00, {"Enum", 2, 0.0}},
+    };
+
+    ZigVstguiEditor first(descriptions, 4, callbacks);
+    ZigVstguiEditor second(descriptions, 4, callbacks);
+    if (!first.valid() || !second.valid()) return 1;
+    if (!first.setParameter(30, 1.0)) return 2;
+    double value = 0.0;
+    if (!first.parameterValue(30, value) || !closeEnough(value, 1.0)) return 3;
+    if (!first.parameterValue(20, value) || !closeEnough(value, 0.5)) return 4;
+    if (!second.parameterValue(30, value) || !closeEnough(value, 0.0)) return 5;
+    if (first.setParameter(99, 0.5)) return 6;
+
+    const ZigVstguiParameterValue restored[] = {
+        {10, 0.75},
+        {20, 1.00},
+        {30, 0.00},
+        {40, 0.50},
+    };
+    if (!first.refreshParameters(restored, 4)) return 7;
+    for (const auto& restored_value : restored) {
+        if (!first.parameterValue(restored_value.parameter_id, value) ||
+            !closeEnough(value, restored_value.normalized)) return 8;
+    }
+
+    const ZigVstguiParameterValue rejected[] = {{10, 0.0}, {99, 1.0}};
+    if (first.refreshParameters(rejected, 2)) return 9;
+    if (!first.parameterValue(10, value) || !closeEnough(value, 0.75)) return 10;
+
+    const ZigVstguiParameterDescription duplicates[] = {
+        descriptions[0],
+        descriptions[0],
+    };
+    ZigVstguiEditor duplicate_editor(duplicates, 2, callbacks);
+    if (duplicate_editor.valid()) return 11;
+    return 0;
+}
+
 }
 
 int main() {
@@ -147,5 +197,6 @@ int main() {
     if (const int result = testGestureOwnership(); result != 0) return 30 + result;
     if (const int result = testActiveGestureCleanup(); result != 0) return 50 + result;
     if (const int result = testThemeResolution(); result != 0) return 70 + result;
+    if (const int result = testMultiParameterRouting(); result != 0) return 90 + result;
     return 0;
 }

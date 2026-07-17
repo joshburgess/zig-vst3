@@ -30,6 +30,19 @@ pub const ParameterInfo = extern struct {
     default_normalized: f64,
 };
 
+pub const ParameterDescription = extern struct {
+    parameter_id: vsttypes.ParamID,
+    initial_normalized: f64,
+    info: ParameterInfo,
+};
+
+pub const ParameterValue = extern struct {
+    parameter_id: vsttypes.ParamID,
+    normalized: f64,
+};
+
+pub const max_parameters = 64;
+
 pub const ObserverCallbacks = struct {
     userdata: *anyopaque,
     subscribe: *const fn (*anyopaque, *anyopaque) bool,
@@ -41,13 +54,14 @@ const ResizeCallbacks = extern struct {
     request_resize: *const fn (?*anyopaque, types.uint32, types.uint32) callconv(.c) types.int32,
 };
 
-extern fn zig_vstgui_editor_create(vsttypes.ParamID, f64, ParameterInfo, Callbacks) ?*Editor;
+extern fn zig_vstgui_editor_create([*]const ParameterDescription, types.uint32, Callbacks) ?*Editor;
 extern fn zig_vstgui_editor_open(*Editor, ?*anyopaque, Platform) types.int32;
 extern fn zig_vstgui_editor_close(*Editor) void;
 extern fn zig_vstgui_editor_destroy(*Editor) void;
 extern fn zig_vstgui_editor_resize(*Editor, types.uint32, types.uint32) types.int32;
 extern fn zig_vstgui_editor_set_scale(*Editor, f64) types.int32;
-extern fn zig_vstgui_editor_set_parameter(*Editor, f64) void;
+extern fn zig_vstgui_editor_set_parameter(*Editor, vsttypes.ParamID, f64) types.int32;
+extern fn zig_vstgui_editor_refresh_parameters(*Editor, [*]const ParameterValue, types.uint32) types.int32;
 extern fn zig_vstgui_editor_key_down(*Editor, types.char16, types.int16, types.int16) types.int32;
 extern fn zig_vstgui_editor_set_focus(*Editor, types.int32) void;
 extern fn zig_vstgui_editor_set_frame(*Editor, ?*iplugview.IPlugFrame) void;
@@ -162,9 +176,18 @@ const View = vst_plug_view.PlugView(1, struct {
     }
 });
 
-pub fn create(controller: *ivsteditcontroller.IEditController, parameter_id: vsttypes.ParamID, parameter_info: ParameterInfo, callbacks: Callbacks, observer_callbacks: ObserverCallbacks, wayland_host: ?*anyopaque) ?*iplugview.IPlugView {
+pub fn create(controller: *ivsteditcontroller.IEditController, parameters: []const ParameterInfoBinding, callbacks: Callbacks, observer_callbacks: ObserverCallbacks, wayland_host: ?*anyopaque) ?*iplugview.IPlugView {
     if (builtin.os.tag != .macos and builtin.os.tag != .windows and builtin.os.tag != .linux) return null;
-    const editor = zig_vstgui_editor_create(parameter_id, controller.vtable.getParamNormalized(controller, parameter_id), parameter_info, callbacks) orelse return null;
+    if (parameters.len == 0 or parameters.len > max_parameters) return null;
+    var descriptions: [max_parameters]ParameterDescription = undefined;
+    for (parameters, 0..) |parameter, index| {
+        descriptions[index] = .{
+            .parameter_id = parameter.id,
+            .initial_normalized = controller.vtable.getParamNormalized(controller, parameter.id),
+            .info = parameter.info,
+        };
+    }
+    const editor = zig_vstgui_editor_create(&descriptions, @intCast(parameters.len), callbacks) orelse return null;
     zig_vstgui_editor_set_wayland_host(editor, wayland_host);
     const state = std.heap.page_allocator.create(Binding) catch {
         zig_vstgui_editor_destroy(editor);
@@ -219,7 +242,18 @@ fn requestEditorResize(userdata: ?*anyopaque, width: types.uint32, height: types
     return 0;
 }
 
-pub fn setParameter(observer_userdata: *anyopaque, value: f64) void {
+pub const ParameterInfoBinding = struct {
+    id: vsttypes.ParamID,
+    info: ParameterInfo,
+};
+
+pub fn setParameter(observer_userdata: *anyopaque, parameter_id: vsttypes.ParamID, value: f64) void {
     const editor: *Editor = @ptrCast(@alignCast(observer_userdata));
-    zig_vstgui_editor_set_parameter(editor, value);
+    _ = zig_vstgui_editor_set_parameter(editor, parameter_id, value);
+}
+
+pub fn refreshParameters(observer_userdata: *anyopaque, parameters: []const ParameterValue) bool {
+    if (parameters.len > max_parameters) return false;
+    const editor: *Editor = @ptrCast(@alignCast(observer_userdata));
+    return zig_vstgui_editor_refresh_parameters(editor, parameters.ptr, @intCast(parameters.len)) == 0;
 }

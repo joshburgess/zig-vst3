@@ -6,14 +6,15 @@ const plug_process = @import("zig-vst3-plugin-core").process;
 const std = @import("std");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
-const vst_plug_view = @import("vst_plug_view.zig");
+const parameter_editor = @import("vstgui_single_parameter_controller.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 
 pub const cid = tuid.inlineUid(0xE14D2D24, 0x9BC84C72, 0x8A522122, 0x121C781D);
 pub const gain_param_id: vsttypes.ParamID = editor_smoke_spec.gain_param_id;
-
-const SmokeView = vst_plug_view.PlugView(4, struct {});
+pub const voices_param_id: vsttypes.ParamID = editor_smoke_spec.voices_param_id;
+pub const bypass_param_id: vsttypes.ParamID = editor_smoke_spec.bypass_param_id;
+pub const mode_param_id: vsttypes.ParamID = editor_smoke_spec.mode_param_id;
 
 const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const controller_name = "EditorSmokeController";
@@ -21,18 +22,12 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const parameter_set = &editor_smoke_spec.parameter_set;
 
     pub fn createView(controller: *ivsteditcontroller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
-        _ = controller;
-        if (!std.mem.eql(u8, std.mem.span(name), std.mem.span(ivsteditcontroller.ViewType.kEditor))) return null;
-        const view = SmokeView.create() orelse return null;
-        if (view.addPlatform(iplugview.PlatformType.kPlatformTypeNSView) != types.kResultOk or
-            view.addPlatform(iplugview.PlatformType.kPlatformTypeHWND) != types.kResultOk or
-            view.addPlatform(iplugview.PlatformType.kPlatformTypeX11EmbedWindowID) != types.kResultOk or
-            view.addPlatform(iplugview.PlatformType.kPlatformTypeWaylandSurfaceID) != types.kResultOk)
-        {
-            _ = view.iface.vtable.release(&view.iface);
-            return null;
-        }
-        return view.asInterface();
+        return parameter_editor.createMultiView(Controller, controller, name, &.{
+            .{ .id = gain_param_id, .title = "Gain", .step_count = 0, .default_normalized = 1.0 },
+            .{ .id = voices_param_id, .title = "Voices", .step_count = 7, .default_normalized = 3.0 / 7.0 },
+            .{ .id = bypass_param_id, .title = "Bypass", .step_count = 1, .default_normalized = 0.0 },
+            .{ .id = mode_param_id, .title = "Mode", .step_count = 2, .default_normalized = 0.0 },
+        });
     }
 });
 
