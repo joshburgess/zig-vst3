@@ -31,6 +31,8 @@ pub const Callbacks = extern struct {
     store_editor_envelope: *const fn (?*anyopaque, types.uint32, [*]const EnvelopePoint, types.uint32) callconv(.c) types.int32,
     store_editor_text: *const fn (?*anyopaque, types.uint32, [*:0]const u8) callconv(.c) types.int32,
     load_preset: *const fn (?*anyopaque, types.uint32) callconv(.c) types.int32,
+    store_editor_bool: *const fn (?*anyopaque, types.uint32, types.int32) callconv(.c) types.int32,
+    invoke_menu_action: *const fn (?*anyopaque, types.uint32, types.uint32, types.int32) callconv(.c) types.int32,
 };
 
 pub const ParameterInfo = extern struct {
@@ -69,6 +71,8 @@ pub const max_parameters = 64;
 pub const max_xy_pads = 8;
 pub const max_preset_browsers = 2;
 pub const max_presets = 64;
+pub const max_action_menus = 4;
+pub const max_menu_items = 16;
 pub const max_meters = 8;
 pub const max_graphs = 8;
 pub const max_graph_points = 256;
@@ -97,6 +101,29 @@ pub const PresetBrowserDescription = extern struct {
     selection_state_id: types.uint32,
     initial_search: [*:0]const u8,
     initial_selection: types.uint32,
+};
+
+pub const MenuItemKind = enum(c_int) {
+    action,
+    toggle,
+    separator,
+};
+
+pub const MenuItemDescription = extern struct {
+    item_id: types.uint32,
+    label: ?[*:0]const u8,
+    kind: MenuItemKind,
+    enabled: types.int32,
+    destructive: types.int32,
+    checked_state_id: types.uint32,
+    initial_checked: types.int32,
+};
+
+pub const ActionMenuDescription = extern struct {
+    menu_id: types.uint32,
+    title: [*:0]const u8,
+    items: [*]const MenuItemDescription,
+    item_count: types.uint32,
 };
 
 pub const MeterKind = enum(c_int) {
@@ -372,6 +399,8 @@ extern fn zig_vstgui_editor_create_advanced(
     types.uint32,
     ?[*]const PresetBrowserDescription,
     types.uint32,
+    ?[*]const ActionMenuDescription,
+    types.uint32,
     SkinDescription,
 ) ?*Editor;
 extern fn zig_vstgui_canvas_fill_rect(*Canvas, f64, f64, f64, f64, types.uint32) void;
@@ -545,6 +574,7 @@ pub fn create(
     graphs: []const GraphDescription,
     xy_pads: []const XYPadDescription,
     preset_browsers: []const PresetBrowserDescription,
+    action_menus: []const ActionMenuDescription,
     skin: Skin,
     composition: Composition,
     callbacks: Callbacks,
@@ -558,7 +588,7 @@ pub fn create(
     }
     if (parameters.len == 0 or parameters.len > max_parameters or
         meters.len > max_meters or graphs.len > max_graphs or xy_pads.len > max_xy_pads or
-        preset_browsers.len > max_preset_browsers or
+        preset_browsers.len > max_preset_browsers or action_menus.len > max_action_menus or
         skin.assets.len > max_assets or composition.groups.len > max_groups)
     {
         if (telemetry_source) |source| source.release();
@@ -621,6 +651,8 @@ pub fn create(
         @intCast(xy_pads.len),
         if (preset_browsers.len == 0) null else preset_browsers.ptr,
         @intCast(preset_browsers.len),
+        if (action_menus.len == 0) null else action_menus.ptr,
+        @intCast(action_menus.len),
         .{
             .assets = if (skin.assets.len == 0) null else &assets,
             .asset_count = @intCast(skin.assets.len),

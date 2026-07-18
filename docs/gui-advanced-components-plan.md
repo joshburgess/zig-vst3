@@ -121,7 +121,7 @@ Completion evidence:
 ## Milestone 12: Higher-Level Components
 
 - [x] Add a preset browser with search, selection, load status, and keyboard navigation.
-- [ ] Add anchored popovers and richer menus with focus containment and restoration.
+- [x] Add anchored popovers and richer menus with focus containment and restoration.
 - [ ] Add a piano keyboard with pointer, computer-keyboard, and accessible note input.
 - [ ] Add a bounded step sequencer with multi-selection and clear playhead semantics.
 - [ ] Add file drag-and-drop with type filtering, rejection feedback, and host-safe lifetimes.
@@ -146,7 +146,20 @@ Preset browser completion evidence:
 - All Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, and all ten Steinberg example validators pass. The final warm-render average, including the browser, is 77.9 microseconds against the 300 microsecond budget.
 - All examples cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`. The Windows UI Automation provider also cross-compiles through the native adapter test script.
 - Pluginval was not launched because it repeatedly produced macOS crash dialogs in earlier milestones. Manual macOS host interaction and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
-- Popovers, richer menus, piano input, sequencing, file drop, and production waveform or spectrum components remain separate slices of this milestone.
+- Action menus, piano input, sequencing, file drop, and production waveform or spectrum components remain separate slices of this milestone.
+
+Action menu completion evidence:
+
+- `ActionMenu` is a supported public authoring declaration shared by the component gallery and channel-strip editor. Plugin code declares bounded action, toggle, separator, disabled, and destructive items without importing adapter internals.
+- Adapter ABI version 13 adds up to four menus with 16 items each, menu-action dispatch, and persisted boolean toggle state. Invalid IDs, empty labels, duplicate items, malformed separators, destructive toggles, missing handlers, and mismatched state fields reject editor creation.
+- The overlay anchors above or below its trigger, clamps to the editor, dismisses on outside clicks, and coordinates one open menu per editor. The closed trigger is one focus stop. While open, Tab remains contained, arrows skip unavailable items, Home and End select boundaries, Enter or Space activates, and Escape closes and restores trigger focus.
+- Accessible press, increment, decrement, and focus actions use the same menu state machine. Failed actions and failed persistence keep the menu open with a retry message. Failed toggle persistence restores the prior checked state.
+- Menu descriptions and display labels are copied into instance-owned storage. Warm drawing uses cached labels and performs no menu-owned allocation. Generic arbitrary-content popovers remain unexposed because the two consumers establish only the action-menu contract.
+- Native tests cover keyboard and pointer activation, disabled and separator skipping, toggle persistence, action rejection, store rollback, retry, outside dismissal, maximum-size scrolling, accessibility actions, invalid declarations, multiple-menu coordination, editor integration, and instance-owned descriptions.
+- `action-menu-closed.png` covers the closed trigger. `action-menus.png` covers checked, disabled, separator, destructive, selected, and recoverable error states. The final warm-render average, including an open menu, was 82.7 microseconds against the 300 microsecond budget.
+- Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, and all ten Steinberg example validators pass. All examples cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`.
+- Pluginval was not launched because earlier runs repeatedly produced macOS crash dialogs. Manual menu interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+- Piano input, sequencing, file drop, and production waveform or spectrum components remain separate slices of this milestone.
 
 ## Validation After Each Milestone
 
@@ -167,3 +180,4 @@ Preset browser completion evidence:
 - AT-SPI semantics and actions on Linux.
 - Manual graph rendering in a production host.
 - Manual preset-browser interaction in a production host.
+- Manual action-menu interaction in a production host.

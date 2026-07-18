@@ -1,4 +1,5 @@
 #include "zig_vstgui_assets.h"
+#include "zig_vstgui_action_menu.h"
 #include "zig_vstgui_controls.h"
 #include "zig_vstgui_graphs.h"
 #include "zig_vstgui_meters.h"
@@ -380,6 +381,14 @@ int32_t rejectPreset(void*, uint32_t) {
     return -1;
 }
 
+int32_t acceptMenuAction(void*, uint32_t, uint32_t, int32_t) {
+    return 0;
+}
+
+int32_t rejectMenuAction(void*, uint32_t, uint32_t, int32_t) {
+    return -1;
+}
+
 Snapshot presetBrowsers() {
     return {
         "preset-browsers.png",
@@ -408,6 +417,69 @@ Snapshot presetBrowsers() {
             views[1].handleKey(0, Steinberg::KEY_RETURN, 0);
             for (const char character : std::string("missing")) views[2].handleKey(character, 0, 0);
             for (auto& view : views) view.draw(&context);
+        },
+    };
+}
+
+Snapshot actionMenus() {
+    return {
+        "action-menus.png",
+        720,
+        240,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            context.setFillColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            context.drawRect(VSTGUI::CRect(0, 0, 720, 240), VSTGUI::kDrawFilled);
+            const ZigVstguiMenuItemDescription items[] = {
+                {1, "Reset UI", ZIG_VSTGUI_MENU_ACTION, 1, 0, 0, 0},
+                {2, "Export Snapshot", ZIG_VSTGUI_MENU_ACTION, 0, 0, 0, 0},
+                {0, nullptr, ZIG_VSTGUI_MENU_SEPARATOR, 0, 0, 0, 0},
+                {3, "Show Analyzer", ZIG_VSTGUI_MENU_TOGGLE, 1, 0, 8, 1},
+                {4, "Clear Envelope", ZIG_VSTGUI_MENU_ACTION, 1, 1, 0, 0},
+            };
+            const ZigVstguiActionMenuDescription description {1, "Actions", items, 5};
+            ZigVstguiCallbacks accepted {};
+            accepted.invoke_menu_action = acceptMenuAction;
+            ZigVstguiCallbacks rejected {};
+            rejected.invoke_menu_action = rejectMenuAction;
+            ZigVstgui::AccessibilityNode nodes[2];
+            ZigVstgui::ActionMenuView menus[] = {
+                {description, accepted, styles, &nodes[0], nullptr},
+                {description, rejected, styles, &nodes[1], nullptr},
+            };
+            menus[0].setLayout(VSTGUI::CRect(0, 0, 352, 240), VSTGUI::CRect(12, 200, 180, 228));
+            menus[0].open();
+            menus[0].handleKey(0, Steinberg::KEY_DOWN, 0);
+            menus[1].setLayout(VSTGUI::CRect(368, 0, 720, 240), VSTGUI::CRect(380, 200, 548, 228));
+            menus[1].open();
+            menus[1].handleKey(0, Steinberg::KEY_RETURN, 0);
+            for (auto& menu : menus) menu.draw(&context);
+        },
+    };
+}
+
+Snapshot closedActionMenu() {
+    return {
+        "action-menu-closed.png",
+        320,
+        72,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 72)));
+            container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            const ZigVstguiMenuItemDescription item {
+                1, "Reset UI", ZIG_VSTGUI_MENU_ACTION, 1, 0, 0, 0,
+            };
+            const ZigVstguiActionMenuDescription description {1, "Actions", &item, 1};
+            ZigVstguiCallbacks callbacks {};
+            callbacks.invoke_menu_action = acceptMenuAction;
+            ZigVstgui::ActionMenuControl control;
+            if (!control.build(container, description, callbacks, styles)) return;
+            control.setBounds(VSTGUI::CRect(12, 20, 180, 52), VSTGUI::CRect(0, 0, 320, 72));
+            container->drawRect(&context, container->getViewSize());
+            control.clear();
         },
     };
 }
@@ -491,6 +563,24 @@ double benchmarkWarmDraw() {
         styles,
         &browser_accessibility
     ));
+    const ZigVstguiMenuItemDescription menu_items[] = {
+        {1, "Reset", ZIG_VSTGUI_MENU_ACTION, 1, 0, 0, 0},
+        {2, "Analyzer", ZIG_VSTGUI_MENU_TOGGLE, 1, 0, 8, 1},
+    };
+    const ZigVstguiActionMenuDescription menu_description {1, "Actions", menu_items, 2};
+    ZigVstguiCallbacks menu_callbacks {};
+    menu_callbacks.invoke_menu_action = acceptMenuAction;
+    ZigVstgui::AccessibilityNode menu_accessibility;
+    auto* menu = new ZigVstgui::ActionMenuView(
+        menu_description,
+        menu_callbacks,
+        styles,
+        &menu_accessibility,
+        nullptr
+    );
+    menu->setLayout(VSTGUI::CRect(0, 0, 480, 140), VSTGUI::CRect(360, 104, 472, 132));
+    menu->open();
+    container->addView(menu);
     const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(480, 140), 1.0);
     if (!offscreen) return 1e9;
     offscreen->beginDraw();
@@ -527,6 +617,8 @@ int main(int argc, char** argv) {
         xyPad(),
         editableEnvelope(),
         presetBrowsers(),
+        closedActionMenu(),
+        actionMenus(),
     };
     int result = 0;
     for (const auto& snapshot : snapshots) {

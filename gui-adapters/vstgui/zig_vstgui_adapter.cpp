@@ -71,6 +71,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_configured(
         0,
         nullptr,
         0,
+        nullptr,
+        0,
         skin
     );
 }
@@ -89,6 +91,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_advanced(
     uint32_t xy_pad_count,
     const ZigVstguiPresetBrowserDescription* preset_browsers,
     uint32_t preset_browser_count,
+    const ZigVstguiActionMenuDescription* action_menus,
+    uint32_t action_menu_count,
     ZigVstguiSkinDescription skin
 ) {
     constexpr uint32_t style_mask = ZIG_VSTGUI_STYLE_BACKGROUND |
@@ -112,6 +116,33 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_advanced(
                 browser.presets[preset].name[0] == 0) return nullptr;
             for (uint32_t previous = 0; previous < preset; ++previous) {
                 if (browser.presets[previous].preset_id == browser.presets[preset].preset_id) return nullptr;
+            }
+        }
+    }
+    if ((!action_menus && action_menu_count > 0) || action_menu_count > ZIG_VSTGUI_MAX_ACTION_MENUS ||
+        (action_menu_count > 0 && !callbacks.invoke_menu_action)) return nullptr;
+    for (uint32_t index = 0; index < action_menu_count; ++index) {
+        const auto& menu = action_menus[index];
+        if (menu.menu_id == 0 || !menu.title || menu.title[0] == 0 || !menu.items || menu.item_count == 0 ||
+            menu.item_count > ZIG_VSTGUI_MAX_MENU_ITEMS) return nullptr;
+        for (uint32_t previous_menu = 0; previous_menu < index; ++previous_menu) {
+            if (action_menus[previous_menu].menu_id == menu.menu_id) return nullptr;
+        }
+        for (uint32_t item_index = 0; item_index < menu.item_count; ++item_index) {
+            const auto& item = menu.items[item_index];
+            if (item.kind == ZIG_VSTGUI_MENU_SEPARATOR) {
+                if (item.item_id != 0 || item.label || item.enabled || item.destructive ||
+                    item.checked_state_id != 0 || item.initial_checked) return nullptr;
+                continue;
+            }
+            if (item.kind < ZIG_VSTGUI_MENU_ACTION || item.kind > ZIG_VSTGUI_MENU_TOGGLE ||
+                item.item_id == 0 || !item.label || item.label[0] == 0 ||
+                (item.kind == ZIG_VSTGUI_MENU_ACTION && item.checked_state_id != 0) ||
+                (item.kind == ZIG_VSTGUI_MENU_TOGGLE &&
+                    (item.checked_state_id == 0 || item.destructive || !callbacks.store_editor_bool))) return nullptr;
+            for (uint32_t previous = 0; previous < item_index; ++previous) {
+                if (menu.items[previous].kind != ZIG_VSTGUI_MENU_SEPARATOR &&
+                    menu.items[previous].item_id == item.item_id) return nullptr;
             }
         }
     }
@@ -201,7 +232,9 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_advanced(
         xy_pads,
         xy_pad_count,
         preset_browsers,
-        preset_browser_count
+        preset_browser_count,
+        action_menus,
+        action_menu_count
     );
     if (editor && !editor->valid()) {
         delete editor;
@@ -291,5 +324,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 12;
+    return 13;
 }

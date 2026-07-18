@@ -1,5 +1,6 @@
 #include "zig_vstgui_component.h"
 #include "zig_vstgui_controls.h"
+#include "zig_vstgui_action_menu.h"
 #include "zig_vstgui_assets.h"
 #include "zig_vstgui_editor.h"
 #include "zig_vstgui_fonts.h"
@@ -12,6 +13,7 @@
 #include "vstgui/lib/events.h"
 #include "vstgui/lib/vstguiinit.h"
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -44,6 +46,13 @@ struct CallbackState {
     uint32_t loaded_preset_id {0};
     uint32_t preset_load_count {0};
     bool reject_preset {false};
+    uint32_t invoked_menu_id {0};
+    uint32_t invoked_menu_item_id {0};
+    uint32_t menu_action_count {0};
+    uint32_t stored_bool_field {0};
+    bool stored_bool_value {false};
+    bool reject_menu_action {false};
+    bool reject_bool_store {false};
 };
 
 void recordOperation(CallbackState* state, char kind, uint32_t parameter_id) {
@@ -152,6 +161,21 @@ int32_t loadPreset(void* userdata, uint32_t preset_id) {
     state->loaded_preset_id = preset_id;
     state->preset_load_count += 1;
     return state->reject_preset ? -1 : 0;
+}
+
+int32_t storeEditorBool(void* userdata, uint32_t field_id, int32_t value) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->stored_bool_field = field_id;
+    state->stored_bool_value = value != 0;
+    return state->reject_bool_store ? -1 : 0;
+}
+
+int32_t invokeMenuAction(void* userdata, uint32_t menu_id, uint32_t item_id, int32_t) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->invoked_menu_id = menu_id;
+    state->invoked_menu_item_id = item_id;
+    state->menu_action_count += 1;
+    return state->reject_menu_action ? -1 : 0;
 }
 
 bool closeEnough(double left, double right) {
@@ -440,6 +464,8 @@ int testMultiParameterAttachmentAndXYPad() {
         1,
         nullptr,
         0,
+        nullptr,
+        0,
         {}
     );
     if (!editor) return 10;
@@ -467,7 +493,7 @@ int testMultiParameterAttachmentAndXYPad() {
     invalid_xy_pad.y_parameter_id = 10;
     if (zig_vstgui_editor_create_advanced(
             parameters, 2, callbacks, nullptr, 0, {}, nullptr, 0, {}, &invalid_xy_pad, 1,
-            nullptr, 0, {}
+            nullptr, 0, nullptr, 0, {}
         )) return 18;
     return 0;
 }
@@ -755,7 +781,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 12) return 1;
+    if (zig_vstgui_adapter_version() != 13) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -838,7 +864,7 @@ int testMeterAbi() {
     };
     auto* preset_editor = zig_vstgui_editor_create_advanced(
         &parameter, 1, preset_callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
-        &browser, 1, {}
+        &browser, 1, nullptr, 0, {}
     );
     if (!preset_editor || !preset_editor->resize(640, 480)) return 13;
     const auto* preset_semantics = preset_editor->presetBrowserAccessibility(0);
@@ -851,7 +877,7 @@ int testMeterAbi() {
     invalid_browser.search_state_id = invalid_browser.selection_state_id;
     if (zig_vstgui_editor_create_advanced(
             &parameter, 1, preset_callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
-            &invalid_browser, 1, {}
+            &invalid_browser, 1, nullptr, 0, {}
         )) return 15;
     return 0;
 }
@@ -1342,6 +1368,175 @@ int testPresetBrowser() {
     return 0;
 }
 
+int testActionMenus() {
+    VSTGUI::init(nullptr);
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.store_editor_bool = storeEditorBool;
+    callbacks.invoke_menu_action = invokeMenuAction;
+    char reset_label[] = "Reset";
+    ZigVstguiMenuItemDescription items[] = {
+        {1, reset_label, ZIG_VSTGUI_MENU_ACTION, 1, 0, 0, 0},
+        {2, "Export", ZIG_VSTGUI_MENU_ACTION, 0, 0, 0, 0},
+        {0, nullptr, ZIG_VSTGUI_MENU_SEPARATOR, 0, 0, 0, 0},
+        {3, "Show analyzer", ZIG_VSTGUI_MENU_TOGGLE, 1, 0, 9, 1},
+        {4, "Clear envelope", ZIG_VSTGUI_MENU_ACTION, 1, 1, 0, 0},
+    };
+    const ZigVstguiActionMenuDescription description {11, "Options", items, 5};
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 360, 240)));
+    ZigVstgui::ActionMenuControl control;
+    if (!control.build(container, description, callbacks, styles)) {
+        VSTGUI::exit();
+        return 1;
+    }
+    control.setBounds(VSTGUI::CRect(20, 200, 180, 228), VSTGUI::CRect(0, 0, 360, 240));
+    const auto& accessibility = control.accessibilityNode();
+    reset_label[0] = 'X';
+    if (accessibility.role() != ZigVstgui::AccessibilityRole::choice ||
+        accessibility.name() != "Options" || !accessibility.perform(ZigVstgui::AccessibilityAction::press) ||
+        accessibility.valueText().find("Reset") == std::string::npos ||
+        !control.menuView()->isOpen() || control.menuView()->selectedItem() != 1) {
+        control.clear();
+        VSTGUI::exit();
+        return 2;
+    }
+    reset_label[0] = 'R';
+    if (!accessibility.perform(ZigVstgui::AccessibilityAction::increment) ||
+        control.menuView()->selectedItem() != 3 ||
+        !accessibility.perform(ZigVstgui::AccessibilityAction::press) ||
+        state.invoked_menu_id != 11 || state.invoked_menu_item_id != 3 ||
+        state.stored_bool_field != 9 || state.stored_bool_value || control.menuView()->itemChecked(3)) {
+        control.clear();
+        VSTGUI::exit();
+        return 3;
+    }
+    accessibility.perform(ZigVstgui::AccessibilityAction::press);
+    accessibility.perform(ZigVstgui::AccessibilityAction::increment);
+    state.reject_menu_action = true;
+    if (!accessibility.perform(ZigVstgui::AccessibilityAction::press) ||
+        control.menuView()->statusText().find("retry") == std::string::npos ||
+        control.menuView()->itemChecked(3)) {
+        control.clear();
+        VSTGUI::exit();
+        return 4;
+    }
+    state.reject_menu_action = false;
+    state.reject_bool_store = true;
+    if (!accessibility.perform(ZigVstgui::AccessibilityAction::press) ||
+        control.menuView()->statusText().find("save") == std::string::npos ||
+        control.menuView()->itemChecked(3)) {
+        control.clear();
+        VSTGUI::exit();
+        return 5;
+    }
+    state.reject_bool_store = false;
+    if (!accessibility.perform(ZigVstgui::AccessibilityAction::press) ||
+        !control.menuView()->itemChecked(3) || control.menuView()->isOpen()) {
+        control.clear();
+        VSTGUI::exit();
+        return 6;
+    }
+    accessibility.perform(ZigVstgui::AccessibilityAction::press);
+    if (!control.handleKey(0, Steinberg::KEY_END, 0) || control.menuView()->selectedItem() != 4 ||
+        !control.handleKey(0, Steinberg::KEY_HOME, 0) || control.menuView()->selectedItem() != 1 ||
+        !control.handleKey(0, Steinberg::KEY_TAB, 0)) {
+        control.clear();
+        VSTGUI::exit();
+        return 7;
+    }
+    VSTGUI::MouseDownEvent outside(
+        VSTGUI::CPoint(350, 230),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    control.menuView()->onMouseDownEvent(outside);
+    if (!outside.consumed || control.menuView()->isOpen()) {
+        control.clear();
+        VSTGUI::exit();
+        return 8;
+    }
+    accessibility.perform(ZigVstgui::AccessibilityAction::press);
+    const uint32_t actions_before_pointer = state.menu_action_count;
+    VSTGUI::MouseDownEvent item_click(
+        VSTGUI::CPoint(30, 75),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    control.menuView()->onMouseDownEvent(item_click);
+    if (!item_click.consumed || control.menuView()->isOpen() ||
+        state.menu_action_count != actions_before_pointer + 1 || state.invoked_menu_item_id != 1) {
+        control.clear();
+        VSTGUI::exit();
+        return 9;
+    }
+    control.clear();
+    std::array<ZigVstguiMenuItemDescription, ZIG_VSTGUI_MAX_MENU_ITEMS> many_items {};
+    for (std::size_t index = 0; index < many_items.size(); ++index) {
+        many_items[index] = {
+            static_cast<uint32_t>(index + 1), "Command", ZIG_VSTGUI_MENU_ACTION, 1, 0, 0, 0,
+        };
+    }
+    const ZigVstguiActionMenuDescription many_description {
+        15, "Many Actions", many_items.data(), static_cast<uint32_t>(many_items.size()),
+    };
+    ZigVstgui::AccessibilityNode many_accessibility;
+    ZigVstgui::ActionMenuView many_menu(many_description, callbacks, styles, &many_accessibility, nullptr);
+    many_menu.setLayout(VSTGUI::CRect(0, 0, 320, 240), VSTGUI::CRect(12, 200, 180, 228));
+    many_menu.open();
+    if (!many_menu.valid() || !many_menu.handleKey(0, Steinberg::KEY_END, 0) ||
+        many_menu.selectedItem() != ZIG_VSTGUI_MAX_MENU_ITEMS ||
+        !many_menu.handleKey(0, Steinberg::KEY_HOME, 0) || many_menu.selectedItem() != 1) {
+        VSTGUI::exit();
+        return 10;
+    }
+    VSTGUI::exit();
+
+    const ZigVstguiParameterDescription parameter {
+        10, 0.5, {"Gain", "dB", 0, 0.5}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+    };
+    const ZigVstguiActionMenuDescription menus[] = {
+        description,
+        {12, "More", items, 5},
+    };
+    auto* editor = zig_vstgui_editor_create_advanced(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, menus, 2, {}
+    );
+    if (!editor) return 11;
+    const auto* first = editor->actionMenuAccessibility(0);
+    const auto* second = editor->actionMenuAccessibility(1);
+    if (!first || !second || !first->perform(ZigVstgui::AccessibilityAction::press) ||
+        !first->state().selected || !first->state().focused ||
+        !second->perform(ZigVstgui::AccessibilityAction::press) ||
+        first->state().selected || first->state().focused ||
+        !second->state().selected || !second->state().focused ||
+        !editor->keyDown(0, Steinberg::KEY_ESCAPE, 0) || second->state().selected) {
+        zig_vstgui_editor_destroy(editor);
+        return 12;
+    }
+    zig_vstgui_editor_destroy(editor);
+
+    auto invalid_item = items[0];
+    invalid_item.item_id = 0;
+    const ZigVstguiActionMenuDescription invalid_menu {13, "Invalid", &invalid_item, 1};
+    if (zig_vstgui_editor_create_advanced(
+            &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+            nullptr, 0, &invalid_menu, 1, {}
+        )) return 13;
+    const ZigVstguiActionMenuDescription action_only {14, "Action", items, 1};
+    if (zig_vstgui_editor_create_advanced(
+            &parameter, 1, {}, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+            nullptr, 0, &action_only, 1, {}
+        )) return 14;
+    ZigVstguiCallbacks missing_store = callbacks;
+    missing_store.store_editor_bool = nullptr;
+    if (zig_vstgui_editor_create_advanced(
+            &parameter, 1, missing_store, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+            nullptr, 0, &description, 1, {}
+        )) return 15;
+    return 0;
+}
+
 }
 
 int main() {
@@ -1364,5 +1559,6 @@ int main() {
     if (const int result = testMeterAbi(); result != 0) return 170 + result;
     if (const int result = testAssetsAndFonts(); result != 0) return 190 + result;
     if (const int result = testPresetBrowser(); result != 0) return 210 + result;
+    if (const int result = testActionMenus(); result != 0) return 220 + result;
     return 0;
 }

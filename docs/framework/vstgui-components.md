@@ -34,7 +34,7 @@ pub fn createView(
 
 Use `createView` for one default slider, `createMultiView` for standard parameter controls, `createMultiViewWithMeters` for telemetry, or `createMultiViewWithSkin` for explicit theme, layout, fonts, assets, and drawing.
 
-Use `createEditor` when the editor needs an explicit composition. `EditorDescription` combines parameter, meter, graph, XY-pad, and preset-browser slices with a skin and a bounded `Composition`. Each `Group` names contiguous parameter, meter, graph, and XY-pad ranges. Groups must cover every grouped slice once, in order. Invalid, overlapping, incomplete, or empty groups reject editor creation. Preset browsers occupy a separate responsive editor region and follow the grouped controls in focus order.
+Use `createEditor` when the editor needs an explicit composition. `EditorDescription` combines parameter, meter, graph, XY-pad, preset-browser, and action-menu slices with a skin and a bounded `Composition`. Each `Group` names contiguous parameter, meter, graph, and XY-pad ranges. Groups must cover every grouped slice once, in order. Invalid, overlapping, incomplete, or empty groups reject editor creation. Preset browsers occupy a separate responsive editor region. Action menus occupy the footer. Both follow grouped controls in focus order.
 
 ```zig
 return ui.createEditor(Controller, controller, name, .{
@@ -94,6 +94,30 @@ The reflected controller configuration must implement `loadPreset(controller, pr
 The browser is one composite focus stop. Type printable characters to filter, use Backspace to edit, Escape to clear, Up and Down to move, Home and End to jump, and Enter to load. A single pointer click selects, and a double-click loads. The accessible press action also loads. Empty results explain how to recover. Failed loads preserve the selected preset and expose a retry instruction.
 
 Search and selection are stored as editor state, separate from parameter state. Reopening an editor restores both. Catalog names and search text are copied into instance-owned bounded storage during editor creation. Filtering and drawing do not allocate.
+
+## Action Menus
+
+Declare up to four `ActionMenu` values in `EditorDescription.action_menus`. A menu accepts up to 16 action, toggle, or separator items. Menu and non-separator item IDs must be stable and nonzero. A toggle references a boolean editor-state field so its checked state survives editor teardown and controller serialization.
+
+```zig
+.action_menus = &.{.{
+    .id = 1,
+    .title = "Options",
+    .items = &.{
+        .{ .id = 1, .label = "Reset Channel" },
+        .{ .id = 2, .label = "Show Analyzer", .kind = .toggle, .checked_state_id = show_analyzer_state_id },
+        .{ .id = 3, .label = "Export Preset", .enabled = false },
+        .{ .kind = .separator },
+        .{ .id = 4, .label = "Reset UI", .destructive = true },
+    },
+}},
+```
+
+The reflected controller configuration must implement `performMenuAction(controller, menu_id, item_id, checked)`. Return `kResultOk` only after the requested action succeeds. For toggles, `checked` is the proposed value. The adapter persists the referenced boolean only after the handler accepts it. A rejected action or failed state write keeps the menu open, restores the previous checked state, and displays a retry message.
+
+Each menu is one focus stop while closed and one contained focus region while open. Return, Space, or Down opens it. Up and Down skip separators and disabled items, Home and End select a boundary item, Return or Space activates, Tab remains contained, and Escape closes and restores trigger focus. Pointer clicks outside the panel dismiss it. Opening one menu closes any other menu in the editor. The accessible press, increment, and decrement actions use the same selection and activation path.
+
+Menu storage is copied into the editor instance at creation. Layout anchors the panel above or below its trigger and clamps it to the editor bounds. Warm drawing uses cached labels and does not allocate.
 
 Each `Parameter` needs the stable parameter ID used by the controller, its display metadata, its step count, its normalized default, and a presentation kind:
 
@@ -253,6 +277,8 @@ Supported authoring surface:
 - `EnvelopePoint`, bounded editable envelopes, stable selection, snapping, and parameter-backed point gestures.
 - `editor_state.Store`, typed editor values, bounded serialization, migrations, and persistent envelope bindings.
 - `XYPad`, ordered two-parameter gestures, per-axis semantics, and grouped XY-pad composition.
+- `PresetBrowser`, `gui_preset_browser.Browser`, bounded catalogs, persistent filtering and selection, and host-automated loading.
+- `ActionMenu`, action, toggle, separator, disabled and destructive item states, anchored overlays, and persistent toggle fields.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.
 
@@ -262,8 +288,7 @@ Experimental extensions:
 - Rotary controls currently have no plugin consumer. Bipolar and decibel controls each have one.
 - Fixed graph point storage, dynamic graph sources, and `SnapshotSeries`. Each source mode currently has one production consumer.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
-- New analyzer, modulation, timeline, GPU, preset-browser, and drag-and-drop components.
-- `gui_preset_browser.Browser`, pending a native component and a second production consumer.
+- New analyzer, modulation, timeline, GPU, and drag-and-drop components.
 
 Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.
 

@@ -3,6 +3,7 @@
 
 #include "zig_vstgui_adapter.h"
 #include "zig_vstgui_accessibility_bridge.h"
+#include "zig_vstgui_action_menu.h"
 #include "zig_vstgui_assets.h"
 #include "zig_vstgui_component.h"
 #include "zig_vstgui_controls.h"
@@ -36,7 +37,9 @@ struct ZigVstguiEditor {
         const ZigVstguiXYPadDescription* xy_pads = nullptr,
         uint32_t xy_pad_count = 0,
         const ZigVstguiPresetBrowserDescription* preset_browsers = nullptr,
-        uint32_t preset_browser_count = 0
+        uint32_t preset_browser_count = 0,
+        const ZigVstguiActionMenuDescription* action_menus = nullptr,
+        uint32_t action_menu_count = 0
     );
     ~ZigVstguiEditor();
 
@@ -55,6 +58,7 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode* graphAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* xyPadAccessibility(uint32_t index, uint32_t axis) const;
     const ZigVstgui::AccessibilityNode* presetBrowserAccessibility(uint32_t index) const;
+    const ZigVstgui::AccessibilityNode* actionMenuAccessibility(uint32_t index) const;
     bool tickMeter(uint32_t index, double elapsed_ms);
     bool refreshGraph(uint32_t index);
     uint32_t graphPointCount(uint32_t index) const;
@@ -78,12 +82,15 @@ private:
     void clearFrameReferences();
     void layout();
     void layoutPresetBrowsers(double left, double top, double right, double bottom);
+    void layoutActionMenus(double left, double top, double right, double bottom);
     void reportMetrics() const;
     bool focusNext(bool reverse);
     const ZigVstgui::ThemeResolver& stylesForParameter(uint32_t index) const;
     const ZigVstgui::ThemeResolver& stylesForMeter(uint32_t index) const;
     const ZigVstgui::ThemeResolver& stylesForGraph(uint32_t index) const;
     const ZigVstgui::ThemeResolver& stylesForXYPad(uint32_t index) const;
+    static void actionMenuWillOpen(void* userdata, ZigVstgui::ActionMenuControl* opening);
+    void closeOtherActionMenus(ZigVstgui::ActionMenuControl* opening);
     std::vector<ZigVstgui::AccessibilityEntry> accessibilityEntries() const;
     ZigVstgui::ParameterControl* findControl(uint32_t parameter_id);
     const ZigVstgui::ParameterControl* findControl(uint32_t parameter_id) const;
@@ -135,6 +142,12 @@ private:
     std::array<std::vector<ZigVstguiPreset>, ZIG_VSTGUI_MAX_PRESET_BROWSERS> preset_browser_presets;
     std::array<std::vector<std::string>, ZIG_VSTGUI_MAX_PRESET_BROWSERS> preset_browser_names;
     uint32_t preset_browser_count {0};
+    std::array<std::unique_ptr<ZigVstgui::ActionMenuControl>, ZIG_VSTGUI_MAX_ACTION_MENUS> action_menu_controls;
+    std::array<ZigVstguiActionMenuDescription, ZIG_VSTGUI_MAX_ACTION_MENUS> action_menu_descriptions {};
+    std::array<std::string, ZIG_VSTGUI_MAX_ACTION_MENUS> action_menu_titles;
+    std::array<std::vector<ZigVstguiMenuItemDescription>, ZIG_VSTGUI_MAX_ACTION_MENUS> action_menu_items;
+    std::array<std::vector<std::string>, ZIG_VSTGUI_MAX_ACTION_MENUS> action_menu_labels;
+    uint32_t action_menu_count {0};
     ZigVstgui::AssetStore asset_store;
     ZigVstguiDrawingCallbacks drawing_callbacks {};
     ZigVstgui::ResizeControl resize_control;

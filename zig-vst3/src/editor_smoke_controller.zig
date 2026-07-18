@@ -25,10 +25,15 @@ pub const envelope_selection_state_id: u32 = 4;
 pub const envelope_state_id: u32 = 5;
 pub const preset_search_state_id: u32 = 6;
 pub const preset_selection_state_id: u32 = 7;
+pub const show_analyzer_state_id: u32 = 8;
 
 const gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
     .{ .id = 2, .x = 0.5, .y = 0.5 },
+    .{ .id = 3, .x = 1.0, .y = 0.0 },
+}) catch unreachable;
+const cleared_gallery_envelope = plug_core.editor_state.Envelope.init(&.{
+    .{ .id = 1, .x = 0.0, .y = 0.0 },
     .{ .id = 3, .x = 1.0, .y = 0.0 },
 }) catch unreachable;
 const empty_preset_search = plug_core.editor_state.Text.init("") catch unreachable;
@@ -41,6 +46,7 @@ pub const GalleryEditorState = plug_core.editor_state.Store(1, &.{
     .{ .id = envelope_state_id, .default = .{ .envelope = gallery_envelope } },
     .{ .id = preset_search_state_id, .default = .{ .text = empty_preset_search } },
     .{ .id = preset_selection_state_id, .default = .{ .index = 1 } },
+    .{ .id = show_analyzer_state_id, .default = .{ .boolean = true } },
 });
 
 fn applyPreset(
@@ -137,6 +143,32 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
         return applyPreset(Controller, controller, &ids, &values);
     }
 
+    pub fn performMenuAction(
+        controller: *ivsteditcontroller.IEditController,
+        menu_id: u32,
+        item_id: u32,
+        _: bool,
+    ) types.tresult {
+        if (menu_id != 1) return types.kInvalidArgument;
+        switch (item_id) {
+            1 => {
+                const state = Controller.editorState(controller);
+                state.set(panel_expanded_state_id, .{ .boolean = true }) catch return types.kResultFalse;
+                state.set(analyzer_mode_state_id, .{ .index = 0 }) catch return types.kResultFalse;
+                state.set(selected_tab_state_id, .{ .index = 0 }) catch return types.kResultFalse;
+                return types.kResultOk;
+            },
+            2 => return types.kResultOk,
+            4 => {
+                const state = Controller.editorState(controller);
+                state.set(envelope_state_id, .{ .envelope = cleared_gallery_envelope }) catch return types.kResultFalse;
+                state.set(envelope_selection_state_id, .{ .point_id = 1 }) catch return types.kResultFalse;
+                return types.kResultOk;
+            },
+            else => return types.kInvalidArgument,
+        }
+    }
+
     pub fn createView(controller: *ivsteditcontroller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
         return parameter_editor.createEditor(Controller, controller, name, .{
             .parameters = &.{
@@ -201,6 +233,17 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 },
                 .search_state_id = preset_search_state_id,
                 .selection_state_id = preset_selection_state_id,
+            }},
+            .action_menus = &.{.{
+                .id = 1,
+                .title = "Actions",
+                .items = &.{
+                    .{ .id = 1, .label = "Reset UI" },
+                    .{ .id = 2, .label = "Show Analyzer", .kind = .toggle, .checked_state_id = show_analyzer_state_id },
+                    .{ .id = 3, .label = "Export Snapshot", .enabled = false },
+                    .{ .kind = .separator },
+                    .{ .id = 4, .label = "Clear Envelope", .destructive = true },
+                },
             }},
             .skin = .{
                 .assets = &.{
@@ -302,6 +345,7 @@ test "editor smoke controller persists UI state without changing parameters" {
         .text = try plug_core.editor_state.Text.init("wide"),
     });
     try editorState(source).set(preset_selection_state_id, .{ .index = 2 });
+    try editorState(source).set(show_analyzer_state_id, .{ .boolean = false });
     try std.testing.expectEqual(source_gain_before, Controller.getNormalized(source, gain_param_id));
     try std.testing.expectEqual(types.kResultOk, Controller.setNormalized(source, gain_param_id, 0.75));
     const Stream = vst_stream.FixedBufferStream(65536);
@@ -313,6 +357,7 @@ test "editor smoke controller persists UI state without changing parameters" {
     try std.testing.expectEqual(@as(u32, 2), editorState(restored).get(selected_tab_state_id).?.index);
     try std.testing.expectEqualStrings("wide", editorState(restored).get(preset_search_state_id).?.text.slice());
     try std.testing.expectEqual(@as(u32, 2), editorState(restored).get(preset_selection_state_id).?.index);
+    try std.testing.expect(!editorState(restored).get(show_analyzer_state_id).?.boolean);
     try std.testing.expectEqual(@as(f64, 0.75), Controller.getNormalized(restored, gain_param_id));
     const first = restored.vtable.createView(restored, ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
     _ = first.vtable.release(first);

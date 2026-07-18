@@ -83,6 +83,23 @@ pub const PresetBrowser = struct {
     selection_state_id: u32,
 };
 
+pub const MenuItemKind = vstgui_editor_view.MenuItemKind;
+
+pub const MenuItem = struct {
+    id: u32 = 0,
+    label: ?[*:0]const u8 = null,
+    kind: MenuItemKind = .action,
+    enabled: bool = true,
+    destructive: bool = false,
+    checked_state_id: u32 = 0,
+};
+
+pub const ActionMenu = struct {
+    id: u32,
+    title: [*:0]const u8,
+    items: []const MenuItem,
+};
+
 pub const Asset = vstgui_editor_view.Asset;
 pub const AssetFormat = vstgui_editor_view.AssetFormat;
 pub const AssetScale = vstgui_editor_view.AssetScale;
@@ -105,6 +122,7 @@ pub const EditorDescription = struct {
     graphs: []const Graph = &.{},
     xy_pads: []const XYPad = &.{},
     preset_browsers: []const PresetBrowser = &.{},
+    action_menus: []const ActionMenu = &.{},
     skin: Skin = .{},
     composition: Composition = .{},
 };
@@ -140,7 +158,7 @@ pub fn createMultiViewWithSkin(
     meters: []const Meter,
     skin: Skin,
 ) ?*iplugview.IPlugView {
-    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, &.{}, &.{}, skin, .{});
+    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, &.{}, &.{}, &.{}, skin, .{});
 }
 
 pub fn createEditor(
@@ -158,6 +176,7 @@ pub fn createEditor(
         description.graphs,
         description.xy_pads,
         description.preset_browsers,
+        description.action_menus,
         description.skin,
         description.composition,
     );
@@ -172,6 +191,7 @@ fn createConfiguredView(
     graphs: []const Graph,
     xy_pads: []const XYPad,
     preset_browsers: []const PresetBrowser,
+    action_menus: []const ActionMenu,
     skin: Skin,
     composition: Composition,
 ) ?*iplugview.IPlugView {
@@ -192,9 +212,13 @@ fn createConfiguredView(
             _ = iface.vtable.release(iface);
         };
         if (parameters.len == 0 or parameters.len > vstgui_editor_view.max_parameters or
-            preset_browsers.len > vstgui_editor_view.max_preset_browsers) return null;
+            preset_browsers.len > vstgui_editor_view.max_preset_browsers or
+            action_menus.len > vstgui_editor_view.max_action_menus) return null;
         if (comptime !Controller.hasPresetLoader) {
             if (preset_browsers.len > 0) return null;
+        }
+        if (comptime !Controller.hasMenuActionHandler) {
+            if (action_menus.len > 0) return null;
         }
         var bindings: [vstgui_editor_view.max_parameters]vstgui_editor_view.ParameterInfoBinding = undefined;
         for (parameters, 0..) |parameter, index| {
@@ -380,11 +404,61 @@ fn createConfiguredView(
                 .initial_selection = initial_selection,
             };
         }
+        var menu_items: [vstgui_editor_view.max_action_menus][vstgui_editor_view.max_menu_items]vstgui_editor_view.MenuItemDescription = undefined;
+        var menu_descriptions: [vstgui_editor_view.max_action_menus]vstgui_editor_view.ActionMenuDescription = undefined;
+        for (action_menus, 0..) |menu, menu_index| {
+            if (menu.id == 0 or std.mem.span(menu.title).len == 0 or menu.items.len == 0 or
+                menu.items.len > vstgui_editor_view.max_menu_items) return null;
+            for (action_menus[0..menu_index]) |previous| if (previous.id == menu.id) return null;
+            for (menu.items, 0..) |item, item_index| {
+                var checked = false;
+                switch (item.kind) {
+                    .separator => {
+                        if (item.id != 0 or item.label != null or item.destructive or
+                            item.checked_state_id != 0) return null;
+                    },
+                    .action => {
+                        if (item.id == 0 or item.label == null or std.mem.span(item.label.?).len == 0 or
+                            item.checked_state_id != 0) return null;
+                    },
+                    .toggle => {
+                        if (item.id == 0 or item.label == null or std.mem.span(item.label.?).len == 0 or
+                            item.checked_state_id == 0 or item.destructive) return null;
+                        if (comptime Controller.hasEditorState) {
+                            checked = switch (Controller.editorState(controller).get(item.checked_state_id) orelse return null) {
+                                .boolean => |value| value,
+                                else => return null,
+                            };
+                        } else return null;
+                    },
+                }
+                if (item.kind != .separator) {
+                    for (menu.items[0..item_index]) |previous| {
+                        if (previous.kind != .separator and previous.id == item.id) return null;
+                    }
+                }
+                menu_items[menu_index][item_index] = .{
+                    .item_id = item.id,
+                    .label = item.label,
+                    .kind = item.kind,
+                    .enabled = @intFromBool(item.kind != .separator and item.enabled),
+                    .destructive = @intFromBool(item.destructive),
+                    .checked_state_id = item.checked_state_id,
+                    .initial_checked = @intFromBool(checked),
+                };
+            }
+            menu_descriptions[menu_index] = .{
+                .menu_id = menu.id,
+                .title = menu.title,
+                .items = &menu_items[menu_index],
+                .item_count = @intCast(menu.items.len),
+            };
+        }
         const telemetry_source = if (comptime @hasDecl(Controller, "retainGuiTelemetry"))
             Controller.retainGuiTelemetry(controller)
         else
             null;
-        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], skin, composition, .{
+        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], menu_descriptions[0..action_menus.len], skin, composition, .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
             .perform_edit = Bridge.performEdit,
@@ -396,6 +470,8 @@ fn createConfiguredView(
             .store_editor_envelope = Bridge.storeEditorEnvelope,
             .store_editor_text = Bridge.storeEditorText,
             .load_preset = Bridge.loadPreset,
+            .store_editor_bool = Bridge.storeEditorBool,
+            .invoke_menu_action = Bridge.invokeMenuAction,
         }, .{
             .userdata = controller,
             .subscribe = Bridge.subscribe,
@@ -489,6 +565,23 @@ fn NativeBridge(comptime Controller: type) type {
         fn loadPreset(userdata: ?*anyopaque, preset_id: u32) callconv(.c) types.int32 {
             const iface = controller(userdata) orelse return -1;
             return if (Controller.loadPreset(iface, preset_id) == types.kResultOk) 0 else -1;
+        }
+
+        fn storeEditorBool(userdata: ?*anyopaque, field_id: u32, value: types.int32) callconv(.c) types.int32 {
+            if (comptime !Controller.hasEditorState) return -1;
+            const iface = controller(userdata) orelse return -1;
+            Controller.editorState(iface).set(field_id, .{ .boolean = value != 0 }) catch return -1;
+            return 0;
+        }
+
+        fn invokeMenuAction(
+            userdata: ?*anyopaque,
+            menu_id: u32,
+            item_id: u32,
+            checked: types.int32,
+        ) callconv(.c) types.int32 {
+            const iface = controller(userdata) orelse return -1;
+            return if (Controller.performMenuAction(iface, menu_id, item_id, checked != 0) == types.kResultOk) 0 else -1;
         }
 
         fn subscribe(userdata: *anyopaque, editor: *anyopaque) bool {

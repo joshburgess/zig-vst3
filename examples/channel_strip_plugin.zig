@@ -19,6 +19,7 @@ pub const envelope_selection_state_id: u32 = 4;
 pub const envelope_state_id: u32 = 5;
 pub const preset_search_state_id: u32 = 6;
 pub const preset_selection_state_id: u32 = 7;
+pub const show_analyzer_state_id: u32 = 8;
 
 pub const Mode = enum { clean, console, limit };
 pub const ModeParam = core.parameters.EnumParam(Mode);
@@ -99,6 +100,7 @@ pub const ChannelStripEditorState = core.editor_state.Store(1, &.{
     .{ .id = envelope_state_id, .default = .{ .envelope = persisted_envelope } },
     .{ .id = preset_search_state_id, .default = .{ .text = empty_preset_search } },
     .{ .id = preset_selection_state_id, .default = .{ .index = 1 } },
+    .{ .id = show_analyzer_state_id, .default = .{ .boolean = true } },
 });
 
 fn applyPreset(
@@ -148,6 +150,27 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
             else => return types.kInvalidArgument,
         };
         return applyPreset(Controller, controller, &ids, &values);
+    }
+
+    pub fn performMenuAction(
+        controller: *vst.ivsteditcontroller.IEditController,
+        menu_id: u32,
+        item_id: u32,
+        _: bool,
+    ) types.tresult {
+        if (menu_id != 1) return types.kInvalidArgument;
+        switch (item_id) {
+            1 => return loadPreset(controller, 1),
+            2 => return types.kResultOk,
+            4 => {
+                const state = Controller.editorState(controller);
+                state.set(input_panel_expanded_state_id, .{ .boolean = true }) catch return types.kResultFalse;
+                state.set(analyzer_mode_state_id, .{ .index = 0 }) catch return types.kResultFalse;
+                state.set(selected_tab_state_id, .{ .index = 0 }) catch return types.kResultFalse;
+                return types.kResultOk;
+            },
+            else => return types.kInvalidArgument,
+        }
     }
 
     pub fn createView(
@@ -232,6 +255,17 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 },
                 .search_state_id = preset_search_state_id,
                 .selection_state_id = preset_selection_state_id,
+            }},
+            .action_menus = &.{.{
+                .id = 1,
+                .title = "Options",
+                .items = &.{
+                    .{ .id = 1, .label = "Reset Channel" },
+                    .{ .id = 2, .label = "Show Analyzer", .kind = .toggle, .checked_state_id = show_analyzer_state_id },
+                    .{ .id = 3, .label = "Export Preset", .enabled = false },
+                    .{ .kind = .separator },
+                    .{ .id = 4, .label = "Reset UI", .destructive = true },
+                },
             }},
             .skin = .{
                 .theme = .alternate,
@@ -445,13 +479,16 @@ test "channel strip controller state is serialized and instance isolated" {
     defer _ = second.vtable.release(second);
 
     try Controller.editorState(first).set(input_panel_expanded_state_id, .{ .boolean = false });
+    try Controller.editorState(first).set(show_analyzer_state_id, .{ .boolean = false });
     try std.testing.expect(Controller.editorState(second).get(input_panel_expanded_state_id).?.boolean);
+    try std.testing.expect(Controller.editorState(second).get(show_analyzer_state_id).?.boolean);
     const Stream = vst3.vst_stream.FixedBufferStream(65536);
     var stream = Stream{};
     try std.testing.expectEqual(types.kResultOk, first.vtable.getState(first, stream.asStream()));
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(base.ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, second.vtable.setState(second, stream.asStream()));
     try std.testing.expect(!Controller.editorState(second).get(input_panel_expanded_state_id).?.boolean);
+    try std.testing.expect(!Controller.editorState(second).get(show_analyzer_state_id).?.boolean);
     try std.testing.expectEqual(@as(f64, 0.5), Controller.getNormalized(second, gain_param_id));
 }
 

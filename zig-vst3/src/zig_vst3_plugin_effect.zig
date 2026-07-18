@@ -82,6 +82,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         const EditorState = if (has_editor_state) Config.EditorState else struct {};
         pub const hasEditorState = has_editor_state;
         pub const hasPresetLoader = @hasDecl(Config, "loadPreset");
+        pub const hasMenuActionHandler = @hasDecl(Config, "performMenuAction");
         pub const EditorStateType = EditorState;
         const editor_state_migrations: []const plug_core.editor_state.Migration = if (@hasDecl(Config, "editor_state_migrations"))
             Config.editor_state_migrations
@@ -164,6 +165,18 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         pub fn loadPreset(iface: *ivsteditcontroller.IEditController, preset_id: u32) types.tresult {
             if (comptime @hasDecl(Config, "loadPreset")) return Config.loadPreset(iface, preset_id);
+            return types.kResultFalse;
+        }
+
+        pub fn performMenuAction(
+            iface: *ivsteditcontroller.IEditController,
+            menu_id: u32,
+            item_id: u32,
+            checked: bool,
+        ) types.tresult {
+            if (comptime @hasDecl(Config, "performMenuAction")) {
+                return Config.performMenuAction(iface, menu_id, item_id, checked);
+            }
             return types.kResultFalse;
         }
 

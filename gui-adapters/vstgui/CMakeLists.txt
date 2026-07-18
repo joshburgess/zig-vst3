@@ -27,6 +27,7 @@ set(ZIG_VSTGUI_ADAPTER_SOURCES
     zig_vstgui_adapter.cpp
     zig_vstgui_accessibility.cpp
     zig_vstgui_accessibility_bridge.cpp
+    zig_vstgui_action_menu.cpp
     zig_vstgui_assets.cpp
     zig_vstgui_component.cpp
     zig_vstgui_controls.cpp

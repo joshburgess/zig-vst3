@@ -19,6 +19,8 @@ typedef struct ZigVstguiCallbacks {
     int32_t (*store_editor_envelope)(void* userdata, uint32_t field_id, const struct ZigVstguiEnvelopePoint* points, uint32_t count);
     int32_t (*store_editor_text)(void* userdata, uint32_t field_id, const char* text);
     int32_t (*load_preset)(void* userdata, uint32_t preset_id);
+    int32_t (*store_editor_bool)(void* userdata, uint32_t field_id, int32_t value);
+    int32_t (*invoke_menu_action)(void* userdata, uint32_t menu_id, uint32_t item_id, int32_t checked);
 } ZigVstguiCallbacks;
 
 typedef struct ZigVstguiParameterInfo {
@@ -82,6 +84,32 @@ typedef struct ZigVstguiPresetBrowserDescription {
 
 enum { ZIG_VSTGUI_MAX_PRESET_BROWSERS = 2 };
 enum { ZIG_VSTGUI_MAX_PRESETS = 64 };
+
+typedef enum ZigVstguiMenuItemKind {
+    ZIG_VSTGUI_MENU_ACTION = 0,
+    ZIG_VSTGUI_MENU_TOGGLE = 1,
+    ZIG_VSTGUI_MENU_SEPARATOR = 2
+} ZigVstguiMenuItemKind;
+
+typedef struct ZigVstguiMenuItemDescription {
+    uint32_t item_id;
+    const char* label;
+    ZigVstguiMenuItemKind kind;
+    int32_t enabled;
+    int32_t destructive;
+    uint32_t checked_state_id;
+    int32_t initial_checked;
+} ZigVstguiMenuItemDescription;
+
+typedef struct ZigVstguiActionMenuDescription {
+    uint32_t menu_id;
+    const char* title;
+    const ZigVstguiMenuItemDescription* items;
+    uint32_t item_count;
+} ZigVstguiActionMenuDescription;
+
+enum { ZIG_VSTGUI_MAX_ACTION_MENUS = 4 };
+enum { ZIG_VSTGUI_MAX_MENU_ITEMS = 16 };
 
 typedef enum ZigVstguiMeterKind {
     ZIG_VSTGUI_METER_PEAK = 0,
@@ -357,6 +385,8 @@ ZigVstguiEditor* zig_vstgui_editor_create_advanced(
     uint32_t xy_pad_count,
     const ZigVstguiPresetBrowserDescription* preset_browsers,
     uint32_t preset_browser_count,
+    const ZigVstguiActionMenuDescription* action_menus,
+    uint32_t action_menu_count,
     ZigVstguiSkinDescription skin
 );
 void zig_vstgui_canvas_fill_rect(
