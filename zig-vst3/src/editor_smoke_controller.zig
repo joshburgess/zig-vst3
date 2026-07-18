@@ -6,7 +6,7 @@ const plug_process = @import("zig-vst3-plugin-core").process;
 const std = @import("std");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
-const parameter_editor = @import("vstgui_single_parameter_controller.zig");
+const parameter_editor = @import("vstgui.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 

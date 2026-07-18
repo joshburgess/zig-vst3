@@ -34,7 +34,7 @@ pub fn createView(
 
 Use `createView` for one default slider, `createMultiView` for standard parameter controls, `createMultiViewWithMeters` for telemetry, or `createMultiViewWithSkin` for explicit theme, layout, fonts, assets, and drawing.
 
-Use `createEditor` when the editor needs an explicit composition. `EditorDescription` combines parameter and meter slices with a skin and a bounded `Composition`. Each `Group` names a contiguous range of parameters and meters. Groups must cover both slices once, in order. Invalid, overlapping, incomplete, or empty groups reject editor creation.
+Use `createEditor` when the editor needs an explicit composition. `EditorDescription` combines parameter, meter, and graph slices with a skin and a bounded `Composition`. Each `Group` names contiguous ranges from those slices. Groups must cover every slice once, in order. Invalid, overlapping, incomplete, or empty groups reject editor creation.
 
 ```zig
 return ui.createEditor(Controller, controller, name, .{
@@ -53,6 +53,24 @@ return ui.createEditor(Controller, controller, name, .{
 ```
 
 At widths below 620 logical units, groups form one vertical reading order. Wider editors use two columns while preserving declaration and Tab order. Group headings provide structure but are not focus stops. The resize action remains last.
+
+## Build a Channel Strip
+
+The complete [channel strip example](../../examples/channel_strip_plugin.zig) uses only `@import("zig-vst3").vstgui`. It does not import adapter headers or implementation files.
+
+1. Define stable parameter IDs and the reflected parameter set as usual.
+
+2. Declare the controls, meters, and graphs in one `EditorDescription`. Source IDs are local to the processor instance.
+
+3. Group contiguous ranges in visible reading order. Set every `first_*` index explicitly after the first group so later edits cannot silently change ownership.
+
+4. Publish meter values through `MeterBank`. Guard extra audio-thread calculations with `producing()` and publish only bounded atomic values.
+
+5. Keep fixed graph points in static storage. For dynamic data, use `SnapshotSeries`, stop publication when the last editor closes, and cap editor refresh at 60 Hz or less.
+
+6. Select a theme and layout in `Skin`, then use editor and group style overrides only for semantic colors.
+
+The channel strip combines a decibel gain control, bypass toggle, mode dropdown, stereo and gain-reduction meters, and a fixed transfer graph. The component gallery exercises the same description, grouping, telemetry, graph, resize, focus, and lifecycle contracts with different component variants. Ordinary editor composition should require changes only to the plugin's public declarations.
 
 Each `Parameter` needs the stable parameter ID used by the controller, its display metadata, its step count, its normalized default, and a presentation kind:
 
@@ -93,7 +111,7 @@ Both layouts accept host resize requests from 320 by 240 through 1000 by 700, us
 
 | Gallery area | Components and behavior |
 | --- | --- |
-| Continuous | Rotary gain control and exact numeric entry |
+| Continuous | Bipolar control, modulation marker, and exact numeric entry |
 | Discrete | Bypass toggle, mode dropdown, and segmented voice count |
 | Telemetry | Peak, stereo, and gain-reduction meters plus a live waveform graph |
 | Resources | Embedded PNG, deterministic SVG, font fallback, and custom overlay drawing |
@@ -156,21 +174,22 @@ X11 and Wayland retain the toolkit-neutral semantics, keyboard focus order, and 
 
 ## API Status
 
-The project remains pre-1.0, so even the supported surface does not yet carry a long-term compatibility promise. Milestone 10 narrows the component API according to evidence from both the gallery and Voice Mix editors.
+The project remains pre-1.0, so even the supported surface does not yet carry a long-term compatibility promise. The supported list is limited to contracts exercised by both the component gallery and a production-style editor.
 
 Supported authoring surface:
 
-- `Parameter`, `ControlKind`, `Theme`, `Layout`, and the four `create*View` functions.
+- `Parameter`, the linear, toggle, dropdown, and segmented control kinds, `Theme`, `Layout`, and the four `create*View` functions.
 - `EditorDescription`, `Composition`, `Group`, `StyleOverride`, and `createEditor`.
 - `Meter`, meter source wiring, `MeterBank`, and GUI telemetry presentation.
-- `Graph`, graph axes and style roles, fixed graph series, and grouped graph composition.
+- `Graph`, graph axes and style roles, and grouped graph composition.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.
 
 Experimental extensions:
 
 - `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and `Canvas` drawing functions.
-- Dynamic graph sources and `SnapshotSeries`. The gallery is their only production consumer so far.
+- Rotary controls currently have no plugin consumer. Bipolar and decibel controls each have one.
+- Fixed graph point storage, dynamic graph sources, and `SnapshotSeries`. Each source mode currently has one production consumer.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
 - New analyzer, modulation, timeline, GPU, preset-browser, and drag-and-drop components.
 
@@ -183,7 +202,7 @@ Run the native adapter tests and example validation after changing a component d
 ```sh
 zig build vstgui-adapter
 zig build test raw-api-abi validate-examples
-zig build pluginval-examples
+zig build pluginval-channel-strip
 ```
 
-The native suite covers parameter routing, interaction, layout selection, theme selection, assets, accessibility semantics, visual references, and the warm-render budget. The example suites verify both editor styles through real plugin bundles.
+The native suite covers parameter routing, interaction, layout selection, theme selection, assets, accessibility semantics, visual references, and the warm-render budget. The example suites verify both editor styles through real plugin bundles. Run pluginval examples one at a time on macOS. Stop after the first crash dialog rather than relaunching the application or using the aggregate parallel target.

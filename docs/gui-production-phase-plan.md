@@ -163,20 +163,30 @@ Completion evidence:
 
 ## Milestone 7: Stability Review and Final Validation
 
-- [ ] Document the channel-strip author workflow and each promoted API.
-- [ ] Keep single-consumer and platform-incomplete capabilities marked experimental.
-- [ ] Run native unit, interaction, accessibility, visual, and performance tests.
-- [ ] Run Zig tests, raw ABI checks, and every Steinberg example validator.
-- [ ] Cross-build all example bundles for Linux and Windows.
-- [ ] Diagnose pluginval serially and stop after the first crash dialog.
-- [ ] Record manual macOS and unavailable native Windows, X11, and Wayland host checks.
-- [ ] Confirm the worktree contains no uncommitted milestone work.
+- [x] Document the channel-strip author workflow and each promoted API.
+- [x] Keep single-consumer and platform-incomplete capabilities marked experimental.
+- [x] Run native unit, interaction, accessibility, visual, and performance tests.
+- [x] Run Zig tests, raw ABI checks, and every Steinberg example validator.
+- [x] Cross-build all example bundles for Linux and Windows.
+- [x] Diagnose pluginval serially and stop after the first crash dialog.
+- [x] Record manual macOS and unavailable native Windows, X11, and Wayland host checks.
+- [x] Confirm the worktree contains no uncommitted milestone work.
 
 Exit criteria:
 
 - Both production and gallery editors compile exclusively against documented public declarations.
 - Every promoted API has two real consumers and deterministic coverage.
 - Every local gate passes, and external deferrals state the missing environment and required future check.
+
+Completion evidence:
+
+- `zig-vst3/src/vstgui.zig` is the public authoring facade. The package root exports it as `@import("zig-vst3").vstgui`, and the component gallery compiles against the same facade instead of importing the implementation file.
+- The channel-strip workflow documents parameter, meter, graph, grouping, telemetry, theme, and validation responsibilities. The API status keeps assets, fonts, custom drawing, bipolar and decibel variants, graph source modes, and native accessibility bridges experimental where they have one consumer or incomplete platform verification.
+- Native unit, interaction, AppKit accessibility, visual-regression, and warm-render tests pass. The final warm-render average remained below 40 microseconds against a 300 microsecond budget.
+- Zig tests, raw ABI checks, every Steinberg example validator, and Linux and Windows example bundle cross-builds pass.
+- One isolated pluginval 1.0.4 channel-strip run passed strictness 5, including editor open, open while processing, automation, and editor automation. Earlier crash reports abort in AppKit application startup before plugin loading and correlate with concurrent aggregate invocations. No additional pluginval processes were launched after the isolated pass.
+- Prior manual REAPER checks cover parameter editing, resize, focus, keyboard adjustment, exact entry, reset gestures, instance isolation, automation, and state restoration on macOS. Manual graph rendering and VoiceOver remain pending. Native Narrator, X11, Wayland, and AT-SPI host checks remain pending because those environments are unavailable locally.
+- The final milestone commit leaves no uncommitted implementation or documentation work.
 
 ## Validation Commands
 

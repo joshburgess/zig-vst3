@@ -32,7 +32,7 @@ Run one bundle:
 zig build pluginval -Dplugin=path/to/Plugin.vst3
 ```
 
-Run all native example bundles:
+Run all native example bundles where parallel GUI application launches are reliable:
 
 ```sh
 zig build pluginval-examples
@@ -56,6 +56,8 @@ Pass extra command-line flags with `PLUGINVAL_ARGS`. For Linux CI without a disp
 PLUGINVAL_ARGS=--skip-gui-tests zig build pluginval-examples
 ```
 
-The CI pluginval jobs run on macOS, Linux, and Windows. The Linux job installs the pluginval runtime libraries, runs under `xvfb-run`, and sets `--skip-gui-tests` because the runners have no display server. Only `editor-smoke` exposes an editor, and it is a protocol-only view with no toolkit UI, so the headless command-line path stays the expected workflow.
+On macOS, prefer individual targets such as `zig build pluginval-channel-strip`. The aggregate example targets allow independent validations to run concurrently. pluginval 1.0.4 produced repeated macOS crash dialogs during concurrent runs on July 17, 2026. The crash reports abort in `NSApplication` and `_RegisterApplication` before plugin scanning or loading, so they do not identify a plugin failure. A later isolated channel-strip run passed the complete strictness-5 suite, including editor open, open while processing, automation, and editor automation. Stop after the first startup crash instead of relaunching pluginval repeatedly.
+
+The CI pluginval jobs run on macOS, Linux, and Windows. The Linux job installs the pluginval runtime libraries, runs under `xvfb-run`, and sets `--skip-gui-tests` because the runners have no display server. The headless command-line path does not verify native editor behavior.
 
 The Windows job validates the cross-built Windows bundles produced by the cross-compile job. pluginval is a GUI-subsystem application there, so the job launches it with `Start-Process -Wait` (the call does not otherwise block), runs with `--validate-in-process`, and reads the pass/fail result from the `--output-dir` log file rather than the process exit code, which is unreliable on Windows.

@@ -46,7 +46,7 @@ pub const pluginterfaces = struct {
 pub const tuid = @import("tuid.zig");
 pub const version = "0.2.1-dev";
 pub const vst_capability_support = @import("vst_capability_support.zig");
-pub const vstgui = @import("vstgui_single_parameter_controller.zig");
+pub const vstgui = @import("vstgui.zig");
 pub const vst_cloneable = @import("vst_cloneable.zig");
 pub const vst_component_handler = @import("vst_component_handler.zig");
 pub const vst_content_scale_support = @import("vst_content_scale_support.zig");
@@ -130,6 +130,7 @@ test {
     std.testing.refAllDecls(pluginterfaces);
     std.testing.refAllDecls(tuid);
     std.testing.refAllDecls(vst_capability_support);
+    std.testing.refAllDecls(vstgui);
     std.testing.refAllDecls(vst_cloneable);
     std.testing.refAllDecls(vst_component_handler);
     std.testing.refAllDecls(vst_content_scale_support);
