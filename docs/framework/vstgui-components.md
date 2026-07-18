@@ -103,7 +103,9 @@ Use the gallery as a regression fixture and API example. It is intentionally den
 
 ## Telemetry
 
-Meters consume scalar snapshots from `zig-vst3-plugin.gui_telemetry`. The audio thread publishes bounded atomic values. The editor's 33 millisecond timer applies ballistics, formats accessibility text, and invalidates only when the displayed result changes.
+Meters consume scalar snapshots from `zig-vst3-plugin.gui_telemetry`. A `SimpleStereoEffect` processor opts in by implementing `guiTelemetryLoad`, `guiTelemetryEditorOpened`, and `guiTelemetryEditorClosed`. Its reflected controller discovers that source through the normal component connection point, and `createEditor` retains it automatically. Plugin editor composition does not need adapter-specific wiring.
+
+The audio thread publishes bounded atomic values. The editor's 33 millisecond timer applies ballistics, formats accessibility text, and invalidates only when the displayed result changes. Peak and stereo meters show dB reference ticks and a clipping indicator. Gain-reduction meters show a 0 to 24 dB scale. Clicking a meter or focusing it and pressing Return or Space resets its held peak without changing a parameter.
 
 Describe each `Meter` as `.peak`, `.stereo`, or `.gain_reduction` and assign its source IDs. Do not draw, allocate, lock, call the operating system, or request a repaint from the processor. `MeterBank` stops editor-only publication when all editors are closed.
 
@@ -123,12 +125,12 @@ Supported authoring surface:
 
 - `Parameter`, `ControlKind`, `Theme`, `Layout`, and the four `create*View` functions.
 - `EditorDescription`, `Composition`, `Group`, `StyleOverride`, and `createEditor`.
+- `Meter`, meter source wiring, `MeterBank`, and GUI telemetry presentation.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.
 
 Experimental extensions:
 
-- `Meter`, meter source wiring, and GUI telemetry presentation.
 - `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and `Canvas` drawing functions.
 - Native assistive-technology bridges. Toolkit-neutral semantics exist, but platform screen-reader exposure does not.
 - New analyzer, modulation, timeline, GPU, preset-browser, and drag-and-drop components.

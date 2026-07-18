@@ -117,8 +117,12 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
 });
 
 const ChannelStripProcessor = struct {
+    const MeterBank = core.gui_telemetry.MeterBank(f64, 3);
+
+    meters: MeterBank = MeterBank.init(0.0),
+
     pub fn process(
-        _: *ChannelStripProcessor,
+        self: *ChannelStripProcessor,
         parameters: anytype,
         comptime Sample: type,
         context: *core.process.ProcessContext(Sample),
@@ -137,13 +141,50 @@ const ChannelStripProcessor = struct {
         const bypassed = parameters.getNormalizedById(bypass_param_id) >= 0.5;
         const mode = mode_parameter.denormalize(parameters.getNormalizedById(mode_param_id));
 
+        const telemetry_active = self.meters.producing();
+        var peaks = [_]f64{ 0.0, 0.0 };
+        var maximum_unshaped: f64 = 0.0;
+        var maximum_shaped: f64 = 0.0;
         for (0..context.outputChannelCount()) |channel| {
             const input = context.inputChannel(channel) orelse continue;
             const output = context.outputChannel(channel) orelse continue;
             for (0..context.frameCount()) |sample_index| {
-                output[sample_index] = processSample(Sample, input[sample_index], gain, bypassed, mode);
+                const input_sample = input[sample_index];
+                const output_sample = processSample(Sample, input_sample, gain, bypassed, mode);
+                output[sample_index] = output_sample;
+                if (telemetry_active) {
+                    const output_magnitude = @abs(@as(f64, @floatCast(output_sample)));
+                    if (channel < peaks.len) peaks[channel] = @max(peaks[channel], output_magnitude);
+                    maximum_unshaped = @max(maximum_unshaped, @abs(@as(f64, @floatCast(input_sample))) * gain);
+                    maximum_shaped = @max(maximum_shaped, output_magnitude);
+                }
             }
         }
+        if (telemetry_active) {
+            const reduction_db = if (bypassed or maximum_unshaped <= maximum_shaped or maximum_shaped <= 0.0)
+                0.0
+            else
+                20.0 * std.math.log10(maximum_unshaped / maximum_shaped);
+            self.publishTelemetry(peaks[0], peaks[1], reduction_db / 24.0);
+        }
+    }
+
+    fn publishTelemetry(self: *ChannelStripProcessor, left: f64, right: f64, reduction: f64) void {
+        _ = self.meters.publish(0, std.math.clamp(left, 0.0, 1.0));
+        _ = self.meters.publish(1, std.math.clamp(right, 0.0, 1.0));
+        _ = self.meters.publish(2, std.math.clamp(reduction, 0.0, 1.0));
+    }
+
+    pub fn guiTelemetryLoad(self: *ChannelStripProcessor, source_id: types.uint32) f64 {
+        return self.meters.load(source_id) orelse 0.0;
+    }
+
+    pub fn guiTelemetryEditorOpened(self: *ChannelStripProcessor) void {
+        self.meters.editorOpened();
+    }
+
+    pub fn guiTelemetryEditorClosed(self: *ChannelStripProcessor) void {
+        self.meters.editorClosed();
     }
 };
 
@@ -249,4 +290,72 @@ test "channel strip component instances keep independent parameter state" {
     try std.testing.expectEqual(types.kResultOk, Effect.setParameterNormalized(first, gain_param_id, 1.0));
     try std.testing.expectEqual(@as(f64, 1.0), Effect.getParameterNormalized(first, gain_param_id));
     try std.testing.expectEqual(@as(f64, 0.5), Effect.getParameterNormalized(second, gain_param_id));
+}
+
+test "channel strip telemetry is activity gated and instance isolated" {
+    var first = ChannelStripProcessor{};
+    var second = ChannelStripProcessor{};
+
+    first.publishTelemetry(0.75, 0.5, 0.25);
+    try std.testing.expectEqual(@as(f64, 0.0), first.guiTelemetryLoad(0));
+
+    first.guiTelemetryEditorOpened();
+    first.guiTelemetryEditorOpened();
+    first.publishTelemetry(0.75, 0.5, 0.25);
+    try std.testing.expectEqual(@as(f64, 0.75), first.guiTelemetryLoad(0));
+    try std.testing.expectEqual(@as(f64, 0.5), first.guiTelemetryLoad(1));
+    try std.testing.expectEqual(@as(f64, 0.25), first.guiTelemetryLoad(2));
+    try std.testing.expectEqual(@as(f64, 0.0), second.guiTelemetryLoad(0));
+
+    first.guiTelemetryEditorClosed();
+    first.publishTelemetry(0.5, 0.5, 0.5);
+    try std.testing.expectEqual(@as(f64, 0.5), first.guiTelemetryLoad(0));
+    first.guiTelemetryEditorClosed();
+    first.publishTelemetry(1.0, 1.0, 1.0);
+    try std.testing.expectEqual(@as(f64, 0.5), first.guiTelemetryLoad(0));
+}
+
+test "controller retains its connected component telemetry through editor teardown" {
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Effect.create(@ptrCast(&vst.ivstcomponent.icomponent_iid), &component_out),
+    );
+    const component: *vst.ivstcomponent.IComponent = @ptrCast(@alignCast(component_out orelse return error.MissingComponent));
+    defer _ = component.vtable.release(component);
+
+    var component_connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component.vtable.queryInterface(component, &vst.ivstmessage.iconnection_point_iid, &component_connection_out),
+    );
+    const component_connection: *vst.ivstmessage.IConnectionPoint = @ptrCast(@alignCast(component_connection_out orelse return error.MissingConnection));
+    defer _ = component_connection.vtable.release(component_connection);
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &controller_out),
+    );
+    const controller: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out orelse return error.MissingController));
+    defer _ = controller.vtable.release(controller);
+
+    var controller_connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        controller.vtable.queryInterface(controller, &vst.ivstmessage.iconnection_point_iid, &controller_connection_out),
+    );
+    const controller_connection: *vst.ivstmessage.IConnectionPoint = @ptrCast(@alignCast(controller_connection_out orelse return error.MissingConnection));
+    defer _ = controller_connection.vtable.release(controller_connection);
+
+    try std.testing.expectEqual(types.kResultOk, controller_connection.vtable.connect(controller_connection, component_connection));
+    const source = Controller.retainGuiTelemetry(controller) orelse return error.MissingTelemetry;
+    defer source.release();
+    source.editorOpened();
+    defer source.editorClosed();
+
+    Effect.processorInstance(component).publishTelemetry(0.8, 0.6, 0.4);
+    try std.testing.expectEqual(@as(f64, 0.8), source.load(0));
+    try std.testing.expectEqual(types.kResultOk, controller_connection.vtable.disconnect(controller_connection, component_connection));
+    try std.testing.expectEqual(@as(f64, 0.8), source.load(0));
 }

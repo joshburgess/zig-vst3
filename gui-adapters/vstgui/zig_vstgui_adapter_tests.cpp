@@ -314,13 +314,18 @@ int testMultiParameterRouting() {
     for (uint32_t index = 0; index < 3; ++index) {
         const auto* accessibility = first.meterAccessibility(index);
         if (!accessibility || accessibility->role() != ZigVstgui::AccessibilityRole::meter ||
-            !accessibility->state().read_only) return 25;
+            accessibility->state().read_only ||
+            accessibility->description() != "Audio level. Activate to reset held peaks.") return 25;
         if (!first.tickMeter(index, 0.0)) return 26;
     }
     if (!closeEnough(first.meterLevel(0, 0), 0.8)) return 27;
     if (!closeEnough(first.meterLevel(1, 0), 0.6) || !closeEnough(first.meterLevel(1, 1), 0.4)) return 28;
     if (!closeEnough(first.meterLevel(2, 0), 0.25)) return 29;
     if (first.meterAccessibility(3) || first.tickMeter(3, 0.0)) return 30;
+    state.meter_values[0] = 0.2;
+    if (!first.tickMeter(0, 100.0) || !closeEnough(first.meterPeak(0, 0), 0.8)) return 40;
+    if (!first.resetMeterPeaks(0) || !closeEnough(first.meterPeak(0, 0), first.meterLevel(0, 0))) return 41;
+    if (first.resetMeterPeaks(3)) return 42;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 0) || first.focusPosition() != 0) return 12;
     if (!slider_accessibility->state().focused) return 23;
     const auto begin_before_key = state.begin_count;
@@ -729,8 +734,10 @@ int testMeterBallistics() {
     if (!closeEnough(meter.level(), 0.65) || !closeEnough(meter.peak(), 0.8)) return 4;
     if (!meter.update(0.2, 400.0)) return 5;
     if (!closeEnough(meter.level(), 0.2) || !closeEnough(meter.peak(), 0.8)) return 6;
-    if (!meter.update(0.2, 100.0)) return 7;
-    if (!closeEnough(meter.level(), 0.2) || !closeEnough(meter.peak(), 0.65)) return 8;
+    meter.resetPeak();
+    if (!closeEnough(meter.level(), 0.2) || !closeEnough(meter.peak(), 0.2)) return 12;
+    if (meter.update(0.2, 100.0)) return 7;
+    if (!closeEnough(meter.level(), 0.2) || !closeEnough(meter.peak(), 0.2)) return 8;
     if (!meter.update(2.0, 0.0) || !closeEnough(meter.level(), 1.0)) return 9;
     if (!meter.update(std::nan(""), 1000.0) || !closeEnough(meter.level(), 0.0)) return 10;
     meter.reset();

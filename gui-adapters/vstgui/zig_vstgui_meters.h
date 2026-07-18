@@ -26,6 +26,7 @@ public:
     MeterBallistics(double hold_ms = 500.0, double decay_per_second = 1.5);
     bool update(double input, double elapsed_ms);
     void reset();
+    void resetPeak();
     double level() const;
     double peak() const;
 
@@ -53,11 +54,15 @@ public:
     void draw(VSTGUI::CDrawContext* context) override;
     double level(uint32_t channel) const;
     double peak(uint32_t channel) const;
+    void resetPeaks();
+    bool handleKey(uint16_t key, int16_t key_code);
+    void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override;
     CLASS_METHODS_NOCOPY(MeterView, VSTGUI::CView)
 
 private:
     void updateAccessibility();
     void drawBar(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds, const MeterBallistics& value);
+    void drawScale(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds);
 
     MeterVariant variant;
     uint32_t first_source;
@@ -88,6 +93,9 @@ public:
     void stop();
     bool running() const;
     bool tick(double elapsed_ms = 33.0);
+    VSTGUI::CView* focusView() const;
+    bool handleKey(uint16_t key, int16_t key_code);
+    void resetPeaks();
     const AccessibilityNode& accessibilityNode() const;
     const MeterView* meterView() const;
 

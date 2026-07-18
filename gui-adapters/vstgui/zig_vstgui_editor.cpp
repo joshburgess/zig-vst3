@@ -242,6 +242,17 @@ double ZigVstguiEditor::meterLevel(uint32_t index, uint32_t channel) const {
     return meter_controls[index]->meterView()->level(channel);
 }
 
+double ZigVstguiEditor::meterPeak(uint32_t index, uint32_t channel) const {
+    if (index >= meter_count || !meter_controls[index]->meterView()) return 0.0;
+    return meter_controls[index]->meterView()->peak(channel);
+}
+
+bool ZigVstguiEditor::resetMeterPeaks(uint32_t index) {
+    if (index >= meter_count) return false;
+    meter_controls[index]->resetPeaks();
+    return true;
+}
+
 int32_t ZigVstguiEditor::focusPosition() const {
     return focus_position;
 }
@@ -254,6 +265,10 @@ bool ZigVstguiEditor::keyDown(uint16_t key, int16_t key_code, int16_t modifiers)
         auto& control = *parameter_controls[index];
         if (focused == control.focusView() && control.handleKey(key, key_code, modifiers)) return true;
     }
+    for (uint32_t index = 0; index < meter_count; ++index) {
+        auto& meter = *meter_controls[index];
+        if (focused == meter.focusView() && meter.handleKey(key, key_code)) return true;
+    }
     if (parameter_count == 0 || !parameter_controls[0]->handleKey(key, key_code, modifiers)) return false;
     frame->setFocusView(parameter_controls[0]->focusView());
     return true;
@@ -261,11 +276,14 @@ bool ZigVstguiEditor::keyDown(uint16_t key, int16_t key_code, int16_t modifiers)
 
 bool ZigVstguiEditor::focusNext(bool reverse) {
     if (!frame) return false;
-    std::array<VSTGUI::CView*, ZIG_VSTGUI_MAX_PARAMETERS * 2 + 1> focus_order {};
+    std::array<VSTGUI::CView*, ZIG_VSTGUI_MAX_PARAMETERS * 2 + ZIG_VSTGUI_MAX_METERS + 1> focus_order {};
     uint32_t focus_count = 0;
     for (uint32_t index = 0; index < parameter_count; ++index) {
         if (auto* primary = parameter_controls[index]->focusView()) focus_order[focus_count++] = primary;
         if (auto* value = parameter_controls[index]->valueFocusView()) focus_order[focus_count++] = value;
+    }
+    for (uint32_t index = 0; index < meter_count; ++index) {
+        if (auto* meter = meter_controls[index]->focusView()) focus_order[focus_count++] = meter;
     }
     if (auto* resize = resize_control.focusView()) focus_order[focus_count++] = resize;
     if (focus_count == 0) return false;

@@ -1,6 +1,8 @@
 #include "zig_vstgui_meters.h"
 
 #include "vstgui/lib/cdrawcontext.h"
+#include "vstgui/lib/cframe.h"
+#include "vstgui/lib/events.h"
 
 #include <algorithm>
 #include <cmath>
@@ -39,6 +41,11 @@ void MeterBallistics::reset() {
     hold_remaining_ms = 0.0;
 }
 
+void MeterBallistics::resetPeak() {
+    held_peak = displayed_level;
+    hold_remaining_ms = 0.0;
+}
+
 double MeterBallistics::level() const {
     return displayed_level;
 }
@@ -62,7 +69,9 @@ MeterView::MeterView(
   second_source(value_second_source),
   source(value_source),
   styles(value_styles),
-  accessibility(value_accessibility) {}
+  accessibility(value_accessibility) {
+    setWantsFocus(true);
+}
 
 bool MeterView::tick(double elapsed_ms) {
     if (!source.load) return false;
@@ -85,6 +94,7 @@ void MeterView::draw(VSTGUI::CDrawContext* context) {
     } else {
         drawBar(context, bounds, first);
     }
+    drawScale(context, bounds);
     setDirty(false);
 }
 
@@ -94,6 +104,25 @@ double MeterView::level(uint32_t channel) const {
 
 double MeterView::peak(uint32_t channel) const {
     return channel == 0 ? first.peak() : second.peak();
+}
+
+void MeterView::resetPeaks() {
+    first.resetPeak();
+    second.resetPeak();
+    updateAccessibility();
+    invalid();
+}
+
+bool MeterView::handleKey(uint16_t key, int16_t) {
+    if (key != 13 && key != 32) return false;
+    resetPeaks();
+    return true;
+}
+
+void MeterView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
+    if (auto* frame = getFrame()) frame->setFocusView(this);
+    resetPeaks();
+    event.consumed = true;
 }
 
 void MeterView::updateAccessibility() {
@@ -136,6 +165,29 @@ void MeterView::drawBar(
         : bounds.bottom - bounds.getHeight() * value.peak();
     context->setFrameColor(style.foreground);
     context->drawLine(VSTGUI::CPoint(bounds.left, peak_y), VSTGUI::CPoint(bounds.right, peak_y));
+    if (variant != MeterVariant::gain_reduction && value.peak() >= 0.999) {
+        VSTGUI::CRect clip(bounds.left + 2.0, bounds.top + 2.0, bounds.right - 2.0, bounds.top + 6.0);
+        context->setFillColor(VSTGUI::CColor(220, 55, 45, 255));
+        context->drawRect(clip, VSTGUI::kDrawFilled);
+    }
+}
+
+void MeterView::drawScale(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds) {
+    const auto style = styles.resolve(ComponentKind::meter);
+    context->setFrameColor(style.foreground);
+    context->setLineWidth(1.0);
+    if (variant == MeterVariant::gain_reduction) {
+        for (const double reduction_db : {0.0, 6.0, 12.0, 24.0}) {
+            const double y = bounds.top + bounds.getHeight() * (reduction_db / 24.0);
+            context->drawLine(VSTGUI::CPoint(bounds.left, y), VSTGUI::CPoint(bounds.left + 5.0, y));
+        }
+        return;
+    }
+    for (const double level_db : {-48.0, -24.0, -12.0, -6.0, 0.0}) {
+        const double normalized = std::pow(10.0, level_db / 20.0);
+        const double y = bounds.bottom - bounds.getHeight() * normalized;
+        context->drawLine(VSTGUI::CPoint(bounds.left, y), VSTGUI::CPoint(bounds.left + 5.0, y));
+    }
 }
 
 MeterControl::~MeterControl() {
@@ -167,8 +219,8 @@ void MeterControl::build(
 
     meter_component.accessibility().setRole(AccessibilityRole::meter);
     meter_component.accessibility().setName(title ? title : "Meter");
-    meter_component.accessibility().setDescription("Audio level");
-    meter_component.accessibility().setReadOnly(true);
+    meter_component.accessibility().setDescription("Audio level. Activate to reset held peaks.");
+    meter_component.accessibility().setReadOnly(false);
     meter = new MeterView(
         VSTGUI::CRect(),
         variant,
@@ -216,6 +268,18 @@ bool MeterControl::running() const {
 
 bool MeterControl::tick(double elapsed_ms) {
     return meter && meter->tick(elapsed_ms);
+}
+
+VSTGUI::CView* MeterControl::focusView() const {
+    return meter;
+}
+
+bool MeterControl::handleKey(uint16_t key, int16_t key_code) {
+    return meter && meter->handleKey(key, key_code);
+}
+
+void MeterControl::resetPeaks() {
+    if (meter) meter->resetPeaks();
 }
 
 const AccessibilityNode& MeterControl::accessibilityNode() const {

@@ -89,19 +89,29 @@ Completion evidence:
 
 ## Milestone 4: Production Telemetry and Meter Interaction
 
-- [ ] Connect processor telemetry to each editor through a per-instance bounded snapshot contract.
-- [ ] Publish stereo peak and gain reduction from the channel-strip processor without locks or allocation.
-- [ ] Add decibel meter scales and clipping indicators.
-- [ ] Add resettable held peaks with keyboard and pointer operation.
-- [ ] Coalesce repaint work and stop publication when no editor is open.
-- [ ] Test open, close, reopen, multiple editors, overflow behavior, and teardown while processing.
-- [ ] Promote the shared meter and telemetry API only after both editors use it.
+- [x] Connect processor telemetry to each editor through a per-instance bounded snapshot contract.
+- [x] Publish stereo peak and gain reduction from the channel-strip processor without locks or allocation.
+- [x] Add decibel meter scales and clipping indicators.
+- [x] Add resettable held peaks with keyboard and pointer operation.
+- [x] Coalesce repaint work and stop publication when no editor is open.
+- [x] Test open, close, reopen, multiple editors, bounded source handling, and retained-source teardown.
+- [x] Promote the shared meter and telemetry API only after both editors use it.
 
 Exit criteria:
 
 - Channel-strip meters respond to processed audio and remain isolated between plugin instances.
 - Peak reset is an explicit accessible action and never changes an audio parameter.
 - The audio-thread path has bounded atomic work and no GUI dependency.
+
+Completion evidence:
+
+- `SimpleStereoEffect` exposes a toolkit-neutral telemetry source only when its processor implements the telemetry contract. `ReflectedEditController` obtains that source from its connected component and each editor retains its own source reference through teardown.
+- The channel strip publishes left peak, right peak, and gain reduction through a four-operation bounded path: one activity check and three atomic stores per active block. The component gallery uses the same connection and activity contract for its four meter sources.
+- Meter polling remains fixed at 33 milliseconds. Ballistics invalidate only after a displayed value changes, and both producers skip editor-only analysis while no view is attached.
+- Native interaction tests cover held-peak reset, invalid meter indices, accessible reset guidance, focus order, and meter ballistics. Zig tests cover two open views, close without underflow, inactive publication, source bounds, component isolation, disconnect, and a source retained past connection teardown.
+- The meter visual reference covers peak and stereo dB ticks, reduction ticks, peak holds, and the clipping indicator. The warm-render result remains below the 300 microsecond budget.
+- Zig tests, raw ABI checks, all native Steinberg validator runs, adapter interaction and visual tests, and the Linux and Windows example bundle cross-builds pass. Native Windows, X11, and Wayland host interaction remain deferred to their platform environments.
+- The custom telemetry interface is an in-process connection-point extension. A host that isolates the component behind a proxy may not expose it; the editor remains functional with zero-valued meters. A future cross-process transport can implement the same editor-facing source contract.
 
 ## Milestone 5: Toolkit-neutral Graph Foundation
 

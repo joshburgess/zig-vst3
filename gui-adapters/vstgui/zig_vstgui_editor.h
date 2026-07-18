@@ -41,6 +41,8 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode* meterAccessibility(uint32_t index) const;
     bool tickMeter(uint32_t index, double elapsed_ms);
     double meterLevel(uint32_t index, uint32_t channel) const;
+    double meterPeak(uint32_t index, uint32_t channel) const;
+    bool resetMeterPeaks(uint32_t index);
     int32_t focusPosition() const;
     bool keyDown(uint16_t key, int16_t key_code, int16_t modifiers);
     void setFocus(bool focused);

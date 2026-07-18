@@ -1,5 +1,6 @@
 const std = @import("std");
 const funknown = @import("funknown.zig");
+const gui_telemetry_source = @import("gui_telemetry_source.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
@@ -97,6 +98,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             remap_param_id: ivstremapparamid.IRemapParamID = .{ .vtable = &remap_param_id_vtable },
             xml_representation: ivstrepresentation.IXmlRepresentationController = .{ .vtable = &xml_representation_vtable },
             connected_peer: ?*ivstmessage.IConnectionPoint = null,
+            telemetry_source: ?gui_telemetry_source.RetainedSource = null,
             component_handler: ?*ivsteditcontroller.IComponentHandler = null,
             component_handler2: ?*ivsteditcontroller.IComponentHandler2 = null,
             component_handler3: ?*ivstcontextmenu.IComponentHandler3 = null,
@@ -130,6 +132,11 @@ pub fn ReflectedEditController(comptime Config: type) type {
             const result = query(&controller.iface, @ptrCast(requested_iid), out);
             _ = release(&controller.iface);
             return result;
+        }
+
+        pub fn retainGuiTelemetry(iface: *ivsteditcontroller.IEditController) ?gui_telemetry_source.RetainedSource {
+            const source = owner(iface).telemetry_source orelse return null;
+            return source.clone();
         }
 
         fn instance(iface: *ivsteditcontroller.IEditController) *Controller {
@@ -357,6 +364,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             if (next == 0) {
                 _ = self.ref_count.load(.acquire);
                 releaseConnectionPeer(&self.connected_peer);
+                releaseTelemetrySource(&self.telemetry_source);
                 releaseComponentHandlers(self);
                 releaseHostApplication(&self.host_application);
                 std.heap.page_allocator.destroy(self);
@@ -392,6 +400,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         fn terminate(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
             releaseConnectionPeer(&self.connected_peer);
+            releaseTelemetrySource(&self.telemetry_source);
             releaseComponentHandlers(self);
             releaseHostApplication(&self.host_application);
             return types.kResultOk;
@@ -509,12 +518,18 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         fn connect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromConnectionPoint(ptr);
-            return replaceConnectionPeer(&self.connected_peer, peer);
+            const result = replaceConnectionPeer(&self.connected_peer, peer);
+            if (result != types.kResultOk) return result;
+            releaseTelemetrySource(&self.telemetry_source);
+            self.telemetry_source = gui_telemetry_source.query(peer.?);
+            return types.kResultOk;
         }
 
         fn disconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromConnectionPoint(ptr);
-            return disconnectConnectionPeer(&self.connected_peer, peer);
+            const result = disconnectConnectionPeer(&self.connected_peer, peer);
+            if (result == types.kResultOk) releaseTelemetrySource(&self.telemetry_source);
+            return result;
         }
 
         fn notify(_: *anyopaque, _: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
@@ -1383,6 +1398,12 @@ fn releaseConnectionPeer(peer: *?*ivstmessage.IConnectionPoint) void {
     releaseOptionalInterface(ivstmessage.IConnectionPoint, peer);
 }
 
+fn releaseTelemetrySource(source: *?gui_telemetry_source.RetainedSource) void {
+    const retained = source.* orelse return;
+    source.* = null;
+    retained.release();
+}
+
 fn replaceConnectionPeer(slot: *?*ivstmessage.IConnectionPoint, peer: ?*ivstmessage.IConnectionPoint) types.tresult {
     const connection_peer = peer orelse return types.kInvalidArgument;
     const next_peer = retainConnectionPeer(connection_peer);
@@ -1853,6 +1874,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             plug_interface_support: ivstpluginterfacesupport.IPlugInterfaceSupport = .{ .vtable = &plug_interface_support_vtable },
             prefetchable_support: ivstprefetchablesupport.IPrefetchableSupport = .{ .vtable = &prefetchable_support_vtable },
             data_exchange_receiver: ivstdataexchange.IDataExchangeReceiver = .{ .vtable = &data_exchange_receiver_vtable },
+            telemetry_source: gui_telemetry_source.Interface = .{ .vtable = &telemetry_source_vtable },
             connected_peer: ?*ivstmessage.IConnectionPoint = null,
             host_application: ?*ivsthostapplication.IHostApplication = null,
             info_listener: ?*ivstchannelcontextinfo.IInfoListener = null,
@@ -1957,10 +1979,11 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         const ownerFromPlugInterfaceSupport = interface_map.ownerFromField(Component, ivstpluginterfacesupport.IPlugInterfaceSupport, "plug_interface_support");
         const ownerFromPrefetchableSupport = interface_map.ownerFromField(Component, ivstprefetchablesupport.IPrefetchableSupport, "prefetchable_support");
         const ownerFromDataExchangeReceiver = interface_map.ownerFromField(Component, ivstdataexchange.IDataExchangeReceiver, "data_exchange_receiver");
+        const ownerFromTelemetrySource = interface_map.ownerFromField(Component, gui_telemetry_source.Interface, "telemetry_source");
 
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
-            const entries = [_]interface_map.Entry{
+            const base_entries = [_]interface_map.Entry{
                 interface_map.fieldEntry("iface", self, &funknown.iid),
                 interface_map.fieldEntry("iface", self, &ipluginbase.iplugin_base_iid),
                 interface_map.fieldEntry("iface", self, &ivstcomponent.icomponent_iid),
@@ -1972,7 +1995,13 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
                 interface_map.fieldEntry("prefetchable_support", self, &ivstprefetchablesupport.iprefetchable_support_iid),
                 interface_map.fieldEntry("data_exchange_receiver", self, &ivstdataexchange.idata_exchange_receiver_iid),
             };
-            return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+            if (comptime @hasDecl(Config.Processor, "guiTelemetryLoad")) {
+                const entries = base_entries ++ [_]interface_map.Entry{
+                    interface_map.fieldEntry("telemetry_source", self, &gui_telemetry_source.iid),
+                };
+                return interface_map.queryWithAddRef(ptr, addRef, &entries, requested_iid, out);
+            }
+            return interface_map.queryWithAddRef(ptr, addRef, &base_entries, requested_iid, out);
         }
 
         fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
@@ -2001,6 +2030,36 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         const PlugInterfaceSupportDelegate = interface_map.DelegatedInterface(Component, ownerFromPlugInterfaceSupport, "iface", query, addRef, release);
         const PrefetchableSupportDelegate = interface_map.DelegatedInterface(Component, ownerFromPrefetchableSupport, "iface", query, addRef, release);
         const DataExchangeReceiverDelegate = interface_map.DelegatedInterface(Component, ownerFromDataExchangeReceiver, "iface", query, addRef, release);
+        const TelemetrySourceDelegate = interface_map.DelegatedInterface(Component, ownerFromTelemetrySource, "iface", query, addRef, release);
+
+        const telemetry_source_vtable = gui_telemetry_source.VTable{
+            .queryInterface = TelemetrySourceDelegate.query,
+            .addRef = TelemetrySourceDelegate.addRef,
+            .release = TelemetrySourceDelegate.release,
+            .load = telemetryLoad,
+            .editorOpened = telemetryEditorOpened,
+            .editorClosed = telemetryEditorClosed,
+        };
+
+        fn telemetryLoad(ptr: *anyopaque, source_id: types.uint32) callconv(.c) f64 {
+            const self = ownerFromTelemetrySource(ptr);
+            if (comptime @hasDecl(Config.Processor, "guiTelemetryLoad")) {
+                return self.processor_impl.guiTelemetryLoad(source_id);
+            }
+            return 0.0;
+        }
+
+        fn telemetryEditorOpened(ptr: *anyopaque) callconv(.c) void {
+            if (comptime @hasDecl(Config.Processor, "guiTelemetryEditorOpened")) {
+                ownerFromTelemetrySource(ptr).processor_impl.guiTelemetryEditorOpened();
+            }
+        }
+
+        fn telemetryEditorClosed(ptr: *anyopaque) callconv(.c) void {
+            if (comptime @hasDecl(Config.Processor, "guiTelemetryEditorClosed")) {
+                ownerFromTelemetrySource(ptr).processor_impl.guiTelemetryEditorClosed();
+            }
+        }
 
         fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);

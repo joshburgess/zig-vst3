@@ -52,7 +52,7 @@ struct Snapshot {
 };
 
 struct MeterValues {
-    double values[4] {0.82, 0.68, 0.42, 0.31};
+    double values[4] {1.0, 0.68, 0.42, 0.31};
 };
 
 double loadMeter(void* userdata, uint32_t source_id) {

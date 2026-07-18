@@ -151,6 +151,10 @@ fn createConfiguredView(
                 .second_source_id = meter.second_source_id,
             };
         }
+        const telemetry_source = if (comptime @hasDecl(Controller, "retainGuiTelemetry"))
+            Controller.retainGuiTelemetry(controller)
+        else
+            null;
         return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], skin, composition, .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
@@ -163,7 +167,7 @@ fn createConfiguredView(
             .userdata = controller,
             .subscribe = Bridge.subscribe,
             .unsubscribe = Bridge.unsubscribe,
-        }, wayland_host);
+        }, wayland_host, telemetry_source);
     }
 
     const view = ProtocolView.create() orelse return null;

@@ -5,7 +5,7 @@ const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_plug_view = @import("vst_plug_view.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
-const gui_telemetry = @import("zig-vst3-plugin-core").gui_telemetry;
+const gui_telemetry_source = @import("gui_telemetry_source.zig");
 const vstgui_adapter_enabled = @import("zig-vst3-gui-options").vstgui_adapter_enabled;
 
 const Editor = opaque {};
@@ -267,13 +267,20 @@ const Binding = struct {
     attached: bool = false,
 };
 
-const MeterBank = gui_telemetry.MeterBank(f64, max_meter_sources);
-
 const TelemetryState = struct {
-    meters: MeterBank,
+    source: ?gui_telemetry_source.RetainedSource,
 
-    fn init() TelemetryState {
-        return .{ .meters = MeterBank.init(0.0) };
+    fn opened(self: *TelemetryState) void {
+        if (self.source) |source| source.editorOpened();
+    }
+
+    fn closed(self: *TelemetryState) void {
+        if (self.source) |source| source.editorClosed();
+    }
+
+    fn release(self: *TelemetryState) void {
+        if (self.source) |source| source.release();
+        self.source = null;
     }
 };
 
@@ -299,7 +306,7 @@ const View = vst_plug_view.PlugView(1, struct {
             return types.kResultFalse;
         }
         if (!state.attached) {
-            state.telemetry.meters.editorOpened();
+            state.telemetry.opened();
             state.attached = true;
         }
         return types.kResultOk;
@@ -308,7 +315,7 @@ const View = vst_plug_view.PlugView(1, struct {
     pub fn removed(self: anytype) types.tresult {
         const state = binding(self) orelse return types.kResultFalse;
         if (state.attached) {
-            state.telemetry.meters.editorClosed();
+            state.telemetry.closed();
             state.attached = false;
         }
         zig_vstgui_editor_close(state.editor);
@@ -379,10 +386,11 @@ const View = vst_plug_view.PlugView(1, struct {
     pub fn destroy(self: anytype) void {
         if (self.context) |context| {
             const state: *Binding = @ptrCast(@alignCast(context));
-            if (state.attached) state.telemetry.meters.editorClosed();
+            if (state.attached) state.telemetry.closed();
             state.observer_callbacks.unsubscribe(state.observer_callbacks.userdata, state.editor);
             zig_vstgui_editor_destroy(state.editor);
             _ = state.controller.vtable.release(state.controller);
+            state.telemetry.release();
             std.heap.page_allocator.destroy(state.telemetry);
             std.heap.page_allocator.destroy(state);
             self.context = null;
@@ -399,10 +407,18 @@ pub fn create(
     callbacks: Callbacks,
     observer_callbacks: ObserverCallbacks,
     wayland_host: ?*anyopaque,
+    telemetry_source: ?gui_telemetry_source.RetainedSource,
 ) ?*iplugview.IPlugView {
-    if (builtin.os.tag != .macos and builtin.os.tag != .windows and builtin.os.tag != .linux) return null;
+    if (builtin.os.tag != .macos and builtin.os.tag != .windows and builtin.os.tag != .linux) {
+        if (telemetry_source) |source| source.release();
+        return null;
+    }
     if (parameters.len == 0 or parameters.len > max_parameters or
-        meters.len > max_meters or skin.assets.len > max_assets or composition.groups.len > max_groups) return null;
+        meters.len > max_meters or skin.assets.len > max_assets or composition.groups.len > max_groups)
+    {
+        if (telemetry_source) |source| source.release();
+        return null;
+    }
     var descriptions: [max_parameters]ParameterDescription = undefined;
     for (parameters, 0..) |parameter, index| {
         descriptions[index] = .{
@@ -414,7 +430,10 @@ pub fn create(
     }
     var assets: [max_assets]AssetDescription = undefined;
     for (skin.assets, 0..) |asset, index| {
-        if (asset.data.len == 0 or asset.data.len > std.math.maxInt(types.uint32)) return null;
+        if (asset.data.len == 0 or asset.data.len > std.math.maxInt(types.uint32)) {
+            if (telemetry_source) |source| source.release();
+            return null;
+        }
         assets[index] = .{
             .asset_id = asset.id,
             .data = asset.data.ptr,
@@ -434,8 +453,11 @@ pub fn create(
             .style = nativeStyle(group.style),
         };
     }
-    const telemetry = std.heap.page_allocator.create(TelemetryState) catch return null;
-    telemetry.* = TelemetryState.init();
+    const telemetry = std.heap.page_allocator.create(TelemetryState) catch {
+        if (telemetry_source) |source| source.release();
+        return null;
+    };
+    telemetry.* = .{ .source = telemetry_source };
     const editor = zig_vstgui_editor_create_with_skin(
         &descriptions,
         @intCast(parameters.len),
@@ -456,12 +478,14 @@ pub fn create(
             .editor_style = nativeStyle(composition.style),
         },
     ) orelse {
+        telemetry.release();
         std.heap.page_allocator.destroy(telemetry);
         return null;
     };
     zig_vstgui_editor_set_wayland_host(editor, wayland_host);
     const state = std.heap.page_allocator.create(Binding) catch {
         zig_vstgui_editor_destroy(editor);
+        telemetry.release();
         std.heap.page_allocator.destroy(telemetry);
         return null;
     };
@@ -473,6 +497,7 @@ pub fn create(
     };
     if (!observer_callbacks.subscribe(observer_callbacks.userdata, editor)) {
         std.heap.page_allocator.destroy(state);
+        telemetry.release();
         std.heap.page_allocator.destroy(telemetry);
         zig_vstgui_editor_destroy(editor);
         return null;
@@ -480,6 +505,7 @@ pub fn create(
     const view = View.create() orelse {
         observer_callbacks.unsubscribe(observer_callbacks.userdata, editor);
         std.heap.page_allocator.destroy(state);
+        telemetry.release();
         std.heap.page_allocator.destroy(telemetry);
         zig_vstgui_editor_destroy(editor);
         return null;
@@ -523,7 +549,8 @@ fn nativeStyle(style: StyleOverride) NativeStyleOverride {
 
 fn loadMeter(userdata: ?*anyopaque, source_id: types.uint32) callconv(.c) f64 {
     const state: *TelemetryState = @ptrCast(@alignCast(userdata orelse return 0.0));
-    return state.meters.load(source_id) orelse 0.0;
+    const source = state.source orelse return 0.0;
+    return source.load(source_id);
 }
 
 fn requestEditorResize(userdata: ?*anyopaque, width: types.uint32, height: types.uint32) callconv(.c) types.int32 {
