@@ -196,6 +196,8 @@ pub const ActionButton = struct {
     role: ActionRole = .secondary,
     icon: ActionIcon = .none,
     enabled: bool = true,
+    success_focus_importer_id: u32 = 0,
+    ready_importer_id: u32 = 0,
 };
 
 pub const ActionButtonError = error{
@@ -238,6 +240,19 @@ pub fn validateActionButtons(actions: []const ActionButton) ActionButtonError!vo
     }
 }
 
+fn validActionImporterTargets(actions: []const ActionButton, importers: []const FileImporter) bool {
+    for (actions) |action| {
+        const targets = [_]u32{ action.success_focus_importer_id, action.ready_importer_id };
+        for (targets) |target| {
+            if (target == 0) continue;
+            for (importers) |importer| {
+                if (importer.id == target) break;
+            } else return false;
+        }
+    }
+    return true;
+}
+
 pub const EditableLabel = struct {
     field_id: u32,
     label: [*:0]const u8,
@@ -246,12 +261,15 @@ pub const EditableLabel = struct {
     error_text: [*:0]const u8 = "Value was not accepted",
     maximum_bytes: u32 = editor_state.maximum_text_bytes,
     enabled: bool = true,
+    read_only: bool = false,
+    maximum_refresh_hz: u32 = 10,
 };
 
 pub const EditableLabelError = error{
     InvalidFieldId,
     EmptyLabel,
     InvalidMaximumBytes,
+    InvalidRefreshRate,
     DuplicateFieldId,
 };
 
@@ -262,6 +280,9 @@ pub fn validateEditableLabels(labels: []const EditableLabel) EditableLabelError!
             std.mem.span(label.error_text).len == 0) return error.EmptyLabel;
         if (label.maximum_bytes == 0 or label.maximum_bytes > editor_state.maximum_text_bytes) {
             return error.InvalidMaximumBytes;
+        }
+        if (label.read_only and (label.maximum_refresh_hz == 0 or label.maximum_refresh_hz > 60)) {
+            return error.InvalidRefreshRate;
         }
         for (labels[0..index]) |previous| {
             if (previous.field_id == label.field_id) return error.DuplicateFieldId;
@@ -544,6 +565,7 @@ fn createConfiguredView(
             if (action_buttons.len > 0) return null;
         }
         validateActionButtons(action_buttons) catch return null;
+        if (!validActionImporterTargets(action_buttons, file_importers)) return null;
         if (comptime !Controller.hasEditorState) {
             if (editable_labels.len > 0) return null;
         }
@@ -993,6 +1015,8 @@ fn createConfiguredView(
                 .role = action.role,
                 .icon = action.icon,
                 .enabled = @intFromBool(action.enabled),
+                .success_focus_importer_id = action.success_focus_importer_id,
+                .ready_importer_id = action.ready_importer_id,
             };
         }
         var editable_label_descriptions: [vstgui_editor_view.max_editable_labels]vstgui_editor_view.EditableLabelDescription = undefined;
@@ -1014,6 +1038,8 @@ fn createConfiguredView(
                     .initial_text = @ptrCast(&editable_label_text[index]),
                     .maximum_bytes = label.maximum_bytes,
                     .enabled = @intFromBool(label.enabled),
+                    .read_only = @intFromBool(label.read_only),
+                    .maximum_refresh_hz = if (label.read_only) label.maximum_refresh_hz else 0,
                 };
             }
         }
@@ -1380,6 +1406,34 @@ test "action buttons require one dominant action and safe destructive grouping" 
     }));
 }
 
+test "action buttons target declared file importers" {
+    const importers = [_]FileImporter{
+        .{ .id = 9, .extensions = &.{".wav"} },
+    };
+    try std.testing.expect(validActionImporterTargets(&.{.{
+        .group_id = 1,
+        .id = 1,
+        .label = "Clear",
+        .accessible_label = "Clear",
+        .success_focus_importer_id = 9,
+        .ready_importer_id = 9,
+    }}, &importers));
+    try std.testing.expect(!validActionImporterTargets(&.{.{
+        .group_id = 1,
+        .id = 1,
+        .label = "Clear",
+        .accessible_label = "Clear",
+        .success_focus_importer_id = 10,
+    }}, &importers));
+    try std.testing.expect(!validActionImporterTargets(&.{.{
+        .group_id = 1,
+        .id = 1,
+        .label = "Trim",
+        .accessible_label = "Trim",
+        .ready_importer_id = 10,
+    }}, &importers));
+}
+
 test "editable labels enforce bounded persistent text fields" {
     try validateEditableLabels(&.{.{
         .field_id = 1,
@@ -1402,6 +1456,13 @@ test "editable labels enforce bounded persistent text fields" {
         .{ .field_id = 1, .label = "One", .accessible_label = "One" },
         .{ .field_id = 1, .label = "Two", .accessible_label = "Two" },
     }));
+    try std.testing.expectError(error.InvalidRefreshRate, validateEditableLabels(&.{.{
+        .field_id = 1,
+        .label = "Live",
+        .accessible_label = "Live value",
+        .read_only = true,
+        .maximum_refresh_hz = 61,
+    }}));
 }
 
 test "progress indicators require bounded unique sources and readable states" {

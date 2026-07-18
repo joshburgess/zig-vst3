@@ -664,6 +664,126 @@ Snapshot fileImportStates() {
     };
 }
 
+Snapshot irWorkflowStates() {
+    return {
+        "ir-workflow-states.png",
+        1240,
+        500,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 1240, 500)));
+            const auto editor_style = styles.resolve(ZigVstgui::ComponentKind::editor);
+            const auto label_style = styles.resolve(ZigVstgui::ComponentKind::help);
+            container->setBackgroundColor(editor_style.background);
+            const char* names[] = {
+                "Empty", "Importing", "Ready", "Editing",
+                "Confirming", "Success", "Recoverable Error",
+            };
+            for (uint32_t index = 0; index < 7; ++index) {
+                const double left = 8.0 + (index % 4) * 308.0;
+                const double top = 8.0 + (index / 4) * 244.0;
+                auto* label = new VSTGUI::CTextLabel(
+                    VSTGUI::CRect(left, top, left + 292.0, top + 30.0), names[index]);
+                label->setFont(styles.font(ZigVstgui::TypographyRole::body));
+                label->setFontColor(label_style.foreground);
+                label->setBackColor(label_style.background);
+                container->addView(label);
+            }
+
+            const char* extensions[] = {".wav"};
+            const ZigVstguiFileDropDescription importer {
+                1, "Impulse Response", "Drop a PCM WAV impulse response here", extensions, 1, 1, 1,
+                "Choose IR", "Choose an Impulse Response",
+            };
+            ZigVstgui::AccessibilityNode importer_nodes[4];
+            auto* empty = new ZigVstgui::FileDropView(
+                VSTGUI::CRect(8, 46, 300, 190), importer, {}, styles, &importer_nodes[0]);
+            auto* importing = new ZigVstgui::FileDropView(
+                VSTGUI::CRect(316, 46, 608, 190), importer, {}, styles, &importer_nodes[1]);
+            auto* ready = new ZigVstgui::FileDropView(
+                VSTGUI::CRect(624, 46, 916, 190), importer, {}, styles, &importer_nodes[2]);
+            auto* failed = new ZigVstgui::FileDropView(
+                VSTGUI::CRect(624, 290, 916, 434), importer, {}, styles, &importer_nodes[3]);
+            importing->applyImportSnapshot({
+                ZIG_VSTGUI_FILE_IMPORT_IMPORTING, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE,
+                ZIG_VSTGUI_FILE_IMPORT_PICKER, 0.42, 2, 48000, 2, 4096, 0,
+            });
+            ready->applyImportSnapshot({
+                ZIG_VSTGUI_FILE_IMPORT_READY, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE,
+                ZIG_VSTGUI_FILE_IMPORT_PICKER, 1.0, 3, 48000, 2, 4096, 256,
+            });
+            failed->applyImportSnapshot({
+                ZIG_VSTGUI_FILE_IMPORT_FAILED, ZIG_VSTGUI_FILE_IMPORT_FAILURE_TRUNCATED,
+                ZIG_VSTGUI_FILE_IMPORT_PICKER, 0.67, 4, 0, 0, 0, 0,
+            });
+            container->addView(empty);
+            container->addView(importing);
+            container->addView(ready);
+            container->addView(failed);
+
+            const ZigVstguiGraphPoint waveform[] = {
+                {0.0, 0.0}, {0.08, 0.9}, {0.16, -0.55}, {0.3, 0.36},
+                {0.48, -0.2}, {0.68, 0.1}, {0.84, -0.04}, {1.0, 0.0},
+            };
+            ZigVstguiGraphDescription graph {
+                "Impulse Response", ZIG_VSTGUI_GRAPH_WAVEFORM, ZIG_VSTGUI_GRAPH_MODULATION,
+                {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Time"},
+                {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"}, waveform, 8, 0, 0, 0,
+            };
+            graph.viewport = {
+                1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 128.0, 3.0, 0.1, 0.0, 1.25, 0.1, 0, 0, 0,
+            };
+            graph.range_selection = {1, 0.18, 0.72, 0.01, 0.01, 0, 0};
+            ZigVstgui::AccessibilityNode graph_node;
+            container->addView(new ZigVstgui::GraphView(
+                VSTGUI::CRect(932, 46, 1224, 180), graph, styles, &graph_node));
+
+            const ZigVstguiActionButtonDescription trim_description {
+                1, 1, "Trim", "Trim to selection", nullptr, nullptr,
+                "Trim failed. Adjust the selection and retry", ZIG_VSTGUI_ACTION_PRIMARY,
+                ZIG_VSTGUI_ACTION_ICON_NONE, 1,
+            };
+            ZigVstguiCallbacks action_callbacks {};
+            action_callbacks.invoke_action = acceptAction;
+            ZigVstgui::ActionButtonControl trim;
+            trim.build(container, trim_description, action_callbacks, styles);
+            trim.setBounds(VSTGUI::CRect(944, 190, 1212, 230));
+
+            const ZigVstguiActionButtonDescription clear_description {
+                2, 1, nullptr, "Clear impulse response", "Remove the loaded impulse response",
+                "Confirm Clear IR", "Clear failed. Try again", ZIG_VSTGUI_ACTION_DESTRUCTIVE,
+                ZIG_VSTGUI_ACTION_ICON_CLEAR, 1,
+            };
+            ZigVstgui::ActionButtonControl clear;
+            clear.build(container, clear_description, action_callbacks, styles);
+            clear.setBounds(VSTGUI::CRect(20, 330, 288, 374));
+            clear.activate();
+
+            const ZigVstguiProgressIndicatorDescription progress {
+                1, "Import", "Impulse response import progress", "Choose an IR to begin",
+                "Importing IR", "IR ready", "Import failed", 20,
+            };
+            TextProgressVisualState success_state;
+            success_state.progress = {
+                ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_COMPLETE, 1.0, 5,
+            };
+            ZigVstguiCallbacks progress_callbacks {};
+            progress_callbacks.userdata = &success_state;
+            progress_callbacks.load_progress = loadVisualProgress;
+            ZigVstgui::AccessibilityNode progress_node;
+            auto* success = new ZigVstgui::ProgressView(
+                VSTGUI::CRect(328, 330, 596, 390), progress, progress_callbacks, styles, &progress_node);
+            success->tick();
+            container->addView(success);
+
+            container->drawRect(&context, container->getViewSize());
+            trim.clear();
+            clear.clear();
+        },
+    };
+}
+
 Snapshot presetBrowsers() {
     return {
         "preset-browsers.png",
@@ -812,22 +932,34 @@ Snapshot editableLabelsAndProgress() {
                 1, "IR Name", "Impulse response name", "Name this impulse response",
                 "Enter an IR name", "Studio Plate", 48, 1,
             };
+            const ZigVstguiEditableLabelDescription read_only {
+                2, "Format", "Impulse response format", "", "Value unavailable",
+                "48 kHz, stereo", 48, 1, 1, 10,
+            };
             TextProgressVisualState accepted_state;
             TextProgressVisualState rejected_state;
             rejected_state.reject = true;
+            TextProgressVisualState live_state;
+            live_state.text = "48 kHz, stereo";
             ZigVstguiCallbacks accepted_callbacks {};
             accepted_callbacks.userdata = &accepted_state;
             accepted_callbacks.store_editor_text = storeVisualText;
             accepted_callbacks.load_editor_text = loadVisualText;
             ZigVstguiCallbacks rejected_callbacks = accepted_callbacks;
             rejected_callbacks.userdata = &rejected_state;
-            ZigVstgui::EditableLabelControl labels[2];
+            ZigVstguiCallbacks live_callbacks = accepted_callbacks;
+            live_callbacks.userdata = &live_state;
+            live_callbacks.store_editor_text = nullptr;
+            ZigVstgui::EditableLabelControl labels[3];
             labels[0].build(container, editable, accepted_callbacks, styles);
             labels[1].build(container, editable, rejected_callbacks, styles);
-            labels[0].setBounds(VSTGUI::CRect(8, 8, 96, 40), VSTGUI::CRect(104, 8, 344, 40),
-                VSTGUI::CRect(104, 40, 344, 64));
-            labels[1].setBounds(VSTGUI::CRect(368, 8, 456, 40), VSTGUI::CRect(464, 8, 712, 40),
-                VSTGUI::CRect(464, 40, 712, 64));
+            labels[2].build(container, read_only, live_callbacks, styles);
+            labels[0].setBounds(VSTGUI::CRect(8, 8, 64, 40), VSTGUI::CRect(72, 8, 232, 40),
+                VSTGUI::CRect(72, 40, 232, 64));
+            labels[1].setBounds(VSTGUI::CRect(244, 8, 308, 40), VSTGUI::CRect(316, 8, 468, 40),
+                VSTGUI::CRect(316, 40, 468, 64));
+            labels[2].setBounds(VSTGUI::CRect(480, 8, 536, 40), VSTGUI::CRect(544, 8, 712, 40),
+                VSTGUI::CRect(544, 40, 712, 64));
             labels[1].accessibilityNode().perform(ZigVstgui::AccessibilityAction::set_value, 0.0, "");
 
             const ZigVstguiProgressIndicatorDescription progress {
@@ -1153,6 +1285,7 @@ int main(int argc, char** argv) {
         stepSequencer(),
         fileDrops(),
         fileImportStates(),
+        irWorkflowStates(),
     };
     int result = 0;
     for (const auto& snapshot : snapshots) {

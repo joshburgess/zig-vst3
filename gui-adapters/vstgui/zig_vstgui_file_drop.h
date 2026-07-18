@@ -89,6 +89,7 @@ private:
 class FileDropControl : public VSTGUI::ViewListenerAdapter {
 public:
     using PickerLauncher = bool (*)(void*, FileDropControl&);
+    using ImportStateHandler = void (*)(void*, uint32_t, ZigVstguiFileImportStatus);
 
     FileDropControl(ZigVstguiFileDropDescription description, ZigVstguiCallbacks callbacks);
     ~FileDropControl() override;
@@ -104,6 +105,9 @@ public:
     bool activatePrimaryAction();
     bool dispatchPickerPaths(const char* const* paths, uint32_t count);
     void setPickerLauncher(void* userdata, PickerLauncher launcher);
+    void setImportStateHandler(void* userdata, ImportStateHandler handler);
+    bool refreshImportState();
+    bool importReady() const;
     void viewLostFocus(VSTGUI::CView* view) override;
     void viewTookFocus(VSTGUI::CView* view) override;
 
@@ -119,7 +123,6 @@ private:
     bool performAccessibilityAction(const AccessibilityActionRequest& request);
     bool openNativePicker();
     void pickerFinished(VSTGUI::CNewFileSelector* selector);
-    bool refreshImportState();
     void startRefresh();
     void stopRefresh();
 
@@ -131,6 +134,8 @@ private:
     std::shared_ptr<PickerLifetime> picker_lifetime;
     void* picker_launcher_userdata {nullptr};
     PickerLauncher picker_launcher {nullptr};
+    void* import_state_userdata {nullptr};
+    ImportStateHandler import_state_handler {nullptr};
     VSTGUI::CVSTGUITimer* refresh_timer {nullptr};
     ZigVstguiFileImportSnapshot import_snapshot {};
     bool has_import_snapshot {false};

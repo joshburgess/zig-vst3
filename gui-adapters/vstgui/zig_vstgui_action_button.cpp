@@ -5,6 +5,7 @@
 #include "vstgui/lib/cgradient.h"
 
 #include <new>
+#include <utility>
 
 namespace ZigVstgui {
 
@@ -31,11 +32,13 @@ bool ActionButtonControl::build(
     VSTGUI::CViewContainer* parent,
     const ZigVstguiActionButtonDescription& value_description,
     ZigVstguiCallbacks value_callbacks,
-    const ThemeResolver& styles
+    const ThemeResolver& styles,
+    std::function<void(uint32_t)> value_accepted_handler
 ) {
     if (!parent || button) return false;
     description = value_description;
     callbacks = value_callbacks;
+    accepted_handler = std::move(value_accepted_handler);
     label = description.label ? description.label : "";
     accessible_label = description.accessible_label ? description.accessible_label : label;
     tooltip = description.tooltip ? description.tooltip : "";
@@ -96,10 +99,20 @@ void ActionButtonControl::clear() {
     component.accessibility().clearActionHandler();
     component.clear();
     button = nullptr;
+    accepted_handler = {};
 }
 
 void ActionButtonControl::setBounds(const VSTGUI::CRect& bounds) {
     component.setBounds(bounds);
+}
+
+void ActionButtonControl::setEnabled(bool enabled) {
+    if (!enabled) {
+        confirmation_pending = false;
+        action_failed = false;
+    }
+    component.setEnabled(enabled);
+    syncState();
 }
 
 bool ActionButtonControl::handleKey(uint16_t, int16_t key_code, int16_t) {
@@ -121,6 +134,9 @@ bool ActionButtonControl::activate() {
     confirmation_pending = false;
     action_failed = !accepted;
     syncState();
+    if (accepted && accepted_handler) {
+        accepted_handler(description.success_focus_importer_id);
+    }
     return true;
 }
 
@@ -134,6 +150,7 @@ bool ActionButtonControl::cancelPending() {
 
 bool ActionButtonControl::confirming() const { return confirmation_pending; }
 bool ActionButtonControl::failed() const { return action_failed; }
+bool ActionButtonControl::enabled() const { return component.state().enabled; }
 VSTGUI::CView* ActionButtonControl::focusView() const { return button; }
 
 void ActionButtonControl::setFocusedView(VSTGUI::CView* view) {
@@ -166,9 +183,11 @@ bool ActionButtonControl::accessibilityAction(
 }
 
 bool ActionButtonControl::performAccessibilityAction(const AccessibilityActionRequest& request) {
+    if (!component.state().enabled) return false;
     if (request.action == AccessibilityAction::focus) {
         if (!button || !button->getFrame()) return false;
         button->getFrame()->setFocusView(button);
+        setFocusedView(button);
         return true;
     }
     if (request.action == AccessibilityAction::press) return activate();

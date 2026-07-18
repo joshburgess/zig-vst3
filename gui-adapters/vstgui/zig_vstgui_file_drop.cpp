@@ -440,6 +440,15 @@ void FileDropControl::setPickerLauncher(void* userdata, PickerLauncher launcher)
     picker_launcher = launcher;
 }
 
+void FileDropControl::setImportStateHandler(void* userdata, ImportStateHandler handler) {
+    import_state_userdata = userdata;
+    import_state_handler = handler;
+}
+
+bool FileDropControl::importReady() const {
+    return has_import_snapshot && import_snapshot.status == ZIG_VSTGUI_FILE_IMPORT_READY;
+}
+
 void FileDropControl::viewLostFocus(VSTGUI::CView* focused_view) {
     if (focused_view == view) setFocusedView(nullptr);
 }
@@ -520,6 +529,7 @@ bool FileDropControl::refreshImportState() {
     import_snapshot = next;
     has_import_snapshot = true;
     view->applyImportSnapshot(next);
+    if (import_state_handler) import_state_handler(import_state_userdata, description.drop_id, next.status);
     if (next.status != ZIG_VSTGUI_FILE_IMPORT_VALIDATING &&
         next.status != ZIG_VSTGUI_FILE_IMPORT_IMPORTING) stopRefresh();
     return true;

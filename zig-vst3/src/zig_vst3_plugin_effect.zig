@@ -601,7 +601,12 @@ pub fn ReflectedEditController(comptime Config: type) type {
                     &self.editor_state,
                     editor_state_migrations,
                 );
-                if (result == types.kResultOk) notifyAllParameterObservers(self);
+                if (result == types.kResultOk) {
+                    notifyAllParameterObservers(self);
+                    if (comptime @hasDecl(Config, "afterStateRestore")) {
+                        Config.afterStateRestore(&self.iface);
+                    }
+                }
                 return result;
             }
             return readStateAndNotify(owner(ptr), state);

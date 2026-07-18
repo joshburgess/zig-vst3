@@ -12,15 +12,68 @@ pub const output_param_id: u32 = 1;
 pub const bypass_param_id: u32 = 2;
 pub const ir_import_id: u32 = 1;
 pub const ir_waveform_source_id: u32 = 100;
-pub const ir_action_group_id: u32 = 1;
+pub const ir_edit_action_group_id: u32 = 1;
+pub const trim_action_id: u32 = 1;
+pub const normalize_action_id: u32 = 2;
+pub const reverse_action_id: u32 = 3;
+pub const fade_in_action_id: u32 = 4;
+pub const fade_out_action_id: u32 = 5;
+pub const reset_action_id: u32 = 6;
+pub const ir_destructive_action_group_id: u32 = 2;
 pub const clear_ir_action_id: u32 = 1;
 pub const ir_name_state_id: u32 = 1;
 pub const ir_zoom_state_id: u32 = 2;
 pub const ir_x_offset_state_id: u32 = 3;
 pub const ir_selection_start_state_id: u32 = 4;
 pub const ir_selection_end_state_id: u32 = 5;
+pub const ir_format_state_id: u32 = 6;
+pub const ir_original_duration_state_id: u32 = 7;
+pub const ir_edited_duration_state_id: u32 = 8;
+pub const ir_peak_state_id: u32 = 9;
+pub const ir_publish_state_id: u32 = 10;
 pub const maximum_ir_frames: usize = 131_072;
 pub const convolution_partition_size: usize = 512;
+
+const impulse_asset_id: u32 = 1;
+const impulse_svg =
+    "<svg viewBox=\"0 0 24 24\">" ++
+    "<path d=\"M2 12 L7 12 L9 4 L12 20 L15 8 L17 12 L22 12\" fill=\"none\" stroke=\"#f2f4f7\" stroke-width=\"2\"/>" ++
+    "</svg>";
+
+fn drawIRParameter(
+    _: ?*anyopaque,
+    request: *const vst3.vstgui.DrawRequest,
+    canvas: *vst3.vstgui.Canvas,
+) callconv(.c) types.int32 {
+    if (request.parameter_id != bypass_param_id or request.component != .toggle) return 0;
+    const side = @min(request.height - 8.0, 24.0);
+    const top = (request.height - side) * 0.5;
+    const background: u32 = if (request.normalized >= 0.5) 0xb9472fff else 0x263140ff;
+    vst3.vstgui.fillEllipse(canvas, 8.0, top, 8.0 + side, top + side, background);
+    const drawn = vst3.vstgui.drawAsset(
+        canvas,
+        impulse_asset_id,
+        10.0,
+        top + 2.0,
+        6.0 + side,
+        top + side - 2.0,
+        if (request.state == .disabled) 0.45 else 1.0,
+    );
+    return if (drawn) 0 else -1;
+}
+
+const ir_skin: vst3.vstgui.Skin = .{
+    .assets = &.{.{ .id = impulse_asset_id, .data = impulse_svg, .format = .svg }},
+    .fonts = .{
+        .title_family = "Avenir Next",
+        .body_family = "Avenir Next",
+        .value_family = "Menlo",
+        .fallback_family = "Arial",
+    },
+    .drawing = .{ .draw_parameter = drawIRParameter },
+    .theme = .alternate,
+    .layout = .adaptive,
+};
 
 const Definition = struct {
     pub const name = "zig-vst3 IR Loader";
@@ -55,18 +108,29 @@ const Definition = struct {
 pub const Spec = core.plugin.PluginSpec(Definition);
 pub const ir_parameter_set = Spec.ParameterSet.init(.{});
 const Convolver = core.gui_ir_convolution.PartitionedConvolver(maximum_ir_frames, convolution_partition_size);
+const IREditor = core.gui_ir_editor.Editor(maximum_ir_frames);
 const AudioImporter = vst3.vstgui.DecodedAudioFileImporter(maximum_ir_frames);
 const default_ir_name = core.editor_state.Text.init("Untitled IR") catch unreachable;
+const empty_ir_format = core.editor_state.Text.init("No IR loaded") catch unreachable;
+const zero_ir_duration = core.editor_state.Text.init("0.000 s") catch unreachable;
+const zero_ir_peak = core.editor_state.Text.init("0.000") catch unreachable;
+const empty_ir_state = core.editor_state.Text.init("Empty") catch unreachable;
 const IREditorState = core.editor_state.Store(1, &.{
     .{ .id = ir_name_state_id, .default = .{ .text = default_ir_name } },
     .{ .id = ir_zoom_state_id, .default = .{ .scalar = 1.0 } },
     .{ .id = ir_x_offset_state_id, .default = .{ .scalar = 0.0 } },
     .{ .id = ir_selection_start_state_id, .default = .{ .scalar = 0.0 } },
     .{ .id = ir_selection_end_state_id, .default = .{ .scalar = 1.0 } },
+    .{ .id = ir_format_state_id, .default = .{ .text = empty_ir_format } },
+    .{ .id = ir_original_duration_state_id, .default = .{ .text = zero_ir_duration } },
+    .{ .id = ir_edited_duration_state_id, .default = .{ .text = zero_ir_duration } },
+    .{ .id = ir_peak_state_id, .default = .{ .text = zero_ir_peak } },
+    .{ .id = ir_publish_state_id, .default = .{ .text = empty_ir_state } },
 });
 
 const IRControllerState = struct {
     importer: AudioImporter,
+    editor: IREditor = .{},
     published_import_generation: u64 = 0,
     transfer_generation: u64 = 0,
 
@@ -107,15 +171,17 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
         const state = Controller.controllerState(controller);
         const snapshot = state.importer.snapshot();
         if (snapshot.import.status == .ready and snapshot.import.generation != state.published_import_generation) {
+            state.editor.loadFrom(&state.importer) catch return snapshot;
             const generation = state.transfer_generation +% 1;
             if (generation != 0 and Controller.sendDecodedAudioGeneration(
                 controller,
                 ir_import_id,
                 generation,
-                &state.importer,
+                &state.editor,
             ) == types.kResultOk) {
                 state.transfer_generation = generation;
                 state.published_import_generation = snapshot.import.generation;
+                updateEditorMetadata(controller, state, "Published");
             }
         }
         return snapshot;
@@ -136,16 +202,56 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
         return if (handled) types.kResultOk else types.kResultFalse;
     }
 
+    pub fn afterStateRestore(controller: *vst.ivsteditcontroller.IEditController) void {
+        const state = Controller.controllerState(controller);
+        const publication = if (state.editor.snapshot().decoded_frames == 0) "Empty" else "Published";
+        updateEditorMetadata(controller, state, publication);
+    }
+
     pub fn performAction(
         controller: *vst.ivsteditcontroller.IEditController,
         group_id: u32,
         action_id: u32,
     ) types.tresult {
-        if (group_id != ir_action_group_id or action_id != clear_ir_action_id) return types.kInvalidArgument;
-        return if (clearImport(controller, Controller.controllerState(controller)))
-            types.kResultOk
-        else
-            types.kResultFalse;
+        const state = Controller.controllerState(controller);
+        if (group_id == ir_destructive_action_group_id and action_id == clear_ir_action_id) {
+            return if (clearImport(controller, state)) types.kResultOk else types.kResultFalse;
+        }
+        if (group_id != ir_edit_action_group_id) return types.kInvalidArgument;
+        const command: core.gui_ir_editor.Command = switch (action_id) {
+            trim_action_id => .trim,
+            normalize_action_id => .normalize,
+            reverse_action_id => .reverse,
+            fade_in_action_id => .fade_in,
+            fade_out_action_id => .fade_out,
+            reset_action_id => .reset,
+            else => return types.kInvalidArgument,
+        };
+        const editor_state = Controller.editorState(controller);
+        const selection_start = switch (editor_state.get(ir_selection_start_state_id) orelse return types.kResultFalse) {
+            .scalar => |value| value,
+            else => return types.kResultFalse,
+        };
+        const selection_end = switch (editor_state.get(ir_selection_end_state_id) orelse return types.kResultFalse) {
+            .scalar => |value| value,
+            else => return types.kResultFalse,
+        };
+        if (!(state.editor.apply(command, selection_start, selection_end) catch false)) return types.kResultFalse;
+        const generation = state.transfer_generation +% 1;
+        if (generation == 0 or Controller.sendDecodedAudioGeneration(
+            controller,
+            ir_import_id,
+            generation,
+            &state.editor,
+        ) != types.kResultOk) {
+            state.editor.rollbackLastEdit();
+            updateEditorMetadata(controller, state, "Publish failed");
+            return types.kResultFalse;
+        }
+        state.editor.commitLastEdit();
+        state.transfer_generation = generation;
+        updateEditorMetadata(controller, state, "Published");
+        return types.kResultOk;
     }
 
     pub fn validateEditorText(
@@ -173,12 +279,52 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
     }
 
     fn clearImport(controller: *vst.ivsteditcontroller.IEditController, state: *IRControllerState) bool {
+        if (!state.importer.canReset()) return false;
         const generation = state.transfer_generation +% 1;
         if (generation == 0 or Controller.clearDecodedAudio(controller, ir_import_id, generation) != types.kResultOk) return false;
         if (!state.importer.reset()) return false;
+        _ = state.editor.clear();
         state.transfer_generation = generation;
         state.published_import_generation = 0;
+        updateEditorMetadata(controller, state, "Empty");
         return true;
+    }
+
+    fn updateEditorMetadata(
+        controller: *vst.ivsteditcontroller.IEditController,
+        state: *IRControllerState,
+        publish_state: []const u8,
+    ) void {
+        const snapshot = state.editor.snapshot();
+        var format_buffer: [64]u8 = undefined;
+        var original_duration_buffer: [32]u8 = undefined;
+        var edited_duration_buffer: [32]u8 = undefined;
+        var peak_buffer: [64]u8 = undefined;
+        const format = if (snapshot.sample_rate == 0)
+            "No IR loaded"
+        else
+            std.fmt.bufPrint(&format_buffer, "{d} Hz, {d} ch", .{ snapshot.sample_rate, snapshot.channels }) catch return;
+        const original_duration = std.fmt.bufPrint(
+            &original_duration_buffer,
+            "{d:.3} s",
+            .{if (snapshot.sample_rate == 0) 0.0 else @as(f64, @floatFromInt(snapshot.original_frames)) / @as(f64, @floatFromInt(snapshot.sample_rate))},
+        ) catch return;
+        const edited_duration = std.fmt.bufPrint(
+            &edited_duration_buffer,
+            "{d:.3} s",
+            .{if (snapshot.sample_rate == 0) 0.0 else @as(f64, @floatFromInt(snapshot.decoded_frames)) / @as(f64, @floatFromInt(snapshot.sample_rate))},
+        ) catch return;
+        const peak_text = std.fmt.bufPrint(
+            &peak_buffer,
+            "{d:.3} original, {d:.3} edited",
+            .{ snapshot.original_peak, snapshot.edited_peak },
+        ) catch return;
+        const editor_state = Controller.editorState(controller);
+        editor_state.set(ir_format_state_id, .{ .text = core.editor_state.Text.init(format) catch return }) catch return;
+        editor_state.set(ir_original_duration_state_id, .{ .text = core.editor_state.Text.init(original_duration) catch return }) catch return;
+        editor_state.set(ir_edited_duration_state_id, .{ .text = core.editor_state.Text.init(edited_duration) catch return }) catch return;
+        editor_state.set(ir_peak_state_id, .{ .text = core.editor_state.Text.init(peak_text) catch return }) catch return;
+        editor_state.set(ir_publish_state_id, .{ .text = core.editor_state.Text.init(publish_state) catch return }) catch return;
     }
 
     pub fn loadGuiGraph(
@@ -188,7 +334,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
     ) usize {
         if (source_id != ir_waveform_source_id) return 0;
         var preview: [vst3.vstgui.audio_file_preview_capacity]vst3.vstgui.AudioFilePreviewPoint = undefined;
-        const count = Controller.controllerState(controller).importer.copyPreview(&preview);
+        const count = Controller.controllerState(controller).editor.copyPreview(&preview);
         const copied = @min(count, output.len);
         for (preview[0..copied], output[0..copied]) |point, *destination| {
             destination.* = .{ .x = point.x, .y = point.y };
@@ -259,24 +405,41 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .extensions = &.{".wav"},
                 .maximum_files = 1,
             }},
-            .action_buttons = &.{.{
-                .group_id = ir_action_group_id,
-                .id = clear_ir_action_id,
-                .icon = .clear,
-                .accessible_label = "Clear impulse response",
-                .tooltip = "Remove the imported impulse response.",
-                .confirmation_label = "Confirm Clear IR",
-                .failure_label = "Clear failed. Try again",
-                .role = .destructive,
-            }},
-            .editable_labels = &.{.{
-                .field_id = ir_name_state_id,
-                .label = "IR Name",
-                .accessible_label = "Impulse response name",
-                .placeholder = "Name this impulse response",
-                .error_text = "Enter an IR name",
-                .maximum_bytes = 64,
-            }},
+            .action_buttons = &.{
+                .{ .group_id = ir_edit_action_group_id, .id = trim_action_id, .label = "Trim", .accessible_label = "Trim to selection", .failure_label = "Trim failed. Adjust the selection and retry", .role = .primary, .ready_importer_id = ir_import_id },
+                .{ .group_id = ir_edit_action_group_id, .id = normalize_action_id, .label = "Normalize", .accessible_label = "Normalize selection", .failure_label = "Normalize needs a selection with audio", .ready_importer_id = ir_import_id },
+                .{ .group_id = ir_edit_action_group_id, .id = reverse_action_id, .label = "Reverse", .accessible_label = "Reverse selection", .failure_label = "Reverse needs at least two frames", .ready_importer_id = ir_import_id },
+                .{ .group_id = ir_edit_action_group_id, .id = fade_in_action_id, .label = "Fade In", .accessible_label = "Fade in selection", .failure_label = "Fade in needs at least two frames", .ready_importer_id = ir_import_id },
+                .{ .group_id = ir_edit_action_group_id, .id = fade_out_action_id, .label = "Fade Out", .accessible_label = "Fade out selection", .failure_label = "Fade out needs at least two frames", .ready_importer_id = ir_import_id },
+                .{ .group_id = ir_edit_action_group_id, .id = reset_action_id, .label = "Reset", .accessible_label = "Reset all impulse response edits", .failure_label = "Nothing to reset", .ready_importer_id = ir_import_id },
+                .{
+                    .group_id = ir_destructive_action_group_id,
+                    .id = clear_ir_action_id,
+                    .icon = .clear,
+                    .accessible_label = "Clear impulse response",
+                    .tooltip = "Remove the imported impulse response.",
+                    .confirmation_label = "Confirm Clear IR",
+                    .failure_label = "Clear failed. Try again",
+                    .role = .destructive,
+                    .success_focus_importer_id = ir_import_id,
+                    .ready_importer_id = ir_import_id,
+                },
+            },
+            .editable_labels = &.{
+                .{
+                    .field_id = ir_name_state_id,
+                    .label = "IR Name",
+                    .accessible_label = "Impulse response name",
+                    .placeholder = "Name this impulse response",
+                    .error_text = "Enter an IR name",
+                    .maximum_bytes = 64,
+                },
+                .{ .field_id = ir_format_state_id, .label = "Format", .accessible_label = "Impulse response format", .read_only = true },
+                .{ .field_id = ir_original_duration_state_id, .label = "Original", .accessible_label = "Original duration", .read_only = true },
+                .{ .field_id = ir_edited_duration_state_id, .label = "Edited", .accessible_label = "Edited duration", .read_only = true },
+                .{ .field_id = ir_peak_state_id, .label = "Peak", .accessible_label = "Original and edited peak", .read_only = true },
+                .{ .field_id = ir_publish_state_id, .label = "State", .accessible_label = "Impulse response publication state", .read_only = true },
+            },
             .progress_indicators = &.{.{
                 .source_id = ir_import_id,
                 .label = "Import",
@@ -286,7 +449,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .complete_text = "IR ready",
                 .failure_text = "Import failed",
             }},
-            .skin = .{ .theme = .alternate, .layout = .adaptive },
+            .skin = ir_skin,
             .composition = .{
                 .title = "IR Loader",
                 .groups = &.{
@@ -412,6 +575,11 @@ test "IR loader exports component and controller classes" {
 }
 
 test "IR loader creates a public API editor and bounded processor" {
+    try std.testing.expectEqual(@as(usize, 1), ir_skin.assets.len);
+    try std.testing.expectEqualStrings("Avenir Next", std.mem.span(ir_skin.fonts.title_family.?));
+    try std.testing.expectEqualStrings("Menlo", std.mem.span(ir_skin.fonts.value_family.?));
+    try std.testing.expect(ir_skin.drawing.draw_parameter != null);
+
     var controller_out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &controller_out));
     const controller: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out orelse return error.MissingController));
@@ -487,8 +655,87 @@ test "IR loader imports and clears one immutable processor generation" {
     const processor = Effect.processorInstance(component);
     try std.testing.expect(processor.convolver.adoptPending());
     try std.testing.expectEqual(@as(usize, 2), processor.convolver.activeMetadata().?.frames);
+    const format_text = switch (Controller.editorState(controller).get(ir_format_state_id) orelse return error.MissingFormatState) {
+        .text => |value| value,
+        else => return error.InvalidFormatState,
+    };
+    try std.testing.expectEqualStrings("48000 Hz, 1 ch", format_text.slice());
+    const published_text = switch (Controller.editorState(controller).get(ir_publish_state_id) orelse return error.MissingPublishState) {
+        .text => |value| value,
+        else => return error.InvalidPublishState,
+    };
+    try std.testing.expectEqualStrings("Published", published_text.slice());
 
+    try std.testing.expectEqual(types.kResultOk, Controller.performAction(
+        controller,
+        ir_edit_action_group_id,
+        reverse_action_id,
+    ));
+    try std.testing.expect(processor.convolver.adoptPending());
+    try std.testing.expectEqual(@as(usize, 2), processor.convolver.activeMetadata().?.frames);
+    try std.testing.expectEqual(types.kResultOk, Controller.performAction(
+        controller,
+        ir_edit_action_group_id,
+        reset_action_id,
+    ));
+    try std.testing.expect(processor.convolver.adoptPending());
+    try std.testing.expectEqual(@as(usize, 2), processor.convolver.activeMetadata().?.frames);
+
+    const StateStream = vst3.vst_stream.FixedBufferStream(8192);
+    var state_stream = StateStream{};
+    try std.testing.expectEqual(types.kResultOk, controller.vtable.getState(controller, state_stream.asStream()));
     try std.testing.expectEqual(types.kResultOk, Controller.performFileImportCommand(controller, ir_import_id, .reset));
     try std.testing.expect(processor.convolver.adoptPending());
     try std.testing.expectEqual(@as(usize, 0), processor.convolver.activeMetadata().?.frames);
+    const cleared_text = switch (Controller.editorState(controller).get(ir_publish_state_id) orelse return error.MissingPublishState) {
+        .text => |value| value,
+        else => return error.InvalidPublishState,
+    };
+    try std.testing.expectEqualStrings("Empty", cleared_text.slice());
+
+    try Controller.editorState(controller).set(ir_publish_state_id, .{ .text = core.editor_state.Text.init("Stale") catch unreachable });
+    try std.testing.expectEqual(types.kResultOk, state_stream.asStream().vtable.seek(
+        state_stream.asStream(),
+        0,
+        @intFromEnum(base.ibstream.IStreamSeekMode.kIBSeekSet),
+        null,
+    ));
+    try std.testing.expectEqual(types.kResultOk, controller.vtable.setState(controller, state_stream.asStream()));
+    const restored_text = switch (Controller.editorState(controller).get(ir_publish_state_id) orelse return error.MissingPublishState) {
+        .text => |value| value,
+        else => return error.InvalidPublishState,
+    };
+    try std.testing.expectEqualStrings("Empty", restored_text.slice());
+}
+
+test "IR loader rejects clear before mutating the processor while import work is active" {
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, Effect.create(@ptrCast(&vst.ivstcomponent.icomponent_iid), &component_out));
+    const component: *vst.ivstcomponent.IComponent = @ptrCast(@alignCast(component_out orelse return error.MissingComponent));
+    defer _ = component.vtable.release(component);
+    var component_connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, component.vtable.queryInterface(component, &vst.ivstmessage.iconnection_point_iid, &component_connection_out));
+    const component_connection: *vst.ivstmessage.IConnectionPoint = @ptrCast(@alignCast(component_connection_out orelse return error.MissingConnection));
+    defer _ = component_connection.vtable.release(component_connection);
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &controller_out));
+    const controller: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out orelse return error.MissingController));
+    defer _ = controller.vtable.release(controller);
+    var controller_connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, controller.vtable.queryInterface(controller, &vst.ivstmessage.iconnection_point_iid, &controller_connection_out));
+    const controller_connection: *vst.ivstmessage.IConnectionPoint = @ptrCast(@alignCast(controller_connection_out orelse return error.MissingConnection));
+    defer _ = controller_connection.vtable.release(controller_connection);
+    try std.testing.expectEqual(types.kResultOk, controller_connection.vtable.connect(controller_connection, component_connection));
+
+    const state = Controller.controllerState(controller);
+    state.importer.worker_running.store(true, .release);
+    defer state.importer.worker_running.store(false, .release);
+    try std.testing.expectEqual(types.kResultFalse, Controller.performAction(
+        controller,
+        ir_destructive_action_group_id,
+        clear_ir_action_id,
+    ));
+    try std.testing.expect(!Effect.processorInstance(component).convolver.adoptPending());
+    try std.testing.expectEqual(@as(u64, 0), state.transfer_generation);
 }

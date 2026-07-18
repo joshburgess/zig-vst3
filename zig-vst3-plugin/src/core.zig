@@ -12,6 +12,7 @@ pub const gui_file_drop = @import("gui_file_drop.zig");
 pub const gui_file_importer = @import("gui_file_importer.zig");
 pub const gui_audio_file_importer = @import("gui_audio_file_importer.zig");
 pub const gui_ir_convolution = @import("gui_ir_convolution.zig");
+pub const gui_ir_editor = @import("gui_ir_editor.zig");
 pub const gui_progress = @import("gui_progress.zig");
 pub const gui_range_selection = @import("gui_range_selection.zig");
 pub const gui_viewport = @import("gui_viewport.zig");
@@ -33,6 +34,7 @@ test {
     std.testing.refAllDecls(gui_file_importer);
     std.testing.refAllDecls(gui_audio_file_importer);
     std.testing.refAllDecls(gui_ir_convolution);
+    std.testing.refAllDecls(gui_ir_editor);
     std.testing.refAllDecls(gui_progress);
     std.testing.refAllDecls(gui_range_selection);
     std.testing.refAllDecls(gui_viewport);

@@ -19,6 +19,7 @@
 #include "zig_vstgui_xy_pad.h"
 
 #include "vstgui/lib/cframe.h"
+#include "vstgui/lib/cscrollview.h"
 #include "vstgui/lib/controls/ctextlabel.h"
 
 #include <array>
@@ -26,6 +27,18 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+namespace ZigVstgui {
+
+class RuntimeGuard {
+public:
+    RuntimeGuard();
+    ~RuntimeGuard();
+    RuntimeGuard(const RuntimeGuard&) = delete;
+    RuntimeGuard& operator=(const RuntimeGuard&) = delete;
+};
+
+}
 
 struct ZigVstguiEditor {
     ZigVstguiEditor(
@@ -100,6 +113,8 @@ struct ZigVstguiEditor {
     uint32_t groupCount() const;
     bool nativeAccessibilityActive() const;
     std::size_t nativeAccessibilityElementCount() const;
+    bool contentScrollingActive() const;
+    double contentHeight() const;
 
 private:
     void buildFrame();
@@ -115,6 +130,10 @@ private:
     void layoutProgressIndicators(double left, double top, double right, double bottom);
     void reportMetrics() const;
     bool focusNext(bool reverse);
+    void focusFileImporter(uint32_t importer_id);
+    void actionAccepted(uint32_t importer_id);
+    void updateActionButtonStates();
+    static void importStateChanged(void* userdata, uint32_t importer_id, ZigVstguiFileImportStatus status);
     const ZigVstgui::ThemeResolver& stylesForParameter(uint32_t index) const;
     const ZigVstgui::ThemeResolver& stylesForMeter(uint32_t index) const;
     const ZigVstgui::ThemeResolver& stylesForGraph(uint32_t index) const;
@@ -122,10 +141,13 @@ private:
     static void actionMenuWillOpen(void* userdata, ZigVstgui::ActionMenuControl* opening);
     void closeOtherActionMenus(ZigVstgui::ActionMenuControl* opening);
     std::vector<ZigVstgui::AccessibilityEntry> accessibilityEntries() const;
+    double minimumContentHeight() const;
     ZigVstgui::ParameterControl* findControl(uint32_t parameter_id);
     const ZigVstgui::ParameterControl* findControl(uint32_t parameter_id) const;
 
+    ZigVstgui::RuntimeGuard runtime;
     VSTGUI::CFrame* frame {nullptr};
+    VSTGUI::CScrollView* scroll_view {nullptr};
     ZigVstgui::ProfiledContainer* content {nullptr};
     VSTGUI::CTextLabel* title {nullptr};
     VSTGUI::CTextLabel* help {nullptr};
@@ -230,11 +252,11 @@ private:
     ZigVstguiLayoutKind layout_kind {ZIG_VSTGUI_LAYOUT_ADAPTIVE};
     uint32_t width {400};
     uint32_t height {300};
+    double content_height {300.0};
     void* plug_frame {nullptr};
     void* wayland_host {nullptr};
     ZigVstgui::RenderMetrics metrics;
     bool profile_enabled {false};
-    bool initialized {false};
     int32_t focus_position {-1};
 };
 

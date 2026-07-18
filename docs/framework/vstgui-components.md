@@ -141,13 +141,15 @@ Declare up to 12 buttons in `EditorDescription.action_buttons`. Button order is 
         .confirmation_label = "Confirm Clear IR",
         .failure_label = "Clear failed. Try again",
         .role = .destructive,
+        .success_focus_importer_id = 1,
+        .ready_importer_id = 1,
     },
 },
 ```
 
 The reflected controller implements `performAction(controller, group_id, action_id)`. Existing controllers may route buttons through `performMenuAction`; the framework uses that as a compatibility fallback. Return `kResultOk` only after the command succeeds.
 
-An editor may declare one primary button. Destructive buttons require confirmation text and cannot share a group with the primary action. Icon-only buttons require `accessible_label`; the icon never supplies the semantic name. Return and Space activate the focused button. Escape cancels pending confirmation or dismisses failure feedback. Rejected commands retain focus and replace the label with bounded retry text.
+An editor may declare one primary button. Destructive buttons require confirmation text and cannot share a group with the primary action. Icon-only buttons require `accessible_label`; the icon never supplies the semantic name. Return and Space activate the focused button. Escape cancels pending confirmation or dismisses failure feedback. Rejected commands retain focus and replace the label with bounded retry text. `success_focus_importer_id` may name a declared file importer that receives focus after an accepted command. `ready_importer_id` disables the button until that importer reaches Ready and removes it from focus traversal while unavailable. Unknown targets reject editor creation.
 
 The gallery and IR loader use the same public declaration. The gallery covers primary, secondary, destructive, text, and icon-only variants. The IR loader uses the destructive confirmation contract for clearing imported media.
 
@@ -180,7 +182,7 @@ The bipolar and decibel presentations fill from the center instead of from the m
 - `.adaptive` switches the full parameter editor between compact and expanded arrangements at 520 by 360. It is intended for multi-parameter editors and telemetry.
 - `.compact_strip` keeps a title and dense label, control, value rows. It is intended for small production editors that should not inherit the gallery's large single-control composition.
 
-Both layouts accept host resize requests from 320 by 240 through 1000 by 700, use logical coordinates, and keep Tab order aligned with visible reading order. Editors with a preset browser use a 480 by 480 minimum and open at 720 by 600 so the catalog does not displace parameter controls at an unusable size. The host can reject a requested size. The editor preserves its last accepted size when that happens.
+Both layouts accept host resize requests from 320 by 240 through 1000 by 700, use logical coordinates, and keep Tab order aligned with visible reading order. Editors with a preset browser use a 480 by 480 minimum and open at 720 by 600 so the catalog does not displace parameter controls at an unusable size. Dense compositions receive a bounded virtual content height and vertical scrolling when their natural layout exceeds the accepted host size. Editors that fit remain unscrolled. Focus traversal moves the viewport to keep the focused control visible. The host can reject a requested size. The editor preserves its last accepted size when that happens.
 
 `Composition.style` and `Group.style` override semantic background, foreground, border, and accent colors using `0xRRGGBBAA` values. Editor values apply first and group values apply to controls within that group. Typography, state contrast, spacing, radii, and control metrics still come from the selected theme. Prefer changing the accent or border at group scope. Replacing every color increases the chance of losing hover, focus, disabled, or editing contrast.
 
@@ -367,6 +369,16 @@ Idle, drag hover, validating, importing, ready, empty, unsupported type, excessi
 
 `FileImporter` is supported. The component gallery, production channel strip, and production IR loader use the same public declaration, bounded path callback, picker fallback, keyboard interaction, accessibility semantics, and lifecycle contract. `FileDrop` remains a source-compatible alias. New code should use `FileImporter` and `EditorDescription.file_importers`.
 
+### IR loader ownership reference
+
+The IR loader composes its importer, progress, waveform graph, viewport, range selection, metadata labels, and edit actions through the public `@import("zig-vst3").vstgui` authoring API. The controller owns the decoded importer and editable source buffers. File reading, WAV decoding, resampling, edits, and convolution preparation run outside the audio callback.
+
+Controller-to-processor transfer uses begin, 1,024-sample chunk, commit, cancel, and clear messages. Each message has fixed attribute counts and at most 4,096 bytes of sample payload. The processor stages data in one of three fixed slots. The audio callback only adopts a complete pending generation and processes precomputed spectra. It performs no file access, allocation, mutex acquisition, or decoding.
+
+The production limit is 131,072 mono or stereo frames with 512-sample convolution partitions. Fixed storage is 1.00 MiB for importer decoding, 3.00 MiB for original, edited, and rollback controller buffers, and 19.02 MiB for the three-slot convolver and its processing history. These capacities are allocated with their owning controller or processor instance, so multiple plugin instances do not share mutable media or work state.
+
+Host state stores parameters and bounded editor metadata, but it does not store an absolute source path or perform hidden file I/O during restoration. Restoring an instance therefore produces an explicit empty-media state until the user imports an IR again. This avoids stale path access and makes missing media deterministic. Decoded transport, edit buffers, and partitioned convolution remain experimental because the IR loader is their only production consumer.
+
 ## Editable Labels
 
 Declare bounded, persistent text through `EditorDescription.editable_labels`:
@@ -387,6 +399,20 @@ The field ID addresses a text value in the controller's typed `EditorState`. The
 Implement `validateEditorText` when a field needs domain validation. A rejected edit stays visible with its inline error so the user can correct it, while the accepted state and accessibility value remain unchanged. Escape restores the accepted value. A successful single-click edit commits on Return or focus loss. External state refreshes when the editor regains focus or its controller values refresh.
 
 Editable labels use the toolkit-neutral text-field role and set-value action. The macOS bridge exposes a native text field. The Windows bridge maps the same node to UI Automation Value semantics.
+
+Use the same declaration for bounded controller-owned values that must update while the editor is open:
+
+```zig
+.{
+    .field_id = ir_format_state_id,
+    .label = "Format",
+    .accessible_label = "Impulse response format",
+    .read_only = true,
+    .maximum_refresh_hz = 10,
+},
+```
+
+A read-only label polls its typed text field at 1–60 Hz, stops polling when the editor closes, and avoids repainting when the text is unchanged. It has no pointer, keyboard-focus, or set-value action. Native accessibility still exposes the value as a read-only text field. Its plain value presentation does not resemble an editable input. An editor may declare up to eight editable and read-only labels in total.
 
 ## Progress Indicators
 
@@ -474,7 +500,7 @@ Supported authoring surface:
 - `PresetBrowser`, `gui_preset_browser.Browser`, bounded catalogs, persistent filtering and selection, and host-automated loading.
 - `ActionMenu`, action, toggle, separator, disabled and destructive item states, anchored overlays, and persistent toggle fields.
 - `ActionButton`, primary, secondary, destructive and icon-only roles, grouped toolbar layout, inline confirmation, and recoverable failure feedback.
-- `EditableLabel`, bounded typed editor-state text, validation, inline recovery, external refresh, and native text-field semantics.
+- `EditableLabel`, bounded typed editor-state text, validation, inline recovery, bounded read-only live values, external refresh, and native text-field semantics.
 - `ProgressIndicator` and `ProgressSnapshot`, bounded controller telemetry, determinate and indeterminate presentation, state text, and native progress semantics.
 - `Viewport` and `ViewportAxes`, bounded graph zoom and panning, atomic editor-state persistence, visible navigation feedback, and accessible transform actions.
 - `RangeSelection` and `RangeSelectionHandle`, bounded two-handle graph selection, atomic editor-state persistence, visible handles, and accessible range editing.
@@ -505,4 +531,4 @@ zig build test raw-api-abi validate-examples
 zig build pluginval-channel-strip
 ```
 
-The native suite covers parameter routing, interaction, layout selection, theme selection, assets, accessibility semantics, visual references, and the warm-render budget. The example suites verify both editor styles through real plugin bundles. The aggregate pluginval target is serialized. Stop after the first unexpected exit, preserve its artifacts, and treat it as a plugin failure until isolation proves otherwise.
+The native suite covers parameter routing, interaction, layout selection, theme selection, assets, accessibility semantics, visual references, and the warm-render budget. The example suites verify lifecycle and protocol behavior through real plugin bundles. pluginval opens editors, but its pass result does not verify visible text, geometry, clipping, scrolling, or appearance. Inspect the installed bundle in a real host for those claims. The aggregate pluginval target is serialized. Stop after the first unexpected exit, preserve its artifacts, and treat it as a plugin failure until isolation proves otherwise.

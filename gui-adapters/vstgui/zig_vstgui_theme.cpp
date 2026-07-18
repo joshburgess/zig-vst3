@@ -29,7 +29,7 @@ Theme makeTheme(const ColorTokens& colors) {
     Theme theme {
         colors,
         SpacingTokens {4.0, 8.0, 16.0, 24.0},
-        TypographyTokens {VSTGUI::kNormalFontVeryBig, VSTGUI::kNormalFont, VSTGUI::kNormalFont},
+        TypographyTokens {nullptr, nullptr, nullptr},
         RadiusTokens {8.0, 8.0},
         ControlMetrics {2.0, 2.0, 8.0, 52.0, 40.0, 148.0, 112.0},
         {},
@@ -115,12 +115,12 @@ VSTGUI::CFontRef ThemeResolver::font(TypographyRole role) const {
     const auto role_index = static_cast<std::size_t>(role);
     if (font_overrides[role_index]) return font_overrides[role_index];
     switch (role) {
-        case TypographyRole::title: return selected_theme->typography.title;
-        case TypographyRole::body: return selected_theme->typography.body;
-        case TypographyRole::value: return selected_theme->typography.value;
-        case TypographyRole::count: return selected_theme->typography.body;
+        case TypographyRole::title: return VSTGUI::kNormalFontVeryBig;
+        case TypographyRole::body: return VSTGUI::kNormalFont;
+        case TypographyRole::value: return VSTGUI::kNormalFont;
+        case TypographyRole::count: return VSTGUI::kNormalFont;
     }
-    return selected_theme->typography.body;
+    return VSTGUI::kNormalFont;
 }
 
 ComponentStyle ThemeResolver::resolve(ComponentKind kind, VisualState state) const {

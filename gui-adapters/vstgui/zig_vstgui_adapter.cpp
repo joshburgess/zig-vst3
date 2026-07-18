@@ -392,6 +392,22 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
             (action.confirmation_label && action.confirmation_label[0] == 0) ||
             (action.failure_label && action.failure_label[0] == 0) ||
             (action.role == ZIG_VSTGUI_ACTION_DESTRUCTIVE && !action.confirmation_label)) return nullptr;
+        const uint32_t importer_targets[] = {
+            action.success_focus_importer_id,
+            action.ready_importer_id,
+        };
+        for (const uint32_t target : importer_targets) {
+            if (target != 0) {
+                bool found = false;
+                for (uint32_t drop_index = 0; drop_index < file_drop_count; ++drop_index) {
+                    if (file_drops[drop_index].drop_id == target) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) return nullptr;
+            }
+        }
         if (action.role == ZIG_VSTGUI_ACTION_PRIMARY && ++primary_count > 1) return nullptr;
         for (uint32_t previous = 0; previous < index; ++previous) {
             if (action_buttons[previous].group_id == action.group_id &&
@@ -406,7 +422,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
     }
     if ((!editable_labels && editable_label_count > 0) ||
         editable_label_count > ZIG_VSTGUI_MAX_EDITABLE_LABELS ||
-        (editable_label_count > 0 && (!callbacks.store_editor_text || !callbacks.load_editor_text))) return nullptr;
+        (editable_label_count > 0 && !callbacks.load_editor_text)) return nullptr;
+    bool has_editable_label = false;
     for (uint32_t index = 0; index < editable_label_count; ++index) {
         const auto& label = editable_labels[index];
         if (label.field_id == 0 || !label.label || label.label[0] == 0 ||
@@ -414,11 +431,16 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
             !label.error_text || label.error_text[0] == 0 || !label.initial_text ||
             label.maximum_bytes == 0 || label.maximum_bytes > 96 ||
             std::char_traits<char>::length(label.initial_text) > label.maximum_bytes ||
-            (label.enabled != 0 && label.enabled != 1)) return nullptr;
+            (label.enabled != 0 && label.enabled != 1) ||
+            (label.read_only != 0 && label.read_only != 1) ||
+            (label.read_only != 0 &&
+                (label.maximum_refresh_hz == 0 || label.maximum_refresh_hz > 60))) return nullptr;
+        has_editable_label = has_editable_label || label.read_only == 0;
         for (uint32_t previous = 0; previous < index; ++previous) {
             if (editable_labels[previous].field_id == label.field_id) return nullptr;
         }
     }
+    if (has_editable_label && !callbacks.store_editor_text) return nullptr;
     if ((!progress_indicators && progress_indicator_count > 0) ||
         progress_indicator_count > ZIG_VSTGUI_MAX_PROGRESS_INDICATORS ||
         (progress_indicator_count > 0 && !callbacks.load_progress)) return nullptr;
@@ -700,5 +722,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 18;
+    return 21;
 }

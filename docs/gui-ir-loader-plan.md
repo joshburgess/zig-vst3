@@ -36,6 +36,7 @@ Completion evidence:
 - `gui_ir_transport` uses 1,024-sample little-endian chunks with explicit begin, commit, cancel, and clear operations. The public controller wrapper hides VST message details from editor composition code.
 - `PartitionedConvolver(131_072, 512)` owns three immutable IR slots. Only the producer prepares spectra, and only the audio callback changes the active slot at a process boundary.
 - Unit tests cover mono and stereo convolution, pending replacement, stale generations, malformed chunks, sample-rate republication, decoded storage, controller-to-component transport, component teardown, and independent framework instances.
+- A focused importer regression replaces completed media, verifies decoded storage clears before the worker starts, and proves the newer generation publishes without exposing samples from the previous file. The focused importer suite passes 13 of 13 tests.
 - The reference processor reports a fixed 512-sample VST latency through its raw `IAudioProcessor` interface and delays the dry path by the same amount. pluginval 1.0.3 prints latency as zero through its hosting wrapper despite the raw interface test, so this discrepancy remains tracked for manual host verification.
 
 ## Milestone 2: Reusable Importer Composition
@@ -81,7 +82,7 @@ Exit criteria:
 
 Action-control completion evidence:
 
-- The public `ActionButton` declaration is shared unchanged by the component gallery and IR loader. It covers stable action identifiers, primary, secondary, and destructive roles, icon-only presentation, accessible labels, tooltips, confirmation text, and recoverable failure text.
+- The public `ActionButton` declaration is shared unchanged by the component gallery and IR loader. It covers stable action identifiers, primary, secondary, and destructive roles, icon-only presentation, accessible labels, tooltips, confirmation text, recoverable failure text, and an optional post-success importer focus target.
 - The native adapter copies all declaration strings per editor instance, validates unsafe or ambiguous declarations before construction, and exposes button names, descriptions, values, focus, and press actions through the toolkit-neutral accessibility contract.
 - Direct interaction tests cover pointer activation, Enter, Space, Escape, destructive confirmation, accepted and rejected callbacks, retry, disabled controls, declaration copying, semantic icon labels, and native validation failures.
 - The footer toolbar groups related actions with bounded spacing and separates action buttons from action menus. Focus and accessibility traversal now follow the visible top-to-bottom editor order, including file importers.
@@ -113,10 +114,10 @@ Milestone 3 is complete. The next implementation slice uses the viewport in the 
 
 - [x] Add zoom and horizontal navigation with pointer, keyboard, and accessibility actions.
 - [x] Add a bounded selection with visible start and end handles.
-- [ ] Add trim, normalize, reverse, fade-in, fade-out, reset, and clear commands.
-- [ ] Keep edits non-destructive until committed to a new immutable generation.
-- [ ] Show original and edited duration, peak, channels, sample rate, and pending state.
-- [ ] Add deterministic empty, importing, ready, editing, confirming, success, and recoverable-error visuals.
+- [x] Add trim, normalize, reverse, fade-in, fade-out, reset, and clear commands.
+- [x] Keep edits non-destructive until committed to a new immutable generation.
+- [x] Show original and edited duration, peak, channels, sample rate, and publication state.
+- [x] Add deterministic empty, importing, ready, editing, confirming, success, and recoverable-error visuals.
 
 Exit criteria:
 
@@ -134,13 +135,31 @@ Range-selection completion evidence:
 - Native tests cover bounds, minimum spans, handle crossing, pointer replacement, keyboard adjustment, viewport coexistence, atomic persistence, callback rejection, accessibility actions, invalid declarations, and public editor construction. `graph-viewports.png` records full and zoomed selection states. The isolated warm-render average is 105.7 us against the 300 us budget.
 - Post-change validation passed 54 of 54 Zig build steps and 3,666 of 3,666 tests. Raw ABI and Steinberg validation passed 152 of 152 steps. Linux and Windows cross-target bundle matrices each passed 35 of 35 steps. Serialized pluginval strictness 5 and strictness 10 matrices each passed 48 of 48 steps across all eleven bundles.
 
+Immutable-edit completion evidence:
+
+- `gui_ir_editor.Editor` owns fixed-capacity original, edited, and rollback buffers. Trim, normalize, reverse, fade-in, fade-out, and reset operate only on controller-owned memory. A rejected controller-to-processor publication restores the exact previous samples, metadata, dirty state, and generation before the action reports failure.
+- The original buffer remains unchanged until another file replaces it. Reset republishes that source as a new immutable processor generation. Clear uses the existing confirmation action and publishes an empty generation before releasing controller state.
+- Clear rejects before sending any processor message while importer work is active. This prevents a failed controller reset from silently clearing the processor. An integration test fixes the ordering contract.
+- Clear names Choose IR as its post-success focus target. The Zig authoring layer and native adapter reject unknown importer IDs. Native interaction coverage confirms the destructive action, dispatches the accepted command, and verifies that toolkit-neutral focus returns to the importer.
+- Every IR edit action depends on the importer Ready state. Empty, validating, importing, cancelled, and failed states remove those buttons from focus traversal and leave the importer action as the recovery path. Trim is the sole primary edit after a successful import. Native tests cover initial disabled and enabled states, focus-driven refresh, rejected activation while disabled, and invalid importer targets.
+- The IR editor declares all edit actions, graph selection, live metadata, and importer behavior through the public `@import("zig-vst3").vstgui` authoring surface. Ordinary composition imports no adapter implementation files.
+- The shared `EditableLabel` contract now supports read-only live values at a bounded 1–60 Hz rate. The component gallery and IR loader both use it. Read-only values are excluded from keyboard focus, reject native set-value attempts, stop polling on close, and render as plain data rather than editable inputs.
+- The IR loader reports sample rate, channel count, original duration, edited duration, original and edited peaks, and publication state. Unit coverage verifies composed edits, reset, silent-selection rejection, rollback, controller publication, processor adoption, metadata, and clear.
+- `editable-labels-progress.png` records editable, rejected, and read-only value states. Native interaction and macOS bridge tests cover read-only refresh, semantics, focus exclusion, setter rejection, callback requirements, and invalid refresh rates.
+- The automated local gate passed Zig tests, raw ABI checks, native adapter tests, macOS accessibility tests, visual regression, warm-render budgets, and every Steinberg validator. Linux and Windows example bundle matrices each passed 35 of 35 steps. Serialized pluginval strictness 5 and strictness 10 matrices each passed all eleven plugin bundles. These pluginval results prove lifecycle and protocol coverage, not visual correctness. After the Clear ordering regression was added, the focused aggregate test gate passed 54 of 54 steps and 3,670 of 3,670 tests.
+- The final full-scene warm render averaged 89.7 microseconds. Signal views averaged 260.6 microseconds, viewport rendering 49.5 microseconds, and range-selection rendering 104.5 microseconds. Each remained below its 300 microsecond budget.
+- The IR edit model reserves exactly 3 MiB for its three stereo sample buffers at the 131,072-frame limit. This storage is controller-owned and never accessed by the audio callback.
+- A REAPER 7.36 check on macOS exposed missing editor text that pluginval and the headless visual harness had not detected. The adapter now initializes VSTGUI before resolving theme fonts, resolves global font handles only while the runtime is live, and keeps runtime teardown after all theme-owned state. A repeated editor-construction regression covers the host lifecycle that the headless harness previously masked.
+- The same REAPER check exposed overlap in the dense component gallery at its accepted 720 by 600 size. Dense editors now use bounded vertical scrolling, while simple editors retain an unscrolled surface. Native tests cover both branches. Real-host scrolling and the IR loader's complete lower layout still require confirmation before this milestone is closed.
+- `ir-workflow-states.png` records Empty, Importing, Ready, Editing, Confirming, Success, and Recoverable Error as one production sequence. Each state names its dominant action or recovery path, and the destructive confirmation remains visually separate from the constructive import and edit path.
+
 ## Milestone 5: Production IR Plugin and API Decisions
 
 - [x] Add the IR plugin to native, Linux, and Windows example matrices.
-- [ ] Exercise assets, fonts, custom drawing, controller graph sources, and audio importing in the gallery and IR plugin.
+- [x] Exercise assets, fonts, custom drawing, controller graph sources, and audio importing in the gallery and IR plugin.
 - [ ] Promote shared contracts only after the gallery and two production consumers use the same public shape.
-- [ ] Keep single-consumer convolution and waveform-editing details experimental.
-- [ ] Document authoring, real-time ownership, memory limits, latency, and state restoration.
+- [x] Keep single-consumer convolution and waveform-editing details experimental.
+- [x] Document authoring, real-time ownership, memory limits, latency, and state restoration.
 
 Exit criteria:
 
@@ -149,13 +168,20 @@ Exit criteria:
 - Missing imported media restores as an explicit empty state.
 - Asset, font, drawing, importer, and graph status decisions cite their consumers and remaining blockers.
 
+Completion evidence in progress:
+
+- The gallery and IR loader both declare embedded SVG assets, preferred and fallback font families, and parameter drawing callbacks through the public `Skin` contract. The IR callback adds a bounded impulse mark to Bypass without replacing its text state or parameter attachment.
+- The IR loader also uses a controller-backed waveform graph and `FileImporter` with decoded-audio handoff in the same public editor declaration. Its focused integration suite passes 4 of 4 tests, including native editor construction with the asset, font, and drawing declarations.
+- Asset, font, and custom-drawing promotion remains pending until the rebuilt IR editor passes real-host visual inspection. The callback and asset do not affect the audio thread.
+- The framework guide now documents the public authoring path, controller and processor ownership, fixed message payload, per-instance memory ceilings, audio-thread constraints, and explicit empty-media restoration behavior. Decoded transport, editing buffers, and convolution remain experimental because they still have one production consumer.
+
 ## Milestone 6: Validation and Evidence
 
-- [ ] Add deterministic unit, interaction, accessibility, lifecycle, malformed-input, visual-regression, and performance coverage.
+- [x] Add deterministic unit, interaction, accessibility, lifecycle, malformed-input, visual-regression, and performance coverage.
 - [x] Run Zig tests, raw ABI checks, native adapter tests, macOS accessibility tests, visual tests, and all Steinberg validators.
 - [x] Cross-build every example bundle for Linux and Windows.
 - [x] Run pluginval serially at strictness 5 and strictness 10, stopping at the first unexpected exit.
-- [ ] Record convolution CPU, handoff latency, warm rendering, import throughput, and fixed memory ceilings.
+- [x] Record convolution CPU, handoff latency, warm rendering, import throughput, and fixed memory ceilings.
 - [ ] Commit each coherent completed milestone.
 
 External checks remain pending when their environments are unavailable:
@@ -167,11 +193,13 @@ External checks remain pending when their environments are unavailable:
 
 Validation evidence for the bounded convolution milestone:
 
+- `zig build benchmark` measures the production 131,072-frame, 512-sample-partition convolver at 19.02 MiB of fixed processor storage, plus 1.00 MiB for controller decoding and 3.00 MiB for original, edited, and rollback buffers. A local release run measured 1.27 ms for maximum-length preparation and publication, 24 us for pending adoption, 630.9 ns per stereo sample, and 3.0 percent of one 48 kHz core. The bounded 8 MiB PCM WAV fixture decoded at 796.9 MiB/s. These are local regression measurements, not universal hardware guarantees.
+- The latest isolated native visual run measured 97.5 us for the full reference scene, 275.3 us for maximum-capacity signal views, 55.8 us for the viewport, and 110.8 us for range selection. Each remained below its 300 us warm-render budget. Aggregate reruns while REAPER remains open are treated as invalid when another renderer pushes a component over budget.
 - `zig build test --summary all`: 54 of 54 steps and 3,617 of 3,617 tests passed, including the raw VST latency assertion.
 - `zig build raw-api-abi validate-examples --summary all`: 152 of 152 steps passed. All eleven example bundles passed 47 Steinberg validator tests each.
 - `zig build bundle-examples-linux -Dtarget=aarch64-linux-gnu --summary all`: 35 of 35 steps passed.
 - `zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu --summary all`: 35 of 35 steps passed.
-- Serialized pluginval strictness 5 and strictness 10 matrices each completed 48 of 48 steps. All eleven plugins passed, including the IR loader's editor, processing, automation, state restoration, background-thread state, parameter thread safety, and parameter fuzzing checks.
+- Serialized pluginval strictness 5 and strictness 10 matrices each completed 48 of 48 steps. All eleven plugins passed lifecycle, processing, automation, state restoration, background-thread state, parameter thread safety, and parameter fuzzing checks. Real-host inspection remains the authority for rendered text, layout, clipping, scrolling, and interaction appearance.
 
 API status after this milestone:
 

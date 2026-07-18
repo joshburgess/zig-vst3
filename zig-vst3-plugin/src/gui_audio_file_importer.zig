@@ -111,8 +111,12 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
             return true;
         }
 
+        pub fn canReset(self: *const Self) bool {
+            return !self.worker_running.load(.acquire);
+        }
+
         pub fn reset(self: *Self) bool {
-            if (self.worker_running.load(.acquire)) return false;
+            if (!self.canReset()) return false;
             self.reapWorker();
             self.lock();
             defer self.unlock();
@@ -571,6 +575,34 @@ test "audio importer instances publish isolated previews" {
     try std.testing.expectEqual(gui_file_importer.Status.ready, first.snapshot().import.status);
     try std.testing.expectEqual(gui_file_importer.Status.idle, second.snapshot().import.status);
     try std.testing.expectEqual(@as(usize, 0), second.snapshot().preview_points);
+}
+
+test "audio importer replaces completed media without exposing stale decoded data" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const first_fixture = pcm16Fixture(8);
+    const second_fixture = pcm16Fixture(16);
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "first.wav", .data = &first_fixture });
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "second.wav", .data = &second_fixture });
+    var first_path: [1024]u8 = undefined;
+    const first_length = try temporary.dir.realPathFile(std.testing.io, "first.wav", &first_path);
+    var second_path: [1024]u8 = undefined;
+    const second_length = try temporary.dir.realPathFile(std.testing.io, "second.wav", &second_path);
+
+    var importer = DecodedImporter(16).init();
+    defer importer.deinit();
+    try std.testing.expect(importer.begin(.picker, &.{first_path[0..first_length]}));
+    waitForWorker(&importer);
+    const first_generation = importer.snapshot().import.generation;
+    try std.testing.expectEqual(@as(usize, 8), importer.snapshot().decoded_frames);
+
+    try std.testing.expect(importer.begin(.drop, &.{second_path[0..second_length]}));
+    try std.testing.expectEqual(@as(usize, 0), importer.snapshot().decoded_frames);
+    waitForWorker(&importer);
+    const replacement = importer.snapshot();
+    try std.testing.expectEqual(gui_file_importer.Status.ready, replacement.import.status);
+    try std.testing.expect(replacement.import.generation > first_generation);
+    try std.testing.expectEqual(@as(usize, 16), replacement.decoded_frames);
 }
 
 test "audio importer acknowledges cancellation before teardown joins the worker" {

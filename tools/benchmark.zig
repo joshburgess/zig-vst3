@@ -77,6 +77,7 @@ pub fn main() !void {
     (try benchWaveformCapture()).print();
     (try benchSpectrumAnalyzer()).print();
     try benchAudioFileImport();
+    try benchIrConvolution();
 }
 
 fn benchRawStream() !Benchmark {
@@ -275,6 +276,74 @@ fn benchAudioFileImport() !void {
     const mebibytes_per_second = @as(f64, @floatFromInt(data_bytes)) * @as(f64, std.time.ns_per_s) /
         (@as(f64, @floatFromInt(elapsed_ns)) * 1024.0 * 1024.0);
     std.debug.print("bounded PCM WAV worker: {d:.1} MiB/s ({d} bytes)\n", .{ mebibytes_per_second, data_bytes });
+}
+
+fn benchIrConvolution() !void {
+    const maximum_frames = 131_072;
+    const partition_size = 512;
+    const Convolver = plug.gui_ir_convolution.PartitionedConvolver(maximum_frames, partition_size);
+    const Importer = plug.gui_audio_file_importer.DecodedImporter(maximum_frames);
+    const Editor = plug.gui_ir_editor.Editor(maximum_frames);
+    const allocator = std.heap.page_allocator;
+    const convolver = try allocator.create(Convolver);
+    defer allocator.destroy(convolver);
+    convolver.initInPlace(48_000);
+
+    const impulse = try allocator.alloc(f32, maximum_frames);
+    defer allocator.free(impulse);
+    for (impulse, 0..) |*sample, index| {
+        const decay = @exp(-8.0 * @as(f32, @floatFromInt(index)) / @as(f32, maximum_frames));
+        sample.* = if (index == 0) 1.0 else decay * 0.05;
+    }
+
+    var preparation_timer = try Timer.start();
+    try convolver.begin(.{
+        .generation = 1,
+        .sample_rate = 48_000,
+        .channels = 1,
+        .frames = maximum_frames,
+    });
+    var offset: usize = 0;
+    while (offset < impulse.len) {
+        const end = @min(offset + 1024, impulse.len);
+        try convolver.write(1, offset, impulse[offset..end]);
+        offset = end;
+    }
+    try convolver.commit(1);
+    const preparation_ns = try preparation_timer.read();
+
+    var adoption_timer = try Timer.start();
+    if (!convolver.adoptPending()) return error.BenchmarkConvolutionAdoptionFailed;
+    const adoption_ns = try adoption_timer.read();
+
+    var checksum: f32 = 0.0;
+    var processing_timer = try Timer.start();
+    for (0..partition_size) |index| {
+        const input: f32 = if (index == 0) 1.0 else 0.0;
+        const output = convolver.processFrame(input, input);
+        checksum += output[0] + output[1];
+    }
+    const processing_ns = try processing_timer.read();
+    std.mem.doNotOptimizeAway(checksum);
+
+    const mib = @as(f64, @floatFromInt(@sizeOf(Convolver))) / (1024.0 * 1024.0);
+    const importer_mib = @as(f64, @floatFromInt(@sizeOf(Importer))) / (1024.0 * 1024.0);
+    const editor_mib = @as(f64, @floatFromInt(@sizeOf(Editor))) / (1024.0 * 1024.0);
+    const preparation_ms = @as(f64, @floatFromInt(preparation_ns)) / std.time.ns_per_ms;
+    const ns_per_sample = @as(f64, @floatFromInt(processing_ns)) / partition_size;
+    const realtime_cpu = ns_per_sample * 48_000.0 * 100.0 / std.time.ns_per_s;
+    std.debug.print("IR convolver fixed storage: {d:.2} MiB ({d} frames, {d}-sample partitions)\n", .{
+        mib, maximum_frames, partition_size,
+    });
+    std.debug.print("IR controller fixed storage: {d:.2} MiB importer + {d:.2} MiB editor\n", .{
+        importer_mib, editor_mib,
+    });
+    std.debug.print("IR preparation and publication: {d:.2} ms; pending adoption: {d} ns\n", .{
+        preparation_ms, adoption_ns,
+    });
+    std.debug.print("IR convolution: {d:.1} ns/sample, {d:.1}% of one 48 kHz core\n", .{
+        ns_per_sample, realtime_cpu,
+    });
 }
 
 fn fillInput(buffer: []f32, scale: f32) void {

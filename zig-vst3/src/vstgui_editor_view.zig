@@ -133,7 +133,7 @@ pub const max_pianos = 2;
 pub const max_step_sequencers = 2;
 pub const max_steps = 32;
 pub const max_action_buttons = 12;
-pub const max_editable_labels = 4;
+pub const max_editable_labels = 8;
 pub const max_progress_indicators = 4;
 pub const max_file_drops = 2;
 pub const max_drop_extensions = 8;
@@ -217,6 +217,8 @@ pub const ActionButtonDescription = extern struct {
     role: ActionRole,
     icon: ActionIcon,
     enabled: types.int32,
+    success_focus_importer_id: types.uint32 = 0,
+    ready_importer_id: types.uint32 = 0,
 };
 
 pub const EditableLabelDescription = extern struct {
@@ -228,6 +230,8 @@ pub const EditableLabelDescription = extern struct {
     initial_text: [*:0]const u8,
     maximum_bytes: types.uint32,
     enabled: types.int32,
+    read_only: types.int32 = 0,
+    maximum_refresh_hz: types.uint32 = 0,
 };
 
 pub const ProgressMode = enum(c_int) {

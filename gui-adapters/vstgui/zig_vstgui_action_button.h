@@ -10,6 +10,7 @@
 #include "vstgui/lib/iviewlistener.h"
 
 #include <string>
+#include <functional>
 
 namespace ZigVstgui {
 
@@ -19,15 +20,18 @@ public:
         VSTGUI::CViewContainer* parent,
         const ZigVstguiActionButtonDescription& description,
         ZigVstguiCallbacks callbacks,
-        const ThemeResolver& styles
+        const ThemeResolver& styles,
+        std::function<void(uint32_t)> accepted_handler = {}
     );
     void clear();
     void setBounds(const VSTGUI::CRect& bounds);
+    void setEnabled(bool enabled);
     bool handleKey(uint16_t key, int16_t key_code, int16_t modifiers);
     bool activate();
     bool cancelPending();
     bool confirming() const;
     bool failed() const;
+    bool enabled() const;
     VSTGUI::CView* focusView() const;
     void setFocusedView(VSTGUI::CView* view);
     const AccessibilityNode& accessibilityNode() const;
@@ -53,6 +57,7 @@ private:
     std::string confirmation_label;
     std::string failure_label;
     std::string idle_text;
+    std::function<void(uint32_t)> accepted_handler;
     VSTGUI::CTextButton* button {nullptr};
     Component component;
     bool confirmation_pending {false};

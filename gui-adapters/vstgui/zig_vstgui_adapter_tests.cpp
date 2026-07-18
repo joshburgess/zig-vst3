@@ -427,6 +427,21 @@ int testGestureOwnership() {
     return 0;
 }
 
+int testEditorRuntimeFontLifecycle() {
+    const ZigVstguiParameterDescription parameter {
+        1, 0.5, {"Gain", "dB", 0, 0.5}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+    };
+    for (uint32_t iteration = 0; iteration < 2; ++iteration) {
+        auto* editor = zig_vstgui_editor_create(&parameter, 1, {});
+        if (!editor || !editor->valid() || editor->contentScrollingActive()) {
+            zig_vstgui_editor_destroy(editor);
+            return static_cast<int>(iteration + 1);
+        }
+        zig_vstgui_editor_destroy(editor);
+    }
+    return 0;
+}
+
 int testActiveGestureCleanup() {
     CallbackState state;
     ZigVstguiCallbacks callbacks {};
@@ -930,7 +945,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 18) return 1;
+    if (zig_vstgui_adapter_version() != 21) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -1863,6 +1878,8 @@ int testActionButtons() {
     ZigVstguiCallbacks callbacks {};
     callbacks.userdata = &state;
     callbacks.invoke_action = invokeAction;
+    callbacks.import_files = importFiles;
+    callbacks.load_file_import = loadFileImport;
     char accessible_label[] = "Clear impulse response";
     const ZigVstguiActionButtonDescription description {
         2,
@@ -1938,16 +1955,65 @@ int testActionButtons() {
     const ZigVstguiParameterDescription parameter {
         10, 0.5, {"Gain", "dB", 0, 0.5}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
     };
+    const char* extensions[] = {".wav"};
+    const ZigVstguiFileDropDescription importer {
+        9, "Impulse Response", "Drop a WAV file here", extensions, 1, 1, 1, "Choose IR", "Choose IR",
+    };
+    auto focus_description = description;
+    focus_description.success_focus_importer_id = 9;
+    focus_description.ready_importer_id = 9;
+    state.import_snapshot_available = true;
+    state.import_snapshot.status = ZIG_VSTGUI_FILE_IMPORT_READY;
+    state.import_snapshot.failure = ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE;
+    state.import_snapshot.entry_point = ZIG_VSTGUI_FILE_IMPORT_PICKER;
+    state.import_snapshot.progress = 1.0;
+    state.import_snapshot.generation = 1;
     auto* editor = zig_vstgui_editor_create_widgets(
         &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
-        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
-        &description, 1, {}
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, &importer, 1,
+        &focus_description, 1, {}
     );
-    if (!editor || !editor->actionButtonAccessibility(0)) {
+    if (!editor || !editor->actionButtonAccessibility(0) || !editor->fileDropAccessibility(0) ||
+        !editor->actionButtonAccessibility(0)->state().enabled) {
         zig_vstgui_editor_destroy(editor);
         return 7;
     }
+    const auto* button_accessibility = editor->actionButtonAccessibility(0);
+    state.import_snapshot.status = ZIG_VSTGUI_FILE_IMPORT_IDLE;
+    editor->setFocus(true);
+    if (button_accessibility->state().enabled ||
+        button_accessibility->perform(ZigVstgui::AccessibilityAction::focus)) {
+        zig_vstgui_editor_destroy(editor);
+        return 8;
+    }
+    state.import_snapshot.status = ZIG_VSTGUI_FILE_IMPORT_READY;
+    editor->setFocus(true);
+    if (!button_accessibility->perform(ZigVstgui::AccessibilityAction::press) ||
+        !button_accessibility->perform(ZigVstgui::AccessibilityAction::press) ||
+        !editor->fileDropAccessibility(0)->state().focused) {
+        zig_vstgui_editor_destroy(editor);
+        return 9;
+    }
     zig_vstgui_editor_destroy(editor);
+
+    state.import_snapshot.status = ZIG_VSTGUI_FILE_IMPORT_IDLE;
+    auto* idle_editor = zig_vstgui_editor_create_widgets(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, &importer, 1,
+        &focus_description, 1, {}
+    );
+    if (!idle_editor || idle_editor->actionButtonAccessibility(0)->state().enabled ||
+        idle_editor->actionButtonAccessibility(0)->perform(ZigVstgui::AccessibilityAction::press)) {
+        zig_vstgui_editor_destroy(idle_editor);
+        return 10;
+    }
+    state.import_snapshot.status = ZIG_VSTGUI_FILE_IMPORT_READY;
+    idle_editor->setFocus(true);
+    if (!idle_editor->actionButtonAccessibility(0)->state().enabled) {
+        zig_vstgui_editor_destroy(idle_editor);
+        return 11;
+    }
+    zig_vstgui_editor_destroy(idle_editor);
 
     auto invalid = description;
     invalid.confirmation_label = nullptr;
@@ -1955,7 +2021,21 @@ int testActionButtons() {
         &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
         nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
         &invalid, 1, {}
-    )) return 8;
+    )) return 12;
+    auto invalid_focus = description;
+    invalid_focus.success_focus_importer_id = 10;
+    if (zig_vstgui_editor_create_widgets(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, &importer, 1,
+        &invalid_focus, 1, {}
+    )) return 13;
+    auto invalid_ready = description;
+    invalid_ready.ready_importer_id = 10;
+    if (zig_vstgui_editor_create_widgets(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, &importer, 1,
+        &invalid_ready, 1, {}
+    )) return 14;
     const ZigVstguiActionButtonDescription unsafe[] = {
         {1, 1, "Apply", "Apply", nullptr, nullptr, nullptr, ZIG_VSTGUI_ACTION_PRIMARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1},
         {1, 2, "Clear", "Clear", nullptr, "Confirm Clear", nullptr, ZIG_VSTGUI_ACTION_DESTRUCTIVE, ZIG_VSTGUI_ACTION_ICON_NONE, 1},
@@ -1964,7 +2044,7 @@ int testActionButtons() {
         &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
         nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
         unsafe, 2, {}
-    )) return 9;
+    )) return 15;
     return 0;
 }
 
@@ -2344,6 +2424,28 @@ int testEditableLabelsAndProgress() {
             return 3;
         }
 
+        ZigVstguiCallbacks read_only_callbacks {};
+        read_only_callbacks.userdata = &state;
+        read_only_callbacks.load_editor_text = loadEditorText;
+        const ZigVstguiEditableLabelDescription read_only {
+            12, "Format", "Impulse response format", "", "Value unavailable", "48 kHz, mono",
+            48, 1, 1, 10,
+        };
+        ZigVstgui::EditableLabelControl live_label;
+        if (!live_label.build(container, read_only, read_only_callbacks, styles) ||
+            !live_label.accessibilityNode().state().read_only || live_label.focusView() ||
+            live_label.accessibilityNode().supports(ZigVstgui::AccessibilityAction::focus) ||
+            live_label.accessibilityNode().supports(ZigVstgui::AccessibilityAction::set_value)) {
+            VSTGUI::exit();
+            return 11;
+        }
+        state.editor_text = "96 kHz, stereo";
+        if (!live_label.refresh() || live_label.accessibilityNode().valueText() != "96 kHz, stereo") {
+            VSTGUI::exit();
+            return 12;
+        }
+        live_label.clear();
+
         state.progress_available = true;
         state.progress_snapshot = {ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_IDLE, 0.0, 0};
         ZigVstgui::ProgressIndicatorControl indicator;
@@ -2382,9 +2484,15 @@ int testEditableLabelsAndProgress() {
         nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
         nullptr, 0, &editable, 1, &progress, 1, {}
     );
-    if (!editor || !editor->editableLabelAccessibility(0) || !editor->progressAccessibility(0)) {
+    if (!editor || !editor->editableLabelAccessibility(0) || !editor->progressAccessibility(0) ||
+        !editor->contentScrollingActive() || editor->contentHeight() <= 300.0) {
         zig_vstgui_editor_destroy(editor);
         return 8;
+    }
+    if (!editor->resize(640, 480) || editor->contentScrollingActive() ||
+        !closeEnough(editor->contentHeight(), 480.0)) {
+        zig_vstgui_editor_destroy(editor);
+        return 16;
     }
     zig_vstgui_editor_destroy(editor);
     auto invalid_editable = editable;
@@ -2401,6 +2509,35 @@ int testEditableLabelsAndProgress() {
         nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
         nullptr, 0, &editable, 1, &invalid_progress, 1, {}
     )) return 10;
+    ZigVstguiCallbacks read_only_callbacks = callbacks;
+    read_only_callbacks.store_editor_text = nullptr;
+    const ZigVstguiEditableLabelDescription read_only {
+        12, "Format", "Impulse response format", "", "Value unavailable", "48 kHz, mono",
+        48, 1, 1, 10,
+    };
+    editor = zig_vstgui_editor_create_components(
+        &parameter, 1, read_only_callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        nullptr, 0, &read_only, 1, nullptr, 0, {}
+    );
+    if (!editor || !editor->editableLabelAccessibility(0) ||
+        !editor->editableLabelAccessibility(0)->state().read_only) {
+        zig_vstgui_editor_destroy(editor);
+        return 13;
+    }
+    zig_vstgui_editor_destroy(editor);
+    if (zig_vstgui_editor_create_components(
+        &parameter, 1, read_only_callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        nullptr, 0, &editable, 1, nullptr, 0, {}
+    )) return 14;
+    auto invalid_read_only = read_only;
+    invalid_read_only.maximum_refresh_hz = 61;
+    if (zig_vstgui_editor_create_components(
+        &parameter, 1, read_only_callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        nullptr, 0, &invalid_read_only, 1, nullptr, 0, {}
+    )) return 15;
     return 0;
 }
 
@@ -2414,6 +2551,7 @@ int main() {
     if (const int result = testSteppedGestureQuantization(); result != 0) return 55 + result;
     if (const int result = testParameterContextMenu(); result != 0) return 60 + result;
     if (const int result = testThemeResolution(); result != 0) return 70 + result;
+    if (const int result = testEditorRuntimeFontLifecycle(); result != 0) return 75 + result;
     if (const int result = testMultiParameterAttachmentAndXYPad(); result != 0) return 80 + result;
     if (const int result = testMultiParameterRouting(); result != 0) return 90 + result;
     if (const int result = testLayoutSolvers(); result != 0) return 110 + result;

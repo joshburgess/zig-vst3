@@ -11,6 +11,13 @@
 
 namespace ZigVstgui {
 
+EditableLabelControl::~EditableLabelControl() {
+    if (timer) {
+        timer->stop();
+        timer->forget();
+    }
+}
+
 bool EditableLabelControl::build(VSTGUI::CViewContainer* parent,
     const ZigVstguiEditableLabelDescription& value_description, ZigVstguiCallbacks value_callbacks,
     const ThemeResolver& styles) {
@@ -38,6 +45,11 @@ bool EditableLabelControl::build(VSTGUI::CViewContainer* parent,
     edit->setFrameWidth(value_style.frame_width);
     edit->setRoundRectRadius(value_style.radius);
     edit->setPlaceholderString(description.placeholder);
+    if (description.read_only != 0) {
+        edit->setBackColor(label_style.background);
+        edit->setFrameWidth(0.0);
+        edit->setHoriAlign(VSTGUI::kLeftText);
+    }
     message->setFont(styles.font(TypographyRole::body));
     message->setFontColor(VSTGUI::CColor(196, 72, 72, 255));
     message->setBackColor(label_style.background);
@@ -46,30 +58,58 @@ bool EditableLabelControl::build(VSTGUI::CViewContainer* parent,
     parent->addView(label);
     parent->addView(edit);
     parent->addView(message);
-    edit->registerViewListener(this);
+    if (description.read_only == 0) edit->registerViewListener(this);
     label_component.bind(label);
     edit_component.bind(edit);
     message_component.bind(message);
     label_component.accessibility().setRole(AccessibilityRole::group);
     label_component.accessibility().setName(description.label);
     label_component.accessibility().setReadOnly(true);
-    edit_component.setFocusable(true);
+    edit->setMouseEnabled(description.read_only == 0);
+    edit_component.setFocusable(description.read_only == 0);
     edit_component.setEnabled(description.enabled != 0);
     edit_component.accessibility().setRole(AccessibilityRole::text_field);
     edit_component.accessibility().setName(description.accessible_label);
     edit_component.accessibility().setValueText(accepted_text);
-    edit_component.accessibility().setActionHandler(this, accessibilityAction,
-        static_cast<uint32_t>(AccessibilityAction::focus) |
-        static_cast<uint32_t>(AccessibilityAction::set_value));
+    edit_component.accessibility().setReadOnly(description.read_only != 0);
+    if (description.read_only == 0) {
+        edit_component.accessibility().setActionHandler(this, accessibilityAction,
+            static_cast<uint32_t>(AccessibilityAction::focus) |
+            static_cast<uint32_t>(AccessibilityAction::set_value));
+    }
     message_component.accessibility().setRole(AccessibilityRole::group);
     message_component.accessibility().setName(error_text);
     message_component.accessibility().setReadOnly(true);
     showError(false);
+    if (description.read_only != 0) {
+        const uint32_t interval = std::max(16u, (1000u + description.maximum_refresh_hz - 1) /
+            description.maximum_refresh_hz);
+        timer = new (std::nothrow) VSTGUI::CVSTGUITimer(
+            [this](VSTGUI::CVSTGUITimer*) { refresh(); }, interval, false
+        );
+        if (!timer) return false;
+    }
     return true;
 }
 
+void EditableLabelControl::start() {
+    if (timer) {
+        refresh();
+        timer->start();
+    }
+}
+
+void EditableLabelControl::stop() {
+    if (timer) timer->stop();
+}
+
 void EditableLabelControl::clear() {
-    if (edit) edit->unregisterViewListener(this);
+    if (timer) {
+        timer->stop();
+        timer->forget();
+        timer = nullptr;
+    }
+    if (edit && description.read_only == 0) edit->unregisterViewListener(this);
     edit_component.accessibility().clearActionHandler();
     label_component.clear();
     edit_component.clear();
@@ -100,7 +140,7 @@ bool EditableLabelControl::refresh() {
 }
 
 bool EditableLabelControl::handleKey(uint16_t key, int16_t key_code) {
-    if (!edit) return false;
+    if (!edit || description.read_only != 0) return false;
     if (key_code == Steinberg::KEY_ESCAPE || key == 27) {
         edit->setText(accepted_text.c_str());
         showError(false);
@@ -109,7 +149,11 @@ bool EditableLabelControl::handleKey(uint16_t key, int16_t key_code) {
     return false;
 }
 
-VSTGUI::CView* EditableLabelControl::focusView() const { return edit; }
+VSTGUI::CView* EditableLabelControl::focusView() const {
+    return description.read_only == 0 ? edit : nullptr;
+}
+
+VSTGUI::CView* EditableLabelControl::accessibilityView() const { return edit; }
 
 void EditableLabelControl::setFocusedView(VSTGUI::CView* view) {
     edit_component.setFocused(view && view == edit);
@@ -120,7 +164,7 @@ const AccessibilityNode& EditableLabelControl::accessibilityNode() const {
 }
 
 void EditableLabelControl::valueChanged(VSTGUI::CControl*) {
-    if (edit) commit(edit->getText().getString().c_str());
+    if (edit && description.read_only == 0) commit(edit->getText().getString().c_str());
 }
 
 void EditableLabelControl::viewLostFocus(VSTGUI::CView* view) {
@@ -145,7 +189,8 @@ bool EditableLabelControl::accessibilityAction(void* userdata, const Accessibili
 }
 
 bool EditableLabelControl::commit(const char* text) {
-    if (!text || !callbacks.store_editor_text || std::char_traits<char>::length(text) > description.maximum_bytes) {
+    if (description.read_only != 0 || !text || !callbacks.store_editor_text ||
+        std::char_traits<char>::length(text) > description.maximum_bytes) {
         showError(true);
         return false;
     }

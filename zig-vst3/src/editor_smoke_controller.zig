@@ -33,6 +33,7 @@ pub const waveform_zoom_state_id: u32 = 12;
 pub const waveform_x_offset_state_id: u32 = 13;
 pub const waveform_selection_start_state_id: u32 = 14;
 pub const waveform_selection_end_state_id: u32 = 15;
+pub const gallery_live_label_state_id: u32 = 16;
 
 const gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
@@ -45,6 +46,7 @@ const cleared_gallery_envelope = plug_core.editor_state.Envelope.init(&.{
 }) catch unreachable;
 const empty_preset_search = plug_core.editor_state.Text.init("") catch unreachable;
 const gallery_label = plug_core.editor_state.Text.init("Studio Plate") catch unreachable;
+const gallery_live_label = plug_core.editor_state.Text.init("48 kHz, stereo") catch unreachable;
 
 pub const GalleryEditorState = plug_core.editor_state.Store(1, &.{
     .{ .id = panel_expanded_state_id, .default = .{ .boolean = true } },
@@ -62,6 +64,7 @@ pub const GalleryEditorState = plug_core.editor_state.Store(1, &.{
     .{ .id = waveform_x_offset_state_id, .default = .{ .scalar = 0.0 } },
     .{ .id = waveform_selection_start_state_id, .default = .{ .scalar = 0.2 } },
     .{ .id = waveform_selection_end_state_id, .default = .{ .scalar = 0.8 } },
+    .{ .id = gallery_live_label_state_id, .default = .{ .text = gallery_live_label } },
 });
 
 fn applyPreset(
@@ -345,14 +348,22 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .role = .destructive,
                 },
             },
-            .editable_labels = &.{.{
-                .field_id = gallery_label_state_id,
-                .label = "Editable Label",
-                .accessible_label = "Effect name",
-                .placeholder = "Name this effect",
-                .error_text = "Enter a name",
-                .maximum_bytes = 48,
-            }},
+            .editable_labels = &.{
+                .{
+                    .field_id = gallery_label_state_id,
+                    .label = "Editable Label",
+                    .accessible_label = "Effect name",
+                    .placeholder = "Name this effect",
+                    .error_text = "Enter a name",
+                    .maximum_bytes = 48,
+                },
+                .{
+                    .field_id = gallery_live_label_state_id,
+                    .label = "Live Value",
+                    .accessible_label = "Example live value",
+                    .read_only = true,
+                },
+            },
             .progress_indicators = &.{.{
                 .source_id = 1,
                 .label = "Progress",

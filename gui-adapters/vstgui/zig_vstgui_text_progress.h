@@ -16,14 +16,18 @@ namespace ZigVstgui {
 
 class EditableLabelControl final : public VSTGUI::IControlListener, public VSTGUI::ViewListenerAdapter {
 public:
+    ~EditableLabelControl();
     bool build(VSTGUI::CViewContainer* parent, const ZigVstguiEditableLabelDescription& description,
         ZigVstguiCallbacks callbacks, const ThemeResolver& styles);
     void clear();
     void setBounds(const VSTGUI::CRect& label_bounds, const VSTGUI::CRect& edit_bounds,
         const VSTGUI::CRect& message_bounds);
+    void start();
+    void stop();
     bool refresh();
     bool handleKey(uint16_t key, int16_t key_code);
     VSTGUI::CView* focusView() const;
+    VSTGUI::CView* accessibilityView() const;
     void setFocusedView(VSTGUI::CView* view);
     const AccessibilityNode& accessibilityNode() const;
 
@@ -44,6 +48,7 @@ private:
     VSTGUI::CTextLabel* label {nullptr};
     VSTGUI::CTextEdit* edit {nullptr};
     VSTGUI::CTextLabel* message {nullptr};
+    VSTGUI::CVSTGUITimer* timer {nullptr};
     Component label_component;
     Component edit_component;
     Component message_component;

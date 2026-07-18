@@ -56,6 +56,14 @@ double graphAxisValue(double normalized, const ZigVstguiGraphAxis& axis) {
 
 }
 
+ZigVstgui::RuntimeGuard::RuntimeGuard() {
+    if (editor_count.fetch_add(1, std::memory_order_acq_rel) == 0) VSTGUI::init(nullptr);
+}
+
+ZigVstgui::RuntimeGuard::~RuntimeGuard() {
+    if (editor_count.fetch_sub(1, std::memory_order_acq_rel) == 1) VSTGUI::exit();
+}
+
 ZigVstguiEditor::ZigVstguiEditor(
     const ZigVstguiParameterDescription* parameters,
     uint32_t value_parameter_count,
@@ -103,8 +111,6 @@ ZigVstguiEditor::ZigVstguiEditor(
   theme_resolver(selectedTheme(skin.theme)),
   theme_kind(skin.theme),
   layout_kind(skin.layout) {
-    if (editor_count.fetch_add(1, std::memory_order_acq_rel) == 0) VSTGUI::init(nullptr);
-    initialized = true;
     profile_enabled = std::getenv("ZIG_VSTGUI_PROFILE") != nullptr;
     if (preset_browser_count > 0) {
         width = 720;
@@ -311,6 +317,7 @@ ZigVstguiEditor::ZigVstguiEditor(
             file_drop_descriptions[index], callbacks
         ));
         if (!file_drop_controls[index]) return;
+        file_drop_controls[index]->setImportStateHandler(this, importStateChanged);
     }
     for (uint32_t index = 0; index < action_button_count; ++index) {
         const auto& action = action_buttons[index];
@@ -412,7 +419,6 @@ ZigVstguiEditor::~ZigVstguiEditor() {
     if (frame) frame->forget();
     reportMetrics();
     ZigVstgui::releasePlatformInterfaces(plug_frame, wayland_host);
-    if (initialized && editor_count.fetch_sub(1, std::memory_order_acq_rel) == 1) VSTGUI::exit();
 }
 
 bool ZigVstguiEditor::valid() const {
@@ -427,6 +433,7 @@ bool ZigVstguiEditor::open(void* parent, ZigVstguiPlatform platform) {
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->start();
     for (uint32_t index = 0; index < graph_count; ++index) graph_controls[index]->start();
     for (uint32_t index = 0; index < step_sequencer_count; ++index) step_sequencer_controls[index]->start();
+    for (uint32_t index = 0; index < editable_label_count; ++index) editable_label_controls[index]->start();
     for (uint32_t index = 0; index < progress_indicator_count; ++index) progress_controls[index]->start();
     return true;
 }
@@ -435,6 +442,7 @@ void ZigVstguiEditor::close() {
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->stop();
     for (uint32_t index = 0; index < graph_count; ++index) graph_controls[index]->stop();
     for (uint32_t index = 0; index < step_sequencer_count; ++index) step_sequencer_controls[index]->stop();
+    for (uint32_t index = 0; index < editable_label_count; ++index) editable_label_controls[index]->stop();
     for (uint32_t index = 0; index < progress_indicator_count; ++index) progress_controls[index]->stop();
     accessibility_bridge.close();
     if (!frame || !frame->getPlatformFrame()) return;
@@ -575,6 +583,57 @@ const ZigVstgui::AccessibilityNode* ZigVstguiEditor::stepSequencerAccessibility(
 
 const ZigVstgui::AccessibilityNode* ZigVstguiEditor::fileDropAccessibility(uint32_t index) const {
     return index < file_drop_count ? &file_drop_controls[index]->accessibilityNode() : nullptr;
+}
+
+void ZigVstguiEditor::focusFileImporter(uint32_t importer_id) {
+    if (!frame) return;
+    for (uint32_t index = 0; index < file_drop_count; ++index) {
+        if (file_drop_descriptions[index].drop_id != importer_id) continue;
+        if (auto* view = file_drop_controls[index]->focusView()) {
+            frame->setFocusView(view);
+            for (uint32_t action_index = 0; action_index < action_button_count; ++action_index) {
+                action_button_controls[action_index]->setFocusedView(nullptr);
+            }
+            for (uint32_t importer_index = 0; importer_index < file_drop_count; ++importer_index) {
+                file_drop_controls[importer_index]->setFocusedView(
+                    importer_index == index ? view : nullptr
+                );
+            }
+        }
+        return;
+    }
+}
+
+void ZigVstguiEditor::actionAccepted(uint32_t importer_id) {
+    for (uint32_t index = 0; index < file_drop_count; ++index) {
+        file_drop_controls[index]->refreshImportState();
+    }
+    if (importer_id != 0) focusFileImporter(importer_id);
+}
+
+void ZigVstguiEditor::importStateChanged(void* userdata, uint32_t, ZigVstguiFileImportStatus) {
+    auto* editor = static_cast<ZigVstguiEditor*>(userdata);
+    if (editor) editor->updateActionButtonStates();
+}
+
+void ZigVstguiEditor::updateActionButtonStates() {
+    for (uint32_t action_index = 0; action_index < action_button_count; ++action_index) {
+        const auto& description = action_button_descriptions[action_index];
+        bool enabled = description.enabled != 0;
+        if (enabled && description.ready_importer_id != 0) {
+            enabled = false;
+            for (uint32_t importer_index = 0; importer_index < file_drop_count; ++importer_index) {
+                if (file_drop_descriptions[importer_index].drop_id == description.ready_importer_id) {
+                    enabled = file_drop_controls[importer_index]->importReady();
+                    break;
+                }
+            }
+        }
+        const bool loses_focus = !enabled && frame &&
+            frame->getFocusView() == action_button_controls[action_index]->focusView();
+        action_button_controls[action_index]->setEnabled(enabled);
+        if (loses_focus) focusFileImporter(description.ready_importer_id);
+    }
 }
 
 const ZigVstgui::AccessibilityNode* ZigVstguiEditor::actionButtonAccessibility(uint32_t index) const {
@@ -731,7 +790,9 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
         if (auto* browser = preset_browser_controls[index]->focusView()) focus_order[focus_count++] = browser;
     }
     for (uint32_t index = 0; index < action_button_count; ++index) {
-        if (auto* action = action_button_controls[index]->focusView()) focus_order[focus_count++] = action;
+        if (action_button_controls[index]->enabled()) {
+            if (auto* action = action_button_controls[index]->focusView()) focus_order[focus_count++] = action;
+        }
     }
     for (uint32_t index = 0; index < action_menu_count; ++index) {
         if (auto* menu = action_menu_controls[index]->focusView()) focus_order[focus_count++] = menu;
@@ -788,6 +849,9 @@ void ZigVstguiEditor::setFocus(bool focused) {
     if (!frame) return;
     frame->onActivate(focused);
     if (focused) {
+        for (uint32_t index = 0; index < file_drop_count; ++index) {
+            file_drop_controls[index]->refreshImportState();
+        }
         for (uint32_t index = 0; index < editable_label_count; ++index) {
             editable_label_controls[index]->refresh();
         }
@@ -858,6 +922,12 @@ bool ZigVstguiEditor::nativeAccessibilityActive() const {
     return accessibility_bridge.active();
 }
 
+bool ZigVstguiEditor::contentScrollingActive() const {
+    return content_height > static_cast<double>(height);
+}
+
+double ZigVstguiEditor::contentHeight() const { return content_height; }
+
 std::size_t ZigVstguiEditor::nativeAccessibilityElementCount() const {
     return accessibility_bridge.elementCount();
 }
@@ -893,7 +963,7 @@ std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries
     for (uint32_t index = 0; index < editable_label_count; ++index) {
         entries.push_back({
             &editable_label_controls[index]->accessibilityNode(),
-            editable_label_controls[index]->focusView(),
+            editable_label_controls[index]->accessibilityView(),
         });
     }
     for (uint32_t index = 0; index < progress_indicator_count; ++index) {
@@ -948,12 +1018,25 @@ void ZigVstguiEditor::buildFrame() {
     frame->setFocusDrawingEnabled(true);
     frame->setFocusColor(editor_style.accent);
     frame->setFocusWidth(theme.control_metrics.focus_width);
-    content = new ZigVstgui::ProfiledContainer(
+    content_height = minimumContentHeight();
+    scroll_view = new VSTGUI::CScrollView(
         VSTGUI::CRect(0, 0, width, height),
+        VSTGUI::CRect(0, 0, width, content_height),
+        VSTGUI::CScrollView::kVerticalScrollbar |
+            VSTGUI::CScrollView::kOverlayScrollbars |
+            VSTGUI::CScrollView::kAutoHideScrollbars |
+            VSTGUI::CScrollView::kFollowFocusView |
+            VSTGUI::CScrollView::kDontDrawFrame,
+        12.0
+    );
+    scroll_view->setBackgroundColor(editor_style.background);
+    frame->addView(scroll_view);
+    content = new ZigVstgui::ProfiledContainer(
+        VSTGUI::CRect(0, 0, width, content_height),
         profile_enabled ? &metrics : nullptr
     );
     content->setBackgroundColor(editor_style.background);
-    frame->addView(content);
+    scroll_view->addView(content);
 
     const char* visible_title = !editor_title.empty()
         ? editor_title.c_str()
@@ -1076,9 +1159,11 @@ void ZigVstguiEditor::buildFrame() {
             content,
             action_button_descriptions[index],
             parameter_callbacks,
-            theme_resolver
+            theme_resolver,
+            [this](uint32_t importer_id) { actionAccepted(importer_id); }
         )) return;
     }
+    updateActionButtonStates();
     for (uint32_t index = 0; index < editable_label_count; ++index) {
         if (!editable_label_controls[index]->build(
             content, editable_label_descriptions[index], parameter_callbacks, theme_resolver)) return;
@@ -1092,6 +1177,7 @@ void ZigVstguiEditor::buildFrame() {
 
 void ZigVstguiEditor::clearFrameReferences() {
     frame = nullptr;
+    scroll_view = nullptr;
     content = nullptr;
     title = nullptr;
     help = nullptr;
@@ -1100,7 +1186,12 @@ void ZigVstguiEditor::clearFrameReferences() {
 
 void ZigVstguiEditor::layout() {
     if (!frame) return;
-    if (content) content->setViewSize(VSTGUI::CRect(0, 0, width, height), true);
+    content_height = minimumContentHeight();
+    if (scroll_view) {
+        scroll_view->setViewSize(VSTGUI::CRect(0, 0, width, height), true);
+        scroll_view->setContainerSize(VSTGUI::CRect(0, 0, width, content_height), true);
+    }
+    if (content) content->setViewSize(VSTGUI::CRect(0, 0, width, content_height), true);
     const auto& theme = theme_resolver.theme();
     const double margin = theme.spacing.large;
     const double right = std::max(margin + 1.0, static_cast<double>(width) - margin);
@@ -1108,9 +1199,9 @@ void ZigVstguiEditor::layout() {
         theme.control_metrics.value_width,
         static_cast<double>(width) - margin * 2.0
     );
-    const double footer_top = static_cast<double>(height) - margin - theme.control_metrics.compact_control_height;
+    const double footer_top = content_height - margin - theme.control_metrics.compact_control_height;
     const double browser_height = preset_browser_count > 0
-        ? std::clamp(static_cast<double>(height) * 0.22, 104.0, 156.0)
+        ? std::clamp(content_height * 0.22, 104.0, 156.0)
         : 0.0;
     const double browser_bottom = footer_top - theme.spacing.small;
     const double browser_top = browser_bottom - browser_height;
@@ -1118,12 +1209,12 @@ void ZigVstguiEditor::layout() {
         ? browser_top - theme.spacing.medium
         : footer_top - theme.spacing.medium;
     const double piano_height = piano_count > 0
-        ? std::clamp(static_cast<double>(height) * 0.2, 96.0, 140.0)
+        ? std::clamp(content_height * 0.2, 96.0, 140.0)
         : 0.0;
     const double piano_bottom = lower_content_bottom;
     const double piano_top = piano_bottom - piano_height;
     const double sequencer_height = step_sequencer_count > 0
-        ? std::clamp(static_cast<double>(height) * 0.12, 68.0, 94.0)
+        ? std::clamp(content_height * 0.12, 68.0, 94.0)
         : 0.0;
     const double sequencer_bottom = piano_count > 0 ? piano_top - theme.spacing.medium : lower_content_bottom;
     const double sequencer_top = sequencer_bottom - sequencer_height;
@@ -1159,12 +1250,12 @@ void ZigVstguiEditor::layout() {
     const double footer_right = right - theme.control_metrics.button_width - theme.spacing.small;
     if (action_button_count > 0 && action_menu_count > 0) {
         const double split = margin + (footer_right - margin) * 0.68;
-        layoutActionButtons(margin, footer_top, split - theme.spacing.small, height - margin);
-        layoutActionMenus(split, footer_top, footer_right, height - margin);
+        layoutActionButtons(margin, footer_top, split - theme.spacing.small, content_height - margin);
+        layoutActionMenus(split, footer_top, footer_right, content_height - margin);
     } else if (action_button_count > 0) {
-        layoutActionButtons(margin, footer_top, footer_right, height - margin);
+        layoutActionButtons(margin, footer_top, footer_right, content_height - margin);
     } else {
-        layoutActionMenus(margin, footer_top, footer_right, height - margin);
+        layoutActionMenus(margin, footer_top, footer_right, content_height - margin);
     }
     if (group_count > 0) {
         const bool wide = width >= 620;
@@ -1185,10 +1276,12 @@ void ZigVstguiEditor::layout() {
         for (uint32_t group_index = 0; group_index < group_count; ++group_index) {
             const uint32_t column = group_index % columns;
             const uint32_t row = group_index / columns;
-            const double left = margin + column * (cell_width + column_gap);
+            const bool spans_row = columns == 2 && group_count % 2 == 1 && group_index + 1 == group_count;
+            const double left = spans_row ? margin : margin + column * (cell_width + column_gap);
             const double top = groups_top + row * (cell_height + row_gap);
             const double bottom = top + cell_height;
-            const double group_right = left + cell_width;
+            const double group_right = spans_row ? right : left + cell_width;
+            const double group_width = group_right - left;
             group_components[group_index].setBounds(VSTGUI::CRect(left, top, group_right, top + 28.0));
             const auto& group = group_descriptions[group_index];
             const double content_top = top + 28.0 + theme.spacing.small;
@@ -1199,8 +1292,8 @@ void ZigVstguiEditor::layout() {
             const double control_height = group.parameter_count > 0
                 ? std::max(24.0, (parameter_bottom - content_top - control_gap * (group.parameter_count - 1)) / group.parameter_count)
                 : 0.0;
-            const double label_width = std::min(88.0, cell_width * 0.26);
-            const double row_value_width = std::min(82.0, cell_width * 0.24);
+            const double label_width = std::min(88.0, group_width * 0.26);
+            const double row_value_width = std::min(82.0, group_width * 0.24);
             for (uint32_t offset = 0; offset < group.parameter_count; ++offset) {
                 const uint32_t index = group.first_parameter + offset;
                 const double control_top = content_top + offset * (control_height + control_gap);
@@ -1239,7 +1332,7 @@ void ZigVstguiEditor::layout() {
                     ? visuals_top + (bottom - visuals_top) * 0.45
                     : bottom;
                 const double xy_gap = theme.spacing.small;
-                const double xy_width = (cell_width - xy_gap * (group.xy_pad_count - 1)) / group.xy_pad_count;
+                const double xy_width = (group_width - xy_gap * (group.xy_pad_count - 1)) / group.xy_pad_count;
                 for (uint32_t offset = 0; offset < group.xy_pad_count; ++offset) {
                     const uint32_t index = group.first_xy_pad + offset;
                     const double xy_left = left + offset * (xy_width + xy_gap);
@@ -1255,7 +1348,7 @@ void ZigVstguiEditor::layout() {
                     ? visuals_top + (bottom - visuals_top) * 0.58
                     : bottom;
                 const double graph_gap = theme.spacing.small;
-                const double graph_width = (cell_width - graph_gap * (group.graph_count - 1)) / group.graph_count;
+                const double graph_width = (group_width - graph_gap * (group.graph_count - 1)) / group.graph_count;
                 for (uint32_t offset = 0; offset < group.graph_count; ++offset) {
                     const uint32_t index = group.first_graph + offset;
                     const double graph_left = left + offset * (graph_width + graph_gap);
@@ -1269,7 +1362,7 @@ void ZigVstguiEditor::layout() {
             if (group.meter_count > 0) {
                 const double meters_top = visuals_top;
                 const double meter_gap = theme.spacing.small;
-                const double meter_width = (cell_width - meter_gap * (group.meter_count - 1)) / group.meter_count;
+                const double meter_width = (group_width - meter_gap * (group.meter_count - 1)) / group.meter_count;
                 for (uint32_t offset = 0; offset < group.meter_count; ++offset) {
                     const uint32_t index = group.first_meter + offset;
                     const double meter_left = left + offset * (meter_width + meter_gap);
@@ -1285,7 +1378,7 @@ void ZigVstguiEditor::layout() {
             right - theme.control_metrics.button_width,
             footer_top,
             right,
-            height - margin
+            content_height - margin
         ));
         return;
     }
@@ -1386,7 +1479,7 @@ void ZigVstguiEditor::layout() {
             right - theme.control_metrics.button_width,
             footer_top,
             right,
-            height - margin
+            content_height - margin
         ));
         return;
     }
@@ -1397,9 +1490,9 @@ void ZigVstguiEditor::layout() {
         title_component.setVisible(true);
         help_component.setVisible(true);
         const double track_top = std::clamp(
-            static_cast<double>(height) * 0.42,
+            content_height * 0.42,
             92.0,
-            static_cast<double>(height) - 116.0
+            content_height - 116.0
         );
         parameter_controls[0]->setBounds(
             VSTGUI::CRect(),
@@ -1534,10 +1627,33 @@ void ZigVstguiEditor::layout() {
     }
     resize_control.setBounds(VSTGUI::CRect(
         right - theme.control_metrics.button_width,
-        height - margin - theme.control_metrics.compact_control_height,
+        content_height - margin - theme.control_metrics.compact_control_height,
         right,
-        height - margin
+        content_height - margin
     ));
+}
+
+double ZigVstguiEditor::minimumContentHeight() const {
+    const auto& spacing = theme_resolver.theme().spacing;
+    const auto& control_metrics = theme_resolver.theme().control_metrics;
+    double tail = spacing.large + control_metrics.compact_control_height + spacing.small;
+    if (preset_browser_count > 0) tail += 156.0 + spacing.medium;
+    if (piano_count > 0) tail += 140.0 + spacing.medium;
+    if (step_sequencer_count > 0) tail += 94.0 + spacing.medium;
+    if (file_drop_count > 0) tail += 112.0 + spacing.medium;
+    const uint32_t utility_count = editable_label_count + progress_indicator_count;
+    if (utility_count > 0) {
+        tail += editable_label_count * 58.0 + progress_indicator_count * 48.0 +
+            spacing.small * (utility_count - 1) + spacing.medium;
+    }
+    double upper = 92.0 + parameter_count * 52.0;
+    if (xy_pad_count > 0 || graph_count > 0 || meter_count > 0) upper += 240.0;
+    if (group_count > 0) {
+        const uint32_t columns = width >= 620 ? 2 : 1;
+        const uint32_t rows = (group_count + columns - 1) / columns;
+        upper = 82.0 + rows * 300.0 + (rows - 1) * spacing.medium;
+    }
+    return std::max(static_cast<double>(height), upper + tail);
 }
 
 void ZigVstguiEditor::layoutPresetBrowsers(double left, double top, double right, double bottom) {
@@ -1558,7 +1674,7 @@ void ZigVstguiEditor::layoutActionMenus(double left, double top, double right, d
     const double gap = theme_resolver.theme().spacing.small;
     const double available = std::max(1.0, right - left - gap * (action_menu_count - 1));
     const double menu_width = available / action_menu_count;
-    const VSTGUI::CRect editor_bounds(0, 0, width, height);
+    const VSTGUI::CRect editor_bounds(0, 0, width, content_height);
     for (uint32_t index = 0; index < action_menu_count; ++index) {
         const double menu_left = left + index * (menu_width + gap);
         action_menu_controls[index]->setBounds(

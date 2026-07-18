@@ -193,6 +193,8 @@ typedef struct ZigVstguiActionButtonDescription {
     ZigVstguiActionRole role;
     ZigVstguiActionIcon icon;
     int32_t enabled;
+    uint32_t success_focus_importer_id;
+    uint32_t ready_importer_id;
 } ZigVstguiActionButtonDescription;
 
 enum { ZIG_VSTGUI_MAX_ACTION_BUTTONS = 12 };
@@ -206,9 +208,11 @@ typedef struct ZigVstguiEditableLabelDescription {
     const char* initial_text;
     uint32_t maximum_bytes;
     int32_t enabled;
+    int32_t read_only;
+    uint32_t maximum_refresh_hz;
 } ZigVstguiEditableLabelDescription;
 
-enum { ZIG_VSTGUI_MAX_EDITABLE_LABELS = 4 };
+enum { ZIG_VSTGUI_MAX_EDITABLE_LABELS = 8 };
 
 typedef enum ZigVstguiProgressMode {
     ZIG_VSTGUI_PROGRESS_DETERMINATE = 0,

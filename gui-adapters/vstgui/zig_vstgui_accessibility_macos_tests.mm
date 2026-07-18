@@ -16,6 +16,7 @@ struct CallbackState {
     uint32_t perform_count {0};
     uint32_t end_count {0};
     std::string editor_text {"Studio Plate"};
+    std::string live_text {"48 kHz, mono"};
 };
 
 void beginEdit(void* userdata, uint32_t) {
@@ -43,8 +44,9 @@ int32_t storeEditorText(void* userdata, uint32_t field_id, const char* text) {
     return 0;
 }
 int32_t loadEditorText(void* userdata, uint32_t field_id, char* output, uint32_t capacity) {
-    if (field_id != 11 || !output || capacity == 0) return -1;
-    const auto& text = static_cast<CallbackState*>(userdata)->editor_text;
+    if ((field_id != 11 && field_id != 12) || !output || capacity == 0) return -1;
+    const auto* state = static_cast<CallbackState*>(userdata);
+    const auto& text = field_id == 11 ? state->editor_text : state->live_text;
     if (text.size() >= capacity) return -1;
     std::memcpy(output, text.c_str(), text.size() + 1);
     return 0;
@@ -103,9 +105,11 @@ int main() {
         callbacks.load_progress = loadProgress;
         ZigVstguiSkinDescription skin {};
         skin.editor_title = "Accessibility Test";
-        const ZigVstguiEditableLabelDescription editable {
-            11, "IR Name", "Impulse response name", "Name this impulse response",
-            "Enter an IR name", "Studio Plate", 48, 1,
+        const ZigVstguiEditableLabelDescription editable[] = {
+            {11, "IR Name", "Impulse response name", "Name this impulse response",
+                "Enter an IR name", "Studio Plate", 48, 1},
+            {12, "Format", "Impulse response format", "", "Value unavailable",
+                "48 kHz, mono", 48, 1, 1, 10},
         };
         const ZigVstguiProgressIndicatorDescription progress {
             7, "Import", "Impulse response import progress", "Choose an IR to begin",
@@ -114,14 +118,14 @@ int main() {
         ZigVstguiEditor editor(
             parameters, 3, callbacks, meters, 1, {nullptr, loadMeter}, skin, graphs, 1, {},
             nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
-            nullptr, 0, &editable, 1, &progress, 1
+            nullptr, 0, editable, 2, &progress, 1
         );
         if (!editor.open((__bridge void*)parent, ZIG_VSTGUI_PLATFORM_MACOS)) return 1;
-        if (!editor.nativeAccessibilityActive() || editor.nativeAccessibilityElementCount() != 11) return 2;
+        if (!editor.nativeAccessibilityActive() || editor.nativeAccessibilityElementCount() != 12) return 2;
         auto* native_view = parent.subviews.lastObject;
         if (!native_view) return 3;
         NSArray* children = native_view.accessibilityChildren;
-        if (children.count != 11) return 4;
+        if (children.count != 12) return 4;
         id gain = elementNamed(children, @"Gain (dB)");
         id bypass = elementNamed(children, @"Bypass");
         id exact = elementNamed(children, @"Gain (dB) value");
@@ -129,9 +133,10 @@ int main() {
         id meter = elementNamed(children, @"Level");
         id graph = elementNamed(children, @"Transfer");
         id editable_name = elementNamed(children, @"Impulse response name");
+        id live_value = elementNamed(children, @"Impulse response format");
         id progress_element = elementNamed(children, @"Impulse response import progress");
         id resize = elementNamed(children, @"Editor size");
-        if (!gain || !bypass || !exact || !mode || !meter || !graph || !editable_name || !progress_element || !resize) return 5;
+        if (!gain || !bypass || !exact || !mode || !meter || !graph || !editable_name || !live_value || !progress_element || !resize) return 5;
         if (![[gain accessibilityRole] isEqualToString:NSAccessibilitySliderRole]) return 6;
         if (![[bypass accessibilityRole] isEqualToString:NSAccessibilityCheckBoxRole]) return 7;
         if (![[exact accessibilityRole] isEqualToString:NSAccessibilityTextFieldRole]) return 8;
@@ -139,6 +144,10 @@ int main() {
         if (![[meter accessibilityRole] isEqualToString:NSAccessibilityProgressIndicatorRole]) return 17;
         if (![[graph accessibilityRole] isEqualToString:NSAccessibilityGroupRole]) return 18;
         if (![[editable_name accessibilityRole] isEqualToString:NSAccessibilityTextFieldRole]) return 26;
+        if (![[live_value accessibilityRole] isEqualToString:NSAccessibilityTextFieldRole]) return 31;
+        [live_value setAccessibilityValue:@"Changed"];
+        if (state.live_text != "48 kHz, mono" ||
+            ![[live_value accessibilityValue] isEqualToString:@"48 kHz, mono"]) return 32;
         if (![[progress_element accessibilityRole] isEqualToString:NSAccessibilityProgressIndicatorRole]) return 27;
         if (![[resize accessibilityRole] isEqualToString:NSAccessibilityButtonRole]) return 19;
         if (std::abs([[gain accessibilityValue] doubleValue] - 0.25) > 1e-9) return 9;
