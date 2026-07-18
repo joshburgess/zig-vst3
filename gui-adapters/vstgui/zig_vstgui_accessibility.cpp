@@ -5,7 +5,7 @@
 
 namespace ZigVstgui {
 
-void AccessibilityNode::setObserver(void* userdata, AccessibilityChangeCallback callback) {
+void AccessibilityNode::setObserver(void* userdata, AccessibilityChangeCallback callback) const {
     observer_userdata = userdata;
     observer_callback = callback;
 }

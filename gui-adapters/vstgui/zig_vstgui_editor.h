@@ -2,6 +2,7 @@
 #define ZIG_VSTGUI_EDITOR_H
 
 #include "zig_vstgui_adapter.h"
+#include "zig_vstgui_accessibility_bridge.h"
 #include "zig_vstgui_assets.h"
 #include "zig_vstgui_component.h"
 #include "zig_vstgui_controls.h"
@@ -13,8 +14,10 @@
 #include "vstgui/lib/controls/ctextlabel.h"
 
 #include <array>
+#include <cstddef>
 #include <memory>
 #include <string>
+#include <vector>
 
 struct ZigVstguiEditor {
     ZigVstguiEditor(
@@ -59,6 +62,8 @@ struct ZigVstguiEditor {
     ZigVstguiThemeKind themeKind() const;
     ZigVstguiLayoutKind layoutKind() const;
     uint32_t groupCount() const;
+    bool nativeAccessibilityActive() const;
+    std::size_t nativeAccessibilityElementCount() const;
 
 private:
     void buildFrame();
@@ -69,6 +74,7 @@ private:
     const ZigVstgui::ThemeResolver& stylesForParameter(uint32_t index) const;
     const ZigVstgui::ThemeResolver& stylesForMeter(uint32_t index) const;
     const ZigVstgui::ThemeResolver& stylesForGraph(uint32_t index) const;
+    std::vector<ZigVstgui::AccessibilityEntry> accessibilityEntries() const;
     ZigVstgui::ParameterControl* findControl(uint32_t parameter_id);
     const ZigVstgui::ParameterControl* findControl(uint32_t parameter_id) const;
 
@@ -107,6 +113,7 @@ private:
     ZigVstgui::AssetStore asset_store;
     ZigVstguiDrawingCallbacks drawing_callbacks {};
     ZigVstgui::ResizeControl resize_control;
+    ZigVstgui::NativeAccessibilityBridge accessibility_bridge;
     ZigVstgui::ThemeResolver theme_resolver;
     ZigVstguiThemeKind theme_kind {ZIG_VSTGUI_THEME_DEFAULT};
     ZigVstguiLayoutKind layout_kind {ZIG_VSTGUI_LAYOUT_ADAPTIVE};

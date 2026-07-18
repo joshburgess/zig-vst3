@@ -144,6 +144,16 @@ pub fn guiGraphLoad(self: *Processor, source_id: u32, output: []gui_graph.Point)
 
 The renderer clamps coordinates to the declared range, supports linear and logarithmic axes, and treats decibel axes as linear dB values. An empty series displays `No graph data` instead of a blank panel. Axis labels, graph title, update mode, and point count are available through toolkit-neutral semantics.
 
+## Native Accessibility
+
+Every component keeps its role, name, description, value, range, enabled state, focus state, checked state, and read-only state in the toolkit-neutral accessibility model. Native bridges observe that model only while an editor is open. They do not change parameter attachment, keyboard behavior, focus order, or rendering.
+
+On macOS, the adapter attaches an `NSAccessibilityElement` hierarchy to VSTGUI's editor `NSView`. AppKit receives mapped roles, labels, help text, values, ranges, state, focus, and bounds. Value, focus, semantic, and layout changes post native accessibility notifications. An AppKit integration test opens a real editor view and verifies sliders, text fields, toggles, choices, meters, graphs, buttons, live updates, resize geometry, and teardown.
+
+On Windows, the adapter provides a UI Automation fragment tree through `WM_GETOBJECT`. It maps the same semantic properties, exposes screen-space bounds and focus, and raises property, focus, and structure events. The Windows provider cross-compiles with Zig's Windows SDK headers during the native adapter test, but Narrator behavior has not been tested in a native Windows host.
+
+X11 and Wayland retain the toolkit-neutral semantics, keyboard focus order, and visible focus rendering. No AT-SPI bridge is implemented yet. VoiceOver navigation, Narrator navigation, and AT-SPI host verification remain release checks for their respective platform environments.
+
 ## API Status
 
 The project remains pre-1.0, so even the supported surface does not yet carry a long-term compatibility promise. Milestone 10 narrows the component API according to evidence from both the gallery and Voice Mix editors.
@@ -161,7 +171,7 @@ Experimental extensions:
 
 - `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and `Canvas` drawing functions.
 - Dynamic graph sources and `SnapshotSeries`. The gallery is their only production consumer so far.
-- Native assistive-technology bridges. Toolkit-neutral semantics exist, but platform screen-reader exposure does not.
+- Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
 - New analyzer, modulation, timeline, GPU, preset-browser, and drag-and-drop components.
 
 Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.

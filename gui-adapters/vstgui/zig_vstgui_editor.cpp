@@ -168,6 +168,7 @@ bool ZigVstguiEditor::valid() const {
 bool ZigVstguiEditor::open(void* parent, ZigVstguiPlatform platform) {
     if (!frame) buildFrame();
     if (!ZigVstgui::openFrame(frame, parent, platform, plug_frame, wayland_host)) return false;
+    accessibility_bridge.open(frame, accessibilityEntries());
     metrics.open_count += 1;
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->start();
     for (uint32_t index = 0; index < graph_count; ++index) graph_controls[index]->start();
@@ -177,6 +178,7 @@ bool ZigVstguiEditor::open(void* parent, ZigVstguiPlatform platform) {
 void ZigVstguiEditor::close() {
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->stop();
     for (uint32_t index = 0; index < graph_count; ++index) graph_controls[index]->stop();
+    accessibility_bridge.close();
     if (!frame || !frame->getPlatformFrame()) return;
     for (uint32_t index = 0; index < parameter_count; ++index) parameter_controls[index]->clear();
     resize_control.clear();
@@ -198,12 +200,14 @@ bool ZigVstguiEditor::resize(uint32_t new_width, uint32_t new_height) {
     metrics.resize_count += 1;
     resize_control.setSize(width, height);
     layout();
+    accessibility_bridge.layoutChanged();
     return true;
 }
 
 bool ZigVstguiEditor::setScale(double scale) {
     if (!frame || scale <= 0.0 || !frame->setZoom(scale)) return false;
     metrics.scale_count += 1;
+    accessibility_bridge.layoutChanged();
     return true;
 }
 
@@ -383,6 +387,39 @@ ZigVstguiLayoutKind ZigVstguiEditor::layoutKind() const {
 
 uint32_t ZigVstguiEditor::groupCount() const {
     return group_count;
+}
+
+bool ZigVstguiEditor::nativeAccessibilityActive() const {
+    return accessibility_bridge.active();
+}
+
+std::size_t ZigVstguiEditor::nativeAccessibilityElementCount() const {
+    return accessibility_bridge.elementCount();
+}
+
+std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries() const {
+    std::vector<ZigVstgui::AccessibilityEntry> entries;
+    entries.reserve(2 + group_count + parameter_count * 2 + meter_count + graph_count + 1);
+    entries.push_back({&title_component.accessibility(), title_component.view()});
+    entries.push_back({&help_component.accessibility(), help_component.view()});
+    for (uint32_t index = 0; index < group_count; ++index) {
+        entries.push_back({&group_components[index].accessibility(), group_components[index].view()});
+    }
+    for (uint32_t index = 0; index < parameter_count; ++index) {
+        const auto& control = *parameter_controls[index];
+        entries.push_back({&control.primaryAccessibility(), control.focusView()});
+        if (const auto* value = control.valueAccessibility()) {
+            entries.push_back({value, control.valueFocusView()});
+        }
+    }
+    for (uint32_t index = 0; index < meter_count; ++index) {
+        entries.push_back({&meter_controls[index]->accessibilityNode(), meter_controls[index]->focusView()});
+    }
+    for (uint32_t index = 0; index < graph_count; ++index) {
+        entries.push_back({&graph_controls[index]->accessibilityNode(), graph_controls[index]->graphView()});
+    }
+    entries.push_back({&resize_control.buttonAccessibility(), resize_control.focusView()});
+    return entries;
 }
 
 void ZigVstguiEditor::buildFrame() {

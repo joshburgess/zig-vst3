@@ -716,7 +716,8 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
         }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .yes });
     } else if (target.result.os.tag == .windows) {
         for ([_][]const u8{
-            "comctl32", "d2d1", "dwrite", "gdi32", "ole32", "shell32", "shlwapi", "user32", "uuid", "windowscodecs",
+            "comctl32", "d2d1", "dwrite", "gdi32", "ole32", "oleaut32", "shell32", "shlwapi", "uiautomationcore",
+            "user32", "uuid", "windowscodecs",
         }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .no });
     }
 }

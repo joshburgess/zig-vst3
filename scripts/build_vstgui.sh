@@ -14,4 +14,13 @@ cmake -S "$source_dir" -B "$build_dir" \
   -DVSTGUI_UISCRIPTING=OFF \
   -DVSTGUI_ENABLE_OPENGL_SUPPORT=OFF \
   -DVSTGUI_ENABLE_XMLPARSER=OFF
-cmake --build "$build_dir" --target zig_vstgui_adapter zig_vstgui_adapter_tests_run zig_vstgui_visual_tests_run --parallel
+cmake --build "$build_dir" --target zig_vstgui_adapter zig_vstgui_adapter_tests_run zig_vstgui_accessibility_tests_run zig_vstgui_visual_tests_run --parallel
+
+env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache \
+    ZIG_LOCAL_CACHE_DIR=/tmp/zig-vst3-local-cache \
+    zig c++ -target x86_64-windows-gnu -std=c++17 -Wno-nullability-completeness \
+    -DVSTGUI_ENABLE_XML_PARSER=0 \
+    -I"$root/.vst3-sdk/vst3sdk/vstgui4" \
+    -I"$root/.vst3-sdk/vst3sdk" \
+    -c "$root/gui-adapters/vstgui/zig_vstgui_accessibility_windows.cpp" \
+    -o /tmp/zig_vstgui_accessibility_windows.o

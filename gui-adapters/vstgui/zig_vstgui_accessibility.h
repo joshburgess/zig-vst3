@@ -46,7 +46,7 @@ using AccessibilityChangeCallback = void (*)(void*, AccessibilityChange);
 
 class AccessibilityNode {
 public:
-    void setObserver(void* userdata, AccessibilityChangeCallback callback);
+    void setObserver(void* userdata, AccessibilityChangeCallback callback) const;
     void setRole(AccessibilityRole role);
     void setName(std::string name);
     void setDescription(std::string description);
@@ -76,8 +76,8 @@ private:
     std::string semantic_value;
     AccessibilityRange semantic_range;
     AccessibilityState semantic_state;
-    void* observer_userdata {nullptr};
-    AccessibilityChangeCallback observer_callback {nullptr};
+    mutable void* observer_userdata {nullptr};
+    mutable AccessibilityChangeCallback observer_callback {nullptr};
     uint64_t change_generation {0};
 };
 

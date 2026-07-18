@@ -140,16 +140,26 @@ Completion evidence:
 
 ## Milestone 6: Native Accessibility Bridges
 
-- [ ] Map toolkit-neutral roles, names, descriptions, values, ranges, and state changes to the best locally available VSTGUI or platform API.
-- [ ] Implement and test the macOS bridge when the pinned VSTGUI and local SDK expose a viable route.
-- [ ] Implement compile-time Windows bridge support when it can be cross-compiled without a native host.
-- [ ] Preserve keyboard access and visible focus when no native bridge exists.
-- [ ] Document exact VoiceOver, Narrator, X11, and Wayland verification status without claiming untested support.
+- [x] Map toolkit-neutral roles, names, descriptions, values, ranges, and state changes to the best locally available VSTGUI or platform API.
+- [x] Implement and test the macOS bridge when the pinned VSTGUI and local SDK expose a viable route.
+- [x] Implement compile-time Windows bridge support when it can be cross-compiled without a native host.
+- [x] Preserve keyboard access and visible focus when no native bridge exists.
+- [x] Document exact VoiceOver, Narrator, X11, and Wayland verification status without claiming untested support.
 
 Exit criteria:
 
 - Locally implementable platform semantics are connected without changing component behavior.
 - Unsupported native exposure remains an explicit release limitation rather than a silent fallback claim.
+
+Completion evidence:
+
+- Each editor owns a native bridge that observes existing toolkit-neutral nodes only while its native frame is open. Close detaches the native hierarchy and unregisters every observer before VSTGUI views are released.
+- The AppKit bridge exposes an `NSAccessibilityElement` hierarchy on VSTGUI's child `NSView`, maps all current component roles and semantic properties, derives bounds from live view layout, and posts value, focus, semantic, and layout notifications.
+- The AppKit integration test covers sliders, exact text fields, toggles, choices, meters, graphs, buttons, value and checked-state changes, focus, resize geometry, and teardown.
+- The Windows UI Automation bridge exposes a fragment tree through `WM_GETOBJECT`, maps semantic properties, bounds, and focus, and raises property, focus, and structure events. The source cross-compiles for `x86_64-windows-gnu` in `scripts/build_vstgui.sh`.
+- Existing keyboard focus order, arrow-key editing, exact entry, meter peak reset, and visible focus rendering remain unchanged. Linux retains these paths without claiming an AT-SPI bridge.
+- VoiceOver navigation is not manually verified. Narrator, X11 AT-SPI, and Wayland AT-SPI verification require native platform hosts and remain pending.
+- Native adapter, AppKit accessibility, interaction, visual, and warm-render tests pass. Zig tests, raw ABI checks, every Steinberg validator run, and Linux and Windows example bundle cross-builds also pass.
 
 ## Milestone 7: Stability Review and Final Validation
 
