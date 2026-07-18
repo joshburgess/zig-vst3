@@ -6,6 +6,7 @@
 #include "zig_vstgui_piano.h"
 #include "zig_vstgui_preset_browser.h"
 #include "zig_vstgui_step_sequencer.h"
+#include "zig_vstgui_file_drop.h"
 #include "zig_vstgui_theme.h"
 #include "zig_vstgui_xy_pad.h"
 
@@ -71,6 +72,7 @@ void acceptBegin(void*, uint32_t) {}
 int32_t acceptEdit(void*, uint32_t, double) { return 0; }
 void acceptEnd(void*, uint32_t) {}
 int32_t acceptIndex(void*, uint32_t, uint32_t) { return 0; }
+int32_t rejectDrop(void*, uint32_t, const char* const*, uint32_t) { return -1; }
 
 VSTGUI::SharedPointer<VSTGUI::CBitmap> render(const Snapshot& snapshot) {
     return VSTGUI::renderBitmapOffscreen(
@@ -474,6 +476,38 @@ Snapshot stepSequencer() {
     };
 }
 
+Snapshot fileDrops() {
+    return {
+        "file-drops.png",
+        720,
+        120,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            context.setFillColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            context.drawRect(VSTGUI::CRect(0, 0, 720, 120), VSTGUI::kDrawFilled);
+            const char* extensions[] = {".wav", ".aiff"};
+            const ZigVstguiFileDropDescription description {
+                1, "Audio Import", "Drop WAV or AIFF files here", extensions, 2, 2, 1,
+            };
+            ZigVstguiCallbacks callbacks {};
+            callbacks.drop_files = rejectDrop;
+            ZigVstgui::AccessibilityNode nodes[3];
+            ZigVstgui::FileDropView views[] = {
+                {VSTGUI::CRect(8, 8, 232, 112), description, callbacks, styles, &nodes[0]},
+                {VSTGUI::CRect(248, 8, 472, 112), description, callbacks, styles, &nodes[1]},
+                {VSTGUI::CRect(488, 8, 712, 112), description, callbacks, styles, &nodes[2]},
+            };
+            const char* acceptable[] = {"/tmp/kick.wav"};
+            views[1].inspectPaths(acceptable, 1);
+            const char* failed[] = {"/tmp/snare.aiff"};
+            views[2].inspectPaths(failed, 1);
+            views[2].dispatchInspected();
+            for (auto& view : views) view.draw(&context);
+        },
+    };
+}
+
 Snapshot presetBrowsers() {
     return {
         "preset-browsers.png",
@@ -718,6 +752,23 @@ double benchmarkStepSequencerDraw() {
     return average;
 }
 
+double benchmarkFileDropDraw() {
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 480, 90)));
+    container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+    const char* extensions[] = {".wav", ".aiff"};
+    const ZigVstguiFileDropDescription description {
+        1, "Audio Import", "Drop audio here", extensions, 2, 2, 1,
+    };
+    ZigVstgui::AccessibilityNode accessibility;
+    auto* view = new ZigVstgui::FileDropView(
+        VSTGUI::CRect(8, 8, 472, 82), description, {}, styles, &accessibility
+    );
+    container->addView(view);
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(480, 90), 1.0);
+    return benchmarkDraw(container, offscreen);
+}
+
 }
 
 int main(int argc, char** argv) {
@@ -741,6 +792,7 @@ int main(int argc, char** argv) {
         actionMenus(),
         pianoKeyboard(),
         stepSequencer(),
+        fileDrops(),
     };
     int result = 0;
     for (const auto& snapshot : snapshots) {
@@ -750,10 +802,13 @@ int main(int argc, char** argv) {
         const double average = benchmarkWarmDraw();
         const double piano_average = benchmarkPianoDraw();
         const double step_sequencer_average = benchmarkStepSequencerDraw();
+        const double file_drop_average = benchmarkFileDropDraw();
         std::fprintf(stderr, "visual regression warm render average: %.1f us\n", average);
         std::fprintf(stderr, "piano warm render average: %.1f us\n", piano_average);
         std::fprintf(stderr, "step sequencer warm render average: %.1f us\n", step_sequencer_average);
-        if (average > 300.0 || piano_average > 300.0 || step_sequencer_average > 300.0) result = std::max(result, 6);
+        std::fprintf(stderr, "file drop warm render average: %.1f us\n", file_drop_average);
+        if (average > 300.0 || piano_average > 300.0 || step_sequencer_average > 300.0 ||
+            file_drop_average > 300.0) result = std::max(result, 6);
     }
     VSTGUI::exit();
     return result;

@@ -304,6 +304,26 @@ Clicking a cell selects and toggles it. Dragging paints the first cell's new sta
 
 The sequencer is one focus stop with choice semantics. Accessibility increment and decrement move the cursor, and press toggles the selected steps. Disabled declarations reject pointer, keyboard, and accessibility edits. A rejected host edit keeps the old parameter value and exposes visible and semantic retry feedback. The component supports 1–32 steps; an empty pattern is rejected at editor creation rather than producing an ambiguous empty control.
 
+## File Drop
+
+Declare a bounded operating-system file target through `EditorDescription.file_drops`:
+
+```zig
+.file_drops = &.{.{
+    .id = 1,
+    .title = "Audio Import",
+    .prompt = "Drop WAV or AIFF files here",
+    .extensions = &.{ ".wav", ".aiff", ".aif" },
+    .maximum_files = 2,
+}},
+```
+
+The adapter accepts only VSTGUI file-path payloads. Matching is case-insensitive and occurs before plugin code runs. One target may accept 1–8 files and 1–8 extensions. Each copied path is limited to 1,024 bytes. The callback receives borrowed slices backed by adapter-owned copies and must finish synchronously. Host package storage and pointers never escape the drag callback.
+
+Idle, acceptable, unsupported type, excessive count, invalid path, handler failure, accepted, and disabled states have distinct visible text and semantic values. A callback failure keeps the target available and tells the user to drop again. The target is an accessibility group rather than a keyboard focus stop because the operation begins in the operating system's file browser. A future production consumer should provide an equivalent keyboard-accessible file chooser before this API is promoted.
+
+`FileDrop` remains experimental. The component gallery exercises the native contract, but no production editor imports files yet. Its callback shape and accessible fallback may change when a real importer becomes the second consumer.
+
 ## API Status
 
 The project remains pre-1.0, so even the supported surface does not yet carry a long-term compatibility promise. The supported list is limited to contracts exercised by both the component gallery and a production-style editor.
@@ -330,7 +350,8 @@ Experimental extensions:
 - Rotary controls currently have no plugin consumer. Bipolar and decibel controls each have one.
 - Fixed graph point storage, dynamic graph sources, and `SnapshotSeries`. Each source mode currently has one production consumer.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
-- New analyzer, modulation, GPU, and drag-and-drop components.
+- `FileDrop`, bounded extension filtering, synchronous path copying, and recoverable rejection feedback. It currently has one gallery consumer.
+- New analyzer, modulation, and GPU components.
 
 Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.
 

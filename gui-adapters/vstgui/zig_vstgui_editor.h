@@ -8,6 +8,7 @@
 #include "zig_vstgui_component.h"
 #include "zig_vstgui_controls.h"
 #include "zig_vstgui_graphs.h"
+#include "zig_vstgui_file_drop.h"
 #include "zig_vstgui_meters.h"
 #include "zig_vstgui_piano.h"
 #include "zig_vstgui_preset_browser.h"
@@ -45,7 +46,9 @@ struct ZigVstguiEditor {
         const ZigVstguiPianoDescription* pianos = nullptr,
         uint32_t piano_count = 0,
         const ZigVstguiStepSequencerDescription* step_sequencers = nullptr,
-        uint32_t step_sequencer_count = 0
+        uint32_t step_sequencer_count = 0,
+        const ZigVstguiFileDropDescription* file_drops = nullptr,
+        uint32_t file_drop_count = 0
     );
     ~ZigVstguiEditor();
 
@@ -67,6 +70,7 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode* actionMenuAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* pianoAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* stepSequencerAccessibility(uint32_t index) const;
+    const ZigVstgui::AccessibilityNode* fileDropAccessibility(uint32_t index) const;
     bool tickMeter(uint32_t index, double elapsed_ms);
     bool refreshGraph(uint32_t index);
     uint32_t graphPointCount(uint32_t index) const;
@@ -94,6 +98,7 @@ private:
     void layoutActionMenus(double left, double top, double right, double bottom);
     void layoutPianos(double left, double top, double right, double bottom);
     void layoutStepSequencers(double left, double top, double right, double bottom);
+    void layoutFileDrops(double left, double top, double right, double bottom);
     void reportMetrics() const;
     bool focusNext(bool reverse);
     const ZigVstgui::ThemeResolver& stylesForParameter(uint32_t index) const;
@@ -168,6 +173,13 @@ private:
     std::array<std::string, ZIG_VSTGUI_MAX_STEP_SEQUENCERS> step_sequencer_titles;
     std::array<std::array<uint32_t, ZIG_VSTGUI_MAX_STEPS>, ZIG_VSTGUI_MAX_STEP_SEQUENCERS> step_sequencer_parameter_ids {};
     uint32_t step_sequencer_count {0};
+    std::array<std::unique_ptr<ZigVstgui::FileDropControl>, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_controls;
+    std::array<ZigVstguiFileDropDescription, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_descriptions {};
+    std::array<std::string, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_titles;
+    std::array<std::string, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_prompts;
+    std::array<std::array<std::string, ZIG_VSTGUI_MAX_DROP_EXTENSIONS>, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_extensions;
+    std::array<std::array<const char*, ZIG_VSTGUI_MAX_DROP_EXTENSIONS>, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_extension_pointers {};
+    uint32_t file_drop_count {0};
     ZigVstgui::AssetStore asset_store;
     ZigVstguiDrawingCallbacks drawing_callbacks {};
     ZigVstgui::ResizeControl resize_control;

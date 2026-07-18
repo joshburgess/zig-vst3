@@ -9,6 +9,7 @@ const vstgui_editor_view = @import("vstgui_editor_view.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const vstgui_adapter_enabled = @import("zig-vst3-gui-options").vstgui_adapter_enabled;
 const gui_graph = @import("zig-vst3-plugin-core").gui_graph;
+const gui_file_drop = @import("zig-vst3-plugin-core").gui_file_drop;
 const editor_state = @import("zig-vst3-plugin-core").editor_state;
 
 const ProtocolView = vst_plug_view.PlugView(4, struct {});
@@ -118,6 +119,15 @@ pub const StepSequencer = struct {
     maximum_refresh_hz: u32 = 30,
 };
 
+pub const FileDrop = struct {
+    id: u32,
+    title: [*:0]const u8 = "Import Files",
+    prompt: [*:0]const u8 = "Drop files here",
+    extensions: []const [*:0]const u8,
+    maximum_files: u32 = 1,
+    enabled: bool = true,
+};
+
 pub const Asset = vstgui_editor_view.Asset;
 pub const AssetFormat = vstgui_editor_view.AssetFormat;
 pub const AssetScale = vstgui_editor_view.AssetScale;
@@ -143,6 +153,7 @@ pub const EditorDescription = struct {
     action_menus: []const ActionMenu = &.{},
     pianos: []const Piano = &.{},
     step_sequencers: []const StepSequencer = &.{},
+    file_drops: []const FileDrop = &.{},
     skin: Skin = .{},
     composition: Composition = .{},
 };
@@ -178,7 +189,7 @@ pub fn createMultiViewWithSkin(
     meters: []const Meter,
     skin: Skin,
 ) ?*iplugview.IPlugView {
-    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, &.{}, &.{}, &.{}, &.{}, &.{}, skin, .{});
+    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, &.{}, &.{}, &.{}, &.{}, &.{}, &.{}, skin, .{});
 }
 
 pub fn createEditor(
@@ -199,6 +210,7 @@ pub fn createEditor(
         description.action_menus,
         description.pianos,
         description.step_sequencers,
+        description.file_drops,
         description.skin,
         description.composition,
     );
@@ -216,6 +228,7 @@ fn createConfiguredView(
     action_menus: []const ActionMenu,
     pianos: []const Piano,
     step_sequencers: []const StepSequencer,
+    file_drops: []const FileDrop,
     skin: Skin,
     composition: Composition,
 ) ?*iplugview.IPlugView {
@@ -240,11 +253,15 @@ fn createConfiguredView(
             action_menus.len > vstgui_editor_view.max_action_menus or
             pianos.len > vstgui_editor_view.max_pianos or
             step_sequencers.len > vstgui_editor_view.max_step_sequencers) return null;
+        if (file_drops.len > vstgui_editor_view.max_file_drops) return null;
         if (comptime !Controller.hasPresetLoader) {
             if (preset_browsers.len > 0) return null;
         }
         if (comptime !Controller.hasMenuActionHandler) {
             if (action_menus.len > 0) return null;
+        }
+        if (comptime !Controller.hasFileDropHandler) {
+            if (file_drops.len > 0) return null;
         }
         var bindings: [vstgui_editor_view.max_parameters]vstgui_editor_view.ParameterInfoBinding = undefined;
         for (parameters, 0..) |parameter, index| {
@@ -546,11 +563,34 @@ fn createConfiguredView(
                 .maximum_refresh_hz = sequencer.maximum_refresh_hz,
             };
         }
+        var file_drop_descriptions: [vstgui_editor_view.max_file_drops]vstgui_editor_view.FileDropDescription = undefined;
+        for (file_drops, 0..) |drop, index| {
+            if (drop.id == 0 or std.mem.span(drop.title).len == 0 or std.mem.span(drop.prompt).len == 0 or
+                drop.extensions.len == 0 or drop.extensions.len > vstgui_editor_view.max_drop_extensions or
+                drop.maximum_files == 0 or drop.maximum_files > vstgui_editor_view.max_drop_files) return null;
+            for (file_drops[0..index]) |previous| if (previous.id == drop.id) return null;
+            for (drop.extensions, 0..) |extension, extension_index| {
+                const value = std.mem.span(extension);
+                if (value.len < 2 or value.len > gui_file_drop.maximum_extension_bytes or value[0] != '.') return null;
+                for (drop.extensions[0..extension_index]) |previous| {
+                    if (std.ascii.eqlIgnoreCase(std.mem.span(previous), value)) return null;
+                }
+            }
+            file_drop_descriptions[index] = .{
+                .drop_id = drop.id,
+                .title = drop.title,
+                .prompt = drop.prompt,
+                .extensions = drop.extensions.ptr,
+                .extension_count = @intCast(drop.extensions.len),
+                .maximum_files = drop.maximum_files,
+                .enabled = @intFromBool(drop.enabled),
+            };
+        }
         const telemetry_source = if (comptime @hasDecl(Controller, "retainGuiTelemetry"))
             Controller.retainGuiTelemetry(controller)
         else
             null;
-        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], menu_descriptions[0..action_menus.len], piano_descriptions[0..pianos.len], step_sequencer_descriptions[0..step_sequencers.len], skin, composition, .{
+        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], menu_descriptions[0..action_menus.len], piano_descriptions[0..pianos.len], step_sequencer_descriptions[0..step_sequencers.len], file_drop_descriptions[0..file_drops.len], skin, composition, .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
             .perform_edit = Bridge.performEdit,
@@ -565,6 +605,7 @@ fn createConfiguredView(
             .store_editor_bool = Bridge.storeEditorBool,
             .invoke_menu_action = Bridge.invokeMenuAction,
             .send_note = Bridge.sendNote,
+            .drop_files = Bridge.dropFiles,
         }, .{
             .userdata = controller,
             .subscribe = Bridge.subscribe,
@@ -675,6 +716,19 @@ fn NativeBridge(comptime Controller: type) type {
         ) callconv(.c) types.int32 {
             const iface = controller(userdata) orelse return -1;
             return if (Controller.performMenuAction(iface, menu_id, item_id, checked != 0) == types.kResultOk) 0 else -1;
+        }
+
+        fn dropFiles(
+            userdata: ?*anyopaque,
+            drop_id: types.uint32,
+            paths: [*]const [*:0]const u8,
+            count: types.uint32,
+        ) callconv(.c) types.int32 {
+            if (count == 0 or count > vstgui_editor_view.max_drop_files) return -1;
+            const iface = controller(userdata) orelse return -1;
+            var slices: [vstgui_editor_view.max_drop_files][]const u8 = undefined;
+            for (0..count) |index| slices[index] = std.mem.span(paths[index]);
+            return if (Controller.handleFileDrop(iface, drop_id, slices[0..count]) == types.kResultOk) 0 else -1;
         }
 
         fn sendNote(

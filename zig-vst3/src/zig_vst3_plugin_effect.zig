@@ -84,6 +84,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         pub const hasEditorState = has_editor_state;
         pub const hasPresetLoader = @hasDecl(Config, "loadPreset");
         pub const hasMenuActionHandler = @hasDecl(Config, "performMenuAction");
+        pub const hasFileDropHandler = @hasDecl(Config, "handleFileDrop");
         pub const EditorStateType = EditorState;
         const editor_state_migrations: []const plug_core.editor_state.Migration = if (@hasDecl(Config, "editor_state_migrations"))
             Config.editor_state_migrations
@@ -177,6 +178,17 @@ pub fn ReflectedEditController(comptime Config: type) type {
         ) types.tresult {
             if (comptime @hasDecl(Config, "performMenuAction")) {
                 return Config.performMenuAction(iface, menu_id, item_id, checked);
+            }
+            return types.kResultFalse;
+        }
+
+        pub fn handleFileDrop(
+            iface: *ivsteditcontroller.IEditController,
+            drop_id: u32,
+            paths: []const []const u8,
+        ) types.tresult {
+            if (comptime @hasDecl(Config, "handleFileDrop")) {
+                return Config.handleFileDrop(iface, drop_id, paths);
             }
             return types.kResultFalse;
         }

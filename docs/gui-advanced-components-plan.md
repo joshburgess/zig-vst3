@@ -124,7 +124,7 @@ Completion evidence:
 - [x] Add anchored popovers and richer menus with focus containment and restoration.
 - [x] Add a piano keyboard with pointer, computer-keyboard, and accessible note input.
 - [x] Add a bounded step sequencer with multi-selection and clear playhead semantics.
-- [ ] Add file drag-and-drop with type filtering, rejection feedback, and host-safe lifetimes.
+- [x] Add file drag-and-drop with type filtering, rejection feedback, and host-safe lifetimes.
 - [ ] Add waveform and spectrum views on the graph source contract.
 - [ ] Exercise every promoted component in both the gallery and a production editor.
 - [ ] Add interaction, visual-regression, performance, lifecycle, and instance-isolation coverage.
@@ -185,7 +185,19 @@ Step sequencer completion evidence:
 - `step-sequencer.png` covers active, inactive, multi-selected, and playhead states without relying on color alone. The dedicated 16-step warm-render benchmark completed at 145.1 microseconds against the 300 microsecond budget during final release validation.
 - Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, and all ten Steinberg validators pass. All examples cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`. The benchmark harness now uses the best of three fixed-size batches so scheduler preemption does not create a false regression.
 - Pluginval was not launched because earlier runs repeatedly produced macOS crash dialogs. Manual sequencer interaction in a macOS host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
-- File drop and production waveform or spectrum components remain separate slices of this milestone.
+- Production waveform and spectrum components remain the final separate slice of this milestone.
+
+File drop completion evidence:
+
+- `FileDrop` is an experimental public authoring declaration used by the component gallery. Authors declare a stable target ID, visible title and prompt, 1–8 case-insensitive extensions, a maximum of 1–8 files, and enabled state without importing adapter internals.
+- Adapter ABI version 16 adds up to two file targets while retaining the version 15 full creation entry. Native validation rejects missing callbacks, duplicate IDs, malformed or duplicate extensions, excessive counts, and invalid enabled states before editor creation.
+- The VSTGUI control accepts only file-path packages, copies at most eight 1,024-byte paths into instance-owned storage, filters before dispatch, and invokes plugin code synchronously. No host-owned pointer escapes the callback.
+- Idle, acceptable, rejected type, rejected count, rejected path, handler failure, accepted, and disabled states expose visible text and toolkit-neutral group semantics. Failed handlers remain recoverable. The target intentionally does not enter keyboard focus order because the gesture starts in the operating system file browser.
+- Toolkit-neutral unit tests cover copied caller lifetimes, count and path bounds, case-insensitive filtering, malformed declarations, duplicate extensions, and handler rejection. Native tests exercise real VSTGUI drag enter and drop events, unsupported data packages, copied storage, callback failure and retry semantics, invalid ABI declarations, and editor integration.
+- `file-drops.png` covers idle, acceptable, and recoverable failure states without relying on text alone. The dedicated warm-render benchmark completed at 26.1 microseconds against the 300 microsecond budget during final release validation.
+- `FileDrop` remains experimental because it has only the gallery consumer. Promotion also requires a production importer with a keyboard-accessible file-picker alternative.
+- Pluginval was not launched because earlier runs repeatedly produced macOS crash dialogs. Manual file-drop interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+- Production waveform and spectrum components remain the final local slice of this milestone.
 
 ## Validation After Each Milestone
 
@@ -209,3 +221,4 @@ Step sequencer completion evidence:
 - Manual action-menu interaction in a production host.
 - Manual piano-keyboard interaction in a production host.
 - Manual step-sequencer interaction in a production host.
+- Manual file-drop interaction in a production host.

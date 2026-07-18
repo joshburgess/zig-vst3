@@ -9,6 +9,7 @@ pub const gui_telemetry = core.gui_telemetry;
 pub const gui_graph = core.gui_graph;
 pub const gui_piano = core.gui_piano;
 pub const gui_step_sequencer = core.gui_step_sequencer;
+pub const gui_file_drop = core.gui_file_drop;
 pub const parameters = core.parameters;
 pub const plugin = core.plugin;
 pub const process = core.process;
@@ -39,6 +40,7 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(gui_graph, "SnapshotSeries"));
     try std.testing.expect(@hasDecl(gui_piano, "Keyboard"));
     try std.testing.expect(@hasDecl(gui_step_sequencer, "Sequencer"));
+    try std.testing.expect(@hasDecl(gui_file_drop, "DropZone"));
 }
 
 test "zig-vst3-plugin runs core module tests" {

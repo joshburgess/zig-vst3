@@ -27,6 +27,7 @@ pub const preset_search_state_id: u32 = 6;
 pub const preset_selection_state_id: u32 = 7;
 pub const show_analyzer_state_id: u32 = 8;
 pub const step_selection_state_id: u32 = 9;
+pub const imported_file_count_state_id: u32 = 10;
 
 const gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
@@ -49,6 +50,7 @@ pub const GalleryEditorState = plug_core.editor_state.Store(1, &.{
     .{ .id = preset_selection_state_id, .default = .{ .index = 1 } },
     .{ .id = show_analyzer_state_id, .default = .{ .boolean = true } },
     .{ .id = step_selection_state_id, .default = .{ .index = 1 } },
+    .{ .id = imported_file_count_state_id, .default = .{ .index = 0 } },
 });
 
 fn applyPreset(
@@ -171,6 +173,19 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
         }
     }
 
+    pub fn handleFileDrop(
+        controller: *ivsteditcontroller.IEditController,
+        drop_id: u32,
+        paths: []const []const u8,
+    ) types.tresult {
+        if (drop_id != 1 or paths.len == 0 or paths.len > 2) return types.kInvalidArgument;
+        Controller.editorState(controller).set(
+            imported_file_count_state_id,
+            .{ .index = @intCast(paths.len) },
+        ) catch return types.kResultFalse;
+        return types.kResultOk;
+    }
+
     pub fn createView(controller: *ivsteditcontroller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
         return parameter_editor.createEditor(Controller, controller, name, .{
             .parameters = &.{
@@ -258,6 +273,13 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .step_parameter_ids = &editor_smoke_spec.step_param_ids,
                 .selection_state_id = step_selection_state_id,
                 .playhead_source_id = 4,
+            }},
+            .file_drops = &.{.{
+                .id = 1,
+                .title = "Audio Import",
+                .prompt = "Drop WAV or AIFF files here",
+                .extensions = &.{ ".wav", ".aiff", ".aif" },
+                .maximum_files = 2,
             }},
             .skin = .{
                 .assets = &.{

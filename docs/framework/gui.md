@@ -111,7 +111,7 @@ Each run compares decoded pixels with a channel tolerance of 80 and allows at mo
 cmake --build .vst3-sdk/vstgui-adapter-build --target zig_vstgui_visual_tests_update
 ```
 
-The same harness measures repeated warm drawing of a live slider, active peak meter, piano, and step sequencer. It reports the best of three 100-frame batches so an unrelated scheduler pause does not masquerade as rendering cost. Each dedicated benchmark fails above the 300 microsecond warm-frame budget recorded in `docs/gui-baseline.md`.
+The same harness measures repeated warm drawing of a live slider, active peak meter, piano, step sequencer, and file-drop target. `file-drops.png` covers idle, acceptable, and recoverable handler-failure states. The harness reports the best of three 100-frame batches so an unrelated scheduler pause does not masquerade as rendering cost. Each dedicated benchmark fails above the 300 microsecond warm-frame budget recorded in `docs/gui-baseline.md`.
 
 ### Accessibility Semantics
 

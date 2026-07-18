@@ -10,9 +10,11 @@
 #include "zig_vstgui_piano.h"
 #include "zig_vstgui_preset_browser.h"
 #include "zig_vstgui_step_sequencer.h"
+#include "zig_vstgui_file_drop.h"
 
 #include "pluginterfaces/base/keycodes.h"
 #include "vstgui/lib/events.h"
+#include "vstgui/lib/dragging.h"
 #include "vstgui/lib/vstguiinit.h"
 
 #include <array>
@@ -58,7 +60,45 @@ struct CallbackState {
     uint32_t note_count {0};
     int32_t last_note_pitch {-1};
     int32_t last_note_pressed {0};
+    uint32_t dropped_count {0};
+    uint32_t dropped_id {0};
+    std::string dropped_path;
+    bool reject_drop {false};
 };
+
+class TestDataPackage final : public VSTGUI::IDataPackage {
+public:
+    TestDataPackage(std::string value, Type value_type = kFilePath)
+    : data(std::move(value)), type(value_type) {}
+
+    uint32_t getCount() const override { return 1; }
+    uint32_t getDataSize(uint32_t index) const override {
+        return index == 0 ? static_cast<uint32_t>(data.size() + 1) : 0;
+    }
+    Type getDataType(uint32_t index) const override { return index == 0 ? type : kError; }
+    uint32_t getData(uint32_t index, const void*& buffer, Type& output_type) const override {
+        if (index != 0) {
+            buffer = nullptr;
+            output_type = kError;
+            return 0;
+        }
+        buffer = data.c_str();
+        output_type = type;
+        return static_cast<uint32_t>(data.size() + 1);
+    }
+
+private:
+    std::string data;
+    Type type;
+};
+
+int32_t dropFiles(void* userdata, uint32_t drop_id, const char* const* paths, uint32_t count) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->dropped_id = drop_id;
+    state->dropped_count = count;
+    state->dropped_path = count > 0 && paths && paths[0] ? paths[0] : "";
+    return state->reject_drop ? -1 : 0;
+}
 
 int32_t sendNote(void* userdata, int32_t, int32_t pitch, double, int32_t pressed) {
     auto* state = static_cast<CallbackState*>(userdata);
@@ -794,7 +834,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 15) return 1;
+    if (zig_vstgui_adapter_version() != 16) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -1729,6 +1769,98 @@ int testStepSequencer() {
     return 0;
 }
 
+int testFileDrop() {
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.drop_files = dropFiles;
+    const char* extensions[] = {".wav", ".aiff"};
+    const ZigVstguiFileDropDescription description {
+        4, "Audio Import", "Drop audio here", extensions, 2, 2, 1,
+    };
+    VSTGUI::init(nullptr);
+    {
+        ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+        auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 400, 100)));
+        ZigVstgui::FileDropControl control(description, callbacks);
+        control.build(container, styles);
+        control.setBounds(VSTGUI::CRect(8, 8, 392, 92));
+        auto* view = control.dropView();
+        char path[] = "/tmp/Kick.WAV";
+        const char* paths[] = {path};
+        if (!view || view->inspectPaths(paths, 1) != ZigVstgui::FileDropStatus::acceptable) {
+            VSTGUI::exit();
+            return 1;
+        }
+        path[5] = 'X';
+        if (view->inspectedPath(0) != "/tmp/Kick.WAV" || !view->dispatchInspected() ||
+            state.dropped_id != 4 || state.dropped_count != 1 || state.dropped_path != "/tmp/Kick.WAV" ||
+            view->status() != ZigVstgui::FileDropStatus::accepted) {
+            VSTGUI::exit();
+            return 2;
+        }
+        const char* rejected[] = {"/tmp/pattern.mid"};
+        if (view->inspectPaths(rejected, 1) != ZigVstgui::FileDropStatus::rejected_type ||
+            view->inspectPaths(nullptr, 0) != ZigVstgui::FileDropStatus::rejected_count) {
+            VSTGUI::exit();
+            return 3;
+        }
+        state.reject_drop = true;
+        const char* retry[] = {"/tmp/snare.aiff"};
+        if (view->inspectPaths(retry, 1) != ZigVstgui::FileDropStatus::acceptable ||
+            view->dispatchInspected() || view->status() != ZigVstgui::FileDropStatus::handler_failed ||
+            control.accessibilityNode().valueText().find("retry") == std::string::npos) {
+            VSTGUI::exit();
+            return 4;
+        }
+        state.reject_drop = false;
+        auto package = VSTGUI::owned(new TestDataPackage("/tmp/room.wav"));
+        VSTGUI::DragEventData drag_event {package, {}, {}};
+        if (view->onDragEnter(drag_event) != VSTGUI::DragOperation::Copy ||
+            !view->onDrop(drag_event) || state.dropped_path != "/tmp/room.wav") {
+            VSTGUI::exit();
+            return 5;
+        }
+        auto text_package = VSTGUI::owned(new TestDataPackage("not a file", VSTGUI::IDataPackage::kText));
+        drag_event.drag = text_package;
+        if (view->onDragEnter(drag_event) != VSTGUI::DragOperation::None ||
+            view->status() != ZigVstgui::FileDropStatus::rejected_type) {
+            VSTGUI::exit();
+            return 6;
+        }
+        control.clear();
+    }
+    VSTGUI::exit();
+
+    const ZigVstguiParameterDescription parameter {
+        10, 0.5, {"Level", "", 0, 0.5}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+    };
+    auto* editor = zig_vstgui_editor_create_latest(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, &description, 1, {}
+    );
+    if (!editor || !editor->fileDropAccessibility(0)) {
+        zig_vstgui_editor_destroy(editor);
+        return 7;
+    }
+    zig_vstgui_editor_destroy(editor);
+    auto invalid = description;
+    invalid.maximum_files = 9;
+    if (zig_vstgui_editor_create_latest(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, &invalid, 1, {}
+    )) return 8;
+    const char* duplicate_extensions[] = {".wav", ".WAV"};
+    invalid = description;
+    invalid.extensions = duplicate_extensions;
+    invalid.maximum_files = 1;
+    if (zig_vstgui_editor_create_latest(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, &invalid, 1, {}
+    )) return 9;
+    return 0;
+}
+
 }
 
 int main() {
@@ -1754,5 +1886,6 @@ int main() {
     if (const int result = testActionMenus(); result != 0) return 220 + result;
     if (const int result = testPianoKeyboard(); result != 0) return 240 + result;
     if (const int result = testStepSequencer(); result != 0) return 250 + result;
+    if (const int result = testFileDrop(); result != 0) return 270 + result;
     return 0;
 }

@@ -76,7 +76,9 @@ ZigVstguiEditor::ZigVstguiEditor(
     const ZigVstguiPianoDescription* pianos,
     uint32_t value_piano_count,
     const ZigVstguiStepSequencerDescription* step_sequencers,
-    uint32_t value_step_sequencer_count
+    uint32_t value_step_sequencer_count,
+    const ZigVstguiFileDropDescription* file_drops,
+    uint32_t value_file_drop_count
 )
 : parameter_callbacks(callbacks),
   meter_count(value_meter_count),
@@ -87,6 +89,7 @@ ZigVstguiEditor::ZigVstguiEditor(
   preset_browser_count(value_preset_browser_count),
   action_menu_count(value_action_menu_count),
   piano_count(value_piano_count), step_sequencer_count(value_step_sequencer_count),
+  file_drop_count(value_file_drop_count),
   drawing_callbacks(skin.drawing),
   theme_resolver(selectedTheme(skin.theme)),
   theme_kind(skin.theme),
@@ -278,6 +281,22 @@ ZigVstguiEditor::ZigVstguiEditor(
         ));
         if (!step_sequencer_controls[index]) return;
     }
+    for (uint32_t index = 0; index < file_drop_count; ++index) {
+        file_drop_titles[index] = file_drops[index].title;
+        file_drop_prompts[index] = file_drops[index].prompt;
+        file_drop_descriptions[index] = file_drops[index];
+        file_drop_descriptions[index].title = file_drop_titles[index].c_str();
+        file_drop_descriptions[index].prompt = file_drop_prompts[index].c_str();
+        for (uint32_t extension = 0; extension < file_drops[index].extension_count; ++extension) {
+            file_drop_extensions[index][extension] = file_drops[index].extensions[extension];
+            file_drop_extension_pointers[index][extension] = file_drop_extensions[index][extension].c_str();
+        }
+        file_drop_descriptions[index].extensions = file_drop_extension_pointers[index].data();
+        file_drop_controls[index].reset(new (std::nothrow) ZigVstgui::FileDropControl(
+            file_drop_descriptions[index], callbacks
+        ));
+        if (!file_drop_controls[index]) return;
+    }
     uint32_t next_parameter = 0;
     uint32_t next_meter = 0;
     uint32_t next_graph = 0;
@@ -357,6 +376,7 @@ void ZigVstguiEditor::close() {
     for (uint32_t index = 0; index < action_menu_count; ++index) action_menu_controls[index]->clear();
     for (uint32_t index = 0; index < piano_count; ++index) piano_controls[index]->clear();
     for (uint32_t index = 0; index < step_sequencer_count; ++index) step_sequencer_controls[index]->clear();
+    for (uint32_t index = 0; index < file_drop_count; ++index) file_drop_controls[index]->clear();
     title_component.clear();
     help_component.clear();
     for (uint32_t index = 0; index < group_count; ++index) group_components[index].clear();
@@ -474,6 +494,10 @@ const ZigVstgui::AccessibilityNode* ZigVstguiEditor::pianoAccessibility(uint32_t
 
 const ZigVstgui::AccessibilityNode* ZigVstguiEditor::stepSequencerAccessibility(uint32_t index) const {
     return index < step_sequencer_count ? &step_sequencer_controls[index]->accessibilityNode() : nullptr;
+}
+
+const ZigVstgui::AccessibilityNode* ZigVstguiEditor::fileDropAccessibility(uint32_t index) const {
+    return index < file_drop_count ? &file_drop_controls[index]->accessibilityNode() : nullptr;
 }
 
 bool ZigVstguiEditor::tickMeter(uint32_t index, double elapsed_ms) {
@@ -704,7 +728,7 @@ std::size_t ZigVstguiEditor::nativeAccessibilityElementCount() const {
 std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries() const {
     std::vector<ZigVstgui::AccessibilityEntry> entries;
     entries.reserve(2 + group_count + parameter_count * 2 + meter_count + graph_count +
-        xy_pad_count * 2 + preset_browser_count + action_menu_count + piano_count + step_sequencer_count + 1);
+        xy_pad_count * 2 + preset_browser_count + action_menu_count + piano_count + step_sequencer_count + file_drop_count + 1);
     entries.push_back({&title_component.accessibility(), title_component.view()});
     entries.push_back({&help_component.accessibility(), help_component.view()});
     for (uint32_t index = 0; index < group_count; ++index) {
@@ -748,6 +772,9 @@ std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries
             &step_sequencer_controls[index]->accessibilityNode(),
             step_sequencer_controls[index]->focusView(),
         });
+    }
+    for (uint32_t index = 0; index < file_drop_count; ++index) {
+        entries.push_back({&file_drop_controls[index]->accessibilityNode(), file_drop_controls[index]->dropView()});
     }
     entries.push_back({&resize_control.buttonAccessibility(), resize_control.focusView()});
     return entries;
@@ -885,6 +912,9 @@ void ZigVstguiEditor::buildFrame() {
     for (uint32_t index = 0; index < step_sequencer_count; ++index) {
         step_sequencer_controls[index]->build(content, theme_resolver);
     }
+    for (uint32_t index = 0; index < file_drop_count; ++index) {
+        file_drop_controls[index]->build(content, theme_resolver);
+    }
     layout();
 }
 
@@ -925,14 +955,18 @@ void ZigVstguiEditor::layout() {
         : 0.0;
     const double sequencer_bottom = piano_count > 0 ? piano_top - theme.spacing.medium : lower_content_bottom;
     const double sequencer_top = sequencer_bottom - sequencer_height;
-    const double content_bottom = step_sequencer_count > 0
+    const double file_drop_height = file_drop_count > 0 ? 72.0 : 0.0;
+    const double file_drop_bottom = step_sequencer_count > 0
         ? sequencer_top - theme.spacing.medium
         : (piano_count > 0 ? piano_top - theme.spacing.medium : lower_content_bottom);
+    const double file_drop_top = file_drop_bottom - file_drop_height;
+    const double content_bottom = file_drop_count > 0 ? file_drop_top - theme.spacing.medium : file_drop_bottom;
     if (preset_browser_count > 0) {
         layoutPresetBrowsers(margin, browser_top, right, browser_bottom);
     }
     if (piano_count > 0) layoutPianos(margin, piano_top, right, piano_bottom);
     if (step_sequencer_count > 0) layoutStepSequencers(margin, sequencer_top, right, sequencer_bottom);
+    if (file_drop_count > 0) layoutFileDrops(margin, file_drop_top, right, file_drop_bottom);
     layoutActionMenus(margin, footer_top, right - theme.control_metrics.button_width - theme.spacing.small, height - margin);
     if (group_count > 0) {
         const bool wide = width >= 620;
@@ -1361,6 +1395,17 @@ void ZigVstguiEditor::layoutStepSequencers(double left, double top, double right
             VSTGUI::CRect(sequencer_left, top, sequencer_left + sequencer_width, top + 18.0),
             VSTGUI::CRect(sequencer_left, top + 18.0, sequencer_left + sequencer_width, bottom)
         );
+    }
+}
+
+void ZigVstguiEditor::layoutFileDrops(double left, double top, double right, double bottom) {
+    if (file_drop_count == 0) return;
+    const double gap = theme_resolver.theme().spacing.medium;
+    const double available = std::max(1.0, right - left - gap * (file_drop_count - 1));
+    const double drop_width = available / file_drop_count;
+    for (uint32_t index = 0; index < file_drop_count; ++index) {
+        const double drop_left = left + index * (drop_width + gap);
+        file_drop_controls[index]->setBounds(VSTGUI::CRect(drop_left, top, drop_left + drop_width, bottom));
     }
 }
 

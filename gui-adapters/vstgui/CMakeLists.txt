@@ -40,6 +40,7 @@ set(ZIG_VSTGUI_ADAPTER_SOURCES
     zig_vstgui_platform.cpp
     zig_vstgui_piano.cpp
     zig_vstgui_step_sequencer.cpp
+    zig_vstgui_file_drop.cpp
     zig_vstgui_preset_browser.cpp
     zig_vstgui_theme.cpp
     zig_vstgui_xy_pad.cpp

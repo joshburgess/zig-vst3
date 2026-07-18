@@ -1,8 +1,23 @@
 #include "zig_vstgui_adapter.h"
 #include "zig_vstgui_editor.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <new>
+#include <string>
+
+namespace {
+
+std::string normalizedExtension(const char* value) {
+    std::string result(value);
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return result;
+}
+
+}
 
 extern "C" ZigVstguiEditor* zig_vstgui_editor_create(
     const ZigVstguiParameterDescription* parameters,
@@ -153,6 +168,38 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_complete(
     uint32_t step_sequencer_count,
     ZigVstguiSkinDescription skin
 ) {
+    return zig_vstgui_editor_create_latest(
+        parameters, parameter_count, callbacks, meters, meter_count, meter_callbacks,
+        graphs, graph_count, graph_callbacks, xy_pads, xy_pad_count,
+        preset_browsers, preset_browser_count, action_menus, action_menu_count,
+        pianos, piano_count, step_sequencers, step_sequencer_count, nullptr, 0, skin
+    );
+}
+
+extern "C" ZigVstguiEditor* zig_vstgui_editor_create_latest(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
+    const ZigVstguiXYPadDescription* xy_pads,
+    uint32_t xy_pad_count,
+    const ZigVstguiPresetBrowserDescription* preset_browsers,
+    uint32_t preset_browser_count,
+    const ZigVstguiActionMenuDescription* action_menus,
+    uint32_t action_menu_count,
+    const ZigVstguiPianoDescription* pianos,
+    uint32_t piano_count,
+    const ZigVstguiStepSequencerDescription* step_sequencers,
+    uint32_t step_sequencer_count,
+    const ZigVstguiFileDropDescription* file_drops,
+    uint32_t file_drop_count,
+    ZigVstguiSkinDescription skin
+) {
     constexpr uint32_t style_mask = ZIG_VSTGUI_STYLE_BACKGROUND |
         ZIG_VSTGUI_STYLE_FOREGROUND |
         ZIG_VSTGUI_STYLE_BORDER |
@@ -231,6 +278,27 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_complete(
         for (uint32_t step = 0; step < sequencer.step_count; ++step) {
             for (uint32_t previous = 0; previous < step; ++previous) {
                 if (sequencer.parameter_ids[previous] == sequencer.parameter_ids[step]) return nullptr;
+            }
+        }
+    }
+    if ((!file_drops && file_drop_count > 0) || file_drop_count > ZIG_VSTGUI_MAX_FILE_DROPS ||
+        (file_drop_count > 0 && !callbacks.drop_files)) return nullptr;
+    for (uint32_t index = 0; index < file_drop_count; ++index) {
+        const auto& drop = file_drops[index];
+        if (drop.drop_id == 0 || !drop.title || drop.title[0] == 0 || !drop.prompt || drop.prompt[0] == 0 ||
+            !drop.extensions || drop.extension_count == 0 || drop.extension_count > ZIG_VSTGUI_MAX_DROP_EXTENSIONS ||
+            drop.maximum_files == 0 || drop.maximum_files > ZIG_VSTGUI_MAX_DROP_FILES ||
+            (drop.enabled != 0 && drop.enabled != 1)) return nullptr;
+        for (uint32_t previous_drop = 0; previous_drop < index; ++previous_drop) {
+            if (file_drops[previous_drop].drop_id == drop.drop_id) return nullptr;
+        }
+        for (uint32_t extension = 0; extension < drop.extension_count; ++extension) {
+            const char* value = drop.extensions[extension];
+            if (!value || value[0] != '.' || value[1] == 0 ||
+                std::char_traits<char>::length(value) > ZIG_VSTGUI_MAX_DROP_EXTENSION_BYTES) return nullptr;
+            const auto normalized = normalizedExtension(value);
+            for (uint32_t previous = 0; previous < extension; ++previous) {
+                if (normalizedExtension(drop.extensions[previous]) == normalized) return nullptr;
             }
         }
     }
@@ -326,7 +394,9 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_complete(
         pianos,
         piano_count,
         step_sequencers,
-        step_sequencer_count
+        step_sequencer_count,
+        file_drops,
+        file_drop_count
     );
     if (editor && !editor->valid()) {
         delete editor;
@@ -425,5 +495,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 15;
+    return 16;
 }

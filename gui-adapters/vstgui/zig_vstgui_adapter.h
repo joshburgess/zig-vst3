@@ -22,6 +22,7 @@ typedef struct ZigVstguiCallbacks {
     int32_t (*store_editor_bool)(void* userdata, uint32_t field_id, int32_t value);
     int32_t (*invoke_menu_action)(void* userdata, uint32_t menu_id, uint32_t item_id, int32_t checked);
     int32_t (*send_note)(void* userdata, int32_t channel, int32_t pitch, double velocity, int32_t pressed);
+    int32_t (*drop_files)(void* userdata, uint32_t drop_id, const char* const* paths, uint32_t count);
 } ZigVstguiCallbacks;
 
 typedef struct ZigVstguiParameterInfo {
@@ -137,6 +138,22 @@ typedef struct ZigVstguiStepSequencerDescription {
 
 enum { ZIG_VSTGUI_MAX_STEP_SEQUENCERS = 2 };
 enum { ZIG_VSTGUI_MAX_STEPS = 32 };
+
+typedef struct ZigVstguiFileDropDescription {
+    uint32_t drop_id;
+    const char* title;
+    const char* prompt;
+    const char* const* extensions;
+    uint32_t extension_count;
+    uint32_t maximum_files;
+    int32_t enabled;
+} ZigVstguiFileDropDescription;
+
+enum { ZIG_VSTGUI_MAX_FILE_DROPS = 2 };
+enum { ZIG_VSTGUI_MAX_DROP_EXTENSIONS = 8 };
+enum { ZIG_VSTGUI_MAX_DROP_EXTENSION_BYTES = 16 };
+enum { ZIG_VSTGUI_MAX_DROP_FILES = 8 };
+enum { ZIG_VSTGUI_MAX_DROP_PATH_BYTES = 1024 };
 
 typedef enum ZigVstguiMeterKind {
     ZIG_VSTGUI_METER_PEAK = 0,
@@ -456,6 +473,30 @@ ZigVstguiEditor* zig_vstgui_editor_create_complete(
     uint32_t piano_count,
     const ZigVstguiStepSequencerDescription* step_sequencers,
     uint32_t step_sequencer_count,
+    ZigVstguiSkinDescription skin
+);
+ZigVstguiEditor* zig_vstgui_editor_create_latest(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
+    const ZigVstguiXYPadDescription* xy_pads,
+    uint32_t xy_pad_count,
+    const ZigVstguiPresetBrowserDescription* preset_browsers,
+    uint32_t preset_browser_count,
+    const ZigVstguiActionMenuDescription* action_menus,
+    uint32_t action_menu_count,
+    const ZigVstguiPianoDescription* pianos,
+    uint32_t piano_count,
+    const ZigVstguiStepSequencerDescription* step_sequencers,
+    uint32_t step_sequencer_count,
+    const ZigVstguiFileDropDescription* file_drops,
+    uint32_t file_drop_count,
     ZigVstguiSkinDescription skin
 );
 void zig_vstgui_canvas_fill_rect(
