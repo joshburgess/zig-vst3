@@ -1,5 +1,6 @@
 const std = @import("std");
 const funknown = @import("funknown.zig");
+const gui_ir_transport = @import("gui_ir_transport.zig");
 const gui_note_transport = @import("gui_note_transport.zig");
 const gui_telemetry_source = @import("gui_telemetry_source.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
@@ -61,6 +62,10 @@ var test_data_exchange_last_block_id: ivstdataexchange.DataExchangeBlockID = 0;
 var test_data_exchange_last_background_flag: types.TBool = 0;
 var test_controller_state_init_count: usize = 0;
 var test_controller_state_deinit_count: usize = 0;
+var test_effect_processor_init_count: usize = 0;
+var test_effect_processor_deinit_count: usize = 0;
+var test_effect_prepare_sample_rate: f64 = 0;
+var test_effect_prepare_block_size: u32 = 0;
 
 fn failInfo(out: anytype) types.tresult {
     out.* = .{};
@@ -256,6 +261,31 @@ pub fn ReflectedEditController(comptime Config: type) type {
             command: gui_note_transport.Command,
         ) types.tresult {
             return gui_note_transport.send(instance(iface).connected_peer, command);
+        }
+
+        pub fn sendDecodedAudio(
+            iface: *ivsteditcontroller.IEditController,
+            target_id: u32,
+            importer: anytype,
+        ) types.tresult {
+            return gui_ir_transport.sendDecoded(instance(iface).connected_peer, target_id, importer);
+        }
+
+        pub fn sendDecodedAudioGeneration(
+            iface: *ivsteditcontroller.IEditController,
+            target_id: u32,
+            generation: u64,
+            importer: anytype,
+        ) types.tresult {
+            return gui_ir_transport.sendDecodedGeneration(instance(iface).connected_peer, target_id, generation, importer);
+        }
+
+        pub fn clearDecodedAudio(
+            iface: *ivsteditcontroller.IEditController,
+            target_id: u32,
+            generation: u64,
+        ) types.tresult {
+            return gui_ir_transport.sendClear(instance(iface).connected_peer, target_id, generation);
         }
 
         pub fn setNormalized(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
@@ -2029,6 +2059,137 @@ test "simple stereo effect releases replaced connection peers" {
     try std.testing.expectEqual(@as(types.uint32, 1), second.release_count);
 }
 
+test "simple stereo effect exposes processor lifecycle and decoded audio transport hooks" {
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const Convolver = plug_core.gui_ir_convolution.PartitionedConvolver(16, 8);
+    const TestProcessor = struct {
+        convolver: Convolver,
+
+        pub fn init() @This() {
+            test_effect_processor_init_count += 1;
+            return .{ .convolver = Convolver.init(48_000) };
+        }
+
+        pub fn deinit(_: *@This()) void {
+            test_effect_processor_deinit_count += 1;
+        }
+
+        pub fn prepare(_: *@This(), config: plug_core.plugin.PrepareConfig) void {
+            test_effect_prepare_sample_rate = config.sample_rate;
+            test_effect_prepare_block_size = config.max_block_size;
+        }
+
+        pub fn latencySamples(_: *const @This()) u32 {
+            return 8;
+        }
+
+        pub fn tailSamples(_: *const @This()) u32 {
+            return 16;
+        }
+
+        pub fn audioImportReceiver(self: *@This()) *Convolver {
+            return &self.convolver;
+        }
+
+        pub fn process(_: *@This(), comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+            _ = context;
+        }
+    };
+    const Effect = SimpleStereoEffect(struct {
+        pub const component_name = "LifecycleAudioImportComponent";
+        pub const controller_cid = tuid.inlineUid(0x12340001, 0x12340002, 0x12340003, 0x12340004);
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+        pub const audio_import_target_id: u32 = 12;
+        pub const Processor = TestProcessor;
+    });
+    const Controller = ReflectedEditController(struct {
+        pub const controller_name = "LifecycleAudioImportController";
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+    });
+    const Importer = struct {
+        pub fn snapshot(_: *@This()) plug_core.gui_audio_file_importer.Snapshot {
+            return .{
+                .import = .{
+                    .status = .ready,
+                    .entry_point = .picker,
+                    .path_count = 1,
+                    .completed_units = 2,
+                    .total_units = 2,
+                    .generation = 7,
+                    .cancellation_pending = false,
+                },
+                .failure = .none,
+                .sample_rate = 48_000,
+                .channels = 1,
+                .sample_frames = 2,
+                .preview_points = 2,
+                .decoded_frames = 2,
+            };
+        }
+
+        pub fn copyDecoded(_: *@This(), offset: usize, output: []f32) usize {
+            const samples = [_]f32{ 1.0, 0.5 };
+            if (offset >= samples.len) return 0;
+            const count = @min(output.len, samples.len - offset);
+            @memcpy(output[0..count], samples[offset .. offset + count]);
+            return count;
+        }
+    };
+
+    test_effect_processor_init_count = 0;
+    test_effect_processor_deinit_count = 0;
+    test_effect_prepare_sample_rate = 0;
+    test_effect_prepare_block_size = 0;
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, Effect.create(@ptrCast(&ivstcomponent.icomponent_iid), &component_out));
+    try std.testing.expect(component_out != null);
+    const component: *ivstcomponent.IComponent = @ptrCast(@alignCast(component_out.?));
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, component.vtable.queryInterface(component, &ivstaudioprocessor.iaudio_processor_iid, &processor_out));
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out.?));
+    try std.testing.expectEqual(@as(u32, 8), processor.vtable.getLatencySamples(processor));
+    try std.testing.expectEqual(@as(u32, 16), processor.vtable.getTailSamples(processor));
+    var setup = ivstaudioprocessor.ProcessSetup{
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .sampleRate = 96_000,
+        .maxSamplesPerBlock = 256,
+    };
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.setupProcessing(processor, &setup));
+    try std.testing.expectEqual(@as(f64, 96_000), test_effect_prepare_sample_rate);
+    try std.testing.expectEqual(@as(u32, 256), test_effect_prepare_block_size);
+
+    var component_connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, component.vtable.queryInterface(component, &ivstmessage.iconnection_point_iid, &component_connection_out));
+    const component_connection: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(component_connection_out.?));
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, Controller.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    const controller: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    var controller_connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, controller.vtable.queryInterface(controller, &ivstmessage.iconnection_point_iid, &controller_connection_out));
+    const controller_connection: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(controller_connection_out.?));
+    try std.testing.expectEqual(types.kResultOk, controller_connection.vtable.connect(controller_connection, component_connection));
+
+    var importer = Importer{};
+    try std.testing.expectEqual(types.kResultOk, Controller.sendDecodedAudio(controller, 12, &importer));
+    const effect_processor = Effect.processorInstance(component);
+    try std.testing.expect(effect_processor.convolver.adoptPending());
+    try std.testing.expectEqual(@as(u64, 7), effect_processor.convolver.activeMetadata().?.generation);
+
+    try std.testing.expectEqual(@as(types.uint32, 1), controller_connection.vtable.release(controller_connection));
+    try std.testing.expectEqual(@as(types.uint32, 0), controller.vtable.release(controller));
+    try std.testing.expectEqual(@as(types.uint32, 2), component_connection.vtable.release(component_connection));
+    try std.testing.expectEqual(@as(types.uint32, 1), processor.vtable.release(processor));
+    try std.testing.expectEqual(@as(types.uint32, 0), component.vtable.release(component));
+    try std.testing.expectEqual(@as(usize, 1), test_effect_processor_init_count);
+    try std.testing.expectEqual(@as(usize, 1), test_effect_processor_deinit_count);
+}
+
 pub fn SimpleStereoEffect(comptime Config: type) type {
     return struct {
         const Params = if (@hasDecl(Config, "Params")) Config.Params else struct {};
@@ -2074,7 +2235,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             automation_state: ?*ivstautomationstate.IAutomationState = null,
             data_exchange_handler: ?*ivstdataexchange.IDataExchangeHandler = null,
             parameter_state: ParameterState,
-            processor_impl: Config.Processor = .{},
+            processor_impl: Config.Processor,
             gui_notes: gui_note_transport.Mailbox = .{},
             gui_note_seen: [128]u64 = @splat(0),
             sample_rate: f64 = 0,
@@ -2083,7 +2244,15 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             fn init(self: *Component) void {
                 self.* = .{
                     .parameter_state = ParameterState.init(parameter_set),
+                    .processor_impl = undefined,
                 };
+                if (@hasDecl(Config.Processor, "initInPlace")) {
+                    self.processor_impl.initInPlace();
+                } else if (@hasDecl(Config.Processor, "init")) {
+                    self.processor_impl = Config.Processor.init();
+                } else {
+                    self.processor_impl = .{};
+                }
             }
         };
 
@@ -2213,6 +2382,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
                 releaseAutomationState(&self.automation_state);
                 releaseInfoListener(&self.info_listener);
                 releaseHostApplication(&self.host_application);
+                if (@hasDecl(Config.Processor, "deinit")) self.processor_impl.deinit();
                 std.heap.page_allocator.destroy(self);
             }
             return next;
@@ -2377,8 +2547,17 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         fn componentNotify(ptr: *anyopaque, message: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
+            const self = ownerFromComponentConnectionPoint(ptr);
+            if (comptime @hasDecl(Config, "audio_import_target_id") and @hasDecl(Config.Processor, "audioImportReceiver")) {
+                const result = gui_ir_transport.receive(
+                    self.processor_impl.audioImportReceiver(),
+                    Config.audio_import_target_id,
+                    message,
+                );
+                if (result != types.kResultFalse) return result;
+            }
             if (comptime gui_note_input) {
-                return gui_note_transport.receive(&ownerFromComponentConnectionPoint(ptr).gui_notes, message);
+                return gui_note_transport.receive(&self.gui_notes, message);
             }
             return types.kResultFalse;
         }
@@ -2482,7 +2661,10 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return zig_vst3_plugin_bridge.RealtimeProcessorDefaults.canProcessSampleSize(symbolic_sample_size);
         }
 
-        fn getLatencySamples(_: *anyopaque) callconv(.c) types.uint32 {
+        fn getLatencySamples(ptr: *anyopaque) callconv(.c) types.uint32 {
+            if (comptime @hasDecl(Config.Processor, "latencySamples")) {
+                return ownerFromProcessor(ptr).processor_impl.latencySamples();
+            }
             return zig_vst3_plugin_bridge.RealtimeProcessorDefaults.latencySamples();
         }
 
@@ -2492,6 +2674,12 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             if (setup_result != types.kResultOk) return setup_result;
 
             self.sample_rate = setup.sampleRate;
+            if (comptime @hasDecl(Config.Processor, "prepare")) {
+                self.processor_impl.prepare(.{
+                    .sample_rate = setup.sampleRate,
+                    .max_block_size = @intCast(setup.maxSamplesPerBlock),
+                });
+            }
             resetProcessState(self);
             return types.kResultOk;
         }
@@ -2558,7 +2746,10 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return zig_vst3_plugin_bridge.writeOutputEvents(data, output_events.events());
         }
 
-        fn getTailSamples(_: *anyopaque) callconv(.c) types.uint32 {
+        fn getTailSamples(ptr: *anyopaque) callconv(.c) types.uint32 {
+            if (comptime @hasDecl(Config.Processor, "tailSamples")) {
+                return ownerFromProcessor(ptr).processor_impl.tailSamples();
+            }
             return zig_vst3_plugin_bridge.RealtimeProcessorDefaults.tailSamples();
         }
     };

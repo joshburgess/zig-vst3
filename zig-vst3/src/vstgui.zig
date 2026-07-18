@@ -24,6 +24,7 @@ pub const FileImportEntryPoint = plugin_core.gui_file_importer.EntryPoint;
 pub const FileImportCommand = plugin_core.gui_file_importer.Command;
 pub const FileImportStatus = plugin_core.gui_file_importer.Status;
 pub const AudioFileImporter = plugin_core.gui_audio_file_importer.Importer;
+pub const DecodedAudioFileImporter = plugin_core.gui_audio_file_importer.DecodedImporter;
 pub const AudioFileImportSnapshot = plugin_core.gui_audio_file_importer.Snapshot;
 pub const AudioFilePreviewPoint = plugin_core.gui_audio_file_importer.PreviewPoint;
 pub const audio_file_preview_capacity = plugin_core.gui_audio_file_importer.preview_capacity;

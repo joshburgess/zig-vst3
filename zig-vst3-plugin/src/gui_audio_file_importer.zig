@@ -29,6 +29,7 @@ pub const Snapshot = struct {
     channels: u8,
     sample_frames: u64,
     preview_points: usize,
+    decoded_frames: usize,
 };
 
 const WavInfo = struct {
@@ -41,258 +42,289 @@ const WavInfo = struct {
     sample_frames: usize,
 };
 
-pub const Importer = struct {
-    const Model = gui_file_importer.Model(1, 1);
-    const Self = @This();
-
-    mutex: std.Io.Mutex = .init,
-    model: Model,
-    failure: Failure = .none,
-    sample_rate: u32 = 0,
-    channels: u8 = 0,
-    sample_frames: u64 = 0,
-    preview: [preview_capacity]PreviewPoint = undefined,
-    preview_points: usize = 0,
-    thread: ?std.Thread = null,
-    worker_running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-
-    pub fn init() Self {
-        return .{ .model = Model.init(&.{".wav"}) catch unreachable };
+pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
+    if (decoded_frame_capacity > maximum_sample_frames) {
+        @compileError("DecodedImporter capacity exceeds the WAV frame limit");
     }
+    return struct {
+        const Model = gui_file_importer.Model(1, 1);
+        const Self = @This();
 
-    pub fn deinit(self: *Self) void {
-        self.lock();
-        if (self.model.snapshot().canCancel()) self.model.requestCancel() catch {};
-        self.unlock();
-        self.joinWorker();
-    }
+        mutex: std.Io.Mutex = .init,
+        model: Model,
+        failure: Failure = .none,
+        sample_rate: u32 = 0,
+        channels: u8 = 0,
+        sample_frames: u64 = 0,
+        preview: [preview_capacity]PreviewPoint = undefined,
+        preview_points: usize = 0,
+        decoded: [decoded_frame_capacity * maximum_channels]f32 = @splat(0.0),
+        decoded_frames: usize = 0,
+        thread: ?std.Thread = null,
+        worker_running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
-    pub fn begin(self: *Self, entry_point: gui_file_importer.EntryPoint, paths: []const []const u8) bool {
-        if (self.worker_running.load(.acquire)) return false;
-        self.reapWorker();
-
-        self.lock();
-        const status = self.model.begin(entry_point, paths);
-        self.failure = .none;
-        self.sample_rate = 0;
-        self.channels = 0;
-        self.sample_frames = 0;
-        self.preview_points = 0;
-        self.unlock();
-        if (status != .validating) return false;
-        return self.spawnWorker();
-    }
-
-    pub fn retry(self: *Self) bool {
-        if (self.worker_running.load(.acquire)) return false;
-        self.reapWorker();
-        self.lock();
-        self.model.retry() catch {
-            self.unlock();
-            return false;
-        };
-        self.failure = .none;
-        self.unlock();
-        return self.spawnWorker();
-    }
-
-    pub fn requestCancel(self: *Self) bool {
-        self.lock();
-        defer self.unlock();
-        self.model.requestCancel() catch return false;
-        return true;
-    }
-
-    pub fn reset(self: *Self) bool {
-        if (self.worker_running.load(.acquire)) return false;
-        self.reapWorker();
-        self.lock();
-        defer self.unlock();
-        self.model.reset();
-        self.failure = .none;
-        self.sample_rate = 0;
-        self.channels = 0;
-        self.sample_frames = 0;
-        self.preview_points = 0;
-        return true;
-    }
-
-    pub fn snapshot(self: *Self) Snapshot {
-        self.lock();
-        defer self.unlock();
-        return .{
-            .import = self.model.snapshot(),
-            .failure = self.failure,
-            .sample_rate = self.sample_rate,
-            .channels = self.channels,
-            .sample_frames = self.sample_frames,
-            .preview_points = self.preview_points,
-        };
-    }
-
-    pub fn copyPreview(self: *Self, output: []PreviewPoint) usize {
-        self.lock();
-        defer self.unlock();
-        const count = @min(output.len, self.preview_points);
-        @memcpy(output[0..count], self.preview[0..count]);
-        return count;
-    }
-
-    fn spawnWorker(self: *Self) bool {
-        self.worker_running.store(true, .release);
-        self.thread = std.Thread.spawn(.{}, run, .{self}) catch {
-            self.worker_running.store(false, .release);
-            self.finishFailure(.worker_unavailable);
-            return false;
-        };
-        return true;
-    }
-
-    fn run(self: *Self) void {
-        defer self.worker_running.store(false, .release);
-        var path_storage: [1024]u8 = undefined;
-        self.lock();
-        const path = self.model.path(0) orelse {
-            self.unlock();
-            self.finishFailure(.malformed);
-            return;
-        };
-        @memcpy(path_storage[0..path.len], path);
-        const path_length = path.len;
-        self.unlock();
-        self.decode(path_storage[0..path_length]);
-    }
-
-    fn decode(self: *Self, path: []const u8) void {
-        const io = std.Io.Threaded.global_single_threaded.io();
-        const file = std.Io.Dir.cwd().openFile(io, path, .{}) catch {
-            self.finishFailure(.open_failed);
-            return;
-        };
-        defer file.close(io);
-        const file_size = file.length(io) catch {
-            self.finishFailure(.open_failed);
-            return;
-        };
-        if (file_size > maximum_input_bytes) {
-            self.finishFailure(.too_large);
-            return;
+        pub fn init() Self {
+            return .{ .model = Model.init(&.{".wav"}) catch unreachable };
         }
-        const info = parseWav(io, file, file_size) catch |err| {
-            self.finishFailure(switch (err) {
-                error.Truncated => .truncated,
-                error.UnsupportedFormat => .unsupported_format,
-                error.TooLarge => .too_large,
-                else => .malformed,
-            });
-            return;
-        };
 
-        self.lock();
-        self.model.startImport(info.data_bytes) catch {
-            self.unlock();
-            self.finishFailure(.malformed);
-            return;
-        };
-        self.sample_rate = info.sample_rate;
-        self.channels = info.channels;
-        self.sample_frames = info.sample_frames;
-        self.unlock();
-
-        var sums: [preview_capacity]f64 = @splat(0.0);
-        var counts: [preview_capacity]u32 = @splat(0);
-        var buffer: [4096]u8 = undefined;
-        var bytes_done: usize = 0;
-        var frame_index: usize = 0;
-        while (bytes_done < info.data_bytes) {
-            if (self.model.cancellationRequested()) {
-                self.finishFailure(.cancelled);
-                return;
-            }
-            const remaining = info.data_bytes - bytes_done;
-            var amount = @min(remaining, buffer.len);
-            amount -= amount % info.block_align;
-            if (amount == 0) amount = info.block_align;
-            const read = file.readPositionalAll(io, buffer[0..amount], info.data_offset + bytes_done) catch {
-                self.finishFailure(.truncated);
-                return;
-            };
-            if (read != amount) {
-                self.finishFailure(.truncated);
-                return;
-            }
-            var offset: usize = 0;
-            while (offset < read) : (offset += info.block_align) {
-                var mixed: f64 = 0.0;
-                const sample_bytes = info.bits_per_sample / 8;
-                for (0..info.channels) |channel| {
-                    const start = offset + channel * sample_bytes;
-                    mixed += decodePcm(buffer[start .. start + sample_bytes], info.bits_per_sample);
-                }
-                mixed /= @floatFromInt(info.channels);
-                const bin = @min(preview_capacity - 1, frame_index * preview_capacity / info.sample_frames);
-                sums[bin] += mixed;
-                counts[bin] += 1;
-                frame_index += 1;
-            }
-            bytes_done += read;
+        pub fn deinit(self: *Self) void {
             self.lock();
-            self.model.advance(bytes_done) catch {};
+            if (self.model.snapshot().canCancel()) self.model.requestCancel() catch {};
+            self.unlock();
+            self.joinWorker();
+        }
+
+        pub fn begin(self: *Self, entry_point: gui_file_importer.EntryPoint, paths: []const []const u8) bool {
+            if (self.worker_running.load(.acquire)) return false;
+            self.reapWorker();
+
+            self.lock();
+            const status = self.model.begin(entry_point, paths);
+            self.failure = .none;
+            self.sample_rate = 0;
+            self.channels = 0;
+            self.sample_frames = 0;
+            self.preview_points = 0;
+            self.decoded_frames = 0;
+            self.unlock();
+            if (status != .validating) return false;
+            return self.spawnWorker();
+        }
+
+        pub fn retry(self: *Self) bool {
+            if (self.worker_running.load(.acquire)) return false;
+            self.reapWorker();
+            self.lock();
+            self.model.retry() catch {
+                self.unlock();
+                return false;
+            };
+            self.failure = .none;
+            self.unlock();
+            return self.spawnWorker();
+        }
+
+        pub fn requestCancel(self: *Self) bool {
+            self.lock();
+            defer self.unlock();
+            self.model.requestCancel() catch return false;
+            return true;
+        }
+
+        pub fn reset(self: *Self) bool {
+            if (self.worker_running.load(.acquire)) return false;
+            self.reapWorker();
+            self.lock();
+            defer self.unlock();
+            self.model.reset();
+            self.failure = .none;
+            self.sample_rate = 0;
+            self.channels = 0;
+            self.sample_frames = 0;
+            self.preview_points = 0;
+            self.decoded_frames = 0;
+            return true;
+        }
+
+        pub fn snapshot(self: *Self) Snapshot {
+            self.lock();
+            defer self.unlock();
+            return .{
+                .import = self.model.snapshot(),
+                .failure = self.failure,
+                .sample_rate = self.sample_rate,
+                .channels = self.channels,
+                .sample_frames = self.sample_frames,
+                .preview_points = self.preview_points,
+                .decoded_frames = self.decoded_frames,
+            };
+        }
+
+        pub fn copyPreview(self: *Self, output: []PreviewPoint) usize {
+            self.lock();
+            defer self.unlock();
+            const count = @min(output.len, self.preview_points);
+            @memcpy(output[0..count], self.preview[0..count]);
+            return count;
+        }
+
+        pub fn copyDecoded(self: *Self, sample_offset: usize, output: []f32) usize {
+            self.lock();
+            defer self.unlock();
+            const sample_count = self.decoded_frames * self.channels;
+            if (sample_offset >= sample_count) return 0;
+            const count = @min(output.len, sample_count - sample_offset);
+            @memcpy(output[0..count], self.decoded[sample_offset .. sample_offset + count]);
+            return count;
+        }
+
+        fn spawnWorker(self: *Self) bool {
+            self.worker_running.store(true, .release);
+            self.thread = std.Thread.spawn(.{}, run, .{self}) catch {
+                self.worker_running.store(false, .release);
+                self.finishFailure(.worker_unavailable);
+                return false;
+            };
+            return true;
+        }
+
+        fn run(self: *Self) void {
+            defer self.worker_running.store(false, .release);
+            var path_storage: [1024]u8 = undefined;
+            self.lock();
+            const path = self.model.path(0) orelse {
+                self.unlock();
+                self.finishFailure(.malformed);
+                return;
+            };
+            @memcpy(path_storage[0..path.len], path);
+            const path_length = path.len;
+            self.unlock();
+            self.decode(path_storage[0..path_length]);
+        }
+
+        fn decode(self: *Self, path: []const u8) void {
+            const io = std.Io.Threaded.global_single_threaded.io();
+            const file = std.Io.Dir.cwd().openFile(io, path, .{}) catch {
+                self.finishFailure(.open_failed);
+                return;
+            };
+            defer file.close(io);
+            const file_size = file.length(io) catch {
+                self.finishFailure(.open_failed);
+                return;
+            };
+            if (file_size > maximum_input_bytes) {
+                self.finishFailure(.too_large);
+                return;
+            }
+            const info = parseWav(io, file, file_size) catch |err| {
+                self.finishFailure(switch (err) {
+                    error.Truncated => .truncated,
+                    error.UnsupportedFormat => .unsupported_format,
+                    error.TooLarge => .too_large,
+                    else => .malformed,
+                });
+                return;
+            };
+            if (decoded_frame_capacity != 0 and info.sample_frames > decoded_frame_capacity) {
+                self.finishFailure(.too_large);
+                return;
+            }
+
+            self.lock();
+            self.model.startImport(info.data_bytes) catch {
+                self.unlock();
+                self.finishFailure(.malformed);
+                return;
+            };
+            self.sample_rate = info.sample_rate;
+            self.channels = info.channels;
+            self.sample_frames = info.sample_frames;
+            self.unlock();
+
+            var sums: [preview_capacity]f64 = @splat(0.0);
+            var counts: [preview_capacity]u32 = @splat(0);
+            var buffer: [4096]u8 = undefined;
+            var bytes_done: usize = 0;
+            var frame_index: usize = 0;
+            while (bytes_done < info.data_bytes) {
+                if (self.model.cancellationRequested()) {
+                    self.finishFailure(.cancelled);
+                    return;
+                }
+                const remaining = info.data_bytes - bytes_done;
+                var amount = @min(remaining, buffer.len);
+                amount -= amount % info.block_align;
+                if (amount == 0) amount = info.block_align;
+                const read = file.readPositionalAll(io, buffer[0..amount], info.data_offset + bytes_done) catch {
+                    self.finishFailure(.truncated);
+                    return;
+                };
+                if (read != amount) {
+                    self.finishFailure(.truncated);
+                    return;
+                }
+                var offset: usize = 0;
+                while (offset < read) : (offset += info.block_align) {
+                    var mixed: f64 = 0.0;
+                    const sample_bytes = info.bits_per_sample / 8;
+                    for (0..info.channels) |channel| {
+                        const start = offset + channel * sample_bytes;
+                        const sample = decodePcm(buffer[start .. start + sample_bytes], info.bits_per_sample);
+                        mixed += sample;
+                        if (decoded_frame_capacity != 0) {
+                            self.decoded[frame_index * info.channels + channel] = @floatCast(sample);
+                        }
+                    }
+                    mixed /= @floatFromInt(info.channels);
+                    const bin = @min(preview_capacity - 1, frame_index * preview_capacity / info.sample_frames);
+                    sums[bin] += mixed;
+                    counts[bin] += 1;
+                    frame_index += 1;
+                }
+                bytes_done += read;
+                self.lock();
+                self.model.advance(bytes_done) catch {};
+                self.unlock();
+            }
+
+            var points: [preview_capacity]PreviewPoint = undefined;
+            var point_count: usize = 0;
+            for (sums, counts, 0..) |sum, count, index| {
+                if (count == 0) continue;
+                points[point_count] = .{
+                    .x = if (preview_capacity == 1) 0.0 else @as(f64, @floatFromInt(index)) / @as(f64, preview_capacity - 1),
+                    .y = std.math.clamp(sum / @as(f64, @floatFromInt(count)), -1.0, 1.0),
+                };
+                point_count += 1;
+            }
+
+            self.lock();
+            @memcpy(self.preview[0..point_count], points[0..point_count]);
+            self.preview_points = point_count;
+            self.decoded_frames = if (decoded_frame_capacity == 0) 0 else info.sample_frames;
+            self.failure = .none;
+            self.model.complete(point_count) catch {};
             self.unlock();
         }
 
-        var points: [preview_capacity]PreviewPoint = undefined;
-        var point_count: usize = 0;
-        for (sums, counts, 0..) |sum, count, index| {
-            if (count == 0) continue;
-            points[point_count] = .{
-                .x = if (preview_capacity == 1) 0.0 else @as(f64, @floatFromInt(index)) / @as(f64, preview_capacity - 1),
-                .y = std.math.clamp(sum / @as(f64, @floatFromInt(count)), -1.0, 1.0),
+        fn finishFailure(self: *Self, failure: Failure) void {
+            self.lock();
+            defer self.unlock();
+            self.failure = failure;
+            const status: gui_file_importer.Status = switch (failure) {
+                .too_large => .capacity_limit,
+                .unsupported_format => .unsupported_file,
+                .cancelled => .cancelled,
+                else => .failed,
             };
-            point_count += 1;
+            self.model.finishWith(status) catch {};
         }
 
-        self.lock();
-        @memcpy(self.preview[0..point_count], points[0..point_count]);
-        self.preview_points = point_count;
-        self.failure = .none;
-        self.model.complete(point_count) catch {};
-        self.unlock();
-    }
-
-    fn finishFailure(self: *Self, failure: Failure) void {
-        self.lock();
-        defer self.unlock();
-        self.failure = failure;
-        const status: gui_file_importer.Status = switch (failure) {
-            .too_large => .capacity_limit,
-            .unsupported_format => .unsupported_file,
-            .cancelled => .cancelled,
-            else => .failed,
-        };
-        self.model.finishWith(status) catch {};
-    }
-
-    fn reapWorker(self: *Self) void {
-        if (self.worker_running.load(.acquire)) return;
-        self.joinWorker();
-    }
-
-    fn joinWorker(self: *Self) void {
-        if (self.thread) |thread| {
-            thread.join();
-            self.thread = null;
+        fn reapWorker(self: *Self) void {
+            if (self.worker_running.load(.acquire)) return;
+            self.joinWorker();
         }
-    }
 
-    fn lock(self: *Self) void {
-        self.mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
-    }
+        fn joinWorker(self: *Self) void {
+            if (self.thread) |thread| {
+                thread.join();
+                self.thread = null;
+            }
+        }
 
-    fn unlock(self: *Self) void {
-        self.mutex.unlock(std.Io.Threaded.global_single_threaded.io());
-    }
-};
+        fn lock(self: *Self) void {
+            self.mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+        }
+
+        fn unlock(self: *Self) void {
+            self.mutex.unlock(std.Io.Threaded.global_single_threaded.io());
+        }
+    };
+}
+
+pub const Importer = DecodedImporter(0);
 
 fn parseWav(io: std.Io, file: std.Io.File, file_size: u64) !WavInfo {
     if (file_size < 12) return error.Truncated;
@@ -427,7 +459,7 @@ fn pcm16Fixture(comptime frame_count: usize) [44 + frame_count * 4]u8 {
     return bytes;
 }
 
-fn waitForWorker(importer: *Importer) void {
+fn waitForWorker(importer: anytype) void {
     while (importer.worker_running.load(.acquire)) std.Thread.yield() catch {};
     importer.reapWorker();
 }
@@ -457,6 +489,33 @@ test "audio importer decodes a bounded PCM WAV preview" {
     try std.testing.expectEqual(@as(f64, 0.0), points[0].x);
     try std.testing.expectEqual(@as(f64, 1.0), points[preview_capacity - 1].x);
     try std.testing.expect(points[7].y >= -1.0 and points[7].y <= 1.0);
+}
+
+test "decoded importer keeps bounded interleaved PCM for non-audio-thread handoff" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const fixture = pcm16Fixture(16);
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "decoded.wav", .data = &fixture });
+    var path: [1024]u8 = undefined;
+    const path_length = try temporary.dir.realPathFile(std.testing.io, "decoded.wav", &path);
+
+    var importer = DecodedImporter(16).init();
+    defer importer.deinit();
+    try std.testing.expect(importer.begin(.picker, &.{path[0..path_length]}));
+    waitForWorker(&importer);
+    try std.testing.expectEqual(@as(usize, 16), importer.snapshot().decoded_frames);
+    var samples: [32]f32 = undefined;
+    try std.testing.expectEqual(samples.len, importer.copyDecoded(0, &samples));
+    try std.testing.expectEqual(samples[0], samples[1]);
+    try std.testing.expectEqual(samples[30], samples[31]);
+    try std.testing.expectEqual(@as(usize, 2), importer.copyDecoded(30, samples[0..4]));
+
+    var too_small = DecodedImporter(8).init();
+    defer too_small.deinit();
+    try std.testing.expect(too_small.begin(.drop, &.{path[0..path_length]}));
+    waitForWorker(&too_small);
+    try std.testing.expectEqual(Failure.too_large, too_small.snapshot().failure);
+    try std.testing.expectEqual(@as(usize, 0), too_small.snapshot().decoded_frames);
 }
 
 test "audio importer reports malformed truncated and unsupported files" {

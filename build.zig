@@ -120,6 +120,14 @@ pub fn build(b: *std.Build) void {
             .core_example_source_file = "examples/channel_strip_core.zig",
             .bundle_id = "dev.zig-vst3.channel-strip",
         },
+        .{
+            .short_name = "ir-loader",
+            .display_name = "IR loader",
+            .artifact_name = "zig_vst3_ir_loader",
+            .root_source_file = "examples/ir_loader_plugin.zig",
+            .core_example_source_file = "examples/ir_loader_core.zig",
+            .bundle_id = "dev.zig-vst3.ir-loader",
+        },
     };
 
     var example_plugins: [example_plugin_options.len]ExamplePluginSteps = undefined;
@@ -663,7 +671,8 @@ fn addExamplePlugin(
         std.mem.eql(u8, options.short_name, "voice-mix") or
         std.mem.eql(u8, options.short_name, "sine-synth") or
         std.mem.eql(u8, options.short_name, "editor-smoke") or
-        std.mem.eql(u8, options.short_name, "channel-strip");
+        std.mem.eql(u8, options.short_name, "channel-strip") or
+        std.mem.eql(u8, options.short_name, "ir-loader");
     const library = addVst3PluginLibrary(b, target, optimize, zig_vst3_plugin_core, .{
         .artifact_name = options.artifact_name,
         .root_source_file = options.root_source_file,
@@ -723,8 +732,8 @@ fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget)
         }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .yes });
     } else if (target.result.os.tag == .windows) {
         for ([_][]const u8{
-            "comctl32", "d2d1", "dwrite", "gdi32", "ole32", "oleaut32", "shell32", "shlwapi", "uiautomationcore",
-            "user32", "uuid", "windowscodecs",
+            "comctl32", "d2d1", "dwrite",        "gdi32", "ole32", "oleaut32", "shell32", "shlwapi", "uiautomationcore",
+            "user32",   "uuid", "windowscodecs",
         }) |library| module.linkSystemLibrary(library, .{ .use_pkg_config = .no });
     }
 }
