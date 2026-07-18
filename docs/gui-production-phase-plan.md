@@ -64,18 +64,28 @@ Completion evidence:
 
 ## Milestone 3: Production Parameter Controls
 
-- [ ] Add bipolar slider presentation with a visible center and symmetric keyboard behavior.
-- [ ] Add decibel presentation with plain-value formatting and a useful perceptual scale.
-- [ ] Add a distinct modulation-value overlay that does not overwrite the base value.
-- [ ] Add concise tooltips for controls whose labels do not explain interaction or units.
-- [ ] Preserve exact entry, default reset, context menu, automation playback, and gesture ordering.
-- [ ] Add deterministic state and interaction references for every new presentation.
+- [x] Add bipolar slider presentation with a visible center and symmetric keyboard behavior.
+- [x] Add decibel presentation with plain-value formatting and a useful perceptual scale.
+- [x] Add a distinct modulation-value overlay that does not overwrite the base value.
+- [x] Add concise tooltips for controls whose labels do not explain interaction or units.
+- [x] Preserve exact entry, default reset, context menu, automation playback, and gesture ordering.
+- [x] Add deterministic state and interaction references for every new presentation.
 
 Exit criteria:
 
 - Base, modulated, default, and current values remain visually distinguishable.
 - A user can identify zero, unity, and the active value without moving the control.
 - Tooltips are optional guidance, not the only source of a control name or value.
+
+Completion evidence:
+
+- Adapter ABI version 8 adds bipolar and decibel presentation kinds plus optional tooltip and modulation metadata. Unknown presentation values reject editor creation.
+- Centered presentations draw a visible zero or unity line and fill symmetrically from that line to the base value. Their arrow-key path remains the standard host begin, perform, end gesture, and opposite arrow steps return to the starting value.
+- Decibel normalization remains linear in plain dB. Equal travel therefore produces equal dB steps and multiplicative gain ratios without introducing a second hidden value mapping.
+- A separate outlined marker displays the modulated normalized value. `setModulation` invalidates only the slider and never changes the base parameter model or emits a host gesture.
+- Tooltips use VSTGUI's delayed platform tooltip support and also populate the semantic control description. The gallery and channel strip retain visible labels and exact values without relying on hover.
+- The channel strip uses the decibel presentation and a modulation marker for Gain. The gallery uses the bipolar presentation and modulation marker as a regression fixture. A committed `production-controls.png` reference covers negative, centered, positive, and modulated states.
+- Native tests cover symmetric keyboard gestures, tooltip semantics, modulation routing, invalid presentation rejection, exact entry, default reset, context menus, host updates, and state-specific drawing. The warm-render benchmark includes the same slider rendering path.
 
 ## Milestone 4: Production Telemetry and Meter Interaction
 

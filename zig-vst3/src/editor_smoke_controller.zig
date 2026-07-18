@@ -69,7 +69,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub fn createView(controller: *ivsteditcontroller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
         return parameter_editor.createEditor(Controller, controller, name, .{
             .parameters = &.{
-                .{ .id = gain_param_id, .title = "Gain", .units = "x", .step_count = 0, .default_normalized = 1.0, .control_kind = .rotary_knob },
+                .{ .id = gain_param_id, .title = "Bipolar", .units = "±", .step_count = 0, .default_normalized = 0.5, .control_kind = .bipolar_slider, .tooltip = "Drag around the center line; the outlined marker shows modulation.", .modulation_normalized = 0.75 },
                 .{ .id = voices_param_id, .title = "Voices", .units = "voices", .step_count = 3, .default_normalized = 0.0, .control_kind = .segmented_enum },
                 .{ .id = bypass_param_id, .title = "Bypass", .step_count = 1, .default_normalized = 0.0, .control_kind = .toggle },
                 .{ .id = mode_param_id, .title = "Mode", .step_count = 2, .default_normalized = 0.0, .control_kind = .enum_dropdown },

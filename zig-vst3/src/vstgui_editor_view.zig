@@ -33,6 +33,9 @@ pub const ParameterInfo = extern struct {
     units: [*:0]const u8,
     step_count: types.int32,
     default_normalized: f64,
+    tooltip: ?[*:0]const u8 = null,
+    modulation_normalized: f64 = 0.0,
+    has_modulation: types.int32 = 0,
 };
 
 pub const ParameterDescription = extern struct {
@@ -48,6 +51,8 @@ pub const ControlKind = enum(c_int) {
     toggle,
     enum_dropdown,
     segmented_enum,
+    bipolar_slider,
+    decibel_slider,
 };
 
 pub const ParameterValue = extern struct {
@@ -246,6 +251,7 @@ extern fn zig_vstgui_editor_destroy(*Editor) void;
 extern fn zig_vstgui_editor_resize(*Editor, types.uint32, types.uint32) types.int32;
 extern fn zig_vstgui_editor_set_scale(*Editor, f64) types.int32;
 extern fn zig_vstgui_editor_set_parameter(*Editor, vsttypes.ParamID, f64) types.int32;
+extern fn zig_vstgui_editor_set_modulation(*Editor, vsttypes.ParamID, f64) types.int32;
 extern fn zig_vstgui_editor_refresh_parameters(*Editor, [*]const ParameterValue, types.uint32) types.int32;
 extern fn zig_vstgui_editor_key_down(*Editor, types.char16, types.int16, types.int16) types.int32;
 extern fn zig_vstgui_editor_set_focus(*Editor, types.int32) void;

@@ -18,6 +18,8 @@ pub const Parameter = struct {
     step_count: types.int32,
     default_normalized: f64,
     control_kind: vstgui_editor_view.ControlKind = .linear_slider,
+    tooltip: ?[*:0]const u8 = null,
+    modulation_normalized: ?f64 = null,
 };
 
 pub const Meter = struct {
@@ -134,6 +136,9 @@ fn createConfiguredView(
                 .units = parameter.units,
                 .step_count = parameter.step_count,
                 .default_normalized = parameter.default_normalized,
+                .tooltip = parameter.tooltip,
+                .modulation_normalized = parameter.modulation_normalized orelse 0.0,
+                .has_modulation = if (parameter.modulation_normalized != null) 1 else 0,
             } };
         }
         if (meters.len > vstgui_editor_view.max_meters) return null;

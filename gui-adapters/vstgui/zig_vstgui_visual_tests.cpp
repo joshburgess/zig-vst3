@@ -247,6 +247,41 @@ Snapshot metersAndAssets() {
     };
 }
 
+Snapshot productionControls() {
+    return {
+        "production-controls.png",
+        320,
+        80,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 80)));
+            container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            constexpr ZigVstguiControlKind kinds[] = {
+                ZIG_VSTGUI_CONTROL_BIPOLAR_SLIDER,
+                ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER,
+                ZIG_VSTGUI_CONTROL_BIPOLAR_SLIDER,
+            };
+            constexpr float values[] = {0.25f, 0.5f, 0.75f};
+            for (uint32_t index = 0; index < 3; ++index) {
+                const double left = 8.0 + index * 104.0;
+                auto* slider = new ZigVstgui::GainSlider(
+                    VSTGUI::CRect(left, 24.0, left + 96.0, 56.0),
+                    nullptr,
+                    static_cast<int32_t>(index),
+                    styles,
+                    kinds[index]
+                );
+                slider->setDrawStyle(VSTGUI::CSlider::kDrawFrame | VSTGUI::CSlider::kDrawBack);
+                slider->setValueNormalized(values[index]);
+                if (index < 2) slider->setModulation(index == 0 ? 0.75 : 0.65);
+                container->addView(slider);
+            }
+            container->drawRect(&context, container->getViewSize());
+        },
+    };
+}
+
 int runSnapshot(
     const Snapshot& snapshot,
     const std::filesystem::path& references,
@@ -327,7 +362,12 @@ int main(int argc, char** argv) {
     if (update) std::filesystem::create_directories(references);
     std::filesystem::create_directories(output);
     VSTGUI::init(nullptr);
-    const Snapshot snapshots[] = {controlStates(1.0), controlStates(2.0), metersAndAssets()};
+    const Snapshot snapshots[] = {
+        controlStates(1.0),
+        controlStates(2.0),
+        metersAndAssets(),
+        productionControls(),
+    };
     int result = 0;
     for (const auto& snapshot : snapshots) {
         result = std::max(result, runSnapshot(snapshot, references, output, update));

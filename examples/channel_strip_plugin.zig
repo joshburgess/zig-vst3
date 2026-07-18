@@ -61,7 +61,9 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .units = "dB",
                     .step_count = 0,
                     .default_normalized = 0.5,
-                    .control_kind = .rotary_knob,
+                    .control_kind = .decibel_slider,
+                    .tooltip = "Equal dB steps change gain by equal ratios. Command-click resets to unity.",
+                    .modulation_normalized = 0.64,
                 },
                 .{
                     .id = bypass_param_id,

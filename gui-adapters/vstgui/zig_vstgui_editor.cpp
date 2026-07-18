@@ -70,6 +70,8 @@ ZigVstguiEditor::ZigVstguiEditor(
     ZigVstgui::applyFontDescription(skin.fonts, theme_resolver);
     for (uint32_t index = 0; index < value_parameter_count; ++index) {
         if (!parameters[index].info.title || findControl(parameters[index].parameter_id)) return;
+        if (parameters[index].control_kind < ZIG_VSTGUI_CONTROL_LINEAR_SLIDER ||
+            parameters[index].control_kind > ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER) return;
         auto* control = new (std::nothrow) ZigVstgui::ParameterControl(
             parameters[index].parameter_id,
             parameters[index].initial_normalized,
@@ -77,7 +79,15 @@ ZigVstguiEditor::ZigVstguiEditor(
         );
         if (!control) return;
         parameter_controls[index].reset(control);
+        parameter_titles[index] = parameters[index].info.title;
+        parameter_units[index] = parameters[index].info.units ? parameters[index].info.units : "";
+        parameter_tooltips[index] = parameters[index].info.tooltip ? parameters[index].info.tooltip : "";
         parameter_info[index] = parameters[index].info;
+        parameter_info[index].title = parameter_titles[index].c_str();
+        parameter_info[index].units = parameter_units[index].c_str();
+        parameter_info[index].tooltip = parameter_tooltips[index].empty()
+            ? nullptr
+            : parameter_tooltips[index].c_str();
         parameter_control_kinds[index] = parameters[index].control_kind;
         parameter_count += 1;
     }
@@ -175,6 +185,13 @@ bool ZigVstguiEditor::setParameter(uint32_t parameter_id, double normalized) {
     if (!control) return false;
     metrics.parameter_update_count += 1;
     control->setValue(normalized);
+    return true;
+}
+
+bool ZigVstguiEditor::setModulation(uint32_t parameter_id, double normalized) {
+    auto* control = findControl(parameter_id);
+    if (!control) return false;
+    control->setModulation(normalized);
     return true;
 }
 
@@ -317,6 +334,7 @@ void ZigVstguiEditor::buildFrame() {
     const auto help_style = theme_resolver.resolve(ZigVstgui::ComponentKind::help);
     const auto& theme = theme_resolver.theme();
     frame = new VSTGUI::CFrame(VSTGUI::CRect(0, 0, width, height), nullptr);
+    frame->enableTooltips(true, 600);
     frame->setBackgroundColor(editor_style.background);
     frame->setFocusDrawingEnabled(true);
     frame->setFocusColor(editor_style.accent);

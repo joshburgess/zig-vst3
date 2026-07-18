@@ -63,8 +63,16 @@ Each `Parameter` needs the stable parameter ID used by the controller, its displ
 | `toggle` | Boolean | No |
 | `enum_dropdown` | Enum with several choices | No |
 | `segmented_enum` | Small enum whose choices fit visibly | No |
+| `bipolar_slider` | Signed scalar with a meaningful zero center | Yes |
+| `decibel_slider` | Gain expressed in decibels with unity at the normalized default | Yes |
 
-All five presentations use the same parameter attachment behavior. Pointer and keyboard gestures call the host in begin, perform, end order. Rejected changes roll back. Host automation updates the visible value without producing another gesture. Formatting, parsing, default reset, context menus, focus, and semantic metadata remain attached when the presentation changes.
+All presentations use the same parameter attachment behavior. Pointer and keyboard gestures call the host in begin, perform, end order. Rejected changes roll back. Host automation updates the visible value without producing another gesture. Formatting, parsing, default reset, context menus, focus, and semantic metadata remain attached when the presentation changes.
+
+The bipolar and decibel presentations fill from the center instead of from the minimum. This makes negative and positive movement distinguishable and keeps unity visible for a symmetric decibel range. Decibel parameters should normalize a plain dB range, such as -24 to +24. Equal slider travel then represents equal dB steps and therefore equal gain ratios.
+
+`Parameter.modulation_normalized` adds a non-editable outlined marker without replacing the base parameter value or its thumb. Runtime modulation updates use the separate adapter modulation path and do not begin a host parameter gesture. The marker is presentation only; parameter formatting and automation still describe the base value.
+
+`Parameter.tooltip` adds delayed native tooltip text to the primary control and exact field. The same text becomes the control's semantic description. Keep the visible label sufficient on its own. Tooltips are appropriate for reset gestures, scale details, or other secondary guidance, not for the control name or current value.
 
 ## Themes and Layouts
 

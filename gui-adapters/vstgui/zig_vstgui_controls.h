@@ -54,10 +54,12 @@ public:
         const VSTGUI::CRect& size,
         VSTGUI::IControlListener* listener,
         int32_t tag,
-        const ThemeResolver& styles
+        const ThemeResolver& styles,
+        ZigVstguiControlKind control_kind = ZIG_VSTGUI_CONTROL_LINEAR_SLIDER
     );
 
     bool handleKey(uint16_t key, int16_t key_code, int16_t modifiers);
+    void setModulation(double normalized);
     void forceVisualStateForTesting(std::optional<VisualState> state);
     void draw(VSTGUI::CDrawContext* context) override;
     void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override;
@@ -71,8 +73,10 @@ private:
     VisualState visualState() const;
 
     const ThemeResolver& styles;
+    bool centered {false};
     bool hovered {false};
     bool pressed {false};
+    std::optional<double> modulation;
     std::optional<VisualState> forced_state;
 };
 
@@ -94,6 +98,7 @@ public:
     );
     void clear();
     void setValue(double value);
+    void setModulation(double normalized);
     void setEnabled(bool enabled);
     void setBounds(
         const VSTGUI::CRect& label_bounds,

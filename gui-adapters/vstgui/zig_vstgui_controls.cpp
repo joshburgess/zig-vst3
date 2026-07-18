@@ -101,9 +101,15 @@ GainSlider::GainSlider(
     const VSTGUI::CRect& size,
     VSTGUI::IControlListener* listener,
     int32_t tag,
-    const ThemeResolver& value_styles
+    const ThemeResolver& value_styles,
+    ZigVstguiControlKind control_kind
 )
-: CSlider(size, listener, tag, 0, 1, nullptr, nullptr), styles(value_styles) {}
+: CSlider(size, listener, tag, 0, 1, nullptr, nullptr),
+  styles(value_styles),
+  centered(
+      control_kind == ZIG_VSTGUI_CONTROL_BIPOLAR_SLIDER ||
+      control_kind == ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER
+  ) {}
 
 bool GainSlider::handleKey(uint16_t key, int16_t key_code, int16_t modifiers) {
     VSTGUI::VirtualKey virtual_key = VSTGUI::VirtualKey::None;
@@ -128,6 +134,11 @@ bool GainSlider::handleKey(uint16_t key, int16_t key_code, int16_t modifiers) {
     return event.consumed;
 }
 
+void GainSlider::setModulation(double normalized) {
+    modulation = clampNormalized(normalized);
+    invalid();
+}
+
 void GainSlider::forceVisualStateForTesting(std::optional<VisualState> state) {
     forced_state = state;
     invalid();
@@ -144,6 +155,23 @@ void GainSlider::draw(VSTGUI::CDrawContext* context) {
     const auto bounds = getViewSize();
     const auto center_x = bounds.left + bounds.getWidth() * getValueNormalized();
     const auto center_y = bounds.top + bounds.getHeight() / 2.0;
+    if (centered) {
+        const double zero_x = bounds.left + bounds.getWidth() * 0.5;
+        const double inset = std::max(2.0, style.frame_width + 1.0);
+        context->setFillColor(style.accent);
+        context->drawRect(VSTGUI::CRect(
+            std::min(zero_x, center_x),
+            bounds.top + inset,
+            std::max(zero_x, center_x),
+            bounds.bottom - inset
+        ), VSTGUI::kDrawFilled);
+        context->setFrameColor(style.foreground);
+        context->setLineWidth(style.frame_width);
+        context->drawLine(
+            VSTGUI::CPoint(zero_x, bounds.top + inset),
+            VSTGUI::CPoint(zero_x, bounds.bottom - inset)
+        );
+    }
     VSTGUI::CRect thumb(
         center_x - style.thumb_radius,
         center_y - style.thumb_radius,
@@ -155,6 +183,18 @@ void GainSlider::draw(VSTGUI::CDrawContext* context) {
     context->setFrameColor(style.accent);
     context->setFillColor(style.foreground);
     context->drawEllipse(thumb, VSTGUI::kDrawFilledAndStroked);
+    if (modulation) {
+        const double modulation_x = bounds.left + bounds.getWidth() * *modulation;
+        const double radius = style.thumb_radius + 2.5;
+        context->setFrameColor(style.accent);
+        context->setLineWidth(std::max(1.0, style.frame_width));
+        context->drawEllipse(VSTGUI::CRect(
+            modulation_x - radius,
+            center_y - radius,
+            modulation_x + radius,
+            center_y + radius
+        ), VSTGUI::kDrawStroked);
+    }
 }
 
 void GainSlider::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
@@ -269,6 +309,7 @@ void ParameterControl::build(
     value_edit->setFrameColor(value_style.border);
     value_edit->setFrameWidth(value_style.frame_width);
     value_edit->setRoundRectRadius(value_style.radius);
+    if (parameter_info.tooltip) value_edit->setTooltipText(parameter_info.tooltip);
     value_edit->setValueToStringFunction([](float value, char text[256], VSTGUI::CParamDisplay* display) {
         auto* control = static_cast<ParameterControl*>(display->getListener());
         if (control && control->control_model.callbacks().format_value) {
@@ -396,11 +437,15 @@ void ParameterControl::buildPrimaryControl(
             primary_control = segmented;
             break;
         }
+        case ZIG_VSTGUI_CONTROL_BIPOLAR_SLIDER:
+        case ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER:
         case ZIG_VSTGUI_CONTROL_LINEAR_SLIDER:
         default: {
             const auto style = styles.resolve(component_kind);
-            slider = new GainSlider(VSTGUI::CRect(), this, kParameterTag, styles);
-            slider->setDrawStyle(VSTGUI::CSlider::kDrawFrame | VSTGUI::CSlider::kDrawBack | VSTGUI::CSlider::kDrawValue);
+            slider = new GainSlider(VSTGUI::CRect(), this, kParameterTag, styles, kind);
+            const int32_t draw_style = VSTGUI::CSlider::kDrawFrame | VSTGUI::CSlider::kDrawBack |
+                (kind == ZIG_VSTGUI_CONTROL_LINEAR_SLIDER ? VSTGUI::CSlider::kDrawValue : 0);
+            slider->setDrawStyle(draw_style);
             slider->setFrameWidth(style.frame_width);
             slider->setFrameColor(style.border);
             slider->setBackColor(style.background);
@@ -414,6 +459,7 @@ void ParameterControl::buildPrimaryControl(
     primary_control->setMax(1.f);
     primary_control->setDefaultValue(default_value);
     primary_control->setWheelInc(wheel_increment);
+    if (info.tooltip) primary_control->setTooltipText(info.tooltip);
     parent->addView(primary_control);
     primary_control->registerViewEventListener(this);
     primary_control->registerViewListener(this);
@@ -425,7 +471,8 @@ void ParameterControl::buildPrimaryControl(
         kind == ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM) role = AccessibilityRole::choice;
     primary_component.accessibility().setRole(role);
     primary_component.accessibility().setName(label_text);
-    primary_component.accessibility().setDescription("Plugin parameter");
+    primary_component.accessibility().setDescription(info.tooltip ? info.tooltip : "Plugin parameter");
+    if (slider && info.has_modulation) slider->setModulation(info.modulation_normalized);
     if (drawing.draw_parameter) {
         ZigVstguiDrawingComponent drawing_component = ZIG_VSTGUI_DRAW_SLIDER;
         if (kind == ZIG_VSTGUI_CONTROL_ROTARY_KNOB) drawing_component = ZIG_VSTGUI_DRAW_KNOB;
@@ -486,6 +533,10 @@ void ParameterControl::clear() {
 void ParameterControl::setValue(double value) {
     control_model.hostChanged(value);
     syncViews();
+}
+
+void ParameterControl::setModulation(double normalized) {
+    if (slider) slider->setModulation(normalized);
 }
 
 void ParameterControl::setEnabled(bool enabled) {

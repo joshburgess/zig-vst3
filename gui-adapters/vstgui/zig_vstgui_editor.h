@@ -33,6 +33,7 @@ struct ZigVstguiEditor {
     bool setScale(double scale);
     bool valid() const;
     bool setParameter(uint32_t parameter_id, double normalized);
+    bool setModulation(uint32_t parameter_id, double normalized);
     bool refreshParameters(const ZigVstguiParameterValue* parameters, uint32_t parameter_count);
     bool parameterValue(uint32_t parameter_id, double& value) const;
     const ZigVstgui::AccessibilityNode* parameterAccessibility(uint32_t parameter_id, bool exact_value) const;
@@ -76,6 +77,9 @@ private:
     uint32_t group_count {0};
     std::array<std::unique_ptr<ZigVstgui::ParameterControl>, ZIG_VSTGUI_MAX_PARAMETERS> parameter_controls;
     std::array<ZigVstguiParameterInfo, ZIG_VSTGUI_MAX_PARAMETERS> parameter_info {};
+    std::array<std::string, ZIG_VSTGUI_MAX_PARAMETERS> parameter_titles;
+    std::array<std::string, ZIG_VSTGUI_MAX_PARAMETERS> parameter_units;
+    std::array<std::string, ZIG_VSTGUI_MAX_PARAMETERS> parameter_tooltips;
     std::array<ZigVstguiControlKind, ZIG_VSTGUI_MAX_PARAMETERS> parameter_control_kinds {};
     uint32_t parameter_count {0};
     std::array<std::unique_ptr<ZigVstgui::MeterControl>, ZIG_VSTGUI_MAX_METERS> meter_controls;

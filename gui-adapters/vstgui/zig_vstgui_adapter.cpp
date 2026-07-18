@@ -105,6 +105,14 @@ extern "C" int32_t zig_vstgui_editor_set_parameter(
     return editor && editor->setParameter(parameter_id, normalized) ? 0 : -1;
 }
 
+extern "C" int32_t zig_vstgui_editor_set_modulation(
+    ZigVstguiEditor* editor,
+    uint32_t parameter_id,
+    double normalized
+) {
+    return editor && editor->setModulation(parameter_id, normalized) ? 0 : -1;
+}
+
 extern "C" int32_t zig_vstgui_editor_refresh_parameters(
     ZigVstguiEditor* editor,
     const ZigVstguiParameterValue* parameters,

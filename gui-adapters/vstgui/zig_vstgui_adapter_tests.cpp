@@ -271,7 +271,7 @@ int testMultiParameterRouting() {
     callbacks.perform_edit = performEdit;
     callbacks.end_edit = endEdit;
     const ZigVstguiParameterDescription descriptions[] = {
-        {10, 0.25, {"Continuous", "x", 0, 0.5}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER},
+        {10, 0.25, {"Continuous", "x", 0, 0.5, "Bipolar control", 0.75, 1}, ZIG_VSTGUI_CONTROL_BIPOLAR_SLIDER},
         {20, 0.50, {"Integer", "voices", 7, 3.0 / 7.0}, ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM},
         {30, 0.00, {"Boolean", "", 1, 0.0}, ZIG_VSTGUI_CONTROL_TOGGLE},
         {40, 1.00, {"Enum", "", 2, 0.0}, ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN},
@@ -299,7 +299,9 @@ int testMultiParameterRouting() {
     const auto* choice_accessibility = first.parameterAccessibility(20, false);
     const auto* toggle_accessibility = first.parameterAccessibility(30, false);
     if (!slider_accessibility || slider_accessibility->role() != ZigVstgui::AccessibilityRole::slider) return 16;
-    if (slider_accessibility->name() != "Continuous (x)" || !slider_accessibility->range().present) return 17;
+    if (slider_accessibility->name() != "Continuous (x)" ||
+        slider_accessibility->description() != "Bipolar control" ||
+        !slider_accessibility->range().present) return 17;
     if (!exact_accessibility || exact_accessibility->role() != ZigVstgui::AccessibilityRole::text_field) return 18;
     if (!choice_accessibility || choice_accessibility->role() != ZigVstgui::AccessibilityRole::choice) return 19;
     if (!toggle_accessibility || toggle_accessibility->role() != ZigVstgui::AccessibilityRole::toggle) return 20;
@@ -330,10 +332,16 @@ int testMultiParameterRouting() {
         state.end_count != end_before_key + 1) return 32;
     double keyboard_value = 0.0;
     if (!first.parameterValue(10, keyboard_value) || keyboard_value <= 0.25) return 33;
+    if (!first.keyDown(0, Steinberg::KEY_LEFT, 0)) return 37;
+    if (state.begin_count != begin_before_key + 2 ||
+        state.perform_count != perform_before_key + 2 ||
+        state.end_count != end_before_key + 2) return 38;
+    if (!first.parameterValue(10, keyboard_value) || !closeEnough(keyboard_value, 0.25)) return 39;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 0) || first.focusPosition() != 1) return 13;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 0) || first.focusPosition() != 2) return 14;
     if (!first.keyDown(0, Steinberg::KEY_TAB, 1) || first.focusPosition() != 1) return 15;
     if (!first.setParameter(30, 1.0)) return 2;
+    if (!first.setModulation(10, 0.8) || first.setModulation(99, 0.5)) return 36;
     if (!toggle_accessibility->state().checked || toggle_accessibility->valueText().empty()) return 24;
     double value = 0.0;
     if (!first.parameterValue(30, value) || !closeEnough(value, 1.0)) return 3;
@@ -529,8 +537,8 @@ int testMeterAbi() {
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
-        {"Gain", "dB", 0, 0.5},
-        ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+        {"Gain", "dB", 0, 0.5, "Equal dB steps", 0.65, 1},
+        ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER,
     };
     if (zig_vstgui_editor_create_with_meters(&parameter, 1, {}, nullptr, 1, {})) return 2;
     ZigVstguiMeterDescription meters[ZIG_VSTGUI_MAX_METERS + 1] {};
@@ -707,6 +715,9 @@ int testAssetsAndFonts() {
     invalid_skin = {};
     invalid_skin.editor_style.mask = 1u << 31;
     if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 28;
+    auto invalid_parameter = parameter;
+    invalid_parameter.control_kind = static_cast<ZigVstguiControlKind>(99);
+    if (zig_vstgui_editor_create_with_skin(&invalid_parameter, 1, {}, nullptr, 0, {}, {})) return 29;
     return 0;
 }
 

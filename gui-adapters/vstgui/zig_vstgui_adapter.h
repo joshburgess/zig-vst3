@@ -22,6 +22,9 @@ typedef struct ZigVstguiParameterInfo {
     const char* units;
     int32_t step_count;
     double default_normalized;
+    const char* tooltip;
+    double modulation_normalized;
+    int32_t has_modulation;
 } ZigVstguiParameterInfo;
 
 typedef enum ZigVstguiControlKind {
@@ -29,7 +32,9 @@ typedef enum ZigVstguiControlKind {
     ZIG_VSTGUI_CONTROL_ROTARY_KNOB = 1,
     ZIG_VSTGUI_CONTROL_TOGGLE = 2,
     ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN = 3,
-    ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM = 4
+    ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM = 4,
+    ZIG_VSTGUI_CONTROL_BIPOLAR_SLIDER = 5,
+    ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER = 6
 } ZigVstguiControlKind;
 
 typedef struct ZigVstguiParameterDescription {
@@ -266,6 +271,7 @@ void zig_vstgui_editor_destroy(ZigVstguiEditor* editor);
 int32_t zig_vstgui_editor_resize(ZigVstguiEditor* editor, uint32_t width, uint32_t height);
 int32_t zig_vstgui_editor_set_scale(ZigVstguiEditor* editor, double scale);
 int32_t zig_vstgui_editor_set_parameter(ZigVstguiEditor* editor, uint32_t parameter_id, double normalized);
+int32_t zig_vstgui_editor_set_modulation(ZigVstguiEditor* editor, uint32_t parameter_id, double normalized);
 int32_t zig_vstgui_editor_refresh_parameters(
     ZigVstguiEditor* editor,
     const ZigVstguiParameterValue* parameters,
