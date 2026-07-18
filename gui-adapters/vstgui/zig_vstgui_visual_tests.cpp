@@ -5,6 +5,7 @@
 #include "zig_vstgui_meters.h"
 #include "zig_vstgui_piano.h"
 #include "zig_vstgui_preset_browser.h"
+#include "zig_vstgui_step_sequencer.h"
 #include "zig_vstgui_theme.h"
 #include "zig_vstgui_xy_pad.h"
 
@@ -58,13 +59,18 @@ struct Snapshot {
 };
 
 struct MeterValues {
-    double values[4] {1.0, 0.68, 0.42, 0.31};
+    double values[5] {1.0, 0.68, 0.42, 0.31, 5.0};
 };
 
 double loadMeter(void* userdata, uint32_t source_id) {
     auto* values = static_cast<MeterValues*>(userdata);
-    return source_id < 4 ? values->values[source_id] : 0.0;
+    return source_id < 5 ? values->values[source_id] : 0.0;
 }
+
+void acceptBegin(void*, uint32_t) {}
+int32_t acceptEdit(void*, uint32_t, double) { return 0; }
+void acceptEnd(void*, uint32_t) {}
+int32_t acceptIndex(void*, uint32_t, uint32_t) { return 0; }
 
 VSTGUI::SharedPointer<VSTGUI::CBitmap> render(const Snapshot& snapshot) {
     return VSTGUI::renderBitmapOffscreen(
@@ -72,6 +78,27 @@ VSTGUI::SharedPointer<VSTGUI::CBitmap> render(const Snapshot& snapshot) {
         snapshot.scale,
         snapshot.draw
     );
+}
+
+double benchmarkDraw(
+    VSTGUI::CViewContainer* container,
+    const VSTGUI::SharedPointer<VSTGUI::COffscreenContext>& offscreen
+) {
+    if (!container || !offscreen) return 1e9;
+    constexpr uint32_t repetitions = 100;
+    double best = 1e9;
+    for (uint32_t sample = 0; sample < 3; ++sample) {
+        const auto started = std::chrono::steady_clock::now();
+        for (uint32_t index = 0; index < repetitions; ++index) {
+            offscreen->beginDraw();
+            container->drawRect(offscreen, container->getViewSize());
+            offscreen->endDraw();
+        }
+        best = std::min(best, std::chrono::duration<double, std::micro>(
+            std::chrono::steady_clock::now() - started
+        ).count() / repetitions);
+    }
+    return best;
 }
 
 bool writePng(const VSTGUI::SharedPointer<VSTGUI::CBitmap>& bitmap, const std::filesystem::path& path) {
@@ -417,6 +444,36 @@ Snapshot pianoKeyboard() {
     };
 }
 
+Snapshot stepSequencer() {
+    return {
+        "step-sequencer.png",
+        640,
+        120,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 640, 120)));
+            container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            const uint32_t ids[] = {100, 101, 102, 103, 104, 105, 106, 107};
+            const ZigVstguiStepSequencerDescription description {
+                "Eight Step Gate", ids, 8, 9, 0x3c, 0x55, 1, 4, 30,
+            };
+            MeterValues values;
+            ZigVstguiCallbacks callbacks {};
+            callbacks.begin_edit = acceptBegin;
+            callbacks.perform_edit = acceptEdit;
+            callbacks.end_edit = acceptEnd;
+            callbacks.store_editor_index = acceptIndex;
+            ZigVstgui::StepSequencerControl sequencer(description, callbacks, {&values, loadMeter});
+            sequencer.build(container, styles);
+            sequencer.setBounds(VSTGUI::CRect(12, 8, 628, 30), VSTGUI::CRect(12, 30, 628, 108));
+            sequencer.tick();
+            container->drawRect(&context, container->getViewSize());
+            sequencer.clear();
+        },
+    };
+}
+
 Snapshot presetBrowsers() {
     return {
         "preset-browsers.png",
@@ -614,16 +671,7 @@ double benchmarkWarmDraw() {
     offscreen->beginDraw();
     container->drawRect(offscreen, container->getViewSize());
     offscreen->endDraw();
-    constexpr uint32_t repetitions = 200;
-    const auto started = std::chrono::steady_clock::now();
-    for (uint32_t index = 0; index < repetitions; ++index) {
-        offscreen->beginDraw();
-        container->drawRect(offscreen, container->getViewSize());
-        offscreen->endDraw();
-    }
-    return std::chrono::duration<double, std::micro>(
-        std::chrono::steady_clock::now() - started
-    ).count() / repetitions;
+    return benchmarkDraw(container, offscreen);
 }
 
 double benchmarkPianoDraw() {
@@ -642,17 +690,31 @@ double benchmarkPianoDraw() {
     offscreen->beginDraw();
     container->drawRect(offscreen, container->getViewSize());
     offscreen->endDraw();
-    constexpr uint32_t repetitions = 200;
-    const auto started = std::chrono::steady_clock::now();
-    for (uint32_t index = 0; index < repetitions; ++index) {
-        offscreen->beginDraw();
-        container->drawRect(offscreen, container->getViewSize());
-        offscreen->endDraw();
-    }
-    const double average = std::chrono::duration<double, std::micro>(
-        std::chrono::steady_clock::now() - started
-    ).count() / repetitions;
+    const double average = benchmarkDraw(container, offscreen);
     piano.clear();
+    return average;
+}
+
+double benchmarkStepSequencerDraw() {
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 480, 90)));
+    container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+    const uint32_t ids[] = {100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115};
+    const ZigVstguiStepSequencerDescription description {
+        "Pattern", ids, 16, 9, 0x33, 0x5555, 1, 0, 30,
+    };
+    ZigVstguiCallbacks callbacks {};
+    callbacks.begin_edit = acceptBegin;
+    callbacks.perform_edit = acceptEdit;
+    callbacks.end_edit = acceptEnd;
+    callbacks.store_editor_index = acceptIndex;
+    ZigVstgui::StepSequencerControl sequencer(description, callbacks, {});
+    sequencer.build(container, styles);
+    sequencer.setBounds(VSTGUI::CRect(8, 4, 472, 22), VSTGUI::CRect(8, 22, 472, 86));
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(480, 90), 1.0);
+    if (!offscreen) return 1e9;
+    const double average = benchmarkDraw(container, offscreen);
+    sequencer.clear();
     return average;
 }
 
@@ -678,6 +740,7 @@ int main(int argc, char** argv) {
         closedActionMenu(),
         actionMenus(),
         pianoKeyboard(),
+        stepSequencer(),
     };
     int result = 0;
     for (const auto& snapshot : snapshots) {
@@ -686,9 +749,11 @@ int main(int argc, char** argv) {
     if (!update) {
         const double average = benchmarkWarmDraw();
         const double piano_average = benchmarkPianoDraw();
+        const double step_sequencer_average = benchmarkStepSequencerDraw();
         std::fprintf(stderr, "visual regression warm render average: %.1f us\n", average);
         std::fprintf(stderr, "piano warm render average: %.1f us\n", piano_average);
-        if (average > 300.0 || piano_average > 300.0) result = std::max(result, 6);
+        std::fprintf(stderr, "step sequencer warm render average: %.1f us\n", step_sequencer_average);
+        if (average > 300.0 || piano_average > 300.0 || step_sequencer_average > 300.0) result = std::max(result, 6);
     }
     VSTGUI::exit();
     return result;

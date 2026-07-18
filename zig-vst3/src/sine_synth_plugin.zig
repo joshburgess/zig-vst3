@@ -45,7 +45,7 @@ test "sine synth plugin root exposes zig-vst3-plugin metadata" {
     try std.testing.expectEqualStrings("zig-vst3 Sine Synth", sine_synth_spec.Spec.name);
     try std.testing.expectEqualStrings("zig-vst3 Sine Synth Controller", sine_synth_spec.controller_class_name);
     try std.testing.expectEqualStrings("zig-vst3", sine_synth_spec.Spec.vendor);
-    try std.testing.expectEqual(@as(usize, 1), sine_synth_spec.Spec.ParameterSet.count);
+    try std.testing.expectEqual(@as(usize, 9), sine_synth_spec.Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 0), sine_synth_spec.level_param_index);
     try std.testing.expectEqual(@as(f64, 0.1), spec.values.view(&sine_synth_spec.parameter_set).loadNormalized("level"));
 }

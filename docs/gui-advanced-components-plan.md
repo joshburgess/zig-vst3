@@ -123,7 +123,7 @@ Completion evidence:
 - [x] Add a preset browser with search, selection, load status, and keyboard navigation.
 - [x] Add anchored popovers and richer menus with focus containment and restoration.
 - [x] Add a piano keyboard with pointer, computer-keyboard, and accessible note input.
-- [ ] Add a bounded step sequencer with multi-selection and clear playhead semantics.
+- [x] Add a bounded step sequencer with multi-selection and clear playhead semantics.
 - [ ] Add file drag-and-drop with type filtering, rejection feedback, and host-safe lifetimes.
 - [ ] Add waveform and spectrum views on the graph source contract.
 - [ ] Exercise every promoted component in both the gallery and a production editor.
@@ -174,6 +174,19 @@ Piano keyboard completion evidence:
 - Pluginval was not launched because earlier runs repeatedly produced macOS crash dialogs. Manual piano interaction in a macOS host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
 - Sequencing, file drop, and production waveform or spectrum components remain separate slices of this milestone.
 
+Step sequencer completion evidence:
+
+- `StepSequencer` is a supported public authoring declaration shared by the component gallery and sine-synth editor. Authors bind 1–32 distinct boolean parameters, a persistent selection field, and optional activity-gated playhead telemetry without importing adapter internals.
+- Adapter ABI version 15 adds up to two sequencers while retaining the version 14 full creation entry. Active steps remain automatable processor parameters, selection remains editor state, and the playhead remains read-only telemetry. Host parameter updates refresh hidden step bindings without creating duplicate standalone controls.
+- `gui_step_sequencer.Sequencer(capacity)` keeps the active mask, selection mask, cursor, anchor, and optional playhead independent. The native control applies the same model to click toggling, drag painting, additive and range selection, wrapped cursor movement, multi-step toggling, select all, and selection reset.
+- The component is one focus stop. Choice semantics report cursor, active count, selection count, stopped or current playhead, focus, press, increment, and decrement. Disabled declarations expose read-only semantics and reject edits. Rejected parameter edits retain the old state and show visible and semantic error feedback. Zero-step declarations are invalid, so no ambiguous empty state is rendered.
+- The sine synth uses eight boolean parameters as an audio-rate gate pattern and publishes its externally read playhead only while an editor is active. The gallery uses the same public declaration, persistence, automation, and telemetry contracts with a separate instance.
+- Unit and native tests cover bounded masks, navigation, range and additive selection, painting, multi-parameter gestures, external host updates, rejected edits, disabled behavior, accessibility actions, invalid declarations, DSP gating, telemetry activity, editor integration, teardown, and instance-owned descriptions.
+- `step-sequencer.png` covers active, inactive, multi-selected, and playhead states without relying on color alone. The dedicated 16-step warm-render benchmark completed at 145.1 microseconds against the 300 microsecond budget during final release validation.
+- Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, and all ten Steinberg validators pass. All examples cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`. The benchmark harness now uses the best of three fixed-size batches so scheduler preemption does not create a false regression.
+- Pluginval was not launched because earlier runs repeatedly produced macOS crash dialogs. Manual sequencer interaction in a macOS host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+- File drop and production waveform or spectrum components remain separate slices of this milestone.
+
 ## Validation After Each Milestone
 
 - Run Zig tests and raw ABI checks.
@@ -195,3 +208,4 @@ Piano keyboard completion evidence:
 - Manual preset-browser interaction in a production host.
 - Manual action-menu interaction in a production host.
 - Manual piano-keyboard interaction in a production host.
+- Manual step-sequencer interaction in a production host.

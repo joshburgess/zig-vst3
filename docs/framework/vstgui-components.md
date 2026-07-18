@@ -285,6 +285,25 @@ Enable processor delivery with `pub const gui_note_input = true` on `SimpleStere
 
 The keyboard is one focus stop. Left and Right wrap selection, Home and End select range limits, and Return or Space plays the selected note. Focus loss, pointer cancellation, and editor teardown release every held note. The choice semantic reports the selected MIDI note and its conventional name, plus whether it is playing. Focus, press, increment, and decrement accessibility actions use the same state machine.
 
+## Step Sequencer
+
+Declare a parameter-backed pattern through `EditorDescription.step_sequencers`:
+
+```zig
+.step_sequencers = &.{.{
+    .title = "Eight Step Gate",
+    .step_parameter_ids = &.{ 100, 101, 102, 103, 104, 105, 106, 107 },
+    .selection_state_id = step_selection_state_id,
+    .playhead_source_id = playhead_source_id,
+}},
+```
+
+Each step binds to a distinct boolean parameter. The pattern therefore remains in processor state, automation, and presets when the editor is closed. Selection is non-parameter editor state. The optional playhead is read-only telemetry: publish a zero-based step index, or a negative value while stopped. Editor activity gates polling, and `maximum_refresh_hz` is limited to 1–60 Hz.
+
+Clicking a cell selects and toggles it. Dragging paints the first cell's new state across later cells. Command-click or Control-click changes additive selection, and Shift-click selects a range from the anchor. Left and Right move the cursor, Shift with arrows extends the selection, Home and End move to boundaries, Space toggles every selected step, Command+A or Control+A selects all, and Escape returns to one selected cursor step. Selection, active pattern, cursor, and playhead are rendered and announced as separate states.
+
+The sequencer is one focus stop with choice semantics. Accessibility increment and decrement move the cursor, and press toggles the selected steps. Disabled declarations reject pointer, keyboard, and accessibility edits. A rejected host edit keeps the old parameter value and exposes visible and semantic retry feedback. The component supports 1–32 steps; an empty pattern is rejected at editor creation rather than producing an ambiguous empty control.
+
 ## API Status
 
 The project remains pre-1.0, so even the supported surface does not yet carry a long-term compatibility promise. The supported list is limited to contracts exercised by both the component gallery and a production-style editor.
@@ -301,6 +320,7 @@ Supported authoring surface:
 - `PresetBrowser`, `gui_preset_browser.Browser`, bounded catalogs, persistent filtering and selection, and host-automated loading.
 - `ActionMenu`, action, toggle, separator, disabled and destructive item states, anchored overlays, and persistent toggle fields.
 - `Piano`, bounded note ranges, GUI note transport, computer-key input, pointer glissando, and accessible note selection.
+- `StepSequencer`, bounded parameter-backed patterns, persistent multi-selection, activity-gated playhead telemetry, and accessible editing.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.
 
@@ -310,7 +330,7 @@ Experimental extensions:
 - Rotary controls currently have no plugin consumer. Bipolar and decibel controls each have one.
 - Fixed graph point storage, dynamic graph sources, and `SnapshotSeries`. Each source mode currently has one production consumer.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
-- New analyzer, modulation, timeline, GPU, and drag-and-drop components.
+- New analyzer, modulation, GPU, and drag-and-drop components.
 
 Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.
 

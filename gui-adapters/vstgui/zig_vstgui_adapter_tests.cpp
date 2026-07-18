@@ -9,6 +9,7 @@
 #include "zig_vstgui_meters.h"
 #include "zig_vstgui_piano.h"
 #include "zig_vstgui_preset_browser.h"
+#include "zig_vstgui_step_sequencer.h"
 
 #include "pluginterfaces/base/keycodes.h"
 #include "vstgui/lib/events.h"
@@ -32,7 +33,7 @@ struct CallbackState {
     uint32_t context_menu_count {0};
     int32_t context_x {0};
     int32_t context_y {0};
-    double meter_values[4] {0.0, 0.0, 0.0, 0.0};
+    double meter_values[5] {0.0, 0.0, 0.0, 0.0, 0.0};
     ZigVstguiGraphPoint graph_points[4] {};
     uint32_t graph_count {0};
     uint32_t graph_load_count {0};
@@ -136,7 +137,7 @@ int32_t showContextMenu(void* userdata, uint32_t parameter_id, int32_t x, int32_
 
 double loadMeter(void* userdata, uint32_t source_id) {
     auto* state = static_cast<CallbackState*>(userdata);
-    return source_id < 4 ? state->meter_values[source_id] : 0.0;
+    return source_id < 5 ? state->meter_values[source_id] : 0.0;
 }
 
 uint32_t loadGraph(void* userdata, uint32_t, ZigVstguiGraphPoint* output, uint32_t capacity) {
@@ -793,7 +794,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 14) return 1;
+    if (zig_vstgui_adapter_version() != 15) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -1620,6 +1621,114 @@ int testPianoKeyboard() {
     return 0;
 }
 
+int testStepSequencer() {
+    CallbackState state;
+    state.meter_values[4] = 3.0;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.begin_edit = beginEdit;
+    callbacks.perform_edit = performEdit;
+    callbacks.end_edit = endEdit;
+    callbacks.store_editor_index = storeEditorIndex;
+    const uint32_t ids[] = {100, 101, 102, 103, 104, 105, 106, 107};
+    const ZigVstguiStepSequencerDescription description {
+        "Pattern", ids, 8, 9, 1, 0x55, 1, 4, 30,
+    };
+    VSTGUI::init(nullptr);
+    {
+        ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+        auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 480, 100)));
+        ZigVstgui::StepSequencerControl control(description, callbacks, {&state, loadMeter});
+        auto second_description = description;
+        second_description.initial_active_mask = 0;
+        ZigVstgui::StepSequencerControl second(second_description, callbacks, {&state, loadMeter});
+        control.build(container, styles);
+        second.build(container, styles);
+        control.setBounds(VSTGUI::CRect(8, 8, 472, 28), VSTGUI::CRect(8, 28, 472, 92));
+        if (!control.stepActive(0) || !control.stepActive(2) || control.stepActive(1) ||
+            control.playhead() != 3) {
+            VSTGUI::exit();
+            return 1;
+        }
+        control.pointerBegin(2, true, false);
+        control.pointerEnd();
+        if (state.perform_count != 0 || state.stored_state_index != 5) {
+            VSTGUI::exit();
+            return 2;
+        }
+        control.pointerBegin(1, false, false);
+        control.pointerEnd();
+        if (!control.stepActive(1) || state.last_parameter_id != 101 || state.last_value != 1.0 ||
+            state.stored_state_field != 9 || state.stored_state_index != 2) {
+            VSTGUI::exit();
+            return 3;
+        }
+        if (!control.handleKey(0, Steinberg::KEY_RIGHT, 1) ||
+            !control.handleKey(' ', Steinberg::KEY_SPACE, 0) ||
+            control.stepActive(1) || control.stepActive(2) || state.perform_count != 3) {
+            VSTGUI::exit();
+            return 4;
+        }
+        if (!control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::increment) ||
+            control.cursor() != 3 || control.accessibilityNode().valueText().empty()) {
+            VSTGUI::exit();
+            return 5;
+        }
+        if (!control.setParameter(107, 1.0) || !control.stepActive(7) || second.stepActive(7) ||
+            control.setParameter(999, 1.0)) {
+            VSTGUI::exit();
+            return 6;
+        }
+        state.reject_parameter_id = 104;
+        control.pointerBegin(4, false, false);
+        control.pointerEnd();
+        if (!control.stepActive(4) || !control.editFailed() ||
+            control.accessibilityNode().valueText().find("rejected") == std::string::npos) {
+            VSTGUI::exit();
+            return 7;
+        }
+        second.clear();
+        control.clear();
+    }
+    VSTGUI::exit();
+
+    const ZigVstguiParameterDescription parameter {
+        10, 0.5, {"Level", "", 0, 0.5}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+    };
+    auto* editor = zig_vstgui_editor_create_complete(
+        &parameter, 1, callbacks, nullptr, 0, {&state, loadMeter}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, &description, 1, {}
+    );
+    if (!editor || !editor->stepSequencerAccessibility(0)) {
+        zig_vstgui_editor_destroy(editor);
+        return 8;
+    }
+    zig_vstgui_editor_destroy(editor);
+    auto invalid = description;
+    invalid.step_count = 33;
+    if (zig_vstgui_editor_create_complete(
+        &parameter, 1, callbacks, nullptr, 0, {&state, loadMeter}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, &invalid, 1, {}
+    )) return 9;
+    auto disabled = description;
+    disabled.enabled = 0;
+    VSTGUI::init(nullptr);
+    {
+        ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+        auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 80)));
+        ZigVstgui::StepSequencerControl control(disabled, callbacks, {});
+        control.build(container, styles);
+        if (control.handleKey(' ', Steinberg::KEY_SPACE, 0) ||
+            control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::press)) {
+            VSTGUI::exit();
+            return 10;
+        }
+        control.clear();
+    }
+    VSTGUI::exit();
+    return 0;
+}
+
 }
 
 int main() {
@@ -1644,5 +1753,6 @@ int main() {
     if (const int result = testPresetBrowser(); result != 0) return 210 + result;
     if (const int result = testActionMenus(); result != 0) return 220 + result;
     if (const int result = testPianoKeyboard(); result != 0) return 240 + result;
+    if (const int result = testStepSequencer(); result != 0) return 250 + result;
     return 0;
 }

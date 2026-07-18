@@ -109,6 +109,15 @@ pub const Piano = struct {
     computer_base_pitch: u8 = 60,
 };
 
+pub const StepSequencer = struct {
+    title: [*:0]const u8 = "Step Sequencer",
+    step_parameter_ids: []const vsttypes.ParamID,
+    selection_state_id: u32,
+    enabled: bool = true,
+    playhead_source_id: u32 = 0,
+    maximum_refresh_hz: u32 = 30,
+};
+
 pub const Asset = vstgui_editor_view.Asset;
 pub const AssetFormat = vstgui_editor_view.AssetFormat;
 pub const AssetScale = vstgui_editor_view.AssetScale;
@@ -133,6 +142,7 @@ pub const EditorDescription = struct {
     preset_browsers: []const PresetBrowser = &.{},
     action_menus: []const ActionMenu = &.{},
     pianos: []const Piano = &.{},
+    step_sequencers: []const StepSequencer = &.{},
     skin: Skin = .{},
     composition: Composition = .{},
 };
@@ -168,7 +178,7 @@ pub fn createMultiViewWithSkin(
     meters: []const Meter,
     skin: Skin,
 ) ?*iplugview.IPlugView {
-    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, &.{}, &.{}, &.{}, &.{}, skin, .{});
+    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, &.{}, &.{}, &.{}, &.{}, &.{}, skin, .{});
 }
 
 pub fn createEditor(
@@ -188,6 +198,7 @@ pub fn createEditor(
         description.preset_browsers,
         description.action_menus,
         description.pianos,
+        description.step_sequencers,
         description.skin,
         description.composition,
     );
@@ -204,6 +215,7 @@ fn createConfiguredView(
     preset_browsers: []const PresetBrowser,
     action_menus: []const ActionMenu,
     pianos: []const Piano,
+    step_sequencers: []const StepSequencer,
     skin: Skin,
     composition: Composition,
 ) ?*iplugview.IPlugView {
@@ -226,7 +238,8 @@ fn createConfiguredView(
         if (parameters.len == 0 or parameters.len > vstgui_editor_view.max_parameters or
             preset_browsers.len > vstgui_editor_view.max_preset_browsers or
             action_menus.len > vstgui_editor_view.max_action_menus or
-            pianos.len > vstgui_editor_view.max_pianos) return null;
+            pianos.len > vstgui_editor_view.max_pianos or
+            step_sequencers.len > vstgui_editor_view.max_step_sequencers) return null;
         if (comptime !Controller.hasPresetLoader) {
             if (preset_browsers.len > 0) return null;
         }
@@ -482,11 +495,62 @@ fn createConfiguredView(
                 .computer_base_pitch = piano.computer_base_pitch,
             };
         }
+        var step_parameter_ids: [vstgui_editor_view.max_step_sequencers][vstgui_editor_view.max_steps]vsttypes.ParamID = undefined;
+        var step_sequencer_descriptions: [vstgui_editor_view.max_step_sequencers]vstgui_editor_view.StepSequencerDescription = undefined;
+        for (step_sequencers, 0..) |sequencer, sequencer_index| {
+            if (std.mem.span(sequencer.title).len == 0 or sequencer.step_parameter_ids.len == 0 or
+                sequencer.step_parameter_ids.len > vstgui_editor_view.max_steps or sequencer.selection_state_id == 0 or
+                (sequencer.playhead_source_id != 0 and
+                    (sequencer.maximum_refresh_hz == 0 or sequencer.maximum_refresh_hz > 60))) return null;
+            var initial_selection: u32 = 0;
+            if (comptime Controller.hasEditorState) {
+                initial_selection = switch (Controller.editorState(controller).get(sequencer.selection_state_id) orelse return null) {
+                    .index => |value| value,
+                    else => return null,
+                };
+            } else return null;
+            const valid_mask: u32 = if (sequencer.step_parameter_ids.len == 32)
+                std.math.maxInt(u32)
+            else
+                (@as(u32, 1) << @intCast(sequencer.step_parameter_ids.len)) - 1;
+            if (initial_selection & ~valid_mask != 0) return null;
+            var initial_active: u32 = 0;
+            for (sequencer.step_parameter_ids, 0..) |parameter_id, step| {
+                var found = false;
+                const parameter_count = controller.vtable.getParameterCount(controller);
+                var parameter_index: types.int32 = 0;
+                while (parameter_index < parameter_count) : (parameter_index += 1) {
+                    var info: ivsteditcontroller.ParameterInfo = undefined;
+                    if (controller.vtable.getParameterInfo(controller, parameter_index, &info) != types.kResultOk) return null;
+                    if (info.id != parameter_id) continue;
+                    if (info.stepCount != 1) return null;
+                    found = true;
+                    break;
+                }
+                if (!found) return null;
+                for (sequencer.step_parameter_ids[0..step]) |previous| if (previous == parameter_id) return null;
+                step_parameter_ids[sequencer_index][step] = parameter_id;
+                if (controller.vtable.getParamNormalized(controller, parameter_id) >= 0.5) {
+                    initial_active |= @as(u32, 1) << @intCast(step);
+                }
+            }
+            step_sequencer_descriptions[sequencer_index] = .{
+                .title = sequencer.title,
+                .parameter_ids = &step_parameter_ids[sequencer_index],
+                .step_count = @intCast(sequencer.step_parameter_ids.len),
+                .selection_state_id = sequencer.selection_state_id,
+                .initial_selection_mask = initial_selection,
+                .initial_active_mask = initial_active,
+                .enabled = @intFromBool(sequencer.enabled),
+                .playhead_source_id = sequencer.playhead_source_id,
+                .maximum_refresh_hz = sequencer.maximum_refresh_hz,
+            };
+        }
         const telemetry_source = if (comptime @hasDecl(Controller, "retainGuiTelemetry"))
             Controller.retainGuiTelemetry(controller)
         else
             null;
-        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], menu_descriptions[0..action_menus.len], piano_descriptions[0..pianos.len], skin, composition, .{
+        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], menu_descriptions[0..action_menus.len], piano_descriptions[0..pianos.len], step_sequencer_descriptions[0..step_sequencers.len], skin, composition, .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
             .perform_edit = Bridge.performEdit,

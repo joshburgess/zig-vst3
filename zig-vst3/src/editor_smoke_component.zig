@@ -13,11 +13,12 @@ const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 pub const cid = tuid.inlineUid(0x96F93E47, 0x21084D80, 0xA6A6B8C4, 0x6F94E68F);
 
 const EditorSmokeProcessor = struct {
-    const MeterBank = plug_core.gui_telemetry.MeterBank(f64, 4);
+    const MeterBank = plug_core.gui_telemetry.MeterBank(f64, 5);
     const Waveform = plug_core.gui_graph.SnapshotSeries(64);
 
     meters: MeterBank = MeterBank.init(0.0),
     waveform: Waveform = Waveform.init(),
+    processed_samples: u64 = 0,
 
     pub fn process(self: *EditorSmokeProcessor, parameters: anytype, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
         const gain: Sample = @floatCast(parameters.getNormalizedById(editor_smoke_controller.gain_param_id));
@@ -38,6 +39,7 @@ const EditorSmokeProcessor = struct {
             _ = self.meters.publish(1, peaks[0]);
             _ = self.meters.publish(2, peaks[1]);
             _ = self.meters.publish(3, 0.0);
+            _ = self.meters.publish(4, @floatFromInt((self.processed_samples / 6_000) % 8));
         }
         if (self.waveform.producing()) {
             var points: [64]plug_core.gui_graph.Point = undefined;
@@ -53,6 +55,7 @@ const EditorSmokeProcessor = struct {
                 _ = self.waveform.publish(points[0..count]);
             }
         }
+        self.processed_samples +%= context.frameCount();
     }
 
     pub fn guiTelemetryLoad(self: *EditorSmokeProcessor, source_id: types.uint32) f64 {

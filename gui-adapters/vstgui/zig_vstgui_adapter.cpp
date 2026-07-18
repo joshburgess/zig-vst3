@@ -123,6 +123,36 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_full(
     uint32_t piano_count,
     ZigVstguiSkinDescription skin
 ) {
+    return zig_vstgui_editor_create_complete(
+        parameters, parameter_count, callbacks, meters, meter_count, meter_callbacks,
+        graphs, graph_count, graph_callbacks, xy_pads, xy_pad_count,
+        preset_browsers, preset_browser_count, action_menus, action_menu_count,
+        pianos, piano_count, nullptr, 0, skin
+    );
+}
+
+extern "C" ZigVstguiEditor* zig_vstgui_editor_create_complete(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
+    const ZigVstguiXYPadDescription* xy_pads,
+    uint32_t xy_pad_count,
+    const ZigVstguiPresetBrowserDescription* preset_browsers,
+    uint32_t preset_browser_count,
+    const ZigVstguiActionMenuDescription* action_menus,
+    uint32_t action_menu_count,
+    const ZigVstguiPianoDescription* pianos,
+    uint32_t piano_count,
+    const ZigVstguiStepSequencerDescription* step_sequencers,
+    uint32_t step_sequencer_count,
+    ZigVstguiSkinDescription skin
+) {
     constexpr uint32_t style_mask = ZIG_VSTGUI_STYLE_BACKGROUND |
         ZIG_VSTGUI_STYLE_FOREGROUND |
         ZIG_VSTGUI_STYLE_BORDER |
@@ -182,6 +212,27 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_full(
             piano.first_note >= 128 || piano.first_note + piano.note_count > 128 ||
             piano.channel < 0 || piano.channel > 15 || !std::isfinite(piano.velocity) ||
             piano.velocity <= 0.0 || piano.velocity > 1.0 || piano.computer_base_pitch >= 128) return nullptr;
+    }
+    if ((!step_sequencers && step_sequencer_count > 0) ||
+        step_sequencer_count > ZIG_VSTGUI_MAX_STEP_SEQUENCERS) return nullptr;
+    for (uint32_t index = 0; index < step_sequencer_count; ++index) {
+        const auto& sequencer = step_sequencers[index];
+        if (!sequencer.title || sequencer.title[0] == 0 || !sequencer.parameter_ids ||
+            sequencer.step_count == 0 || sequencer.step_count > ZIG_VSTGUI_MAX_STEPS ||
+            sequencer.selection_state_id == 0 ||
+            (sequencer.enabled != 0 && sequencer.enabled != 1) ||
+            (sequencer.initial_selection_mask & ~(sequencer.step_count == 32
+                ? 0xffffffffu : (1u << sequencer.step_count) - 1u)) != 0 ||
+            (sequencer.initial_active_mask & ~(sequencer.step_count == 32
+                ? 0xffffffffu : (1u << sequencer.step_count) - 1u)) != 0 ||
+            (sequencer.playhead_source_id != 0 &&
+                (!meter_callbacks.load || sequencer.maximum_refresh_hz == 0 ||
+                    sequencer.maximum_refresh_hz > 60))) return nullptr;
+        for (uint32_t step = 0; step < sequencer.step_count; ++step) {
+            for (uint32_t previous = 0; previous < step; ++previous) {
+                if (sequencer.parameter_ids[previous] == sequencer.parameter_ids[step]) return nullptr;
+            }
+        }
     }
     for (uint32_t index = 0; index < graph_count; ++index) {
         const auto& graph = graphs[index];
@@ -273,7 +324,9 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_full(
         action_menus,
         action_menu_count,
         pianos,
-        piano_count
+        piano_count,
+        step_sequencers,
+        step_sequencer_count
     );
     if (editor && !editor->valid()) {
         delete editor;
@@ -372,5 +425,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 14;
+    return 15;
 }

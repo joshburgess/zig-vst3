@@ -75,6 +75,8 @@ pub const max_presets = 64;
 pub const max_action_menus = 4;
 pub const max_menu_items = 16;
 pub const max_pianos = 2;
+pub const max_step_sequencers = 2;
+pub const max_steps = 32;
 pub const max_meters = 8;
 pub const max_graphs = 8;
 pub const max_graph_points = 256;
@@ -135,6 +137,18 @@ pub const PianoDescription = extern struct {
     channel: types.int32,
     velocity: f64,
     computer_base_pitch: types.uint32,
+};
+
+pub const StepSequencerDescription = extern struct {
+    title: [*:0]const u8,
+    parameter_ids: [*]const vsttypes.ParamID,
+    step_count: types.uint32,
+    selection_state_id: types.uint32,
+    initial_selection_mask: types.uint32,
+    initial_active_mask: types.uint32,
+    enabled: types.int32,
+    playhead_source_id: types.uint32,
+    maximum_refresh_hz: types.uint32,
 };
 
 pub const MeterKind = enum(c_int) {
@@ -416,6 +430,28 @@ extern fn zig_vstgui_editor_create_full(
     types.uint32,
     SkinDescription,
 ) ?*Editor;
+extern fn zig_vstgui_editor_create_complete(
+    [*]const ParameterDescription,
+    types.uint32,
+    Callbacks,
+    ?[*]const MeterDescription,
+    types.uint32,
+    MeterCallbacks,
+    ?[*]const GraphDescription,
+    types.uint32,
+    GraphCallbacks,
+    ?[*]const XYPadDescription,
+    types.uint32,
+    ?[*]const PresetBrowserDescription,
+    types.uint32,
+    ?[*]const ActionMenuDescription,
+    types.uint32,
+    ?[*]const PianoDescription,
+    types.uint32,
+    ?[*]const StepSequencerDescription,
+    types.uint32,
+    SkinDescription,
+) ?*Editor;
 extern fn zig_vstgui_canvas_fill_rect(*Canvas, f64, f64, f64, f64, types.uint32) void;
 extern fn zig_vstgui_canvas_stroke_rect(*Canvas, f64, f64, f64, f64, types.uint32, f64) void;
 extern fn zig_vstgui_canvas_fill_ellipse(*Canvas, f64, f64, f64, f64, types.uint32) void;
@@ -592,6 +628,7 @@ pub fn create(
     preset_browsers: []const PresetBrowserDescription,
     action_menus: []const ActionMenuDescription,
     pianos: []const PianoDescription,
+    step_sequencers: []const StepSequencerDescription,
     skin: Skin,
     composition: Composition,
     callbacks: Callbacks,
@@ -606,6 +643,7 @@ pub fn create(
     if (parameters.len == 0 or parameters.len > max_parameters or
         meters.len > max_meters or graphs.len > max_graphs or xy_pads.len > max_xy_pads or
         preset_browsers.len > max_preset_browsers or action_menus.len > max_action_menus or pianos.len > max_pianos or
+        step_sequencers.len > max_step_sequencers or
         skin.assets.len > max_assets or composition.groups.len > max_groups)
     {
         if (telemetry_source) |source| source.release();
@@ -654,7 +692,7 @@ pub fn create(
         return null;
     };
     telemetry.* = .{ .source = telemetry_source };
-    const editor = zig_vstgui_editor_create_full(
+    const editor = zig_vstgui_editor_create_complete(
         &descriptions,
         @intCast(parameters.len),
         callbacks,
@@ -672,6 +710,8 @@ pub fn create(
         @intCast(action_menus.len),
         if (pianos.len == 0) null else pianos.ptr,
         @intCast(pianos.len),
+        if (step_sequencers.len == 0) null else step_sequencers.ptr,
+        @intCast(step_sequencers.len),
         .{
             .assets = if (skin.assets.len == 0) null else &assets,
             .asset_count = @intCast(skin.assets.len),

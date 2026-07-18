@@ -8,6 +8,7 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_stream = @import("vst_stream.zig");
 const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
+const plug_core = @import("zig-vst3-plugin-core");
 
 pub const cid = tuid.inlineUid(0x8C7F6A10, 0x4D2B4A9F, 0xA515C8A1, 0xBC1E3D72);
 
@@ -15,15 +16,24 @@ const SineSynthState = struct {
     active: bool = false,
     note: i16 = 69,
     phase: f64 = 0.0,
+    sample_position: u64 = 0,
 
     fn process(self: *SineSynthState, default_level: f64, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+        self.processSequenced(default_level, @splat(1.0), Sample, context);
+    }
+
+    fn processSequenced(
+        self: *SineSynthState,
+        default_level: f64,
+        default_steps: [sine_synth_spec.step_param_ids.len]f64,
+        comptime Sample: type,
+        context: *plug_process.ProcessContext(Sample),
+    ) void {
         context.clearOutputs();
 
         var segments = context.processBlockSegments();
         while (segments.next()) |segment| {
             self.applyEventsAt(Sample, context, segment.start_offset);
-            if (!self.active) continue;
-
             const level: Sample = @floatCast(context.parameterNormalizedAtOrBeforeOr(
                 sine_synth_controller.level_param_id,
                 segment.start_offset,
@@ -31,13 +41,24 @@ const SineSynthState = struct {
             ));
             const step = midiFrequency(self.note) / context.sample_rate;
             for (segment.start_offset..segment.end_offset) |sample| {
-                const value: Sample = @floatCast(std.math.sin(self.phase * std.math.tau) * @as(f64, @floatCast(level)));
-                for (0..context.outputChannelCount()) |channel| {
-                    const output = context.outputChannel(channel) orelse continue;
-                    output[sample] = value;
+                const sequence_step: usize = @intCast((self.sample_position / 6_000) % sine_synth_spec.step_param_ids.len);
+                const step_active = context.parameterNormalizedAtOrBeforeOr(
+                    sine_synth_spec.step_param_ids[sequence_step],
+                    sample,
+                    default_steps[sequence_step],
+                ) >= 0.5;
+                if (self.active and step_active) {
+                    const value: Sample = @floatCast(std.math.sin(self.phase * std.math.tau) * @as(f64, @floatCast(level)));
+                    for (0..context.outputChannelCount()) |channel| {
+                        const output = context.outputChannel(channel) orelse continue;
+                        output[sample] = value;
+                    }
                 }
-                self.phase += step;
-                if (self.phase >= 1.0) self.phase -= @floor(self.phase);
+                if (self.active) {
+                    self.phase += step;
+                    if (self.phase >= 1.0) self.phase -= @floor(self.phase);
+                }
+                self.sample_position +%= 1;
             }
         }
     }
@@ -61,14 +82,42 @@ const SineSynthState = struct {
 };
 
 const SineSynthProcessor = struct {
+    const Telemetry = plug_core.gui_telemetry.MeterBank(f64, 1);
+
     state: SineSynthState = .{},
+    telemetry: Telemetry = Telemetry.init(-1.0),
 
     pub fn reset(self: *SineSynthProcessor) void {
         self.state = .{};
     }
 
     pub fn process(self: *SineSynthProcessor, parameters: anytype, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-        self.state.process(parameters.getNormalizedById(sine_synth_controller.level_param_id), Sample, context);
+        var steps: [sine_synth_spec.step_param_ids.len]f64 = undefined;
+        for (&steps, sine_synth_spec.step_param_ids) |*value, parameter_id| {
+            value.* = parameters.getNormalizedById(parameter_id);
+        }
+        self.state.processSequenced(
+            parameters.getNormalizedById(sine_synth_controller.level_param_id),
+            steps,
+            Sample,
+            context,
+        );
+        if (self.telemetry.producing()) {
+            _ = self.telemetry.publish(0, @floatFromInt((self.state.sample_position / 6_000) % steps.len));
+        }
+    }
+
+    pub fn guiTelemetryLoad(self: *SineSynthProcessor, source_id: types.uint32) f64 {
+        if (source_id != 0x100) return -1.0;
+        return self.telemetry.load(0) orelse -1.0;
+    }
+
+    pub fn guiTelemetryEditorOpened(self: *SineSynthProcessor) void {
+        self.telemetry.editorOpened();
+    }
+
+    pub fn guiTelemetryEditorClosed(self: *SineSynthProcessor) void {
+        self.telemetry.editorClosed();
     }
 };
 
@@ -122,6 +171,35 @@ test "sine synth processor responds to note events and level automation" {
     try std.testing.expectEqual(@as(f32, 0.0), output[2]);
     try std.testing.expectEqual(@as(f32, 0.0), output[3]);
     try std.testing.expect(local_synth.active);
+}
+
+test "sine synth sequencer gates audio without changing transport progress" {
+    var local_synth = SineSynthState{};
+    var output = [_]f32{ 1.0, 1.0, 1.0, 1.0 };
+    const input_channels = [_][]const f32{};
+    const output_channels = [_][]f32{&output};
+    const events = [_]plug_process.Event{plug_process.Event.noteOn(0, 0, 69, 1.0)};
+    var context = try plug_process.ProcessContext(f32).initWith(48_000.0, &input_channels, &output_channels, .{
+        .events = &events,
+    });
+    var steps: [sine_synth_spec.step_param_ids.len]f64 = @splat(1.0);
+    steps[0] = 0.0;
+
+    local_synth.processSequenced(1.0, steps, f32, &context);
+
+    try std.testing.expectEqualSlices(f32, &.{ 0.0, 0.0, 0.0, 0.0 }, &output);
+    try std.testing.expectEqual(@as(u64, output.len), local_synth.sample_position);
+    try std.testing.expect(local_synth.phase > 0.0);
+}
+
+test "sine synth playhead telemetry is editor activity gated" {
+    var processor = SineSynthProcessor{};
+    try std.testing.expectEqual(@as(f64, -1.0), processor.guiTelemetryLoad(0x100));
+    processor.guiTelemetryEditorOpened();
+    defer processor.guiTelemetryEditorClosed();
+    try std.testing.expect(processor.telemetry.publish(0, 3.0));
+    try std.testing.expectEqual(@as(f64, 3.0), processor.guiTelemetryLoad(0x100));
+    try std.testing.expectEqual(@as(f64, -1.0), processor.guiTelemetryLoad(0x101));
 }
 
 test "sine synth component renders host event list input through processor shell" {

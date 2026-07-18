@@ -123,6 +123,21 @@ typedef struct ZigVstguiPianoDescription {
 
 enum { ZIG_VSTGUI_MAX_PIANOS = 2 };
 
+typedef struct ZigVstguiStepSequencerDescription {
+    const char* title;
+    const uint32_t* parameter_ids;
+    uint32_t step_count;
+    uint32_t selection_state_id;
+    uint32_t initial_selection_mask;
+    uint32_t initial_active_mask;
+    int32_t enabled;
+    uint32_t playhead_source_id;
+    uint32_t maximum_refresh_hz;
+} ZigVstguiStepSequencerDescription;
+
+enum { ZIG_VSTGUI_MAX_STEP_SEQUENCERS = 2 };
+enum { ZIG_VSTGUI_MAX_STEPS = 32 };
+
 typedef enum ZigVstguiMeterKind {
     ZIG_VSTGUI_METER_PEAK = 0,
     ZIG_VSTGUI_METER_STEREO = 1,
@@ -419,6 +434,28 @@ ZigVstguiEditor* zig_vstgui_editor_create_full(
     uint32_t action_menu_count,
     const ZigVstguiPianoDescription* pianos,
     uint32_t piano_count,
+    ZigVstguiSkinDescription skin
+);
+ZigVstguiEditor* zig_vstgui_editor_create_complete(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
+    const ZigVstguiXYPadDescription* xy_pads,
+    uint32_t xy_pad_count,
+    const ZigVstguiPresetBrowserDescription* preset_browsers,
+    uint32_t preset_browser_count,
+    const ZigVstguiActionMenuDescription* action_menus,
+    uint32_t action_menu_count,
+    const ZigVstguiPianoDescription* pianos,
+    uint32_t piano_count,
+    const ZigVstguiStepSequencerDescription* step_sequencers,
+    uint32_t step_sequencer_count,
     ZigVstguiSkinDescription skin
 );
 void zig_vstgui_canvas_fill_rect(

@@ -26,6 +26,7 @@ pub const envelope_state_id: u32 = 5;
 pub const preset_search_state_id: u32 = 6;
 pub const preset_selection_state_id: u32 = 7;
 pub const show_analyzer_state_id: u32 = 8;
+pub const step_selection_state_id: u32 = 9;
 
 const gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
@@ -47,6 +48,7 @@ pub const GalleryEditorState = plug_core.editor_state.Store(1, &.{
     .{ .id = preset_search_state_id, .default = .{ .text = empty_preset_search } },
     .{ .id = preset_selection_state_id, .default = .{ .index = 1 } },
     .{ .id = show_analyzer_state_id, .default = .{ .boolean = true } },
+    .{ .id = step_selection_state_id, .default = .{ .index = 1 } },
 });
 
 fn applyPreset(
@@ -250,6 +252,12 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .first_note = 48,
                 .note_count = 24,
                 .computer_base_pitch = 60,
+            }},
+            .step_sequencers = &.{.{
+                .title = "Step Sequencer",
+                .step_parameter_ids = &editor_smoke_spec.step_param_ids,
+                .selection_state_id = step_selection_state_id,
+                .playhead_source_id = 4,
             }},
             .skin = .{
                 .assets = &.{

@@ -16,6 +16,7 @@ pub const MenuItemKind = implementation.MenuItemKind;
 pub const MenuItem = implementation.MenuItem;
 pub const ActionMenu = implementation.ActionMenu;
 pub const Piano = implementation.Piano;
+pub const StepSequencer = implementation.StepSequencer;
 pub const Asset = implementation.Asset;
 pub const AssetFormat = implementation.AssetFormat;
 pub const AssetScale = implementation.AssetScale;

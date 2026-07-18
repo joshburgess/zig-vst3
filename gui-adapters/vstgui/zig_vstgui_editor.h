@@ -11,6 +11,7 @@
 #include "zig_vstgui_meters.h"
 #include "zig_vstgui_piano.h"
 #include "zig_vstgui_preset_browser.h"
+#include "zig_vstgui_step_sequencer.h"
 #include "zig_vstgui_theme.h"
 #include "zig_vstgui_xy_pad.h"
 
@@ -42,7 +43,9 @@ struct ZigVstguiEditor {
         const ZigVstguiActionMenuDescription* action_menus = nullptr,
         uint32_t action_menu_count = 0,
         const ZigVstguiPianoDescription* pianos = nullptr,
-        uint32_t piano_count = 0
+        uint32_t piano_count = 0,
+        const ZigVstguiStepSequencerDescription* step_sequencers = nullptr,
+        uint32_t step_sequencer_count = 0
     );
     ~ZigVstguiEditor();
 
@@ -63,6 +66,7 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode* presetBrowserAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* actionMenuAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* pianoAccessibility(uint32_t index) const;
+    const ZigVstgui::AccessibilityNode* stepSequencerAccessibility(uint32_t index) const;
     bool tickMeter(uint32_t index, double elapsed_ms);
     bool refreshGraph(uint32_t index);
     uint32_t graphPointCount(uint32_t index) const;
@@ -89,6 +93,7 @@ private:
     void layoutPresetBrowsers(double left, double top, double right, double bottom);
     void layoutActionMenus(double left, double top, double right, double bottom);
     void layoutPianos(double left, double top, double right, double bottom);
+    void layoutStepSequencers(double left, double top, double right, double bottom);
     void reportMetrics() const;
     bool focusNext(bool reverse);
     const ZigVstgui::ThemeResolver& stylesForParameter(uint32_t index) const;
@@ -158,6 +163,11 @@ private:
     std::array<ZigVstguiPianoDescription, ZIG_VSTGUI_MAX_PIANOS> piano_descriptions {};
     std::array<std::string, ZIG_VSTGUI_MAX_PIANOS> piano_titles;
     uint32_t piano_count {0};
+    std::array<std::unique_ptr<ZigVstgui::StepSequencerControl>, ZIG_VSTGUI_MAX_STEP_SEQUENCERS> step_sequencer_controls;
+    std::array<ZigVstguiStepSequencerDescription, ZIG_VSTGUI_MAX_STEP_SEQUENCERS> step_sequencer_descriptions {};
+    std::array<std::string, ZIG_VSTGUI_MAX_STEP_SEQUENCERS> step_sequencer_titles;
+    std::array<std::array<uint32_t, ZIG_VSTGUI_MAX_STEPS>, ZIG_VSTGUI_MAX_STEP_SEQUENCERS> step_sequencer_parameter_ids {};
+    uint32_t step_sequencer_count {0};
     ZigVstgui::AssetStore asset_store;
     ZigVstguiDrawingCallbacks drawing_callbacks {};
     ZigVstgui::ResizeControl resize_control;
