@@ -168,9 +168,14 @@ Completion evidence:
 - [x] Run native unit, interaction, accessibility, visual, and performance tests.
 - [x] Run Zig tests, raw ABI checks, and every Steinberg example validator.
 - [x] Cross-build all example bundles for Linux and Windows.
-- [ ] Diagnose the recent isolated pluginval exit without conflating it with historical concurrent startup crashes.
+- [x] Restore serialized pluginval coverage at strictness 5 and strictness 10 without conflating distinct failure modes.
 - [x] Record manual macOS and unavailable native Windows, X11, and Wayland host checks.
 - [x] Confirm the worktree contains no uncommitted milestone work.
+
+Pluginval completion evidence:
+
+- On July 18, 2026, all ten example plugins passed the serialized aggregate suite at strictness 5 and strictness 10. The GUI examples passed editor creation, editor-while-processing, and editor automation. Strictness 10 also passed state restoration, background-thread state, parameter thread safety, and parameter fuzzing.
+- The artifact-preserving harness produced one directory per invocation and both aggregate targets completed 44 of 44 build steps. The earlier isolated failure was not reproduced, so this evidence does not assign it a root cause.
 
 Exit criteria:
 
@@ -184,7 +189,7 @@ Completion evidence:
 - The channel-strip workflow documents parameter, meter, graph, grouping, telemetry, theme, and validation responsibilities. The API status keeps assets, fonts, custom drawing, bipolar and decibel variants, graph source modes, and native accessibility bridges experimental where they have one consumer or incomplete platform verification.
 - Native unit, interaction, AppKit accessibility, visual-regression, and warm-render tests pass. The final warm-render average remained below 40 microseconds against a 300 microsecond budget.
 - Zig tests, raw ABI checks, every Steinberg example validator, and Linux and Windows example bundle cross-builds pass.
-- One isolated pluginval 1.0.4 channel-strip run passed strictness 5, including editor open, open while processing, automation, and editor automation. Earlier crash reports abort in AppKit application startup before plugin loading and correlate with concurrent aggregate invocations. No additional pluginval processes were launched after the isolated pass.
+- The serialized pluginval aggregate passed all ten examples at strictness 5 and strictness 10 on July 18, 2026. Earlier crash reports abort in AppKit application startup before plugin loading and correlate with concurrent aggregate invocations. A separate isolated failure was not reproduced, so its root cause remains unassigned.
 - Prior manual REAPER checks cover parameter editing, resize, focus, keyboard adjustment, exact entry, reset gestures, instance isolation, automation, and state restoration on macOS. Manual graph rendering and VoiceOver remain pending. Native Narrator, X11, Wayland, and AT-SPI host checks remain pending because those environments are unavailable locally.
 - The final milestone commit leaves no uncommitted implementation or documentation work.
 

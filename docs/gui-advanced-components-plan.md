@@ -128,7 +128,7 @@ Completion evidence:
 - [x] Add waveform and spectrum views on the graph source contract.
 - [x] Exercise every promoted component in both the gallery and a production editor.
 - [x] Add interaction, visual-regression, performance, lifecycle, and instance-isolation coverage.
-- [ ] Restore serial pluginval strictness 5 and 10 coverage, isolating the first plugin that exits unexpectedly.
+- [x] Restore serial pluginval strictness 5 and 10 coverage, isolating the first plugin that exits unexpectedly.
 
 Exit criteria:
 
@@ -210,7 +210,12 @@ Waveform and spectrum completion evidence:
 - Unit tests cover activity gating, deterministic waveform reduction, maximum capacity, deterministic FFT peak frequency and level, invalid sample rate, source selection, editor counts, and instance isolation. Native tests cover empty and populated semantics, dynamic refresh, invalid data, timer lifecycle, and unchanged-frame suppression.
 - `signal-views.png` covers populated waveform, populated spectrum, and empty spectrum states. A dedicated benchmark renders a maximum-capacity 256-point waveform and 256-bin spectrum against the 300 microsecond warm-frame budget.
 - Final local measurements were 273.7 microseconds for the maximum-capacity signal pair, 263 nanoseconds for 128-point waveform capture plus snapshot read, and 2.19 microseconds for a 128-point FFT plus snapshot read. All Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, and all ten Steinberg validators pass. All examples cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`.
-- Pluginval coverage is pending because recent isolated runs quit unexpectedly. Treat that as an unresolved plugin defect, separate from historical concurrent startup crashes. Manual signal-view interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+- Pluginval coverage was pending after recent isolated runs quit unexpectedly. The recovery run below restored local coverage without assigning those earlier exits a root cause. Manual signal-view interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+
+Pluginval recovery evidence:
+
+- On July 18, 2026, the serialized aggregate suite passed all ten example plugins at strictness 5 and strictness 10. Both GUI examples passed editor creation, editor-while-processing, and editor automation. Strictness 10 also passed non-releasing processing, state restoration, background-thread state, parameter thread safety, and parameter fuzzing.
+- Each invocation wrote to a separate artifact directory. The aggregate target completed 44 of 44 build steps at both strictness levels, and no unexpected exit occurred. The earlier isolated failure was not reproduced, so no plugin root cause is claimed.
 
 ## Validation After Each Milestone
 

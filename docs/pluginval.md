@@ -62,6 +62,8 @@ On macOS, individual targets such as `zig build pluginval-channel-strip` are use
 
 Do not use the historical concurrent-startup reports to explain an isolated pluginval exit. If an individual target quits unexpectedly after startup, preserve its log and crash report and treat it as a plugin regression until isolation proves otherwise. Stop after the first unexpected exit instead of repeatedly relaunching the process.
 
+On July 18, 2026, the serialized aggregate targets passed all ten example plugins at strictness 5 and strictness 10. The GUI examples passed editor creation, editor-while-processing, and editor automation. Strictness 10 also passed non-releasing processing, state restoration, background-thread state, parameter thread safety, and parameter fuzzing. The earlier isolated failure was not reproduced in these runs, so this result does not establish its root cause.
+
 The CI pluginval jobs run on macOS, Linux, and Windows. The Linux job installs the pluginval runtime libraries, runs under `xvfb-run`, and sets `--skip-gui-tests` because the runners have no display server. The headless command-line path does not verify native editor behavior.
 
 The Windows job validates the cross-built Windows bundles produced by the cross-compile job. pluginval is a GUI-subsystem application there, so the job launches it with `Start-Process -Wait` (the call does not otherwise block), runs with `--validate-in-process`, and reads the pass/fail result from the `--output-dir` log file rather than the process exit code, which is unreliable on Windows.
