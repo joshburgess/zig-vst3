@@ -123,6 +123,8 @@ pub const FileDrop = struct {
     id: u32,
     title: [*:0]const u8 = "Import Files",
     prompt: [*:0]const u8 = "Drop files here",
+    picker_label: [*:0]const u8 = "Choose Audio File",
+    picker_title: [*:0]const u8 = "Choose Audio File",
     extensions: []const [*:0]const u8,
     maximum_files: u32 = 1,
     enabled: bool = true,
@@ -566,6 +568,7 @@ fn createConfiguredView(
         var file_drop_descriptions: [vstgui_editor_view.max_file_drops]vstgui_editor_view.FileDropDescription = undefined;
         for (file_drops, 0..) |drop, index| {
             if (drop.id == 0 or std.mem.span(drop.title).len == 0 or std.mem.span(drop.prompt).len == 0 or
+                std.mem.span(drop.picker_label).len == 0 or std.mem.span(drop.picker_title).len == 0 or
                 drop.extensions.len == 0 or drop.extensions.len > vstgui_editor_view.max_drop_extensions or
                 drop.maximum_files == 0 or drop.maximum_files > vstgui_editor_view.max_drop_files) return null;
             for (file_drops[0..index]) |previous| if (previous.id == drop.id) return null;
@@ -580,6 +583,8 @@ fn createConfiguredView(
                 .drop_id = drop.id,
                 .title = drop.title,
                 .prompt = drop.prompt,
+                .picker_label = drop.picker_label,
+                .picker_title = drop.picker_title,
                 .extensions = drop.extensions.ptr,
                 .extension_count = @intCast(drop.extensions.len),
                 .maximum_files = drop.maximum_files,

@@ -286,6 +286,7 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_latest(
     for (uint32_t index = 0; index < file_drop_count; ++index) {
         const auto& drop = file_drops[index];
         if (drop.drop_id == 0 || !drop.title || drop.title[0] == 0 || !drop.prompt || drop.prompt[0] == 0 ||
+            (drop.picker_label && drop.picker_label[0] == 0) || (drop.picker_title && drop.picker_title[0] == 0) ||
             !drop.extensions || drop.extension_count == 0 || drop.extension_count > ZIG_VSTGUI_MAX_DROP_EXTENSIONS ||
             drop.maximum_files == 0 || drop.maximum_files > ZIG_VSTGUI_MAX_DROP_FILES ||
             (drop.enabled != 0 && drop.enabled != 1)) return nullptr;

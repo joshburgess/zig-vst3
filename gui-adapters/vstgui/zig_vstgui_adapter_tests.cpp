@@ -64,6 +64,7 @@ struct CallbackState {
     uint32_t dropped_id {0};
     std::string dropped_path;
     bool reject_drop {false};
+    uint32_t picker_launch_count {0};
 };
 
 class TestDataPackage final : public VSTGUI::IDataPackage {
@@ -98,6 +99,13 @@ int32_t dropFiles(void* userdata, uint32_t drop_id, const char* const* paths, ui
     state->dropped_count = count;
     state->dropped_path = count > 0 && paths && paths[0] ? paths[0] : "";
     return state->reject_drop ? -1 : 0;
+}
+
+bool launchTestPicker(void* userdata, ZigVstgui::FileDropControl& control) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->picker_launch_count += 1;
+    const char* paths[] = {"/tmp/picker.wav"};
+    return control.dispatchPickerPaths(paths, 1);
 }
 
 int32_t sendNote(void* userdata, int32_t, int32_t pitch, double, int32_t pressed) {
@@ -1791,6 +1799,7 @@ int testFileDrop() {
     const char* extensions[] = {".wav", ".aiff"};
     const ZigVstguiFileDropDescription description {
         4, "Audio Import", "Drop audio here", extensions, 2, 2, 1,
+        "Choose Audio File", "Choose Audio File",
     };
     VSTGUI::init(nullptr);
     {
@@ -1798,26 +1807,40 @@ int testFileDrop() {
         auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 400, 100)));
         ZigVstgui::FileDropControl control(description, callbacks);
         control.build(container, styles);
+        control.setPickerLauncher(&state, launchTestPicker);
         control.setBounds(VSTGUI::CRect(8, 8, 392, 92));
         auto* view = control.dropView();
-        char path[] = "/tmp/Kick.WAV";
-        const char* paths[] = {path};
-        if (!view || view->inspectPaths(paths, 1) != ZigVstgui::FileDropStatus::acceptable) {
+        if (!view) {
             VSTGUI::exit();
             return 1;
+        }
+        VSTGUI::MouseDownEvent picker_click(
+            VSTGUI::CPoint(20, 20),
+            VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+        );
+        view->onMouseDownEvent(picker_click);
+        if (!picker_click.consumed || state.picker_launch_count != 1 || state.dropped_path != "/tmp/picker.wav") {
+            VSTGUI::exit();
+            return 1;
+        }
+        char path[] = "/tmp/Kick.WAV";
+        const char* paths[] = {path};
+        if (view->inspectPaths(paths, 1) != ZigVstgui::FileDropStatus::acceptable) {
+            VSTGUI::exit();
+            return 2;
         }
         path[5] = 'X';
         if (view->inspectedPath(0) != "/tmp/Kick.WAV" || !view->dispatchInspected() ||
             state.dropped_id != 4 || state.dropped_count != 1 || state.dropped_path != "/tmp/Kick.WAV" ||
             view->status() != ZigVstgui::FileDropStatus::accepted) {
             VSTGUI::exit();
-            return 2;
+            return 3;
         }
         const char* rejected[] = {"/tmp/pattern.mid"};
         if (view->inspectPaths(rejected, 1) != ZigVstgui::FileDropStatus::rejected_type ||
             view->inspectPaths(nullptr, 0) != ZigVstgui::FileDropStatus::rejected_count) {
             VSTGUI::exit();
-            return 3;
+            return 4;
         }
         state.reject_drop = true;
         const char* retry[] = {"/tmp/snare.aiff"};
@@ -1825,7 +1848,7 @@ int testFileDrop() {
             view->dispatchInspected() || view->status() != ZigVstgui::FileDropStatus::handler_failed ||
             control.accessibilityNode().valueText().find("retry") == std::string::npos) {
             VSTGUI::exit();
-            return 4;
+            return 5;
         }
         state.reject_drop = false;
         auto package = VSTGUI::owned(new TestDataPackage("/tmp/room.wav"));
@@ -1833,16 +1856,39 @@ int testFileDrop() {
         if (view->onDragEnter(drag_event) != VSTGUI::DragOperation::Copy ||
             !view->onDrop(drag_event) || state.dropped_path != "/tmp/room.wav") {
             VSTGUI::exit();
-            return 5;
+            return 6;
         }
         auto text_package = VSTGUI::owned(new TestDataPackage("not a file", VSTGUI::IDataPackage::kText));
         drag_event.drag = text_package;
         if (view->onDragEnter(drag_event) != VSTGUI::DragOperation::None ||
             view->status() != ZigVstgui::FileDropStatus::rejected_type) {
             VSTGUI::exit();
-            return 6;
+            return 7;
+        }
+        if (control.accessibilityNode().role() != ZigVstgui::AccessibilityRole::button ||
+            control.accessibilityNode().name() != "Choose Audio File" ||
+            !control.accessibilityNode().supports(ZigVstgui::AccessibilityAction::press) ||
+            !control.handleKey(0, Steinberg::KEY_RETURN, 0) || state.picker_launch_count != 2 ||
+            state.dropped_path != "/tmp/picker.wav" ||
+            !control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::press) ||
+            state.picker_launch_count != 3) {
+            VSTGUI::exit();
+            return 8;
         }
         control.clear();
+
+        auto disabled_description = description;
+        disabled_description.enabled = 0;
+        ZigVstgui::FileDropControl disabled(disabled_description, callbacks);
+        disabled.build(container, styles);
+        disabled.setPickerLauncher(&state, launchTestPicker);
+        if (disabled.handleKey(0, Steinberg::KEY_SPACE, 0) ||
+            disabled.accessibilityNode().perform(ZigVstgui::AccessibilityAction::press) ||
+            state.picker_launch_count != 3) {
+            VSTGUI::exit();
+            return 9;
+        }
+        disabled.clear();
     }
     VSTGUI::exit();
 
@@ -1855,7 +1901,7 @@ int testFileDrop() {
     );
     if (!editor || !editor->fileDropAccessibility(0)) {
         zig_vstgui_editor_destroy(editor);
-        return 7;
+        return 10;
     }
     zig_vstgui_editor_destroy(editor);
     auto invalid = description;

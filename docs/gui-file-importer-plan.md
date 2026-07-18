@@ -35,12 +35,13 @@ Completion evidence:
 
 ## Milestone 2: Accessible Native Entry Points
 
-- [ ] Extend the public `FileDrop` declaration with picker text and refresh behavior without exposing VSTGUI types.
-- [ ] Make the native component keyboard focusable with a visible focus state.
-- [ ] Open the operating-system file picker from pointer activation, Enter, Space, and the accessibility press action.
-- [ ] Apply the same extension and count validation to picker and drop results.
-- [ ] Restore focus to the importer after the picker closes.
-- [ ] Cancel an open picker safely during editor teardown.
+- [x] Extend the public `FileDrop` declaration with picker text without exposing VSTGUI types.
+- [x] Make the native component keyboard focusable with a visible focus state.
+- [x] Open the operating-system file picker from pointer activation, Enter, Space, and the accessibility press action.
+- [x] Apply the same extension and count validation to picker and drop results.
+- [x] Restore focus to the importer after the picker closes.
+- [x] Cancel an open picker safely during editor teardown.
+- [x] Commit the accessible picker fallback.
 
 Exit criteria:
 
@@ -48,6 +49,16 @@ Exit criteria:
 - The accessibility node exposes a button-like import action, name, current status, and enabled state.
 - The primary action says `Choose Audio File`. Drag and drop remains a secondary shortcut.
 - Disabled importers reject pointer, keyboard, drop, picker, and accessibility activation.
+
+Completion evidence:
+
+- The public `FileDrop` declaration supplies picker labels and titles while the native adapter owns the VSTGUI file-selector implementation.
+- Pointer activation, Enter, Space, and the accessibility press action use one picker action. Picker and drop paths share the same inspection, count limit, extension filter, copied-path callback, and rejection behavior.
+- A per-invocation lifetime token cancels an open selector and rejects late callbacks after editor teardown. Successful selection restores keyboard focus to the importer.
+- Native adapter tests cover pointer, keyboard, accessibility, shared callback delivery, and disabled-state rejection without opening an operating-system dialog during automation.
+- The updated deterministic visual reference shows `Choose Audio File` as the primary action and drag and drop as the secondary shortcut. Warm rendering measured 35.1 microseconds for the file-drop scene against a 300 microsecond budget.
+- The full local run completed 193 of 193 build steps and 3,572 of 3,572 tests. Raw ABI checks, all ten Steinberg validators, native adapter tests, macOS accessibility tests, visual regression, warm-render budgets, the Windows accessibility bridge cross-compile, and Linux and Windows bundles passed.
+- Actual system picker behavior in REAPER and native Windows, X11, and Wayland hosts remains a manual external check.
 
 ## Milestone 3: Instance-Owned Import Worker
 

@@ -163,6 +163,8 @@ pub const FileDropDescription = extern struct {
     extension_count: types.uint32,
     maximum_files: types.uint32,
     enabled: types.int32,
+    picker_label: [*:0]const u8,
+    picker_title: [*:0]const u8,
 };
 
 pub const MeterKind = enum(c_int) {

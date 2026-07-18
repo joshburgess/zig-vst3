@@ -177,6 +177,8 @@ private:
     std::array<ZigVstguiFileDropDescription, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_descriptions {};
     std::array<std::string, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_titles;
     std::array<std::string, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_prompts;
+    std::array<std::string, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_picker_labels;
+    std::array<std::string, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_picker_titles;
     std::array<std::array<std::string, ZIG_VSTGUI_MAX_DROP_EXTENSIONS>, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_extensions;
     std::array<std::array<const char*, ZIG_VSTGUI_MAX_DROP_EXTENSIONS>, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_extension_pointers {};
     uint32_t file_drop_count {0};

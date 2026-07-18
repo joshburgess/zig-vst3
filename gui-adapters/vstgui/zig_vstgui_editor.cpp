@@ -284,9 +284,15 @@ ZigVstguiEditor::ZigVstguiEditor(
     for (uint32_t index = 0; index < file_drop_count; ++index) {
         file_drop_titles[index] = file_drops[index].title;
         file_drop_prompts[index] = file_drops[index].prompt;
+        file_drop_picker_labels[index] = file_drops[index].picker_label
+            ? file_drops[index].picker_label : "Choose Audio File";
+        file_drop_picker_titles[index] = file_drops[index].picker_title
+            ? file_drops[index].picker_title : "Choose Audio File";
         file_drop_descriptions[index] = file_drops[index];
         file_drop_descriptions[index].title = file_drop_titles[index].c_str();
         file_drop_descriptions[index].prompt = file_drop_prompts[index].c_str();
+        file_drop_descriptions[index].picker_label = file_drop_picker_labels[index].c_str();
+        file_drop_descriptions[index].picker_title = file_drop_picker_titles[index].c_str();
         for (uint32_t extension = 0; extension < file_drops[index].extension_count; ++extension) {
             file_drop_extensions[index][extension] = file_drops[index].extensions[extension];
             file_drop_extension_pointers[index][extension] = file_drop_extensions[index][extension].c_str();
@@ -572,6 +578,10 @@ bool ZigVstguiEditor::keyDown(uint16_t key, int16_t key_code, int16_t modifiers)
     for (uint32_t index = 0; index < step_sequencer_count; ++index) {
         auto& sequencer = *step_sequencer_controls[index];
         if (focused == sequencer.focusView() && sequencer.handleKey(key, key_code, modifiers)) return true;
+    }
+    for (uint32_t index = 0; index < file_drop_count; ++index) {
+        auto& file_drop = *file_drop_controls[index];
+        if (focused == file_drop.focusView() && file_drop.handleKey(key, key_code, modifiers)) return true;
     }
     if (parameter_count == 0 || !parameter_controls[0]->handleKey(key, key_code, modifiers)) return false;
     frame->setFocusView(parameter_controls[0]->focusView());

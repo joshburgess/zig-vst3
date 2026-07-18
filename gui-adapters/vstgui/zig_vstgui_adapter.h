@@ -147,6 +147,8 @@ typedef struct ZigVstguiFileDropDescription {
     uint32_t extension_count;
     uint32_t maximum_files;
     int32_t enabled;
+    const char* picker_label;
+    const char* picker_title;
 } ZigVstguiFileDropDescription;
 
 enum { ZIG_VSTGUI_MAX_FILE_DROPS = 2 };

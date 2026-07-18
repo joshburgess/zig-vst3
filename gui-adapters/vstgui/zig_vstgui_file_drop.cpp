@@ -1,6 +1,10 @@
 #include "zig_vstgui_file_drop.h"
 
+#include "pluginterfaces/base/keycodes.h"
+#include "vstgui/lib/cfileselector.h"
+#include "vstgui/lib/cframe.h"
 #include "vstgui/lib/cdrawcontext.h"
+#include "vstgui/lib/events.h"
 #include "vstgui/lib/idatapackage.h"
 
 #include <algorithm>
@@ -10,6 +14,20 @@
 namespace ZigVstgui {
 
 namespace {
+
+constexpr uint32_t actionMask(AccessibilityAction action) {
+    return static_cast<uint32_t>(action);
+}
+
+const char* pickerLabel(const ZigVstguiFileDropDescription& description) {
+    return description.picker_label && description.picker_label[0] != 0
+        ? description.picker_label : "Choose Audio File";
+}
+
+const char* pickerTitle(const ZigVstguiFileDropDescription& description) {
+    return description.picker_title && description.picker_title[0] != 0
+        ? description.picker_title : "Choose Audio File";
+}
 
 std::string lower(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
@@ -25,10 +43,12 @@ FileDropView::FileDropView(
     ZigVstguiFileDropDescription value_description,
     ZigVstguiCallbacks value_callbacks,
     const ThemeResolver& value_styles,
-    AccessibilityNode* value_accessibility
+    AccessibilityNode* value_accessibility,
+    FileDropControl* value_owner
 )
 : CView(size), description(value_description), callbacks(value_callbacks), styles(value_styles),
-  accessibility(value_accessibility), title(value_description.title), prompt(value_description.prompt) {
+  accessibility(value_accessibility), owner(value_owner), title(value_description.title),
+  prompt(value_description.prompt), picker_label(pickerLabel(value_description)) {
     for (uint32_t index = 0; index < description.extension_count; ++index) {
         extensions[index] = lower(description.extensions[index]);
     }
@@ -46,20 +66,29 @@ void FileDropView::draw(VSTGUI::CDrawContext* context) {
         current_status == FileDropStatus::handler_failed;
     context->setFillColor(description.enabled == 0 ? disabled.background :
         current_status == FileDropStatus::acceptable ? active.background : normal.background);
+    const bool focused = getFrame() && getFrame()->getFocusView() == this;
     context->setFrameColor(rejected ? VSTGUI::CColor(220, 55, 45, 255) :
         current_status == FileDropStatus::acceptable || current_status == FileDropStatus::accepted
-            ? active.accent : normal.border);
-    context->setLineWidth(rejected || current_status != FileDropStatus::idle ? 2.0 : normal.frame_width);
+            ? active.accent : focused ? normal.accent : normal.border);
+    context->setLineWidth(rejected || current_status != FileDropStatus::idle || focused ? 2.0 : normal.frame_width);
     context->drawRect(bounds, VSTGUI::kDrawFilledAndStroked);
     context->setFont(styles.font(TypographyRole::body));
     context->setFontColor(description.enabled == 0 ? disabled.foreground : normal.foreground);
     VSTGUI::CRect title_bounds = bounds;
-    title_bounds.bottom = title_bounds.top + bounds.getHeight() * 0.46;
+    title_bounds.bottom = title_bounds.top + bounds.getHeight() * 0.38;
     context->drawString(title.c_str(), title_bounds, VSTGUI::kCenterText);
     context->setFont(styles.font(TypographyRole::value));
     VSTGUI::CRect status_bounds = bounds;
     status_bounds.top = title_bounds.bottom;
+    if (current_status == FileDropStatus::idle) status_bounds.bottom = bounds.top + bounds.getHeight() * 0.74;
     context->drawString(statusText(), status_bounds, VSTGUI::kCenterText);
+    if (current_status == FileDropStatus::idle) {
+        context->setFont(styles.font(TypographyRole::body));
+        context->setFontColor(description.enabled == 0 ? disabled.foreground : styles.theme().colors.text_secondary);
+        VSTGUI::CRect prompt_bounds = bounds;
+        prompt_bounds.top = status_bounds.bottom;
+        context->drawString(prompt.c_str(), prompt_bounds, VSTGUI::kCenterText);
+    }
     setDirty(false);
 }
 
@@ -80,6 +109,20 @@ void FileDropView::onDragLeave(VSTGUI::DragEventData) {
 bool FileDropView::onDrop(VSTGUI::DragEventData event_data) {
     if (description.enabled == 0 || !inspectPackage(event_data.drag)) return false;
     return dispatchInspected();
+}
+
+void FileDropView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
+    if (description.enabled == 0 || !event.buttonState.isLeft() || !owner) return;
+    if (getFrame()) getFrame()->setFocusView(this);
+    event.consumed = owner->activatePicker();
+}
+
+void FileDropView::onKeyboardEvent(VSTGUI::KeyboardEvent& event) {
+    if (event.type != VSTGUI::EventType::KeyDown || !owner) return;
+    int16_t key_code = 0;
+    if (event.virt == VSTGUI::VirtualKey::Return) key_code = Steinberg::KEY_RETURN;
+    else if (event.virt == VSTGUI::VirtualKey::Space) key_code = Steinberg::KEY_SPACE;
+    if (owner->handleKey(event.character, key_code, 0)) event.consumed = true;
 }
 
 FileDropStatus FileDropView::inspectPaths(const char* const* values, uint32_t count) {
@@ -116,6 +159,11 @@ bool FileDropView::dispatchInspected() {
     const bool accepted = callbacks.drop_files(callbacks.userdata, description.drop_id, pointers.data(), path_count) == 0;
     setStatus(accepted ? FileDropStatus::accepted : FileDropStatus::handler_failed);
     return accepted;
+}
+
+void FileDropView::cancelSelection() {
+    path_count = 0;
+    setStatus(FileDropStatus::idle);
 }
 
 FileDropStatus FileDropView::status() const { return current_status; }
@@ -182,7 +230,7 @@ void FileDropView::syncAccessibility() {
 const char* FileDropView::statusText() const {
     if (description.enabled == 0) return "File import disabled";
     switch (current_status) {
-        case FileDropStatus::idle: return prompt.c_str();
+        case FileDropStatus::idle: return picker_label.c_str();
         case FileDropStatus::acceptable: return "Release to import";
         case FileDropStatus::rejected_type: return "Unsupported file type";
         case FileDropStatus::rejected_count: return "Too many files";
@@ -193,24 +241,40 @@ const char* FileDropView::statusText() const {
     return prompt.c_str();
 }
 
+struct FileDropControl::PickerLifetime {
+    FileDropControl* owner {nullptr};
+};
+
 FileDropControl::FileDropControl(ZigVstguiFileDropDescription value_description, ZigVstguiCallbacks value_callbacks)
 : description(value_description), callbacks(value_callbacks) {}
 
 void FileDropControl::build(VSTGUI::CViewContainer* parent, const ThemeResolver& styles) {
     if (!parent || view) return;
     auto& accessibility = component.accessibility();
-    accessibility.setRole(AccessibilityRole::group);
-    accessibility.setName(description.title);
-    accessibility.setDescription("File drop target. Drag supported files from the system file browser.");
-    accessibility.setReadOnly(true);
+    accessibility.setRole(AccessibilityRole::button);
+    accessibility.setName(pickerLabel(description));
+    accessibility.setDescription("Opens the system file picker. You can also drag supported files onto this control.");
+    accessibility.setReadOnly(false);
     accessibility.setEnabled(description.enabled != 0);
-    view = new FileDropView(VSTGUI::CRect(), description, callbacks, styles, &accessibility);
+    accessibility.setActionHandler(
+        this,
+        accessibilityAction,
+        actionMask(AccessibilityAction::focus) | actionMask(AccessibilityAction::press)
+    );
+    view = new FileDropView(VSTGUI::CRect(), description, callbacks, styles, &accessibility, this);
     parent->addView(view);
+    view->registerViewListener(this);
     component.bind(view);
     component.setEnabled(description.enabled != 0);
+    component.setFocusable(true);
 }
 
 void FileDropControl::clear() {
+    if (picker_lifetime) picker_lifetime->owner = nullptr;
+    if (picker) picker->cancel();
+    picker = nullptr;
+    if (view) view->unregisterViewListener(this);
+    component.accessibility().clearActionHandler();
     component.clear();
     view = nullptr;
 }
@@ -218,5 +282,97 @@ void FileDropControl::clear() {
 void FileDropControl::setBounds(const VSTGUI::CRect& bounds) { component.setBounds(bounds); }
 const AccessibilityNode& FileDropControl::accessibilityNode() const { return component.accessibility(); }
 FileDropView* FileDropControl::dropView() const { return view; }
+VSTGUI::CView* FileDropControl::focusView() const { return view; }
+
+bool FileDropControl::handleKey(uint16_t, int16_t key_code, int16_t) {
+    if (key_code != Steinberg::KEY_RETURN && key_code != Steinberg::KEY_ENTER && key_code != Steinberg::KEY_SPACE) {
+        return false;
+    }
+    return activatePicker();
+}
+
+bool FileDropControl::activatePicker() {
+    if (!view || description.enabled == 0 || picker) return false;
+    return picker_launcher
+        ? picker_launcher(picker_launcher_userdata, *this)
+        : openNativePicker();
+}
+
+bool FileDropControl::dispatchPickerPaths(const char* const* paths, uint32_t count) {
+    if (!view || view->inspectPaths(paths, count) != FileDropStatus::acceptable) return false;
+    return view->dispatchInspected();
+}
+
+void FileDropControl::setPickerLauncher(void* userdata, PickerLauncher launcher) {
+    picker_launcher_userdata = userdata;
+    picker_launcher = launcher;
+}
+
+void FileDropControl::viewLostFocus(VSTGUI::CView* focused_view) {
+    if (focused_view == view) component.setFocused(false);
+}
+
+void FileDropControl::viewTookFocus(VSTGUI::CView* focused_view) {
+    if (focused_view == view) component.setFocused(true);
+}
+
+bool FileDropControl::accessibilityAction(
+    void* userdata,
+    const AccessibilityNode&,
+    const AccessibilityActionRequest& request
+) {
+    auto* self = static_cast<FileDropControl*>(userdata);
+    return self && self->performAccessibilityAction(request);
+}
+
+bool FileDropControl::performAccessibilityAction(const AccessibilityActionRequest& request) {
+    if (!view || description.enabled == 0) return false;
+    if (request.action == AccessibilityAction::focus) {
+        if (!view->getFrame()) return false;
+        view->getFrame()->setFocusView(view);
+        return true;
+    }
+    return request.action == AccessibilityAction::press && activatePicker();
+}
+
+bool FileDropControl::openNativePicker() {
+    if (!view || !view->getFrame()) return false;
+    auto* next = VSTGUI::CNewFileSelector::create(view->getFrame(), VSTGUI::CNewFileSelector::kSelectFile);
+    if (!next) return false;
+    next->setTitle(pickerTitle(description));
+    next->setAllowMultiFileSelection(description.maximum_files > 1);
+    for (uint32_t index = 0; index < description.extension_count; ++index) {
+        const char* extension = description.extensions[index];
+        next->addFileExtension(VSTGUI::CFileExtension(extension + 1, extension + 1));
+    }
+    picker = next;
+    picker_lifetime = std::make_shared<PickerLifetime>();
+    picker_lifetime->owner = this;
+    const auto lifetime = picker_lifetime;
+    const bool started = next->run([lifetime](VSTGUI::CNewFileSelector* completed) {
+        if (lifetime && lifetime->owner) lifetime->owner->pickerFinished(completed);
+    });
+    next->forget();
+    if (!started) {
+        picker = nullptr;
+        next->forget();
+    }
+    return started;
+}
+
+void FileDropControl::pickerFinished(VSTGUI::CNewFileSelector* completed) {
+    if (!view || completed != picker) return;
+    picker = nullptr;
+    const uint32_t count = completed->getNumSelectedFiles();
+    if (count == 0) view->cancelSelection();
+    else {
+        std::array<const char*, ZIG_VSTGUI_MAX_DROP_FILES> paths {};
+        for (uint32_t index = 0; index < std::min(count, static_cast<uint32_t>(paths.size())); ++index) {
+            paths[index] = completed->getSelectedFile(index);
+        }
+        dispatchPickerPaths(paths.data(), count);
+    }
+    if (view->getFrame()) view->getFrame()->setFocusView(view);
+}
 
 }

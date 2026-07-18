@@ -524,6 +524,7 @@ Snapshot fileDrops() {
             const char* extensions[] = {".wav", ".aiff"};
             const ZigVstguiFileDropDescription description {
                 1, "Audio Import", "Drop WAV or AIFF files here", extensions, 2, 2, 1,
+                "Choose Audio File", "Choose Audio File",
             };
             ZigVstguiCallbacks callbacks {};
             callbacks.drop_files = rejectDrop;
@@ -794,6 +795,7 @@ double benchmarkFileDropDraw() {
     const char* extensions[] = {".wav", ".aiff"};
     const ZigVstguiFileDropDescription description {
         1, "Audio Import", "Drop audio here", extensions, 2, 2, 1,
+        "Choose Audio File", "Choose Audio File",
     };
     ZigVstgui::AccessibilityNode accessibility;
     auto* view = new ZigVstgui::FileDropView(
