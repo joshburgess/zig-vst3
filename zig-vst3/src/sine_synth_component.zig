@@ -76,6 +76,7 @@ const Effect = zig_vst3_plugin_effect.SimpleStereoEffect(struct {
     pub const component_name = "SineSynthComponent";
     pub const controller_cid = sine_synth_controller.cid;
     pub const event_input = sine_synth_spec.Spec.event_input;
+    pub const gui_note_input = true;
     pub const audio_input = sine_synth_spec.Spec.audio_input;
     pub const Params = sine_synth_spec.Spec.Params;
     pub const parameter_set = &sine_synth_spec.parameter_set;
@@ -202,6 +203,71 @@ test "sine synth component renders host event list input through processor shell
     try std.testing.expectEqualSlices(f32, &left, &right);
     try std.testing.expect(!Effect.processorInstance(component_iface).state.active);
     try std.testing.expectEqual(@as(f64, 1.0), Effect.getParameterNormalized(component_iface, sine_synth_controller.level_param_id));
+}
+
+test "sine synth component renders GUI note mailbox input" {
+    const gui_note_transport = @import("gui_note_transport.zig");
+    const ivstaudioprocessor = @import("pluginterfaces/vst/ivstaudioprocessor.zig");
+    const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
+    const ivstmessage = @import("pluginterfaces/vst/ivstmessage.zig");
+    const ivstprocesscontext = @import("pluginterfaces/vst/ivstprocesscontext.zig");
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivstcomponent.icomponent_iid), &out));
+    const component_iface: *ivstcomponent.IComponent = @ptrCast(@alignCast(out orelse return error.MissingComponent));
+    defer _ = component_iface.vtable.release(component_iface);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstaudioprocessor.iaudio_processor_iid, &processor_out),
+    );
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out orelse return error.MissingProcessor));
+    defer _ = processor.vtable.release(processor);
+    var connection_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        component_iface.vtable.queryInterface(component_iface, &ivstmessage.iconnection_point_iid, &connection_out),
+    );
+    const connection: *ivstmessage.IConnectionPoint = @ptrCast(@alignCast(connection_out orelse return error.MissingConnection));
+    defer _ = connection.vtable.release(connection);
+
+    var left = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
+    var right = left;
+    var output_channel_ptrs = [_][*]f32{ &left, &right };
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 2,
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
+    }};
+    var process_context = ivstprocesscontext.ProcessContext{ .sampleRate = 48_000.0 };
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 0,
+        .numOutputs = 1,
+        .outputs = &outputs,
+        .numSamples = left.len,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .processContext = &process_context,
+    };
+
+    try std.testing.expectEqual(types.kResultOk, gui_note_transport.send(connection, .{
+        .pitch = 69,
+        .velocity = 1.0,
+        .pressed = true,
+    }));
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expect(left[1] > 0.0);
+    try std.testing.expect(Effect.processorInstance(component_iface).state.active);
+
+    try std.testing.expectEqual(types.kResultOk, gui_note_transport.send(connection, .{
+        .pitch = 69,
+        .velocity = 0.0,
+        .pressed = false,
+    }));
+    @memset(left[0..], 1.0);
+    @memset(right[0..], 1.0);
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqualSlices(f32, &.{ 0.0, 0.0, 0.0, 0.0 }, &left);
+    try std.testing.expect(!Effect.processorInstance(component_iface).state.active);
 }
 
 test "sine synth component renders host event list input through double precision processor shell" {

@@ -33,6 +33,7 @@ pub const Callbacks = extern struct {
     load_preset: *const fn (?*anyopaque, types.uint32) callconv(.c) types.int32,
     store_editor_bool: *const fn (?*anyopaque, types.uint32, types.int32) callconv(.c) types.int32,
     invoke_menu_action: *const fn (?*anyopaque, types.uint32, types.uint32, types.int32) callconv(.c) types.int32,
+    send_note: *const fn (?*anyopaque, types.int32, types.int32, f64, types.int32) callconv(.c) types.int32,
 };
 
 pub const ParameterInfo = extern struct {
@@ -73,6 +74,7 @@ pub const max_preset_browsers = 2;
 pub const max_presets = 64;
 pub const max_action_menus = 4;
 pub const max_menu_items = 16;
+pub const max_pianos = 2;
 pub const max_meters = 8;
 pub const max_graphs = 8;
 pub const max_graph_points = 256;
@@ -124,6 +126,15 @@ pub const ActionMenuDescription = extern struct {
     title: [*:0]const u8,
     items: [*]const MenuItemDescription,
     item_count: types.uint32,
+};
+
+pub const PianoDescription = extern struct {
+    title: [*:0]const u8,
+    first_note: types.uint32,
+    note_count: types.uint32,
+    channel: types.int32,
+    velocity: f64,
+    computer_base_pitch: types.uint32,
 };
 
 pub const MeterKind = enum(c_int) {
@@ -385,7 +396,7 @@ extern fn zig_vstgui_editor_create_configured(
     GraphCallbacks,
     SkinDescription,
 ) ?*Editor;
-extern fn zig_vstgui_editor_create_advanced(
+extern fn zig_vstgui_editor_create_full(
     [*]const ParameterDescription,
     types.uint32,
     Callbacks,
@@ -400,6 +411,8 @@ extern fn zig_vstgui_editor_create_advanced(
     ?[*]const PresetBrowserDescription,
     types.uint32,
     ?[*]const ActionMenuDescription,
+    types.uint32,
+    ?[*]const PianoDescription,
     types.uint32,
     SkinDescription,
 ) ?*Editor;
@@ -417,6 +430,7 @@ extern fn zig_vstgui_editor_set_parameter(*Editor, vsttypes.ParamID, f64) types.
 extern fn zig_vstgui_editor_set_modulation(*Editor, vsttypes.ParamID, f64) types.int32;
 extern fn zig_vstgui_editor_refresh_parameters(*Editor, [*]const ParameterValue, types.uint32) types.int32;
 extern fn zig_vstgui_editor_key_down(*Editor, types.char16, types.int16, types.int16) types.int32;
+extern fn zig_vstgui_editor_key_up(*Editor, types.char16, types.int16, types.int16) types.int32;
 extern fn zig_vstgui_editor_set_focus(*Editor, types.int32) void;
 extern fn zig_vstgui_editor_set_frame(*Editor, ?*iplugview.IPlugFrame) void;
 extern fn zig_vstgui_editor_set_wayland_host(*Editor, ?*anyopaque) void;
@@ -508,7 +522,9 @@ const View = vst_plug_view.PlugView(1, struct {
             types.kResultFalse;
     }
 
-    pub fn onKeyUp(_: anytype, _: types.char16, key_code: types.int16, _: types.int16) types.tresult {
+    pub fn onKeyUp(self: anytype, key: types.char16, key_code: types.int16, modifiers: types.int16) types.tresult {
+        const state = binding(self) orelse return types.kResultFalse;
+        if (zig_vstgui_editor_key_up(state.editor, key, key_code, modifiers) == 0) return types.kResultOk;
         return switch (key_code) {
             iplugview.VirtualKeyCode.tab,
             iplugview.VirtualKeyCode.end,
@@ -575,6 +591,7 @@ pub fn create(
     xy_pads: []const XYPadDescription,
     preset_browsers: []const PresetBrowserDescription,
     action_menus: []const ActionMenuDescription,
+    pianos: []const PianoDescription,
     skin: Skin,
     composition: Composition,
     callbacks: Callbacks,
@@ -588,7 +605,7 @@ pub fn create(
     }
     if (parameters.len == 0 or parameters.len > max_parameters or
         meters.len > max_meters or graphs.len > max_graphs or xy_pads.len > max_xy_pads or
-        preset_browsers.len > max_preset_browsers or action_menus.len > max_action_menus or
+        preset_browsers.len > max_preset_browsers or action_menus.len > max_action_menus or pianos.len > max_pianos or
         skin.assets.len > max_assets or composition.groups.len > max_groups)
     {
         if (telemetry_source) |source| source.release();
@@ -637,7 +654,7 @@ pub fn create(
         return null;
     };
     telemetry.* = .{ .source = telemetry_source };
-    const editor = zig_vstgui_editor_create_advanced(
+    const editor = zig_vstgui_editor_create_full(
         &descriptions,
         @intCast(parameters.len),
         callbacks,
@@ -653,6 +670,8 @@ pub fn create(
         @intCast(preset_browsers.len),
         if (action_menus.len == 0) null else action_menus.ptr,
         @intCast(action_menus.len),
+        if (pianos.len == 0) null else pianos.ptr,
+        @intCast(pianos.len),
         .{
             .assets = if (skin.assets.len == 0) null else &assets,
             .asset_count = @intCast(skin.assets.len),

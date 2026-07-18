@@ -100,6 +100,15 @@ pub const ActionMenu = struct {
     items: []const MenuItem,
 };
 
+pub const Piano = struct {
+    title: [*:0]const u8 = "Keyboard",
+    first_note: u8 = 48,
+    note_count: u8 = 24,
+    channel: u8 = 0,
+    velocity: f64 = 0.8,
+    computer_base_pitch: u8 = 60,
+};
+
 pub const Asset = vstgui_editor_view.Asset;
 pub const AssetFormat = vstgui_editor_view.AssetFormat;
 pub const AssetScale = vstgui_editor_view.AssetScale;
@@ -123,6 +132,7 @@ pub const EditorDescription = struct {
     xy_pads: []const XYPad = &.{},
     preset_browsers: []const PresetBrowser = &.{},
     action_menus: []const ActionMenu = &.{},
+    pianos: []const Piano = &.{},
     skin: Skin = .{},
     composition: Composition = .{},
 };
@@ -158,7 +168,7 @@ pub fn createMultiViewWithSkin(
     meters: []const Meter,
     skin: Skin,
 ) ?*iplugview.IPlugView {
-    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, &.{}, &.{}, &.{}, skin, .{});
+    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, &.{}, &.{}, &.{}, &.{}, skin, .{});
 }
 
 pub fn createEditor(
@@ -177,6 +187,7 @@ pub fn createEditor(
         description.xy_pads,
         description.preset_browsers,
         description.action_menus,
+        description.pianos,
         description.skin,
         description.composition,
     );
@@ -192,6 +203,7 @@ fn createConfiguredView(
     xy_pads: []const XYPad,
     preset_browsers: []const PresetBrowser,
     action_menus: []const ActionMenu,
+    pianos: []const Piano,
     skin: Skin,
     composition: Composition,
 ) ?*iplugview.IPlugView {
@@ -213,7 +225,8 @@ fn createConfiguredView(
         };
         if (parameters.len == 0 or parameters.len > vstgui_editor_view.max_parameters or
             preset_browsers.len > vstgui_editor_view.max_preset_browsers or
-            action_menus.len > vstgui_editor_view.max_action_menus) return null;
+            action_menus.len > vstgui_editor_view.max_action_menus or
+            pianos.len > vstgui_editor_view.max_pianos) return null;
         if (comptime !Controller.hasPresetLoader) {
             if (preset_browsers.len > 0) return null;
         }
@@ -454,11 +467,26 @@ fn createConfiguredView(
                 .item_count = @intCast(menu.items.len),
             };
         }
+        var piano_descriptions: [vstgui_editor_view.max_pianos]vstgui_editor_view.PianoDescription = undefined;
+        for (pianos, 0..) |piano, index| {
+            if (std.mem.span(piano.title).len == 0 or piano.note_count == 0 or piano.note_count > 48 or
+                @as(usize, piano.first_note) + @as(usize, piano.note_count) > 128 or
+                piano.channel > 15 or !std.math.isFinite(piano.velocity) or
+                piano.velocity <= 0.0 or piano.velocity > 1.0) return null;
+            piano_descriptions[index] = .{
+                .title = piano.title,
+                .first_note = piano.first_note,
+                .note_count = piano.note_count,
+                .channel = piano.channel,
+                .velocity = piano.velocity,
+                .computer_base_pitch = piano.computer_base_pitch,
+            };
+        }
         const telemetry_source = if (comptime @hasDecl(Controller, "retainGuiTelemetry"))
             Controller.retainGuiTelemetry(controller)
         else
             null;
-        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], menu_descriptions[0..action_menus.len], skin, composition, .{
+        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], menu_descriptions[0..action_menus.len], piano_descriptions[0..pianos.len], skin, composition, .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
             .perform_edit = Bridge.performEdit,
@@ -472,6 +500,7 @@ fn createConfiguredView(
             .load_preset = Bridge.loadPreset,
             .store_editor_bool = Bridge.storeEditorBool,
             .invoke_menu_action = Bridge.invokeMenuAction,
+            .send_note = Bridge.sendNote,
         }, .{
             .userdata = controller,
             .subscribe = Bridge.subscribe,
@@ -582,6 +611,23 @@ fn NativeBridge(comptime Controller: type) type {
         ) callconv(.c) types.int32 {
             const iface = controller(userdata) orelse return -1;
             return if (Controller.performMenuAction(iface, menu_id, item_id, checked != 0) == types.kResultOk) 0 else -1;
+        }
+
+        fn sendNote(
+            userdata: ?*anyopaque,
+            channel: types.int32,
+            pitch: types.int32,
+            velocity: f64,
+            pressed: types.int32,
+        ) callconv(.c) types.int32 {
+            if (channel < 0 or channel > 15 or pitch < 0 or pitch > 127) return -1;
+            const iface = controller(userdata) orelse return -1;
+            return if (Controller.sendGuiNote(iface, .{
+                .channel = @intCast(channel),
+                .pitch = @intCast(pitch),
+                .velocity = velocity,
+                .pressed = pressed != 0,
+            }) == types.kResultOk) 0 else -1;
         }
 
         fn subscribe(userdata: *anyopaque, editor: *anyopaque) bool {

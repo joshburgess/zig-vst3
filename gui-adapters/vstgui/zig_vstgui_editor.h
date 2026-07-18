@@ -9,6 +9,7 @@
 #include "zig_vstgui_controls.h"
 #include "zig_vstgui_graphs.h"
 #include "zig_vstgui_meters.h"
+#include "zig_vstgui_piano.h"
 #include "zig_vstgui_preset_browser.h"
 #include "zig_vstgui_theme.h"
 #include "zig_vstgui_xy_pad.h"
@@ -39,7 +40,9 @@ struct ZigVstguiEditor {
         const ZigVstguiPresetBrowserDescription* preset_browsers = nullptr,
         uint32_t preset_browser_count = 0,
         const ZigVstguiActionMenuDescription* action_menus = nullptr,
-        uint32_t action_menu_count = 0
+        uint32_t action_menu_count = 0,
+        const ZigVstguiPianoDescription* pianos = nullptr,
+        uint32_t piano_count = 0
     );
     ~ZigVstguiEditor();
 
@@ -59,6 +62,7 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode* xyPadAccessibility(uint32_t index, uint32_t axis) const;
     const ZigVstgui::AccessibilityNode* presetBrowserAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* actionMenuAccessibility(uint32_t index) const;
+    const ZigVstgui::AccessibilityNode* pianoAccessibility(uint32_t index) const;
     bool tickMeter(uint32_t index, double elapsed_ms);
     bool refreshGraph(uint32_t index);
     uint32_t graphPointCount(uint32_t index) const;
@@ -67,6 +71,7 @@ struct ZigVstguiEditor {
     bool resetMeterPeaks(uint32_t index);
     int32_t focusPosition() const;
     bool keyDown(uint16_t key, int16_t key_code, int16_t modifiers);
+    bool keyUp(uint16_t key, int16_t key_code, int16_t modifiers);
     void setFocus(bool focused);
     void setPlugFrame(void* frame);
     void setWaylandHost(void* host);
@@ -83,6 +88,7 @@ private:
     void layout();
     void layoutPresetBrowsers(double left, double top, double right, double bottom);
     void layoutActionMenus(double left, double top, double right, double bottom);
+    void layoutPianos(double left, double top, double right, double bottom);
     void reportMetrics() const;
     bool focusNext(bool reverse);
     const ZigVstgui::ThemeResolver& stylesForParameter(uint32_t index) const;
@@ -148,6 +154,10 @@ private:
     std::array<std::vector<ZigVstguiMenuItemDescription>, ZIG_VSTGUI_MAX_ACTION_MENUS> action_menu_items;
     std::array<std::vector<std::string>, ZIG_VSTGUI_MAX_ACTION_MENUS> action_menu_labels;
     uint32_t action_menu_count {0};
+    std::array<std::unique_ptr<ZigVstgui::PianoControl>, ZIG_VSTGUI_MAX_PIANOS> piano_controls;
+    std::array<ZigVstguiPianoDescription, ZIG_VSTGUI_MAX_PIANOS> piano_descriptions {};
+    std::array<std::string, ZIG_VSTGUI_MAX_PIANOS> piano_titles;
+    uint32_t piano_count {0};
     ZigVstgui::AssetStore asset_store;
     ZigVstguiDrawingCallbacks drawing_callbacks {};
     ZigVstgui::ResizeControl resize_control;

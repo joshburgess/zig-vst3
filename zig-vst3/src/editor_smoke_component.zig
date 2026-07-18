@@ -78,6 +78,7 @@ const EditorSmokeProcessor = struct {
 const Effect = zig_vst3_plugin_effect.SimpleStereoEffect(struct {
     pub const component_name = "EditorSmokeComponent";
     pub const controller_cid = editor_smoke_controller.cid;
+    pub const gui_note_input = true;
     pub const Params = editor_smoke_spec.Spec.Params;
     pub const parameter_set = &editor_smoke_spec.parameter_set;
     pub const Processor = EditorSmokeProcessor;

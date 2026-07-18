@@ -655,6 +655,7 @@ fn addExamplePlugin(
         std.mem.eql(u8, options.short_name, "bypass") or
         std.mem.eql(u8, options.short_name, "mode-gain") or
         std.mem.eql(u8, options.short_name, "voice-mix") or
+        std.mem.eql(u8, options.short_name, "sine-synth") or
         std.mem.eql(u8, options.short_name, "editor-smoke") or
         std.mem.eql(u8, options.short_name, "channel-strip");
     const library = addVst3PluginLibrary(b, target, optimize, zig_vst3_plugin_core, .{

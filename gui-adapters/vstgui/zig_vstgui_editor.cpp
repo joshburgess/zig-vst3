@@ -72,7 +72,9 @@ ZigVstguiEditor::ZigVstguiEditor(
     const ZigVstguiPresetBrowserDescription* preset_browsers,
     uint32_t value_preset_browser_count,
     const ZigVstguiActionMenuDescription* action_menus,
-    uint32_t value_action_menu_count
+    uint32_t value_action_menu_count,
+    const ZigVstguiPianoDescription* pianos,
+    uint32_t value_piano_count
 )
 : parameter_callbacks(callbacks),
   meter_count(value_meter_count),
@@ -82,6 +84,7 @@ ZigVstguiEditor::ZigVstguiEditor(
   xy_pad_count(value_xy_pad_count),
   preset_browser_count(value_preset_browser_count),
   action_menu_count(value_action_menu_count),
+  piano_count(value_piano_count),
   drawing_callbacks(skin.drawing),
   theme_resolver(selectedTheme(skin.theme)),
   theme_kind(skin.theme),
@@ -251,6 +254,15 @@ ZigVstguiEditor::ZigVstguiEditor(
         action_menu_controls[index].reset(new (std::nothrow) ZigVstgui::ActionMenuControl());
         if (!action_menu_controls[index]) return;
     }
+    for (uint32_t index = 0; index < piano_count; ++index) {
+        piano_titles[index] = pianos[index].title;
+        piano_descriptions[index] = pianos[index];
+        piano_descriptions[index].title = piano_titles[index].c_str();
+        piano_controls[index].reset(new (std::nothrow) ZigVstgui::PianoControl(
+            piano_descriptions[index], callbacks
+        ));
+        if (!piano_controls[index]) return;
+    }
     uint32_t next_parameter = 0;
     uint32_t next_meter = 0;
     uint32_t next_graph = 0;
@@ -326,6 +338,7 @@ void ZigVstguiEditor::close() {
     for (uint32_t index = 0; index < xy_pad_count; ++index) xy_pad_controls[index]->clear();
     for (uint32_t index = 0; index < preset_browser_count; ++index) preset_browser_controls[index]->clear();
     for (uint32_t index = 0; index < action_menu_count; ++index) action_menu_controls[index]->clear();
+    for (uint32_t index = 0; index < piano_count; ++index) piano_controls[index]->clear();
     title_component.clear();
     help_component.clear();
     for (uint32_t index = 0; index < group_count; ++index) group_components[index].clear();
@@ -434,6 +447,10 @@ const ZigVstgui::AccessibilityNode* ZigVstguiEditor::actionMenuAccessibility(uin
     return index < action_menu_count ? &action_menu_controls[index]->accessibilityNode() : nullptr;
 }
 
+const ZigVstgui::AccessibilityNode* ZigVstguiEditor::pianoAccessibility(uint32_t index) const {
+    return index < piano_count ? &piano_controls[index]->accessibilityNode() : nullptr;
+}
+
 bool ZigVstguiEditor::tickMeter(uint32_t index, double elapsed_ms) {
     return index < meter_count && meter_controls[index]->tick(elapsed_ms);
 }
@@ -499,9 +516,21 @@ bool ZigVstguiEditor::keyDown(uint16_t key, int16_t key_code, int16_t modifiers)
         auto& menu = *action_menu_controls[index];
         if (focused == menu.focusView() && menu.handleKey(key, key_code, modifiers)) return true;
     }
+    for (uint32_t index = 0; index < piano_count; ++index) {
+        auto& piano = *piano_controls[index];
+        if (focused == piano.focusView() && piano.handleKey(key, key_code, modifiers, true)) return true;
+    }
     if (parameter_count == 0 || !parameter_controls[0]->handleKey(key, key_code, modifiers)) return false;
     frame->setFocusView(parameter_controls[0]->focusView());
     return true;
+}
+
+bool ZigVstguiEditor::keyUp(uint16_t key, int16_t key_code, int16_t modifiers) {
+    bool handled = false;
+    for (uint32_t index = 0; index < piano_count; ++index) {
+        handled = piano_controls[index]->handleKey(key, key_code, modifiers, false) || handled;
+    }
+    return handled;
 }
 
 bool ZigVstguiEditor::focusNext(bool reverse) {
@@ -512,6 +541,7 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
             ZIG_VSTGUI_MAX_XY_PADS + 1
             + ZIG_VSTGUI_MAX_PRESET_BROWSERS
             + ZIG_VSTGUI_MAX_ACTION_MENUS
+            + ZIG_VSTGUI_MAX_PIANOS
     > focus_order {};
     uint32_t focus_count = 0;
     for (uint32_t index = 0; index < parameter_count; ++index) {
@@ -532,6 +562,9 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
     }
     for (uint32_t index = 0; index < action_menu_count; ++index) {
         if (auto* menu = action_menu_controls[index]->focusView()) focus_order[focus_count++] = menu;
+    }
+    for (uint32_t index = 0; index < piano_count; ++index) {
+        if (auto* piano = piano_controls[index]->focusView()) focus_order[focus_count++] = piano;
     }
     if (auto* resize = resize_control.focusView()) focus_order[focus_count++] = resize;
     if (focus_count == 0) return false;
@@ -565,6 +598,7 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
     for (uint32_t index = 0; index < action_menu_count; ++index) {
         action_menu_controls[index]->setFocusedView(next_view);
     }
+    for (uint32_t index = 0; index < piano_count; ++index) piano_controls[index]->setFocusedView(next_view);
     resize_control.setFocusedView(next_view);
     focus_position = static_cast<int32_t>(next);
     return true;
@@ -589,6 +623,10 @@ void ZigVstguiEditor::setFocus(bool focused) {
         for (uint32_t index = 0; index < action_menu_count; ++index) {
             action_menu_controls[index]->close(false);
             action_menu_controls[index]->setFocusedView(nullptr);
+        }
+        for (uint32_t index = 0; index < piano_count; ++index) {
+            piano_controls[index]->releaseAll();
+            piano_controls[index]->setFocusedView(nullptr);
         }
         resize_control.setFocusedView(nullptr);
     }
@@ -629,7 +667,7 @@ std::size_t ZigVstguiEditor::nativeAccessibilityElementCount() const {
 std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries() const {
     std::vector<ZigVstgui::AccessibilityEntry> entries;
     entries.reserve(2 + group_count + parameter_count * 2 + meter_count + graph_count +
-        xy_pad_count * 2 + preset_browser_count + action_menu_count + 1);
+        xy_pad_count * 2 + preset_browser_count + action_menu_count + piano_count + 1);
     entries.push_back({&title_component.accessibility(), title_component.view()});
     entries.push_back({&help_component.accessibility(), help_component.view()});
     for (uint32_t index = 0; index < group_count; ++index) {
@@ -664,6 +702,9 @@ std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries
             &action_menu_controls[index]->accessibilityNode(),
             action_menu_controls[index]->focusView(),
         });
+    }
+    for (uint32_t index = 0; index < piano_count; ++index) {
+        entries.push_back({&piano_controls[index]->accessibilityNode(), piano_controls[index]->focusView()});
     }
     entries.push_back({&resize_control.buttonAccessibility(), resize_control.focusView()});
     return entries;
@@ -795,6 +836,9 @@ void ZigVstguiEditor::buildFrame() {
         )) return;
         action_menu_controls[index]->setOpenCoordinator(this, actionMenuWillOpen);
     }
+    for (uint32_t index = 0; index < piano_count; ++index) {
+        piano_controls[index]->build(content, theme_resolver);
+    }
     layout();
 }
 
@@ -822,12 +866,21 @@ void ZigVstguiEditor::layout() {
         : 0.0;
     const double browser_bottom = footer_top - theme.spacing.small;
     const double browser_top = browser_bottom - browser_height;
-    const double content_bottom = preset_browser_count > 0
+    const double lower_content_bottom = preset_browser_count > 0
         ? browser_top - theme.spacing.medium
         : footer_top - theme.spacing.medium;
+    const double piano_height = piano_count > 0
+        ? std::clamp(static_cast<double>(height) * 0.2, 96.0, 140.0)
+        : 0.0;
+    const double piano_bottom = lower_content_bottom;
+    const double piano_top = piano_bottom - piano_height;
+    const double content_bottom = piano_count > 0
+        ? piano_top - theme.spacing.medium
+        : lower_content_bottom;
     if (preset_browser_count > 0) {
         layoutPresetBrowsers(margin, browser_top, right, browser_bottom);
     }
+    if (piano_count > 0) layoutPianos(margin, piano_top, right, piano_bottom);
     layoutActionMenus(margin, footer_top, right - theme.control_metrics.button_width - theme.spacing.small, height - margin);
     if (group_count > 0) {
         const bool wide = width >= 620;
@@ -1227,6 +1280,20 @@ void ZigVstguiEditor::layoutActionMenus(double left, double top, double right, d
         action_menu_controls[index]->setBounds(
             VSTGUI::CRect(menu_left, top, menu_left + menu_width, bottom),
             editor_bounds
+        );
+    }
+}
+
+void ZigVstguiEditor::layoutPianos(double left, double top, double right, double bottom) {
+    if (piano_count == 0) return;
+    const double gap = theme_resolver.theme().spacing.small;
+    const double available = std::max(1.0, right - left - gap * (piano_count - 1));
+    const double piano_width = available / piano_count;
+    for (uint32_t index = 0; index < piano_count; ++index) {
+        const double piano_left = left + index * (piano_width + gap);
+        piano_controls[index]->setBounds(
+            VSTGUI::CRect(piano_left, top, piano_left + piano_width, top + 18.0),
+            VSTGUI::CRect(piano_left, top + 18.0, piano_left + piano_width, bottom)
         );
     }
 }

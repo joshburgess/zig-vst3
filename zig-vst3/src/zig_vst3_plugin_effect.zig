@@ -1,5 +1,6 @@
 const std = @import("std");
 const funknown = @import("funknown.zig");
+const gui_note_transport = @import("gui_note_transport.zig");
 const gui_telemetry_source = @import("gui_telemetry_source.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
@@ -178,6 +179,13 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 return Config.performMenuAction(iface, menu_id, item_id, checked);
             }
             return types.kResultFalse;
+        }
+
+        pub fn sendGuiNote(
+            iface: *ivsteditcontroller.IEditController,
+            command: gui_note_transport.Command,
+        ) types.tresult {
+            return gui_note_transport.send(instance(iface).connected_peer, command);
         }
 
         pub fn setNormalized(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
@@ -1914,6 +1922,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         const ParameterState = zig_vst3_plugin_bridge.ParameterState(Params);
         const event_output = @hasDecl(Config, "event_output") and Config.event_output;
         const event_input = !@hasDecl(Config, "event_input") or Config.event_input;
+        const gui_note_input = @hasDecl(Config, "gui_note_input") and Config.gui_note_input;
         const audio_input = !@hasDecl(Config, "audio_input") or Config.audio_input;
         const audio_output = !@hasDecl(Config, "audio_output") or Config.audio_output;
         const bus_config = zig_vst3_plugin_bridge.StereoAudioBuses.Config{
@@ -1926,6 +1935,12 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             Config.process_context_requirements
         else
             0;
+
+        comptime {
+            if (gui_note_input and !event_input) {
+                @compileError("gui_note_input requires an event input bus");
+            }
+        }
 
         const Component = struct {
             iface: ivstcomponent.IComponent = .{ .vtable = &component_vtable },
@@ -1944,6 +1959,8 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             data_exchange_handler: ?*ivstdataexchange.IDataExchangeHandler = null,
             parameter_state: ParameterState,
             processor_impl: Config.Processor = .{},
+            gui_notes: gui_note_transport.Mailbox = .{},
+            gui_note_seen: [128]u64 = @splat(0),
             sample_rate: f64 = 0,
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
 
@@ -2194,6 +2211,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             if (@hasDecl(Config.Processor, "reset")) {
                 self.processor_impl.reset();
             }
+            self.gui_note_seen = @splat(0);
         }
 
         fn setActive(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
@@ -2242,7 +2260,10 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return disconnectConnectionPeer(&self.connected_peer, peer);
         }
 
-        fn componentNotify(_: *anyopaque, _: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
+        fn componentNotify(ptr: *anyopaque, message: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
+            if (comptime gui_note_input) {
+                return gui_note_transport.receive(&ownerFromComponentConnectionPoint(ptr).gui_notes, message);
+            }
             return types.kResultFalse;
         }
 
@@ -2384,7 +2405,37 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             var event_storage: [process_event_capacity]plug_process.Event = undefined;
             var output_event_storage: [process_output_event_capacity]plug_process.Event = undefined;
             const parameter_changes = zig_vst3_plugin_bridge.collectInputParameterChanges(data, &parameter_change_storage);
-            const events = zig_vst3_plugin_bridge.collectInputEvents(data, &event_storage);
+            const host_events = zig_vst3_plugin_bridge.collectInputEvents(data, &event_storage);
+            var event_count = host_events.items.len;
+            const frame_count = zig_vst3_plugin_bridge.frameCountOrZero(data);
+            if (comptime gui_note_input) {
+                if (frame_count != 0 and event_count < event_storage.len) {
+                    var commands: [process_event_capacity]gui_note_transport.Command = undefined;
+                    const command_count = self.gui_notes.collect(
+                        &self.gui_note_seen,
+                        commands[0 .. event_storage.len - event_count],
+                    );
+                    for (commands[0..command_count]) |command| {
+                        event_storage[event_count] = if (command.pressed)
+                            plug_process.Event.noteOn(0, command.channel, command.pitch, @floatCast(command.velocity))
+                        else
+                            plug_process.Event.noteOff(0, command.channel, command.pitch, 0.0);
+                        event_count += 1;
+                    }
+                    for (host_events.items.len..event_count) |index| {
+                        const item = event_storage[index];
+                        var cursor = index;
+                        while (cursor > 0 and event_storage[cursor - 1].sample_offset > item.sample_offset) {
+                            event_storage[cursor] = event_storage[cursor - 1];
+                            cursor -= 1;
+                        }
+                        event_storage[cursor] = item;
+                    }
+                }
+            }
+            const events = plug_process.Events.init(event_storage[0..event_count], frame_count) catch {
+                return types.kInvalidArgument;
+            };
             var output_events = plug_process.EventWriter.init(&output_event_storage, zig_vst3_plugin_bridge.frameCountOrZero(data));
             const result = zig_vst3_plugin_bridge.processMainAudioConfiguredWithSampleRate(data, parameter_changes, events, &output_events, Processor{ .component = self, .parameter_changes = parameter_changes }, bus_config, self.sample_rate);
             if (result != types.kResultOk) return result;

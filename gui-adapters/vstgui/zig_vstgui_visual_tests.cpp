@@ -3,6 +3,7 @@
 #include "zig_vstgui_controls.h"
 #include "zig_vstgui_graphs.h"
 #include "zig_vstgui_meters.h"
+#include "zig_vstgui_piano.h"
 #include "zig_vstgui_preset_browser.h"
 #include "zig_vstgui_theme.h"
 #include "zig_vstgui_xy_pad.h"
@@ -389,6 +390,33 @@ int32_t rejectMenuAction(void*, uint32_t, uint32_t, int32_t) {
     return -1;
 }
 
+int32_t acceptNote(void*, int32_t, int32_t, double, int32_t) {
+    return 0;
+}
+
+Snapshot pianoKeyboard() {
+    return {
+        "piano-keyboard.png",
+        640,
+        180,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 640, 180)));
+            container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            ZigVstguiCallbacks callbacks {};
+            callbacks.send_note = acceptNote;
+            const ZigVstguiPianoDescription description {"Piano Keyboard", 48, 24, 0, 0.8, 60};
+            ZigVstgui::PianoControl piano(description, callbacks);
+            piano.build(container, styles);
+            piano.setBounds(VSTGUI::CRect(12, 8, 628, 30), VSTGUI::CRect(12, 30, 628, 168));
+            piano.pointerPress(60, 0.8);
+            container->drawRect(&context, container->getViewSize());
+            piano.clear();
+        },
+    };
+}
+
 Snapshot presetBrowsers() {
     return {
         "preset-browsers.png",
@@ -598,6 +626,36 @@ double benchmarkWarmDraw() {
     ).count() / repetitions;
 }
 
+double benchmarkPianoDraw() {
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 480, 100)));
+    container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+    ZigVstguiCallbacks callbacks {};
+    callbacks.send_note = acceptNote;
+    const ZigVstguiPianoDescription description {"Keyboard", 48, 24, 0, 0.8, 60};
+    ZigVstgui::PianoControl piano(description, callbacks);
+    piano.build(container, styles);
+    piano.setBounds(VSTGUI::CRect(8, 4, 472, 22), VSTGUI::CRect(8, 22, 472, 96));
+    piano.pointerPress(60, 0.8);
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(480, 100), 1.0);
+    if (!offscreen) return 1e9;
+    offscreen->beginDraw();
+    container->drawRect(offscreen, container->getViewSize());
+    offscreen->endDraw();
+    constexpr uint32_t repetitions = 200;
+    const auto started = std::chrono::steady_clock::now();
+    for (uint32_t index = 0; index < repetitions; ++index) {
+        offscreen->beginDraw();
+        container->drawRect(offscreen, container->getViewSize());
+        offscreen->endDraw();
+    }
+    const double average = std::chrono::duration<double, std::micro>(
+        std::chrono::steady_clock::now() - started
+    ).count() / repetitions;
+    piano.clear();
+    return average;
+}
+
 }
 
 int main(int argc, char** argv) {
@@ -619,6 +677,7 @@ int main(int argc, char** argv) {
         presetBrowsers(),
         closedActionMenu(),
         actionMenus(),
+        pianoKeyboard(),
     };
     int result = 0;
     for (const auto& snapshot : snapshots) {
@@ -626,8 +685,10 @@ int main(int argc, char** argv) {
     }
     if (!update) {
         const double average = benchmarkWarmDraw();
+        const double piano_average = benchmarkPianoDraw();
         std::fprintf(stderr, "visual regression warm render average: %.1f us\n", average);
-        if (average > 300.0) result = std::max(result, 6);
+        std::fprintf(stderr, "piano warm render average: %.1f us\n", piano_average);
+        if (average > 300.0 || piano_average > 300.0) result = std::max(result, 6);
     }
     VSTGUI::exit();
     return result;

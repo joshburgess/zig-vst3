@@ -7,6 +7,7 @@ pub const editor_state = core.editor_state;
 pub const gui_preset_browser = core.gui_preset_browser;
 pub const gui_telemetry = core.gui_telemetry;
 pub const gui_graph = core.gui_graph;
+pub const gui_piano = core.gui_piano;
 pub const parameters = core.parameters;
 pub const plugin = core.plugin;
 pub const process = core.process;
@@ -35,6 +36,7 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(gui_preset_browser, "Browser"));
     try std.testing.expect(@hasDecl(gui_telemetry, "ScalarSnapshot"));
     try std.testing.expect(@hasDecl(gui_graph, "SnapshotSeries"));
+    try std.testing.expect(@hasDecl(gui_piano, "Keyboard"));
 }
 
 test "zig-vst3-plugin runs core module tests" {

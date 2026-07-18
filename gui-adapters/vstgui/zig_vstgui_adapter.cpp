@@ -95,6 +95,34 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_advanced(
     uint32_t action_menu_count,
     ZigVstguiSkinDescription skin
 ) {
+    return zig_vstgui_editor_create_full(
+        parameters, parameter_count, callbacks, meters, meter_count, meter_callbacks,
+        graphs, graph_count, graph_callbacks, xy_pads, xy_pad_count,
+        preset_browsers, preset_browser_count, action_menus, action_menu_count,
+        nullptr, 0, skin
+    );
+}
+
+extern "C" ZigVstguiEditor* zig_vstgui_editor_create_full(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
+    const ZigVstguiXYPadDescription* xy_pads,
+    uint32_t xy_pad_count,
+    const ZigVstguiPresetBrowserDescription* preset_browsers,
+    uint32_t preset_browser_count,
+    const ZigVstguiActionMenuDescription* action_menus,
+    uint32_t action_menu_count,
+    const ZigVstguiPianoDescription* pianos,
+    uint32_t piano_count,
+    ZigVstguiSkinDescription skin
+) {
     constexpr uint32_t style_mask = ZIG_VSTGUI_STYLE_BACKGROUND |
         ZIG_VSTGUI_STYLE_FOREGROUND |
         ZIG_VSTGUI_STYLE_BORDER |
@@ -145,6 +173,15 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_advanced(
                     menu.items[previous].item_id == item.item_id) return nullptr;
             }
         }
+    }
+    if ((!pianos && piano_count > 0) || piano_count > ZIG_VSTGUI_MAX_PIANOS ||
+        (piano_count > 0 && !callbacks.send_note)) return nullptr;
+    for (uint32_t index = 0; index < piano_count; ++index) {
+        const auto& piano = pianos[index];
+        if (!piano.title || piano.title[0] == 0 || piano.note_count == 0 || piano.note_count > 48 ||
+            piano.first_note >= 128 || piano.first_note + piano.note_count > 128 ||
+            piano.channel < 0 || piano.channel > 15 || !std::isfinite(piano.velocity) ||
+            piano.velocity <= 0.0 || piano.velocity > 1.0 || piano.computer_base_pitch >= 128) return nullptr;
     }
     for (uint32_t index = 0; index < graph_count; ++index) {
         const auto& graph = graphs[index];
@@ -234,7 +271,9 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_advanced(
         preset_browsers,
         preset_browser_count,
         action_menus,
-        action_menu_count
+        action_menu_count,
+        pianos,
+        piano_count
     );
     if (editor && !editor->valid()) {
         delete editor;
@@ -304,6 +343,15 @@ extern "C" int32_t zig_vstgui_editor_key_down(
     return editor && editor->keyDown(key, key_code, modifiers) ? 0 : -1;
 }
 
+extern "C" int32_t zig_vstgui_editor_key_up(
+    ZigVstguiEditor* editor,
+    uint16_t key,
+    int16_t key_code,
+    int16_t modifiers
+) {
+    return editor && editor->keyUp(key, key_code, modifiers) ? 0 : -1;
+}
+
 extern "C" void zig_vstgui_editor_set_focus(ZigVstguiEditor* editor, int32_t focused) {
     if (editor) editor->setFocus(focused != 0);
 }
@@ -324,5 +372,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 13;
+    return 14;
 }

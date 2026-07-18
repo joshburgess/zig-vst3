@@ -245,6 +245,12 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .{ .id = 4, .label = "Clear Envelope", .destructive = true },
                 },
             }},
+            .pianos = &.{.{
+                .title = "Piano Keyboard",
+                .first_note = 48,
+                .note_count = 24,
+                .computer_base_pitch = 60,
+            }},
             .skin = .{
                 .assets = &.{
                     .{ .id = checkmark_asset_id, .data = checkmark_svg, .format = .svg, .scale = .contain },

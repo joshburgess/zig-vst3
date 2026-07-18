@@ -264,6 +264,27 @@ On Windows, the adapter provides a UI Automation fragment tree through `WM_GETOB
 
 X11 and Wayland retain the toolkit-neutral semantics, keyboard focus order, and visible focus rendering. No AT-SPI bridge is implemented yet. VoiceOver navigation, Narrator navigation, and AT-SPI host verification remain release checks for their respective platform environments.
 
+## Piano Keyboard
+
+Add a bounded note-input surface through `EditorDescription.pianos`:
+
+```zig
+.pianos = &.{.{
+    .title = "Instrument Keyboard",
+    .first_note = 48,
+    .note_count = 24,
+    .channel = 0,
+    .velocity = 0.8,
+    .computer_base_pitch = 60,
+}},
+```
+
+The visible range may contain 1–48 MIDI notes and must stay within 0–127. Pointer vertical position controls velocity. Dragging across keys releases the previous note before pressing the next. The computer-key mapping `awsedftgyhujkolp;` starts at `computer_base_pitch`. The host must forward both key-down and key-up events so releases cannot remain stuck.
+
+Enable processor delivery with `pub const gui_note_input = true` on `SimpleStereoEffect` configuration. The reflected controller sends fixed VST3 connection messages. The component stores only the latest desired state for each pitch in a bounded atomic mailbox. Processing collects changed states at the next nonempty block, emits note-offs before note-ons, and merges them at sample zero without allocating or locking.
+
+The keyboard is one focus stop. Left and Right wrap selection, Home and End select range limits, and Return or Space plays the selected note. Focus loss, pointer cancellation, and editor teardown release every held note. The choice semantic reports the selected MIDI note and its conventional name, plus whether it is playing. Focus, press, increment, and decrement accessibility actions use the same state machine.
+
 ## API Status
 
 The project remains pre-1.0, so even the supported surface does not yet carry a long-term compatibility promise. The supported list is limited to contracts exercised by both the component gallery and a production-style editor.
@@ -279,6 +300,7 @@ Supported authoring surface:
 - `XYPad`, ordered two-parameter gestures, per-axis semantics, and grouped XY-pad composition.
 - `PresetBrowser`, `gui_preset_browser.Browser`, bounded catalogs, persistent filtering and selection, and host-automated loading.
 - `ActionMenu`, action, toggle, separator, disabled and destructive item states, anchored overlays, and persistent toggle fields.
+- `Piano`, bounded note ranges, GUI note transport, computer-key input, pointer glissando, and accessible note selection.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.
 

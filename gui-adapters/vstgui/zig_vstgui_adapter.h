@@ -21,6 +21,7 @@ typedef struct ZigVstguiCallbacks {
     int32_t (*load_preset)(void* userdata, uint32_t preset_id);
     int32_t (*store_editor_bool)(void* userdata, uint32_t field_id, int32_t value);
     int32_t (*invoke_menu_action)(void* userdata, uint32_t menu_id, uint32_t item_id, int32_t checked);
+    int32_t (*send_note)(void* userdata, int32_t channel, int32_t pitch, double velocity, int32_t pressed);
 } ZigVstguiCallbacks;
 
 typedef struct ZigVstguiParameterInfo {
@@ -110,6 +111,17 @@ typedef struct ZigVstguiActionMenuDescription {
 
 enum { ZIG_VSTGUI_MAX_ACTION_MENUS = 4 };
 enum { ZIG_VSTGUI_MAX_MENU_ITEMS = 16 };
+
+typedef struct ZigVstguiPianoDescription {
+    const char* title;
+    uint32_t first_note;
+    uint32_t note_count;
+    int32_t channel;
+    double velocity;
+    uint32_t computer_base_pitch;
+} ZigVstguiPianoDescription;
+
+enum { ZIG_VSTGUI_MAX_PIANOS = 2 };
 
 typedef enum ZigVstguiMeterKind {
     ZIG_VSTGUI_METER_PEAK = 0,
@@ -389,6 +401,26 @@ ZigVstguiEditor* zig_vstgui_editor_create_advanced(
     uint32_t action_menu_count,
     ZigVstguiSkinDescription skin
 );
+ZigVstguiEditor* zig_vstgui_editor_create_full(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
+    const ZigVstguiXYPadDescription* xy_pads,
+    uint32_t xy_pad_count,
+    const ZigVstguiPresetBrowserDescription* preset_browsers,
+    uint32_t preset_browser_count,
+    const ZigVstguiActionMenuDescription* action_menus,
+    uint32_t action_menu_count,
+    const ZigVstguiPianoDescription* pianos,
+    uint32_t piano_count,
+    ZigVstguiSkinDescription skin
+);
 void zig_vstgui_canvas_fill_rect(
     ZigVstguiCanvas* canvas,
     double left,
@@ -445,6 +477,7 @@ int32_t zig_vstgui_editor_refresh_parameters(
     uint32_t parameter_count
 );
 int32_t zig_vstgui_editor_key_down(ZigVstguiEditor* editor, uint16_t key, int16_t key_code, int16_t modifiers);
+int32_t zig_vstgui_editor_key_up(ZigVstguiEditor* editor, uint16_t key, int16_t key_code, int16_t modifiers);
 void zig_vstgui_editor_set_focus(ZigVstguiEditor* editor, int32_t focused);
 void zig_vstgui_editor_set_frame(ZigVstguiEditor* editor, void* plug_frame);
 void zig_vstgui_editor_set_wayland_host(ZigVstguiEditor* editor, void* wayland_host);

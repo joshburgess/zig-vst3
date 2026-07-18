@@ -7,6 +7,7 @@
 #include "zig_vstgui_graphs.h"
 #include "zig_vstgui_layout.h"
 #include "zig_vstgui_meters.h"
+#include "zig_vstgui_piano.h"
 #include "zig_vstgui_preset_browser.h"
 
 #include "pluginterfaces/base/keycodes.h"
@@ -53,7 +54,18 @@ struct CallbackState {
     bool stored_bool_value {false};
     bool reject_menu_action {false};
     bool reject_bool_store {false};
+    uint32_t note_count {0};
+    int32_t last_note_pitch {-1};
+    int32_t last_note_pressed {0};
 };
+
+int32_t sendNote(void* userdata, int32_t, int32_t pitch, double, int32_t pressed) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->note_count += 1;
+    state->last_note_pitch = pitch;
+    state->last_note_pressed = pressed;
+    return 0;
+}
 
 void recordOperation(CallbackState* state, char kind, uint32_t parameter_id) {
     if (state->operation_count >= 32) return;
@@ -781,7 +793,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 13) return 1;
+    if (zig_vstgui_adapter_version() != 14) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -1537,6 +1549,77 @@ int testActionMenus() {
     return 0;
 }
 
+int testPianoKeyboard() {
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.send_note = sendNote;
+    const ZigVstguiPianoDescription description {"Keyboard", 48, 24, 0, 0.8, 60};
+    VSTGUI::init(nullptr);
+    {
+        ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+        auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 480, 160)));
+        ZigVstgui::PianoControl piano(description, callbacks);
+        piano.build(container, styles);
+        piano.setBounds(VSTGUI::CRect(8, 8, 472, 28), VSTGUI::CRect(8, 28, 472, 152));
+        if (!piano.handleKey('a', 0, 0, true) || state.last_note_pitch != 60 ||
+            state.last_note_pressed != 1 || !piano.notePressed(60)) {
+            VSTGUI::exit();
+            return 1;
+        }
+        if (!piano.handleKey('a', 0, 0, false) || state.last_note_pressed != 0 || piano.notePressed(60)) {
+            VSTGUI::exit();
+            return 2;
+        }
+        if (!piano.handleKey(0, Steinberg::KEY_RIGHT, 0, true) || piano.selectedNote() != 61 ||
+            !piano.accessibilityNode().perform(ZigVstgui::AccessibilityAction::press) ||
+            !piano.notePressed(61)) {
+            VSTGUI::exit();
+            return 3;
+        }
+        piano.releaseAll();
+        if (piano.notePressed(61) || state.last_note_pressed != 0) {
+            VSTGUI::exit();
+            return 4;
+        }
+        if (!piano.handleKey(' ', 0, 0, true) || !piano.handleKey(0, Steinberg::KEY_RIGHT, 0, true) ||
+            !piano.handleKey(' ', 0, 0, false) || state.last_note_pitch != 61 ||
+            piano.notePressed(61)) {
+            VSTGUI::exit();
+            return 5;
+        }
+        const int black = piano.hitTest(VSTGUI::CPoint(39.0, 40.0));
+        if (black < 48 || black >= 72) {
+            VSTGUI::exit();
+            return 6;
+        }
+        piano.clear();
+    }
+    VSTGUI::exit();
+
+    const ZigVstguiParameterDescription parameter {
+        10, 0.5, {"Level", "", 0, 0.5}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+    };
+    auto* editor = zig_vstgui_editor_create_full(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, &description, 1, {}
+    );
+    if (!editor) return 7;
+    const auto* semantics = editor->pianoAccessibility(0);
+    if (!semantics || semantics->role() != ZigVstgui::AccessibilityRole::choice) {
+        zig_vstgui_editor_destroy(editor);
+        return 8;
+    }
+    zig_vstgui_editor_destroy(editor);
+    auto invalid = description;
+    invalid.note_count = 49;
+    if (zig_vstgui_editor_create_full(
+            &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+            nullptr, 0, nullptr, 0, &invalid, 1, {}
+        )) return 9;
+    return 0;
+}
+
 }
 
 int main() {
@@ -1560,5 +1643,6 @@ int main() {
     if (const int result = testAssetsAndFonts(); result != 0) return 190 + result;
     if (const int result = testPresetBrowser(); result != 0) return 210 + result;
     if (const int result = testActionMenus(); result != 0) return 220 + result;
+    if (const int result = testPianoKeyboard(); result != 0) return 240 + result;
     return 0;
 }

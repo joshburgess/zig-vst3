@@ -122,7 +122,7 @@ Completion evidence:
 
 - [x] Add a preset browser with search, selection, load status, and keyboard navigation.
 - [x] Add anchored popovers and richer menus with focus containment and restoration.
-- [ ] Add a piano keyboard with pointer, computer-keyboard, and accessible note input.
+- [x] Add a piano keyboard with pointer, computer-keyboard, and accessible note input.
 - [ ] Add a bounded step sequencer with multi-selection and clear playhead semantics.
 - [ ] Add file drag-and-drop with type filtering, rejection feedback, and host-safe lifetimes.
 - [ ] Add waveform and spectrum views on the graph source contract.
@@ -159,7 +159,20 @@ Action menu completion evidence:
 - `action-menu-closed.png` covers the closed trigger. `action-menus.png` covers checked, disabled, separator, destructive, selected, and recoverable error states. The final warm-render average, including an open menu, was 82.7 microseconds against the 300 microsecond budget.
 - Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, and all ten Steinberg example validators pass. All examples cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`.
 - Pluginval was not launched because earlier runs repeatedly produced macOS crash dialogs. Manual menu interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
-- Piano input, sequencing, file drop, and production waveform or spectrum components remain separate slices of this milestone.
+- Piano input is complete. Sequencing, file drop, and production waveform or spectrum components remain separate slices of this milestone.
+
+Piano keyboard completion evidence:
+
+- `Piano` is a supported public authoring declaration shared by the component gallery and sine-synth editor. Authors declare a bounded note range, MIDI channel, velocity, and computer-keyboard base pitch without importing adapter internals.
+- Adapter ABI version 14 adds up to two 48-note keyboards and key-up forwarding. The existing ABI version 13 creation entry remains available, while the full creation entry carries piano descriptions.
+- The native control draws conventional white and black key geometry. Pointer press and drag support velocity and glissando, the `awsedftgyhujkolp;` mapping plays chromatic notes, arrows and Home or End select notes, and Return or Space plays the selected note.
+- Focus loss, editor close, pointer cancellation, and key release send note-off commands. Selected and playing states use outlines and text in addition to color.
+- `gui_note_transport.Mailbox` carries the latest desired state for each MIDI pitch through the VST3 component connection. The audio thread performs bounded atomic reads without locks or allocation, emits releases before presses, and merges GUI events at sample zero with stable host-event ordering.
+- `gui_piano.Keyboard(capacity)` supplies the toolkit-neutral note-range, selection, pressed-state, computer-key mapping, and bounded release model. The native choice semantic exposes the selected note, range, playing state, focus, press, increment, and decrement through the shared accessibility action path.
+- Unit and native tests cover range validation, selection wrap, idempotent presses, bounded release, note naming, key mapping, pointer hit testing, key-up behavior, accessibility actions, invalid declarations, processor delivery, note-off delivery, and editor integration.
+- `piano-keyboard.png` covers standard key geometry, octave labels, selection, and a pressed note. Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, all ten Steinberg validators, and Linux and Windows example cross-bundles pass. The final piano-only warm-render average was 120.6 microseconds against the 300 microsecond budget. The complete warm-render scene averaged 201.8 microseconds during the same final validation run.
+- Pluginval was not launched because earlier runs repeatedly produced macOS crash dialogs. Manual piano interaction in a macOS host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+- Sequencing, file drop, and production waveform or spectrum components remain separate slices of this milestone.
 
 ## Validation After Each Milestone
 
@@ -181,3 +194,4 @@ Action menu completion evidence:
 - Manual graph rendering in a production host.
 - Manual preset-browser interaction in a production host.
 - Manual action-menu interaction in a production host.
+- Manual piano-keyboard interaction in a production host.
