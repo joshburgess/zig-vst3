@@ -125,9 +125,9 @@ Completion evidence:
 - [x] Add a piano keyboard with pointer, computer-keyboard, and accessible note input.
 - [x] Add a bounded step sequencer with multi-selection and clear playhead semantics.
 - [x] Add file drag-and-drop with type filtering, rejection feedback, and host-safe lifetimes.
-- [ ] Add waveform and spectrum views on the graph source contract.
-- [ ] Exercise every promoted component in both the gallery and a production editor.
-- [ ] Add interaction, visual-regression, performance, lifecycle, and instance-isolation coverage.
+- [x] Add waveform and spectrum views on the graph source contract.
+- [x] Exercise every promoted component in both the gallery and a production editor.
+- [x] Add interaction, visual-regression, performance, lifecycle, and instance-isolation coverage.
 
 Exit criteria:
 
@@ -197,7 +197,19 @@ File drop completion evidence:
 - `file-drops.png` covers idle, acceptable, and recoverable failure states without relying on text alone. The dedicated warm-render benchmark completed at 26.1 microseconds against the 300 microsecond budget during final release validation.
 - `FileDrop` remains experimental because it has only the gallery consumer. Promotion also requires a production importer with a keyboard-accessible file-picker alternative.
 - Pluginval was not launched because earlier runs repeatedly produced macOS crash dialogs. Manual file-drop interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
-- Production waveform and spectrum components remain the final local slice of this milestone.
+- Production waveform and spectrum components complete the local slices of this milestone.
+
+Waveform and spectrum completion evidence:
+
+- `gui_graph.WaveformCapture(capacity)` reduces an audio block to at most 256 evenly spaced points. `gui_graph.SpectrumAnalyzer(fft_size)` accepts power-of-two sizes from 8 through 512, applies a Hann window, performs an in-place radix-2 FFT, and publishes up to 256 positive-frequency decibel bins.
+- Both sources own fixed storage, allocate no memory, acquire no locks, publish through the existing nonblocking snapshot contract, and skip reduction and spectral work while no editor is open. The spectrum performs at most one transform per process call with a 50 percent hop.
+- The gallery and production channel-strip processors use the same public source types and declare their waveform and spectrum through `@import("zig-vst3").vstgui.Graph`. Neither consumer imports adapter internals. Source activity, snapshots, and FFT work remain isolated per processor instance.
+- Native rendering gives waveforms a zero line and spectra magnitude bars. Curve, bar, and grid geometry use batched graphics paths so draw-call count stays constant as the bounded point count grows. Unchanged dynamic frames do not invalidate the view.
+- Empty waveform and spectrum states are explicit. Toolkit-neutral graph semantics report sample count and peak magnitude, or bin count and the strongest frequency and decibel level. Read-only signal views do not add misleading keyboard stops.
+- Unit tests cover activity gating, deterministic waveform reduction, maximum capacity, deterministic FFT peak frequency and level, invalid sample rate, source selection, editor counts, and instance isolation. Native tests cover empty and populated semantics, dynamic refresh, invalid data, timer lifecycle, and unchanged-frame suppression.
+- `signal-views.png` covers populated waveform, populated spectrum, and empty spectrum states. A dedicated benchmark renders a maximum-capacity 256-point waveform and 256-bin spectrum against the 300 microsecond warm-frame budget.
+- Final local measurements were 273.7 microseconds for the maximum-capacity signal pair, 263 nanoseconds for 128-point waveform capture plus snapshot read, and 2.19 microseconds for a 128-point FFT plus snapshot read. All Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, and all ten Steinberg validators pass. All examples cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`.
+- Pluginval remains unavailable because earlier invocations repeatedly produced macOS crash dialogs. Manual signal-view interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
 
 ## Validation After Each Milestone
 
@@ -222,3 +234,4 @@ File drop completion evidence:
 - Manual piano-keyboard interaction in a production host.
 - Manual step-sequencer interaction in a production host.
 - Manual file-drop interaction in a production host.
+- Manual waveform and spectrum interaction in a production host.

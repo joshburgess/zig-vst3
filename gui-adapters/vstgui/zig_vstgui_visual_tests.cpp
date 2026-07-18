@@ -349,6 +349,41 @@ Snapshot graphs() {
     };
 }
 
+Snapshot signalViews() {
+    return {
+        "signal-views.png",
+        640,
+        180,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+            context.setFillColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            context.drawRect(VSTGUI::CRect(0, 0, 640, 180), VSTGUI::kDrawFilled);
+            const ZigVstguiGraphPoint waveform[] = {
+                {0.0, 0.0}, {0.125, 0.72}, {0.25, 0.1}, {0.375, -0.54}, {0.5, 0.0},
+                {0.625, 0.42}, {0.75, -0.08}, {0.875, -0.78}, {1.0, 0.0},
+            };
+            const ZigVstguiGraphPoint spectrum[] = {
+                {46.875, -71.0}, {93.75, -58.0}, {187.5, -42.0}, {375.0, -18.0},
+                {750.0, -7.0}, {1500.0, -13.0}, {3000.0, -28.0}, {6000.0, -45.0},
+                {12000.0, -62.0}, {20000.0, -78.0},
+            };
+            ZigVstgui::AccessibilityNode nodes[3];
+            const ZigVstguiGraphDescription descriptions[] = {
+                {"Output Waveform", ZIG_VSTGUI_GRAPH_WAVEFORM, ZIG_VSTGUI_GRAPH_MODULATION, {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Frame"}, {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"}, waveform, 9, 0, 0, 0},
+                {"Output Spectrum", ZIG_VSTGUI_GRAPH_SPECTRUM, ZIG_VSTGUI_GRAPH_PRIMARY, {20.0, 20000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"}, {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"}, spectrum, 10, 0, 0, 0},
+                {"Waiting", ZIG_VSTGUI_GRAPH_SPECTRUM, ZIG_VSTGUI_GRAPH_SECONDARY, {20.0, 20000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"}, {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"}, nullptr, 0, 0, 0, 0},
+            };
+            ZigVstgui::GraphView views[] = {
+                {VSTGUI::CRect(8, 8, 208, 172), descriptions[0], styles, &nodes[0]},
+                {VSTGUI::CRect(220, 8, 420, 172), descriptions[1], styles, &nodes[1]},
+                {VSTGUI::CRect(432, 8, 632, 172), descriptions[2], styles, &nodes[2]},
+            };
+            for (auto& view : views) view.draw(&context);
+        },
+    };
+}
+
 Snapshot xyPad() {
     return {
         "xy-pad.png",
@@ -769,6 +804,32 @@ double benchmarkFileDropDraw() {
     return benchmarkDraw(container, offscreen);
 }
 
+double benchmarkSignalViewsDraw() {
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 640, 180)));
+    container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+    ZigVstguiGraphPoint waveform[256] {};
+    ZigVstguiGraphPoint spectrum[256] {};
+    for (uint32_t index = 0; index < 256; ++index) {
+        const double normalized = static_cast<double>(index) / 255.0;
+        waveform[index] = {normalized, std::sin(normalized * 25.1327412287) * 0.8};
+        spectrum[index] = {20.0 * std::pow(1000.0, normalized), -84.0 + 72.0 * std::exp(-8.0 * normalized)};
+    }
+    const ZigVstguiGraphDescription descriptions[] = {
+        {"Waveform", ZIG_VSTGUI_GRAPH_WAVEFORM, ZIG_VSTGUI_GRAPH_MODULATION, {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Frame"}, {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"}, waveform, 256, 0, 0, 0},
+        {"Spectrum", ZIG_VSTGUI_GRAPH_SPECTRUM, ZIG_VSTGUI_GRAPH_PRIMARY, {20.0, 20000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"}, {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"}, spectrum, 256, 0, 0, 0},
+    };
+    ZigVstgui::AccessibilityNode accessibility[2];
+    container->addView(new ZigVstgui::GraphView(
+        VSTGUI::CRect(8, 8, 312, 172), descriptions[0], styles, &accessibility[0]
+    ));
+    container->addView(new ZigVstgui::GraphView(
+        VSTGUI::CRect(328, 8, 632, 172), descriptions[1], styles, &accessibility[1]
+    ));
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(640, 180), 1.0);
+    return benchmarkDraw(container, offscreen);
+}
+
 }
 
 int main(int argc, char** argv) {
@@ -785,6 +846,7 @@ int main(int argc, char** argv) {
         metersAndAssets(),
         productionControls(),
         graphs(),
+        signalViews(),
         xyPad(),
         editableEnvelope(),
         presetBrowsers(),
@@ -803,12 +865,14 @@ int main(int argc, char** argv) {
         const double piano_average = benchmarkPianoDraw();
         const double step_sequencer_average = benchmarkStepSequencerDraw();
         const double file_drop_average = benchmarkFileDropDraw();
+        const double signal_views_average = benchmarkSignalViewsDraw();
         std::fprintf(stderr, "visual regression warm render average: %.1f us\n", average);
         std::fprintf(stderr, "piano warm render average: %.1f us\n", piano_average);
         std::fprintf(stderr, "step sequencer warm render average: %.1f us\n", step_sequencer_average);
         std::fprintf(stderr, "file drop warm render average: %.1f us\n", file_drop_average);
+        std::fprintf(stderr, "signal views warm render average: %.1f us\n", signal_views_average);
         if (average > 300.0 || piano_average > 300.0 || step_sequencer_average > 300.0 ||
-            file_drop_average > 300.0) result = std::max(result, 6);
+            file_drop_average > 300.0 || signal_views_average > 300.0) result = std::max(result, 6);
     }
     VSTGUI::exit();
     return result;

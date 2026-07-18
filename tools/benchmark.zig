@@ -74,6 +74,8 @@ pub fn main() !void {
     (try benchParameterUpdates()).print();
     (try benchStateSaveLoad()).print();
     (try benchGuiScalarSnapshot()).print();
+    (try benchWaveformCapture()).print();
+    (try benchSpectrumAnalyzer()).print();
 }
 
 fn benchRawStream() !Benchmark {
@@ -186,6 +188,46 @@ fn benchGuiScalarSnapshot() !Benchmark {
     }
     std.mem.doNotOptimizeAway(checksum);
     return .{ .name = "GUI scalar snapshot store/load", .iterations = iterations, .elapsed_ns = try timer.read() };
+}
+
+fn benchWaveformCapture() !Benchmark {
+    var capture = plug.gui_graph.WaveformCapture(128).init();
+    capture.editorOpened();
+    defer capture.editorClosed();
+    var input: [frame_count]f32 = undefined;
+    fillInput(&input, 0.01);
+    var output: [128]plug.gui_graph.Point = undefined;
+
+    var timer = try Timer.start();
+    var checksum: f64 = 0.0;
+    for (0..iterations) |_| {
+        if (!capture.capture(&input)) return error.BenchmarkWaveformPublishFailed;
+        const count = capture.read(&output) orelse return error.BenchmarkWaveformReadFailed;
+        checksum += output[count - 1].y;
+    }
+    std.mem.doNotOptimizeAway(checksum);
+    return .{ .name = "GUI waveform capture/read", .iterations = iterations, .elapsed_ns = try timer.read() };
+}
+
+fn benchSpectrumAnalyzer() !Benchmark {
+    var analyzer = plug.gui_graph.SpectrumAnalyzer(128).init();
+    analyzer.editorOpened();
+    defer analyzer.editorClosed();
+    var input: [frame_count]f32 = undefined;
+    for (&input, 0..) |*sample, index| {
+        sample.* = @floatCast(std.math.sin(std.math.tau * 8.0 * @as(f64, @floatFromInt(index)) / 128.0));
+    }
+    var output: [64]plug.gui_graph.Point = undefined;
+
+    var timer = try Timer.start();
+    var checksum: f64 = 0.0;
+    for (0..iterations) |_| {
+        if (!analyzer.push(&input, 48_000.0)) return error.BenchmarkSpectrumPublishFailed;
+        const count = analyzer.read(&output) orelse return error.BenchmarkSpectrumReadFailed;
+        checksum += output[count - 1].y;
+    }
+    std.mem.doNotOptimizeAway(checksum);
+    return .{ .name = "GUI 128-point spectrum analysis/read", .iterations = iterations, .elapsed_ns = try timer.read() };
 }
 
 fn fillInput(buffer: []f32, scale: f32) void {

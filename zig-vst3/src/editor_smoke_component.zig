@@ -14,10 +14,12 @@ pub const cid = tuid.inlineUid(0x96F93E47, 0x21084D80, 0xA6A6B8C4, 0x6F94E68F);
 
 const EditorSmokeProcessor = struct {
     const MeterBank = plug_core.gui_telemetry.MeterBank(f64, 5);
-    const Waveform = plug_core.gui_graph.SnapshotSeries(64);
+    const Waveform = plug_core.gui_graph.WaveformCapture(64);
+    const Spectrum = plug_core.gui_graph.SpectrumAnalyzer(128);
 
     meters: MeterBank = MeterBank.init(0.0),
     waveform: Waveform = Waveform.init(),
+    spectrum: Spectrum = Spectrum.init(),
     processed_samples: u64 = 0,
 
     pub fn process(self: *EditorSmokeProcessor, parameters: anytype, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
@@ -41,19 +43,9 @@ const EditorSmokeProcessor = struct {
             _ = self.meters.publish(3, 0.0);
             _ = self.meters.publish(4, @floatFromInt((self.processed_samples / 6_000) % 8));
         }
-        if (self.waveform.producing()) {
-            var points: [64]plug_core.gui_graph.Point = undefined;
-            const count = @min(context.frameCount(), points.len);
-            if (context.outputChannel(0)) |output| {
-                for (points[0..count], 0..) |*point, index| {
-                    const source_index = if (count <= 1) 0 else index * (context.frameCount() - 1) / (count - 1);
-                    point.* = .{
-                        .x = if (count <= 1) 0.0 else -1.0 + 2.0 * @as(f64, @floatFromInt(index)) / @as(f64, @floatFromInt(count - 1)),
-                        .y = @floatCast(output[source_index]),
-                    };
-                }
-                _ = self.waveform.publish(points[0..count]);
-            }
+        if (context.outputChannel(0)) |output| {
+            _ = self.waveform.capture(output);
+            _ = self.spectrum.push(output, context.sampleRate());
         }
         self.processed_samples +%= context.frameCount();
     }
@@ -65,16 +57,21 @@ const EditorSmokeProcessor = struct {
     pub fn guiTelemetryEditorOpened(self: *EditorSmokeProcessor) void {
         self.meters.editorOpened();
         self.waveform.editorOpened();
+        self.spectrum.editorOpened();
     }
 
     pub fn guiTelemetryEditorClosed(self: *EditorSmokeProcessor) void {
         self.meters.editorClosed();
         self.waveform.editorClosed();
+        self.spectrum.editorClosed();
     }
 
     pub fn guiGraphLoad(self: *EditorSmokeProcessor, source_id: types.uint32, output: []plug_core.gui_graph.Point) usize {
-        if (source_id != 0) return 0;
-        return self.waveform.read(output) orelse 0;
+        return switch (source_id) {
+            0 => self.waveform.read(output) orelse 0,
+            1 => self.spectrum.read(output) orelse 0,
+            else => 0,
+        };
     }
 };
 
@@ -100,13 +97,18 @@ test "editor smoke graph source publishes bounded waveform snapshots" {
     source.editorOpened();
     defer source.editorClosed();
 
-    const points = [_]plug_core.gui_graph.Point{
-        .{ .x = -1.0, .y = -0.5 },
-        .{ .x = 1.0, .y = 0.5 },
-    };
-    try std.testing.expect(Effect.processorInstance(component).waveform.publish(&points));
+    const samples = [_]f64{ -0.5, 0.5 };
+    try std.testing.expect(Effect.processorInstance(component).waveform.capture(&samples));
     var loaded: [4]plug_core.gui_graph.Point = undefined;
     try std.testing.expectEqual(@as(usize, 2), source.loadGraph(0, &loaded));
     try std.testing.expectEqual(@as(f64, 0.5), loaded[1].y);
-    try std.testing.expectEqual(@as(usize, 0), source.loadGraph(1, &loaded));
+    var tone: [128]f64 = undefined;
+    for (&tone, 0..) |*sample, index| {
+        sample.* = std.math.sin(std.math.tau * 8.0 * @as(f64, @floatFromInt(index)) / 128.0);
+    }
+    try std.testing.expect(Effect.processorInstance(component).spectrum.push(&tone, 48_000.0));
+    var spectrum: [64]plug_core.gui_graph.Point = undefined;
+    try std.testing.expectEqual(@as(usize, 64), source.loadGraph(1, &spectrum));
+    try std.testing.expect(spectrum[7].y > -1.0);
+    try std.testing.expectEqual(@as(usize, 0), source.loadGraph(2, &loaded));
 }

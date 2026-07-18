@@ -3,6 +3,7 @@
 #include "pluginterfaces/base/keycodes.h"
 #include "vstgui/lib/cdrawcontext.h"
 #include "vstgui/lib/cframe.h"
+#include "vstgui/lib/cgraphicspath.h"
 #include "vstgui/lib/events.h"
 
 #include <algorithm>
@@ -507,6 +508,31 @@ void GraphView::syncAccessibility() {
         );
         accessibility->setRange(description.y_axis.minimum, description.y_axis.maximum, selected.y);
         accessibility->setSelected(true);
+    } else if (description.kind == ZIG_VSTGUI_GRAPH_WAVEFORM) {
+        double peak = 0.0;
+        for (const auto& point : points) peak = std::max(peak, std::abs(point.position.y));
+        if (points.empty()) std::snprintf(text, sizeof(text), "No waveform data");
+        else std::snprintf(text, sizeof(text), "%u samples. Peak %.3f", static_cast<uint32_t>(points.size()), peak);
+        accessibility->clearRange();
+        accessibility->setSelected(false);
+    } else if (description.kind == ZIG_VSTGUI_GRAPH_SPECTRUM) {
+        if (points.empty()) {
+            std::snprintf(text, sizeof(text), "No spectrum data");
+        } else {
+            const auto peak = std::max_element(points.begin(), points.end(), [](const PointState& left, const PointState& right) {
+                return left.position.y < right.position.y;
+            });
+            std::snprintf(
+                text,
+                sizeof(text),
+                "%u bins. Peak %.0f Hz at %.1f dB",
+                static_cast<uint32_t>(points.size()),
+                peak->position.x,
+                peak->position.y
+            );
+        }
+        accessibility->clearRange();
+        accessibility->setSelected(false);
     } else {
         std::snprintf(text, sizeof(text), "%u points. No point selected", static_cast<uint32_t>(points.size()));
         accessibility->clearRange();
@@ -525,17 +551,40 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
 
     context->setFrameColor(style.foreground);
     context->setLineWidth(1.0);
-    for (uint32_t division = 1; division < 4; ++division) {
-        const double x = bounds.left + bounds.getWidth() * division / 4.0;
-        const double y = bounds.top + bounds.getHeight() * division / 4.0;
-        context->drawLine(VSTGUI::CPoint(x, bounds.top), VSTGUI::CPoint(x, bounds.bottom));
-        context->drawLine(VSTGUI::CPoint(bounds.left, y), VSTGUI::CPoint(bounds.right, y));
+    if (auto grid = VSTGUI::owned(context->createGraphicsPath())) {
+        for (uint32_t division = 1; division < 4; ++division) {
+            const double x = bounds.left + bounds.getWidth() * division / 4.0;
+            const double y = bounds.top + bounds.getHeight() * division / 4.0;
+            grid->beginSubpath(VSTGUI::CPoint(x, bounds.top));
+            grid->addLine(VSTGUI::CPoint(x, bounds.bottom));
+            grid->beginSubpath(VSTGUI::CPoint(bounds.left, y));
+            grid->addLine(VSTGUI::CPoint(bounds.right, y));
+        }
+        context->drawGraphicsPath(grid, VSTGUI::CDrawContext::kPathStroked);
+    } else {
+        for (uint32_t division = 1; division < 4; ++division) {
+            const double x = bounds.left + bounds.getWidth() * division / 4.0;
+            const double y = bounds.top + bounds.getHeight() * division / 4.0;
+            context->drawLine(VSTGUI::CPoint(x, bounds.top), VSTGUI::CPoint(x, bounds.bottom));
+            context->drawLine(VSTGUI::CPoint(bounds.left, y), VSTGUI::CPoint(bounds.right, y));
+        }
+    }
+
+    if (description.kind == ZIG_VSTGUI_GRAPH_WAVEFORM &&
+        description.y_axis.minimum <= 0.0 && description.y_axis.maximum >= 0.0) {
+        const double zero = viewPoint({description.x_axis.minimum, 0.0}).y;
+        context->setFrameColor(style.border);
+        context->setLineWidth(1.5);
+        context->drawLine(VSTGUI::CPoint(bounds.left, zero), VSTGUI::CPoint(bounds.right, zero));
     }
 
     if (points.empty()) {
         context->setFont(styles.font(TypographyRole::body));
         context->setFontColor(style.foreground);
-        context->drawString(editable() ? "Press Return or click to add a point" : "No graph data", bounds, VSTGUI::kCenterText);
+        const char* message = editable() ? "Press Return or click to add a point" :
+            description.kind == ZIG_VSTGUI_GRAPH_WAVEFORM ? "No waveform data" :
+            description.kind == ZIG_VSTGUI_GRAPH_SPECTRUM ? "No spectrum data" : "No graph data";
+        context->drawString(message, bounds, VSTGUI::kCenterText);
         setDirty(false);
         return;
     }
@@ -547,9 +596,35 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
         curve_color = styles.resolve(ComponentKind::graph, VisualState::pressed).accent;
     }
     context->setFrameColor(curve_color);
-    context->setLineWidth(2.0);
-    for (std::size_t index = 1; index < points.size(); ++index) {
-        context->drawLine(viewPoint(points[index - 1].position), viewPoint(points[index].position));
+    if (description.kind == ZIG_VSTGUI_GRAPH_SPECTRUM) {
+        context->setLineWidth(std::clamp(bounds.getWidth() / std::max(1.0, static_cast<double>(points.size())) * 0.7, 1.0, 5.0));
+        if (auto path = VSTGUI::owned(context->createGraphicsPath())) {
+            for (const auto& point : points) {
+                const auto top = viewPoint(point.position);
+                const auto bottom = viewPoint({point.position.x, description.y_axis.minimum});
+                path->beginSubpath(bottom);
+                path->addLine(top);
+            }
+            context->drawGraphicsPath(path, VSTGUI::CDrawContext::kPathStroked);
+        } else {
+            for (const auto& point : points) {
+                context->drawLine(
+                    viewPoint({point.position.x, description.y_axis.minimum}),
+                    viewPoint(point.position)
+                );
+            }
+        }
+    } else {
+        context->setLineWidth(2.0);
+        if (auto path = VSTGUI::owned(context->createGraphicsPath())) {
+            path->beginSubpath(viewPoint(points.front().position));
+            for (std::size_t index = 1; index < points.size(); ++index) path->addLine(viewPoint(points[index].position));
+            context->drawGraphicsPath(path, VSTGUI::CDrawContext::kPathStroked);
+        } else {
+            for (std::size_t index = 1; index < points.size(); ++index) {
+                context->drawLine(viewPoint(points[index - 1].position), viewPoint(points[index].position));
+            }
+        }
     }
     if (editable()) {
         const bool focused = getFrame() && getFrame()->getFocusView() == this;
@@ -706,6 +781,11 @@ bool GraphControl::build(
     graph_component.accessibility().setRole(AccessibilityRole::graph);
     graph_component.accessibility().setName(description.title ? description.title : "Graph");
     std::string semantic_description = description.dynamic ? "Updating graph" : "Static graph";
+    if (description.kind == ZIG_VSTGUI_GRAPH_WAVEFORM) {
+        semantic_description = description.dynamic ? "Updating waveform" : "Static waveform";
+    } else if (description.kind == ZIG_VSTGUI_GRAPH_SPECTRUM) {
+        semantic_description = description.dynamic ? "Updating frequency spectrum" : "Static frequency spectrum";
+    }
     if (description.point_capacity > 0) semantic_description = "Editable envelope. Brackets select points. Arrows adjust. Return adds. Delete removes.";
     if (description.x_axis.label && description.x_axis.label[0]) semantic_description += ". X: " + std::string(description.x_axis.label);
     if (description.y_axis.label && description.y_axis.label[0]) semantic_description += ". Y: " + std::string(description.y_axis.label);

@@ -203,9 +203,18 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .{
                     .title = "Waveform",
                     .kind = .waveform,
-                    .x_axis = .{ .minimum = -1.0, .maximum = 1.0, .label = "Time" },
+                    .x_axis = .{ .minimum = 0.0, .maximum = 1.0, .label = "Frame" },
                     .y_axis = .{ .minimum = -1.0, .maximum = 1.0, .label = "Level" },
                     .source_id = 0,
+                    .dynamic = true,
+                    .maximum_refresh_hz = 30,
+                },
+                .{
+                    .title = "Spectrum",
+                    .kind = .spectrum,
+                    .x_axis = .{ .minimum = 20.0, .maximum = 24_000.0, .scale = .logarithmic, .label = "Hz" },
+                    .y_axis = .{ .minimum = -96.0, .maximum = 0.0, .scale = .decibels, .label = "dB" },
+                    .source_id = 1,
                     .dynamic = true,
                     .maximum_refresh_hz = 30,
                 },
@@ -299,7 +308,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .groups = &.{
                     .{ .title = "Continuous", .parameter_count = 1, .style = .{ .accent = 0x7ce8c5ff }, .xy_pad_count = 1 },
                     .{ .title = "Discrete", .first_parameter = 1, .parameter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0xe8c77cff } },
-                    .{ .title = "Telemetry", .first_parameter = 4, .meter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0x7caee8ff }, .graph_count = 2 },
+                    .{ .title = "Telemetry", .first_parameter = 4, .meter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0x7caee8ff }, .graph_count = 3 },
                 },
             },
         });

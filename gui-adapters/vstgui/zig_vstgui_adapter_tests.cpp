@@ -1157,6 +1157,18 @@ int testGraphs() {
     ZigVstgui::GraphView empty(VSTGUI::CRect(), empty_graph, styles, &accessibility);
     if (!empty.valid() || empty.pointCount() != 0) return 4;
 
+    auto empty_spectrum = empty_graph;
+    empty_spectrum.title = "Spectrum";
+    empty_spectrum.kind = ZIG_VSTGUI_GRAPH_SPECTRUM;
+    empty_spectrum.x_axis = {20.0, 20'000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"};
+    empty_spectrum.y_axis = {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"};
+    ZigVstgui::AccessibilityNode spectrum_accessibility;
+    ZigVstgui::GraphView spectrum(VSTGUI::CRect(), empty_spectrum, styles, &spectrum_accessibility);
+    if (!spectrum.valid() || spectrum_accessibility.valueText() != "No spectrum data") return 15;
+    const ZigVstguiGraphPoint spectrum_points[] = {{100.0, -24.0}, {1'000.0, -3.0}, {10'000.0, -48.0}};
+    if (!spectrum.setPoints(spectrum_points, 3) ||
+        spectrum_accessibility.valueText().find("Peak 1000 Hz at -3.0 dB") == std::string::npos) return 16;
+
     CallbackState state;
     state.graph_points[0] = {-1.0, -0.5};
     state.graph_points[1] = {1.0, 0.5};
@@ -1169,7 +1181,9 @@ int testGraphs() {
     ZigVstgui::GraphControl control;
     auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
     if (!control.build(container, dynamic_graph, {&state, loadGraph}, {}, styles)) return 5;
-    if (control.graphView()->pointCount() != 2 || state.graph_load_count != 1) return 6;
+    if (control.graphView()->pointCount() != 2 || state.graph_load_count != 1 ||
+        control.accessibilityNode().valueText().find("2 samples") == std::string::npos ||
+        control.accessibilityNode().description().find("Updating waveform") == std::string::npos) return 6;
     if (control.running()) return 7;
     control.start();
     if (!control.running()) return 8;

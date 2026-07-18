@@ -111,7 +111,7 @@ Each run compares decoded pixels with a channel tolerance of 80 and allows at mo
 cmake --build .vst3-sdk/vstgui-adapter-build --target zig_vstgui_visual_tests_update
 ```
 
-The same harness measures repeated warm drawing of a live slider, active peak meter, piano, step sequencer, and file-drop target. `file-drops.png` covers idle, acceptable, and recoverable handler-failure states. The harness reports the best of three 100-frame batches so an unrelated scheduler pause does not masquerade as rendering cost. Each dedicated benchmark fails above the 300 microsecond warm-frame budget recorded in `docs/gui-baseline.md`.
+The same harness measures repeated warm drawing of a live slider, active peak meter, piano, step sequencer, file-drop target, and maximum-capacity waveform and spectrum pair. `file-drops.png` covers idle, acceptable, and recoverable handler-failure states. `signal-views.png` covers a waveform, populated spectrum, and empty spectrum. The harness reports the best of three 100-frame batches so an unrelated scheduler pause does not masquerade as rendering cost. Each dedicated benchmark fails above the 300 microsecond warm-frame budget recorded in `docs/gui-baseline.md`.
 
 ### Accessibility Semantics
 
@@ -135,13 +135,15 @@ Use these measurements before adding render threads, dirty-region bookkeeping, o
 
 ## Real-time-safe Telemetry
 
-Parameter controls do not need an audio-to-GUI message queue. For meters and analyzers, use `plug.gui_telemetry`:
+Parameter controls do not need an audio-to-GUI message queue. For meters and analyzers, use `plug.gui_telemetry` and `plug.gui_graph`:
 
 - `ScalarSnapshot(f32)` or `ScalarSnapshot(f64)` stores the latest scalar without a lock.
 - `SpscQueue(T, capacity)` transports bounded visualization records from one producer to one consumer. A full queue drops new records and counts them.
 - `RepaintCoalescer` allows only one pending repaint request.
 - `EditorActivity` lets the processor skip editor-only analysis while every editor is closed.
 - `MeterBank(Float, count)` combines fixed scalar snapshots with editor activity. `publish` is a bounded atomic store while any editor is open and a no-op while all editors are closed.
+- `WaveformCapture(capacity)` performs bounded block reduction and publishes normalized sample points.
+- `SpectrumAnalyzer(fft_size)` performs one bounded radix-2 FFT at most once per process call and publishes decibel bins through a fixed snapshot.
 
 The VSTGUI adapter provides peak, stereo, and gain-reduction meters. Meter descriptions select one or two scalar source IDs. A 33 millisecond GUI timer loads the latest snapshots, applies peak hold and decay, updates semantic value text, and invalidates only when the displayed state changes. The timer starts after attachment and stops before removal. Editors without meters create no timer.
 
@@ -149,7 +151,7 @@ Peak and gain-reduction sources use normalized values from 0 to 1. Stereo meters
 
 Overflow is a visual quality loss, never a reason to wait on the audio thread. The processor must not allocate, lock a GUI mutex, call the operating system, or perform unbounded work for an editor.
 
-Spectrum analyzers are intentionally not part of the current component set. Define a representative plugin, bin count, update rate, queue capacity, and overflow behavior before adding one.
+The gallery and channel-strip processors both use 30 Hz views. The channel strip captures up to 128 waveform points and uses a 128-sample FFT with 64 positive-frequency bins. Snapshot contention or insufficient reader capacity drops a visual frame. It never blocks processing or changes audio output.
 
 ## Persistent Editor State
 

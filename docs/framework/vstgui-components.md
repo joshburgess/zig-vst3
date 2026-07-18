@@ -66,7 +66,7 @@ The complete [channel strip example](../../examples/channel_strip_plugin.zig) us
 
 4. Publish meter values through `MeterBank`. Guard extra audio-thread calculations with `producing()` and publish only bounded atomic values.
 
-5. Keep fixed graph points in static storage. For dynamic data, use `SnapshotSeries`, stop publication when the last editor closes, and cap editor refresh at 60 Hz or less.
+5. Keep fixed graph points in static storage. For live audio, use `WaveformCapture` or `SpectrumAnalyzer`, stop publication when the last editor closes, and cap editor refresh at 60 Hz or less.
 
 6. Select a theme and layout in `Skin`, then use editor and group style overrides only for semantic colors.
 
@@ -176,7 +176,7 @@ Dragging edits both parameters as one ordered gesture. Left and Right adjust the
 | --- | --- |
 | Continuous | Bipolar control, modulation marker, exact numeric entry, and linked XY pad |
 | Discrete | Bypass toggle, mode dropdown, and segmented voice count |
-| Telemetry | Peak, stereo, and gain-reduction meters plus a live waveform graph |
+| Telemetry | Peak, stereo, and gain-reduction meters plus live waveform and spectrum graphs |
 | Resources | Embedded PNG, deterministic SVG, font fallback, and custom overlay drawing |
 | Lifecycle | Adaptive breakpoint, resize action, drag handle, scaling, independent editor instances, and persistent preset search and selection |
 
@@ -212,18 +212,25 @@ Add graphs through `EditorDescription.graphs`. A `Graph` declares a title, serie
 }},
 ```
 
-Fixed graphs copy at most 256 finite points when the editor is created and never create a refresh timer. Use `gui_graph.SnapshotSeries` for waveforms or spectra produced at runtime. Dynamic graphs require `maximum_refresh_hz` from 1 through 60. Publication stops while no editor is open, and a busy reader may drop a visualization frame rather than blocking the producer.
+Fixed graphs copy at most 256 finite points when the editor is created and never create a refresh timer. Dynamic graphs require `maximum_refresh_hz` from 1 through 60. Publication stops while no editor is open, and a busy reader may drop a visualization frame rather than blocking the producer.
+
+`gui_graph.WaveformCapture(capacity)` reduces the latest audio block to 1–256 evenly spaced points with normalized frame positions. `gui_graph.SpectrumAnalyzer(fft_size)` accepts power-of-two FFT sizes from 8 through 512, applies a Hann window, publishes the positive-frequency bins as decibels, and performs at most one radix-2 transform per process call after a 50 percent hop. Both types use fixed storage and the nonblocking `SnapshotSeries` handoff. They allocate no memory, acquire no locks, and do no sample reduction or spectral work while every editor is closed.
 
 A `SimpleStereoEffect` processor exposes dynamic points with `guiGraphLoad`. Its existing telemetry open and close hooks should update the graph snapshot activity count:
 
 ```zig
 pub fn guiGraphLoad(self: *Processor, source_id: u32, output: []gui_graph.Point) usize {
-    if (source_id != waveform_source) return 0;
-    return self.waveform.read(output) orelse 0;
+    return switch (source_id) {
+        waveform_source => self.waveform.read(output) orelse 0,
+        spectrum_source => self.spectrum.read(output) orelse 0,
+        else => 0,
+    };
 }
 ```
 
-The renderer clamps coordinates to the declared range, supports linear and logarithmic axes, and treats decibel axes as linear dB values. An empty series displays `No graph data` instead of a blank panel. Axis labels, graph title, update mode, and point count are available through toolkit-neutral semantics.
+Call `waveform.capture(output)` and `spectrum.push(output, context.sampleRate())` after producing the output block. The spectrum excludes DC and emits frequencies from one FFT bin through Nyquist. Declare a logarithmic frequency axis and a decibel y axis that match the intended visible range.
+
+The renderer clamps coordinates to the declared range, supports linear and logarithmic axes, and treats decibel axes as linear dB values. Waveforms receive a visible zero line and a batched curve. Spectra use a batched set of magnitude bars. Batching keeps draw-call count constant as point count grows. Empty views display `No waveform data` or `No spectrum data`. Toolkit-neutral semantics report waveform sample count and peak magnitude, or spectrum bin count and the strongest frequency and level.
 
 ### Editable Envelopes
 
@@ -334,6 +341,7 @@ Supported authoring surface:
 - `EditorDescription`, `Composition`, `Group`, `StyleOverride`, and `createEditor`.
 - `Meter`, meter source wiring, `MeterBank`, and GUI telemetry presentation.
 - `Graph`, graph axes and style roles, and grouped graph composition.
+- `WaveformCapture`, `SpectrumAnalyzer`, activity-gated dynamic graph sources, and production waveform and spectrum rendering.
 - `EnvelopePoint`, bounded editable envelopes, stable selection, snapping, and parameter-backed point gestures.
 - `editor_state.Store`, typed editor values, bounded serialization, migrations, and persistent envelope bindings.
 - `XYPad`, ordered two-parameter gestures, per-axis semantics, and grouped XY-pad composition.
@@ -348,10 +356,10 @@ Experimental extensions:
 
 - `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and `Canvas` drawing functions.
 - Rotary controls currently have no plugin consumer. Bipolar and decibel controls each have one.
-- Fixed graph point storage, dynamic graph sources, and `SnapshotSeries`. Each source mode currently has one production consumer.
+- Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
 - `FileDrop`, bounded extension filtering, synchronous path copying, and recoverable rejection feedback. It currently has one gallery consumer.
-- New analyzer, modulation, and GPU components.
+- New modulation and GPU components.
 
 Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.
 

@@ -245,6 +245,25 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .selection_state_id = envelope_selection_state_id,
                     .envelope_state_id = envelope_state_id,
                 },
+                .{
+                    .title = "Output Waveform",
+                    .kind = .waveform,
+                    .style = .modulation,
+                    .x_axis = .{ .minimum = 0.0, .maximum = 1.0, .label = "Frame" },
+                    .y_axis = .{ .minimum = -1.0, .maximum = 1.0, .label = "Level" },
+                    .source_id = 0,
+                    .dynamic = true,
+                    .maximum_refresh_hz = 30,
+                },
+                .{
+                    .title = "Output Spectrum",
+                    .kind = .spectrum,
+                    .x_axis = .{ .minimum = 20.0, .maximum = 24_000.0, .scale = .logarithmic, .label = "Hz" },
+                    .y_axis = .{ .minimum = -96.0, .maximum = 0.0, .scale = .decibels, .label = "dB" },
+                    .source_id = 1,
+                    .dynamic = true,
+                    .maximum_refresh_hz = 30,
+                },
             },
             .preset_browsers = &.{.{
                 .title = "Channel Presets",
@@ -295,7 +314,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                         .meter_count = 2,
                         .first_xy_pad = 1,
                         .style = .{ .accent = 0x35866aff, .border = 0x719789ff },
-                        .graph_count = 2,
+                        .graph_count = 4,
                     },
                 },
             },
@@ -305,8 +324,12 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
 
 const ChannelStripProcessor = struct {
     const MeterBank = core.gui_telemetry.MeterBank(f64, 3);
+    const Waveform = core.gui_graph.WaveformCapture(128);
+    const Spectrum = core.gui_graph.SpectrumAnalyzer(128);
 
     meters: MeterBank = MeterBank.init(0.0),
+    waveform: Waveform = Waveform.init(),
+    spectrum: Spectrum = Spectrum.init(),
 
     pub fn process(
         self: *ChannelStripProcessor,
@@ -364,6 +387,10 @@ const ChannelStripProcessor = struct {
                 20.0 * std.math.log10(maximum_unshaped / maximum_shaped);
             self.publishTelemetry(peaks[0], peaks[1], reduction_db / 24.0);
         }
+        if (context.outputChannel(0)) |output| {
+            _ = self.waveform.capture(output);
+            _ = self.spectrum.push(output, context.sampleRate());
+        }
     }
 
     fn publishTelemetry(self: *ChannelStripProcessor, left: f64, right: f64, reduction: f64) void {
@@ -378,10 +405,22 @@ const ChannelStripProcessor = struct {
 
     pub fn guiTelemetryEditorOpened(self: *ChannelStripProcessor) void {
         self.meters.editorOpened();
+        self.waveform.editorOpened();
+        self.spectrum.editorOpened();
     }
 
     pub fn guiTelemetryEditorClosed(self: *ChannelStripProcessor) void {
         self.meters.editorClosed();
+        self.waveform.editorClosed();
+        self.spectrum.editorClosed();
+    }
+
+    pub fn guiGraphLoad(self: *ChannelStripProcessor, source_id: types.uint32, output: []core.gui_graph.Point) usize {
+        return switch (source_id) {
+            0 => self.waveform.read(output) orelse 0,
+            1 => self.spectrum.read(output) orelse 0,
+            else => 0,
+        };
     }
 };
 
@@ -523,16 +562,30 @@ test "channel strip telemetry is activity gated and instance isolated" {
     first.guiTelemetryEditorOpened();
     first.guiTelemetryEditorOpened();
     first.publishTelemetry(0.75, 0.5, 0.25);
+    var signal: [128]f64 = undefined;
+    for (&signal, 0..) |*sample, index| {
+        sample.* = std.math.sin(std.math.tau * 8.0 * @as(f64, @floatFromInt(index)) / 128.0);
+    }
+    try std.testing.expect(first.waveform.capture(&signal));
+    try std.testing.expect(first.spectrum.push(&signal, 48_000.0));
     try std.testing.expectEqual(@as(f64, 0.75), first.guiTelemetryLoad(0));
     try std.testing.expectEqual(@as(f64, 0.5), first.guiTelemetryLoad(1));
     try std.testing.expectEqual(@as(f64, 0.25), first.guiTelemetryLoad(2));
     try std.testing.expectEqual(@as(f64, 0.0), second.guiTelemetryLoad(0));
+    var waveform: [128]core.gui_graph.Point = undefined;
+    var spectrum: [64]core.gui_graph.Point = undefined;
+    try std.testing.expectEqual(@as(usize, 128), first.guiGraphLoad(0, &waveform));
+    try std.testing.expectEqual(@as(usize, 64), first.guiGraphLoad(1, &spectrum));
+    try std.testing.expectEqual(@as(usize, 0), second.guiGraphLoad(0, &waveform));
+    try std.testing.expect(spectrum[7].y > -1.0);
 
     first.guiTelemetryEditorClosed();
     first.publishTelemetry(0.5, 0.5, 0.5);
     try std.testing.expectEqual(@as(f64, 0.5), first.guiTelemetryLoad(0));
     first.guiTelemetryEditorClosed();
     first.publishTelemetry(1.0, 1.0, 1.0);
+    try std.testing.expect(!first.waveform.capture(&signal));
+    try std.testing.expect(!first.spectrum.push(&signal, 48_000.0));
     try std.testing.expectEqual(@as(f64, 0.5), first.guiTelemetryLoad(0));
 }
 

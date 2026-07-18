@@ -38,6 +38,8 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(gui_preset_browser, "Browser"));
     try std.testing.expect(@hasDecl(gui_telemetry, "ScalarSnapshot"));
     try std.testing.expect(@hasDecl(gui_graph, "SnapshotSeries"));
+    try std.testing.expect(@hasDecl(gui_graph, "WaveformCapture"));
+    try std.testing.expect(@hasDecl(gui_graph, "SpectrumAnalyzer"));
     try std.testing.expect(@hasDecl(gui_piano, "Keyboard"));
     try std.testing.expect(@hasDecl(gui_step_sequencer, "Sequencer"));
     try std.testing.expect(@hasDecl(gui_file_drop, "DropZone"));
