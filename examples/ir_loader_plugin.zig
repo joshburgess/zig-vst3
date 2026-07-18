@@ -15,6 +15,8 @@ pub const ir_waveform_source_id: u32 = 100;
 pub const ir_action_group_id: u32 = 1;
 pub const clear_ir_action_id: u32 = 1;
 pub const ir_name_state_id: u32 = 1;
+pub const ir_zoom_state_id: u32 = 2;
+pub const ir_x_offset_state_id: u32 = 3;
 pub const maximum_ir_frames: usize = 131_072;
 pub const convolution_partition_size: usize = 512;
 
@@ -55,6 +57,8 @@ const AudioImporter = vst3.vstgui.DecodedAudioFileImporter(maximum_ir_frames);
 const default_ir_name = core.editor_state.Text.init("Untitled IR") catch unreachable;
 const IREditorState = core.editor_state.Store(1, &.{
     .{ .id = ir_name_state_id, .default = .{ .text = default_ir_name } },
+    .{ .id = ir_zoom_state_id, .default = .{ .scalar = 1.0 } },
+    .{ .id = ir_x_offset_state_id, .default = .{ .scalar = 0.0 } },
 });
 
 const IRControllerState = struct {
@@ -230,6 +234,11 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .source = .controller,
                 .dynamic = true,
                 .maximum_refresh_hz = 20,
+                .viewport = .{
+                    .maximum_zoom = 128.0,
+                    .zoom_state_id = ir_zoom_state_id,
+                    .x_offset_state_id = ir_x_offset_state_id,
+                },
             }},
             .file_importers = &.{.{
                 .id = ir_import_id,

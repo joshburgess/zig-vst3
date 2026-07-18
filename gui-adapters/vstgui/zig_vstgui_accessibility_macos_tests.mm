@@ -75,7 +75,7 @@ int main() {
         };
         const ZigVstguiMeterDescription meters[] = {{"Level", ZIG_VSTGUI_METER_PEAK, 0, 0}};
         const ZigVstguiGraphPoint points[] = {{0.0, 0.0}, {1.0, 1.0}};
-        const ZigVstguiGraphDescription graphs[] = {{
+        ZigVstguiGraphDescription graphs[] = {{
             "Transfer",
             ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION,
             ZIG_VSTGUI_GRAPH_PRIMARY,
@@ -87,6 +87,9 @@ int main() {
             0,
             0,
         }};
+        graphs[0].viewport = {
+            1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 8.0, 1.0, 0.0, 0.0, 1.25, 0.1, 0, 0, 0,
+        };
         CallbackState state;
         ZigVstguiCallbacks callbacks {};
         callbacks.userdata = &state;
@@ -151,6 +154,9 @@ int main() {
             !editor.parameterValue(20, value) || std::abs(value) > 1e-9) return 23;
         [exact setAccessibilityValue:@"0.42"];
         if (!editor.parameterValue(10, value) || std::abs(value - 0.42) > 1e-9) return 24;
+        [graph accessibilityPerformIncrement];
+        if (![[graph accessibilityValueDescription] containsString:@"Zoom 125%"] ||
+            std::abs([[graph accessibilityValue] doubleValue] - 1.25) > 1e-9) return 30;
         [editable_name setAccessibilityValue:@"Bright Hall"];
         if (state.editor_text != "Bright Hall" || ![[editable_name accessibilityValue] isEqualToString:@"Bright Hall"]) return 28;
         if (![[progress_element accessibilityValueDescription] containsString:@"42%"] ||

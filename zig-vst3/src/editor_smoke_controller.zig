@@ -29,6 +29,8 @@ pub const show_analyzer_state_id: u32 = 8;
 pub const step_selection_state_id: u32 = 9;
 pub const imported_file_count_state_id: u32 = 10;
 pub const gallery_label_state_id: u32 = 11;
+pub const waveform_zoom_state_id: u32 = 12;
+pub const waveform_x_offset_state_id: u32 = 13;
 
 const gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
@@ -54,6 +56,8 @@ pub const GalleryEditorState = plug_core.editor_state.Store(1, &.{
     .{ .id = step_selection_state_id, .default = .{ .index = 1 } },
     .{ .id = imported_file_count_state_id, .default = .{ .index = 0 } },
     .{ .id = gallery_label_state_id, .default = .{ .text = gallery_label } },
+    .{ .id = waveform_zoom_state_id, .default = .{ .scalar = 1.0 } },
+    .{ .id = waveform_x_offset_state_id, .default = .{ .scalar = 0.0 } },
 });
 
 fn applyPreset(
@@ -236,6 +240,11 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .source_id = 0,
                     .dynamic = true,
                     .maximum_refresh_hz = 30,
+                    .viewport = .{
+                        .maximum_zoom = 64.0,
+                        .zoom_state_id = waveform_zoom_state_id,
+                        .x_offset_state_id = waveform_x_offset_state_id,
+                    },
                 },
                 .{
                     .title = "Spectrum",

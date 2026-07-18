@@ -411,6 +411,29 @@ Polling is bounded to 1–60 Hz while the editor is open. Unchanged determinate 
 
 `EditableLabel`, `ProgressIndicator`, and `ProgressSnapshot` are supported. The gallery and production IR loader use the same public declaration, callback, validation, rendering, lifecycle, and accessibility contracts.
 
+## Graph Viewports
+
+Add a bounded viewport to any graph through its public declaration:
+
+```zig
+.viewport = .{
+    .axes = .horizontal,
+    .maximum_zoom = 128.0,
+    .zoom_state_id = ir_zoom_state_id,
+    .x_offset_state_id = ir_x_offset_state_id,
+},
+```
+
+The transform supports horizontal, vertical, or uniform two-axis navigation. Zoom is bounded to 1x–128x. Initial offsets must fit the visible span, inactive axes must have zero offsets, zoom multipliers must be in `(1, 4]`, and scroll steps must be in `(0, 1]`. Invalid declarations fail before native editor construction.
+
+State field IDs are optional. When present, each field must be a typed editor-state scalar. Zoom and active offsets commit through one bounded callback so a rejected write cannot leave a partially persisted transform. Reopening the editor restores those values after clamping them to the current declaration.
+
+Use a pointer wheel or trackpad to pan. Command-wheel or Control-wheel zooms around the pointer, as does a native pinch gesture. Plus and minus zoom, arrows pan, Shift with arrows moves faster, Page Up and Page Down move one visible page, Home and End reach a boundary, and 0 restores the initial transform. On an editable graph, plain arrows continue editing the selected point; Command or Control with arrows pans instead.
+
+Each viewport draws a numeric zoom value and a proportional navigator. The accessibility value includes zoom and position. Increment and decrement zoom, set-value selects an exact zoom, and press resets the transform. The macOS bridge exposes the zoom range and actions through the native graph element. Windows uses the same toolkit-neutral range and action contract.
+
+`Viewport` and `ViewportAxes` are supported. The gallery and production IR loader share their public declaration, bounded model, persistence, interactions, rendering, and accessibility semantics.
+
 ## API Status
 
 The project remains pre-1.0, so even the supported surface does not yet carry a long-term compatibility promise. The supported list is limited to contracts exercised by both the component gallery and a production-style editor.
@@ -430,6 +453,7 @@ Supported authoring surface:
 - `ActionButton`, primary, secondary, destructive and icon-only roles, grouped toolbar layout, inline confirmation, and recoverable failure feedback.
 - `EditableLabel`, bounded typed editor-state text, validation, inline recovery, external refresh, and native text-field semantics.
 - `ProgressIndicator` and `ProgressSnapshot`, bounded controller telemetry, determinate and indeterminate presentation, state text, and native progress semantics.
+- `Viewport` and `ViewportAxes`, bounded graph zoom and panning, atomic editor-state persistence, visible navigation feedback, and accessible transform actions.
 - `Piano`, bounded note ranges, GUI note transport, computer-key input, pointer glissando, and accessible note selection.
 - `StepSequencer`, bounded parameter-backed patterns, persistent multi-selection, activity-gated playhead telemetry, and accessible editing.
 - `FileImporter`, bounded extension filtering and path copying, an accessible operating-system picker fallback, keyboard interaction, progress presentation, cancellation, retry, and recoverable rejection feedback.

@@ -43,6 +43,7 @@ GraphView::GraphView(
     valid_description = description.title && validAxis(description.x_axis) && validAxis(description.y_axis) &&
         description.kind >= ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION && description.kind <= ZIG_VSTGUI_GRAPH_SPECTRUM &&
         description.style >= ZIG_VSTGUI_GRAPH_PRIMARY && description.style <= ZIG_VSTGUI_GRAPH_WARNING;
+    if (valid_description && !viewport.configure(description.viewport)) valid_description = false;
     if (!valid_description) return;
 
     if (editable()) {
@@ -116,6 +117,7 @@ GraphView::GraphView(
             points.push_back({index + 1, description.points[index]});
         }
     }
+    if (editable() || viewport.enabled()) setWantsFocus(true);
     syncAccessibility();
 }
 
@@ -243,6 +245,33 @@ void GraphView::persistEnvelope() {
         stored.data(),
         static_cast<uint32_t>(stored.size())
     );
+}
+
+bool GraphView::persistViewport(const ViewportModel& previous) {
+    const auto& viewport_description = viewport.description();
+    uint32_t field_ids[3] {};
+    double values[3] {};
+    uint32_t count = 0;
+    if (viewport_description.zoom_state_id != 0) {
+        field_ids[count] = viewport_description.zoom_state_id;
+        values[count++] = viewport.zoom();
+    }
+    if (viewport_description.x_offset_state_id != 0) {
+        field_ids[count] = viewport_description.x_offset_state_id;
+        values[count++] = viewport.xOffset();
+    }
+    if (viewport_description.y_offset_state_id != 0) {
+        field_ids[count] = viewport_description.y_offset_state_id;
+        values[count++] = viewport.yOffset();
+    }
+    if (count > 0 && (!parameter_callbacks.store_editor_scalars ||
+        parameter_callbacks.store_editor_scalars(parameter_callbacks.userdata, field_ids, values, count) != 0)) {
+        viewport = previous;
+        return false;
+    }
+    syncAccessibility();
+    invalid();
+    return true;
 }
 
 bool GraphView::selectAdjacent(bool next) {
@@ -379,6 +408,36 @@ bool GraphView::setParameter(uint32_t parameter_id, double normalized) {
     return true;
 }
 
+bool GraphView::viewportEnabled() const { return viewport.enabled(); }
+double GraphView::viewportZoom() const { return viewport.zoom(); }
+double GraphView::viewportXOffset() const { return viewport.xOffset(); }
+double GraphView::viewportYOffset() const { return viewport.yOffset(); }
+
+bool GraphView::zoomViewportIn(double anchor_x, double anchor_y) {
+    const auto previous = viewport;
+    return viewport.zoomIn(anchor_x, anchor_y) && persistViewport(previous);
+}
+
+bool GraphView::zoomViewportOut(double anchor_x, double anchor_y) {
+    const auto previous = viewport;
+    return viewport.zoomOut(anchor_x, anchor_y) && persistViewport(previous);
+}
+
+bool GraphView::setViewportZoom(double zoom, double anchor_x, double anchor_y) {
+    const auto previous = viewport;
+    return viewport.setZoom(zoom, anchor_x, anchor_y) && persistViewport(previous);
+}
+
+bool GraphView::panViewport(double x_steps, double y_steps) {
+    const auto previous = viewport;
+    return viewport.pan(x_steps, y_steps) && persistViewport(previous);
+}
+
+bool GraphView::resetViewport() {
+    const auto previous = viewport;
+    return viewport.reset() && persistViewport(previous);
+}
+
 bool GraphView::handleKey(uint16_t key, int16_t key_code, int16_t modifiers) {
     VSTGUI::KeyboardEvent event;
     event.type = VSTGUI::EventType::KeyDown;
@@ -390,14 +449,19 @@ bool GraphView::handleKey(uint16_t key, int16_t key_code, int16_t modifiers) {
         case Steinberg::KEY_DOWN: event.virt = VSTGUI::VirtualKey::Down; break;
         case Steinberg::KEY_HOME: event.virt = VSTGUI::VirtualKey::Home; break;
         case Steinberg::KEY_END: event.virt = VSTGUI::VirtualKey::End; break;
+        case Steinberg::KEY_PAGEUP: event.virt = VSTGUI::VirtualKey::PageUp; break;
+        case Steinberg::KEY_PAGEDOWN: event.virt = VSTGUI::VirtualKey::PageDown; break;
         case Steinberg::KEY_BACK: event.virt = VSTGUI::VirtualKey::Back; break;
         case Steinberg::KEY_DELETE: event.virt = VSTGUI::VirtualKey::Delete; break;
         case Steinberg::KEY_RETURN: event.virt = VSTGUI::VirtualKey::Return; break;
         default:
-            if (key != '[' && key != ']') return false;
+            if (key != '[' && key != ']' && key != '+' && key != '=' && key != '-' && key != '0') return false;
             break;
     }
     if ((modifiers & 1) != 0) event.modifiers.add(VSTGUI::ModifierKey::Shift);
+    if ((modifiers & 2) != 0) event.modifiers.add(VSTGUI::ModifierKey::Alt);
+    if ((modifiers & 4) != 0) event.modifiers.add(VSTGUI::ModifierKey::Control);
+    if ((modifiers & 8) != 0) event.modifiers.add(VSTGUI::ModifierKey::Super);
     onKeyboardEvent(event);
     return event.consumed;
 }
@@ -428,17 +492,33 @@ double GraphView::snap(double value, const ZigVstguiGraphAxis& axis, double step
 
 VSTGUI::CPoint GraphView::viewPoint(const ZigVstguiGraphPoint& point) const {
     const auto bounds = getViewSize();
+    const double x = normalize(point.x, description.x_axis);
+    const double y = normalize(point.y, description.y_axis);
+    if (!viewport.enabled()) {
+        return {
+            bounds.left + bounds.getWidth() * x,
+            bounds.bottom - bounds.getHeight() * y,
+        };
+    }
     return {
-        bounds.left + bounds.getWidth() * normalize(point.x, description.x_axis),
-        bounds.bottom - bounds.getHeight() * normalize(point.y, description.y_axis),
+        bounds.left + bounds.getWidth() * viewport.projectX(x),
+        bounds.bottom - bounds.getHeight() * viewport.projectY(y),
     };
 }
 
 ZigVstguiGraphPoint GraphView::graphPoint(const VSTGUI::CPoint& point) const {
     const auto bounds = getViewSize();
+    const double x = (point.x - bounds.left) / std::max(1.0, bounds.getWidth());
+    const double y = (bounds.bottom - point.y) / std::max(1.0, bounds.getHeight());
+    if (!viewport.enabled()) {
+        return {
+            denormalize(x, description.x_axis),
+            denormalize(y, description.y_axis),
+        };
+    }
     return {
-        denormalize((point.x - bounds.left) / std::max(1.0, bounds.getWidth()), description.x_axis),
-        denormalize((bounds.bottom - point.y) / std::max(1.0, bounds.getHeight()), description.y_axis),
+        denormalize(viewport.unprojectX(x), description.x_axis),
+        denormalize(viewport.unprojectY(y), description.y_axis),
     };
 }
 
@@ -538,7 +618,63 @@ void GraphView::syncAccessibility() {
         accessibility->clearRange();
         accessibility->setSelected(false);
     }
+    if (viewport.enabled()) {
+        const double maximum_offset = std::max(0.0, 1.0 - 1.0 / viewport.zoom());
+        const double x_position = maximum_offset > 0.0 ? viewport.xOffset() / maximum_offset * 100.0 : 0.0;
+        const double y_position = maximum_offset > 0.0 ? viewport.yOffset() / maximum_offset * 100.0 : 0.0;
+        const std::size_t length = std::char_traits<char>::length(text);
+        if (viewport.horizontal() && viewport.vertical()) {
+            std::snprintf(text + length, sizeof(text) - length, ". Zoom %.0f%%. Position %.0f%%, %.0f%%",
+                viewport.zoom() * 100.0, x_position, y_position);
+        } else {
+            const double position = viewport.horizontal() ? x_position : y_position;
+            std::snprintf(text + length, sizeof(text) - length, ". Zoom %.0f%%. Position %.0f%%",
+                viewport.zoom() * 100.0, position);
+        }
+        if (!editable()) {
+            const auto& viewport_description = viewport.description();
+            accessibility->setRange(
+                viewport_description.minimum_zoom,
+                viewport_description.maximum_zoom,
+                viewport.zoom()
+            );
+        }
+    }
     accessibility->setValueText(text);
+}
+
+void GraphView::drawViewportOverlay(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds) {
+    if (!viewport.enabled()) return;
+    const auto style = styles.resolve(ComponentKind::value_field);
+    const double span = 1.0 / viewport.zoom();
+    context->setFillColor(style.background);
+    context->setFrameColor(style.border);
+    context->setLineWidth(1.0);
+    if (viewport.horizontal()) {
+        VSTGUI::CRect track(bounds.left + 8.0, bounds.bottom - 9.0, bounds.right - 52.0, bounds.bottom - 4.0);
+        context->drawRect(track, VSTGUI::kDrawFilledAndStroked);
+        VSTGUI::CRect thumb = track;
+        thumb.left += track.getWidth() * viewport.xOffset();
+        thumb.right = thumb.left + track.getWidth() * span;
+        context->setFillColor(style.accent);
+        context->drawRect(thumb, VSTGUI::kDrawFilled);
+    }
+    if (viewport.vertical()) {
+        VSTGUI::CRect track(bounds.right - 9.0, bounds.top + 24.0, bounds.right - 4.0, bounds.bottom - 14.0);
+        context->setFillColor(style.background);
+        context->drawRect(track, VSTGUI::kDrawFilledAndStroked);
+        VSTGUI::CRect thumb = track;
+        thumb.bottom -= track.getHeight() * viewport.yOffset();
+        thumb.top = thumb.bottom - track.getHeight() * span;
+        context->setFillColor(style.accent);
+        context->drawRect(thumb, VSTGUI::kDrawFilled);
+    }
+    char zoom_text[24] {};
+    std::snprintf(zoom_text, sizeof(zoom_text), "%.1fx", viewport.zoom());
+    context->setFont(styles.font(TypographyRole::body));
+    context->setFontColor(style.foreground);
+    context->drawString(zoom_text, VSTGUI::CRect(bounds.right - 48.0, bounds.top + 4.0, bounds.right - 6.0, bounds.top + 20.0),
+        VSTGUI::kRightText);
 }
 
 void GraphView::draw(VSTGUI::CDrawContext* context) {
@@ -585,6 +721,7 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
             description.kind == ZIG_VSTGUI_GRAPH_WAVEFORM ? "No waveform data" :
             description.kind == ZIG_VSTGUI_GRAPH_SPECTRUM ? "No spectrum data" : "No graph data";
         context->drawString(message, bounds, VSTGUI::kCenterText);
+        drawViewportOverlay(context, bounds);
         setDirty(false);
         return;
     }
@@ -645,6 +782,7 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
             );
         }
     }
+    drawViewportOverlay(context, bounds);
     setDirty(false);
 }
 
@@ -696,8 +834,83 @@ void GraphView::onMouseCancelEvent(VSTGUI::MouseCancelEvent& event) {
     event.consumed = true;
 }
 
+void GraphView::onMouseWheelEvent(VSTGUI::MouseWheelEvent& event) {
+    if (!viewport.enabled()) return;
+    const auto bounds = getViewSize();
+    const double anchor_x = (event.mousePosition.x - bounds.left) / std::max(1.0, bounds.getWidth());
+    const double anchor_y = (bounds.bottom - event.mousePosition.y) / std::max(1.0, bounds.getHeight());
+    const bool zoom_modifier = event.modifiers.has(VSTGUI::ModifierKey::Control) ||
+        event.modifiers.has(VSTGUI::ModifierKey::Super);
+    bool changed = false;
+    if (zoom_modifier) {
+        changed = event.deltaY >= 0.0
+            ? zoomViewportIn(anchor_x, anchor_y)
+            : zoomViewportOut(anchor_x, anchor_y);
+    } else {
+        const double x_steps = std::abs(event.deltaX) > 0.0001
+            ? -event.deltaX
+            : viewport.horizontal() && !viewport.vertical() ? -event.deltaY : 0.0;
+        const double y_steps = viewport.vertical() ? event.deltaY : 0.0;
+        changed = panViewport(x_steps, y_steps);
+    }
+    if (changed) event.consumed = true;
+}
+
+void GraphView::onZoomGestureEvent(VSTGUI::ZoomGestureEvent& event) {
+    if (!viewport.enabled() || event.phase == VSTGUI::ZoomGestureEvent::Phase::End) return;
+    const auto bounds = getViewSize();
+    const double anchor_x = (event.mousePosition.x - bounds.left) / std::max(1.0, bounds.getWidth());
+    const double anchor_y = (bounds.bottom - event.mousePosition.y) / std::max(1.0, bounds.getHeight());
+    if (setViewportZoom(viewport.zoom() * std::max(0.01, 1.0 + event.zoom), anchor_x, anchor_y)) {
+        event.consumed = true;
+    }
+}
+
 void GraphView::onKeyboardEvent(VSTGUI::KeyboardEvent& event) {
-    if (!editable() || event.type != VSTGUI::EventType::KeyDown) return;
+    if (event.type != VSTGUI::EventType::KeyDown) return;
+    if (viewport.enabled()) {
+        if (event.character == '+' || event.character == '=') {
+            if (zoomViewportIn()) event.consumed = true;
+            return;
+        }
+        if (event.character == '-') {
+            if (zoomViewportOut()) event.consumed = true;
+            return;
+        }
+        if (event.character == '0') {
+            if (resetViewport()) event.consumed = true;
+            return;
+        }
+        const bool command = event.modifiers.has(VSTGUI::ModifierKey::Control) ||
+            event.modifiers.has(VSTGUI::ModifierKey::Super);
+        if (!editable() || command) {
+            const double distance = event.modifiers.has(VSTGUI::ModifierKey::Shift) ? 5.0 : 1.0;
+            bool changed = false;
+            if (event.virt == VSTGUI::VirtualKey::Left) changed = panViewport(-distance, 0.0);
+            else if (event.virt == VSTGUI::VirtualKey::Right) changed = panViewport(distance, 0.0);
+            else if (event.virt == VSTGUI::VirtualKey::Up) changed = panViewport(0.0, -distance);
+            else if (event.virt == VSTGUI::VirtualKey::Down) changed = panViewport(0.0, distance);
+            else if (event.virt == VSTGUI::VirtualKey::PageUp || event.virt == VSTGUI::VirtualKey::PageDown) {
+                const double page = 1.0 / viewport.description().scroll_step;
+                const double direction = event.virt == VSTGUI::VirtualKey::PageUp ? -page : page;
+                changed = viewport.horizontal() ? panViewport(direction, 0.0) : panViewport(0.0, direction);
+            } else if (event.virt == VSTGUI::VirtualKey::Home || event.virt == VSTGUI::VirtualKey::End) {
+                const auto previous = viewport;
+                const bool horizontal_axis = viewport.horizontal();
+                changed = event.virt == VSTGUI::VirtualKey::Home
+                    ? viewport.panToStart(horizontal_axis)
+                    : viewport.panToEnd(horizontal_axis);
+                if (changed) changed = persistViewport(previous);
+            }
+            if (changed) event.consumed = true;
+            if (event.consumed || event.virt == VSTGUI::VirtualKey::Left ||
+                event.virt == VSTGUI::VirtualKey::Right || event.virt == VSTGUI::VirtualKey::Up ||
+                event.virt == VSTGUI::VirtualKey::Down || event.virt == VSTGUI::VirtualKey::PageUp ||
+                event.virt == VSTGUI::VirtualKey::PageDown || event.virt == VSTGUI::VirtualKey::Home ||
+                event.virt == VSTGUI::VirtualKey::End) return;
+        }
+    }
+    if (!editable()) return;
     if (event.character == '[' || event.character == ']') {
         if (selectAdjacent(event.character == ']')) event.consumed = true;
         return;
@@ -787,10 +1000,15 @@ bool GraphControl::build(
         semantic_description = description.dynamic ? "Updating frequency spectrum" : "Static frequency spectrum";
     }
     if (description.point_capacity > 0) semantic_description = "Editable envelope. Brackets select points. Arrows adjust. Return adds. Delete removes.";
+    if (description.viewport.enabled != 0) {
+        semantic_description += description.point_capacity > 0
+            ? " Plus and minus zoom. Command with arrows pans. Zero resets the view."
+            : " Plus and minus zoom. Arrows pan. Zero resets the view.";
+    }
     if (description.x_axis.label && description.x_axis.label[0]) semantic_description += ". X: " + std::string(description.x_axis.label);
     if (description.y_axis.label && description.y_axis.label[0]) semantic_description += ". Y: " + std::string(description.y_axis.label);
     graph_component.accessibility().setDescription(semantic_description);
-    graph_component.accessibility().setReadOnly(description.point_capacity == 0);
+    graph_component.accessibility().setReadOnly(description.point_capacity == 0 && description.viewport.enabled == 0);
     graph = new GraphView(
         VSTGUI::CRect(),
         description,
@@ -808,21 +1026,30 @@ bool GraphControl::build(
     }
     parent->addView(graph);
     graph_component.bind(graph);
-    if (graph->editable()) {
+    if (graph->editable() || graph->viewportEnabled()) {
         graph->registerViewListener(this);
         graph_component.setFocusable(true);
-        graph_component.accessibility().setActionHandler(
-            this,
-            accessibilityAction,
-            actionMask(AccessibilityAction::focus) |
-                actionMask(AccessibilityAction::press) |
+        uint32_t actions = actionMask(AccessibilityAction::focus);
+        if (graph->viewportEnabled()) {
+            actions |= actionMask(AccessibilityAction::press) |
+                actionMask(AccessibilityAction::increment) |
+                actionMask(AccessibilityAction::decrement) |
+                actionMask(AccessibilityAction::set_value);
+        }
+        if (graph->editable()) {
+            actions |= actionMask(AccessibilityAction::press) |
                 actionMask(AccessibilityAction::increment) |
                 actionMask(AccessibilityAction::decrement) |
                 actionMask(AccessibilityAction::set_value) |
                 actionMask(AccessibilityAction::select_previous) |
                 actionMask(AccessibilityAction::select_next) |
                 actionMask(AccessibilityAction::add_point) |
-                actionMask(AccessibilityAction::delete_selected)
+                actionMask(AccessibilityAction::delete_selected);
+        }
+        graph_component.accessibility().setActionHandler(
+            this,
+            accessibilityAction,
+            actions
         );
     }
 
@@ -887,6 +1114,7 @@ void GraphControl::setFocusedView(VSTGUI::CView* view) {
     graph_component.setFocused(graph && view == graph);
 }
 
+GraphView* GraphControl::graphView() { return graph; }
 const GraphView* GraphControl::graphView() const {
     return graph;
 }
@@ -913,13 +1141,21 @@ bool GraphControl::accessibilityAction(
 }
 
 bool GraphControl::performAccessibilityAction(const AccessibilityActionRequest& request) {
-    if (!graph || !graph->editable()) return false;
+    if (!graph) return false;
     if (request.action == AccessibilityAction::focus) {
         if (!graph->getFrame()) return false;
         graph->getFrame()->setFocusView(graph);
         setFocusedView(graph);
         return true;
     }
+    if (graph->viewportEnabled() && !graph->editable()) {
+        if (request.action == AccessibilityAction::increment) return graph->zoomViewportIn();
+        if (request.action == AccessibilityAction::decrement) return graph->zoomViewportOut();
+        if (request.action == AccessibilityAction::press) return graph->resetViewport();
+        if (request.action == AccessibilityAction::set_value) return graph->setViewportZoom(request.value);
+        return false;
+    }
+    if (!graph->editable()) return false;
     if (request.action == AccessibilityAction::press || request.action == AccessibilityAction::select_next) {
         return graph->selectAdjacent(true);
     }

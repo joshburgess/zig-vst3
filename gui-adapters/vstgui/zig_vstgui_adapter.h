@@ -76,6 +76,7 @@ typedef struct ZigVstguiCallbacks {
     int32_t (*command_file_import)(void* userdata, uint32_t drop_id, ZigVstguiFileImportCommand command);
     int32_t (*load_editor_text)(void* userdata, uint32_t field_id, char* output, uint32_t capacity);
     int32_t (*load_progress)(void* userdata, uint32_t source_id, struct ZigVstguiProgressSnapshot* snapshot);
+    int32_t (*store_editor_scalars)(void* userdata, const uint32_t* field_ids, const double* values, uint32_t count);
 } ZigVstguiCallbacks;
 
 typedef struct ZigVstguiParameterInfo {
@@ -348,6 +349,27 @@ typedef struct ZigVstguiEnvelopePoint {
     int32_t y_step_count;
 } ZigVstguiEnvelopePoint;
 
+typedef enum ZigVstguiViewportAxes {
+    ZIG_VSTGUI_VIEWPORT_HORIZONTAL = 0,
+    ZIG_VSTGUI_VIEWPORT_VERTICAL = 1,
+    ZIG_VSTGUI_VIEWPORT_BOTH = 2
+} ZigVstguiViewportAxes;
+
+typedef struct ZigVstguiViewportDescription {
+    int32_t enabled;
+    ZigVstguiViewportAxes axes;
+    double minimum_zoom;
+    double maximum_zoom;
+    double initial_zoom;
+    double initial_x_offset;
+    double initial_y_offset;
+    double zoom_step;
+    double scroll_step;
+    uint32_t zoom_state_id;
+    uint32_t x_offset_state_id;
+    uint32_t y_offset_state_id;
+} ZigVstguiViewportDescription;
+
 typedef struct ZigVstguiGraphDescription {
     const char* title;
     ZigVstguiGraphKind kind;
@@ -368,6 +390,7 @@ typedef struct ZigVstguiGraphDescription {
     uint32_t selection_state_id;
     uint32_t envelope_state_id;
     uint32_t initial_selected_point_id;
+    ZigVstguiViewportDescription viewport;
 } ZigVstguiGraphDescription;
 
 typedef struct ZigVstguiGraphCallbacks {

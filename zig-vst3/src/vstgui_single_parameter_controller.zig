@@ -11,6 +11,7 @@ const vstgui_adapter_enabled = @import("zig-vst3-gui-options").vstgui_adapter_en
 const gui_graph = @import("zig-vst3-plugin-core").gui_graph;
 const gui_file_drop = @import("zig-vst3-plugin-core").gui_file_drop;
 const gui_progress = @import("zig-vst3-plugin-core").gui_progress;
+const gui_viewport = @import("zig-vst3-plugin-core").gui_viewport;
 const editor_state = @import("zig-vst3-plugin-core").editor_state;
 
 const ProtocolView = vst_plug_view.PlugView(4, struct {});
@@ -43,6 +44,48 @@ pub const GraphSource = enum {
     controller,
 };
 
+pub const ViewportAxes = gui_viewport.Axes;
+
+pub const Viewport = struct {
+    axes: ViewportAxes = .horizontal,
+    minimum_zoom: f64 = 1.0,
+    maximum_zoom: f64 = 32.0,
+    initial_zoom: f64 = 1.0,
+    initial_x_offset: f64 = 0.0,
+    initial_y_offset: f64 = 0.0,
+    zoom_step: f64 = 1.25,
+    scroll_step: f64 = 0.1,
+    zoom_state_id: u32 = 0,
+    x_offset_state_id: u32 = 0,
+    y_offset_state_id: u32 = 0,
+
+    pub fn config(self: Viewport) gui_viewport.Config {
+        return .{
+            .axes = self.axes,
+            .minimum_zoom = self.minimum_zoom,
+            .maximum_zoom = self.maximum_zoom,
+            .initial_zoom = self.initial_zoom,
+            .initial_x_offset = self.initial_x_offset,
+            .initial_y_offset = self.initial_y_offset,
+            .zoom_step = self.zoom_step,
+            .scroll_step = self.scroll_step,
+        };
+    }
+
+    pub fn validate(self: Viewport) !void {
+        try self.config().validate();
+        if (!self.axes.includesHorizontal() and self.x_offset_state_id != 0) return error.InvalidViewportStateField;
+        if (!self.axes.includesVertical() and self.y_offset_state_id != 0) return error.InvalidViewportStateField;
+        const ids = [_]u32{ self.zoom_state_id, self.x_offset_state_id, self.y_offset_state_id };
+        for (ids, 0..) |id, index| {
+            if (id == 0) continue;
+            for (ids[0..index]) |previous| {
+                if (previous == id) return error.DuplicateViewportStateField;
+            }
+        }
+    }
+};
+
 pub const GraphAxis = struct {
     minimum: f64,
     maximum: f64,
@@ -68,6 +111,7 @@ pub const Graph = struct {
     snap_y: f64 = 0.0,
     selection_state_id: u32 = 0,
     envelope_state_id: u32 = 0,
+    viewport: ?Viewport = null,
 };
 
 pub const XYPad = struct {
@@ -508,6 +552,11 @@ fn createConfiguredView(
         for (graphs, 0..) |graph, index| {
             var editable_points = graph.editable_points;
             var initial_selected_point_id: u32 = 0;
+            var viewport_description = vstgui_editor_view.ViewportDescription{};
+            const has_persistent_viewport = if (graph.viewport) |viewport|
+                viewport.zoom_state_id != 0 or viewport.x_offset_state_id != 0 or viewport.y_offset_state_id != 0
+            else
+                false;
             if (comptime Controller.hasEditorState) {
                 const state = Controller.editorState(controller);
                 if (graph.envelope_state_id != 0) {
@@ -540,7 +589,48 @@ fn createConfiguredView(
                         else => return null,
                     };
                 }
-            } else if (graph.selection_state_id != 0 or graph.envelope_state_id != 0) return null;
+            } else if (graph.selection_state_id != 0 or graph.envelope_state_id != 0 or has_persistent_viewport) return null;
+            if (graph.viewport) |viewport| {
+                viewport.validate() catch return null;
+                var config = viewport.config();
+                if (comptime Controller.hasEditorState) {
+                    const state = Controller.editorState(controller);
+                    if (viewport.zoom_state_id != 0) {
+                        config.initial_zoom = switch (state.get(viewport.zoom_state_id) orelse return null) {
+                            .scalar => |value| std.math.clamp(value, config.minimum_zoom, config.maximum_zoom),
+                            else => return null,
+                        };
+                    }
+                    const maximum_offset = 1.0 - 1.0 / config.initial_zoom;
+                    if (viewport.x_offset_state_id != 0) {
+                        config.initial_x_offset = switch (state.get(viewport.x_offset_state_id) orelse return null) {
+                            .scalar => |value| std.math.clamp(value, 0.0, maximum_offset),
+                            else => return null,
+                        };
+                    }
+                    if (viewport.y_offset_state_id != 0) {
+                        config.initial_y_offset = switch (state.get(viewport.y_offset_state_id) orelse return null) {
+                            .scalar => |value| std.math.clamp(value, 0.0, maximum_offset),
+                            else => return null,
+                        };
+                    }
+                }
+                config.validate() catch return null;
+                viewport_description = .{
+                    .enabled = 1,
+                    .axes = @enumFromInt(@intFromEnum(config.axes)),
+                    .minimum_zoom = config.minimum_zoom,
+                    .maximum_zoom = config.maximum_zoom,
+                    .initial_zoom = config.initial_zoom,
+                    .initial_x_offset = config.initial_x_offset,
+                    .initial_y_offset = config.initial_y_offset,
+                    .zoom_step = config.zoom_step,
+                    .scroll_step = config.scroll_step,
+                    .zoom_state_id = viewport.zoom_state_id,
+                    .x_offset_state_id = viewport.x_offset_state_id,
+                    .y_offset_state_id = viewport.y_offset_state_id,
+                };
+            }
             if (graph.points.len > vstgui_editor_view.max_graph_points or
                 editable_points.len > vstgui_editor_view.max_graph_points or
                 (graph.dynamic and graph.source_id & vstgui_editor_view.controller_graph_source_flag != 0) or
@@ -609,6 +699,7 @@ fn createConfiguredView(
                 .selection_state_id = graph.selection_state_id,
                 .envelope_state_id = graph.envelope_state_id,
                 .initial_selected_point_id = initial_selected_point_id,
+                .viewport = viewport_description,
             };
         }
         if (xy_pads.len > vstgui_editor_view.max_xy_pads) return null;
@@ -876,6 +967,7 @@ fn createConfiguredView(
             .command_file_import = Bridge.commandFileImport,
             .load_editor_text = Bridge.loadEditorText,
             .load_progress = Bridge.loadProgress,
+            .store_editor_scalars = Bridge.storeEditorScalars,
         }, .{
             .userdata = controller,
             .subscribe = Bridge.subscribe,
@@ -1005,6 +1097,27 @@ fn NativeBridge(comptime Controller: type) type {
                 .value = snapshot.value,
                 .generation = snapshot.generation,
             };
+            return 0;
+        }
+
+        fn storeEditorScalars(
+            userdata: ?*anyopaque,
+            field_ids: [*]const u32,
+            values: [*]const f64,
+            count: u32,
+        ) callconv(.c) types.int32 {
+            if (comptime !Controller.hasEditorState) return -1;
+            if (count == 0 or count > 3) return -1;
+            const iface = controller(userdata) orelse return -1;
+            const state = Controller.editorState(iface);
+            for (field_ids[0..count], values[0..count]) |field_id, value| {
+                if (field_id == 0 or !std.math.isFinite(value)) return -1;
+                const current = state.get(field_id) orelse return -1;
+                if (current.kind() != .scalar) return -1;
+            }
+            for (field_ids[0..count], values[0..count]) |field_id, value| {
+                state.set(field_id, .{ .scalar = value }) catch return -1;
+            }
             return 0;
         }
 
@@ -1223,4 +1336,21 @@ test "progress indicators require bounded unique sources and readable states" {
         .{ .source_id = 1, .label = "One", .accessible_label = "One" },
         .{ .source_id = 1, .label = "Two", .accessible_label = "Two" },
     }));
+}
+
+test "graph viewports validate bounded transforms and persistent fields" {
+    try (Viewport{
+        .maximum_zoom = 64.0,
+        .zoom_state_id = 10,
+        .x_offset_state_id = 11,
+    }).validate();
+    try std.testing.expectError(error.InvalidZoomRange, (Viewport{ .minimum_zoom = 0.5 }).validate());
+    try std.testing.expectError(error.InvalidViewportStateField, (Viewport{
+        .axes = .horizontal,
+        .y_offset_state_id = 12,
+    }).validate());
+    try std.testing.expectError(error.DuplicateViewportStateField, (Viewport{
+        .zoom_state_id = 10,
+        .x_offset_state_id = 10,
+    }).validate());
 }

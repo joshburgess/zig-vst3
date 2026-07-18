@@ -415,6 +415,46 @@ Snapshot signalViews() {
     };
 }
 
+Snapshot graphViewports() {
+    return {
+        "graph-viewports.png",
+        640,
+        180,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 640, 180)));
+            container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            const ZigVstguiGraphPoint waveform[] = {
+                {0.0, 0.0}, {0.0625, 0.82}, {0.125, 0.28}, {0.1875, -0.6},
+                {0.25, -0.2}, {0.3125, 0.5}, {0.375, 0.16}, {0.4375, -0.34},
+                {0.5, -0.12}, {0.5625, 0.26}, {0.625, 0.08}, {0.6875, -0.18},
+                {0.75, -0.05}, {0.8125, 0.12}, {0.875, 0.03}, {0.9375, -0.07}, {1.0, 0.0},
+            };
+            ZigVstguiGraphDescription full {
+                "Full IR", ZIG_VSTGUI_GRAPH_WAVEFORM, ZIG_VSTGUI_GRAPH_MODULATION,
+                {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Time"},
+                {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"}, waveform, 17, 0, 0, 0,
+            };
+            full.viewport = {
+                1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 16.0, 1.0, 0.0, 0.0, 1.25, 0.1, 0, 0, 0,
+            };
+            auto detail = full;
+            detail.title = "Zoomed IR";
+            detail.viewport.initial_zoom = 4.0;
+            detail.viewport.initial_x_offset = 0.2;
+            ZigVstgui::AccessibilityNode nodes[2];
+            container->addView(new ZigVstgui::GraphView(
+                VSTGUI::CRect(8, 8, 312, 172), full, styles, &nodes[0]
+            ));
+            container->addView(new ZigVstgui::GraphView(
+                VSTGUI::CRect(328, 8, 632, 172), detail, styles, &nodes[1]
+            ));
+            container->drawRect(&context, container->getViewSize());
+        },
+    };
+}
+
 Snapshot xyPad() {
     return {
         "xy-pad.png",
@@ -1052,6 +1092,31 @@ double benchmarkSignalViewsDraw() {
     return benchmarkDraw(container, offscreen);
 }
 
+double benchmarkViewportDraw() {
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 180)));
+    container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+    ZigVstguiGraphPoint waveform[256] {};
+    for (uint32_t index = 0; index < 256; ++index) {
+        const double normalized = static_cast<double>(index) / 255.0;
+        waveform[index] = {normalized, std::sin(normalized * 25.1327412287) * std::exp(-3.0 * normalized)};
+    }
+    ZigVstguiGraphDescription description {
+        "IR Detail", ZIG_VSTGUI_GRAPH_WAVEFORM, ZIG_VSTGUI_GRAPH_MODULATION,
+        {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Time"},
+        {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"}, waveform, 256, 0, 0, 0,
+    };
+    description.viewport = {
+        1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 128.0, 8.0, 0.4, 0.0, 1.25, 0.1, 0, 0, 0,
+    };
+    ZigVstgui::AccessibilityNode accessibility;
+    container->addView(new ZigVstgui::GraphView(
+        VSTGUI::CRect(8, 8, 312, 172), description, styles, &accessibility
+    ));
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(320, 180), 1.0);
+    return benchmarkDraw(container, offscreen);
+}
+
 }
 
 int main(int argc, char** argv) {
@@ -1068,6 +1133,7 @@ int main(int argc, char** argv) {
         metersAndAssets(),
         productionControls(),
         graphs(),
+        graphViewports(),
         signalViews(),
         xyPad(),
         editableEnvelope(),
@@ -1093,6 +1159,7 @@ int main(int argc, char** argv) {
         const double action_button_average = benchmarkActionButtonDraw();
         const double progress_average = benchmarkProgressDraw();
         const double signal_views_average = benchmarkSignalViewsDraw();
+        const double viewport_average = benchmarkViewportDraw();
         std::fprintf(stderr, "visual regression warm render average: %.1f us\n", average);
         std::fprintf(stderr, "piano warm render average: %.1f us\n", piano_average);
         std::fprintf(stderr, "step sequencer warm render average: %.1f us\n", step_sequencer_average);
@@ -1100,9 +1167,10 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "action button warm render average: %.1f us\n", action_button_average);
         std::fprintf(stderr, "progress warm render average: %.1f us\n", progress_average);
         std::fprintf(stderr, "signal views warm render average: %.1f us\n", signal_views_average);
+        std::fprintf(stderr, "viewport warm render average: %.1f us\n", viewport_average);
         if (average > 300.0 || piano_average > 300.0 || step_sequencer_average > 300.0 ||
             file_drop_average > 300.0 || action_button_average > 300.0 || progress_average > 300.0 ||
-            signal_views_average > 300.0) result = std::max(result, 6);
+            signal_views_average > 300.0 || viewport_average > 300.0) result = std::max(result, 6);
     }
     VSTGUI::exit();
     return result;

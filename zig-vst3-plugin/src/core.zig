@@ -13,6 +13,7 @@ pub const gui_file_importer = @import("gui_file_importer.zig");
 pub const gui_audio_file_importer = @import("gui_audio_file_importer.zig");
 pub const gui_ir_convolution = @import("gui_ir_convolution.zig");
 pub const gui_progress = @import("gui_progress.zig");
+pub const gui_viewport = @import("gui_viewport.zig");
 pub const plugin = @import("plugin.zig");
 pub const process = @import("process.zig");
 pub const state = @import("state.zig");
@@ -32,6 +33,7 @@ test {
     std.testing.refAllDecls(gui_audio_file_importer);
     std.testing.refAllDecls(gui_ir_convolution);
     std.testing.refAllDecls(gui_progress);
+    std.testing.refAllDecls(gui_viewport);
     std.testing.refAllDecls(plugin);
     std.testing.refAllDecls(process);
     std.testing.refAllDecls(state);

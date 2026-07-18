@@ -3,6 +3,7 @@
 
 #include "zig_vstgui_adapter.h"
 #include "zig_vstgui_component.h"
+#include "zig_vstgui_viewport.h"
 #include "zig_vstgui_xy_pad.h"
 
 #include "vstgui/lib/cvstguitimer.h"
@@ -42,12 +43,23 @@ public:
     bool adjustSelected(double x_delta, double y_delta);
     bool deleteSelected();
     bool setParameter(uint32_t parameter_id, double normalized);
+    bool viewportEnabled() const;
+    double viewportZoom() const;
+    double viewportXOffset() const;
+    double viewportYOffset() const;
+    bool zoomViewportIn(double anchor_x = 0.5, double anchor_y = 0.5);
+    bool zoomViewportOut(double anchor_x = 0.5, double anchor_y = 0.5);
+    bool setViewportZoom(double zoom, double anchor_x = 0.5, double anchor_y = 0.5);
+    bool panViewport(double x_steps, double y_steps);
+    bool resetViewport();
     bool handleKey(uint16_t key, int16_t key_code, int16_t modifiers);
     void draw(VSTGUI::CDrawContext* context) override;
     void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override;
     void onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) override;
     void onMouseUpEvent(VSTGUI::MouseUpEvent& event) override;
     void onMouseCancelEvent(VSTGUI::MouseCancelEvent& event) override;
+    void onMouseWheelEvent(VSTGUI::MouseWheelEvent& event) override;
+    void onZoomGestureEvent(VSTGUI::ZoomGestureEvent& event) override;
     void onKeyboardEvent(VSTGUI::KeyboardEvent& event) override;
     CLASS_METHODS_NOCOPY(GraphView, VSTGUI::CView)
 
@@ -74,6 +86,8 @@ private:
     void syncAccessibility();
     void persistSelection();
     void persistEnvelope();
+    bool persistViewport(const ViewportModel& previous);
+    void drawViewportOverlay(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds);
     uint32_t allocatePointId();
 
     ZigVstguiGraphDescription description;
@@ -89,6 +103,7 @@ private:
     bool transaction_active {false};
     bool dragging {false};
     bool valid_description {false};
+    ViewportModel viewport;
 };
 
 class GraphControl final : public VSTGUI::ViewListenerAdapter {
@@ -111,6 +126,7 @@ public:
     bool handleKey(uint16_t key, int16_t key_code, int16_t modifiers);
     VSTGUI::CView* focusView() const;
     void setFocusedView(VSTGUI::CView* view);
+    GraphView* graphView();
     const GraphView* graphView() const;
     const AccessibilityNode& accessibilityNode() const;
     void viewLostFocus(VSTGUI::CView* view) override;

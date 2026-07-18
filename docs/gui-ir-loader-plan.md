@@ -67,7 +67,7 @@ Completion evidence:
 - [x] Add icon buttons with required accessible labels and optional visible text.
 - [x] Add editable labels with commit, cancel, validation, and external-update behavior.
 - [x] Add determinate and indeterminate progress indicators with textual semantics.
-- [ ] Add bounded scrollable and zoomable viewports.
+- [x] Add bounded scrollable and zoomable viewports.
 - [x] Add toolbar and grouped-action layout declarations.
 - [x] Add confirmation and recoverable-error presentation without modal dependence where an inline choice is sufficient.
 
@@ -97,11 +97,21 @@ Editable-label and progress completion evidence:
 - Native interaction tests cover accepted and rejected edits, external text refresh, determinate and indeterminate progress, completion, invalid declarations, and component construction. The macOS bridge test verifies native text-field and progress-indicator roles, value editing, and the determinate range.
 - `editable-labels-progress.png` records accepted text, inline validation feedback, and idle, determinate, indeterminate, and failed progress states. The strictness 10 gate measured the progress view at 13.5 us against the 300 us budget.
 - Post-change validation passed 54 of 54 Zig build steps and 3,646 of 3,646 tests. Raw ABI and Steinberg validation passed 152 of 152 steps. Linux and Windows cross-target bundle matrices each passed 35 of 35 steps. Serialized pluginval strictness 5 and strictness 10 matrices each passed 48 of 48 steps across all eleven bundles.
-- Bounded viewports remain open. Milestone 3 is not complete until the viewport contract meets the same lifecycle, interaction, accessibility, visual, and performance criteria.
+
+Viewport completion evidence:
+
+- `Viewport` is an optional public graph composition with horizontal, vertical, or two-axis navigation, a 1x–128x validated zoom range, anchor-preserving zoom, bounded offsets, configurable steps, and optional typed editor-state fields.
+- The gallery waveform and IR waveform use the same public declaration. Zoom and offset values restore through one atomic bounded scalar callback, and a rejected callback restores the previous native transform.
+- Pointer wheels and trackpads pan. Command-wheel, Control-wheel, and native zoom gestures zoom around the pointer. Plus and minus zoom, arrows pan, Shift accelerates panning, Page Up and Page Down move one visible page, Home and End reach a boundary, and 0 restores the declared view. Editable graphs retain plain-arrow editing and use Command or Control with arrows for viewport navigation.
+- A text zoom value and proportional navigator remain visible over the graph. Toolkit-neutral accessibility exposes focus, zoom range, position text, increment, decrement, set-value, and reset actions. The macOS bridge test verifies the native range and increment behavior.
+- Native tests cover horizontal bounds, anchor preservation, keyboard, wheel, pinch, accessibility, atomic persistence, callback rejection, invalid declarations, and public editor construction. `graph-viewports.png` records full and zoomed waveform states. The isolated viewport warm-render average is 55.4 us against the 300 us budget.
+- Post-change validation passed 54 of 54 Zig build steps and 3,656 of 3,656 tests. Raw ABI and Steinberg validation passed 152 of 152 steps. Linux and Windows cross-target bundle matrices each passed 35 of 35 steps. Serialized pluginval strictness 5 and strictness 10 matrices each passed 48 of 48 steps across all eleven bundles.
+
+Milestone 3 is complete. The next implementation slice uses the viewport in the IR selection and non-destructive edit workflow.
 
 ## Milestone 4: IR Waveform Editor
 
-- [ ] Add zoom and horizontal navigation with pointer, keyboard, and accessibility actions.
+- [x] Add zoom and horizontal navigation with pointer, keyboard, and accessibility actions.
 - [ ] Add a bounded selection with visible start and end handles.
 - [ ] Add trim, normalize, reverse, fade-in, fade-out, reset, and clear commands.
 - [ ] Keep edits non-destructive until committed to a new immutable generation.
@@ -158,5 +168,6 @@ API status after this milestone:
 
 - `FileImporter` is supported. The gallery, channel strip, and IR loader use the same public declaration and lifecycle contract. `FileDrop` remains a compatibility alias for existing source.
 - `EditableLabel`, `ProgressIndicator`, and `ProgressSnapshot` are supported. The gallery and IR loader share their public declarations, bounded callbacks, native semantics, and lifecycle behavior.
+- `Viewport`, `ViewportAxes`, and persistent graph transforms are supported. The gallery and IR loader share the declaration, interaction, rendering, state, and accessibility contracts.
 - `DecodedAudioFileImporter`, decoded-audio controller transport, processor lifecycle hooks, and partitioned convolution remain experimental. The decoded importer and transport have only one production consumer.
 - Existing graph, parameter attachment, and composition declarations keep their current status. This milestone does not promote them.

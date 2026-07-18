@@ -80,6 +80,10 @@ struct CallbackState {
     bool reject_editor_text {false};
     ZigVstguiProgressSnapshot progress_snapshot {};
     bool progress_available {false};
+    uint32_t stored_scalar_ids[3] {};
+    double stored_scalar_values[3] {};
+    uint32_t stored_scalar_count {0};
+    bool reject_scalar_store {false};
 };
 
 class TestDataPackage final : public VSTGUI::IDataPackage {
@@ -288,6 +292,17 @@ int32_t storeEditorText(void* userdata, uint32_t field_id, const char* value) {
     state->stored_state_field = field_id;
     state->stored_state_text = value ? value : "";
     return value ? 0 : -1;
+}
+
+int32_t storeEditorScalars(void* userdata, const uint32_t* field_ids, const double* values, uint32_t count) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    if (!field_ids || !values || count == 0 || count > 3 || state->reject_scalar_store) return -1;
+    state->stored_scalar_count = count;
+    for (uint32_t index = 0; index < count; ++index) {
+        state->stored_scalar_ids[index] = field_ids[index];
+        state->stored_scalar_values[index] = values[index];
+    }
+    return 0;
 }
 
 int32_t loadPreset(void* userdata, uint32_t preset_id) {
@@ -915,7 +930,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 16) return 1;
+    if (zig_vstgui_adapter_version() != 17) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -960,6 +975,33 @@ int testMeterAbi() {
     auto invalid_graph = graph;
     invalid_graph.point_count = ZIG_VSTGUI_MAX_GRAPH_POINTS + 1;
     if (zig_vstgui_editor_create_configured(&parameter, 1, {}, nullptr, 0, {}, &invalid_graph, 1, {}, {})) return 8;
+    CallbackState viewport_state;
+    ZigVstguiCallbacks viewport_callbacks {};
+    viewport_callbacks.userdata = &viewport_state;
+    viewport_callbacks.store_editor_scalars = storeEditorScalars;
+    auto viewport_graph = graph;
+    viewport_graph.viewport = {
+        1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 8.0, 2.0, 0.1, 0.0, 1.25, 0.1, 12, 13, 0,
+    };
+    auto* viewport_editor = zig_vstgui_editor_create_configured(
+        &parameter, 1, viewport_callbacks, nullptr, 0, {}, &viewport_graph, 1, {}, {}
+    );
+    const auto* viewport_semantics = viewport_editor ? viewport_editor->graphAccessibility(0) : nullptr;
+    if (!viewport_semantics || viewport_semantics->state().read_only ||
+        viewport_semantics->valueText().find("Zoom 200%") == std::string::npos ||
+        !viewport_semantics->perform(ZigVstgui::AccessibilityAction::increment) ||
+        viewport_state.stored_scalar_count != 2) {
+        zig_vstgui_editor_destroy(viewport_editor);
+        return 16;
+    }
+    zig_vstgui_editor_destroy(viewport_editor);
+    if (zig_vstgui_editor_create_configured(
+        &parameter, 1, {}, nullptr, 0, {}, &viewport_graph, 1, {}, {}
+    )) return 17;
+    viewport_graph.viewport.maximum_zoom = 0.5;
+    if (zig_vstgui_editor_create_configured(
+        &parameter, 1, viewport_callbacks, nullptr, 0, {}, &viewport_graph, 1, {}, {}
+    )) return 18;
     const ZigVstguiEnvelopePoint envelope_points[] = {{1, 0.0, 0.0}, {2, 1.0, 1.0}};
     const ZigVstguiGraphDescription editable_graph {
         "Envelope",
@@ -1259,12 +1301,50 @@ int testGraphs() {
     dynamic_graph.kind = ZIG_VSTGUI_GRAPH_WAVEFORM;
     dynamic_graph.dynamic = 1;
     dynamic_graph.maximum_refresh_hz = 30;
+    dynamic_graph.viewport = {
+        1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 8.0, 2.0, 0.1, 0.0, 1.25, 0.1, 12, 13, 0,
+    };
+    ZigVstguiCallbacks viewport_callbacks {};
+    viewport_callbacks.userdata = &state;
+    viewport_callbacks.store_editor_scalars = storeEditorScalars;
     ZigVstgui::GraphControl control;
     auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
-    if (!control.build(container, dynamic_graph, {&state, loadGraph}, {}, styles)) return 5;
+    if (!control.build(container, dynamic_graph, {&state, loadGraph}, viewport_callbacks, styles)) return 5;
     if (control.graphView()->pointCount() != 2 || state.graph_load_count != 1 ||
         control.accessibilityNode().valueText().find("2 samples") == std::string::npos ||
         control.accessibilityNode().description().find("Updating waveform") == std::string::npos) return 6;
+    if (!control.graphView()->viewportEnabled() || !closeEnough(control.graphView()->viewportZoom(), 2.0) ||
+        control.accessibilityNode().valueText().find("Zoom 200%") == std::string::npos ||
+        !control.handleKey('+', 0, 0) || !closeEnough(control.graphView()->viewportZoom(), 2.5) ||
+        state.stored_scalar_count != 2 || state.stored_scalar_ids[0] != 12 || state.stored_scalar_ids[1] != 13) return 39;
+    if (!control.handleKey(0, Steinberg::KEY_RIGHT, 0) || control.graphView()->viewportXOffset() <= 0.1 ||
+        !control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::increment) ||
+        control.graphView()->viewportZoom() <= 2.5) return 40;
+    state.reject_scalar_store = true;
+    const double rejected_zoom = control.graphView()->viewportZoom();
+    if (control.handleKey('+', 0, 0) || !closeEnough(control.graphView()->viewportZoom(), rejected_zoom)) return 41;
+    state.reject_scalar_store = false;
+    if (!control.handleKey('0', 0, 0) || !closeEnough(control.graphView()->viewportZoom(), 2.0) ||
+        !closeEnough(control.graphView()->viewportXOffset(), 0.1)) return 42;
+    VSTGUI::MouseWheelEvent zoom_wheel;
+    zoom_wheel.mousePosition = {120.0, 70.0};
+    zoom_wheel.deltaY = 1.0;
+    zoom_wheel.modifiers.add(VSTGUI::ModifierKey::Super);
+    control.graphView()->onMouseWheelEvent(zoom_wheel);
+    if (!zoom_wheel.consumed || control.graphView()->viewportZoom() <= 2.0) return 44;
+    VSTGUI::MouseWheelEvent pan_wheel;
+    pan_wheel.mousePosition = {120.0, 70.0};
+    pan_wheel.deltaY = -1.0;
+    const double offset_before_wheel = control.graphView()->viewportXOffset();
+    control.graphView()->onMouseWheelEvent(pan_wheel);
+    if (!pan_wheel.consumed || closeEnough(control.graphView()->viewportXOffset(), offset_before_wheel)) return 45;
+    VSTGUI::ZoomGestureEvent pinch;
+    pinch.phase = VSTGUI::ZoomGestureEvent::Phase::Changed;
+    pinch.mousePosition = {120.0, 70.0};
+    pinch.zoom = 0.2;
+    const double zoom_before_pinch = control.graphView()->viewportZoom();
+    control.graphView()->onZoomGestureEvent(pinch);
+    if (!pinch.consumed || control.graphView()->viewportZoom() <= zoom_before_pinch) return 46;
     if (control.running()) return 7;
     control.start();
     if (!control.running()) return 8;
@@ -1287,6 +1367,11 @@ int testGraphs() {
     ZigVstgui::GraphControl invalid_rate;
     auto invalid_container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
     if (invalid_rate.build(invalid_container, dynamic_graph, {&state, loadGraph}, {}, styles)) return 14;
+    auto invalid_viewport = static_graph;
+    invalid_viewport.viewport = dynamic_graph.viewport;
+    invalid_viewport.viewport.maximum_zoom = 0.5;
+    ZigVstgui::GraphView invalid_view(VSTGUI::CRect(), invalid_viewport, styles, &accessibility);
+    if (invalid_view.valid()) return 43;
 
     const ZigVstguiEnvelopePoint envelope_points[] = {
         {10, 0.0, 0.0},

@@ -88,6 +88,7 @@ pub const Callbacks = extern struct {
     command_file_import: *const fn (?*anyopaque, types.uint32, FileImportCommand) callconv(.c) types.int32,
     load_editor_text: *const fn (?*anyopaque, types.uint32, [*]u8, types.uint32) callconv(.c) types.int32,
     load_progress: *const fn (?*anyopaque, types.uint32, *ProgressSnapshot) callconv(.c) types.int32,
+    store_editor_scalars: *const fn (?*anyopaque, [*]const types.uint32, [*]const f64, types.uint32) callconv(.c) types.int32,
 };
 
 pub const ParameterInfo = extern struct {
@@ -357,6 +358,7 @@ pub const GraphDescription = extern struct {
     selection_state_id: types.uint32 = 0,
     envelope_state_id: types.uint32 = 0,
     initial_selected_point_id: types.uint32 = 0,
+    viewport: ViewportDescription = .{},
 };
 
 pub const EnvelopePoint = extern struct {
@@ -368,6 +370,27 @@ pub const EnvelopePoint = extern struct {
     parameter_mask: types.uint32 = 0,
     x_step_count: types.int32 = 0,
     y_step_count: types.int32 = 0,
+};
+
+pub const ViewportAxes = enum(c_int) {
+    horizontal,
+    vertical,
+    both,
+};
+
+pub const ViewportDescription = extern struct {
+    enabled: types.int32 = 0,
+    axes: ViewportAxes = .horizontal,
+    minimum_zoom: f64 = 1.0,
+    maximum_zoom: f64 = 1.0,
+    initial_zoom: f64 = 1.0,
+    initial_x_offset: f64 = 0.0,
+    initial_y_offset: f64 = 0.0,
+    zoom_step: f64 = 1.25,
+    scroll_step: f64 = 0.1,
+    zoom_state_id: types.uint32 = 0,
+    x_offset_state_id: types.uint32 = 0,
+    y_offset_state_id: types.uint32 = 0,
 };
 
 const GraphCallbacks = extern struct {

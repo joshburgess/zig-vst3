@@ -438,6 +438,39 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
     for (uint32_t index = 0; index < graph_count; ++index) {
         const auto& graph = graphs[index];
         const bool editable = graph.point_capacity > 0;
+        const auto& viewport = graph.viewport;
+        if (viewport.enabled != 0 && viewport.enabled != 1) return nullptr;
+        if (viewport.enabled != 0) {
+            if (viewport.axes < ZIG_VSTGUI_VIEWPORT_HORIZONTAL || viewport.axes > ZIG_VSTGUI_VIEWPORT_BOTH ||
+                !std::isfinite(viewport.minimum_zoom) || !std::isfinite(viewport.maximum_zoom) ||
+                viewport.minimum_zoom < 1.0 || viewport.maximum_zoom < viewport.minimum_zoom ||
+                viewport.maximum_zoom > 128.0 || !std::isfinite(viewport.initial_zoom) ||
+                viewport.initial_zoom < viewport.minimum_zoom || viewport.initial_zoom > viewport.maximum_zoom ||
+                !std::isfinite(viewport.initial_x_offset) || !std::isfinite(viewport.initial_y_offset) ||
+                !std::isfinite(viewport.zoom_step) || viewport.zoom_step <= 1.0 || viewport.zoom_step > 4.0 ||
+                !std::isfinite(viewport.scroll_step) || viewport.scroll_step <= 0.0 || viewport.scroll_step > 1.0 ||
+                viewport.initial_x_offset < 0.0 || viewport.initial_y_offset < 0.0 ||
+                viewport.initial_x_offset > 1.0 - 1.0 / viewport.initial_zoom ||
+                viewport.initial_y_offset > 1.0 - 1.0 / viewport.initial_zoom ||
+                (viewport.axes == ZIG_VSTGUI_VIEWPORT_HORIZONTAL &&
+                    (viewport.initial_y_offset != 0.0 || viewport.y_offset_state_id != 0)) ||
+                (viewport.axes == ZIG_VSTGUI_VIEWPORT_VERTICAL &&
+                    (viewport.initial_x_offset != 0.0 || viewport.x_offset_state_id != 0))) return nullptr;
+            const uint32_t state_ids[] = {
+                viewport.zoom_state_id,
+                viewport.x_offset_state_id,
+                viewport.y_offset_state_id,
+            };
+            bool has_state = false;
+            for (uint32_t field = 0; field < 3; ++field) {
+                if (state_ids[field] == 0) continue;
+                has_state = true;
+                for (uint32_t previous = 0; previous < field; ++previous) {
+                    if (state_ids[previous] == state_ids[field]) return nullptr;
+                }
+            }
+            if (has_state && !callbacks.store_editor_scalars) return nullptr;
+        }
         if (!graph.title || graph.point_count > ZIG_VSTGUI_MAX_GRAPH_POINTS ||
             (!graph.points && graph.point_count > 0) ||
             !std::isfinite(graph.x_axis.minimum) || !std::isfinite(graph.x_axis.maximum) ||
@@ -634,5 +667,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 16;
+    return 17;
 }
