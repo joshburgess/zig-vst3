@@ -439,10 +439,13 @@ Snapshot graphViewports() {
             full.viewport = {
                 1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 16.0, 1.0, 0.0, 0.0, 1.25, 0.1, 0, 0, 0,
             };
+            full.range_selection = {1, 0.15, 0.8, 0.01, 0.01, 0, 0};
             auto detail = full;
             detail.title = "Zoomed IR";
             detail.viewport.initial_zoom = 4.0;
             detail.viewport.initial_x_offset = 0.2;
+            detail.range_selection.initial_start = 0.28;
+            detail.range_selection.initial_end = 0.42;
             ZigVstgui::AccessibilityNode nodes[2];
             container->addView(new ZigVstgui::GraphView(
                 VSTGUI::CRect(8, 8, 312, 172), full, styles, &nodes[0]
@@ -1092,7 +1095,7 @@ double benchmarkSignalViewsDraw() {
     return benchmarkDraw(container, offscreen);
 }
 
-double benchmarkViewportDraw() {
+double benchmarkGraphOverlayDraw(bool with_selection) {
     ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
     auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 180)));
     container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
@@ -1109,6 +1112,7 @@ double benchmarkViewportDraw() {
     description.viewport = {
         1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 128.0, 8.0, 0.4, 0.0, 1.25, 0.1, 0, 0, 0,
     };
+    if (with_selection) description.range_selection = {1, 0.45, 0.55, 0.001, 0.001, 0, 0};
     ZigVstgui::AccessibilityNode accessibility;
     container->addView(new ZigVstgui::GraphView(
         VSTGUI::CRect(8, 8, 312, 172), description, styles, &accessibility
@@ -1116,6 +1120,9 @@ double benchmarkViewportDraw() {
     const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(320, 180), 1.0);
     return benchmarkDraw(container, offscreen);
 }
+
+double benchmarkViewportDraw() { return benchmarkGraphOverlayDraw(false); }
+double benchmarkRangeSelectionDraw() { return benchmarkGraphOverlayDraw(true); }
 
 }
 
@@ -1160,6 +1167,7 @@ int main(int argc, char** argv) {
         const double progress_average = benchmarkProgressDraw();
         const double signal_views_average = benchmarkSignalViewsDraw();
         const double viewport_average = benchmarkViewportDraw();
+        const double range_selection_average = benchmarkRangeSelectionDraw();
         std::fprintf(stderr, "visual regression warm render average: %.1f us\n", average);
         std::fprintf(stderr, "piano warm render average: %.1f us\n", piano_average);
         std::fprintf(stderr, "step sequencer warm render average: %.1f us\n", step_sequencer_average);
@@ -1168,9 +1176,11 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "progress warm render average: %.1f us\n", progress_average);
         std::fprintf(stderr, "signal views warm render average: %.1f us\n", signal_views_average);
         std::fprintf(stderr, "viewport warm render average: %.1f us\n", viewport_average);
+        std::fprintf(stderr, "range selection warm render average: %.1f us\n", range_selection_average);
         if (average > 300.0 || piano_average > 300.0 || step_sequencer_average > 300.0 ||
             file_drop_average > 300.0 || action_button_average > 300.0 || progress_average > 300.0 ||
-            signal_views_average > 300.0 || viewport_average > 300.0) result = std::max(result, 6);
+            signal_views_average > 300.0 || viewport_average > 300.0 ||
+            range_selection_average > 300.0) result = std::max(result, 6);
     }
     VSTGUI::exit();
     return result;

@@ -17,6 +17,8 @@ pub const clear_ir_action_id: u32 = 1;
 pub const ir_name_state_id: u32 = 1;
 pub const ir_zoom_state_id: u32 = 2;
 pub const ir_x_offset_state_id: u32 = 3;
+pub const ir_selection_start_state_id: u32 = 4;
+pub const ir_selection_end_state_id: u32 = 5;
 pub const maximum_ir_frames: usize = 131_072;
 pub const convolution_partition_size: usize = 512;
 
@@ -59,6 +61,8 @@ const IREditorState = core.editor_state.Store(1, &.{
     .{ .id = ir_name_state_id, .default = .{ .text = default_ir_name } },
     .{ .id = ir_zoom_state_id, .default = .{ .scalar = 1.0 } },
     .{ .id = ir_x_offset_state_id, .default = .{ .scalar = 0.0 } },
+    .{ .id = ir_selection_start_state_id, .default = .{ .scalar = 0.0 } },
+    .{ .id = ir_selection_end_state_id, .default = .{ .scalar = 1.0 } },
 });
 
 const IRControllerState = struct {
@@ -238,6 +242,12 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .maximum_zoom = 128.0,
                     .zoom_state_id = ir_zoom_state_id,
                     .x_offset_state_id = ir_x_offset_state_id,
+                },
+                .range_selection = .{
+                    .minimum_span = 1.0 / @as(f64, maximum_ir_frames),
+                    .step = 1.0 / 1024.0,
+                    .start_state_id = ir_selection_start_state_id,
+                    .end_state_id = ir_selection_end_state_id,
                 },
             }},
             .file_importers = &.{.{

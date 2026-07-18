@@ -370,6 +370,16 @@ typedef struct ZigVstguiViewportDescription {
     uint32_t y_offset_state_id;
 } ZigVstguiViewportDescription;
 
+typedef struct ZigVstguiRangeSelectionDescription {
+    int32_t enabled;
+    double initial_start;
+    double initial_end;
+    double minimum_span;
+    double step;
+    uint32_t start_state_id;
+    uint32_t end_state_id;
+} ZigVstguiRangeSelectionDescription;
+
 typedef struct ZigVstguiGraphDescription {
     const char* title;
     ZigVstguiGraphKind kind;
@@ -391,6 +401,7 @@ typedef struct ZigVstguiGraphDescription {
     uint32_t envelope_state_id;
     uint32_t initial_selected_point_id;
     ZigVstguiViewportDescription viewport;
+    ZigVstguiRangeSelectionDescription range_selection;
 } ZigVstguiGraphDescription;
 
 typedef struct ZigVstguiGraphCallbacks {

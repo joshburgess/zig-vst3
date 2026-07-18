@@ -930,7 +930,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 17) return 1;
+    if (zig_vstgui_adapter_version() != 18) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -1002,6 +1002,33 @@ int testMeterAbi() {
     if (zig_vstgui_editor_create_configured(
         &parameter, 1, viewport_callbacks, nullptr, 0, {}, &viewport_graph, 1, {}, {}
     )) return 18;
+    auto selection_graph = graph;
+    selection_graph.range_selection = {1, -0.5, 0.5, 0.1, 0.05, 20, 21};
+    auto* selection_editor = zig_vstgui_editor_create_configured(
+        &parameter, 1, viewport_callbacks, nullptr, 0, {}, &selection_graph, 1, {}, {}
+    );
+    const auto* selection_semantics = selection_editor ? selection_editor->graphAccessibility(0) : nullptr;
+    if (!selection_semantics || selection_semantics->state().read_only ||
+        selection_semantics->valueText().find("Selection -0.500 to 0.500") == std::string::npos ||
+        !selection_semantics->perform(ZigVstgui::AccessibilityAction::select_next) ||
+        !selection_semantics->perform(ZigVstgui::AccessibilityAction::increment) ||
+        viewport_state.stored_scalar_ids[0] != 20 || viewport_state.stored_scalar_ids[1] != 21) {
+        zig_vstgui_editor_destroy(selection_editor);
+        return 19;
+    }
+    zig_vstgui_editor_destroy(selection_editor);
+    selection_graph.range_selection.end_state_id = 20;
+    if (zig_vstgui_editor_create_configured(
+        &parameter, 1, viewport_callbacks, nullptr, 0, {}, &selection_graph, 1, {}, {}
+    )) return 20;
+    selection_graph = graph;
+    selection_graph.range_selection = {1, -0.5, 0.5, 0.1, 0.05, 12, 13};
+    selection_graph.viewport = {
+        1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 8.0, 2.0, 0.1, 0.0, 1.25, 0.1, 12, 14, 0,
+    };
+    if (zig_vstgui_editor_create_configured(
+        &parameter, 1, viewport_callbacks, nullptr, 0, {}, &selection_graph, 1, {}, {}
+    )) return 21;
     const ZigVstguiEnvelopePoint envelope_points[] = {{1, 0.0, 0.0}, {2, 1.0, 1.0}};
     const ZigVstguiGraphDescription editable_graph {
         "Envelope",
@@ -1355,6 +1382,67 @@ int testGraphs() {
     state.graph_points[0].y = std::nan("");
     if (control.refresh() || control.graphView()->pointCount() != 2) return 11;
     control.clear();
+
+    auto selection_graph = dynamic_graph;
+    selection_graph.range_selection = {1, -0.5, 0.5, 0.1, 0.05, 20, 21};
+    ZigVstgui::GraphControl selection_control;
+    auto selection_container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
+    if (!selection_control.build(
+            selection_container,
+            selection_graph,
+            {&state, loadGraph},
+            viewport_callbacks,
+            styles
+        )) return 47;
+    if (!selection_control.graphView()->rangeSelectionEnabled() ||
+        !closeEnough(selection_control.graphView()->rangeSelectionStart(), -0.5) ||
+        !closeEnough(selection_control.graphView()->rangeSelectionEnd(), 0.5) ||
+        selection_control.accessibilityNode().valueText().find("Start handle active") == std::string::npos ||
+        !selection_control.handleKey(']', 0, 0) ||
+        !selection_control.handleKey(0, Steinberg::KEY_RIGHT, 0) ||
+        !closeEnough(selection_control.graphView()->rangeSelectionEnd(), 0.55) ||
+        state.stored_scalar_count != 2 || state.stored_scalar_ids[0] != 20 ||
+        state.stored_scalar_ids[1] != 21) return 48;
+    const double selection_offset = selection_control.graphView()->viewportXOffset();
+    if (!selection_control.handleKey(0, Steinberg::KEY_RIGHT, 8) ||
+        selection_control.graphView()->viewportXOffset() <= selection_offset ||
+        !selection_control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::press) ||
+        selection_control.graphView()->activeRangeSelectionHandle() != ZigVstgui::RangeSelectionHandle::start ||
+        !selection_control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::increment)) return 49;
+    const double accepted_start = selection_control.graphView()->rangeSelectionStart();
+    state.reject_scalar_store = true;
+    if (selection_control.handleKey(0, Steinberg::KEY_RIGHT, 0) ||
+        !closeEnough(selection_control.graphView()->rangeSelectionStart(), accepted_start)) return 50;
+    state.reject_scalar_store = false;
+    selection_control.clear();
+
+    ZigVstgui::AccessibilityNode range_accessibility;
+    ZigVstgui::GraphView range_graph(
+        VSTGUI::CRect(0, 0, 200, 100),
+        selection_graph,
+        styles,
+        &range_accessibility,
+        viewport_callbacks
+    );
+    VSTGUI::MouseDownEvent range_down(
+        VSTGUI::CPoint(100, 50),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    range_graph.onMouseDownEvent(range_down);
+    VSTGUI::MouseMoveEvent range_move(
+        VSTGUI::CPoint(160, 50),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    range_graph.onMouseMoveEvent(range_move);
+    VSTGUI::MouseUpEvent range_up(
+        VSTGUI::CPoint(160, 50),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    range_graph.onMouseUpEvent(range_up);
+    if (!range_down.consumed || !range_move.consumed || !range_up.consumed ||
+        !closeEnough(range_graph.rangeSelectionStart(), -0.3) ||
+        !closeEnough(range_graph.rangeSelectionEnd(), 0.0) ||
+        state.stored_scalar_ids[0] != 20 || state.stored_scalar_ids[1] != 21) return 51;
 
     ZigVstgui::GraphControl static_control;
     auto static_container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));

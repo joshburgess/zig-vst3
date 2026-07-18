@@ -11,6 +11,7 @@ const vstgui_adapter_enabled = @import("zig-vst3-gui-options").vstgui_adapter_en
 const gui_graph = @import("zig-vst3-plugin-core").gui_graph;
 const gui_file_drop = @import("zig-vst3-plugin-core").gui_file_drop;
 const gui_progress = @import("zig-vst3-plugin-core").gui_progress;
+const gui_range_selection = @import("zig-vst3-plugin-core").gui_range_selection;
 const gui_viewport = @import("zig-vst3-plugin-core").gui_viewport;
 const editor_state = @import("zig-vst3-plugin-core").editor_state;
 
@@ -45,6 +46,7 @@ pub const GraphSource = enum {
 };
 
 pub const ViewportAxes = gui_viewport.Axes;
+pub const RangeSelectionHandle = gui_range_selection.Handle;
 
 pub const Viewport = struct {
     axes: ViewportAxes = .horizontal,
@@ -86,6 +88,34 @@ pub const Viewport = struct {
     }
 };
 
+pub const RangeSelection = struct {
+    initial_start: f64 = 0.0,
+    initial_end: f64 = 1.0,
+    minimum_span: f64 = 0.0,
+    step: f64 = 0.01,
+    start_state_id: u32 = 0,
+    end_state_id: u32 = 0,
+
+    pub fn config(self: RangeSelection, axis: GraphAxis) gui_range_selection.Config {
+        return .{
+            .minimum = axis.minimum,
+            .maximum = axis.maximum,
+            .initial_start = self.initial_start,
+            .initial_end = self.initial_end,
+            .minimum_span = self.minimum_span,
+            .step = self.step,
+        };
+    }
+
+    pub fn validate(self: RangeSelection, axis: GraphAxis) !void {
+        try self.config(axis).validate();
+        if ((self.start_state_id == 0) != (self.end_state_id == 0)) return error.IncompleteRangeSelectionState;
+        if (self.start_state_id != 0 and self.start_state_id == self.end_state_id) {
+            return error.DuplicateRangeSelectionStateField;
+        }
+    }
+};
+
 pub const GraphAxis = struct {
     minimum: f64,
     maximum: f64,
@@ -112,6 +142,7 @@ pub const Graph = struct {
     selection_state_id: u32 = 0,
     envelope_state_id: u32 = 0,
     viewport: ?Viewport = null,
+    range_selection: ?RangeSelection = null,
 };
 
 pub const XYPad = struct {
@@ -553,8 +584,13 @@ fn createConfiguredView(
             var editable_points = graph.editable_points;
             var initial_selected_point_id: u32 = 0;
             var viewport_description = vstgui_editor_view.ViewportDescription{};
+            var range_selection_description = vstgui_editor_view.RangeSelectionDescription{};
             const has_persistent_viewport = if (graph.viewport) |viewport|
                 viewport.zoom_state_id != 0 or viewport.x_offset_state_id != 0 or viewport.y_offset_state_id != 0
+            else
+                false;
+            const has_persistent_range_selection = if (graph.range_selection) |selection|
+                selection.start_state_id != 0 or selection.end_state_id != 0
             else
                 false;
             if (comptime Controller.hasEditorState) {
@@ -589,7 +625,8 @@ fn createConfiguredView(
                         else => return null,
                     };
                 }
-            } else if (graph.selection_state_id != 0 or graph.envelope_state_id != 0 or has_persistent_viewport) return null;
+            } else if (graph.selection_state_id != 0 or graph.envelope_state_id != 0 or
+                has_persistent_viewport or has_persistent_range_selection) return null;
             if (graph.viewport) |viewport| {
                 viewport.validate() catch return null;
                 var config = viewport.config();
@@ -631,10 +668,61 @@ fn createConfiguredView(
                     .y_offset_state_id = viewport.y_offset_state_id,
                 };
             }
+            if (graph.range_selection) |selection| {
+                selection.validate(graph.x_axis) catch return null;
+                var config = selection.config(graph.x_axis);
+                if (comptime Controller.hasEditorState) {
+                    const state = Controller.editorState(controller);
+                    if (selection.start_state_id != 0) {
+                        const restored_start = switch (state.get(selection.start_state_id) orelse return null) {
+                            .scalar => |value| value,
+                            else => return null,
+                        };
+                        const restored_end = switch (state.get(selection.end_state_id) orelse return null) {
+                            .scalar => |value| value,
+                            else => return null,
+                        };
+                        config.initial_start = std.math.clamp(
+                            restored_start,
+                            config.minimum,
+                            config.maximum - config.minimum_span,
+                        );
+                        config.initial_end = std.math.clamp(
+                            restored_end,
+                            config.initial_start + config.minimum_span,
+                            config.maximum,
+                        );
+                    }
+                }
+                config.validate() catch return null;
+                range_selection_description = .{
+                    .enabled = 1,
+                    .initial_start = config.initial_start,
+                    .initial_end = config.initial_end,
+                    .minimum_span = config.minimum_span,
+                    .step = config.step,
+                    .start_state_id = selection.start_state_id,
+                    .end_state_id = selection.end_state_id,
+                };
+            }
+            const persistent_scalar_ids = [_]u32{
+                viewport_description.zoom_state_id,
+                viewport_description.x_offset_state_id,
+                viewport_description.y_offset_state_id,
+                range_selection_description.start_state_id,
+                range_selection_description.end_state_id,
+            };
+            for (persistent_scalar_ids, 0..) |field_id, field_index| {
+                if (field_id == 0) continue;
+                for (persistent_scalar_ids[0..field_index]) |previous| {
+                    if (previous == field_id) return null;
+                }
+            }
             if (graph.points.len > vstgui_editor_view.max_graph_points or
                 editable_points.len > vstgui_editor_view.max_graph_points or
                 (graph.dynamic and graph.source_id & vstgui_editor_view.controller_graph_source_flag != 0) or
                 graph.x_axis.maximum <= graph.x_axis.minimum or graph.y_axis.maximum <= graph.y_axis.minimum or
+                (graph.range_selection != null and graph.point_capacity > 0) or
                 (graph.dynamic and (graph.maximum_refresh_hz == 0 or graph.maximum_refresh_hz > 60)) or
                 (graph.point_capacity == 0 and (graph.editable_points.len > 0 or graph.minimum_point_count > 0 or
                     graph.snap_x != 0.0 or graph.snap_y != 0.0)) or
@@ -700,6 +788,7 @@ fn createConfiguredView(
                 .envelope_state_id = graph.envelope_state_id,
                 .initial_selected_point_id = initial_selected_point_id,
                 .viewport = viewport_description,
+                .range_selection = range_selection_description,
             };
         }
         if (xy_pads.len > vstgui_editor_view.max_xy_pads) return null;
@@ -1353,4 +1442,28 @@ test "graph viewports validate bounded transforms and persistent fields" {
         .zoom_state_id = 10,
         .x_offset_state_id = 10,
     }).validate());
+}
+
+test "graph range selections validate bounds and paired state fields" {
+    const axis = GraphAxis{ .minimum = 0.0, .maximum = 1.0 };
+    try (RangeSelection{
+        .initial_start = 0.2,
+        .initial_end = 0.8,
+        .minimum_span = 0.1,
+        .step = 0.01,
+        .start_state_id = 20,
+        .end_state_id = 21,
+    }).validate(axis);
+    try std.testing.expectError(error.InvalidRangeSelectionSpan, (RangeSelection{
+        .initial_start = 0.2,
+        .initial_end = 0.25,
+        .minimum_span = 0.1,
+    }).validate(axis));
+    try std.testing.expectError(error.IncompleteRangeSelectionState, (RangeSelection{
+        .start_state_id = 20,
+    }).validate(axis));
+    try std.testing.expectError(error.DuplicateRangeSelectionStateField, (RangeSelection{
+        .start_state_id = 20,
+        .end_state_id = 20,
+    }).validate(axis));
 }

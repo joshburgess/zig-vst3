@@ -30,6 +30,7 @@ set(ZIG_VSTGUI_ADAPTER_SOURCES
     zig_vstgui_action_button.cpp
     zig_vstgui_text_progress.cpp
     zig_vstgui_viewport.cpp
+    zig_vstgui_range_selection.cpp
     zig_vstgui_action_menu.cpp
     zig_vstgui_assets.cpp
     zig_vstgui_component.cpp

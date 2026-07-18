@@ -359,6 +359,7 @@ pub const GraphDescription = extern struct {
     envelope_state_id: types.uint32 = 0,
     initial_selected_point_id: types.uint32 = 0,
     viewport: ViewportDescription = .{},
+    range_selection: RangeSelectionDescription = .{},
 };
 
 pub const EnvelopePoint = extern struct {
@@ -391,6 +392,16 @@ pub const ViewportDescription = extern struct {
     zoom_state_id: types.uint32 = 0,
     x_offset_state_id: types.uint32 = 0,
     y_offset_state_id: types.uint32 = 0,
+};
+
+pub const RangeSelectionDescription = extern struct {
+    enabled: types.int32 = 0,
+    initial_start: f64 = 0.0,
+    initial_end: f64 = 0.0,
+    minimum_span: f64 = 0.0,
+    step: f64 = 0.0,
+    start_state_id: types.uint32 = 0,
+    end_state_id: types.uint32 = 0,
 };
 
 const GraphCallbacks = extern struct {

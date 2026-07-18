@@ -434,6 +434,29 @@ Each viewport draws a numeric zoom value and a proportional navigator. The acces
 
 `Viewport` and `ViewportAxes` are supported. The gallery and production IR loader share their public declaration, bounded model, persistence, interactions, rendering, and accessibility semantics.
 
+## Graph Range Selections
+
+Add a bounded two-handle selection to a graph through its public declaration:
+
+```zig
+.range_selection = .{
+    .initial_start = 0.2,
+    .initial_end = 0.8,
+    .minimum_span = 0.01,
+    .step = 0.01,
+    .start_state_id = selection_start_state_id,
+    .end_state_id = selection_end_state_id,
+},
+```
+
+Selection values use the graph's x-axis units. Both handles remain inside that axis and cannot cross or violate the declared minimum span. Persistent selections require both scalar state fields. The adapter commits them through one bounded callback and restores the prior selection if the controller rejects the write.
+
+Drag either visible handle to adjust one boundary. Drag elsewhere to create a replacement range. Left and Right Bracket choose the start or end handle, Left and Right Arrow adjust it, Shift moves ten steps, Home and End reach a boundary, and Return switches handles. When a viewport is also present, Command or Control with arrows pans without changing the selection.
+
+The selected interval uses a translucent fill plus explicit boundary lines and handle shapes. Focus changes the active handle's weight, so the state does not depend on color. Accessibility exposes the selected interval, active handle, x-axis range, exact set-value, increment, decrement, and handle-selection actions.
+
+`RangeSelection` and `RangeSelectionHandle` are supported. The component gallery and production IR loader share their public declaration, bounded model, atomic state callback, interactions, rendering, and accessibility semantics.
+
 ## API Status
 
 The project remains pre-1.0, so even the supported surface does not yet carry a long-term compatibility promise. The supported list is limited to contracts exercised by both the component gallery and a production-style editor.
@@ -454,6 +477,7 @@ Supported authoring surface:
 - `EditableLabel`, bounded typed editor-state text, validation, inline recovery, external refresh, and native text-field semantics.
 - `ProgressIndicator` and `ProgressSnapshot`, bounded controller telemetry, determinate and indeterminate presentation, state text, and native progress semantics.
 - `Viewport` and `ViewportAxes`, bounded graph zoom and panning, atomic editor-state persistence, visible navigation feedback, and accessible transform actions.
+- `RangeSelection` and `RangeSelectionHandle`, bounded two-handle graph selection, atomic editor-state persistence, visible handles, and accessible range editing.
 - `Piano`, bounded note ranges, GUI note transport, computer-key input, pointer glissando, and accessible note selection.
 - `StepSequencer`, bounded parameter-backed patterns, persistent multi-selection, activity-gated playhead telemetry, and accessible editing.
 - `FileImporter`, bounded extension filtering and path copying, an accessible operating-system picker fallback, keyboard interaction, progress presentation, cancellation, retry, and recoverable rejection feedback.

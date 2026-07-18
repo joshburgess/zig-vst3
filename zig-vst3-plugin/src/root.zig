@@ -14,6 +14,7 @@ pub const gui_file_importer = core.gui_file_importer;
 pub const gui_audio_file_importer = core.gui_audio_file_importer;
 pub const gui_ir_convolution = core.gui_ir_convolution;
 pub const gui_progress = core.gui_progress;
+pub const gui_range_selection = core.gui_range_selection;
 pub const gui_viewport = core.gui_viewport;
 pub const parameters = core.parameters;
 pub const plugin = core.plugin;
@@ -52,6 +53,7 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(gui_audio_file_importer, "Importer"));
     try std.testing.expect(@hasDecl(gui_ir_convolution, "PartitionedConvolver"));
     try std.testing.expect(@hasDecl(gui_progress, "Snapshot"));
+    try std.testing.expect(@hasDecl(gui_range_selection, "State"));
     try std.testing.expect(@hasDecl(gui_viewport, "State"));
 }
 

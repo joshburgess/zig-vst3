@@ -31,6 +31,8 @@ pub const imported_file_count_state_id: u32 = 10;
 pub const gallery_label_state_id: u32 = 11;
 pub const waveform_zoom_state_id: u32 = 12;
 pub const waveform_x_offset_state_id: u32 = 13;
+pub const waveform_selection_start_state_id: u32 = 14;
+pub const waveform_selection_end_state_id: u32 = 15;
 
 const gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
@@ -58,6 +60,8 @@ pub const GalleryEditorState = plug_core.editor_state.Store(1, &.{
     .{ .id = gallery_label_state_id, .default = .{ .text = gallery_label } },
     .{ .id = waveform_zoom_state_id, .default = .{ .scalar = 1.0 } },
     .{ .id = waveform_x_offset_state_id, .default = .{ .scalar = 0.0 } },
+    .{ .id = waveform_selection_start_state_id, .default = .{ .scalar = 0.2 } },
+    .{ .id = waveform_selection_end_state_id, .default = .{ .scalar = 0.8 } },
 });
 
 fn applyPreset(
@@ -244,6 +248,14 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                         .maximum_zoom = 64.0,
                         .zoom_state_id = waveform_zoom_state_id,
                         .x_offset_state_id = waveform_x_offset_state_id,
+                    },
+                    .range_selection = .{
+                        .initial_start = 0.2,
+                        .initial_end = 0.8,
+                        .minimum_span = 0.01,
+                        .step = 0.01,
+                        .start_state_id = waveform_selection_start_state_id,
+                        .end_state_id = waveform_selection_end_state_id,
                     },
                 },
                 .{

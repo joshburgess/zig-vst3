@@ -439,6 +439,7 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         const auto& graph = graphs[index];
         const bool editable = graph.point_capacity > 0;
         const auto& viewport = graph.viewport;
+        const auto& range_selection = graph.range_selection;
         if (viewport.enabled != 0 && viewport.enabled != 1) return nullptr;
         if (viewport.enabled != 0) {
             if (viewport.axes < ZIG_VSTGUI_VIEWPORT_HORIZONTAL || viewport.axes > ZIG_VSTGUI_VIEWPORT_BOTH ||
@@ -492,6 +493,38 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
                 (!graph.editable_points && graph.editable_point_count > 0) ||
                 !std::isfinite(graph.snap_x) || !std::isfinite(graph.snap_y) ||
                 graph.snap_x < 0.0 || graph.snap_y < 0.0))) return nullptr;
+        if (range_selection.enabled != 0 && range_selection.enabled != 1) return nullptr;
+        if (range_selection.enabled == 0) {
+            if (range_selection.start_state_id != 0 || range_selection.end_state_id != 0) return nullptr;
+        } else {
+            const double axis_span = graph.x_axis.maximum - graph.x_axis.minimum;
+            if (editable || !std::isfinite(range_selection.initial_start) ||
+                !std::isfinite(range_selection.initial_end) ||
+                !std::isfinite(range_selection.minimum_span) || !std::isfinite(range_selection.step) ||
+                range_selection.initial_start < graph.x_axis.minimum ||
+                range_selection.initial_end > graph.x_axis.maximum ||
+                range_selection.initial_end < range_selection.initial_start ||
+                range_selection.minimum_span < 0.0 || range_selection.minimum_span > axis_span ||
+                range_selection.initial_end - range_selection.initial_start < range_selection.minimum_span ||
+                range_selection.step <= 0.0 || range_selection.step > axis_span ||
+                ((range_selection.start_state_id == 0) != (range_selection.end_state_id == 0)) ||
+                (range_selection.start_state_id != 0 &&
+                    range_selection.start_state_id == range_selection.end_state_id)) return nullptr;
+            if (range_selection.start_state_id != 0 && !callbacks.store_editor_scalars) return nullptr;
+            const uint32_t state_ids[] = {
+                viewport.zoom_state_id,
+                viewport.x_offset_state_id,
+                viewport.y_offset_state_id,
+                range_selection.start_state_id,
+                range_selection.end_state_id,
+            };
+            for (uint32_t field = 0; field < 5; ++field) {
+                if (state_ids[field] == 0) continue;
+                for (uint32_t previous = 0; previous < field; ++previous) {
+                    if (state_ids[previous] == state_ids[field]) return nullptr;
+                }
+            }
+        }
         for (uint32_t point = 0; point < graph.point_count; ++point) {
             if (!std::isfinite(graph.points[point].x) || !std::isfinite(graph.points[point].y)) return nullptr;
         }
@@ -667,5 +700,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 17;
+    return 18;
 }

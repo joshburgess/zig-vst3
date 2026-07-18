@@ -112,7 +112,7 @@ Milestone 3 is complete. The next implementation slice uses the viewport in the 
 ## Milestone 4: IR Waveform Editor
 
 - [x] Add zoom and horizontal navigation with pointer, keyboard, and accessibility actions.
-- [ ] Add a bounded selection with visible start and end handles.
+- [x] Add a bounded selection with visible start and end handles.
 - [ ] Add trim, normalize, reverse, fade-in, fade-out, reset, and clear commands.
 - [ ] Keep edits non-destructive until committed to a new immutable generation.
 - [ ] Show original and edited duration, peak, channels, sample rate, and pending state.
@@ -124,6 +124,15 @@ Exit criteria:
 - Keyboard users can select and edit the same range as pointer users.
 - Clear requires an explicit confirmation and restores focus to Choose IR.
 - Waveform rendering and hit testing remain bounded under maximum zoom.
+
+Range-selection completion evidence:
+
+- `RangeSelection` is a graph-generic public composition with ordered start and end handles, x-axis bounds, a minimum span, a keyboard step, and optional paired editor-state fields.
+- The component gallery and IR waveform use the same public declaration. Both values persist through one bounded scalar callback, and callback rejection restores the previous range.
+- Pointer users can drag either handle or create a replacement range. Keyboard users choose handles with Left and Right Bracket, adjust with arrows, move farther with Shift, reach boundaries with Home and End, and switch handles with Return. Command or Control with arrows preserves viewport panning.
+- The selected interval combines shading, boundary lines, and distinct handle shapes. Toolkit-neutral accessibility exposes the interval, active handle, x-axis range, exact value, increment, decrement, and handle selection. The macOS bridge test verifies native range adjustment and value reporting.
+- Native tests cover bounds, minimum spans, handle crossing, pointer replacement, keyboard adjustment, viewport coexistence, atomic persistence, callback rejection, accessibility actions, invalid declarations, and public editor construction. `graph-viewports.png` records full and zoomed selection states. The isolated warm-render average is 105.7 us against the 300 us budget.
+- Post-change validation passed 54 of 54 Zig build steps and 3,666 of 3,666 tests. Raw ABI and Steinberg validation passed 152 of 152 steps. Linux and Windows cross-target bundle matrices each passed 35 of 35 steps. Serialized pluginval strictness 5 and strictness 10 matrices each passed 48 of 48 steps across all eleven bundles.
 
 ## Milestone 5: Production IR Plugin and API Decisions
 
@@ -169,5 +178,6 @@ API status after this milestone:
 - `FileImporter` is supported. The gallery, channel strip, and IR loader use the same public declaration and lifecycle contract. `FileDrop` remains a compatibility alias for existing source.
 - `EditableLabel`, `ProgressIndicator`, and `ProgressSnapshot` are supported. The gallery and IR loader share their public declarations, bounded callbacks, native semantics, and lifecycle behavior.
 - `Viewport`, `ViewportAxes`, and persistent graph transforms are supported. The gallery and IR loader share the declaration, interaction, rendering, state, and accessibility contracts.
+- `RangeSelection`, `RangeSelectionHandle`, and persistent graph ranges are supported. The gallery and IR loader share the declaration, interaction, rendering, state, and accessibility contracts.
 - `DecodedAudioFileImporter`, decoded-audio controller transport, processor lifecycle hooks, and partitioned convolution remain experimental. The decoded importer and transport have only one production consumer.
 - Existing graph, parameter attachment, and composition declarations keep their current status. This milestone does not promote them.

@@ -3,6 +3,7 @@
 
 #include "zig_vstgui_adapter.h"
 #include "zig_vstgui_component.h"
+#include "zig_vstgui_range_selection.h"
 #include "zig_vstgui_viewport.h"
 #include "zig_vstgui_xy_pad.h"
 
@@ -52,6 +53,14 @@ public:
     bool setViewportZoom(double zoom, double anchor_x = 0.5, double anchor_y = 0.5);
     bool panViewport(double x_steps, double y_steps);
     bool resetViewport();
+    bool rangeSelectionEnabled() const;
+    double rangeSelectionStart() const;
+    double rangeSelectionEnd() const;
+    RangeSelectionHandle activeRangeSelectionHandle() const;
+    bool selectRangeSelectionHandle(RangeSelectionHandle handle);
+    bool cycleRangeSelectionHandle();
+    bool setRangeSelectionValue(double value);
+    bool adjustRangeSelection(double delta);
     bool handleKey(uint16_t key, int16_t key_code, int16_t modifiers);
     void draw(VSTGUI::CDrawContext* context) override;
     void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override;
@@ -80,6 +89,7 @@ private:
     ZigVstguiGraphPoint graphPoint(const VSTGUI::CPoint& point) const;
     std::optional<std::size_t> indexOf(uint32_t point_id) const;
     std::optional<std::size_t> hitTestPoint(const VSTGUI::CPoint& point) const;
+    std::optional<RangeSelectionHandle> hitTestRangeSelectionHandle(const VSTGUI::CPoint& point) const;
     VSTGUI::CRect affectedBounds(const std::vector<PointState>& values, std::size_t index) const;
     VSTGUI::CRect contentBounds(const std::vector<PointState>& values) const;
     void invalidateChange(const std::vector<PointState>& before, std::size_t before_index, std::size_t after_index);
@@ -87,7 +97,9 @@ private:
     void persistSelection();
     void persistEnvelope();
     bool persistViewport(const ViewportModel& previous);
+    bool persistRangeSelection(const RangeSelectionModel& previous);
     void drawViewportOverlay(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds);
+    void drawRangeSelection(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds);
     uint32_t allocatePointId();
 
     ZigVstguiGraphDescription description;
@@ -102,8 +114,13 @@ private:
     uint32_t transaction_next_point_id {1};
     bool transaction_active {false};
     bool dragging {false};
+    bool range_dragging {false};
+    bool range_creating {false};
+    double range_anchor {0.0};
     bool valid_description {false};
     ViewportModel viewport;
+    RangeSelectionModel range_selection;
+    RangeSelectionModel range_transaction;
 };
 
 class GraphControl final : public VSTGUI::ViewListenerAdapter {
