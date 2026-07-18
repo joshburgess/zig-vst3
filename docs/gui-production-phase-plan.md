@@ -17,18 +17,26 @@ The phase is complete when both editors use the public `@import("zig-vst3").vstg
 
 ## Milestone 1: Production Channel Strip
 
-- [ ] Add a `zig_vst3_channel_strip` example with gain, bypass, and mode parameters.
-- [ ] Create its editor entirely through the public `@import("zig-vst3").vstgui` API.
-- [ ] Include stereo level and gain-reduction meter declarations.
-- [ ] Use an explicit production theme and responsive layout distinct from the gallery.
-- [ ] Cover parameter processing, state, automation, independent instances, and editor creation.
-- [ ] Add the example to native validation and Linux and Windows cross-target bundles.
+- [x] Add a `zig_vst3_channel_strip` example with gain, bypass, and mode parameters.
+- [x] Create its editor entirely through the public `@import("zig-vst3").vstgui` API.
+- [x] Include stereo level and gain-reduction meter declarations.
+- [x] Use an explicit production theme and responsive layout distinct from the gallery.
+- [x] Cover parameter processing, state, automation, independent instances, and editor creation.
+- [x] Add the example to native validation and Linux and Windows cross-target bundles.
 
 Exit criteria:
 
 - The plugin processes audio and exposes a working multi-parameter editor without importing an adapter-internal Zig file.
 - The editor declares every required channel-strip control and meter, even if live processor telemetry remains scheduled for Milestone 4.
 - Unit tests, native adapter tests, visual tests, the Steinberg validator, and cross-target bundle builds pass.
+
+Completion evidence:
+
+- `examples/channel_strip_plugin.zig` is an external example module that imports `@import("zig-vst3").vstgui`; it cannot reach a relative adapter implementation file.
+- The editor declares a rotary gain control, bypass toggle, mode dropdown, stereo meter, and gain-reduction meter through `createMultiViewWithSkin`. It selects the alternate theme and compact-strip layout while the gallery retains the default adaptive presentation.
+- The processor implements clean, console-shaped, and limited audio paths with a -24 dB to +24 dB gain range and bypass. Unit tests cover DSP behavior, two independent editor views, and parameter isolation between two component instances.
+- `zig build test` passes with the native unit, interaction, visual, and warm-render harness. The channel-strip bundle passes all 47 Steinberg validator tests. Linux and Windows example bundle sets cross-compile successfully.
+- Meter declarations are present, but live processor snapshots remain intentionally deferred to Milestone 4. The current editor-local telemetry bank cannot receive processor data without violating instance ownership, so it is not represented as production-ready yet.
 
 ## Milestone 2: Reusable Composition and Styling
 

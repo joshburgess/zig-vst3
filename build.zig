@@ -112,11 +112,19 @@ pub fn build(b: *std.Build) void {
             .core_example_source_file = "examples/editor_smoke_core.zig",
             .bundle_id = "dev.zig-vst3.editor-smoke",
         },
+        .{
+            .short_name = "channel-strip",
+            .display_name = "channel strip",
+            .artifact_name = "zig_vst3_channel_strip",
+            .root_source_file = "examples/channel_strip_plugin.zig",
+            .core_example_source_file = "examples/channel_strip_core.zig",
+            .bundle_id = "dev.zig-vst3.channel-strip",
+        },
     };
 
     var example_plugins: [example_plugin_options.len]ExamplePluginSteps = undefined;
     for (example_plugin_options, 0..) |options, index| {
-        example_plugins[index] = addExamplePlugin(b, target, optimize, zig_vst3_plugin_core, zig_vst3_plugin, gui_options, native_vstgui, entry_symbols_step, vstgui_adapter_step, options);
+        example_plugins[index] = addExamplePlugin(b, target, optimize, zig_vst3, zig_vst3_plugin_core, zig_vst3_plugin, gui_options, native_vstgui, entry_symbols_step, vstgui_adapter_step, options);
     }
 
     var example_bundle_steps: [example_plugin_options.len]Vst3BundleSteps = undefined;
@@ -634,6 +642,7 @@ fn addExamplePlugin(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    zig_vst3: *std.Build.Module,
     zig_vst3_plugin_core: *std.Build.Module,
     zig_vst3_plugin: *std.Build.Module,
     gui_options: *std.Build.Step.Options,
@@ -646,11 +655,13 @@ fn addExamplePlugin(
         std.mem.eql(u8, options.short_name, "bypass") or
         std.mem.eql(u8, options.short_name, "mode-gain") or
         std.mem.eql(u8, options.short_name, "voice-mix") or
-        std.mem.eql(u8, options.short_name, "editor-smoke");
+        std.mem.eql(u8, options.short_name, "editor-smoke") or
+        std.mem.eql(u8, options.short_name, "channel-strip");
     const library = addVst3PluginLibrary(b, target, optimize, zig_vst3_plugin_core, .{
         .artifact_name = options.artifact_name,
         .root_source_file = options.root_source_file,
     });
+    library.root_module.addImport("zig-vst3", zig_vst3);
     if (has_reference_editor) library.root_module.addOptions("zig-vst3-gui-options", gui_options);
     if (native_vstgui and has_reference_editor) {
         addVstguiAdapter(library.root_module, target);
@@ -659,6 +670,7 @@ fn addExamplePlugin(
     addEntrySymbolsCheck(b, entry_symbols_step, library);
 
     const plugin_tests = addZigVst3PluginCoreTest(b, target, optimize, zig_vst3_plugin_core, options.root_source_file);
+    plugin_tests.root_module.addImport("zig-vst3", zig_vst3);
     if (has_reference_editor) plugin_tests.root_module.addOptions("zig-vst3-gui-options", gui_options);
     if (native_vstgui and has_reference_editor) {
         addVstguiAdapter(plugin_tests.root_module, target);
