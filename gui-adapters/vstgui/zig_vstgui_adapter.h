@@ -17,6 +17,8 @@ typedef struct ZigVstguiCallbacks {
     int32_t (*show_context_menu)(void* userdata, uint32_t parameter_id, int32_t x, int32_t y);
     int32_t (*store_editor_index)(void* userdata, uint32_t field_id, uint32_t value);
     int32_t (*store_editor_envelope)(void* userdata, uint32_t field_id, const struct ZigVstguiEnvelopePoint* points, uint32_t count);
+    int32_t (*store_editor_text)(void* userdata, uint32_t field_id, const char* text);
+    int32_t (*load_preset)(void* userdata, uint32_t preset_id);
 } ZigVstguiCallbacks;
 
 typedef struct ZigVstguiParameterInfo {
@@ -62,6 +64,24 @@ typedef struct ZigVstguiXYPadDescription {
 } ZigVstguiXYPadDescription;
 
 enum { ZIG_VSTGUI_MAX_XY_PADS = 8 };
+
+typedef struct ZigVstguiPreset {
+    uint32_t preset_id;
+    const char* name;
+} ZigVstguiPreset;
+
+typedef struct ZigVstguiPresetBrowserDescription {
+    const char* title;
+    const ZigVstguiPreset* presets;
+    uint32_t preset_count;
+    uint32_t search_state_id;
+    uint32_t selection_state_id;
+    const char* initial_search;
+    uint32_t initial_selection;
+} ZigVstguiPresetBrowserDescription;
+
+enum { ZIG_VSTGUI_MAX_PRESET_BROWSERS = 2 };
+enum { ZIG_VSTGUI_MAX_PRESETS = 64 };
 
 typedef enum ZigVstguiMeterKind {
     ZIG_VSTGUI_METER_PEAK = 0,
@@ -335,6 +355,8 @@ ZigVstguiEditor* zig_vstgui_editor_create_advanced(
     ZigVstguiGraphCallbacks graph_callbacks,
     const ZigVstguiXYPadDescription* xy_pads,
     uint32_t xy_pad_count,
+    const ZigVstguiPresetBrowserDescription* preset_browsers,
+    uint32_t preset_browser_count,
     ZigVstguiSkinDescription skin
 );
 void zig_vstgui_canvas_fill_rect(

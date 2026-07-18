@@ -69,6 +69,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_configured(
         graph_callbacks,
         nullptr,
         0,
+        nullptr,
+        0,
         skin
     );
 }
@@ -85,6 +87,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_advanced(
     ZigVstguiGraphCallbacks graph_callbacks,
     const ZigVstguiXYPadDescription* xy_pads,
     uint32_t xy_pad_count,
+    const ZigVstguiPresetBrowserDescription* preset_browsers,
+    uint32_t preset_browser_count,
     ZigVstguiSkinDescription skin
 ) {
     constexpr uint32_t style_mask = ZIG_VSTGUI_STYLE_BACKGROUND |
@@ -95,6 +99,22 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_advanced(
     if ((!meters && meter_count > 0) || meter_count > ZIG_VSTGUI_MAX_METERS) return nullptr;
     if ((!graphs && graph_count > 0) || graph_count > ZIG_VSTGUI_MAX_GRAPHS) return nullptr;
     if ((!xy_pads && xy_pad_count > 0) || xy_pad_count > ZIG_VSTGUI_MAX_XY_PADS) return nullptr;
+    if ((!preset_browsers && preset_browser_count > 0) ||
+        preset_browser_count > ZIG_VSTGUI_MAX_PRESET_BROWSERS) return nullptr;
+    for (uint32_t index = 0; index < preset_browser_count; ++index) {
+        const auto& browser = preset_browsers[index];
+        if (!browser.title || !browser.presets || browser.preset_count == 0 ||
+            browser.preset_count > ZIG_VSTGUI_MAX_PRESETS || !browser.initial_search ||
+            browser.search_state_id == 0 || browser.selection_state_id == 0 ||
+            browser.search_state_id == browser.selection_state_id) return nullptr;
+        for (uint32_t preset = 0; preset < browser.preset_count; ++preset) {
+            if (browser.presets[preset].preset_id == 0 || !browser.presets[preset].name ||
+                browser.presets[preset].name[0] == 0) return nullptr;
+            for (uint32_t previous = 0; previous < preset; ++previous) {
+                if (browser.presets[previous].preset_id == browser.presets[preset].preset_id) return nullptr;
+            }
+        }
+    }
     for (uint32_t index = 0; index < graph_count; ++index) {
         const auto& graph = graphs[index];
         const bool editable = graph.point_capacity > 0;
@@ -179,7 +199,9 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_advanced(
         graph_count,
         graph_callbacks,
         xy_pads,
-        xy_pad_count
+        xy_pad_count,
+        preset_browsers,
+        preset_browser_count
     );
     if (editor && !editor->valid()) {
         delete editor;
@@ -269,5 +291,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 10;
+    return 12;
 }

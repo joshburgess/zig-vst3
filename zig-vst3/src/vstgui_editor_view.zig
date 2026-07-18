@@ -29,6 +29,8 @@ pub const Callbacks = extern struct {
     show_context_menu: *const fn (?*anyopaque, vsttypes.ParamID, types.int32, types.int32) callconv(.c) types.int32,
     store_editor_index: *const fn (?*anyopaque, types.uint32, types.uint32) callconv(.c) types.int32,
     store_editor_envelope: *const fn (?*anyopaque, types.uint32, [*]const EnvelopePoint, types.uint32) callconv(.c) types.int32,
+    store_editor_text: *const fn (?*anyopaque, types.uint32, [*:0]const u8) callconv(.c) types.int32,
+    load_preset: *const fn (?*anyopaque, types.uint32) callconv(.c) types.int32,
 };
 
 pub const ParameterInfo = extern struct {
@@ -65,6 +67,8 @@ pub const ParameterValue = extern struct {
 
 pub const max_parameters = 64;
 pub const max_xy_pads = 8;
+pub const max_preset_browsers = 2;
+pub const max_presets = 64;
 pub const max_meters = 8;
 pub const max_graphs = 8;
 pub const max_graph_points = 256;
@@ -78,6 +82,21 @@ pub const XYPadDescription = extern struct {
     y_parameter_id: vsttypes.ParamID,
     x_label: [*:0]const u8,
     y_label: [*:0]const u8,
+};
+
+pub const PresetDescription = extern struct {
+    preset_id: types.uint32,
+    name: [*:0]const u8,
+};
+
+pub const PresetBrowserDescription = extern struct {
+    title: [*:0]const u8,
+    presets: [*]const PresetDescription,
+    preset_count: types.uint32,
+    search_state_id: types.uint32,
+    selection_state_id: types.uint32,
+    initial_search: [*:0]const u8,
+    initial_selection: types.uint32,
 };
 
 pub const MeterKind = enum(c_int) {
@@ -351,6 +370,8 @@ extern fn zig_vstgui_editor_create_advanced(
     GraphCallbacks,
     ?[*]const XYPadDescription,
     types.uint32,
+    ?[*]const PresetBrowserDescription,
+    types.uint32,
     SkinDescription,
 ) ?*Editor;
 extern fn zig_vstgui_canvas_fill_rect(*Canvas, f64, f64, f64, f64, types.uint32) void;
@@ -378,6 +399,7 @@ const Binding = struct {
     observer_callbacks: ObserverCallbacks,
     telemetry: *TelemetryState,
     attached: bool = false,
+    has_preset_browser: bool = false,
 };
 
 const TelemetryState = struct {
@@ -438,8 +460,10 @@ const View = vst_plug_view.PlugView(1, struct {
     pub fn onSize(self: anytype, rect: *iplugview.ViewRect) types.tresult {
         const width = rect.right - rect.left;
         const height = rect.bottom - rect.top;
-        if (width < 320 or height < 240) return types.kResultFalse;
         const state = binding(self) orelse return types.kResultFalse;
+        const minimum_width: types.int32 = if (state.has_preset_browser) 480 else 320;
+        const minimum_height: types.int32 = if (state.has_preset_browser) 480 else 240;
+        if (width < minimum_width or height < minimum_height) return types.kResultFalse;
         if (zig_vstgui_editor_resize(state.editor, @intCast(width), @intCast(height)) != 0) {
             std.log.err("VSTGUI editor rejected size {d}x{d}", .{ width, height });
             return types.kResultFalse;
@@ -475,9 +499,12 @@ const View = vst_plug_view.PlugView(1, struct {
         return types.kResultOk;
     }
 
-    pub fn checkSizeConstraint(_: anytype, rect: *iplugview.ViewRect) types.tresult {
-        rect.right = std.math.clamp(rect.right, 320, 1_000);
-        rect.bottom = std.math.clamp(rect.bottom, 240, 700);
+    pub fn checkSizeConstraint(self: anytype, rect: *iplugview.ViewRect) types.tresult {
+        const state = binding(self) orelse return types.kResultFalse;
+        const minimum_width: types.int32 = if (state.has_preset_browser) 480 else 320;
+        const minimum_height: types.int32 = if (state.has_preset_browser) 480 else 240;
+        rect.right = std.math.clamp(rect.right, minimum_width, 1_000);
+        rect.bottom = std.math.clamp(rect.bottom, minimum_height, 700);
         return types.kResultOk;
     }
 
@@ -517,6 +544,7 @@ pub fn create(
     meters: []const MeterDescription,
     graphs: []const GraphDescription,
     xy_pads: []const XYPadDescription,
+    preset_browsers: []const PresetBrowserDescription,
     skin: Skin,
     composition: Composition,
     callbacks: Callbacks,
@@ -530,6 +558,7 @@ pub fn create(
     }
     if (parameters.len == 0 or parameters.len > max_parameters or
         meters.len > max_meters or graphs.len > max_graphs or xy_pads.len > max_xy_pads or
+        preset_browsers.len > max_preset_browsers or
         skin.assets.len > max_assets or composition.groups.len > max_groups)
     {
         if (telemetry_source) |source| source.release();
@@ -590,6 +619,8 @@ pub fn create(
         .{ .userdata = telemetry, .load = loadGraph },
         if (xy_pads.len == 0) null else xy_pads.ptr,
         @intCast(xy_pads.len),
+        if (preset_browsers.len == 0) null else preset_browsers.ptr,
+        @intCast(preset_browsers.len),
         .{
             .assets = if (skin.assets.len == 0) null else &assets,
             .asset_count = @intCast(skin.assets.len),
@@ -619,6 +650,7 @@ pub fn create(
         .controller = controller,
         .observer_callbacks = observer_callbacks,
         .telemetry = telemetry,
+        .has_preset_browser = preset_browsers.len > 0,
     };
     if (!observer_callbacks.subscribe(observer_callbacks.userdata, editor)) {
         std.heap.page_allocator.destroy(state);
@@ -635,6 +667,10 @@ pub fn create(
         zig_vstgui_editor_destroy(editor);
         return null;
     };
+    if (preset_browsers.len > 0) {
+        view.rect.right = 720;
+        view.rect.bottom = 600;
+    }
     view.context = state;
     zig_vstgui_editor_set_resize_callbacks(editor, .{
         .userdata = view,

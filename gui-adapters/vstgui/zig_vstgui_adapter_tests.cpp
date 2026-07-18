@@ -6,6 +6,7 @@
 #include "zig_vstgui_graphs.h"
 #include "zig_vstgui_layout.h"
 #include "zig_vstgui_meters.h"
+#include "zig_vstgui_preset_browser.h"
 
 #include "pluginterfaces/base/keycodes.h"
 #include "vstgui/lib/events.h"
@@ -39,6 +40,10 @@ struct CallbackState {
     uint32_t stored_state_field {0};
     uint32_t stored_state_index {0};
     uint32_t stored_envelope_count {0};
+    std::string stored_state_text;
+    uint32_t loaded_preset_id {0};
+    uint32_t preset_load_count {0};
+    bool reject_preset {false};
 };
 
 void recordOperation(CallbackState* state, char kind, uint32_t parameter_id) {
@@ -133,6 +138,20 @@ int32_t storeEditorEnvelope(void* userdata, uint32_t field_id, const ZigVstguiEn
     state->stored_state_field = field_id;
     state->stored_envelope_count = count;
     return 0;
+}
+
+int32_t storeEditorText(void* userdata, uint32_t field_id, const char* value) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->stored_state_field = field_id;
+    state->stored_state_text = value ? value : "";
+    return value ? 0 : -1;
+}
+
+int32_t loadPreset(void* userdata, uint32_t preset_id) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->loaded_preset_id = preset_id;
+    state->preset_load_count += 1;
+    return state->reject_preset ? -1 : 0;
 }
 
 bool closeEnough(double left, double right) {
@@ -419,6 +438,8 @@ int testMultiParameterAttachmentAndXYPad() {
         {},
         &xy_pad,
         1,
+        nullptr,
+        0,
         {}
     );
     if (!editor) return 10;
@@ -445,7 +466,8 @@ int testMultiParameterAttachmentAndXYPad() {
     auto invalid_xy_pad = xy_pad;
     invalid_xy_pad.y_parameter_id = 10;
     if (zig_vstgui_editor_create_advanced(
-            parameters, 2, callbacks, nullptr, 0, {}, nullptr, 0, {}, &invalid_xy_pad, 1, {}
+            parameters, 2, callbacks, nullptr, 0, {}, nullptr, 0, {}, &invalid_xy_pad, 1,
+            nullptr, 0, {}
         )) return 18;
     return 0;
 }
@@ -733,7 +755,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 10) return 1;
+    if (zig_vstgui_adapter_version() != 12) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -804,6 +826,33 @@ int testMeterAbi() {
     if (!editable_semantics->state().selected || !editable_semantics->range().present ||
         editable_semantics->range().current <= 0.0) return 12;
     zig_vstgui_editor_destroy(editable_editor);
+    CallbackState preset_state;
+    ZigVstguiCallbacks preset_callbacks {};
+    preset_callbacks.userdata = &preset_state;
+    preset_callbacks.store_editor_index = storeEditorIndex;
+    preset_callbacks.store_editor_text = storeEditorText;
+    preset_callbacks.load_preset = loadPreset;
+    const ZigVstguiPreset presets[] = {{1, "Clean"}, {2, "Driven"}};
+    const ZigVstguiPresetBrowserDescription browser {
+        "Presets", presets, 2, 6, 7, "", 1,
+    };
+    auto* preset_editor = zig_vstgui_editor_create_advanced(
+        &parameter, 1, preset_callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        &browser, 1, {}
+    );
+    if (!preset_editor || !preset_editor->resize(640, 480)) return 13;
+    const auto* preset_semantics = preset_editor->presetBrowserAccessibility(0);
+    if (!preset_semantics || preset_semantics->role() != ZigVstgui::AccessibilityRole::choice ||
+        !preset_semantics->perform(ZigVstgui::AccessibilityAction::set_value, 0.0, "drive") ||
+        !preset_semantics->perform(ZigVstgui::AccessibilityAction::press) ||
+        preset_state.loaded_preset_id != 2) return 14;
+    zig_vstgui_editor_destroy(preset_editor);
+    auto invalid_browser = browser;
+    invalid_browser.search_state_id = invalid_browser.selection_state_id;
+    if (zig_vstgui_editor_create_advanced(
+            &parameter, 1, preset_callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+            &invalid_browser, 1, {}
+        )) return 15;
     return 0;
 }
 
@@ -1218,6 +1267,81 @@ int testGraphs() {
     return 0;
 }
 
+int testPresetBrowser() {
+    VSTGUI::init(nullptr);
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.store_editor_index = storeEditorIndex;
+    callbacks.store_editor_text = storeEditorText;
+    callbacks.load_preset = loadPreset;
+    const ZigVstguiPreset presets[] = {
+        {1, "Clean Start"},
+        {2, "Console Push"},
+        {3, "Peak Limit"},
+    };
+    const ZigVstguiPresetBrowserDescription description {
+        "Channel Presets", presets, 3, 6, 7, "", 1,
+    };
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 360, 180)));
+    ZigVstgui::PresetBrowserControl browser;
+    if (!browser.build(container, description, callbacks, styles)) {
+        VSTGUI::exit();
+        return 1;
+    }
+    browser.setBounds(VSTGUI::CRect(0, 0, 360, 180));
+    const auto& accessibility = browser.accessibilityNode();
+    if (accessibility.role() != ZigVstgui::AccessibilityRole::choice ||
+        accessibility.name() != "Channel Presets" || browser.browserView()->selectedPreset() != 1) {
+        browser.clear();
+        VSTGUI::exit();
+        return 2;
+    }
+    VSTGUI::MouseDownEvent double_click(
+        VSTGUI::CPoint(40, 66),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    double_click.clickCount = 2;
+    browser.browserView()->onMouseDownEvent(double_click);
+    if (!double_click.consumed || state.loaded_preset_id != 2) {
+        browser.clear();
+        VSTGUI::exit();
+        return 3;
+    }
+    if (!browser.handleKey('p', 0, 0) || state.stored_state_field != 7 ||
+        state.stored_state_index != 2 || state.stored_state_text != "p") {
+        browser.clear();
+        VSTGUI::exit();
+        return 4;
+    }
+    if (!browser.handleKey(0, Steinberg::KEY_DOWN, 0) || browser.browserView()->selectedPreset() != 3 ||
+        !browser.handleKey(0, Steinberg::KEY_RETURN, 0) || state.loaded_preset_id != 3) {
+        browser.clear();
+        VSTGUI::exit();
+        return 5;
+    }
+    if (!accessibility.perform(ZigVstgui::AccessibilityAction::set_value, 0.0, "missing") ||
+        browser.browserView()->selectedPreset() != 0 ||
+        browser.browserView()->statusText().find("No matches") == std::string::npos ||
+        !accessibility.perform(ZigVstgui::AccessibilityAction::set_value, 0.0, "clean") ||
+        !accessibility.perform(ZigVstgui::AccessibilityAction::press) || state.loaded_preset_id != 1) {
+        browser.clear();
+        VSTGUI::exit();
+        return 6;
+    }
+    state.reject_preset = true;
+    if (!accessibility.perform(ZigVstgui::AccessibilityAction::press) ||
+        browser.browserView()->statusText().find("retry") == std::string::npos) {
+        browser.clear();
+        VSTGUI::exit();
+        return 7;
+    }
+    browser.clear();
+    VSTGUI::exit();
+    return 0;
+}
+
 }
 
 int main() {
@@ -1239,5 +1363,6 @@ int main() {
     if (graph_result != 0) return 160 + graph_result;
     if (const int result = testMeterAbi(); result != 0) return 170 + result;
     if (const int result = testAssetsAndFonts(); result != 0) return 190 + result;
+    if (const int result = testPresetBrowser(); result != 0) return 210 + result;
     return 0;
 }

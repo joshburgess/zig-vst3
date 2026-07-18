@@ -2,9 +2,11 @@
 #include "zig_vstgui_controls.h"
 #include "zig_vstgui_graphs.h"
 #include "zig_vstgui_meters.h"
+#include "zig_vstgui_preset_browser.h"
 #include "zig_vstgui_theme.h"
 #include "zig_vstgui_xy_pad.h"
 
+#include "pluginterfaces/base/keycodes.h"
 #include "vstgui/lib/cbitmap.h"
 #include "vstgui/lib/coffscreencontext.h"
 #include "vstgui/lib/cviewcontainer.h"
@@ -374,6 +376,42 @@ Snapshot editableEnvelope() {
     };
 }
 
+int32_t rejectPreset(void*, uint32_t) {
+    return -1;
+}
+
+Snapshot presetBrowsers() {
+    return {
+        "preset-browsers.png",
+        720,
+        180,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            context.setFillColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            context.drawRect(VSTGUI::CRect(0, 0, 720, 180), VSTGUI::kDrawFilled);
+            const ZigVstguiPreset presets[] = {
+                {1, "Clean Start"}, {2, "Console Push"}, {3, "Peak Limit"}, {4, "Wide Motion"},
+            };
+            const ZigVstguiPresetBrowserDescription description {
+                "Channel Presets", presets, 4, 6, 7, "", 2,
+            };
+            ZigVstguiCallbacks callbacks {};
+            callbacks.load_preset = rejectPreset;
+            ZigVstgui::AccessibilityNode nodes[3];
+            ZigVstgui::PresetBrowserView views[] = {
+                {VSTGUI::CRect(8, 8, 232, 172), description, callbacks, styles, &nodes[0]},
+                {VSTGUI::CRect(248, 8, 472, 172), description, callbacks, styles, &nodes[1]},
+                {VSTGUI::CRect(488, 8, 712, 172), description, callbacks, styles, &nodes[2]},
+            };
+            views[1].handleKey('p', 0, 0);
+            views[1].handleKey(0, Steinberg::KEY_RETURN, 0);
+            for (const char character : std::string("missing")) views[2].handleKey(character, 0, 0);
+            for (auto& view : views) view.draw(&context);
+        },
+    };
+}
+
 int runSnapshot(
     const Snapshot& snapshot,
     const std::filesystem::path& references,
@@ -399,7 +437,7 @@ int runSnapshot(
 
 double benchmarkWarmDraw() {
     ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
-    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 64)));
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 480, 140)));
     container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
     auto* slider = new ZigVstgui::GainSlider(
         VSTGUI::CRect(8, 18, 104, 46),
@@ -439,7 +477,21 @@ double benchmarkWarmDraw() {
     container->addView(new ZigVstgui::GraphView(
         VSTGUI::CRect(160, 6, 232, 58), graph_description, styles, &graph_accessibility
     ));
-    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(240, 64), 1.0);
+    const ZigVstguiPreset presets[] = {
+        {1, "Clean Start"}, {2, "Console Push"}, {3, "Peak Limit"}, {4, "Wide Motion"},
+    };
+    const ZigVstguiPresetBrowserDescription browser_description {
+        "Presets", presets, 4, 6, 7, "", 1,
+    };
+    ZigVstgui::AccessibilityNode browser_accessibility;
+    container->addView(new ZigVstgui::PresetBrowserView(
+        VSTGUI::CRect(240, 6, 472, 134),
+        browser_description,
+        {},
+        styles,
+        &browser_accessibility
+    ));
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(480, 140), 1.0);
     if (!offscreen) return 1e9;
     offscreen->beginDraw();
     container->drawRect(offscreen, container->getViewSize());
@@ -474,6 +526,7 @@ int main(int argc, char** argv) {
         graphs(),
         xyPad(),
         editableEnvelope(),
+        presetBrowsers(),
     };
     int result = 0;
     for (const auto& snapshot : snapshots) {

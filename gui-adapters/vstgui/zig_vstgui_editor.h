@@ -8,6 +8,7 @@
 #include "zig_vstgui_controls.h"
 #include "zig_vstgui_graphs.h"
 #include "zig_vstgui_meters.h"
+#include "zig_vstgui_preset_browser.h"
 #include "zig_vstgui_theme.h"
 #include "zig_vstgui_xy_pad.h"
 
@@ -33,7 +34,9 @@ struct ZigVstguiEditor {
         uint32_t graph_count = 0,
         ZigVstguiGraphCallbacks graph_callbacks = {},
         const ZigVstguiXYPadDescription* xy_pads = nullptr,
-        uint32_t xy_pad_count = 0
+        uint32_t xy_pad_count = 0,
+        const ZigVstguiPresetBrowserDescription* preset_browsers = nullptr,
+        uint32_t preset_browser_count = 0
     );
     ~ZigVstguiEditor();
 
@@ -51,6 +54,7 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode* meterAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* graphAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* xyPadAccessibility(uint32_t index, uint32_t axis) const;
+    const ZigVstgui::AccessibilityNode* presetBrowserAccessibility(uint32_t index) const;
     bool tickMeter(uint32_t index, double elapsed_ms);
     bool refreshGraph(uint32_t index);
     uint32_t graphPointCount(uint32_t index) const;
@@ -73,6 +77,7 @@ private:
     void buildFrame();
     void clearFrameReferences();
     void layout();
+    void layoutPresetBrowsers(double left, double top, double right, double bottom);
     void reportMetrics() const;
     bool focusNext(bool reverse);
     const ZigVstgui::ThemeResolver& stylesForParameter(uint32_t index) const;
@@ -123,6 +128,13 @@ private:
     std::array<std::string, ZIG_VSTGUI_MAX_XY_PADS> xy_pad_x_labels;
     std::array<std::string, ZIG_VSTGUI_MAX_XY_PADS> xy_pad_y_labels;
     uint32_t xy_pad_count {0};
+    std::array<std::unique_ptr<ZigVstgui::PresetBrowserControl>, ZIG_VSTGUI_MAX_PRESET_BROWSERS> preset_browser_controls;
+    std::array<ZigVstguiPresetBrowserDescription, ZIG_VSTGUI_MAX_PRESET_BROWSERS> preset_browser_descriptions {};
+    std::array<std::string, ZIG_VSTGUI_MAX_PRESET_BROWSERS> preset_browser_titles;
+    std::array<std::string, ZIG_VSTGUI_MAX_PRESET_BROWSERS> preset_browser_searches;
+    std::array<std::vector<ZigVstguiPreset>, ZIG_VSTGUI_MAX_PRESET_BROWSERS> preset_browser_presets;
+    std::array<std::vector<std::string>, ZIG_VSTGUI_MAX_PRESET_BROWSERS> preset_browser_names;
+    uint32_t preset_browser_count {0};
     ZigVstgui::AssetStore asset_store;
     ZigVstguiDrawingCallbacks drawing_callbacks {};
     ZigVstgui::ResizeControl resize_control;

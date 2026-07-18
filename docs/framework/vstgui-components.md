@@ -2,7 +2,7 @@
 
 The reference component API is available as `@import("zig-vst3").vstgui`. A controller describes parameters, meters, and presentation choices in Zig. It does not include VSTGUI headers, allocate C++ widgets, or call VST3 gesture functions directly.
 
-The component gallery is the `zig_vst3_editor_smoke` example. The Voice Mix example is the smaller production-style editor used to verify that the same API works with a different composition and theme.
+The component gallery is the `zig_vst3_editor_smoke` example. The channel-strip example is the production-style editor used to verify that the same API works with a different composition and theme.
 
 ## Build a Parameter Editor
 
@@ -34,7 +34,7 @@ pub fn createView(
 
 Use `createView` for one default slider, `createMultiView` for standard parameter controls, `createMultiViewWithMeters` for telemetry, or `createMultiViewWithSkin` for explicit theme, layout, fonts, assets, and drawing.
 
-Use `createEditor` when the editor needs an explicit composition. `EditorDescription` combines parameter, meter, graph, and XY-pad slices with a skin and a bounded `Composition`. Each `Group` names contiguous ranges from those slices. Groups must cover every slice once, in order. Invalid, overlapping, incomplete, or empty groups reject editor creation.
+Use `createEditor` when the editor needs an explicit composition. `EditorDescription` combines parameter, meter, graph, XY-pad, and preset-browser slices with a skin and a bounded `Composition`. Each `Group` names contiguous parameter, meter, graph, and XY-pad ranges. Groups must cover every grouped slice once, in order. Invalid, overlapping, incomplete, or empty groups reject editor creation. Preset browsers occupy a separate responsive editor region and follow the grouped controls in focus order.
 
 ```zig
 return ui.createEditor(Controller, controller, name, .{
@@ -72,6 +72,29 @@ The complete [channel strip example](../../examples/channel_strip_plugin.zig) us
 
 The channel strip combines gain and drive controls, a linked XY pad, bypass toggle, mode dropdown, stereo and gain-reduction meters, and a fixed transfer graph. The component gallery exercises the same description, grouping, XY interaction, telemetry, graph, resize, focus, and lifecycle contracts with different component variants. Ordinary editor composition should require changes only to the plugin's public declarations.
 
+## Preset Browsers
+
+Declare up to two `PresetBrowser` values in `EditorDescription.preset_browsers`. Each browser accepts up to 64 stable, nonzero preset IDs. Search and selection reference declared persistent editor-state fields. The search field must use `editor_state.Text`; the selection field must use `index` or `point_id`.
+
+```zig
+.preset_browsers = &.{.{
+    .title = "Channel Presets",
+    .presets = &.{
+        .{ .id = 1, .name = "Clean Start" },
+        .{ .id = 2, .name = "Console Push" },
+        .{ .id = 3, .name = "Peak Limit" },
+    },
+    .search_state_id = preset_search_state_id,
+    .selection_state_id = preset_selection_state_id,
+}},
+```
+
+The reflected controller configuration must implement `loadPreset(controller, preset_id)` when it declares a browser. Editor creation rejects a browser without a loader. A production load should edit every affected parameter through the controller's begin, perform, and end methods so the host records automation. The gallery and channel strip open an optional host group edit, begin all affected parameters, roll back accepted values if any perform call fails, end every begun gesture, and finish the group edit.
+
+The browser is one composite focus stop. Type printable characters to filter, use Backspace to edit, Escape to clear, Up and Down to move, Home and End to jump, and Enter to load. A single pointer click selects, and a double-click loads. The accessible press action also loads. Empty results explain how to recover. Failed loads preserve the selected preset and expose a retry instruction.
+
+Search and selection are stored as editor state, separate from parameter state. Reopening an editor restores both. Catalog names and search text are copied into instance-owned bounded storage during editor creation. Filtering and drawing do not allocate.
+
 Each `Parameter` needs the stable parameter ID used by the controller, its display metadata, its step count, its normalized default, and a presentation kind:
 
 | Kind | Intended parameter | Exact entry |
@@ -101,7 +124,7 @@ The bipolar and decibel presentations fill from the center instead of from the m
 - `.adaptive` switches the full parameter editor between compact and expanded arrangements at 520 by 360. It is intended for multi-parameter editors and telemetry.
 - `.compact_strip` keeps a title and dense label, control, value rows. It is intended for small production editors that should not inherit the gallery's large single-control composition.
 
-Both layouts accept host resize requests from 320 by 240 through 1000 by 700, use logical coordinates, and keep Tab order aligned with visible reading order. The host can reject a requested size. The editor preserves its last accepted size when that happens.
+Both layouts accept host resize requests from 320 by 240 through 1000 by 700, use logical coordinates, and keep Tab order aligned with visible reading order. Editors with a preset browser use a 480 by 480 minimum and open at 720 by 600 so the catalog does not displace parameter controls at an unusable size. The host can reject a requested size. The editor preserves its last accepted size when that happens.
 
 `Composition.style` and `Group.style` override semantic background, foreground, border, and accent colors using `0xRRGGBBAA` values. Editor values apply first and group values apply to controls within that group. Typography, state contrast, spacing, radii, and control metrics still come from the selected theme. Prefer changing the accent or border at group scope. Replacing every color increases the chance of losing hover, focus, disabled, or editing contrast.
 
@@ -131,9 +154,9 @@ Dragging edits both parameters as one ordered gesture. Left and Right adjust the
 | Discrete | Bypass toggle, mode dropdown, and segmented voice count |
 | Telemetry | Peak, stereo, and gain-reduction meters plus a live waveform graph |
 | Resources | Embedded PNG, deterministic SVG, font fallback, and custom overlay drawing |
-| Lifecycle | Adaptive breakpoint, resize action, drag handle, scaling, and independent editor instances |
+| Lifecycle | Adaptive breakpoint, resize action, drag handle, scaling, independent editor instances, and persistent preset search and selection |
 
-Use the gallery as a regression fixture and API example. It is intentionally denser than a production editor. The Voice Mix editor demonstrates the opposite case: one musical choice, the alternate palette, and the compact-strip composition.
+Use the gallery as a regression fixture and API example. It is intentionally denser than a production editor. The channel strip demonstrates the production case with an alternate palette, compact-strip composition, and host-automated presets.
 
 ## Telemetry
 

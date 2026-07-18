@@ -23,12 +23,15 @@ pub const analyzer_mode_state_id: u32 = 2;
 pub const selected_tab_state_id: u32 = 3;
 pub const envelope_selection_state_id: u32 = 4;
 pub const envelope_state_id: u32 = 5;
+pub const preset_search_state_id: u32 = 6;
+pub const preset_selection_state_id: u32 = 7;
 
 const gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
     .{ .id = 2, .x = 0.5, .y = 0.5 },
     .{ .id = 3, .x = 1.0, .y = 0.0 },
 }) catch unreachable;
+const empty_preset_search = plug_core.editor_state.Text.init("") catch unreachable;
 
 pub const GalleryEditorState = plug_core.editor_state.Store(1, &.{
     .{ .id = panel_expanded_state_id, .default = .{ .boolean = true } },
@@ -36,7 +39,41 @@ pub const GalleryEditorState = plug_core.editor_state.Store(1, &.{
     .{ .id = selected_tab_state_id, .default = .{ .index = 0 } },
     .{ .id = envelope_selection_state_id, .default = .{ .point_id = 2 } },
     .{ .id = envelope_state_id, .default = .{ .envelope = gallery_envelope } },
+    .{ .id = preset_search_state_id, .default = .{ .text = empty_preset_search } },
+    .{ .id = preset_selection_state_id, .default = .{ .index = 1 } },
 });
+
+fn applyPreset(
+    comptime ControllerType: type,
+    iface: *ivsteditcontroller.IEditController,
+    ids: []const vsttypes.ParamID,
+    values: []const f64,
+) types.tresult {
+    if (ids.len == 0 or ids.len != values.len or ids.len > 64) return types.kInvalidArgument;
+    var previous: [64]f64 = undefined;
+    for (ids, 0..) |id, index| previous[index] = ControllerType.getNormalized(iface, id);
+    const grouped = ControllerType.startGroupEdit(iface) == types.kResultOk;
+    var begun: usize = 0;
+    while (begun < ids.len) : (begun += 1) {
+        if (ControllerType.beginEdit(iface, ids[begun]) != types.kResultOk) {
+            for (ids[0..begun]) |id| _ = ControllerType.endEdit(iface, id);
+            if (grouped) _ = ControllerType.finishGroupEdit(iface);
+            return types.kResultFalse;
+        }
+    }
+    var applied: usize = 0;
+    while (applied < ids.len) : (applied += 1) {
+        if (ControllerType.performEdit(iface, ids[applied], values[applied]) != types.kResultOk) {
+            for (ids[0..applied], previous[0..applied]) |id, value| _ = ControllerType.performEdit(iface, id, value);
+            for (ids) |id| _ = ControllerType.endEdit(iface, id);
+            if (grouped) _ = ControllerType.finishGroupEdit(iface);
+            return types.kResultFalse;
+        }
+    }
+    for (ids) |id| _ = ControllerType.endEdit(iface, id);
+    if (grouped and ControllerType.finishGroupEdit(iface) != types.kResultOk) return types.kResultFalse;
+    return types.kResultOk;
+}
 
 const checkmark_asset_id: types.uint32 = 1;
 const pixel_asset_id: types.uint32 = 2;
@@ -88,6 +125,17 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const Params = editor_smoke_spec.Spec.Params;
     pub const parameter_set = &editor_smoke_spec.parameter_set;
     pub const EditorState = GalleryEditorState;
+
+    pub fn loadPreset(controller: *ivsteditcontroller.IEditController, preset_id: u32) types.tresult {
+        const ids = [_]vsttypes.ParamID{ gain_param_id, voices_param_id, bypass_param_id, mode_param_id };
+        const values = switch (preset_id) {
+            1 => [_]f64{ 0.5, 0.0, 0.0, 0.0 },
+            2 => [_]f64{ 0.75, 2.0 / 3.0, 0.0, 0.5 },
+            3 => [_]f64{ 0.5, 0.0, 1.0, 0.0 },
+            else => return types.kInvalidArgument,
+        };
+        return applyPreset(Controller, controller, &ids, &values);
+    }
 
     pub fn createView(controller: *ivsteditcontroller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
         return parameter_editor.createEditor(Controller, controller, name, .{
@@ -143,6 +191,16 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .y_parameter_id = voices_param_id,
                 .x_label = "Bipolar",
                 .y_label = "Voices",
+            }},
+            .preset_browsers = &.{.{
+                .title = "Gallery Presets",
+                .presets = &.{
+                    .{ .id = 1, .name = "Neutral" },
+                    .{ .id = 2, .name = "Wide Motion" },
+                    .{ .id = 3, .name = "Safe Bypass" },
+                },
+                .search_state_id = preset_search_state_id,
+                .selection_state_id = preset_selection_state_id,
             }},
             .skin = .{
                 .assets = &.{
@@ -204,8 +262,8 @@ test "editor smoke controller creates an editor view" {
     try std.testing.expectEqual(types.kResultOk, view.vtable.isPlatformTypeSupported(view, iplugview.PlatformType.kPlatformTypeNSView));
     var rect = iplugview.ViewRect{};
     try std.testing.expectEqual(types.kResultOk, view.vtable.getSize(view, &rect));
-    try std.testing.expectEqual(@as(types.int32, 400), rect.right);
-    try std.testing.expectEqual(@as(types.int32, 300), rect.bottom);
+    try std.testing.expectEqual(@as(types.int32, 720), rect.right);
+    try std.testing.expectEqual(@as(types.int32, 600), rect.bottom);
 }
 
 test "editor smoke controller creates independent views" {
@@ -220,12 +278,12 @@ test "editor smoke controller creates independent views" {
     defer _ = second.vtable.release(second);
     try std.testing.expect(first != second);
 
-    var changed = iplugview.ViewRect{ .left = 0, .top = 0, .right = 640, .bottom = 360 };
+    var changed = iplugview.ViewRect{ .left = 0, .top = 0, .right = 640, .bottom = 520 };
     try std.testing.expectEqual(types.kResultOk, first.vtable.onSize(first, &changed));
     var second_size = iplugview.ViewRect{};
     try std.testing.expectEqual(types.kResultOk, second.vtable.getSize(second, &second_size));
-    try std.testing.expectEqual(@as(types.int32, 400), second_size.right);
-    try std.testing.expectEqual(@as(types.int32, 300), second_size.bottom);
+    try std.testing.expectEqual(@as(types.int32, 720), second_size.right);
+    try std.testing.expectEqual(@as(types.int32, 600), second_size.bottom);
 }
 
 test "editor smoke controller persists UI state without changing parameters" {
@@ -240,6 +298,10 @@ test "editor smoke controller persists UI state without changing parameters" {
 
     const source_gain_before = Controller.getNormalized(source, gain_param_id);
     try editorState(source).set(selected_tab_state_id, .{ .index = 2 });
+    try editorState(source).set(preset_search_state_id, .{
+        .text = try plug_core.editor_state.Text.init("wide"),
+    });
+    try editorState(source).set(preset_selection_state_id, .{ .index = 2 });
     try std.testing.expectEqual(source_gain_before, Controller.getNormalized(source, gain_param_id));
     try std.testing.expectEqual(types.kResultOk, Controller.setNormalized(source, gain_param_id, 0.75));
     const Stream = vst_stream.FixedBufferStream(65536);
@@ -249,12 +311,15 @@ test "editor smoke controller persists UI state without changing parameters" {
     try std.testing.expectEqual(types.kResultOk, restored.vtable.setState(restored, stream.asStream()));
 
     try std.testing.expectEqual(@as(u32, 2), editorState(restored).get(selected_tab_state_id).?.index);
+    try std.testing.expectEqualStrings("wide", editorState(restored).get(preset_search_state_id).?.text.slice());
+    try std.testing.expectEqual(@as(u32, 2), editorState(restored).get(preset_selection_state_id).?.index);
     try std.testing.expectEqual(@as(f64, 0.75), Controller.getNormalized(restored, gain_param_id));
     const first = restored.vtable.createView(restored, ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
     _ = first.vtable.release(first);
     const reopened = restored.vtable.createView(restored, ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
     defer _ = reopened.vtable.release(reopened);
     try std.testing.expectEqual(@as(u32, 2), editorState(restored).get(selected_tab_state_id).?.index);
+    try std.testing.expectEqualStrings("wide", editorState(restored).get(preset_search_state_id).?.text.slice());
 
     try std.testing.expectEqual(types.kResultOk, Controller.setNormalized(restored, gain_param_id, 0.25));
     try editorState(restored).set(selected_tab_state_id, .{ .index = 1 });

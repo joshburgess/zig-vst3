@@ -120,7 +120,7 @@ Completion evidence:
 
 ## Milestone 12: Higher-Level Components
 
-- [ ] Add a preset browser with search, selection, load status, and keyboard navigation.
+- [x] Add a preset browser with search, selection, load status, and keyboard navigation.
 - [ ] Add anchored popovers and richer menus with focus containment and restoration.
 - [ ] Add a piano keyboard with pointer, computer-keyboard, and accessible note input.
 - [ ] Add a bounded step sequencer with multi-selection and clear playhead semantics.
@@ -134,6 +134,19 @@ Exit criteria:
 - Each component has a complete pointer, keyboard, focus, empty, disabled, error, and accessibility experience.
 - Repaint and data-transfer costs remain bounded under declared capacities.
 - Single-consumer contracts remain experimental until a second production use establishes the shared API.
+
+Preset browser completion evidence:
+
+- `PresetBrowser` is a supported public authoring declaration. The component gallery and channel-strip editor both use the same bounded catalog, persistent search and selection fields, and host-automated load callback.
+- Adapter ABI version 12 adds bounded preset catalogs, persisted text and selection callbacks, and preset-load dispatch. Version 11 remains the persistent editor-state foundation used by the browser.
+- The browser is one composite focus stop. Typing filters the catalog, Backspace edits the query, Escape clears it, arrows and Home or End move selection, and Enter loads the selected preset. A single click selects and a double-click loads. Native accessibility focus, value, increment, decrement, and press actions use the same state machine.
+- Empty results and failed loads remain visible and recoverable. A failed load keeps the selection and lets Enter retry.
+- Filtering and visible-row selection use fixed-capacity storage. Drawing does not allocate, and keyboard navigation keeps the selected row in view.
+- Native interaction tests cover filtering, persisted state callbacks, keyboard selection, accessible search and load actions, empty results, successful load, failed load, retry status, invalid declarations, and editor integration. `preset-browsers.png` covers populated, filtered-error, and empty states.
+- All Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, and all ten Steinberg example validators pass. The final warm-render average, including the browser, is 77.9 microseconds against the 300 microsecond budget.
+- All examples cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`. The Windows UI Automation provider also cross-compiles through the native adapter test script.
+- Pluginval was not launched because it repeatedly produced macOS crash dialogs in earlier milestones. Manual macOS host interaction and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+- Popovers, richer menus, piano input, sequencing, file drop, and production waveform or spectrum components remain separate slices of this milestone.
 
 ## Validation After Each Milestone
 
@@ -153,3 +166,4 @@ Exit criteria:
 - X11 and Wayland host interaction.
 - AT-SPI semantics and actions on Linux.
 - Manual graph rendering in a production host.
+- Manual preset-browser interaction in a production host.

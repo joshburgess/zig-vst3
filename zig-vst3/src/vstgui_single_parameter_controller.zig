@@ -71,6 +71,18 @@ pub const XYPad = struct {
     y_label: [*:0]const u8 = "Y",
 };
 
+pub const Preset = struct {
+    id: u32,
+    name: [*:0]const u8,
+};
+
+pub const PresetBrowser = struct {
+    title: [*:0]const u8 = "Presets",
+    presets: []const Preset,
+    search_state_id: u32,
+    selection_state_id: u32,
+};
+
 pub const Asset = vstgui_editor_view.Asset;
 pub const AssetFormat = vstgui_editor_view.AssetFormat;
 pub const AssetScale = vstgui_editor_view.AssetScale;
@@ -92,6 +104,7 @@ pub const EditorDescription = struct {
     meters: []const Meter = &.{},
     graphs: []const Graph = &.{},
     xy_pads: []const XYPad = &.{},
+    preset_browsers: []const PresetBrowser = &.{},
     skin: Skin = .{},
     composition: Composition = .{},
 };
@@ -127,7 +140,7 @@ pub fn createMultiViewWithSkin(
     meters: []const Meter,
     skin: Skin,
 ) ?*iplugview.IPlugView {
-    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, &.{}, skin, .{});
+    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, &.{}, &.{}, skin, .{});
 }
 
 pub fn createEditor(
@@ -144,6 +157,7 @@ pub fn createEditor(
         description.meters,
         description.graphs,
         description.xy_pads,
+        description.preset_browsers,
         description.skin,
         description.composition,
     );
@@ -157,6 +171,7 @@ fn createConfiguredView(
     meters: []const Meter,
     graphs: []const Graph,
     xy_pads: []const XYPad,
+    preset_browsers: []const PresetBrowser,
     skin: Skin,
     composition: Composition,
 ) ?*iplugview.IPlugView {
@@ -176,7 +191,11 @@ fn createConfiguredView(
             const iface: *iwaylandframe.IWaylandHost = @ptrCast(@alignCast(host));
             _ = iface.vtable.release(iface);
         };
-        if (parameters.len == 0 or parameters.len > vstgui_editor_view.max_parameters) return null;
+        if (parameters.len == 0 or parameters.len > vstgui_editor_view.max_parameters or
+            preset_browsers.len > vstgui_editor_view.max_preset_browsers) return null;
+        if (comptime !Controller.hasPresetLoader) {
+            if (preset_browsers.len > 0) return null;
+        }
         var bindings: [vstgui_editor_view.max_parameters]vstgui_editor_view.ParameterInfoBinding = undefined;
         for (parameters, 0..) |parameter, index| {
             bindings[index] = .{ .id = parameter.id, .control_kind = parameter.control_kind, .info = .{
@@ -323,11 +342,49 @@ fn createConfiguredView(
                 .y_label = xy_pad.y_label,
             };
         }
+        var preset_descriptions: [vstgui_editor_view.max_preset_browsers][vstgui_editor_view.max_presets]vstgui_editor_view.PresetDescription = undefined;
+        var browser_descriptions: [vstgui_editor_view.max_preset_browsers]vstgui_editor_view.PresetBrowserDescription = undefined;
+        var initial_search: [vstgui_editor_view.max_preset_browsers][editor_state.maximum_text_bytes + 1]u8 = @splat(@splat(0));
+        for (preset_browsers, 0..) |browser, browser_index| {
+            if (browser.presets.len == 0 or browser.presets.len > vstgui_editor_view.max_presets or
+                browser.search_state_id == 0 or browser.selection_state_id == 0 or
+                browser.search_state_id == browser.selection_state_id) return null;
+            var initial_selection: u32 = 0;
+            if (comptime Controller.hasEditorState) {
+                const state = Controller.editorState(controller);
+                const search_value = state.get(browser.search_state_id) orelse return null;
+                const search = switch (search_value) {
+                    .text => |text| text,
+                    else => return null,
+                };
+                @memcpy(initial_search[browser_index][0..search.len], search.slice());
+                const selection_value = state.get(browser.selection_state_id) orelse return null;
+                initial_selection = switch (selection_value) {
+                    .index => |id| id,
+                    .point_id => |id| id,
+                    else => return null,
+                };
+            } else return null;
+            for (browser.presets, 0..) |preset, preset_index| {
+                if (preset.id == 0) return null;
+                for (browser.presets[0..preset_index]) |previous| if (previous.id == preset.id) return null;
+                preset_descriptions[browser_index][preset_index] = .{ .preset_id = preset.id, .name = preset.name };
+            }
+            browser_descriptions[browser_index] = .{
+                .title = browser.title,
+                .presets = &preset_descriptions[browser_index],
+                .preset_count = @intCast(browser.presets.len),
+                .search_state_id = browser.search_state_id,
+                .selection_state_id = browser.selection_state_id,
+                .initial_search = @ptrCast(&initial_search[browser_index]),
+                .initial_selection = initial_selection,
+            };
+        }
         const telemetry_source = if (comptime @hasDecl(Controller, "retainGuiTelemetry"))
             Controller.retainGuiTelemetry(controller)
         else
             null;
-        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], skin, composition, .{
+        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], skin, composition, .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
             .perform_edit = Bridge.performEdit,
@@ -337,6 +394,8 @@ fn createConfiguredView(
             .show_context_menu = Bridge.showContextMenu,
             .store_editor_index = Bridge.storeEditorIndex,
             .store_editor_envelope = Bridge.storeEditorEnvelope,
+            .store_editor_text = Bridge.storeEditorText,
+            .load_preset = Bridge.loadPreset,
         }, .{
             .userdata = controller,
             .subscribe = Bridge.subscribe,
@@ -417,6 +476,19 @@ fn NativeBridge(comptime Controller: type) type {
             const iface = controller(userdata) orelse return -1;
             Controller.editorState(iface).set(field_id, .{ .envelope = envelope }) catch return -1;
             return 0;
+        }
+
+        fn storeEditorText(userdata: ?*anyopaque, field_id: u32, text: [*:0]const u8) callconv(.c) types.int32 {
+            if (comptime !Controller.hasEditorState) return -1;
+            const value = editor_state.Text.init(std.mem.span(text)) catch return -1;
+            const iface = controller(userdata) orelse return -1;
+            Controller.editorState(iface).set(field_id, .{ .text = value }) catch return -1;
+            return 0;
+        }
+
+        fn loadPreset(userdata: ?*anyopaque, preset_id: u32) callconv(.c) types.int32 {
+            const iface = controller(userdata) orelse return -1;
+            return if (Controller.loadPreset(iface, preset_id) == types.kResultOk) 0 else -1;
         }
 
         fn subscribe(userdata: *anyopaque, editor: *anyopaque) bool {

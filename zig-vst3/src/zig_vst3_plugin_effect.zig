@@ -81,6 +81,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         const has_editor_state = @hasDecl(Config, "EditorState");
         const EditorState = if (has_editor_state) Config.EditorState else struct {};
         pub const hasEditorState = has_editor_state;
+        pub const hasPresetLoader = @hasDecl(Config, "loadPreset");
         pub const EditorStateType = EditorState;
         const editor_state_migrations: []const plug_core.editor_state.Migration = if (@hasDecl(Config, "editor_state_migrations"))
             Config.editor_state_migrations
@@ -159,6 +160,11 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         pub fn editorState(iface: *ivsteditcontroller.IEditController) *EditorState {
             return &instance(iface).editor_state;
+        }
+
+        pub fn loadPreset(iface: *ivsteditcontroller.IEditController, preset_id: u32) types.tresult {
+            if (comptime @hasDecl(Config, "loadPreset")) return Config.loadPreset(iface, preset_id);
+            return types.kResultFalse;
         }
 
         pub fn setNormalized(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
