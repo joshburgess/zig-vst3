@@ -3,6 +3,7 @@
 
 #include "zig_vstgui_adapter.h"
 #include "zig_vstgui_accessibility_bridge.h"
+#include "zig_vstgui_action_button.h"
 #include "zig_vstgui_action_menu.h"
 #include "zig_vstgui_assets.h"
 #include "zig_vstgui_component.h"
@@ -48,7 +49,9 @@ struct ZigVstguiEditor {
         const ZigVstguiStepSequencerDescription* step_sequencers = nullptr,
         uint32_t step_sequencer_count = 0,
         const ZigVstguiFileDropDescription* file_drops = nullptr,
-        uint32_t file_drop_count = 0
+        uint32_t file_drop_count = 0,
+        const ZigVstguiActionButtonDescription* action_buttons = nullptr,
+        uint32_t action_button_count = 0
     );
     ~ZigVstguiEditor();
 
@@ -71,6 +74,7 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode* pianoAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* stepSequencerAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* fileDropAccessibility(uint32_t index) const;
+    const ZigVstgui::AccessibilityNode* actionButtonAccessibility(uint32_t index) const;
     bool tickMeter(uint32_t index, double elapsed_ms);
     bool refreshGraph(uint32_t index);
     uint32_t graphPointCount(uint32_t index) const;
@@ -99,6 +103,7 @@ private:
     void layoutPianos(double left, double top, double right, double bottom);
     void layoutStepSequencers(double left, double top, double right, double bottom);
     void layoutFileDrops(double left, double top, double right, double bottom);
+    void layoutActionButtons(double left, double top, double right, double bottom);
     void reportMetrics() const;
     bool focusNext(bool reverse);
     const ZigVstgui::ThemeResolver& stylesForParameter(uint32_t index) const;
@@ -182,6 +187,14 @@ private:
     std::array<std::array<std::string, ZIG_VSTGUI_MAX_DROP_EXTENSIONS>, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_extensions;
     std::array<std::array<const char*, ZIG_VSTGUI_MAX_DROP_EXTENSIONS>, ZIG_VSTGUI_MAX_FILE_DROPS> file_drop_extension_pointers {};
     uint32_t file_drop_count {0};
+    std::array<std::unique_ptr<ZigVstgui::ActionButtonControl>, ZIG_VSTGUI_MAX_ACTION_BUTTONS> action_button_controls;
+    std::array<ZigVstguiActionButtonDescription, ZIG_VSTGUI_MAX_ACTION_BUTTONS> action_button_descriptions {};
+    std::array<std::string, ZIG_VSTGUI_MAX_ACTION_BUTTONS> action_button_labels;
+    std::array<std::string, ZIG_VSTGUI_MAX_ACTION_BUTTONS> action_button_accessible_labels;
+    std::array<std::string, ZIG_VSTGUI_MAX_ACTION_BUTTONS> action_button_tooltips;
+    std::array<std::string, ZIG_VSTGUI_MAX_ACTION_BUTTONS> action_button_confirmation_labels;
+    std::array<std::string, ZIG_VSTGUI_MAX_ACTION_BUTTONS> action_button_failure_labels;
+    uint32_t action_button_count {0};
     ZigVstgui::AssetStore asset_store;
     ZigVstguiDrawingCallbacks drawing_callbacks {};
     ZigVstgui::ResizeControl resize_control;

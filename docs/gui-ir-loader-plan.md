@@ -63,21 +63,32 @@ Completion evidence:
 
 ## Milestone 3: General UI Primitives
 
-- [ ] Add action buttons with primary, secondary, and destructive roles.
-- [ ] Add icon buttons with required accessible labels and optional visible text.
+- [x] Add action buttons with primary, secondary, and destructive roles.
+- [x] Add icon buttons with required accessible labels and optional visible text.
 - [ ] Add editable labels with commit, cancel, validation, and external-update behavior.
 - [ ] Add determinate and indeterminate progress indicators with textual semantics.
 - [ ] Add bounded scrollable and zoomable viewports.
-- [ ] Add toolbar and grouped-action layout declarations.
-- [ ] Add confirmation and recoverable-error presentation without modal dependence where an inline choice is sufficient.
+- [x] Add toolbar and grouped-action layout declarations.
+- [x] Add confirmation and recoverable-error presentation without modal dependence where an inline choice is sufficient.
 
 Exit criteria:
 
-- Focus order follows visible reading order.
-- Enter and Space activate buttons. Escape cancels editing and confirmation.
-- Icon-only actions remain understandable to assistive technology.
-- Destructive actions are separated from the dominant constructive action.
-- Static controls do not repaint continuously.
+- [x] Focus order follows visible reading order for the completed action-control slice.
+- [x] Enter and Space activate buttons. Escape cancels confirmation and recoverable failure feedback.
+- [x] Icon-only actions remain understandable to assistive technology.
+- [x] Destructive actions are separated from the dominant constructive action.
+- [x] Static action controls do not repaint continuously.
+
+Action-control completion evidence:
+
+- The public `ActionButton` declaration is shared unchanged by the component gallery and IR loader. It covers stable action identifiers, primary, secondary, and destructive roles, icon-only presentation, accessible labels, tooltips, confirmation text, and recoverable failure text.
+- The native adapter copies all declaration strings per editor instance, validates unsafe or ambiguous declarations before construction, and exposes button names, descriptions, values, focus, and press actions through the toolkit-neutral accessibility contract.
+- Direct interaction tests cover pointer activation, Enter, Space, Escape, destructive confirmation, accepted and rejected callbacks, retry, disabled controls, declaration copying, semantic icon labels, and native validation failures.
+- The footer toolbar groups related actions with bounded spacing and separates action buttons from action menus. Focus and accessibility traversal now follow the visible top-to-bottom editor order, including file importers.
+- Deterministic visual coverage records primary, destructive confirmation, and recoverable failure states in `action-buttons.png`. The strictness 10 run measured a 40.2 us warm action-button render average against the 300 us budget.
+- `zig build test --summary all` passed 54 of 54 steps and 3,631 of 3,631 tests. Raw ABI checks passed 107 of 107 steps, example validation passed 59 of 59 steps, and all eleven bundles passed their 47 Steinberg validator tests.
+- Linux and Windows cross-target bundle matrices each passed 35 of 35 steps. Serialized pluginval strictness 5 and strictness 10 matrices each passed 48 of 48 steps across all eleven plugin bundles.
+- Editable labels, progress indicators, and bounded viewports remain open. Milestone 3 is not complete until those independent primitives meet the same exit criteria.
 
 ## Milestone 4: IR Waveform Editor
 

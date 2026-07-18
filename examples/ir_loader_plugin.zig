@@ -12,6 +12,8 @@ pub const output_param_id: u32 = 1;
 pub const bypass_param_id: u32 = 2;
 pub const ir_import_id: u32 = 1;
 pub const ir_waveform_source_id: u32 = 100;
+pub const ir_action_group_id: u32 = 1;
+pub const clear_ir_action_id: u32 = 1;
 pub const maximum_ir_frames: usize = 131_072;
 pub const convolution_partition_size: usize = 512;
 
@@ -120,6 +122,18 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
         return if (handled) types.kResultOk else types.kResultFalse;
     }
 
+    pub fn performAction(
+        controller: *vst.ivsteditcontroller.IEditController,
+        group_id: u32,
+        action_id: u32,
+    ) types.tresult {
+        if (group_id != ir_action_group_id or action_id != clear_ir_action_id) return types.kInvalidArgument;
+        return if (clearImport(controller, Controller.controllerState(controller)))
+            types.kResultOk
+        else
+            types.kResultFalse;
+    }
+
     fn clearImport(controller: *vst.ivsteditcontroller.IEditController, state: *IRControllerState) bool {
         const generation = state.transfer_generation +% 1;
         if (generation == 0 or Controller.clearDecodedAudio(controller, ir_import_id, generation) != types.kResultOk) return false;
@@ -195,6 +209,16 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .picker_title = "Choose an Impulse Response",
                 .extensions = &.{".wav"},
                 .maximum_files = 1,
+            }},
+            .action_buttons = &.{.{
+                .group_id = ir_action_group_id,
+                .id = clear_ir_action_id,
+                .icon = .clear,
+                .accessible_label = "Clear impulse response",
+                .tooltip = "Remove the imported impulse response.",
+                .confirmation_label = "Confirm Clear IR",
+                .failure_label = "Clear failed. Try again",
+                .role = .destructive,
             }},
             .skin = .{ .theme = .alternate, .layout = .adaptive },
             .composition = .{

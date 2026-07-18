@@ -68,6 +68,7 @@ typedef struct ZigVstguiCallbacks {
     int32_t (*load_preset)(void* userdata, uint32_t preset_id);
     int32_t (*store_editor_bool)(void* userdata, uint32_t field_id, int32_t value);
     int32_t (*invoke_menu_action)(void* userdata, uint32_t menu_id, uint32_t item_id, int32_t checked);
+    int32_t (*invoke_action)(void* userdata, uint32_t group_id, uint32_t action_id);
     int32_t (*send_note)(void* userdata, int32_t channel, int32_t pitch, double velocity, int32_t pressed);
     int32_t (*drop_files)(void* userdata, uint32_t drop_id, const char* const* paths, uint32_t count);
     int32_t (*import_files)(void* userdata, uint32_t drop_id, ZigVstguiFileImportEntryPoint entry_point, const char* const* paths, uint32_t count);
@@ -162,6 +163,36 @@ typedef struct ZigVstguiActionMenuDescription {
 
 enum { ZIG_VSTGUI_MAX_ACTION_MENUS = 4 };
 enum { ZIG_VSTGUI_MAX_MENU_ITEMS = 16 };
+
+typedef enum ZigVstguiActionRole {
+    ZIG_VSTGUI_ACTION_PRIMARY = 0,
+    ZIG_VSTGUI_ACTION_SECONDARY = 1,
+    ZIG_VSTGUI_ACTION_DESTRUCTIVE = 2
+} ZigVstguiActionRole;
+
+typedef enum ZigVstguiActionIcon {
+    ZIG_VSTGUI_ACTION_ICON_NONE = 0,
+    ZIG_VSTGUI_ACTION_ICON_RESET = 1,
+    ZIG_VSTGUI_ACTION_ICON_CLEAR = 2,
+    ZIG_VSTGUI_ACTION_ICON_REVERSE = 3,
+    ZIG_VSTGUI_ACTION_ICON_ZOOM_IN = 4,
+    ZIG_VSTGUI_ACTION_ICON_ZOOM_OUT = 5
+} ZigVstguiActionIcon;
+
+typedef struct ZigVstguiActionButtonDescription {
+    uint32_t group_id;
+    uint32_t action_id;
+    const char* label;
+    const char* accessible_label;
+    const char* tooltip;
+    const char* confirmation_label;
+    const char* failure_label;
+    ZigVstguiActionRole role;
+    ZigVstguiActionIcon icon;
+    int32_t enabled;
+} ZigVstguiActionButtonDescription;
+
+enum { ZIG_VSTGUI_MAX_ACTION_BUTTONS = 12 };
 
 typedef struct ZigVstguiPianoDescription {
     const char* title;
@@ -549,6 +580,32 @@ ZigVstguiEditor* zig_vstgui_editor_create_latest(
     uint32_t step_sequencer_count,
     const ZigVstguiFileDropDescription* file_drops,
     uint32_t file_drop_count,
+    ZigVstguiSkinDescription skin
+);
+ZigVstguiEditor* zig_vstgui_editor_create_widgets(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
+    const ZigVstguiXYPadDescription* xy_pads,
+    uint32_t xy_pad_count,
+    const ZigVstguiPresetBrowserDescription* preset_browsers,
+    uint32_t preset_browser_count,
+    const ZigVstguiActionMenuDescription* action_menus,
+    uint32_t action_menu_count,
+    const ZigVstguiPianoDescription* pianos,
+    uint32_t piano_count,
+    const ZigVstguiStepSequencerDescription* step_sequencers,
+    uint32_t step_sequencer_count,
+    const ZigVstguiFileDropDescription* file_drops,
+    uint32_t file_drop_count,
+    const ZigVstguiActionButtonDescription* action_buttons,
+    uint32_t action_button_count,
     ZigVstguiSkinDescription skin
 );
 void zig_vstgui_canvas_fill_rect(

@@ -80,6 +80,7 @@ pub const Callbacks = extern struct {
     load_preset: *const fn (?*anyopaque, types.uint32) callconv(.c) types.int32,
     store_editor_bool: *const fn (?*anyopaque, types.uint32, types.int32) callconv(.c) types.int32,
     invoke_menu_action: *const fn (?*anyopaque, types.uint32, types.uint32, types.int32) callconv(.c) types.int32,
+    invoke_action: *const fn (?*anyopaque, types.uint32, types.uint32) callconv(.c) types.int32,
     send_note: *const fn (?*anyopaque, types.int32, types.int32, f64, types.int32) callconv(.c) types.int32,
     drop_files: *const fn (?*anyopaque, types.uint32, [*]const [*:0]const u8, types.uint32) callconv(.c) types.int32,
     import_files: *const fn (?*anyopaque, types.uint32, FileImportEntryPoint, [*]const [*:0]const u8, types.uint32) callconv(.c) types.int32,
@@ -128,6 +129,7 @@ pub const max_menu_items = 16;
 pub const max_pianos = 2;
 pub const max_step_sequencers = 2;
 pub const max_steps = 32;
+pub const max_action_buttons = 12;
 pub const max_file_drops = 2;
 pub const max_drop_extensions = 8;
 pub const max_drop_files = 8;
@@ -182,6 +184,34 @@ pub const ActionMenuDescription = extern struct {
     title: [*:0]const u8,
     items: [*]const MenuItemDescription,
     item_count: types.uint32,
+};
+
+pub const ActionRole = enum(c_int) {
+    primary,
+    secondary,
+    destructive,
+};
+
+pub const ActionIcon = enum(c_int) {
+    none,
+    reset,
+    clear,
+    reverse,
+    zoom_in,
+    zoom_out,
+};
+
+pub const ActionButtonDescription = extern struct {
+    group_id: types.uint32,
+    action_id: types.uint32,
+    label: ?[*:0]const u8,
+    accessible_label: [*:0]const u8,
+    tooltip: ?[*:0]const u8,
+    confirmation_label: ?[*:0]const u8,
+    failure_label: ?[*:0]const u8,
+    role: ActionRole,
+    icon: ActionIcon,
+    enabled: types.int32,
 };
 
 pub const PianoDescription = extern struct {
@@ -549,6 +579,32 @@ extern fn zig_vstgui_editor_create_latest(
     types.uint32,
     SkinDescription,
 ) ?*Editor;
+extern fn zig_vstgui_editor_create_widgets(
+    [*]const ParameterDescription,
+    types.uint32,
+    Callbacks,
+    ?[*]const MeterDescription,
+    types.uint32,
+    MeterCallbacks,
+    ?[*]const GraphDescription,
+    types.uint32,
+    GraphCallbacks,
+    ?[*]const XYPadDescription,
+    types.uint32,
+    ?[*]const PresetBrowserDescription,
+    types.uint32,
+    ?[*]const ActionMenuDescription,
+    types.uint32,
+    ?[*]const PianoDescription,
+    types.uint32,
+    ?[*]const StepSequencerDescription,
+    types.uint32,
+    ?[*]const FileDropDescription,
+    types.uint32,
+    ?[*]const ActionButtonDescription,
+    types.uint32,
+    SkinDescription,
+) ?*Editor;
 extern fn zig_vstgui_canvas_fill_rect(*Canvas, f64, f64, f64, f64, types.uint32) void;
 extern fn zig_vstgui_canvas_stroke_rect(*Canvas, f64, f64, f64, f64, types.uint32, f64) void;
 extern fn zig_vstgui_canvas_fill_ellipse(*Canvas, f64, f64, f64, f64, types.uint32) void;
@@ -728,6 +784,7 @@ pub fn create(
     pianos: []const PianoDescription,
     step_sequencers: []const StepSequencerDescription,
     file_drops: []const FileDropDescription,
+    action_buttons: []const ActionButtonDescription,
     skin: Skin,
     composition: Composition,
     callbacks: Callbacks,
@@ -744,7 +801,7 @@ pub fn create(
         meters.len > max_meters or graphs.len > max_graphs or xy_pads.len > max_xy_pads or
         preset_browsers.len > max_preset_browsers or action_menus.len > max_action_menus or pianos.len > max_pianos or
         step_sequencers.len > max_step_sequencers or
-        file_drops.len > max_file_drops or
+        file_drops.len > max_file_drops or action_buttons.len > max_action_buttons or
         skin.assets.len > max_assets or composition.groups.len > max_groups)
     {
         if (telemetry_source) |source| source.release();
@@ -793,7 +850,7 @@ pub fn create(
         return null;
     };
     telemetry.* = .{ .source = telemetry_source, .controller_graph = controller_graph };
-    const editor = zig_vstgui_editor_create_latest(
+    const editor = zig_vstgui_editor_create_widgets(
         &descriptions,
         @intCast(parameters.len),
         callbacks,
@@ -815,6 +872,8 @@ pub fn create(
         @intCast(step_sequencers.len),
         if (file_drops.len == 0) null else file_drops.ptr,
         @intCast(file_drops.len),
+        if (action_buttons.len == 0) null else action_buttons.ptr,
+        @intCast(action_buttons.len),
         .{
             .assets = if (skin.assets.len == 0) null else &assets,
             .asset_count = @intCast(skin.assets.len),

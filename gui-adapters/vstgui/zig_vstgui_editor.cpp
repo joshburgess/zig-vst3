@@ -78,7 +78,9 @@ ZigVstguiEditor::ZigVstguiEditor(
     const ZigVstguiStepSequencerDescription* step_sequencers,
     uint32_t value_step_sequencer_count,
     const ZigVstguiFileDropDescription* file_drops,
-    uint32_t value_file_drop_count
+    uint32_t value_file_drop_count,
+    const ZigVstguiActionButtonDescription* action_buttons,
+    uint32_t value_action_button_count
 )
 : parameter_callbacks(callbacks),
   meter_count(value_meter_count),
@@ -90,6 +92,7 @@ ZigVstguiEditor::ZigVstguiEditor(
   action_menu_count(value_action_menu_count),
   piano_count(value_piano_count), step_sequencer_count(value_step_sequencer_count),
   file_drop_count(value_file_drop_count),
+  action_button_count(value_action_button_count),
   drawing_callbacks(skin.drawing),
   theme_resolver(selectedTheme(skin.theme)),
   theme_kind(skin.theme),
@@ -303,6 +306,26 @@ ZigVstguiEditor::ZigVstguiEditor(
         ));
         if (!file_drop_controls[index]) return;
     }
+    for (uint32_t index = 0; index < action_button_count; ++index) {
+        const auto& action = action_buttons[index];
+        action_button_labels[index] = action.label ? action.label : "";
+        action_button_accessible_labels[index] = action.accessible_label ? action.accessible_label : "";
+        action_button_tooltips[index] = action.tooltip ? action.tooltip : "";
+        action_button_confirmation_labels[index] = action.confirmation_label ? action.confirmation_label : "";
+        action_button_failure_labels[index] = action.failure_label ? action.failure_label : "";
+        action_button_descriptions[index] = action;
+        action_button_descriptions[index].label = action_button_labels[index].empty()
+            ? nullptr : action_button_labels[index].c_str();
+        action_button_descriptions[index].accessible_label = action_button_accessible_labels[index].c_str();
+        action_button_descriptions[index].tooltip = action_button_tooltips[index].empty()
+            ? nullptr : action_button_tooltips[index].c_str();
+        action_button_descriptions[index].confirmation_label = action_button_confirmation_labels[index].empty()
+            ? nullptr : action_button_confirmation_labels[index].c_str();
+        action_button_descriptions[index].failure_label = action_button_failure_labels[index].empty()
+            ? nullptr : action_button_failure_labels[index].c_str();
+        action_button_controls[index].reset(new (std::nothrow) ZigVstgui::ActionButtonControl());
+        if (!action_button_controls[index]) return;
+    }
     uint32_t next_parameter = 0;
     uint32_t next_meter = 0;
     uint32_t next_graph = 0;
@@ -383,6 +406,7 @@ void ZigVstguiEditor::close() {
     for (uint32_t index = 0; index < piano_count; ++index) piano_controls[index]->clear();
     for (uint32_t index = 0; index < step_sequencer_count; ++index) step_sequencer_controls[index]->clear();
     for (uint32_t index = 0; index < file_drop_count; ++index) file_drop_controls[index]->clear();
+    for (uint32_t index = 0; index < action_button_count; ++index) action_button_controls[index]->clear();
     title_component.clear();
     help_component.clear();
     for (uint32_t index = 0; index < group_count; ++index) group_components[index].clear();
@@ -506,6 +530,10 @@ const ZigVstgui::AccessibilityNode* ZigVstguiEditor::fileDropAccessibility(uint3
     return index < file_drop_count ? &file_drop_controls[index]->accessibilityNode() : nullptr;
 }
 
+const ZigVstgui::AccessibilityNode* ZigVstguiEditor::actionButtonAccessibility(uint32_t index) const {
+    return index < action_button_count ? &action_button_controls[index]->accessibilityNode() : nullptr;
+}
+
 bool ZigVstguiEditor::tickMeter(uint32_t index, double elapsed_ms) {
     return index < meter_count && meter_controls[index]->tick(elapsed_ms);
 }
@@ -583,6 +611,10 @@ bool ZigVstguiEditor::keyDown(uint16_t key, int16_t key_code, int16_t modifiers)
         auto& file_drop = *file_drop_controls[index];
         if (focused == file_drop.focusView() && file_drop.handleKey(key, key_code, modifiers)) return true;
     }
+    for (uint32_t index = 0; index < action_button_count; ++index) {
+        auto& action = *action_button_controls[index];
+        if (focused == action.focusView() && action.handleKey(key, key_code, modifiers)) return true;
+    }
     if (parameter_count == 0 || !parameter_controls[0]->handleKey(key, key_code, modifiers)) return false;
     frame->setFocusView(parameter_controls[0]->focusView());
     return true;
@@ -606,6 +638,8 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
             + ZIG_VSTGUI_MAX_ACTION_MENUS
             + ZIG_VSTGUI_MAX_PIANOS
             + ZIG_VSTGUI_MAX_STEP_SEQUENCERS
+            + ZIG_VSTGUI_MAX_FILE_DROPS
+            + ZIG_VSTGUI_MAX_ACTION_BUTTONS
     > focus_order {};
     uint32_t focus_count = 0;
     for (uint32_t index = 0; index < parameter_count; ++index) {
@@ -621,17 +655,23 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
     for (uint32_t index = 0; index < xy_pad_count; ++index) {
         if (auto* xy_pad = xy_pad_controls[index]->focusView()) focus_order[focus_count++] = xy_pad;
     }
-    for (uint32_t index = 0; index < preset_browser_count; ++index) {
-        if (auto* browser = preset_browser_controls[index]->focusView()) focus_order[focus_count++] = browser;
+    for (uint32_t index = 0; index < file_drop_count; ++index) {
+        if (auto* importer = file_drop_controls[index]->focusView()) focus_order[focus_count++] = importer;
     }
-    for (uint32_t index = 0; index < action_menu_count; ++index) {
-        if (auto* menu = action_menu_controls[index]->focusView()) focus_order[focus_count++] = menu;
+    for (uint32_t index = 0; index < step_sequencer_count; ++index) {
+        if (auto* sequencer = step_sequencer_controls[index]->focusView()) focus_order[focus_count++] = sequencer;
     }
     for (uint32_t index = 0; index < piano_count; ++index) {
         if (auto* piano = piano_controls[index]->focusView()) focus_order[focus_count++] = piano;
     }
-    for (uint32_t index = 0; index < step_sequencer_count; ++index) {
-        if (auto* sequencer = step_sequencer_controls[index]->focusView()) focus_order[focus_count++] = sequencer;
+    for (uint32_t index = 0; index < preset_browser_count; ++index) {
+        if (auto* browser = preset_browser_controls[index]->focusView()) focus_order[focus_count++] = browser;
+    }
+    for (uint32_t index = 0; index < action_button_count; ++index) {
+        if (auto* action = action_button_controls[index]->focusView()) focus_order[focus_count++] = action;
+    }
+    for (uint32_t index = 0; index < action_menu_count; ++index) {
+        if (auto* menu = action_menu_controls[index]->focusView()) focus_order[focus_count++] = menu;
     }
     if (auto* resize = resize_control.focusView()) focus_order[focus_count++] = resize;
     if (focus_count == 0) return false;
@@ -667,6 +707,12 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
     }
     for (uint32_t index = 0; index < piano_count; ++index) piano_controls[index]->setFocusedView(next_view);
     for (uint32_t index = 0; index < step_sequencer_count; ++index) step_sequencer_controls[index]->setFocusedView(next_view);
+    for (uint32_t index = 0; index < file_drop_count; ++index) {
+        file_drop_controls[index]->setFocusedView(next_view);
+    }
+    for (uint32_t index = 0; index < action_button_count; ++index) {
+        action_button_controls[index]->setFocusedView(next_view);
+    }
     resize_control.setFocusedView(next_view);
     focus_position = static_cast<int32_t>(next);
     return true;
@@ -698,6 +744,13 @@ void ZigVstguiEditor::setFocus(bool focused) {
         }
         for (uint32_t index = 0; index < step_sequencer_count; ++index) {
             step_sequencer_controls[index]->setFocusedView(nullptr);
+        }
+        for (uint32_t index = 0; index < file_drop_count; ++index) {
+            file_drop_controls[index]->setFocusedView(nullptr);
+        }
+        for (uint32_t index = 0; index < action_button_count; ++index) {
+            action_button_controls[index]->cancelPending();
+            action_button_controls[index]->setFocusedView(nullptr);
         }
         resize_control.setFocusedView(nullptr);
     }
@@ -738,7 +791,8 @@ std::size_t ZigVstguiEditor::nativeAccessibilityElementCount() const {
 std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries() const {
     std::vector<ZigVstgui::AccessibilityEntry> entries;
     entries.reserve(2 + group_count + parameter_count * 2 + meter_count + graph_count +
-        xy_pad_count * 2 + preset_browser_count + action_menu_count + piano_count + step_sequencer_count + file_drop_count + 1);
+        xy_pad_count * 2 + preset_browser_count + action_menu_count + piano_count + step_sequencer_count +
+        file_drop_count + action_button_count + 1);
     entries.push_back({&title_component.accessibility(), title_component.view()});
     entries.push_back({&help_component.accessibility(), help_component.view()});
     for (uint32_t index = 0; index < group_count; ++index) {
@@ -762,20 +816,8 @@ std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries
         entries.push_back({&xy_pad.axisAccessibility(0), xy_pad.focusView()});
         entries.push_back({&xy_pad.axisAccessibility(1), xy_pad.focusView()});
     }
-    for (uint32_t index = 0; index < preset_browser_count; ++index) {
-        entries.push_back({
-            &preset_browser_controls[index]->accessibilityNode(),
-            preset_browser_controls[index]->focusView(),
-        });
-    }
-    for (uint32_t index = 0; index < action_menu_count; ++index) {
-        entries.push_back({
-            &action_menu_controls[index]->accessibilityNode(),
-            action_menu_controls[index]->focusView(),
-        });
-    }
-    for (uint32_t index = 0; index < piano_count; ++index) {
-        entries.push_back({&piano_controls[index]->accessibilityNode(), piano_controls[index]->focusView()});
+    for (uint32_t index = 0; index < file_drop_count; ++index) {
+        entries.push_back({&file_drop_controls[index]->accessibilityNode(), file_drop_controls[index]->dropView()});
     }
     for (uint32_t index = 0; index < step_sequencer_count; ++index) {
         entries.push_back({
@@ -783,8 +825,26 @@ std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries
             step_sequencer_controls[index]->focusView(),
         });
     }
-    for (uint32_t index = 0; index < file_drop_count; ++index) {
-        entries.push_back({&file_drop_controls[index]->accessibilityNode(), file_drop_controls[index]->dropView()});
+    for (uint32_t index = 0; index < piano_count; ++index) {
+        entries.push_back({&piano_controls[index]->accessibilityNode(), piano_controls[index]->focusView()});
+    }
+    for (uint32_t index = 0; index < preset_browser_count; ++index) {
+        entries.push_back({
+            &preset_browser_controls[index]->accessibilityNode(),
+            preset_browser_controls[index]->focusView(),
+        });
+    }
+    for (uint32_t index = 0; index < action_button_count; ++index) {
+        entries.push_back({
+            &action_button_controls[index]->accessibilityNode(),
+            action_button_controls[index]->focusView(),
+        });
+    }
+    for (uint32_t index = 0; index < action_menu_count; ++index) {
+        entries.push_back({
+            &action_menu_controls[index]->accessibilityNode(),
+            action_menu_controls[index]->focusView(),
+        });
     }
     entries.push_back({&resize_control.buttonAccessibility(), resize_control.focusView()});
     return entries;
@@ -925,6 +985,14 @@ void ZigVstguiEditor::buildFrame() {
     for (uint32_t index = 0; index < file_drop_count; ++index) {
         file_drop_controls[index]->build(content, theme_resolver);
     }
+    for (uint32_t index = 0; index < action_button_count; ++index) {
+        if (!action_button_controls[index]->build(
+            content,
+            action_button_descriptions[index],
+            parameter_callbacks,
+            theme_resolver
+        )) return;
+    }
     layout();
 }
 
@@ -977,7 +1045,16 @@ void ZigVstguiEditor::layout() {
     if (piano_count > 0) layoutPianos(margin, piano_top, right, piano_bottom);
     if (step_sequencer_count > 0) layoutStepSequencers(margin, sequencer_top, right, sequencer_bottom);
     if (file_drop_count > 0) layoutFileDrops(margin, file_drop_top, right, file_drop_bottom);
-    layoutActionMenus(margin, footer_top, right - theme.control_metrics.button_width - theme.spacing.small, height - margin);
+    const double footer_right = right - theme.control_metrics.button_width - theme.spacing.small;
+    if (action_button_count > 0 && action_menu_count > 0) {
+        const double split = margin + (footer_right - margin) * 0.68;
+        layoutActionButtons(margin, footer_top, split - theme.spacing.small, height - margin);
+        layoutActionMenus(split, footer_top, footer_right, height - margin);
+    } else if (action_button_count > 0) {
+        layoutActionButtons(margin, footer_top, footer_right, height - margin);
+    } else {
+        layoutActionMenus(margin, footer_top, footer_right, height - margin);
+    }
     if (group_count > 0) {
         const bool wide = width >= 620;
         title_component.setVisible(true);
@@ -1377,6 +1454,29 @@ void ZigVstguiEditor::layoutActionMenus(double left, double top, double right, d
             VSTGUI::CRect(menu_left, top, menu_left + menu_width, bottom),
             editor_bounds
         );
+    }
+}
+
+void ZigVstguiEditor::layoutActionButtons(double left, double top, double right, double bottom) {
+    if (action_button_count == 0) return;
+    const auto& spacing = theme_resolver.theme().spacing;
+    double total_gap = spacing.small * (action_button_count - 1);
+    for (uint32_t index = 1; index < action_button_count; ++index) {
+        if (action_button_descriptions[index - 1].group_id != action_button_descriptions[index].group_id) {
+            total_gap += spacing.medium - spacing.small;
+        }
+    }
+    const double button_width = std::max(1.0, (right - left - total_gap) / action_button_count);
+    double button_left = left;
+    for (uint32_t index = 0; index < action_button_count; ++index) {
+        action_button_controls[index]->setBounds(
+            VSTGUI::CRect(button_left, top, button_left + button_width, bottom)
+        );
+        button_left += button_width;
+        if (index + 1 < action_button_count) {
+            button_left += action_button_descriptions[index].group_id == action_button_descriptions[index + 1].group_id
+                ? spacing.small : spacing.medium;
+        }
     }
 }
 

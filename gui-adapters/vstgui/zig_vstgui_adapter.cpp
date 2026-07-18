@@ -200,6 +200,41 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_latest(
     uint32_t file_drop_count,
     ZigVstguiSkinDescription skin
 ) {
+    return zig_vstgui_editor_create_widgets(
+        parameters, parameter_count, callbacks, meters, meter_count, meter_callbacks,
+        graphs, graph_count, graph_callbacks, xy_pads, xy_pad_count,
+        preset_browsers, preset_browser_count, action_menus, action_menu_count,
+        pianos, piano_count, step_sequencers, step_sequencer_count,
+        file_drops, file_drop_count, nullptr, 0, skin
+    );
+}
+
+extern "C" ZigVstguiEditor* zig_vstgui_editor_create_widgets(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
+    const ZigVstguiXYPadDescription* xy_pads,
+    uint32_t xy_pad_count,
+    const ZigVstguiPresetBrowserDescription* preset_browsers,
+    uint32_t preset_browser_count,
+    const ZigVstguiActionMenuDescription* action_menus,
+    uint32_t action_menu_count,
+    const ZigVstguiPianoDescription* pianos,
+    uint32_t piano_count,
+    const ZigVstguiStepSequencerDescription* step_sequencers,
+    uint32_t step_sequencer_count,
+    const ZigVstguiFileDropDescription* file_drops,
+    uint32_t file_drop_count,
+    const ZigVstguiActionButtonDescription* action_buttons,
+    uint32_t action_button_count,
+    ZigVstguiSkinDescription skin
+) {
     constexpr uint32_t style_mask = ZIG_VSTGUI_STYLE_BACKGROUND |
         ZIG_VSTGUI_STYLE_FOREGROUND |
         ZIG_VSTGUI_STYLE_BORDER |
@@ -303,6 +338,32 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_latest(
             }
         }
     }
+    if ((!action_buttons && action_button_count > 0) || action_button_count > ZIG_VSTGUI_MAX_ACTION_BUTTONS ||
+        (action_button_count > 0 && !callbacks.invoke_action)) return nullptr;
+    uint32_t primary_count = 0;
+    for (uint32_t index = 0; index < action_button_count; ++index) {
+        const auto& action = action_buttons[index];
+        if (action.group_id == 0 || action.action_id == 0 || !action.accessible_label ||
+            action.accessible_label[0] == 0 || (action.enabled != 0 && action.enabled != 1) ||
+            action.role < ZIG_VSTGUI_ACTION_PRIMARY || action.role > ZIG_VSTGUI_ACTION_DESTRUCTIVE ||
+            action.icon < ZIG_VSTGUI_ACTION_ICON_NONE || action.icon > ZIG_VSTGUI_ACTION_ICON_ZOOM_OUT ||
+            ((!action.label || action.label[0] == 0) && action.icon == ZIG_VSTGUI_ACTION_ICON_NONE) ||
+            (action.label && action.label[0] == 0) || (action.tooltip && action.tooltip[0] == 0) ||
+            (action.confirmation_label && action.confirmation_label[0] == 0) ||
+            (action.failure_label && action.failure_label[0] == 0) ||
+            (action.role == ZIG_VSTGUI_ACTION_DESTRUCTIVE && !action.confirmation_label)) return nullptr;
+        if (action.role == ZIG_VSTGUI_ACTION_PRIMARY && ++primary_count > 1) return nullptr;
+        for (uint32_t previous = 0; previous < index; ++previous) {
+            if (action_buttons[previous].group_id == action.group_id &&
+                action_buttons[previous].action_id == action.action_id) return nullptr;
+            if ((action.role == ZIG_VSTGUI_ACTION_DESTRUCTIVE &&
+                    action_buttons[previous].role == ZIG_VSTGUI_ACTION_PRIMARY) ||
+                (action.role == ZIG_VSTGUI_ACTION_PRIMARY &&
+                    action_buttons[previous].role == ZIG_VSTGUI_ACTION_DESTRUCTIVE)) {
+                if (action_buttons[previous].group_id == action.group_id) return nullptr;
+            }
+        }
+    }
     for (uint32_t index = 0; index < graph_count; ++index) {
         const auto& graph = graphs[index];
         const bool editable = graph.point_capacity > 0;
@@ -397,7 +458,9 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_latest(
         step_sequencers,
         step_sequencer_count,
         file_drops,
-        file_drop_count
+        file_drop_count,
+        action_buttons,
+        action_button_count
     );
     if (editor && !editor->valid()) {
         delete editor;

@@ -384,6 +384,10 @@ const AccessibilityNode& FileDropControl::accessibilityNode() const { return com
 FileDropView* FileDropControl::dropView() const { return view; }
 VSTGUI::CView* FileDropControl::focusView() const { return view; }
 
+void FileDropControl::setFocusedView(VSTGUI::CView* focused_view) {
+    component.setFocused(focused_view && focused_view == view);
+}
+
 bool FileDropControl::handleKey(uint16_t, int16_t key_code, int16_t) {
     if (key_code != Steinberg::KEY_RETURN && key_code != Steinberg::KEY_ENTER && key_code != Steinberg::KEY_SPACE) {
         return false;
@@ -437,11 +441,11 @@ void FileDropControl::setPickerLauncher(void* userdata, PickerLauncher launcher)
 }
 
 void FileDropControl::viewLostFocus(VSTGUI::CView* focused_view) {
-    if (focused_view == view) component.setFocused(false);
+    if (focused_view == view) setFocusedView(nullptr);
 }
 
 void FileDropControl::viewTookFocus(VSTGUI::CView* focused_view) {
-    if (focused_view == view) component.setFocused(true);
+    if (focused_view == view) setFocusedView(focused_view);
 }
 
 bool FileDropControl::accessibilityAction(

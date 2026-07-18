@@ -106,6 +106,62 @@ pub const ActionMenu = struct {
     items: []const MenuItem,
 };
 
+pub const ActionRole = vstgui_editor_view.ActionRole;
+pub const ActionIcon = vstgui_editor_view.ActionIcon;
+
+pub const ActionButton = struct {
+    group_id: u32,
+    id: u32,
+    label: ?[*:0]const u8 = null,
+    accessible_label: [*:0]const u8,
+    tooltip: ?[*:0]const u8 = null,
+    confirmation_label: ?[*:0]const u8 = null,
+    failure_label: ?[*:0]const u8 = null,
+    role: ActionRole = .secondary,
+    icon: ActionIcon = .none,
+    enabled: bool = true,
+};
+
+pub const ActionButtonError = error{
+    InvalidId,
+    EmptyAccessibleLabel,
+    MissingPresentation,
+    InvalidOptionalLabel,
+    MissingDestructiveConfirmation,
+    DuplicateAction,
+    MultiplePrimaryActions,
+    UnsafeDestructiveGrouping,
+};
+
+pub fn validateActionButtons(actions: []const ActionButton) ActionButtonError!void {
+    var primary_count: usize = 0;
+    for (actions, 0..) |action, index| {
+        if (action.group_id == 0 or action.id == 0) return error.InvalidId;
+        if (std.mem.span(action.accessible_label).len == 0) return error.EmptyAccessibleLabel;
+        if (action.label == null and action.icon == .none) return error.MissingPresentation;
+        if (action.label) |label| if (std.mem.span(label).len == 0) return error.InvalidOptionalLabel;
+        if (action.tooltip) |tooltip| if (std.mem.span(tooltip).len == 0) return error.InvalidOptionalLabel;
+        if (action.confirmation_label) |label| if (std.mem.span(label).len == 0) return error.InvalidOptionalLabel;
+        if (action.failure_label) |label| if (std.mem.span(label).len == 0) return error.InvalidOptionalLabel;
+        if (action.role == .destructive and action.confirmation_label == null) {
+            return error.MissingDestructiveConfirmation;
+        }
+        if (action.role == .primary) {
+            primary_count += 1;
+            if (primary_count > 1) return error.MultiplePrimaryActions;
+        }
+        for (actions[0..index]) |previous| {
+            if (previous.group_id == action.group_id and previous.id == action.id) return error.DuplicateAction;
+            if (previous.group_id == action.group_id and
+                ((previous.role == .primary and action.role == .destructive) or
+                    (previous.role == .destructive and action.role == .primary)))
+            {
+                return error.UnsafeDestructiveGrouping;
+            }
+        }
+    }
+}
+
 pub const Piano = struct {
     title: [*:0]const u8 = "Keyboard",
     first_note: u8 = 48,
@@ -192,6 +248,7 @@ pub const EditorDescription = struct {
     xy_pads: []const XYPad = &.{},
     preset_browsers: []const PresetBrowser = &.{},
     action_menus: []const ActionMenu = &.{},
+    action_buttons: []const ActionButton = &.{},
     pianos: []const Piano = &.{},
     step_sequencers: []const StepSequencer = &.{},
     file_importers: []const FileImporter = &.{},
@@ -231,7 +288,23 @@ pub fn createMultiViewWithSkin(
     meters: []const Meter,
     skin: Skin,
 ) ?*iplugview.IPlugView {
-    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, &.{}, &.{}, &.{}, &.{}, &.{}, &.{}, skin, .{});
+    return createConfiguredView(
+        Controller,
+        controller,
+        name,
+        parameters,
+        meters,
+        &.{},
+        &.{},
+        &.{},
+        &.{},
+        &.{},
+        &.{},
+        &.{},
+        &.{},
+        skin,
+        .{},
+    );
 }
 
 pub fn createEditor(
@@ -255,6 +328,7 @@ pub fn createEditor(
         description.xy_pads,
         description.preset_browsers,
         description.action_menus,
+        description.action_buttons,
         description.pianos,
         description.step_sequencers,
         file_importers,
@@ -273,6 +347,7 @@ fn createConfiguredView(
     xy_pads: []const XYPad,
     preset_browsers: []const PresetBrowser,
     action_menus: []const ActionMenu,
+    action_buttons: []const ActionButton,
     pianos: []const Piano,
     step_sequencers: []const StepSequencer,
     file_importers: []const FileImporter,
@@ -298,6 +373,7 @@ fn createConfiguredView(
         if (parameters.len == 0 or parameters.len > vstgui_editor_view.max_parameters or
             preset_browsers.len > vstgui_editor_view.max_preset_browsers or
             action_menus.len > vstgui_editor_view.max_action_menus or
+            action_buttons.len > vstgui_editor_view.max_action_buttons or
             pianos.len > vstgui_editor_view.max_pianos or
             step_sequencers.len > vstgui_editor_view.max_step_sequencers) return null;
         if (file_importers.len > vstgui_editor_view.max_file_drops) return null;
@@ -307,6 +383,10 @@ fn createConfiguredView(
         if (comptime !Controller.hasMenuActionHandler) {
             if (action_menus.len > 0) return null;
         }
+        if (comptime !Controller.hasActionHandler) {
+            if (action_buttons.len > 0) return null;
+        }
+        validateActionButtons(action_buttons) catch return null;
         if (comptime !Controller.hasFileDropHandler) {
             if (file_importers.len > 0) return null;
         }
@@ -630,11 +710,26 @@ fn createConfiguredView(
                 .enabled = @intFromBool(drop.enabled),
             };
         }
+        var action_button_descriptions: [vstgui_editor_view.max_action_buttons]vstgui_editor_view.ActionButtonDescription = undefined;
+        for (action_buttons, 0..) |action, index| {
+            action_button_descriptions[index] = .{
+                .group_id = action.group_id,
+                .action_id = action.id,
+                .label = action.label,
+                .accessible_label = action.accessible_label,
+                .tooltip = action.tooltip,
+                .confirmation_label = action.confirmation_label,
+                .failure_label = action.failure_label,
+                .role = action.role,
+                .icon = action.icon,
+                .enabled = @intFromBool(action.enabled),
+            };
+        }
         const telemetry_source = if (comptime @hasDecl(Controller, "retainGuiTelemetry"))
             Controller.retainGuiTelemetry(controller)
         else
             null;
-        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], menu_descriptions[0..action_menus.len], piano_descriptions[0..pianos.len], step_sequencer_descriptions[0..step_sequencers.len], file_drop_descriptions[0..file_importers.len], skin, composition, .{
+        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], menu_descriptions[0..action_menus.len], piano_descriptions[0..pianos.len], step_sequencer_descriptions[0..step_sequencers.len], file_drop_descriptions[0..file_importers.len], action_button_descriptions[0..action_buttons.len], skin, composition, .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
             .perform_edit = Bridge.performEdit,
@@ -648,6 +743,7 @@ fn createConfiguredView(
             .load_preset = Bridge.loadPreset,
             .store_editor_bool = Bridge.storeEditorBool,
             .invoke_menu_action = Bridge.invokeMenuAction,
+            .invoke_action = Bridge.invokeAction,
             .send_note = Bridge.sendNote,
             .drop_files = Bridge.dropFiles,
             .import_files = Bridge.importFiles,
@@ -768,6 +864,16 @@ fn NativeBridge(comptime Controller: type) type {
             return if (Controller.performMenuAction(iface, menu_id, item_id, checked != 0) == types.kResultOk) 0 else -1;
         }
 
+        fn invokeAction(
+            userdata: ?*anyopaque,
+            group_id: u32,
+            action_id: u32,
+        ) callconv(.c) types.int32 {
+            const iface = controller(userdata) orelse return -1;
+            const result = Controller.performAction(iface, group_id, action_id);
+            return if (result == types.kResultOk) 0 else -1;
+        }
+
         fn dropFiles(
             userdata: ?*anyopaque,
             drop_id: types.uint32,
@@ -883,4 +989,25 @@ test "file importer declaration validates bounded picker and drop configuration"
     try std.testing.expectError(error.InvalidExtension, validateFileImporter(.{ .id = 1, .extensions = &.{"wav"} }));
     try std.testing.expectError(error.DuplicateExtension, validateFileImporter(.{ .id = 1, .extensions = &.{ ".wav", ".WAV" } }));
     try std.testing.expectError(error.InvalidFileLimit, validateFileImporter(.{ .id = 1, .extensions = &.{".wav"}, .maximum_files = 0 }));
+}
+
+test "action buttons require one dominant action and safe destructive grouping" {
+    try validateActionButtons(&.{
+        .{ .group_id = 1, .id = 1, .label = "Apply", .accessible_label = "Apply changes", .role = .primary },
+        .{ .group_id = 2, .id = 2, .icon = .clear, .accessible_label = "Clear", .role = .destructive, .confirmation_label = "Confirm Clear" },
+    });
+    try std.testing.expectError(error.MissingPresentation, validateActionButtons(&.{
+        .{ .group_id = 1, .id = 1, .accessible_label = "Invisible" },
+    }));
+    try std.testing.expectError(error.MultiplePrimaryActions, validateActionButtons(&.{
+        .{ .group_id = 1, .id = 1, .label = "One", .accessible_label = "One", .role = .primary },
+        .{ .group_id = 2, .id = 2, .label = "Two", .accessible_label = "Two", .role = .primary },
+    }));
+    try std.testing.expectError(error.MissingDestructiveConfirmation, validateActionButtons(&.{
+        .{ .group_id = 1, .id = 1, .label = "Clear", .accessible_label = "Clear", .role = .destructive },
+    }));
+    try std.testing.expectError(error.UnsafeDestructiveGrouping, validateActionButtons(&.{
+        .{ .group_id = 1, .id = 1, .label = "Apply", .accessible_label = "Apply", .role = .primary },
+        .{ .group_id = 1, .id = 2, .label = "Clear", .accessible_label = "Clear", .role = .destructive, .confirmation_label = "Confirm Clear" },
+    }));
 }

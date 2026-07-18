@@ -94,6 +94,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         pub const hasControllerState = has_controller_state;
         pub const hasPresetLoader = @hasDecl(Config, "loadPreset");
         pub const hasMenuActionHandler = @hasDecl(Config, "performMenuAction");
+        pub const hasActionHandler = @hasDecl(Config, "performAction") or hasMenuActionHandler;
         pub const hasFileDropHandler = @hasDecl(Config, "handleFileImport") or @hasDecl(Config, "handleFileDrop");
         pub const hasFileImportStatus = @hasDecl(Config, "loadFileImport");
         pub const hasFileImportCommandHandler = @hasDecl(Config, "performFileImportCommand");
@@ -201,6 +202,20 @@ pub fn ReflectedEditController(comptime Config: type) type {
         ) types.tresult {
             if (comptime @hasDecl(Config, "performMenuAction")) {
                 return Config.performMenuAction(iface, menu_id, item_id, checked);
+            }
+            return types.kResultFalse;
+        }
+
+        pub fn performAction(
+            iface: *ivsteditcontroller.IEditController,
+            group_id: u32,
+            action_id: u32,
+        ) types.tresult {
+            if (comptime @hasDecl(Config, "performAction")) {
+                return Config.performAction(iface, group_id, action_id);
+            }
+            if (comptime @hasDecl(Config, "performMenuAction")) {
+                return Config.performMenuAction(iface, group_id, action_id, false);
             }
             return types.kResultFalse;
         }

@@ -98,6 +98,7 @@ public:
     const AccessibilityNode& accessibilityNode() const;
     FileDropView* dropView() const;
     VSTGUI::CView* focusView() const;
+    void setFocusedView(VSTGUI::CView* view);
     bool handleKey(uint16_t key, int16_t key_code, int16_t modifiers);
     bool activatePicker();
     bool activatePrimaryAction();

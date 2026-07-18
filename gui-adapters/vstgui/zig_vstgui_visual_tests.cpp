@@ -1,4 +1,5 @@
 #include "zig_vstgui_assets.h"
+#include "zig_vstgui_action_button.h"
 #include "zig_vstgui_action_menu.h"
 #include "zig_vstgui_controls.h"
 #include "zig_vstgui_graphs.h"
@@ -73,6 +74,8 @@ int32_t acceptEdit(void*, uint32_t, double) { return 0; }
 void acceptEnd(void*, uint32_t) {}
 int32_t acceptIndex(void*, uint32_t, uint32_t) { return 0; }
 int32_t rejectDrop(void*, uint32_t, const char* const*, uint32_t) { return -1; }
+int32_t acceptAction(void*, uint32_t, uint32_t) { return 0; }
+int32_t rejectAction(void*, uint32_t, uint32_t) { return -1; }
 
 VSTGUI::SharedPointer<VSTGUI::CBitmap> render(const Snapshot& snapshot) {
     return VSTGUI::renderBitmapOffscreen(
@@ -685,6 +688,45 @@ Snapshot closedActionMenu() {
     };
 }
 
+Snapshot actionButtons() {
+    return {
+        "action-buttons.png",
+        640,
+        88,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 640, 88)));
+            container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            const ZigVstguiActionButtonDescription descriptions[] = {
+                {1, 1, "Apply Edit", "Apply edit", nullptr, nullptr, nullptr,
+                    ZIG_VSTGUI_ACTION_PRIMARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1},
+                {2, 2, nullptr, "Clear impulse response", "Remove the loaded impulse response",
+                    "Confirm Clear IR", "Clear failed. Try again",
+                    ZIG_VSTGUI_ACTION_DESTRUCTIVE, ZIG_VSTGUI_ACTION_ICON_CLEAR, 1},
+                {2, 3, "Normalize", "Normalize impulse response", nullptr, nullptr,
+                    "Normalize failed. Try again", ZIG_VSTGUI_ACTION_SECONDARY,
+                    ZIG_VSTGUI_ACTION_ICON_NONE, 1},
+            };
+            ZigVstguiCallbacks accepted {};
+            accepted.invoke_action = acceptAction;
+            ZigVstguiCallbacks rejected {};
+            rejected.invoke_action = rejectAction;
+            ZigVstgui::ActionButtonControl controls[3];
+            controls[0].build(container, descriptions[0], accepted, styles);
+            controls[1].build(container, descriptions[1], accepted, styles);
+            controls[2].build(container, descriptions[2], rejected, styles);
+            controls[0].setBounds(VSTGUI::CRect(12, 26, 188, 62));
+            controls[1].setBounds(VSTGUI::CRect(214, 26, 390, 62));
+            controls[2].setBounds(VSTGUI::CRect(408, 26, 628, 62));
+            controls[1].activate();
+            controls[2].activate();
+            container->drawRect(&context, container->getViewSize());
+            for (auto& control : controls) control.clear();
+        },
+    };
+}
+
 int runSnapshot(
     const Snapshot& snapshot,
     const std::filesystem::path& references,
@@ -856,6 +898,26 @@ double benchmarkFileDropDraw() {
     return benchmarkDraw(container, offscreen);
 }
 
+double benchmarkActionButtonDraw() {
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 72)));
+    container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+    const ZigVstguiActionButtonDescription description {
+        1, 1, "Apply Edit", "Apply edit", nullptr, nullptr, nullptr,
+        ZIG_VSTGUI_ACTION_PRIMARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1,
+    };
+    ZigVstguiCallbacks callbacks {};
+    callbacks.invoke_action = acceptAction;
+    ZigVstgui::ActionButtonControl action;
+    action.build(container, description, callbacks, styles);
+    action.setBounds(VSTGUI::CRect(8, 16, 180, 56));
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(320, 72), 1.0);
+    if (!offscreen) return 1e9;
+    const double average = benchmarkDraw(container, offscreen);
+    action.clear();
+    return average;
+}
+
 double benchmarkSignalViewsDraw() {
     ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
     auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 640, 180)));
@@ -904,6 +966,7 @@ int main(int argc, char** argv) {
         presetBrowsers(),
         closedActionMenu(),
         actionMenus(),
+        actionButtons(),
         pianoKeyboard(),
         stepSequencer(),
         fileDrops(),
@@ -918,14 +981,17 @@ int main(int argc, char** argv) {
         const double piano_average = benchmarkPianoDraw();
         const double step_sequencer_average = benchmarkStepSequencerDraw();
         const double file_drop_average = benchmarkFileDropDraw();
+        const double action_button_average = benchmarkActionButtonDraw();
         const double signal_views_average = benchmarkSignalViewsDraw();
         std::fprintf(stderr, "visual regression warm render average: %.1f us\n", average);
         std::fprintf(stderr, "piano warm render average: %.1f us\n", piano_average);
         std::fprintf(stderr, "step sequencer warm render average: %.1f us\n", step_sequencer_average);
         std::fprintf(stderr, "file drop warm render average: %.1f us\n", file_drop_average);
+        std::fprintf(stderr, "action button warm render average: %.1f us\n", action_button_average);
         std::fprintf(stderr, "signal views warm render average: %.1f us\n", signal_views_average);
         if (average > 300.0 || piano_average > 300.0 || step_sequencer_average > 300.0 ||
-            file_drop_average > 300.0 || signal_views_average > 300.0) result = std::max(result, 6);
+            file_drop_average > 300.0 || action_button_average > 300.0 ||
+            signal_views_average > 300.0) result = std::max(result, 6);
     }
     VSTGUI::exit();
     return result;

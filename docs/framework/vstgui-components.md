@@ -119,6 +119,38 @@ Each menu is one focus stop while closed and one contained focus region while op
 
 Menu storage is copied into the editor instance at creation. Layout anchors the panel above or below its trigger and clamps it to the editor bounds. Warm drawing uses cached labels and does not allocate.
 
+## Action Buttons and Toolbars
+
+Declare up to 12 buttons in `EditorDescription.action_buttons`. Button order is visible order. Adjacent buttons with the same `group_id` form a group; a new group receives wider toolbar spacing.
+
+```zig
+.action_buttons = &.{
+    .{
+        .group_id = 1,
+        .id = 1,
+        .label = "Apply Edit",
+        .accessible_label = "Apply impulse response edit",
+        .role = .primary,
+    },
+    .{
+        .group_id = 2,
+        .id = 2,
+        .icon = .clear,
+        .accessible_label = "Clear impulse response",
+        .tooltip = "Remove the loaded impulse response.",
+        .confirmation_label = "Confirm Clear IR",
+        .failure_label = "Clear failed. Try again",
+        .role = .destructive,
+    },
+},
+```
+
+The reflected controller implements `performAction(controller, group_id, action_id)`. Existing controllers may route buttons through `performMenuAction`; the framework uses that as a compatibility fallback. Return `kResultOk` only after the command succeeds.
+
+An editor may declare one primary button. Destructive buttons require confirmation text and cannot share a group with the primary action. Icon-only buttons require `accessible_label`; the icon never supplies the semantic name. Return and Space activate the focused button. Escape cancels pending confirmation or dismisses failure feedback. Rejected commands retain focus and replace the label with bounded retry text.
+
+The gallery and IR loader use the same public declaration. The gallery covers primary, secondary, destructive, text, and icon-only variants. The IR loader uses the destructive confirmation contract for clearing imported media.
+
 Each `Parameter` needs the stable parameter ID used by the controller, its display metadata, its step count, its normalized default, and a presentation kind:
 
 | Kind | Intended parameter | Exact entry |
@@ -351,6 +383,7 @@ Supported authoring surface:
 - `XYPad`, ordered two-parameter gestures, per-axis semantics, and grouped XY-pad composition.
 - `PresetBrowser`, `gui_preset_browser.Browser`, bounded catalogs, persistent filtering and selection, and host-automated loading.
 - `ActionMenu`, action, toggle, separator, disabled and destructive item states, anchored overlays, and persistent toggle fields.
+- `ActionButton`, primary, secondary, destructive and icon-only roles, grouped toolbar layout, inline confirmation, and recoverable failure feedback.
 - `Piano`, bounded note ranges, GUI note transport, computer-key input, pointer glissando, and accessible note selection.
 - `StepSequencer`, bounded parameter-backed patterns, persistent multi-selection, activity-gated playhead telemetry, and accessible editing.
 - `FileImporter`, bounded extension filtering and path copying, an accessible operating-system picker fallback, keyboard interaction, progress presentation, cancellation, retry, and recoverable rejection feedback.
@@ -363,7 +396,7 @@ Experimental extensions:
 - Rotary controls currently have no plugin consumer. Bipolar and decibel controls each have one.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
-- `AudioFileImporter`, controller-owned import status and command callbacks, and controller-sourced graph snapshots. The channel strip is their only authoring consumer, so their exact composition shape may still change.
+- `AudioFileImporter`, controller-owned import status and command callbacks, and controller-sourced graph snapshots. The channel strip and IR loader use the contract, but decoded audio transport still has one production consumer.
 - New modulation and GPU components.
 
 Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.

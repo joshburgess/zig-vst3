@@ -1,5 +1,6 @@
 #include "zig_vstgui_component.h"
 #include "zig_vstgui_controls.h"
+#include "zig_vstgui_action_button.h"
 #include "zig_vstgui_action_menu.h"
 #include "zig_vstgui_assets.h"
 #include "zig_vstgui_editor.h"
@@ -56,6 +57,10 @@ struct CallbackState {
     uint32_t stored_bool_field {0};
     bool stored_bool_value {false};
     bool reject_menu_action {false};
+    uint32_t invoked_action_group_id {0};
+    uint32_t invoked_action_id {0};
+    uint32_t action_count {0};
+    bool reject_action {false};
     bool reject_bool_store {false};
     uint32_t note_count {0};
     int32_t last_note_pitch {-1};
@@ -130,6 +135,14 @@ int32_t commandFileImport(void* userdata, uint32_t, ZigVstguiFileImportCommand c
     state->import_command_count += 1;
     state->import_command = command;
     return 0;
+}
+
+int32_t invokeAction(void* userdata, uint32_t group_id, uint32_t action_id) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->invoked_action_group_id = group_id;
+    state->invoked_action_id = action_id;
+    state->action_count += 1;
+    return state->reject_action ? -1 : 0;
 }
 
 bool launchTestPicker(void* userdata, ZigVstgui::FileDropControl& control) {
@@ -1643,6 +1656,116 @@ int testActionMenus() {
     return 0;
 }
 
+int testActionButtons() {
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.invoke_action = invokeAction;
+    char accessible_label[] = "Clear impulse response";
+    const ZigVstguiActionButtonDescription description {
+        2,
+        7,
+        nullptr,
+        accessible_label,
+        "Remove the loaded impulse response",
+        "Confirm Clear IR",
+        "Clear failed. Try again",
+        ZIG_VSTGUI_ACTION_DESTRUCTIVE,
+        ZIG_VSTGUI_ACTION_ICON_CLEAR,
+        1,
+    };
+    VSTGUI::init(nullptr);
+    {
+        ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+        auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 80)));
+        ZigVstgui::ActionButtonControl control;
+        if (!control.build(container, description, callbacks, styles)) {
+            VSTGUI::exit();
+            return 1;
+        }
+        control.setBounds(VSTGUI::CRect(8, 8, 180, 40));
+        accessible_label[0] = 'X';
+        const auto& accessibility = control.accessibilityNode();
+        if (accessibility.role() != ZigVstgui::AccessibilityRole::button ||
+            accessibility.name() != "Clear impulse response" ||
+            !accessibility.perform(ZigVstgui::AccessibilityAction::press) || !control.confirming() ||
+            state.action_count != 0 || accessibility.valueText() != "Confirmation required") {
+            control.clear();
+            VSTGUI::exit();
+            return 2;
+        }
+        if (!control.handleKey(0, Steinberg::KEY_ESCAPE, 0) || control.confirming() ||
+            !control.handleKey(0, Steinberg::KEY_SPACE, 0) || !control.confirming() ||
+            !control.handleKey(0, Steinberg::KEY_RETURN, 0) || state.action_count != 1 ||
+            state.invoked_action_group_id != 2 || state.invoked_action_id != 7 || control.failed()) {
+            control.clear();
+            VSTGUI::exit();
+            return 3;
+        }
+        state.reject_action = true;
+        if (!accessibility.perform(ZigVstgui::AccessibilityAction::press) || !control.confirming() ||
+            !accessibility.perform(ZigVstgui::AccessibilityAction::press) || !control.failed() ||
+            state.action_count != 2 || accessibility.valueText().find("Try again") == std::string::npos) {
+            control.clear();
+            VSTGUI::exit();
+            return 4;
+        }
+        state.reject_action = false;
+        if (!accessibility.perform(ZigVstgui::AccessibilityAction::press) || control.failed() ||
+            state.action_count != 3) {
+            control.clear();
+            VSTGUI::exit();
+            return 5;
+        }
+        control.clear();
+
+        auto disabled_description = description;
+        disabled_description.enabled = 0;
+        ZigVstgui::ActionButtonControl disabled;
+        if (!disabled.build(container, disabled_description, callbacks, styles) ||
+            disabled.handleKey(0, Steinberg::KEY_SPACE, 0) ||
+            disabled.accessibilityNode().perform(ZigVstgui::AccessibilityAction::press)) {
+            disabled.clear();
+            VSTGUI::exit();
+            return 6;
+        }
+        disabled.clear();
+    }
+    VSTGUI::exit();
+
+    const ZigVstguiParameterDescription parameter {
+        10, 0.5, {"Gain", "dB", 0, 0.5}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+    };
+    auto* editor = zig_vstgui_editor_create_widgets(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        &description, 1, {}
+    );
+    if (!editor || !editor->actionButtonAccessibility(0)) {
+        zig_vstgui_editor_destroy(editor);
+        return 7;
+    }
+    zig_vstgui_editor_destroy(editor);
+
+    auto invalid = description;
+    invalid.confirmation_label = nullptr;
+    if (zig_vstgui_editor_create_widgets(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        &invalid, 1, {}
+    )) return 8;
+    const ZigVstguiActionButtonDescription unsafe[] = {
+        {1, 1, "Apply", "Apply", nullptr, nullptr, nullptr, ZIG_VSTGUI_ACTION_PRIMARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1},
+        {1, 2, "Clear", "Clear", nullptr, "Confirm Clear", nullptr, ZIG_VSTGUI_ACTION_DESTRUCTIVE, ZIG_VSTGUI_ACTION_ICON_NONE, 1},
+    };
+    if (zig_vstgui_editor_create_widgets(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        unsafe, 2, {}
+    )) return 9;
+    return 0;
+}
+
 int testPianoKeyboard() {
     CallbackState state;
     ZigVstguiCallbacks callbacks {};
@@ -2000,6 +2123,7 @@ int main() {
     if (const int result = testAssetsAndFonts(); result != 0) return 190 + result;
     if (const int result = testPresetBrowser(); result != 0) return 210 + result;
     if (const int result = testActionMenus(); result != 0) return 220 + result;
+    if (const int result = testActionButtons(); result != 0) return 230 + result;
     if (const int result = testPianoKeyboard(); result != 0) return 240 + result;
     if (const int result = testStepSequencer(); result != 0) return 250 + result;
     if (const int result = testFileDrop(); result != 0) return 270 + result;

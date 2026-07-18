@@ -173,6 +173,14 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
         }
     }
 
+    pub fn performAction(
+        controller: *ivsteditcontroller.IEditController,
+        group_id: u32,
+        action_id: u32,
+    ) types.tresult {
+        return performMenuAction(controller, group_id, action_id, false);
+    }
+
     pub fn handleFileDrop(
         controller: *ivsteditcontroller.IEditController,
         drop_id: u32,
@@ -271,6 +279,31 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .{ .id = 4, .label = "Clear Envelope", .destructive = true },
                 },
             }},
+            .action_buttons = &.{
+                .{
+                    .group_id = 1,
+                    .id = 1,
+                    .label = "Reset Layout",
+                    .accessible_label = "Reset gallery layout",
+                    .role = .primary,
+                },
+                .{
+                    .group_id = 1,
+                    .id = 2,
+                    .label = "Audition",
+                    .accessible_label = "Audition current settings",
+                    .role = .secondary,
+                },
+                .{
+                    .group_id = 2,
+                    .id = 4,
+                    .icon = .clear,
+                    .accessible_label = "Clear envelope",
+                    .tooltip = "Remove the editable envelope points.",
+                    .confirmation_label = "Confirm Clear",
+                    .role = .destructive,
+                },
+            },
             .pianos = &.{.{
                 .title = "Piano Keyboard",
                 .first_note = 48,
