@@ -97,6 +97,9 @@ GraphView::GraphView(
             maximum_id = std::max(maximum_id, source.point_id);
         }
         next_point_id = maximum_id == std::numeric_limits<uint32_t>::max() ? 1 : maximum_id + 1;
+        if (description.initial_selected_point_id != 0 && indexOf(description.initial_selected_point_id)) {
+            selected_id = description.initial_selected_point_id;
+        }
         setWantsFocus(true);
     } else if (!description.dynamic) {
         if (description.point_count > ZIG_VSTGUI_MAX_GRAPH_POINTS ||
@@ -166,6 +169,8 @@ void GraphView::finishTransaction() {
     }
     transaction_active = false;
     transaction_points.clear();
+    persistEnvelope();
+    persistSelection();
 }
 
 void GraphView::cancelTransaction() {
@@ -202,7 +207,41 @@ bool GraphView::selectPoint(uint32_t point_id) {
     syncAccessibility();
     if (previous) invalidRect(affectedBounds(points, *previous));
     invalidRect(affectedBounds(points, *index));
+    if (!transaction_active) persistSelection();
     return true;
+}
+
+void GraphView::persistSelection() {
+    if (description.selection_state_id == 0 || !selected_id || !parameter_callbacks.store_editor_index) return;
+    parameter_callbacks.store_editor_index(
+        parameter_callbacks.userdata,
+        description.selection_state_id,
+        *selected_id
+    );
+}
+
+void GraphView::persistEnvelope() {
+    if (description.envelope_state_id == 0 || !parameter_callbacks.store_editor_envelope) return;
+    std::vector<ZigVstguiEnvelopePoint> stored;
+    stored.reserve(points.size());
+    for (const auto& point : points) {
+        stored.push_back({
+            point.id,
+            point.position.x,
+            point.position.y,
+            point.x_parameter_id,
+            point.y_parameter_id,
+            point.parameter_mask,
+            0,
+            0,
+        });
+    }
+    parameter_callbacks.store_editor_envelope(
+        parameter_callbacks.userdata,
+        description.envelope_state_id,
+        stored.data(),
+        static_cast<uint32_t>(stored.size())
+    );
 }
 
 bool GraphView::selectAdjacent(bool next) {

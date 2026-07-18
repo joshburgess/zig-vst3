@@ -203,7 +203,9 @@ Clicking an empty location creates and selects a point. Dragging moves the selec
 
 The graph semantic value reports point count, selected ID, and selected coordinates. Standard focus, press, increment, decrement, and set-value actions operate the selected point. Toolkit-neutral actions also expose previous, next, add, and delete operations. Static graphs remain read-only and never acquire an edit timer.
 
-To bind a point to two automatable parameters, set `parameter_mask = 3` with distinct `x_parameter_id` and `y_parameter_id` values. Both parameters must be declared in the same editor. Movement then uses the standard ordered multi-parameter gesture, rejection restores both coordinates, and host automation updates the handle without emitting another gesture. Unbound points use isolated per-editor transactional state. Persistent serialization of that state belongs to the persistent editor-state milestone.
+To bind a point to two automatable parameters, set `parameter_mask = 3` with distinct `x_parameter_id` and `y_parameter_id` values. Both parameters must be declared in the same editor. Movement then uses the standard ordered multi-parameter gesture, rejection restores both coordinates, and host automation updates the handle without emitting another gesture.
+
+Set `selection_state_id` and `envelope_state_id` to fields in the controller's public `editor_state.Store` to persist non-parameter selection and geometry. The store restores before each view is built. VSTGUI writes completed envelope transactions and selection changes back through toolkit-neutral callbacks. Parameter-backed points recover their declared bindings by stable point ID, so restoring UI geometry does not emit automation or change parameter state.
 
 ## Native Accessibility
 
@@ -226,6 +228,7 @@ Supported authoring surface:
 - `Meter`, meter source wiring, `MeterBank`, and GUI telemetry presentation.
 - `Graph`, graph axes and style roles, and grouped graph composition.
 - `EnvelopePoint`, bounded editable envelopes, stable selection, snapping, and parameter-backed point gestures.
+- `editor_state.Store`, typed editor values, bounded serialization, migrations, and persistent envelope bindings.
 - `XYPad`, ordered two-parameter gestures, per-axis semantics, and grouped XY-pad composition.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.
@@ -237,6 +240,7 @@ Experimental extensions:
 - Fixed graph point storage, dynamic graph sources, and `SnapshotSeries`. Each source mode currently has one production consumer.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
 - New analyzer, modulation, timeline, GPU, preset-browser, and drag-and-drop components.
+- `gui_preset_browser.Browser`, pending a native component and a second production consumer.
 
 Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.
 

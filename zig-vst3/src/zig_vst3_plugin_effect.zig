@@ -78,6 +78,14 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         const ParameterState = zig_vst3_plugin_bridge.ParameterState(Params);
         const ParameterController = zig_vst3_plugin_bridge.ParameterController(Params);
+        const has_editor_state = @hasDecl(Config, "EditorState");
+        const EditorState = if (has_editor_state) Config.EditorState else struct {};
+        pub const hasEditorState = has_editor_state;
+        pub const EditorStateType = EditorState;
+        const editor_state_migrations: []const plug_core.editor_state.Migration = if (@hasDecl(Config, "editor_state_migrations"))
+            Config.editor_state_migrations
+        else
+            &.{};
 
         const Controller = struct {
             iface: ivsteditcontroller.IEditController = .{ .vtable = &controller_vtable },
@@ -110,6 +118,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             host_application: ?*ivsthostapplication.IHostApplication = null,
             parameter_state: ParameterState,
             parameters: ParameterController,
+            editor_state: EditorState,
             parameter_observers: [parameter_observer_capacity]?ParameterObserver = @splat(null),
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
 
@@ -117,6 +126,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 self.* = .{
                     .parameter_state = ParameterState.init(Config.parameter_set),
                     .parameters = undefined,
+                    .editor_state = if (has_editor_state) EditorState.init() else .{},
                 };
                 self.parameters = .{
                     .set = Config.parameter_set,
@@ -145,6 +155,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         pub fn getNormalized(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID) vsttypes.ParamValue {
             return instance(iface).parameters.getNormalized(id);
+        }
+
+        pub fn editorState(iface: *ivsteditcontroller.IEditController) *EditorState {
+            return &instance(iface).editor_state;
         }
 
         pub fn setNormalized(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
@@ -411,10 +425,35 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn setState(ptr: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
+            if (comptime has_editor_state) {
+                const self = owner(ptr);
+                const result = zig_vst3_plugin_bridge.readControllerState(
+                    Params,
+                    EditorState,
+                    state,
+                    Config.parameter_set,
+                    &self.parameter_state.values,
+                    &self.editor_state,
+                    editor_state_migrations,
+                );
+                if (result == types.kResultOk) notifyAllParameterObservers(self);
+                return result;
+            }
             return readStateAndNotify(owner(ptr), state);
         }
 
         fn getState(ptr: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
+            if (comptime has_editor_state) {
+                const self = owner(ptr);
+                return zig_vst3_plugin_bridge.writeControllerState(
+                    Params,
+                    EditorState,
+                    state,
+                    Config.parameter_set,
+                    &self.parameter_state.values,
+                    &self.editor_state,
+                );
+            }
             return owner(ptr).parameters.writeState(state);
         }
 
@@ -459,6 +498,11 @@ pub fn ReflectedEditController(comptime Config: type) type {
         fn readStateAndNotify(self: *Controller, state: ?*ibstream.IBStream) types.tresult {
             const result = self.parameters.readState(state);
             if (result != types.kResultOk) return result;
+            notifyAllParameterObservers(self);
+            return result;
+        }
+
+        fn notifyAllParameterObservers(self: *Controller) void {
             var index: types.int32 = 0;
             while (index < self.parameters.parameterCount()) : (index += 1) {
                 var info: ivsteditcontroller.ParameterInfo = undefined;
@@ -466,7 +510,6 @@ pub fn ReflectedEditController(comptime Config: type) type {
                     notifyParameterObservers(self, info.id, self.parameters.getNormalized(info.id));
                 }
             }
-            return result;
         }
 
         fn notifyParameterObservers(self: *Controller, id: vsttypes.ParamID, value: vsttypes.ParamValue) void {

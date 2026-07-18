@@ -15,6 +15,8 @@ typedef struct ZigVstguiCallbacks {
     int32_t (*format_value)(void* userdata, uint32_t parameter_id, double normalized, char* output, uint32_t capacity);
     int32_t (*parse_value)(void* userdata, uint32_t parameter_id, const char* text, double* normalized);
     int32_t (*show_context_menu)(void* userdata, uint32_t parameter_id, int32_t x, int32_t y);
+    int32_t (*store_editor_index)(void* userdata, uint32_t field_id, uint32_t value);
+    int32_t (*store_editor_envelope)(void* userdata, uint32_t field_id, const struct ZigVstguiEnvelopePoint* points, uint32_t count);
 } ZigVstguiCallbacks;
 
 typedef struct ZigVstguiParameterInfo {
@@ -141,6 +143,9 @@ typedef struct ZigVstguiGraphDescription {
     uint32_t minimum_point_count;
     double snap_x;
     double snap_y;
+    uint32_t selection_state_id;
+    uint32_t envelope_state_id;
+    uint32_t initial_selected_point_id;
 } ZigVstguiGraphDescription;
 
 typedef struct ZigVstguiGraphCallbacks {

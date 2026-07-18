@@ -720,6 +720,111 @@ pub fn writeParameterState(
     return types.kResultOk;
 }
 
+pub fn readEditorState(
+    comptime State: type,
+    stream: ?*ibstream.IBStream,
+    state: *State,
+    migrations: []const plug.editor_state.Migration,
+) types.tresult {
+    const input = stream orelse return types.kInvalidArgument;
+    var input_reader: IBStreamReader = undefined;
+    input_reader.init(input);
+    _ = state.read(input_reader.reader(), migrations) catch return types.kResultFalse;
+    return types.kResultOk;
+}
+
+pub fn writeEditorState(
+    comptime State: type,
+    stream: ?*ibstream.IBStream,
+    state: *const State,
+) types.tresult {
+    const output = stream orelse return types.kInvalidArgument;
+    var output_writer: IBStreamWriter = undefined;
+    output_writer.init(output);
+    state.write(output_writer.writer()) catch return types.kResultFalse;
+    return types.kResultOk;
+}
+
+const controller_state_magic = "ZCTRLSTA";
+const controller_state_version: u16 = 1;
+
+pub fn readControllerState(
+    comptime Params: type,
+    comptime EditorState: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *plug.parameters.ParameterValues(Params),
+    editor: *EditorState,
+    migrations: []const plug.editor_state.Migration,
+) types.tresult {
+    const input = stream orelse return types.kInvalidArgument;
+    var start: types.int64 = 0;
+    if (input.vtable.seek(input, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur), &start) != types.kResultOk) {
+        return types.kResultFalse;
+    }
+    var probe: [controller_state_magic.len]u8 = undefined;
+    var probe_count: types.int32 = 0;
+    const probe_result = input.vtable.read(input, &probe, @intCast(probe.len), &probe_count);
+    if (input.vtable.seek(input, start, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null) != types.kResultOk) {
+        return types.kResultFalse;
+    }
+    if (probe_result != types.kResultOk or probe_count != @as(types.int32, @intCast(probe.len)) or !std.mem.eql(u8, &probe, controller_state_magic)) {
+        var restored_values = plug.parameters.ParameterValues(Params).init(set);
+        const result = readParameterState(Params, input, set, &restored_values);
+        if (result != types.kResultOk) return result;
+        values.copyFrom(&restored_values);
+        return types.kResultOk;
+    }
+
+    var input_reader: IBStreamReader = undefined;
+    input_reader.init(input);
+    var header_magic: [controller_state_magic.len]u8 = undefined;
+    input_reader.reader().readSliceAll(&header_magic) catch return types.kResultFalse;
+    const version = input_reader.reader().takeInt(u16, .little) catch return types.kResultFalse;
+    if (version != controller_state_version) return types.kResultFalse;
+    const parameter_size = input_reader.reader().takeInt(u32, .little) catch return types.kResultFalse;
+    const editor_size = input_reader.reader().takeInt(u32, .little) catch return types.kResultFalse;
+    const expected_parameter_size = plug.state.encodedSize(Params);
+    if (parameter_size != expected_parameter_size or editor_size > EditorState.maximumEncodedSize()) return types.kResultFalse;
+
+    var parameter_bytes: [plug.state.encodedSize(Params)]u8 = undefined;
+    var editor_bytes: [EditorState.maximumEncodedSize()]u8 = undefined;
+    input_reader.reader().readSliceAll(parameter_bytes[0..@intCast(parameter_size)]) catch return types.kResultFalse;
+    input_reader.reader().readSliceAll(editor_bytes[0..@intCast(editor_size)]) catch return types.kResultFalse;
+    var parameter_reader = std.Io.Reader.fixed(parameter_bytes[0..@intCast(parameter_size)]);
+    var editor_reader = std.Io.Reader.fixed(editor_bytes[0..@intCast(editor_size)]);
+    var restored_values = plug.parameters.ParameterValues(Params).init(set);
+    var restored_editor = EditorState.init();
+    plug.state.readParameterState(Params, set, &restored_values, &parameter_reader) catch return types.kResultFalse;
+    _ = restored_editor.read(&editor_reader, migrations) catch return types.kResultFalse;
+    values.copyFrom(&restored_values);
+    editor.* = restored_editor;
+    return types.kResultOk;
+}
+
+pub fn writeControllerState(
+    comptime Params: type,
+    comptime EditorState: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *const plug.parameters.ParameterValues(Params),
+    editor: *const EditorState,
+) types.tresult {
+    const output = stream orelse return types.kInvalidArgument;
+    const parameter_size = std.math.cast(u32, plug.state.encodedSize(Params)) orelse return types.kResultFalse;
+    const editor_size = std.math.cast(u32, editor.encodedSize()) orelse return types.kResultFalse;
+    var output_writer: IBStreamWriter = undefined;
+    output_writer.init(output);
+    const writer = output_writer.writer();
+    writer.writeAll(controller_state_magic) catch return types.kResultFalse;
+    writer.writeInt(u16, controller_state_version, .little) catch return types.kResultFalse;
+    writer.writeInt(u32, parameter_size, .little) catch return types.kResultFalse;
+    writer.writeInt(u32, editor_size, .little) catch return types.kResultFalse;
+    plug.state.writeParameterState(Params, set, values, writer) catch return types.kResultFalse;
+    editor.write(writer) catch return types.kResultFalse;
+    return types.kResultOk;
+}
+
 const IBStreamReader = struct {
     stream: *ibstream.IBStream,
     buffer: [ibstream_buffer_bytes]u8,

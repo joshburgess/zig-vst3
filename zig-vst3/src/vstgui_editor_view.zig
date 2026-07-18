@@ -27,6 +27,8 @@ pub const Callbacks = extern struct {
     format_value: *const fn (?*anyopaque, vsttypes.ParamID, f64, [*]u8, types.uint32) callconv(.c) types.int32,
     parse_value: *const fn (?*anyopaque, vsttypes.ParamID, [*:0]const u8, *f64) callconv(.c) types.int32,
     show_context_menu: *const fn (?*anyopaque, vsttypes.ParamID, types.int32, types.int32) callconv(.c) types.int32,
+    store_editor_index: *const fn (?*anyopaque, types.uint32, types.uint32) callconv(.c) types.int32,
+    store_editor_envelope: *const fn (?*anyopaque, types.uint32, [*]const EnvelopePoint, types.uint32) callconv(.c) types.int32,
 };
 
 pub const ParameterInfo = extern struct {
@@ -140,6 +142,9 @@ pub const GraphDescription = extern struct {
     minimum_point_count: types.uint32 = 0,
     snap_x: f64 = 0.0,
     snap_y: f64 = 0.0,
+    selection_state_id: types.uint32 = 0,
+    envelope_state_id: types.uint32 = 0,
+    initial_selected_point_id: types.uint32 = 0,
 };
 
 pub const EnvelopePoint = extern struct {

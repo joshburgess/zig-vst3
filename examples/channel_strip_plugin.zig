@@ -12,6 +12,12 @@ pub const bypass_param_id: u32 = 1;
 pub const mode_param_id: u32 = 2;
 pub const drive_param_id: u32 = 3;
 
+pub const input_panel_expanded_state_id: u32 = 1;
+pub const analyzer_mode_state_id: u32 = 2;
+pub const selected_tab_state_id: u32 = 3;
+pub const envelope_selection_state_id: u32 = 4;
+pub const envelope_state_id: u32 = 5;
+
 pub const Mode = enum { clean, console, limit };
 pub const ModeParam = core.parameters.EnumParam(Mode);
 
@@ -76,10 +82,25 @@ const envelope_points = [_]vst3.vstgui.EnvelopePoint{
     .{ .point_id = 3, .x = 1.0, .y = 0.0 },
 };
 
+const persisted_envelope = core.editor_state.Envelope.init(&.{
+    .{ .id = 1, .x = 0.0, .y = 0.0 },
+    .{ .id = 2, .x = 0.5, .y = 0.5 },
+    .{ .id = 3, .x = 1.0, .y = 0.0 },
+}) catch unreachable;
+
+pub const ChannelStripEditorState = core.editor_state.Store(1, &.{
+    .{ .id = input_panel_expanded_state_id, .default = .{ .boolean = true } },
+    .{ .id = analyzer_mode_state_id, .default = .{ .index = 0 } },
+    .{ .id = selected_tab_state_id, .default = .{ .index = 0 } },
+    .{ .id = envelope_selection_state_id, .default = .{ .point_id = 2 } },
+    .{ .id = envelope_state_id, .default = .{ .envelope = persisted_envelope } },
+});
+
 const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const controller_name = "ChannelStripController";
     pub const Params = Spec.Params;
     pub const parameter_set = &channel_parameter_set;
+    pub const EditorState = ChannelStripEditorState;
 
     pub fn createView(
         controller: *vst.ivsteditcontroller.IEditController,
@@ -150,6 +171,8 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .minimum_point_count = 2,
                     .snap_x = 0.05,
                     .snap_y = 0.05,
+                    .selection_state_id = envelope_selection_state_id,
+                    .envelope_state_id = envelope_state_id,
                 },
             },
             .skin = .{
@@ -351,6 +374,27 @@ test "channel strip controller creates independent public API views" {
     try std.testing.expectEqual(types.kResultOk, second.vtable.getSize(second, &second_size));
     try std.testing.expectEqual(@as(types.int32, 400), second_size.right);
     try std.testing.expectEqual(@as(types.int32, 300), second_size.bottom);
+}
+
+test "channel strip controller state is serialized and instance isolated" {
+    var first_out: ?*anyopaque = null;
+    var second_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &first_out));
+    try std.testing.expectEqual(types.kResultOk, Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &second_out));
+    const first: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(first_out orelse return error.MissingController));
+    defer _ = first.vtable.release(first);
+    const second: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(second_out orelse return error.MissingController));
+    defer _ = second.vtable.release(second);
+
+    try Controller.editorState(first).set(input_panel_expanded_state_id, .{ .boolean = false });
+    try std.testing.expect(Controller.editorState(second).get(input_panel_expanded_state_id).?.boolean);
+    const Stream = vst3.vst_stream.FixedBufferStream(65536);
+    var stream = Stream{};
+    try std.testing.expectEqual(types.kResultOk, first.vtable.getState(first, stream.asStream()));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(base.ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, second.vtable.setState(second, stream.asStream()));
+    try std.testing.expect(!Controller.editorState(second).get(input_panel_expanded_state_id).?.boolean);
+    try std.testing.expectEqual(@as(f64, 0.5), Controller.getNormalized(second, gain_param_id));
 }
 
 test "channel strip component instances keep independent parameter state" {

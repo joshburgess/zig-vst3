@@ -93,19 +93,30 @@ Completion evidence:
 
 ## Milestone 11: Persistent Editor State
 
-- [ ] Define a versioned, per-instance store for non-parameter editor state.
-- [ ] Support typed values needed for panel expansion, analyzer settings, tabs, graph selection, and envelopes.
-- [ ] Keep editor state separate from automatable parameter state and audio-thread processing.
-- [ ] Define controller serialization hooks with size bounds, validation, and migration.
-- [ ] Exercise the contract in both the gallery and channel strip.
-- [ ] Build the preset-browser state model on this contract.
-- [ ] Test round trips, unknown fields, invalid data, migration, instance isolation, and editor reopen.
+- [x] Define a versioned, per-instance store for non-parameter editor state.
+- [x] Support typed values needed for panel expansion, analyzer settings, tabs, graph selection, and envelopes.
+- [x] Keep editor state separate from automatable parameter state and audio-thread processing.
+- [x] Define controller serialization hooks with size bounds, validation, and migration.
+- [x] Exercise the contract in both the gallery and channel strip.
+- [x] Build the preset-browser state model on this contract.
+- [x] Test round trips, unknown fields, invalid data, migration, instance isolation, and editor reopen.
 
 Exit criteria:
 
 - Closing and reopening an editor restores declared UI state without changing plugin parameters.
 - State decoding is bounded and rejects malformed payloads without partial mutation.
 - Plugin authors can use the feature without importing adapter internals.
+
+Completion evidence:
+
+- `editor_state.Store(schema_version, fields)` provides compile-time schemas, typed defaults, fixed storage, bounded text and envelopes, transactional decode, unknown-field handling, and explicit field-ID migrations.
+- Reflected controllers keep UI state in a per-instance store. VST3 `getState` and `setState` use a bounded composite with separate parameter and editor sections, while `setComponentState` remains the parameter-only path. UI mutations do not change automatable values, and composite decode commits neither section until both validate.
+- Adapter ABI version 11 adds toolkit-neutral persistence callbacks and stable field bindings for editable-envelope selection and geometry. Completed VSTGUI edits update the controller store, and reopened views restore points, selection, and parameter bindings.
+- The component gallery and channel strip declare panel, analyzer, tab, graph-selection, and envelope fields through the public core API. Both bind editable graphs without importing adapter internals.
+- `gui_preset_browser.Browser(capacity)` adds bounded search, filtered selection navigation, and load status on top of persistent text and selection fields. It remains experimental until the native component milestone.
+- Unit and native interaction tests cover every value type, successful and malformed round trips, unknown fields, migration, instance isolation, parameter separation, editor reopen, restored selection, and envelope callbacks.
+- Zig tests, raw ABI checks, native adapter tests, AppKit integration tests, all ten Steinberg example validators, and Linux and Windows example cross-bundles pass. The final measured warm-render average was 61.3 microseconds against the 300 microsecond budget.
+- Pluginval was not relaunched because prior macOS runs produced repeated crash dialogs. Native Windows, X11, Wayland, VoiceOver, and Narrator interaction remain external checks.
 
 ## Milestone 12: Higher-Level Components
 

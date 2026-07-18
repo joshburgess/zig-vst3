@@ -66,7 +66,7 @@ zig build pluginval-gain
 
 The current visible reference control supports pointer dragging, arrow keys, Home and End, exact text entry, resize constraints, and content scale. Default reset uses Command-click on macOS and Control-click on Windows and Linux. Host parameter changes are broadcast through a bounded per-controller observer list, so open views follow automation and restored state without producing a new gesture.
 
-The native adapter creation contract at ABI version 10 accepts 1–64 parameter descriptions, up to eight XY pads, and bounded editable-envelope metadata. Each parameter carries its ID, initial normalized value, label, units, step count, default, and presentation kind. Host updates and bulk state refreshes are addressed by parameter ID. The adapter rejects duplicate parameter IDs, invalid XY axis references, malformed point IDs, unbounded envelopes, and invalid parameter-backed points before creating an editor. `zig_vst3_editor_smoke` is the multi-parameter integration fixture: one editor binds continuous, integer, boolean, enum, linked XY, and editable-envelope interactions.
+The native adapter creation contract at ABI version 11 accepts 1–64 parameter descriptions, up to eight XY pads, bounded editable-envelope metadata, and optional persistent field IDs for envelope geometry and selection. Each parameter carries its ID, initial normalized value, label, units, step count, default, and presentation kind. Host updates and bulk state refreshes are addressed by parameter ID. The adapter rejects duplicate parameter IDs, invalid XY axis references, malformed point IDs, unbounded envelopes, invalid parameter-backed points, and persistent bindings without a declared controller store before creating an editor. `zig_vst3_editor_smoke` is the multi-parameter integration fixture: one editor binds continuous, integer, boolean, enum, linked XY, editable-envelope, and persistent editor-state interactions.
 
 Each description also selects a presentation kind: `linear_slider`, `rotary_knob`, `toggle`, `enum_dropdown`, or `segmented_enum`. The control keeps reflected formatting, parsing, quantization, automation gestures, host playback, default reset, focus, and context-menu behavior regardless of presentation. Numeric controls include exact text entry. Labels append units when supplied. Editors provide both a compact/expand action and a draggable lower-right resize handle.
 
@@ -150,6 +150,25 @@ Peak and gain-reduction sources use normalized values from 0 to 1. Stereo meters
 Overflow is a visual quality loss, never a reason to wait on the audio thread. The processor must not allocate, lock a GUI mutex, call the operating system, or perform unbounded work for an editor.
 
 Spectrum analyzers are intentionally not part of the current component set. Define a representative plugin, bin count, update rate, queue capacity, and overflow behavior before adding one.
+
+## Persistent Editor State
+
+Use `plug.editor_state.Store(schema_version, fields)` for bounded state that belongs to the editor rather than the processor. A schema declares stable nonzero field IDs, types, and defaults at compile time. Supported values cover booleans, signed integers, finite scalars, indexes, selected point IDs, finite points, short text, and envelopes with up to 32 points.
+
+```zig
+const EditorState = plug.editor_state.Store(1, &.{
+    .{ .id = 1, .default = .{ .boolean = true } },
+    .{ .id = 2, .default = .{ .index = 0 } },
+    .{ .id = 3, .default = .{ .point_id = 2 } },
+    .{ .id = 4, .default = .{ .envelope = default_envelope } },
+});
+```
+
+Declare `pub const EditorState = EditorStateType` on a reflected controller configuration. The VST3 controller `getState` and `setState` methods then serialize a composite with separate parameter and editor sections, while `setComponentState` continues to accept the processor's parameter-only snapshot. Editor state never enters the processor, process callback, or audio thread.
+
+The binary format carries independent wire and schema versions. Decode limits entry count and payload size, validates every known value, ignores unknown field IDs and value kinds, supports explicit field-ID migrations, and commits only after the complete payload succeeds. Malformed or truncated data leaves the live store unchanged. A controller owns one store per plugin instance, and every view created by that controller observes the same restored state.
+
+`gui_preset_browser.Browser(capacity)` supplies the bounded search, selection, keyboard navigation, and load-status model for the upcoming preset-browser component. It persists search text and selection through declared editor-state fields. The model is experimental until both reference editors use a native browser widget.
 
 ## Lifecycle Checklist
 

@@ -36,6 +36,9 @@ struct CallbackState {
     uint32_t operation_ids[32] {};
     uint32_t operation_count {0};
     uint32_t reject_parameter_id {UINT32_MAX};
+    uint32_t stored_state_field {0};
+    uint32_t stored_state_index {0};
+    uint32_t stored_envelope_count {0};
 };
 
 void recordOperation(CallbackState* state, char kind, uint32_t parameter_id) {
@@ -116,6 +119,20 @@ uint32_t loadGraph(void* userdata, uint32_t, ZigVstguiGraphPoint* output, uint32
     const uint32_t count = std::min(state->graph_count, capacity);
     for (uint32_t index = 0; index < count; ++index) output[index] = state->graph_points[index];
     return count;
+}
+
+int32_t storeEditorIndex(void* userdata, uint32_t field_id, uint32_t value) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->stored_state_field = field_id;
+    state->stored_state_index = value;
+    return 0;
+}
+
+int32_t storeEditorEnvelope(void* userdata, uint32_t field_id, const ZigVstguiEnvelopePoint*, uint32_t count) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->stored_state_field = field_id;
+    state->stored_envelope_count = count;
+    return 0;
 }
 
 bool closeEnough(double left, double right) {
@@ -1070,11 +1087,20 @@ int testGraphs() {
         0.25,
         0.25,
     };
+    editable_graph.selection_state_id = 41;
+    editable_graph.envelope_state_id = 42;
+    editable_graph.initial_selected_point_id = 20;
+    ZigVstguiCallbacks editor_state_callbacks {};
+    editor_state_callbacks.userdata = &state;
+    editor_state_callbacks.store_editor_index = storeEditorIndex;
+    editor_state_callbacks.store_editor_envelope = storeEditorEnvelope;
     ZigVstgui::AccessibilityNode envelope_accessibility;
     ZigVstgui::GraphView envelope(
-        VSTGUI::CRect(0, 0, 200, 100), editable_graph, styles, &envelope_accessibility
+        VSTGUI::CRect(0, 0, 200, 100), editable_graph, styles, &envelope_accessibility, editor_state_callbacks
     );
     if (!envelope.valid() || !envelope.editable() || envelope.pointCount() != 2) return 15;
+    ZigVstguiEnvelopePoint initially_selected {};
+    if (!envelope.selectedPoint(initially_selected) || initially_selected.point_id != 20) return 37;
     if (!envelope.selectAdjacent(true)) return 16;
     ZigVstguiEnvelopePoint selected {};
     if (!envelope.selectedPoint(selected) || selected.point_id != 10) return 17;
@@ -1082,6 +1108,7 @@ int testGraphs() {
     if (!envelope.selectedPoint(selected) || selected.point_id != 21 ||
         !closeEnough(selected.x, 0.5) || !closeEnough(selected.y, 0.5)) return 19;
     envelope.finishTransaction();
+    if (state.stored_envelope_count != 3 || state.stored_state_field != 41 || state.stored_state_index != 21) return 38;
     if (!envelope.beginTransaction() || !envelope.moveSelected(2.0, -2.0)) return 20;
     envelope.cancelTransaction();
     if (!envelope.selectedPoint(selected) || !closeEnough(selected.x, 0.5) || !closeEnough(selected.y, 0.5)) return 21;

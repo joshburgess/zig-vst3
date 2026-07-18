@@ -3,6 +3,8 @@ const vst3 = @import("zig-vst3");
 
 pub const core = @import("zig-vst3-plugin-core");
 pub const gui = @import("gui.zig");
+pub const editor_state = core.editor_state;
+pub const gui_preset_browser = core.gui_preset_browser;
 pub const gui_telemetry = core.gui_telemetry;
 pub const gui_graph = core.gui_graph;
 pub const parameters = core.parameters;
@@ -29,6 +31,8 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(state, "format_version"));
     try std.testing.expect(@hasDecl(units, "UnitSet"));
     try std.testing.expect(@hasDecl(gui, "Editor"));
+    try std.testing.expect(@hasDecl(editor_state, "Store"));
+    try std.testing.expect(@hasDecl(gui_preset_browser, "Browser"));
     try std.testing.expect(@hasDecl(gui_telemetry, "ScalarSnapshot"));
     try std.testing.expect(@hasDecl(gui_graph, "SnapshotSeries"));
 }

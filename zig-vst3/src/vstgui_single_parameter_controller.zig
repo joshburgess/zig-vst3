@@ -9,6 +9,7 @@ const vstgui_editor_view = @import("vstgui_editor_view.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const vstgui_adapter_enabled = @import("zig-vst3-gui-options").vstgui_adapter_enabled;
 const gui_graph = @import("zig-vst3-plugin-core").gui_graph;
+const editor_state = @import("zig-vst3-plugin-core").editor_state;
 
 const ProtocolView = vst_plug_view.PlugView(4, struct {});
 
@@ -58,6 +59,8 @@ pub const Graph = struct {
     minimum_point_count: types.uint32 = 0,
     snap_x: f64 = 0.0,
     snap_y: f64 = 0.0,
+    selection_state_id: u32 = 0,
+    envelope_state_id: u32 = 0,
 };
 
 pub const XYPad = struct {
@@ -198,20 +201,56 @@ fn createConfiguredView(
         }
         if (graphs.len > vstgui_editor_view.max_graphs) return null;
         var graph_descriptions: [vstgui_editor_view.max_graphs]vstgui_editor_view.GraphDescription = undefined;
+        var persisted_points: [vstgui_editor_view.max_graphs][editor_state.maximum_envelope_points]EnvelopePoint = undefined;
         for (graphs, 0..) |graph, index| {
+            var editable_points = graph.editable_points;
+            var initial_selected_point_id: u32 = 0;
+            if (comptime Controller.hasEditorState) {
+                const state = Controller.editorState(controller);
+                if (graph.envelope_state_id != 0) {
+                    const value = state.get(graph.envelope_state_id) orelse return null;
+                    const envelope = switch (value) {
+                        .envelope => |stored| stored,
+                        else => return null,
+                    };
+                    for (envelope.slice(), 0..) |point, point_index| {
+                        var restored = EnvelopePoint{ .point_id = point.id, .x = point.x, .y = point.y };
+                        for (graph.editable_points) |declared| {
+                            if (declared.point_id == point.id) {
+                                restored.x_parameter_id = declared.x_parameter_id;
+                                restored.y_parameter_id = declared.y_parameter_id;
+                                restored.parameter_mask = declared.parameter_mask;
+                                restored.x_step_count = declared.x_step_count;
+                                restored.y_step_count = declared.y_step_count;
+                                break;
+                            }
+                        }
+                        persisted_points[index][point_index] = restored;
+                    }
+                    editable_points = persisted_points[index][0..envelope.len];
+                }
+                if (graph.selection_state_id != 0) {
+                    const value = state.get(graph.selection_state_id) orelse return null;
+                    initial_selected_point_id = switch (value) {
+                        .point_id => |id| id,
+                        .index => |id| id,
+                        else => return null,
+                    };
+                }
+            } else if (graph.selection_state_id != 0 or graph.envelope_state_id != 0) return null;
             if (graph.points.len > vstgui_editor_view.max_graph_points or
-                graph.editable_points.len > vstgui_editor_view.max_graph_points or
+                editable_points.len > vstgui_editor_view.max_graph_points or
                 graph.x_axis.maximum <= graph.x_axis.minimum or graph.y_axis.maximum <= graph.y_axis.minimum or
                 (graph.dynamic and (graph.maximum_refresh_hz == 0 or graph.maximum_refresh_hz > 60)) or
                 (graph.point_capacity == 0 and (graph.editable_points.len > 0 or graph.minimum_point_count > 0 or
                     graph.snap_x != 0.0 or graph.snap_y != 0.0)) or
                 (graph.point_capacity > 0 and (graph.kind != .envelope or graph.dynamic or graph.points.len > 0 or
                     graph.point_capacity > vstgui_editor_view.max_graph_points or
-                    graph.editable_points.len > graph.point_capacity or
-                    graph.minimum_point_count > graph.editable_points.len or
+                    editable_points.len > graph.point_capacity or
+                    graph.minimum_point_count > editable_points.len or
                     !std.math.isFinite(graph.snap_x) or !std.math.isFinite(graph.snap_y) or
                     graph.snap_x < 0.0 or graph.snap_y < 0.0))) return null;
-            for (graph.editable_points, 0..) |point, point_index| {
+            for (editable_points, 0..) |point, point_index| {
                 if (point.point_id == 0 or !std.math.isFinite(point.x) or !std.math.isFinite(point.y) or
                     point.parameter_mask & ~@as(types.uint32, 3) != 0 or
                     point.x_step_count < 0 or point.y_step_count < 0 or
@@ -219,8 +258,8 @@ fn createConfiguredView(
                         point.x_parameter_id == point.y_parameter_id)) or
                     point.x < graph.x_axis.minimum or point.x > graph.x_axis.maximum or
                     point.y < graph.y_axis.minimum or point.y > graph.y_axis.maximum or
-                    (point_index > 0 and graph.editable_points[point_index - 1].x > point.x)) return null;
-                for (graph.editable_points[0..point_index]) |previous| {
+                    (point_index > 0 and editable_points[point_index - 1].x > point.x)) return null;
+                for (editable_points[0..point_index]) |previous| {
                     if (previous.point_id == point.point_id) return null;
                 }
                 if (point.parameter_mask == 3) {
@@ -254,12 +293,15 @@ fn createConfiguredView(
                 .source_id = graph.source_id,
                 .dynamic = @intFromBool(graph.dynamic),
                 .maximum_refresh_hz = graph.maximum_refresh_hz,
-                .editable_points = if (graph.editable_points.len == 0) null else graph.editable_points.ptr,
-                .editable_point_count = @intCast(graph.editable_points.len),
+                .editable_points = if (editable_points.len == 0) null else editable_points.ptr,
+                .editable_point_count = @intCast(editable_points.len),
                 .point_capacity = graph.point_capacity,
                 .minimum_point_count = graph.minimum_point_count,
                 .snap_x = graph.snap_x,
                 .snap_y = graph.snap_y,
+                .selection_state_id = graph.selection_state_id,
+                .envelope_state_id = graph.envelope_state_id,
+                .initial_selected_point_id = initial_selected_point_id,
             };
         }
         if (xy_pads.len > vstgui_editor_view.max_xy_pads) return null;
@@ -293,6 +335,8 @@ fn createConfiguredView(
             .format_value = Bridge.formatValue,
             .parse_value = Bridge.parseValue,
             .show_context_menu = Bridge.showContextMenu,
+            .store_editor_index = Bridge.storeEditorIndex,
+            .store_editor_envelope = Bridge.storeEditorEnvelope,
         }, .{
             .userdata = controller,
             .subscribe = Bridge.subscribe,
@@ -355,6 +399,24 @@ fn NativeBridge(comptime Controller: type) type {
             const menu = Controller.createContextMenu(iface, null, &parameter_id) orelse return -1;
             defer _ = menu.vtable.release(menu);
             return if (menu.vtable.popup(menu, @intCast(@max(0, x)), @intCast(@max(0, y))) == types.kResultOk) 0 else -1;
+        }
+
+        fn storeEditorIndex(userdata: ?*anyopaque, field_id: u32, value: u32) callconv(.c) types.int32 {
+            if (comptime !Controller.hasEditorState) return -1;
+            const iface = controller(userdata) orelse return -1;
+            Controller.editorState(iface).setUnsigned(field_id, value) catch return -1;
+            return 0;
+        }
+
+        fn storeEditorEnvelope(userdata: ?*anyopaque, field_id: u32, points: [*]const EnvelopePoint, count: u32) callconv(.c) types.int32 {
+            if (comptime !Controller.hasEditorState) return -1;
+            if (count > editor_state.maximum_envelope_points) return -1;
+            var stored: [editor_state.maximum_envelope_points]editor_state.Point = undefined;
+            for (points[0..count], 0..) |point, index| stored[index] = .{ .id = point.point_id, .x = point.x, .y = point.y };
+            const envelope = editor_state.Envelope.init(stored[0..count]) catch return -1;
+            const iface = controller(userdata) orelse return -1;
+            Controller.editorState(iface).set(field_id, .{ .envelope = envelope }) catch return -1;
+            return 0;
         }
 
         fn subscribe(userdata: *anyopaque, editor: *anyopaque) bool {

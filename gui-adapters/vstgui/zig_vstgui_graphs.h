@@ -72,6 +72,8 @@ private:
     VSTGUI::CRect contentBounds(const std::vector<PointState>& values) const;
     void invalidateChange(const std::vector<PointState>& before, std::size_t before_index, std::size_t after_index);
     void syncAccessibility();
+    void persistSelection();
+    void persistEnvelope();
     uint32_t allocatePointId();
 
     ZigVstguiGraphDescription description;
