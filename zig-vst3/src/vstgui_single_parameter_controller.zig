@@ -39,6 +39,16 @@ pub const Fonts = vstgui_editor_view.Fonts;
 pub const Skin = vstgui_editor_view.Skin;
 pub const Theme = vstgui_editor_view.Theme;
 pub const Layout = vstgui_editor_view.Layout;
+pub const StyleOverride = vstgui_editor_view.StyleOverride;
+pub const Group = vstgui_editor_view.Group;
+pub const Composition = vstgui_editor_view.Composition;
+
+pub const EditorDescription = struct {
+    parameters: []const Parameter,
+    meters: []const Meter = &.{},
+    skin: Skin = .{},
+    composition: Composition = .{},
+};
 pub const drawAsset = vstgui_editor_view.drawAsset;
 pub const fillEllipse = vstgui_editor_view.fillEllipse;
 pub const fillRect = vstgui_editor_view.fillRect;
@@ -70,6 +80,35 @@ pub fn createMultiViewWithSkin(
     parameters: []const Parameter,
     meters: []const Meter,
     skin: Skin,
+) ?*iplugview.IPlugView {
+    return createConfiguredView(Controller, controller, name, parameters, meters, skin, .{});
+}
+
+pub fn createEditor(
+    comptime Controller: type,
+    controller: *ivsteditcontroller.IEditController,
+    name: types.FIDString,
+    description: EditorDescription,
+) ?*iplugview.IPlugView {
+    return createConfiguredView(
+        Controller,
+        controller,
+        name,
+        description.parameters,
+        description.meters,
+        description.skin,
+        description.composition,
+    );
+}
+
+fn createConfiguredView(
+    comptime Controller: type,
+    controller: *ivsteditcontroller.IEditController,
+    name: types.FIDString,
+    parameters: []const Parameter,
+    meters: []const Meter,
+    skin: Skin,
+    composition: Composition,
 ) ?*iplugview.IPlugView {
     if (!std.mem.eql(u8, std.mem.span(name), std.mem.span(ivsteditcontroller.ViewType.kEditor))) return null;
     if (comptime vstgui_adapter_enabled) {
@@ -107,7 +146,7 @@ pub fn createMultiViewWithSkin(
                 .second_source_id = meter.second_source_id,
             };
         }
-        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], skin, .{
+        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], skin, composition, .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
             .perform_edit = Bridge.performEdit,

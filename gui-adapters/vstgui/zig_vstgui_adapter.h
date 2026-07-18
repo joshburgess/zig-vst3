@@ -87,6 +87,7 @@ typedef struct ZigVstguiAssetDescription {
 } ZigVstguiAssetDescription;
 
 enum { ZIG_VSTGUI_MAX_ASSETS = 16 };
+enum { ZIG_VSTGUI_MAX_GROUPS = 8 };
 
 typedef struct ZigVstguiFontDescription {
     const char* title_family;
@@ -143,6 +144,30 @@ typedef enum ZigVstguiLayoutKind {
     ZIG_VSTGUI_LAYOUT_COMPACT_STRIP = 1
 } ZigVstguiLayoutKind;
 
+typedef enum ZigVstguiStyleMask {
+    ZIG_VSTGUI_STYLE_BACKGROUND = 1 << 0,
+    ZIG_VSTGUI_STYLE_FOREGROUND = 1 << 1,
+    ZIG_VSTGUI_STYLE_BORDER = 1 << 2,
+    ZIG_VSTGUI_STYLE_ACCENT = 1 << 3
+} ZigVstguiStyleMask;
+
+typedef struct ZigVstguiStyleOverride {
+    uint32_t mask;
+    uint32_t background_rgba;
+    uint32_t foreground_rgba;
+    uint32_t border_rgba;
+    uint32_t accent_rgba;
+} ZigVstguiStyleOverride;
+
+typedef struct ZigVstguiGroupDescription {
+    const char* title;
+    uint32_t first_parameter;
+    uint32_t parameter_count;
+    uint32_t first_meter;
+    uint32_t meter_count;
+    ZigVstguiStyleOverride style;
+} ZigVstguiGroupDescription;
+
 typedef struct ZigVstguiSkinDescription {
     const ZigVstguiAssetDescription* assets;
     uint32_t asset_count;
@@ -150,6 +175,10 @@ typedef struct ZigVstguiSkinDescription {
     ZigVstguiDrawingCallbacks drawing;
     ZigVstguiThemeKind theme;
     ZigVstguiLayoutKind layout;
+    const char* editor_title;
+    const ZigVstguiGroupDescription* groups;
+    uint32_t group_count;
+    ZigVstguiStyleOverride editor_style;
 } ZigVstguiSkinDescription;
 
 typedef struct ZigVstguiResizeCallbacks {

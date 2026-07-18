@@ -39,9 +39,18 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_with_skin(
     ZigVstguiMeterCallbacks meter_callbacks,
     ZigVstguiSkinDescription skin
 ) {
+    constexpr uint32_t style_mask = ZIG_VSTGUI_STYLE_BACKGROUND |
+        ZIG_VSTGUI_STYLE_FOREGROUND |
+        ZIG_VSTGUI_STYLE_BORDER |
+        ZIG_VSTGUI_STYLE_ACCENT;
     if (!parameters || parameter_count == 0 || parameter_count > ZIG_VSTGUI_MAX_PARAMETERS) return nullptr;
     if ((!meters && meter_count > 0) || meter_count > ZIG_VSTGUI_MAX_METERS) return nullptr;
     if ((!skin.assets && skin.asset_count > 0) || skin.asset_count > ZIG_VSTGUI_MAX_ASSETS) return nullptr;
+    if ((!skin.groups && skin.group_count > 0) || skin.group_count > ZIG_VSTGUI_MAX_GROUPS) return nullptr;
+    if (skin.editor_style.mask & ~style_mask) return nullptr;
+    for (uint32_t index = 0; index < skin.group_count; ++index) {
+        if (skin.groups[index].style.mask & ~style_mask) return nullptr;
+    }
     if (skin.theme != ZIG_VSTGUI_THEME_DEFAULT && skin.theme != ZIG_VSTGUI_THEME_ALTERNATE) return nullptr;
     if (skin.layout != ZIG_VSTGUI_LAYOUT_ADAPTIVE && skin.layout != ZIG_VSTGUI_LAYOUT_COMPACT_STRIP) return nullptr;
     auto* editor = new (std::nothrow) ZigVstguiEditor(

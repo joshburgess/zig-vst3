@@ -40,19 +40,27 @@ Completion evidence:
 
 ## Milestone 2: Reusable Composition and Styling
 
-- [ ] Add public editor, group, and section descriptions with bounded storage.
-- [ ] Support titled parameter groups and meter groups without exposing VSTGUI types.
-- [ ] Add a channel-strip layout that responds across the supported size range.
-- [ ] Add semantic theme overrides at editor and group scope.
-- [ ] Derive focus order from the composed visible tree.
-- [ ] Preserve the last accepted size when a host rejects resize.
-- [ ] Verify two simultaneous channel-strip editors do not share focus, layout, size, or theme state.
+- [x] Add public editor, group, and section descriptions with bounded storage.
+- [x] Support titled parameter groups and meter groups without exposing VSTGUI types.
+- [x] Add a channel-strip layout that responds across the supported size range.
+- [x] Add semantic theme overrides at editor and group scope.
+- [x] Derive focus order from the composed visible tree.
+- [x] Preserve the last accepted size when a host rejects resize.
+- [x] Verify two simultaneous channel-strip editors do not share focus, layout, size, or theme state.
 
 Exit criteria:
 
 - The channel strip has scannable Input, Character, Output, and Meter sections instead of one flat control list.
 - The gallery can express its Continuous, Discrete, and Telemetry groups through the same API.
 - Grouping reduces visual search without adding extra interactive stops.
+
+Completion evidence:
+
+- Adapter ABI version 7 accepts up to eight ordered groups, an editor title, and semantic RGBA overrides for background, foreground, border, and accent. Unknown style bits, empty groups, gaps, overlaps, incomplete coverage, and out-of-range spans reject editor creation.
+- The public `EditorDescription`, `Composition`, `Group`, `StyleOverride`, and `createEditor` declarations contain no VSTGUI types. The adapter copies group titles and style data into each editor.
+- Both the component gallery and channel strip use `createEditor`. The gallery declares Continuous, Discrete, and Telemetry groups. The channel strip declares Input, Character, and Output groups with distinct accents.
+- Grouped editors use one column below 620 logical units and two columns at wider sizes. Headings are semantic groups rather than focus stops. Parameter controls retain declaration order, exact fields follow their controls, and resize remains the final action.
+- Native tests cover valid grouped construction, independent grouped and ungrouped instances, ordered focus, responsive resize, style masks, and rejected group descriptions. Channel-strip tests resize one of two simultaneous editor views and verify the second remains at its original size.
 
 ## Milestone 3: Production Parameter Controls
 

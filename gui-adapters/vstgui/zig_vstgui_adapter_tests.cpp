@@ -281,9 +281,19 @@ int testMultiParameterRouting() {
         {"Stereo", ZIG_VSTGUI_METER_STEREO, 1, 2},
         {"Reduction", ZIG_VSTGUI_METER_GAIN_REDUCTION, 3, 0},
     };
-    ZigVstguiEditor first(descriptions, 4, callbacks, meters, 3, {&state, loadMeter});
+    const ZigVstguiGroupDescription groups[] = {
+        {"Continuous", 0, 1, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x7ce8c5ff}},
+        {"Discrete", 1, 3, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0xe8c77cff}},
+        {"Telemetry", 4, 0, 0, 3, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x7caee8ff}},
+    };
+    ZigVstguiSkinDescription skin {};
+    skin.editor_title = "Component Gallery";
+    skin.groups = groups;
+    skin.group_count = 3;
+    ZigVstguiEditor first(descriptions, 4, callbacks, meters, 3, {&state, loadMeter}, skin);
     ZigVstguiEditor second(descriptions, 4, callbacks);
     if (!first.valid() || !second.valid()) return 1;
+    if (first.groupCount() != 3 || second.groupCount() != 0) return 35;
     const auto* slider_accessibility = first.parameterAccessibility(10, false);
     const auto* exact_accessibility = first.parameterAccessibility(10, true);
     const auto* choice_accessibility = first.parameterAccessibility(20, false);
@@ -634,6 +644,17 @@ int testAssetsAndFonts() {
     valid_skin.asset_count = 2;
     valid_skin.theme = ZIG_VSTGUI_THEME_ALTERNATE;
     valid_skin.layout = ZIG_VSTGUI_LAYOUT_COMPACT_STRIP;
+    valid_skin.editor_title = "Grouped editor";
+    const ZigVstguiGroupDescription valid_group {
+        "Input",
+        0,
+        1,
+        0,
+        0,
+        {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x3578baff},
+    };
+    valid_skin.groups = &valid_group;
+    valid_skin.group_count = 1;
     auto* skinned_editor = zig_vstgui_editor_create_with_skin(
         &parameter,
         1,
@@ -646,6 +667,7 @@ int testAssetsAndFonts() {
     if (!skinned_editor) return 15;
     if (skinned_editor->themeKind() != ZIG_VSTGUI_THEME_ALTERNATE) return 16;
     if (skinned_editor->layoutKind() != ZIG_VSTGUI_LAYOUT_COMPACT_STRIP) return 17;
+    if (skinned_editor->groupCount() != 1) return 18;
     auto* default_editor = zig_vstgui_editor_create_with_skin(
         &parameter,
         1,
@@ -655,23 +677,36 @@ int testAssetsAndFonts() {
         {},
         {}
     );
-    if (!default_editor || default_editor == skinned_editor) return 18;
-    if (default_editor->themeKind() != ZIG_VSTGUI_THEME_DEFAULT) return 19;
-    if (default_editor->layoutKind() != ZIG_VSTGUI_LAYOUT_ADAPTIVE) return 20;
+    if (!default_editor || default_editor == skinned_editor) return 19;
+    if (default_editor->themeKind() != ZIG_VSTGUI_THEME_DEFAULT) return 20;
+    if (default_editor->layoutKind() != ZIG_VSTGUI_LAYOUT_ADAPTIVE) return 21;
     zig_vstgui_editor_destroy(default_editor);
     zig_vstgui_editor_destroy(skinned_editor);
     ZigVstguiSkinDescription invalid_skin {};
     invalid_skin.asset_count = 1;
-    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 21;
+    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 22;
     invalid_skin.asset_count = ZIG_VSTGUI_MAX_ASSETS + 1;
     invalid_skin.assets = &svg_asset;
-    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 22;
-    invalid_skin = {};
-    invalid_skin.theme = static_cast<ZigVstguiThemeKind>(99);
     if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 23;
     invalid_skin = {};
-    invalid_skin.layout = static_cast<ZigVstguiLayoutKind>(99);
+    invalid_skin.theme = static_cast<ZigVstguiThemeKind>(99);
     if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 24;
+    invalid_skin = {};
+    invalid_skin.layout = static_cast<ZigVstguiLayoutKind>(99);
+    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 25;
+    invalid_skin = {};
+    const ZigVstguiGroupDescription incomplete_group {"Incomplete", 0, 0, 0, 0, {}};
+    invalid_skin.groups = &incomplete_group;
+    invalid_skin.group_count = 1;
+    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 26;
+    invalid_skin = {};
+    const ZigVstguiGroupDescription out_of_order_group {"Gap", 1, 1, 0, 0, {}};
+    invalid_skin.groups = &out_of_order_group;
+    invalid_skin.group_count = 1;
+    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 27;
+    invalid_skin = {};
+    invalid_skin.editor_style.mask = 1u << 31;
+    if (zig_vstgui_editor_create_with_skin(&parameter, 1, {}, nullptr, 0, {}, invalid_skin)) return 28;
     return 0;
 }
 

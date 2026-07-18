@@ -53,35 +53,63 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
         controller: *vst.ivsteditcontroller.IEditController,
         name: types.FIDString,
     ) ?*gui.iplugview.IPlugView {
-        return vst3.vstgui.createMultiViewWithSkin(Controller, controller, name, &.{
-            .{
-                .id = gain_param_id,
-                .title = "Gain",
-                .units = "dB",
-                .step_count = 0,
-                .default_normalized = 0.5,
-                .control_kind = .rotary_knob,
+        return vst3.vstgui.createEditor(Controller, controller, name, .{
+            .parameters = &.{
+                .{
+                    .id = gain_param_id,
+                    .title = "Gain",
+                    .units = "dB",
+                    .step_count = 0,
+                    .default_normalized = 0.5,
+                    .control_kind = .rotary_knob,
+                },
+                .{
+                    .id = bypass_param_id,
+                    .title = "Bypass",
+                    .step_count = 1,
+                    .default_normalized = 0.0,
+                    .control_kind = .toggle,
+                },
+                .{
+                    .id = mode_param_id,
+                    .title = "Mode",
+                    .step_count = 2,
+                    .default_normalized = 0.0,
+                    .control_kind = .enum_dropdown,
+                },
             },
-            .{
-                .id = bypass_param_id,
-                .title = "Bypass",
-                .step_count = 1,
-                .default_normalized = 0.0,
-                .control_kind = .toggle,
+            .meters = &.{
+                .{ .title = "Stereo", .kind = .stereo, .first_source_id = 0, .second_source_id = 1 },
+                .{ .title = "Reduction", .kind = .gain_reduction, .first_source_id = 2 },
             },
-            .{
-                .id = mode_param_id,
-                .title = "Mode",
-                .step_count = 2,
-                .default_normalized = 0.0,
-                .control_kind = .enum_dropdown,
+            .skin = .{
+                .theme = .alternate,
+                .layout = .compact_strip,
             },
-        }, &.{
-            .{ .title = "Stereo", .kind = .stereo, .first_source_id = 0, .second_source_id = 1 },
-            .{ .title = "Reduction", .kind = .gain_reduction, .first_source_id = 2 },
-        }, .{
-            .theme = .alternate,
-            .layout = .compact_strip,
+            .composition = .{
+                .title = "Channel Strip",
+                .style = .{ .background = 0xeeeae0ff, .foreground = 0x25231fff },
+                .groups = &.{
+                    .{
+                        .title = "Input",
+                        .parameter_count = 1,
+                        .style = .{ .accent = 0x3578baff, .border = 0x7994aaff },
+                    },
+                    .{
+                        .title = "Character",
+                        .first_parameter = 1,
+                        .parameter_count = 2,
+                        .style = .{ .accent = 0xb96b32ff, .border = 0xac8b73ff },
+                    },
+                    .{
+                        .title = "Output",
+                        .first_parameter = 3,
+                        .first_meter = 0,
+                        .meter_count = 2,
+                        .style = .{ .accent = 0x35866aff, .border = 0x719789ff },
+                    },
+                },
+            },
         });
     }
 });
@@ -192,6 +220,12 @@ test "channel strip controller creates independent public API views" {
     const second = controller.vtable.createView(controller, vst.ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
     defer _ = second.vtable.release(second);
     try std.testing.expect(first != second);
+    var expanded = gui.iplugview.ViewRect{ .left = 0, .top = 0, .right = 720, .bottom = 480 };
+    try std.testing.expectEqual(types.kResultOk, first.vtable.onSize(first, &expanded));
+    var second_size = gui.iplugview.ViewRect{};
+    try std.testing.expectEqual(types.kResultOk, second.vtable.getSize(second, &second_size));
+    try std.testing.expectEqual(@as(types.int32, 400), second_size.right);
+    try std.testing.expectEqual(@as(types.int32, 300), second_size.bottom);
 }
 
 test "channel strip component instances keep independent parameter state" {

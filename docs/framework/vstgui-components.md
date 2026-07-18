@@ -34,6 +34,26 @@ pub fn createView(
 
 Use `createView` for one default slider, `createMultiView` for standard parameter controls, `createMultiViewWithMeters` for telemetry, or `createMultiViewWithSkin` for explicit theme, layout, fonts, assets, and drawing.
 
+Use `createEditor` when the editor needs an explicit composition. `EditorDescription` combines parameter and meter slices with a skin and a bounded `Composition`. Each `Group` names a contiguous range of parameters and meters. Groups must cover both slices once, in order. Invalid, overlapping, incomplete, or empty groups reject editor creation.
+
+```zig
+return ui.createEditor(Controller, controller, name, .{
+    .parameters = parameters,
+    .meters = meters,
+    .skin = .{ .theme = .alternate },
+    .composition = .{
+        .title = "Channel Strip",
+        .groups = &.{
+            .{ .title = "Input", .parameter_count = 1 },
+            .{ .title = "Character", .first_parameter = 1, .parameter_count = 2 },
+            .{ .title = "Output", .first_parameter = 3, .meter_count = 2 },
+        },
+    },
+});
+```
+
+At widths below 620 logical units, groups form one vertical reading order. Wider editors use two columns while preserving declaration and Tab order. Group headings provide structure but are not focus stops. The resize action remains last.
+
 Each `Parameter` needs the stable parameter ID used by the controller, its display metadata, its step count, its normalized default, and a presentation kind:
 
 | Kind | Intended parameter | Exact entry |
@@ -56,6 +76,8 @@ All five presentations use the same parameter attachment behavior. Pointer and k
 - `.compact_strip` keeps a title and dense label, control, value rows. It is intended for small production editors that should not inherit the gallery's large single-control composition.
 
 Both layouts accept host resize requests from 320 by 240 through 1000 by 700, use logical coordinates, and keep Tab order aligned with visible reading order. The host can reject a requested size. The editor preserves its last accepted size when that happens.
+
+`Composition.style` and `Group.style` override semantic background, foreground, border, and accent colors using `0xRRGGBBAA` values. Editor values apply first and group values apply to controls within that group. Typography, state contrast, spacing, radii, and control metrics still come from the selected theme. Prefer changing the accent or border at group scope. Replacing every color increases the chance of losing hover, focus, disabled, or editing contrast.
 
 ## Component Gallery
 
@@ -92,6 +114,7 @@ The project remains pre-1.0, so even the supported surface does not yet carry a 
 Supported authoring surface:
 
 - `Parameter`, `ControlKind`, `Theme`, `Layout`, and the four `create*View` functions.
+- `EditorDescription`, `Composition`, `Group`, `StyleOverride`, and `createEditor`.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.
 

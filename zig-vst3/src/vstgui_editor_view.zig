@@ -59,6 +59,7 @@ pub const max_parameters = 64;
 pub const max_meters = 8;
 pub const max_meter_sources = 16;
 pub const max_assets = 16;
+pub const max_groups = 8;
 
 pub const MeterKind = enum(c_int) {
     peak,
@@ -154,6 +155,28 @@ pub const Layout = enum(c_int) {
     compact_strip,
 };
 
+pub const StyleOverride = struct {
+    background: ?types.uint32 = null,
+    foreground: ?types.uint32 = null,
+    border: ?types.uint32 = null,
+    accent: ?types.uint32 = null,
+};
+
+pub const Group = struct {
+    title: [*:0]const u8,
+    first_parameter: types.uint32 = 0,
+    parameter_count: types.uint32 = 0,
+    first_meter: types.uint32 = 0,
+    meter_count: types.uint32 = 0,
+    style: StyleOverride = .{},
+};
+
+pub const Composition = struct {
+    title: ?[*:0]const u8 = null,
+    groups: []const Group = &.{},
+    style: StyleOverride = .{},
+};
+
 pub const Skin = struct {
     assets: []const Asset = &.{},
     fonts: Fonts = .{},
@@ -169,6 +192,27 @@ const SkinDescription = extern struct {
     drawing: DrawingCallbacks,
     theme: Theme,
     layout: Layout,
+    editor_title: ?[*:0]const u8,
+    groups: ?[*]const GroupDescription,
+    group_count: types.uint32,
+    editor_style: NativeStyleOverride,
+};
+
+const NativeStyleOverride = extern struct {
+    mask: types.uint32,
+    background_rgba: types.uint32,
+    foreground_rgba: types.uint32,
+    border_rgba: types.uint32,
+    accent_rgba: types.uint32,
+};
+
+const GroupDescription = extern struct {
+    title: [*:0]const u8,
+    first_parameter: types.uint32,
+    parameter_count: types.uint32,
+    first_meter: types.uint32,
+    meter_count: types.uint32,
+    style: NativeStyleOverride,
 };
 
 pub const ObserverCallbacks = struct {
@@ -345,13 +389,14 @@ pub fn create(
     parameters: []const ParameterInfoBinding,
     meters: []const MeterDescription,
     skin: Skin,
+    composition: Composition,
     callbacks: Callbacks,
     observer_callbacks: ObserverCallbacks,
     wayland_host: ?*anyopaque,
 ) ?*iplugview.IPlugView {
     if (builtin.os.tag != .macos and builtin.os.tag != .windows and builtin.os.tag != .linux) return null;
     if (parameters.len == 0 or parameters.len > max_parameters or
-        meters.len > max_meters or skin.assets.len > max_assets) return null;
+        meters.len > max_meters or skin.assets.len > max_assets or composition.groups.len > max_groups) return null;
     var descriptions: [max_parameters]ParameterDescription = undefined;
     for (parameters, 0..) |parameter, index| {
         descriptions[index] = .{
@@ -372,6 +417,17 @@ pub fn create(
             .scale = asset.scale,
         };
     }
+    var groups: [max_groups]GroupDescription = undefined;
+    for (composition.groups, 0..) |group, index| {
+        groups[index] = .{
+            .title = group.title,
+            .first_parameter = group.first_parameter,
+            .parameter_count = group.parameter_count,
+            .first_meter = group.first_meter,
+            .meter_count = group.meter_count,
+            .style = nativeStyle(group.style),
+        };
+    }
     const telemetry = std.heap.page_allocator.create(TelemetryState) catch return null;
     telemetry.* = TelemetryState.init();
     const editor = zig_vstgui_editor_create_with_skin(
@@ -388,6 +444,10 @@ pub fn create(
             .drawing = skin.drawing,
             .theme = skin.theme,
             .layout = skin.layout,
+            .editor_title = composition.title,
+            .groups = if (composition.groups.len == 0) null else &groups,
+            .group_count = @intCast(composition.groups.len),
+            .editor_style = nativeStyle(composition.style),
         },
     ) orelse {
         std.heap.page_allocator.destroy(telemetry);
@@ -438,6 +498,21 @@ pub fn create(
         return null;
     }
     return view.asInterface();
+}
+
+fn nativeStyle(style: StyleOverride) NativeStyleOverride {
+    var mask: types.uint32 = 0;
+    if (style.background != null) mask |= 1 << 0;
+    if (style.foreground != null) mask |= 1 << 1;
+    if (style.border != null) mask |= 1 << 2;
+    if (style.accent != null) mask |= 1 << 3;
+    return .{
+        .mask = mask,
+        .background_rgba = style.background orelse 0,
+        .foreground_rgba = style.foreground orelse 0,
+        .border_rgba = style.border orelse 0,
+        .accent_rgba = style.accent orelse 0,
+    };
 }
 
 fn loadMeter(userdata: ?*anyopaque, source_id: types.uint32) callconv(.c) f64 {

@@ -67,27 +67,39 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const parameter_set = &editor_smoke_spec.parameter_set;
 
     pub fn createView(controller: *ivsteditcontroller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
-        return parameter_editor.createMultiViewWithSkin(Controller, controller, name, &.{
-            .{ .id = gain_param_id, .title = "Gain", .units = "x", .step_count = 0, .default_normalized = 1.0, .control_kind = .rotary_knob },
-            .{ .id = voices_param_id, .title = "Voices", .units = "voices", .step_count = 3, .default_normalized = 0.0, .control_kind = .segmented_enum },
-            .{ .id = bypass_param_id, .title = "Bypass", .step_count = 1, .default_normalized = 0.0, .control_kind = .toggle },
-            .{ .id = mode_param_id, .title = "Mode", .step_count = 2, .default_normalized = 0.0, .control_kind = .enum_dropdown },
-        }, &.{
-            .{ .title = "Peak", .kind = .peak, .first_source_id = 0 },
-            .{ .title = "Stereo", .kind = .stereo, .first_source_id = 1, .second_source_id = 2 },
-            .{ .title = "Reduction", .kind = .gain_reduction, .first_source_id = 3 },
-        }, .{
-            .assets = &.{
-                .{ .id = checkmark_asset_id, .data = checkmark_svg, .format = .svg, .scale = .contain },
-                .{ .id = pixel_asset_id, .data = &accent_pixel, .format = .png, .scale = .stretch },
+        return parameter_editor.createEditor(Controller, controller, name, .{
+            .parameters = &.{
+                .{ .id = gain_param_id, .title = "Gain", .units = "x", .step_count = 0, .default_normalized = 1.0, .control_kind = .rotary_knob },
+                .{ .id = voices_param_id, .title = "Voices", .units = "voices", .step_count = 3, .default_normalized = 0.0, .control_kind = .segmented_enum },
+                .{ .id = bypass_param_id, .title = "Bypass", .step_count = 1, .default_normalized = 0.0, .control_kind = .toggle },
+                .{ .id = mode_param_id, .title = "Mode", .step_count = 2, .default_normalized = 0.0, .control_kind = .enum_dropdown },
             },
-            .fonts = .{
-                .title_family = "zig-vst3 Gallery Sans",
-                .body_family = "zig-vst3 Gallery Sans",
-                .value_family = "zig-vst3 Gallery Mono",
-                .fallback_family = "Arial",
+            .meters = &.{
+                .{ .title = "Peak", .kind = .peak, .first_source_id = 0 },
+                .{ .title = "Stereo", .kind = .stereo, .first_source_id = 1, .second_source_id = 2 },
+                .{ .title = "Reduction", .kind = .gain_reduction, .first_source_id = 3 },
             },
-            .drawing = .{ .draw_parameter = drawGalleryParameter },
+            .skin = .{
+                .assets = &.{
+                    .{ .id = checkmark_asset_id, .data = checkmark_svg, .format = .svg, .scale = .contain },
+                    .{ .id = pixel_asset_id, .data = &accent_pixel, .format = .png, .scale = .stretch },
+                },
+                .fonts = .{
+                    .title_family = "zig-vst3 Gallery Sans",
+                    .body_family = "zig-vst3 Gallery Sans",
+                    .value_family = "zig-vst3 Gallery Mono",
+                    .fallback_family = "Arial",
+                },
+                .drawing = .{ .draw_parameter = drawGalleryParameter },
+            },
+            .composition = .{
+                .title = "Component Gallery",
+                .groups = &.{
+                    .{ .title = "Continuous", .parameter_count = 1, .style = .{ .accent = 0x7ce8c5ff } },
+                    .{ .title = "Discrete", .first_parameter = 1, .parameter_count = 3, .style = .{ .accent = 0xe8c77cff } },
+                    .{ .title = "Telemetry", .first_parameter = 4, .meter_count = 3, .style = .{ .accent = 0x7caee8ff } },
+                },
+            },
         });
     }
 });

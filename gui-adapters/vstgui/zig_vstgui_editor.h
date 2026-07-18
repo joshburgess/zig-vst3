@@ -13,6 +13,7 @@
 
 #include <array>
 #include <memory>
+#include <string>
 
 struct ZigVstguiEditor {
     ZigVstguiEditor(
@@ -47,6 +48,7 @@ struct ZigVstguiEditor {
     void setResizeCallbacks(ZigVstguiResizeCallbacks callbacks);
     ZigVstguiThemeKind themeKind() const;
     ZigVstguiLayoutKind layoutKind() const;
+    uint32_t groupCount() const;
 
 private:
     void buildFrame();
@@ -54,6 +56,8 @@ private:
     void layout();
     void reportMetrics() const;
     bool focusNext(bool reverse);
+    const ZigVstgui::ThemeResolver& stylesForParameter(uint32_t index) const;
+    const ZigVstgui::ThemeResolver& stylesForMeter(uint32_t index) const;
     ZigVstgui::ParameterControl* findControl(uint32_t parameter_id);
     const ZigVstgui::ParameterControl* findControl(uint32_t parameter_id) const;
 
@@ -63,6 +67,13 @@ private:
     VSTGUI::CTextLabel* help {nullptr};
     ZigVstgui::Component title_component;
     ZigVstgui::Component help_component;
+    std::string editor_title;
+    std::array<std::string, ZIG_VSTGUI_MAX_GROUPS> group_titles;
+    std::array<ZigVstguiGroupDescription, ZIG_VSTGUI_MAX_GROUPS> group_descriptions {};
+    std::array<std::unique_ptr<ZigVstgui::ThemeResolver>, ZIG_VSTGUI_MAX_GROUPS> group_styles;
+    std::array<VSTGUI::CTextLabel*, ZIG_VSTGUI_MAX_GROUPS> group_labels {};
+    std::array<ZigVstgui::Component, ZIG_VSTGUI_MAX_GROUPS> group_components;
+    uint32_t group_count {0};
     std::array<std::unique_ptr<ZigVstgui::ParameterControl>, ZIG_VSTGUI_MAX_PARAMETERS> parameter_controls;
     std::array<ZigVstguiParameterInfo, ZIG_VSTGUI_MAX_PARAMETERS> parameter_info {};
     std::array<ZigVstguiControlKind, ZIG_VSTGUI_MAX_PARAMETERS> parameter_control_kinds {};

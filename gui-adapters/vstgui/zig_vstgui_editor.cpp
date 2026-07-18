@@ -26,6 +26,24 @@ const ZigVstgui::Theme& selectedTheme(ZigVstguiThemeKind requested) {
         : ZigVstgui::defaultTheme();
 }
 
+VSTGUI::CColor rgba(uint32_t value) {
+    return VSTGUI::CColor(
+        static_cast<uint8_t>(value >> 24),
+        static_cast<uint8_t>(value >> 16),
+        static_cast<uint8_t>(value >> 8),
+        static_cast<uint8_t>(value)
+    );
+}
+
+ZigVstgui::StyleOverride styleOverride(const ZigVstguiStyleOverride& value) {
+    ZigVstgui::StyleOverride result;
+    if (value.mask & ZIG_VSTGUI_STYLE_BACKGROUND) result.background = rgba(value.background_rgba);
+    if (value.mask & ZIG_VSTGUI_STYLE_FOREGROUND) result.foreground = rgba(value.foreground_rgba);
+    if (value.mask & ZIG_VSTGUI_STYLE_BORDER) result.border = rgba(value.border_rgba);
+    if (value.mask & ZIG_VSTGUI_STYLE_ACCENT) result.accent = rgba(value.accent_rgba);
+    return result;
+}
+
 }
 
 ZigVstguiEditor::ZigVstguiEditor(
@@ -47,6 +65,8 @@ ZigVstguiEditor::ZigVstguiEditor(
     initialized = true;
     profile_enabled = std::getenv("ZIG_VSTGUI_PROFILE") != nullptr;
     if (!asset_store.load(skin.assets, skin.asset_count)) return;
+    editor_title = skin.editor_title ? skin.editor_title : "";
+    theme_resolver.setEditorOverride(styleOverride(skin.editor_style));
     ZigVstgui::applyFontDescription(skin.fonts, theme_resolver);
     for (uint32_t index = 0; index < value_parameter_count; ++index) {
         if (!parameters[index].info.title || findControl(parameters[index].parameter_id)) return;
@@ -67,6 +87,35 @@ ZigVstguiEditor::ZigVstguiEditor(
         meter_controls[index].reset(new (std::nothrow) ZigVstgui::MeterControl());
         if (!meter_controls[index]) return;
     }
+    uint32_t next_parameter = 0;
+    uint32_t next_meter = 0;
+    for (uint32_t index = 0; index < skin.group_count; ++index) {
+        const auto& group = skin.groups[index];
+        if (!group.title || (group.parameter_count == 0 && group.meter_count == 0)) return;
+        if (group.first_parameter != next_parameter || group.first_meter != next_meter) return;
+        if (group.parameter_count > parameter_count - next_parameter) return;
+        if (group.meter_count > meter_count - next_meter) return;
+        group_titles[index] = group.title;
+        group_descriptions[index] = group;
+        group_descriptions[index].title = group_titles[index].c_str();
+        auto* resolver = new (std::nothrow) ZigVstgui::ThemeResolver(selectedTheme(skin.theme));
+        if (!resolver) return;
+        group_styles[index].reset(resolver);
+        resolver->setEditorOverride(styleOverride(skin.editor_style));
+        resolver->setComponentOverride(
+            ZigVstgui::ComponentKind::editor,
+            styleOverride(group.style)
+        );
+        const auto group_override = styleOverride(group.style);
+        for (std::size_t kind = 0; kind < static_cast<std::size_t>(ZigVstgui::ComponentKind::count); ++kind) {
+            resolver->setComponentOverride(static_cast<ZigVstgui::ComponentKind>(kind), group_override);
+        }
+        ZigVstgui::applyFontDescription(skin.fonts, *resolver);
+        next_parameter += group.parameter_count;
+        next_meter += group.meter_count;
+        group_count += 1;
+    }
+    if (group_count > 0 && (next_parameter != parameter_count || next_meter != meter_count)) return;
     buildFrame();
 }
 
@@ -98,6 +147,7 @@ void ZigVstguiEditor::close() {
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->clear();
     title_component.clear();
     help_component.clear();
+    for (uint32_t index = 0; index < group_count; ++index) group_components[index].clear();
     metrics.close_count += 1;
     frame->close();
     clearFrameReferences();
@@ -256,6 +306,10 @@ ZigVstguiLayoutKind ZigVstguiEditor::layoutKind() const {
     return layout_kind;
 }
 
+uint32_t ZigVstguiEditor::groupCount() const {
+    return group_count;
+}
+
 void ZigVstguiEditor::buildFrame() {
     if (frame) return;
     const auto editor_style = theme_resolver.resolve(ZigVstgui::ComponentKind::editor);
@@ -274,8 +328,10 @@ void ZigVstguiEditor::buildFrame() {
     content->setBackgroundColor(editor_style.background);
     frame->addView(content);
 
-    const char* editor_title = parameter_count == 1 ? parameter_info[0].title : "zig-vst3 Parameters";
-    title = new VSTGUI::CTextLabel(VSTGUI::CRect(), editor_title);
+    const char* visible_title = !editor_title.empty()
+        ? editor_title.c_str()
+        : parameter_count == 1 ? parameter_info[0].title : "zig-vst3 Parameters";
+    title = new VSTGUI::CTextLabel(VSTGUI::CRect(), visible_title);
     title->setFont(theme_resolver.font(ZigVstgui::TypographyRole::title));
     title->setFontColor(title_style.foreground);
     title->setBackColor(title_style.background);
@@ -283,7 +339,7 @@ void ZigVstguiEditor::buildFrame() {
     content->addView(title);
     title_component.bind(title);
     title_component.accessibility().setRole(ZigVstgui::AccessibilityRole::group);
-    title_component.accessibility().setName(editor_title);
+    title_component.accessibility().setName(visible_title);
     title_component.accessibility().setReadOnly(true);
 
 #if defined(__APPLE__)
@@ -307,12 +363,29 @@ void ZigVstguiEditor::buildFrame() {
     help_component.accessibility().setName("Editor keyboard instructions");
     help_component.accessibility().setReadOnly(true);
 
+    for (uint32_t index = 0; index < group_count; ++index) {
+        const auto& styles = *group_styles[index];
+        const auto style = styles.resolve(ZigVstgui::ComponentKind::title);
+        group_labels[index] = new VSTGUI::CTextLabel(VSTGUI::CRect(), group_titles[index].c_str());
+        group_labels[index]->setFont(styles.font(ZigVstgui::TypographyRole::title));
+        group_labels[index]->setFontColor(style.foreground);
+        group_labels[index]->setBackColor(style.background);
+        group_labels[index]->setFrameColor(style.border);
+        group_labels[index]->setFrameWidth(style.frame_width);
+        group_labels[index]->setRoundRectRadius(style.radius);
+        content->addView(group_labels[index]);
+        group_components[index].bind(group_labels[index]);
+        group_components[index].accessibility().setRole(ZigVstgui::AccessibilityRole::group);
+        group_components[index].accessibility().setName(group_titles[index]);
+        group_components[index].accessibility().setReadOnly(true);
+    }
+
     for (uint32_t index = 0; index < parameter_count; ++index) {
         parameter_controls[index]->build(
             content,
             parameter_info[index],
             parameter_control_kinds[index],
-            theme_resolver,
+            stylesForParameter(index),
             &asset_store,
             drawing_callbacks
         );
@@ -329,7 +402,7 @@ void ZigVstguiEditor::buildFrame() {
             description.first_source_id,
             description.second_source_id,
             {meter_callbacks.userdata, meter_callbacks.load},
-            theme_resolver
+            stylesForMeter(index)
         );
     }
     resize_control.build(content, theme_resolver);
@@ -342,6 +415,7 @@ void ZigVstguiEditor::clearFrameReferences() {
     content = nullptr;
     title = nullptr;
     help = nullptr;
+    group_labels.fill(nullptr);
 }
 
 void ZigVstguiEditor::layout() {
@@ -354,6 +428,95 @@ void ZigVstguiEditor::layout() {
         theme.control_metrics.value_width,
         static_cast<double>(width) - margin * 2.0
     );
+    if (group_count > 0) {
+        const bool wide = width >= 620;
+        title_component.setVisible(true);
+        help_component.setVisible(wide);
+        title_component.setBounds(VSTGUI::CRect(margin, 12, right, 46));
+        help_component.setBounds(VSTGUI::CRect(margin, 46, right, 72));
+        const double groups_top = wide ? 82.0 : 54.0;
+        const double footer_top = static_cast<double>(height) - margin - theme.control_metrics.compact_control_height;
+        const uint32_t columns = wide ? 2 : 1;
+        const uint32_t rows = (group_count + columns - 1) / columns;
+        const double column_gap = theme.spacing.medium;
+        const double row_gap = theme.spacing.medium;
+        const double cell_width = (right - margin - column_gap * (columns - 1)) / columns;
+        const double cell_height = std::max(
+            1.0,
+            (footer_top - theme.spacing.medium - groups_top - row_gap * (rows - 1)) / rows
+        );
+        for (uint32_t group_index = 0; group_index < group_count; ++group_index) {
+            const uint32_t column = group_index % columns;
+            const uint32_t row = group_index / columns;
+            const double left = margin + column * (cell_width + column_gap);
+            const double top = groups_top + row * (cell_height + row_gap);
+            const double bottom = top + cell_height;
+            const double group_right = left + cell_width;
+            group_components[group_index].setBounds(VSTGUI::CRect(left, top, group_right, top + 28.0));
+            const auto& group = group_descriptions[group_index];
+            const double content_top = top + 28.0 + theme.spacing.small;
+            const double parameter_fraction = group.meter_count > 0 && group.parameter_count > 0 ? 0.58 : 1.0;
+            const double parameter_bottom = content_top + (bottom - content_top) * parameter_fraction;
+            const double control_gap = theme.spacing.small;
+            const double control_height = group.parameter_count > 0
+                ? std::max(24.0, (parameter_bottom - content_top - control_gap * (group.parameter_count - 1)) / group.parameter_count)
+                : 0.0;
+            const double label_width = std::min(88.0, cell_width * 0.26);
+            const double row_value_width = std::min(82.0, cell_width * 0.24);
+            for (uint32_t offset = 0; offset < group.parameter_count; ++offset) {
+                const uint32_t index = group.first_parameter + offset;
+                const double control_top = content_top + offset * (control_height + control_gap);
+                const VSTGUI::CRect row_bounds(left, control_top, group_right, control_top + control_height);
+                const ZigVstgui::GridTrack tracks[] = {
+                    {label_width, 0.0},
+                    {48.0, 1.0},
+                    {row_value_width, 0.0},
+                };
+                const ZigVstgui::GridTrack row_track[] = {{24.0, 1.0}};
+                const ZigVstgui::GridItem items[] = {
+                    {0, 0, 1, 1},
+                    {1, 0, 1, 1},
+                    {2, 0, 1, 1},
+                };
+                VSTGUI::CRect cells[3];
+                ZigVstgui::layoutGrid(
+                    row_bounds,
+                    {},
+                    theme.spacing.small,
+                    0.0,
+                    tracks,
+                    3,
+                    row_track,
+                    1,
+                    items,
+                    3,
+                    cells
+                );
+                parameter_controls[index]->setBounds(cells[0], cells[1], cells[2]);
+            }
+            if (group.meter_count > 0) {
+                const double meters_top = group.parameter_count > 0 ? parameter_bottom + theme.spacing.small : content_top;
+                const double meter_gap = theme.spacing.small;
+                const double meter_width = (cell_width - meter_gap * (group.meter_count - 1)) / group.meter_count;
+                for (uint32_t offset = 0; offset < group.meter_count; ++offset) {
+                    const uint32_t index = group.first_meter + offset;
+                    const double meter_left = left + offset * (meter_width + meter_gap);
+                    meter_controls[index]->setLabelVisible(true);
+                    meter_controls[index]->setBounds(
+                        VSTGUI::CRect(meter_left, meters_top, meter_left + meter_width, meters_top + 18.0),
+                        VSTGUI::CRect(meter_left, meters_top + 18.0, meter_left + meter_width, bottom)
+                    );
+                }
+            }
+        }
+        resize_control.setBounds(VSTGUI::CRect(
+            right - theme.control_metrics.button_width,
+            footer_top,
+            right,
+            height - margin
+        ));
+        return;
+    }
     if (layout_kind == ZIG_VSTGUI_LAYOUT_COMPACT_STRIP) {
         title_component.setVisible(true);
         help_component.setVisible(false);
@@ -543,6 +706,26 @@ const ZigVstgui::ParameterControl* ZigVstguiEditor::findControl(uint32_t paramet
         if (parameter_controls[index]->model().parameterId() == parameter_id) return parameter_controls[index].get();
     }
     return nullptr;
+}
+
+const ZigVstgui::ThemeResolver& ZigVstguiEditor::stylesForParameter(uint32_t index) const {
+    for (uint32_t group_index = 0; group_index < group_count; ++group_index) {
+        const auto& group = group_descriptions[group_index];
+        if (index >= group.first_parameter && index < group.first_parameter + group.parameter_count) {
+            return *group_styles[group_index];
+        }
+    }
+    return theme_resolver;
+}
+
+const ZigVstgui::ThemeResolver& ZigVstguiEditor::stylesForMeter(uint32_t index) const {
+    for (uint32_t group_index = 0; group_index < group_count; ++group_index) {
+        const auto& group = group_descriptions[group_index];
+        if (index >= group.first_meter && index < group.first_meter + group.meter_count) {
+            return *group_styles[group_index];
+        }
+    }
+    return theme_resolver;
 }
 
 void ZigVstguiEditor::reportMetrics() const {
