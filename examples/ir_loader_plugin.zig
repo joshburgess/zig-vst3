@@ -14,6 +14,7 @@ pub const ir_import_id: u32 = 1;
 pub const ir_waveform_source_id: u32 = 100;
 pub const ir_action_group_id: u32 = 1;
 pub const clear_ir_action_id: u32 = 1;
+pub const ir_name_state_id: u32 = 1;
 pub const maximum_ir_frames: usize = 131_072;
 pub const convolution_partition_size: usize = 512;
 
@@ -51,6 +52,10 @@ pub const Spec = core.plugin.PluginSpec(Definition);
 pub const ir_parameter_set = Spec.ParameterSet.init(.{});
 const Convolver = core.gui_ir_convolution.PartitionedConvolver(maximum_ir_frames, convolution_partition_size);
 const AudioImporter = vst3.vstgui.DecodedAudioFileImporter(maximum_ir_frames);
+const default_ir_name = core.editor_state.Text.init("Untitled IR") catch unreachable;
+const IREditorState = core.editor_state.Store(1, &.{
+    .{ .id = ir_name_state_id, .default = .{ .text = default_ir_name } },
+});
 
 const IRControllerState = struct {
     importer: AudioImporter,
@@ -71,6 +76,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const Params = Spec.Params;
     pub const parameter_set = &ir_parameter_set;
     pub const ControllerState = IRControllerState;
+    pub const EditorState = IREditorState;
 
     pub fn handleFileImport(
         controller: *vst.ivsteditcontroller.IEditController,
@@ -132,6 +138,30 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
             types.kResultOk
         else
             types.kResultFalse;
+    }
+
+    pub fn validateEditorText(
+        _: *vst.ivsteditcontroller.IEditController,
+        field_id: u32,
+        text: []const u8,
+    ) types.tresult {
+        if (field_id != ir_name_state_id) return types.kInvalidArgument;
+        return if (std.mem.trim(u8, text, " \t\r\n").len == 0) types.kResultFalse else types.kResultOk;
+    }
+
+    pub fn loadGuiProgress(
+        controller: *vst.ivsteditcontroller.IEditController,
+        source_id: u32,
+    ) ?core.gui_progress.Snapshot {
+        if (source_id != ir_import_id) return null;
+        const snapshot = Controller.controllerState(controller).importer.snapshot().import;
+        return switch (snapshot.status) {
+            .idle => .{ .generation = snapshot.generation },
+            .validating => .{ .mode = .indeterminate, .state = .running, .generation = snapshot.generation },
+            .importing => .{ .state = .running, .value = snapshot.progress(), .generation = snapshot.generation },
+            .ready => .{ .state = .complete, .value = 1.0, .generation = snapshot.generation },
+            else => .{ .state = .failed, .value = snapshot.progress(), .generation = snapshot.generation },
+        };
     }
 
     fn clearImport(controller: *vst.ivsteditcontroller.IEditController, state: *IRControllerState) bool {
@@ -219,6 +249,23 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .confirmation_label = "Confirm Clear IR",
                 .failure_label = "Clear failed. Try again",
                 .role = .destructive,
+            }},
+            .editable_labels = &.{.{
+                .field_id = ir_name_state_id,
+                .label = "IR Name",
+                .accessible_label = "Impulse response name",
+                .placeholder = "Name this impulse response",
+                .error_text = "Enter an IR name",
+                .maximum_bytes = 64,
+            }},
+            .progress_indicators = &.{.{
+                .source_id = ir_import_id,
+                .label = "Import",
+                .accessible_label = "Impulse response import progress",
+                .idle_text = "Choose an IR to begin",
+                .running_text = "Importing IR",
+                .complete_text = "IR ready",
+                .failure_text = "Import failed",
             }},
             .skin = .{ .theme = .alternate, .layout = .adaptive },
             .composition = .{

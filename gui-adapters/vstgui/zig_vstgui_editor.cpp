@@ -80,7 +80,11 @@ ZigVstguiEditor::ZigVstguiEditor(
     const ZigVstguiFileDropDescription* file_drops,
     uint32_t value_file_drop_count,
     const ZigVstguiActionButtonDescription* action_buttons,
-    uint32_t value_action_button_count
+    uint32_t value_action_button_count,
+    const ZigVstguiEditableLabelDescription* editable_labels,
+    uint32_t value_editable_label_count,
+    const ZigVstguiProgressIndicatorDescription* progress_indicators,
+    uint32_t value_progress_indicator_count
 )
 : parameter_callbacks(callbacks),
   meter_count(value_meter_count),
@@ -93,6 +97,8 @@ ZigVstguiEditor::ZigVstguiEditor(
   piano_count(value_piano_count), step_sequencer_count(value_step_sequencer_count),
   file_drop_count(value_file_drop_count),
   action_button_count(value_action_button_count),
+  editable_label_count(value_editable_label_count),
+  progress_indicator_count(value_progress_indicator_count),
   drawing_callbacks(skin.drawing),
   theme_resolver(selectedTheme(skin.theme)),
   theme_kind(skin.theme),
@@ -326,6 +332,40 @@ ZigVstguiEditor::ZigVstguiEditor(
         action_button_controls[index].reset(new (std::nothrow) ZigVstgui::ActionButtonControl());
         if (!action_button_controls[index]) return;
     }
+    for (uint32_t index = 0; index < editable_label_count; ++index) {
+        const auto& editable = editable_labels[index];
+        editable_label_labels[index] = editable.label;
+        editable_label_accessible_labels[index] = editable.accessible_label;
+        editable_label_placeholders[index] = editable.placeholder;
+        editable_label_errors[index] = editable.error_text;
+        editable_label_initial_text[index] = editable.initial_text;
+        editable_label_descriptions[index] = editable;
+        editable_label_descriptions[index].label = editable_label_labels[index].c_str();
+        editable_label_descriptions[index].accessible_label = editable_label_accessible_labels[index].c_str();
+        editable_label_descriptions[index].placeholder = editable_label_placeholders[index].c_str();
+        editable_label_descriptions[index].error_text = editable_label_errors[index].c_str();
+        editable_label_descriptions[index].initial_text = editable_label_initial_text[index].c_str();
+        editable_label_controls[index].reset(new (std::nothrow) ZigVstgui::EditableLabelControl());
+        if (!editable_label_controls[index]) return;
+    }
+    for (uint32_t index = 0; index < progress_indicator_count; ++index) {
+        const auto& progress = progress_indicators[index];
+        progress_labels[index] = progress.label;
+        progress_accessible_labels[index] = progress.accessible_label;
+        progress_idle_text[index] = progress.idle_text;
+        progress_running_text[index] = progress.running_text;
+        progress_complete_text[index] = progress.complete_text;
+        progress_failure_text[index] = progress.failure_text;
+        progress_descriptions[index] = progress;
+        progress_descriptions[index].label = progress_labels[index].c_str();
+        progress_descriptions[index].accessible_label = progress_accessible_labels[index].c_str();
+        progress_descriptions[index].idle_text = progress_idle_text[index].c_str();
+        progress_descriptions[index].running_text = progress_running_text[index].c_str();
+        progress_descriptions[index].complete_text = progress_complete_text[index].c_str();
+        progress_descriptions[index].failure_text = progress_failure_text[index].c_str();
+        progress_controls[index].reset(new (std::nothrow) ZigVstgui::ProgressIndicatorControl());
+        if (!progress_controls[index]) return;
+    }
     uint32_t next_parameter = 0;
     uint32_t next_meter = 0;
     uint32_t next_graph = 0;
@@ -387,6 +427,7 @@ bool ZigVstguiEditor::open(void* parent, ZigVstguiPlatform platform) {
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->start();
     for (uint32_t index = 0; index < graph_count; ++index) graph_controls[index]->start();
     for (uint32_t index = 0; index < step_sequencer_count; ++index) step_sequencer_controls[index]->start();
+    for (uint32_t index = 0; index < progress_indicator_count; ++index) progress_controls[index]->start();
     return true;
 }
 
@@ -394,6 +435,7 @@ void ZigVstguiEditor::close() {
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->stop();
     for (uint32_t index = 0; index < graph_count; ++index) graph_controls[index]->stop();
     for (uint32_t index = 0; index < step_sequencer_count; ++index) step_sequencer_controls[index]->stop();
+    for (uint32_t index = 0; index < progress_indicator_count; ++index) progress_controls[index]->stop();
     accessibility_bridge.close();
     if (!frame || !frame->getPlatformFrame()) return;
     for (uint32_t index = 0; index < parameter_count; ++index) parameter_controls[index]->clear();
@@ -407,6 +449,8 @@ void ZigVstguiEditor::close() {
     for (uint32_t index = 0; index < step_sequencer_count; ++index) step_sequencer_controls[index]->clear();
     for (uint32_t index = 0; index < file_drop_count; ++index) file_drop_controls[index]->clear();
     for (uint32_t index = 0; index < action_button_count; ++index) action_button_controls[index]->clear();
+    for (uint32_t index = 0; index < editable_label_count; ++index) editable_label_controls[index]->clear();
+    for (uint32_t index = 0; index < progress_indicator_count; ++index) progress_controls[index]->clear();
     title_component.clear();
     help_component.clear();
     for (uint32_t index = 0; index < group_count; ++index) group_components[index].clear();
@@ -469,6 +513,9 @@ bool ZigVstguiEditor::refreshParameters(
     }
     for (uint32_t index = 0; index < value_parameter_count; ++index) {
         setParameter(parameters[index].parameter_id, parameters[index].normalized);
+    }
+    for (uint32_t index = 0; index < editable_label_count; ++index) {
+        editable_label_controls[index]->refresh();
     }
     return true;
 }
@@ -534,6 +581,14 @@ const ZigVstgui::AccessibilityNode* ZigVstguiEditor::actionButtonAccessibility(u
     return index < action_button_count ? &action_button_controls[index]->accessibilityNode() : nullptr;
 }
 
+const ZigVstgui::AccessibilityNode* ZigVstguiEditor::editableLabelAccessibility(uint32_t index) const {
+    return index < editable_label_count ? &editable_label_controls[index]->accessibilityNode() : nullptr;
+}
+
+const ZigVstgui::AccessibilityNode* ZigVstguiEditor::progressAccessibility(uint32_t index) const {
+    return index < progress_indicator_count ? &progress_controls[index]->accessibilityNode() : nullptr;
+}
+
 bool ZigVstguiEditor::tickMeter(uint32_t index, double elapsed_ms) {
     return index < meter_count && meter_controls[index]->tick(elapsed_ms);
 }
@@ -591,6 +646,10 @@ bool ZigVstguiEditor::keyDown(uint16_t key, int16_t key_code, int16_t modifiers)
         auto& xy_pad = *xy_pad_controls[index];
         if (focused == xy_pad.focusView() && xy_pad.handleKey(key, key_code, modifiers)) return true;
     }
+    for (uint32_t index = 0; index < editable_label_count; ++index) {
+        auto& editable = *editable_label_controls[index];
+        if (focused == editable.focusView() && editable.handleKey(key, key_code)) return true;
+    }
     for (uint32_t index = 0; index < preset_browser_count; ++index) {
         auto& browser = *preset_browser_controls[index];
         if (focused == browser.focusView() && browser.handleKey(key, key_code, modifiers)) return true;
@@ -640,6 +699,7 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
             + ZIG_VSTGUI_MAX_STEP_SEQUENCERS
             + ZIG_VSTGUI_MAX_FILE_DROPS
             + ZIG_VSTGUI_MAX_ACTION_BUTTONS
+            + ZIG_VSTGUI_MAX_EDITABLE_LABELS
     > focus_order {};
     uint32_t focus_count = 0;
     for (uint32_t index = 0; index < parameter_count; ++index) {
@@ -654,6 +714,9 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
     }
     for (uint32_t index = 0; index < xy_pad_count; ++index) {
         if (auto* xy_pad = xy_pad_controls[index]->focusView()) focus_order[focus_count++] = xy_pad;
+    }
+    for (uint32_t index = 0; index < editable_label_count; ++index) {
+        if (auto* editable = editable_label_controls[index]->focusView()) focus_order[focus_count++] = editable;
     }
     for (uint32_t index = 0; index < file_drop_count; ++index) {
         if (auto* importer = file_drop_controls[index]->focusView()) focus_order[focus_count++] = importer;
@@ -699,6 +762,9 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
     for (uint32_t index = 0; index < xy_pad_count; ++index) {
         xy_pad_controls[index]->setFocusedView(next_view);
     }
+    for (uint32_t index = 0; index < editable_label_count; ++index) {
+        editable_label_controls[index]->setFocusedView(next_view);
+    }
     for (uint32_t index = 0; index < preset_browser_count; ++index) {
         preset_browser_controls[index]->setFocusedView(next_view);
     }
@@ -721,6 +787,11 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
 void ZigVstguiEditor::setFocus(bool focused) {
     if (!frame) return;
     frame->onActivate(focused);
+    if (focused) {
+        for (uint32_t index = 0; index < editable_label_count; ++index) {
+            editable_label_controls[index]->refresh();
+        }
+    }
     if (!focused) {
         for (uint32_t index = 0; index < parameter_count; ++index) {
             parameter_controls[index]->setFocusedView(nullptr);
@@ -730,6 +801,9 @@ void ZigVstguiEditor::setFocus(bool focused) {
         }
         for (uint32_t index = 0; index < xy_pad_count; ++index) {
             xy_pad_controls[index]->setFocusedView(nullptr);
+        }
+        for (uint32_t index = 0; index < editable_label_count; ++index) {
+            editable_label_controls[index]->setFocusedView(nullptr);
         }
         for (uint32_t index = 0; index < preset_browser_count; ++index) {
             preset_browser_controls[index]->setFocusedView(nullptr);
@@ -792,7 +866,7 @@ std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries
     std::vector<ZigVstgui::AccessibilityEntry> entries;
     entries.reserve(2 + group_count + parameter_count * 2 + meter_count + graph_count +
         xy_pad_count * 2 + preset_browser_count + action_menu_count + piano_count + step_sequencer_count +
-        file_drop_count + action_button_count + 1);
+        file_drop_count + action_button_count + editable_label_count + progress_indicator_count + 1);
     entries.push_back({&title_component.accessibility(), title_component.view()});
     entries.push_back({&help_component.accessibility(), help_component.view()});
     for (uint32_t index = 0; index < group_count; ++index) {
@@ -815,6 +889,18 @@ std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries
         const auto& xy_pad = *xy_pad_controls[index];
         entries.push_back({&xy_pad.axisAccessibility(0), xy_pad.focusView()});
         entries.push_back({&xy_pad.axisAccessibility(1), xy_pad.focusView()});
+    }
+    for (uint32_t index = 0; index < editable_label_count; ++index) {
+        entries.push_back({
+            &editable_label_controls[index]->accessibilityNode(),
+            editable_label_controls[index]->focusView(),
+        });
+    }
+    for (uint32_t index = 0; index < progress_indicator_count; ++index) {
+        entries.push_back({
+            &progress_controls[index]->accessibilityNode(),
+            progress_controls[index]->accessibilityView(),
+        });
     }
     for (uint32_t index = 0; index < file_drop_count; ++index) {
         entries.push_back({&file_drop_controls[index]->accessibilityNode(), file_drop_controls[index]->dropView()});
@@ -993,6 +1079,14 @@ void ZigVstguiEditor::buildFrame() {
             theme_resolver
         )) return;
     }
+    for (uint32_t index = 0; index < editable_label_count; ++index) {
+        if (!editable_label_controls[index]->build(
+            content, editable_label_descriptions[index], parameter_callbacks, theme_resolver)) return;
+    }
+    for (uint32_t index = 0; index < progress_indicator_count; ++index) {
+        if (!progress_controls[index]->build(
+            content, progress_descriptions[index], parameter_callbacks, theme_resolver)) return;
+    }
     layout();
 }
 
@@ -1038,13 +1132,30 @@ void ZigVstguiEditor::layout() {
         ? sequencer_top - theme.spacing.medium
         : (piano_count > 0 ? piano_top - theme.spacing.medium : lower_content_bottom);
     const double file_drop_top = file_drop_bottom - file_drop_height;
-    const double content_bottom = file_drop_count > 0 ? file_drop_top - theme.spacing.medium : file_drop_bottom;
+    const uint32_t utility_count = editable_label_count + progress_indicator_count;
+    const double utility_bottom = file_drop_count > 0 ? file_drop_top - theme.spacing.medium : file_drop_bottom;
+    const double utility_height = utility_count > 0
+        ? editable_label_count * 58.0 + progress_indicator_count * 48.0 +
+            theme.spacing.small * (utility_count - 1)
+        : 0.0;
+    const double utility_top = utility_bottom - utility_height;
+    const double content_bottom = utility_count > 0 ? utility_top - theme.spacing.medium : utility_bottom;
     if (preset_browser_count > 0) {
         layoutPresetBrowsers(margin, browser_top, right, browser_bottom);
     }
     if (piano_count > 0) layoutPianos(margin, piano_top, right, piano_bottom);
     if (step_sequencer_count > 0) layoutStepSequencers(margin, sequencer_top, right, sequencer_bottom);
     if (file_drop_count > 0) layoutFileDrops(margin, file_drop_top, right, file_drop_bottom);
+    double utility_cursor = utility_top;
+    if (editable_label_count > 0) {
+        const double editable_bottom = utility_cursor + editable_label_count * 58.0 +
+            theme.spacing.small * (editable_label_count - 1);
+        layoutEditableLabels(margin, utility_cursor, right, editable_bottom);
+        utility_cursor = editable_bottom + (progress_indicator_count > 0 ? theme.spacing.small : 0.0);
+    }
+    if (progress_indicator_count > 0) {
+        layoutProgressIndicators(margin, utility_cursor, right, utility_bottom);
+    }
     const double footer_right = right - theme.control_metrics.button_width - theme.spacing.small;
     if (action_button_count > 0 && action_menu_count > 0) {
         const double split = margin + (footer_right - margin) * 0.68;
@@ -1477,6 +1588,33 @@ void ZigVstguiEditor::layoutActionButtons(double left, double top, double right,
             button_left += action_button_descriptions[index].group_id == action_button_descriptions[index + 1].group_id
                 ? spacing.small : spacing.medium;
         }
+    }
+}
+
+void ZigVstguiEditor::layoutEditableLabels(double left, double top, double right, double) {
+    if (editable_label_count == 0) return;
+    const double gap = theme_resolver.theme().spacing.small;
+    const double label_width = std::min(120.0, (right - left) * 0.24);
+    for (uint32_t index = 0; index < editable_label_count; ++index) {
+        const double row_top = top + index * (58.0 + gap);
+        editable_label_controls[index]->setBounds(
+            VSTGUI::CRect(left, row_top, left + label_width, row_top + 32.0),
+            VSTGUI::CRect(left + label_width + gap, row_top, right, row_top + 32.0),
+            VSTGUI::CRect(left + label_width + gap, row_top + 32.0, right, row_top + 56.0)
+        );
+    }
+}
+
+void ZigVstguiEditor::layoutProgressIndicators(double left, double top, double right, double) {
+    if (progress_indicator_count == 0) return;
+    const double gap = theme_resolver.theme().spacing.small;
+    const double label_width = std::min(120.0, (right - left) * 0.24);
+    for (uint32_t index = 0; index < progress_indicator_count; ++index) {
+        const double row_top = top + index * (48.0 + gap);
+        progress_controls[index]->setBounds(
+            VSTGUI::CRect(left, row_top, left + label_width, row_top + 40.0),
+            VSTGUI::CRect(left + label_width + gap, row_top + 4.0, right, row_top + 36.0)
+        );
     }
 }
 

@@ -367,6 +367,50 @@ Idle, drag hover, validating, importing, ready, empty, unsupported type, excessi
 
 `FileImporter` is supported. The component gallery, production channel strip, and production IR loader use the same public declaration, bounded path callback, picker fallback, keyboard interaction, accessibility semantics, and lifecycle contract. `FileDrop` remains a source-compatible alias. New code should use `FileImporter` and `EditorDescription.file_importers`.
 
+## Editable Labels
+
+Declare bounded, persistent text through `EditorDescription.editable_labels`:
+
+```zig
+.editable_labels = &.{.{
+    .field_id = ir_name_state_id,
+    .label = "IR Name",
+    .accessible_label = "Impulse response name",
+    .placeholder = "Name this impulse response",
+    .error_text = "Enter an IR name",
+    .maximum_bytes = 64,
+}},
+```
+
+The field ID addresses a text value in the controller's typed `EditorState`. The maximum is 96 bytes, including only the stored content and not the terminating zero. Field IDs must be nonzero and unique within an editor. Labels, accessible labels, and error text must be nonempty.
+
+Implement `validateEditorText` when a field needs domain validation. A rejected edit stays visible with its inline error so the user can correct it, while the accepted state and accessibility value remain unchanged. Escape restores the accepted value. A successful single-click edit commits on Return or focus loss. External state refreshes when the editor regains focus or its controller values refresh.
+
+Editable labels use the toolkit-neutral text-field role and set-value action. The macOS bridge exposes a native text field. The Windows bridge maps the same node to UI Automation Value semantics.
+
+## Progress Indicators
+
+Declare controller-owned progress through `EditorDescription.progress_indicators`:
+
+```zig
+.progress_indicators = &.{.{
+    .source_id = ir_import_id,
+    .label = "Import",
+    .accessible_label = "Impulse response import progress",
+    .idle_text = "Choose an IR to begin",
+    .running_text = "Importing IR",
+    .complete_text = "IR ready",
+    .failure_text = "Import failed",
+    .maximum_refresh_hz = 20,
+}},
+```
+
+Implement `loadGuiProgress` and return a `ProgressSnapshot`. Determinate values must be finite and in `[0, 1]`; complete snapshots must equal `1`; indeterminate mode is valid only while running. The generation identifies logical work and lets consumers distinguish replacement from continued progress.
+
+Polling is bounded to 1–60 Hz while the editor is open. Unchanged determinate states do not repaint. Indeterminate state animates a bounded segment. Idle, running, complete, and failed states always expose explicit text, and failure does not rely on color alone. The accessibility node uses meter semantics and exposes a numeric range only for running determinate work.
+
+`EditableLabel`, `ProgressIndicator`, and `ProgressSnapshot` are supported. The gallery and production IR loader use the same public declaration, callback, validation, rendering, lifecycle, and accessibility contracts.
+
 ## API Status
 
 The project remains pre-1.0, so even the supported surface does not yet carry a long-term compatibility promise. The supported list is limited to contracts exercised by both the component gallery and a production-style editor.
@@ -384,6 +428,8 @@ Supported authoring surface:
 - `PresetBrowser`, `gui_preset_browser.Browser`, bounded catalogs, persistent filtering and selection, and host-automated loading.
 - `ActionMenu`, action, toggle, separator, disabled and destructive item states, anchored overlays, and persistent toggle fields.
 - `ActionButton`, primary, secondary, destructive and icon-only roles, grouped toolbar layout, inline confirmation, and recoverable failure feedback.
+- `EditableLabel`, bounded typed editor-state text, validation, inline recovery, external refresh, and native text-field semantics.
+- `ProgressIndicator` and `ProgressSnapshot`, bounded controller telemetry, determinate and indeterminate presentation, state text, and native progress semantics.
 - `Piano`, bounded note ranges, GUI note transport, computer-key input, pointer glissando, and accessible note selection.
 - `StepSequencer`, bounded parameter-backed patterns, persistent multi-selection, activity-gated playhead telemetry, and accessible editing.
 - `FileImporter`, bounded extension filtering and path copying, an accessible operating-system picker fallback, keyboard interaction, progress presentation, cancellation, retry, and recoverable rejection feedback.

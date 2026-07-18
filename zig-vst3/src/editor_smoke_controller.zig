@@ -28,6 +28,7 @@ pub const preset_selection_state_id: u32 = 7;
 pub const show_analyzer_state_id: u32 = 8;
 pub const step_selection_state_id: u32 = 9;
 pub const imported_file_count_state_id: u32 = 10;
+pub const gallery_label_state_id: u32 = 11;
 
 const gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
@@ -39,6 +40,7 @@ const cleared_gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 3, .x = 1.0, .y = 0.0 },
 }) catch unreachable;
 const empty_preset_search = plug_core.editor_state.Text.init("") catch unreachable;
+const gallery_label = plug_core.editor_state.Text.init("Studio Plate") catch unreachable;
 
 pub const GalleryEditorState = plug_core.editor_state.Store(1, &.{
     .{ .id = panel_expanded_state_id, .default = .{ .boolean = true } },
@@ -51,6 +53,7 @@ pub const GalleryEditorState = plug_core.editor_state.Store(1, &.{
     .{ .id = show_analyzer_state_id, .default = .{ .boolean = true } },
     .{ .id = step_selection_state_id, .default = .{ .index = 1 } },
     .{ .id = imported_file_count_state_id, .default = .{ .index = 0 } },
+    .{ .id = gallery_label_state_id, .default = .{ .text = gallery_label } },
 });
 
 fn applyPreset(
@@ -181,6 +184,23 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
         return performMenuAction(controller, group_id, action_id, false);
     }
 
+    pub fn validateEditorText(
+        _: *ivsteditcontroller.IEditController,
+        field_id: u32,
+        text: []const u8,
+    ) types.tresult {
+        if (field_id != gallery_label_state_id) return types.kInvalidArgument;
+        return if (std.mem.trim(u8, text, " \t\r\n").len == 0) types.kResultFalse else types.kResultOk;
+    }
+
+    pub fn loadGuiProgress(
+        _: *ivsteditcontroller.IEditController,
+        source_id: u32,
+    ) ?plug_core.gui_progress.Snapshot {
+        if (source_id != 1) return null;
+        return .{ .state = .running, .value = 0.42, .generation = 1 };
+    }
+
     pub fn handleFileDrop(
         controller: *ivsteditcontroller.IEditController,
         drop_id: u32,
@@ -304,6 +324,20 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .role = .destructive,
                 },
             },
+            .editable_labels = &.{.{
+                .field_id = gallery_label_state_id,
+                .label = "Editable Label",
+                .accessible_label = "Effect name",
+                .placeholder = "Name this effect",
+                .error_text = "Enter a name",
+                .maximum_bytes = 48,
+            }},
+            .progress_indicators = &.{.{
+                .source_id = 1,
+                .label = "Progress",
+                .accessible_label = "Example render progress",
+                .running_text = "Rendering preview",
+            }},
             .pianos = &.{.{
                 .title = "Piano Keyboard",
                 .first_note = 48,

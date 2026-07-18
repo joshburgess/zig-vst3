@@ -12,6 +12,7 @@
 #include "zig_vstgui_preset_browser.h"
 #include "zig_vstgui_step_sequencer.h"
 #include "zig_vstgui_file_drop.h"
+#include "zig_vstgui_text_progress.h"
 
 #include "pluginterfaces/base/keycodes.h"
 #include "vstgui/lib/events.h"
@@ -75,6 +76,10 @@ struct CallbackState {
     bool import_snapshot_available {false};
     uint32_t import_command_count {0};
     ZigVstguiFileImportCommand import_command {ZIG_VSTGUI_FILE_IMPORT_RESET};
+    std::string editor_text {"Studio Plate"};
+    bool reject_editor_text {false};
+    ZigVstguiProgressSnapshot progress_snapshot {};
+    bool progress_available {false};
 };
 
 class TestDataPackage final : public VSTGUI::IDataPackage {
@@ -134,6 +139,30 @@ int32_t commandFileImport(void* userdata, uint32_t, ZigVstguiFileImportCommand c
     auto* state = static_cast<CallbackState*>(userdata);
     state->import_command_count += 1;
     state->import_command = command;
+    return 0;
+}
+
+int32_t storeEditableText(void* userdata, uint32_t field_id, const char* text) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->stored_state_field = field_id;
+    state->stored_state_text = text ? text : "";
+    if (state->reject_editor_text) return -1;
+    state->editor_text = state->stored_state_text;
+    return 0;
+}
+
+int32_t loadEditorText(void* userdata, uint32_t, char* output, uint32_t capacity) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    if (!output || state->editor_text.size() >= capacity) return -1;
+    std::copy(state->editor_text.begin(), state->editor_text.end(), output);
+    output[state->editor_text.size()] = 0;
+    return static_cast<int32_t>(state->editor_text.size());
+}
+
+int32_t loadProgress(void* userdata, uint32_t, ZigVstguiProgressSnapshot* output) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    if (!state->progress_available || !output) return -1;
+    *output = state->progress_snapshot;
     return 0;
 }
 
@@ -2100,6 +2129,108 @@ int testFileDrop() {
     return 0;
 }
 
+int testEditableLabelsAndProgress() {
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.store_editor_text = storeEditableText;
+    callbacks.load_editor_text = loadEditorText;
+    callbacks.load_progress = loadProgress;
+    const ZigVstguiEditableLabelDescription editable {
+        11, "IR Name", "Impulse response name", "Name this impulse response",
+        "Enter an IR name", "Studio Plate", 48, 1,
+    };
+    const ZigVstguiProgressIndicatorDescription progress {
+        7, "Import", "Impulse response import progress", "Choose an IR to begin",
+        "Importing IR", "IR ready", "Import failed", 20,
+    };
+    VSTGUI::init(nullptr);
+    {
+        ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+        auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 500, 160)));
+        ZigVstgui::EditableLabelControl label;
+        if (!label.build(container, editable, callbacks, styles) ||
+            label.accessibilityNode().role() != ZigVstgui::AccessibilityRole::text_field ||
+            label.accessibilityNode().valueText() != "Studio Plate" ||
+            !label.accessibilityNode().perform(ZigVstgui::AccessibilityAction::set_value, 0.0, "Bright Hall") ||
+            state.editor_text != "Bright Hall" || state.stored_state_field != 11) {
+            VSTGUI::exit();
+            return 1;
+        }
+        state.reject_editor_text = true;
+        if (label.accessibilityNode().perform(ZigVstgui::AccessibilityAction::set_value, 0.0, "") ||
+            label.accessibilityNode().description() != "Enter an IR name" ||
+            label.accessibilityNode().valueText() != "Bright Hall") {
+            VSTGUI::exit();
+            return 2;
+        }
+        state.reject_editor_text = false;
+        state.editor_text = "External Name";
+        if (!label.refresh() || label.accessibilityNode().valueText() != "External Name" || label.refresh()) {
+            VSTGUI::exit();
+            return 3;
+        }
+
+        state.progress_available = true;
+        state.progress_snapshot = {ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_IDLE, 0.0, 0};
+        ZigVstgui::ProgressIndicatorControl indicator;
+        if (!indicator.build(container, progress, callbacks, styles) ||
+            indicator.accessibilityNode().role() != ZigVstgui::AccessibilityRole::meter ||
+            indicator.accessibilityNode().valueText() != "Choose an IR to begin") {
+            VSTGUI::exit();
+            return 4;
+        }
+        state.progress_snapshot = {ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_RUNNING, 0.42, 1};
+        if (!indicator.tick() || indicator.accessibilityNode().valueText().find("42%") == std::string::npos ||
+            !indicator.progressView() || indicator.progressView()->snapshot().value != 0.42) {
+            VSTGUI::exit();
+            return 5;
+        }
+        state.progress_snapshot = {ZIG_VSTGUI_PROGRESS_INDETERMINATE, ZIG_VSTGUI_PROGRESS_RUNNING, 0.0, 2};
+        if (!indicator.tick() || indicator.accessibilityNode().valueText() != "Importing IR") {
+            VSTGUI::exit();
+            return 6;
+        }
+        state.progress_snapshot = {ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_COMPLETE, 1.0, 3};
+        if (!indicator.tick() || indicator.accessibilityNode().valueText() != "IR ready") {
+            VSTGUI::exit();
+            return 7;
+        }
+        indicator.clear();
+        label.clear();
+    }
+    VSTGUI::exit();
+
+    const ZigVstguiParameterDescription parameter {
+        10, 0.5, {"Level", "", 0, 0.5}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+    };
+    auto* editor = zig_vstgui_editor_create_components(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        nullptr, 0, &editable, 1, &progress, 1, {}
+    );
+    if (!editor || !editor->editableLabelAccessibility(0) || !editor->progressAccessibility(0)) {
+        zig_vstgui_editor_destroy(editor);
+        return 8;
+    }
+    zig_vstgui_editor_destroy(editor);
+    auto invalid_editable = editable;
+    invalid_editable.maximum_bytes = 0;
+    if (zig_vstgui_editor_create_components(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        nullptr, 0, &invalid_editable, 1, &progress, 1, {}
+    )) return 9;
+    auto invalid_progress = progress;
+    invalid_progress.maximum_refresh_hz = 61;
+    if (zig_vstgui_editor_create_components(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        nullptr, 0, &editable, 1, &invalid_progress, 1, {}
+    )) return 10;
+    return 0;
+}
+
 }
 
 int main() {
@@ -2127,5 +2258,6 @@ int main() {
     if (const int result = testPianoKeyboard(); result != 0) return 240 + result;
     if (const int result = testStepSequencer(); result != 0) return 250 + result;
     if (const int result = testFileDrop(); result != 0) return 270 + result;
+    if (const int result = testEditableLabelsAndProgress(); result != 0) return 290 + result;
     return 0;
 }

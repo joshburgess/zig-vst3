@@ -9,6 +9,7 @@
 #include "zig_vstgui_step_sequencer.h"
 #include "zig_vstgui_file_drop.h"
 #include "zig_vstgui_theme.h"
+#include "zig_vstgui_text_progress.h"
 #include "zig_vstgui_xy_pad.h"
 
 #include "pluginterfaces/base/keycodes.h"
@@ -76,6 +77,33 @@ int32_t acceptIndex(void*, uint32_t, uint32_t) { return 0; }
 int32_t rejectDrop(void*, uint32_t, const char* const*, uint32_t) { return -1; }
 int32_t acceptAction(void*, uint32_t, uint32_t) { return 0; }
 int32_t rejectAction(void*, uint32_t, uint32_t) { return -1; }
+
+struct TextProgressVisualState {
+    std::string text {"Studio Plate"};
+    bool reject {false};
+    ZigVstguiProgressSnapshot progress {};
+};
+
+int32_t storeVisualText(void* userdata, uint32_t, const char* text) {
+    auto* state = static_cast<TextProgressVisualState*>(userdata);
+    if (state->reject || !text) return -1;
+    state->text = text;
+    return 0;
+}
+
+int32_t loadVisualText(void* userdata, uint32_t, char* output, uint32_t capacity) {
+    auto* state = static_cast<TextProgressVisualState*>(userdata);
+    if (!output || state->text.size() >= capacity) return -1;
+    std::copy(state->text.begin(), state->text.end(), output);
+    output[state->text.size()] = 0;
+    return static_cast<int32_t>(state->text.size());
+}
+
+int32_t loadVisualProgress(void* userdata, uint32_t, ZigVstguiProgressSnapshot* output) {
+    if (!userdata || !output) return -1;
+    *output = static_cast<TextProgressVisualState*>(userdata)->progress;
+    return 0;
+}
 
 VSTGUI::SharedPointer<VSTGUI::CBitmap> render(const Snapshot& snapshot) {
     return VSTGUI::renderBitmapOffscreen(
@@ -727,6 +755,65 @@ Snapshot actionButtons() {
     };
 }
 
+Snapshot editableLabelsAndProgress() {
+    return {
+        "editable-labels-progress.png",
+        720,
+        180,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 720, 180)));
+            container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            const ZigVstguiEditableLabelDescription editable {
+                1, "IR Name", "Impulse response name", "Name this impulse response",
+                "Enter an IR name", "Studio Plate", 48, 1,
+            };
+            TextProgressVisualState accepted_state;
+            TextProgressVisualState rejected_state;
+            rejected_state.reject = true;
+            ZigVstguiCallbacks accepted_callbacks {};
+            accepted_callbacks.userdata = &accepted_state;
+            accepted_callbacks.store_editor_text = storeVisualText;
+            accepted_callbacks.load_editor_text = loadVisualText;
+            ZigVstguiCallbacks rejected_callbacks = accepted_callbacks;
+            rejected_callbacks.userdata = &rejected_state;
+            ZigVstgui::EditableLabelControl labels[2];
+            labels[0].build(container, editable, accepted_callbacks, styles);
+            labels[1].build(container, editable, rejected_callbacks, styles);
+            labels[0].setBounds(VSTGUI::CRect(8, 8, 96, 40), VSTGUI::CRect(104, 8, 344, 40),
+                VSTGUI::CRect(104, 40, 344, 64));
+            labels[1].setBounds(VSTGUI::CRect(368, 8, 456, 40), VSTGUI::CRect(464, 8, 712, 40),
+                VSTGUI::CRect(464, 40, 712, 64));
+            labels[1].accessibilityNode().perform(ZigVstgui::AccessibilityAction::set_value, 0.0, "");
+
+            const ZigVstguiProgressIndicatorDescription progress {
+                1, "Import", "Impulse response import progress", "Choose an IR to begin",
+                "Importing IR", "IR ready", "Import failed", 20,
+            };
+            TextProgressVisualState progress_states[4];
+            progress_states[0].progress = {ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_IDLE, 0.0, 1};
+            progress_states[1].progress = {ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_RUNNING, 0.42, 2};
+            progress_states[2].progress = {ZIG_VSTGUI_PROGRESS_INDETERMINATE, ZIG_VSTGUI_PROGRESS_RUNNING, 0.0, 3};
+            progress_states[3].progress = {ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_FAILED, 0.67, 4};
+            ZigVstgui::AccessibilityNode nodes[4];
+            ZigVstgui::ProgressView* views[4] {};
+            for (uint32_t index = 0; index < 4; ++index) {
+                ZigVstguiCallbacks callbacks {};
+                callbacks.userdata = &progress_states[index];
+                callbacks.load_progress = loadVisualProgress;
+                const double left = 8.0 + index * 178.0;
+                views[index] = new ZigVstgui::ProgressView(
+                    VSTGUI::CRect(left, 92, left + 168, 140), progress, callbacks, styles, &nodes[index]);
+                views[index]->tick();
+                container->addView(views[index]);
+            }
+            container->drawRect(&context, container->getViewSize());
+            for (auto& label : labels) label.clear();
+        },
+    };
+}
+
 int runSnapshot(
     const Snapshot& snapshot,
     const std::filesystem::path& references,
@@ -918,6 +1005,27 @@ double benchmarkActionButtonDraw() {
     return average;
 }
 
+double benchmarkProgressDraw() {
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 72)));
+    container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+    const ZigVstguiProgressIndicatorDescription description {
+        1, "Import", "Import progress", "Waiting", "Importing", "Ready", "Failed", 20,
+    };
+    TextProgressVisualState state;
+    state.progress = {ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_RUNNING, 0.42, 1};
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.load_progress = loadVisualProgress;
+    ZigVstgui::AccessibilityNode accessibility;
+    auto* progress = new ZigVstgui::ProgressView(
+        VSTGUI::CRect(8, 16, 312, 56), description, callbacks, styles, &accessibility);
+    progress->tick();
+    container->addView(progress);
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(320, 72), 1.0);
+    return benchmarkDraw(container, offscreen);
+}
+
 double benchmarkSignalViewsDraw() {
     ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
     auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 640, 180)));
@@ -967,6 +1075,7 @@ int main(int argc, char** argv) {
         closedActionMenu(),
         actionMenus(),
         actionButtons(),
+        editableLabelsAndProgress(),
         pianoKeyboard(),
         stepSequencer(),
         fileDrops(),
@@ -982,15 +1091,17 @@ int main(int argc, char** argv) {
         const double step_sequencer_average = benchmarkStepSequencerDraw();
         const double file_drop_average = benchmarkFileDropDraw();
         const double action_button_average = benchmarkActionButtonDraw();
+        const double progress_average = benchmarkProgressDraw();
         const double signal_views_average = benchmarkSignalViewsDraw();
         std::fprintf(stderr, "visual regression warm render average: %.1f us\n", average);
         std::fprintf(stderr, "piano warm render average: %.1f us\n", piano_average);
         std::fprintf(stderr, "step sequencer warm render average: %.1f us\n", step_sequencer_average);
         std::fprintf(stderr, "file drop warm render average: %.1f us\n", file_drop_average);
         std::fprintf(stderr, "action button warm render average: %.1f us\n", action_button_average);
+        std::fprintf(stderr, "progress warm render average: %.1f us\n", progress_average);
         std::fprintf(stderr, "signal views warm render average: %.1f us\n", signal_views_average);
         if (average > 300.0 || piano_average > 300.0 || step_sequencer_average > 300.0 ||
-            file_drop_average > 300.0 || action_button_average > 300.0 ||
+            file_drop_average > 300.0 || action_button_average > 300.0 || progress_average > 300.0 ||
             signal_views_average > 300.0) result = std::max(result, 6);
     }
     VSTGUI::exit();

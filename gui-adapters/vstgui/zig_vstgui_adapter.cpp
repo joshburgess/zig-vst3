@@ -235,6 +235,46 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_widgets(
     uint32_t action_button_count,
     ZigVstguiSkinDescription skin
 ) {
+    return zig_vstgui_editor_create_components(
+        parameters, parameter_count, callbacks, meters, meter_count, meter_callbacks,
+        graphs, graph_count, graph_callbacks, xy_pads, xy_pad_count,
+        preset_browsers, preset_browser_count, action_menus, action_menu_count,
+        pianos, piano_count, step_sequencers, step_sequencer_count,
+        file_drops, file_drop_count, action_buttons, action_button_count,
+        nullptr, 0, nullptr, 0, skin
+    );
+}
+
+extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
+    const ZigVstguiXYPadDescription* xy_pads,
+    uint32_t xy_pad_count,
+    const ZigVstguiPresetBrowserDescription* preset_browsers,
+    uint32_t preset_browser_count,
+    const ZigVstguiActionMenuDescription* action_menus,
+    uint32_t action_menu_count,
+    const ZigVstguiPianoDescription* pianos,
+    uint32_t piano_count,
+    const ZigVstguiStepSequencerDescription* step_sequencers,
+    uint32_t step_sequencer_count,
+    const ZigVstguiFileDropDescription* file_drops,
+    uint32_t file_drop_count,
+    const ZigVstguiActionButtonDescription* action_buttons,
+    uint32_t action_button_count,
+    const ZigVstguiEditableLabelDescription* editable_labels,
+    uint32_t editable_label_count,
+    const ZigVstguiProgressIndicatorDescription* progress_indicators,
+    uint32_t progress_indicator_count,
+    ZigVstguiSkinDescription skin
+) {
     constexpr uint32_t style_mask = ZIG_VSTGUI_STYLE_BACKGROUND |
         ZIG_VSTGUI_STYLE_FOREGROUND |
         ZIG_VSTGUI_STYLE_BORDER |
@@ -364,6 +404,37 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_widgets(
             }
         }
     }
+    if ((!editable_labels && editable_label_count > 0) ||
+        editable_label_count > ZIG_VSTGUI_MAX_EDITABLE_LABELS ||
+        (editable_label_count > 0 && (!callbacks.store_editor_text || !callbacks.load_editor_text))) return nullptr;
+    for (uint32_t index = 0; index < editable_label_count; ++index) {
+        const auto& label = editable_labels[index];
+        if (label.field_id == 0 || !label.label || label.label[0] == 0 ||
+            !label.accessible_label || label.accessible_label[0] == 0 || !label.placeholder ||
+            !label.error_text || label.error_text[0] == 0 || !label.initial_text ||
+            label.maximum_bytes == 0 || label.maximum_bytes > 96 ||
+            std::char_traits<char>::length(label.initial_text) > label.maximum_bytes ||
+            (label.enabled != 0 && label.enabled != 1)) return nullptr;
+        for (uint32_t previous = 0; previous < index; ++previous) {
+            if (editable_labels[previous].field_id == label.field_id) return nullptr;
+        }
+    }
+    if ((!progress_indicators && progress_indicator_count > 0) ||
+        progress_indicator_count > ZIG_VSTGUI_MAX_PROGRESS_INDICATORS ||
+        (progress_indicator_count > 0 && !callbacks.load_progress)) return nullptr;
+    for (uint32_t index = 0; index < progress_indicator_count; ++index) {
+        const auto& progress = progress_indicators[index];
+        if (progress.source_id == 0 || !progress.label || progress.label[0] == 0 ||
+            !progress.accessible_label || progress.accessible_label[0] == 0 ||
+            !progress.idle_text || progress.idle_text[0] == 0 ||
+            !progress.running_text || progress.running_text[0] == 0 ||
+            !progress.complete_text || progress.complete_text[0] == 0 ||
+            !progress.failure_text || progress.failure_text[0] == 0 ||
+            progress.maximum_refresh_hz == 0 || progress.maximum_refresh_hz > 60) return nullptr;
+        for (uint32_t previous = 0; previous < index; ++previous) {
+            if (progress_indicators[previous].source_id == progress.source_id) return nullptr;
+        }
+    }
     for (uint32_t index = 0; index < graph_count; ++index) {
         const auto& graph = graphs[index];
         const bool editable = graph.point_capacity > 0;
@@ -460,7 +531,11 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_widgets(
         file_drops,
         file_drop_count,
         action_buttons,
-        action_button_count
+        action_button_count,
+        editable_labels,
+        editable_label_count,
+        progress_indicators,
+        progress_indicator_count
     );
     if (editor && !editor->valid()) {
         delete editor;

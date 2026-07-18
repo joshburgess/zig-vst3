@@ -86,6 +86,8 @@ pub const Callbacks = extern struct {
     import_files: *const fn (?*anyopaque, types.uint32, FileImportEntryPoint, [*]const [*:0]const u8, types.uint32) callconv(.c) types.int32,
     load_file_import: *const fn (?*anyopaque, types.uint32, *FileImportSnapshot) callconv(.c) types.int32,
     command_file_import: *const fn (?*anyopaque, types.uint32, FileImportCommand) callconv(.c) types.int32,
+    load_editor_text: *const fn (?*anyopaque, types.uint32, [*]u8, types.uint32) callconv(.c) types.int32,
+    load_progress: *const fn (?*anyopaque, types.uint32, *ProgressSnapshot) callconv(.c) types.int32,
 };
 
 pub const ParameterInfo = extern struct {
@@ -130,6 +132,8 @@ pub const max_pianos = 2;
 pub const max_step_sequencers = 2;
 pub const max_steps = 32;
 pub const max_action_buttons = 12;
+pub const max_editable_labels = 4;
+pub const max_progress_indicators = 4;
 pub const max_file_drops = 2;
 pub const max_drop_extensions = 8;
 pub const max_drop_files = 8;
@@ -212,6 +216,47 @@ pub const ActionButtonDescription = extern struct {
     role: ActionRole,
     icon: ActionIcon,
     enabled: types.int32,
+};
+
+pub const EditableLabelDescription = extern struct {
+    field_id: types.uint32,
+    label: [*:0]const u8,
+    accessible_label: [*:0]const u8,
+    placeholder: [*:0]const u8,
+    error_text: [*:0]const u8,
+    initial_text: [*:0]const u8,
+    maximum_bytes: types.uint32,
+    enabled: types.int32,
+};
+
+pub const ProgressMode = enum(c_int) {
+    determinate,
+    indeterminate,
+};
+
+pub const ProgressState = enum(c_int) {
+    idle,
+    running,
+    complete,
+    failed,
+};
+
+pub const ProgressSnapshot = extern struct {
+    mode: ProgressMode,
+    state: ProgressState,
+    value: f64,
+    generation: u64,
+};
+
+pub const ProgressIndicatorDescription = extern struct {
+    source_id: types.uint32,
+    label: [*:0]const u8,
+    accessible_label: [*:0]const u8,
+    idle_text: [*:0]const u8,
+    running_text: [*:0]const u8,
+    complete_text: [*:0]const u8,
+    failure_text: [*:0]const u8,
+    maximum_refresh_hz: types.uint32,
 };
 
 pub const PianoDescription = extern struct {
@@ -605,6 +650,36 @@ extern fn zig_vstgui_editor_create_widgets(
     types.uint32,
     SkinDescription,
 ) ?*Editor;
+extern fn zig_vstgui_editor_create_components(
+    [*]const ParameterDescription,
+    types.uint32,
+    Callbacks,
+    ?[*]const MeterDescription,
+    types.uint32,
+    MeterCallbacks,
+    ?[*]const GraphDescription,
+    types.uint32,
+    GraphCallbacks,
+    ?[*]const XYPadDescription,
+    types.uint32,
+    ?[*]const PresetBrowserDescription,
+    types.uint32,
+    ?[*]const ActionMenuDescription,
+    types.uint32,
+    ?[*]const PianoDescription,
+    types.uint32,
+    ?[*]const StepSequencerDescription,
+    types.uint32,
+    ?[*]const FileDropDescription,
+    types.uint32,
+    ?[*]const ActionButtonDescription,
+    types.uint32,
+    ?[*]const EditableLabelDescription,
+    types.uint32,
+    ?[*]const ProgressIndicatorDescription,
+    types.uint32,
+    SkinDescription,
+) ?*Editor;
 extern fn zig_vstgui_canvas_fill_rect(*Canvas, f64, f64, f64, f64, types.uint32) void;
 extern fn zig_vstgui_canvas_stroke_rect(*Canvas, f64, f64, f64, f64, types.uint32, f64) void;
 extern fn zig_vstgui_canvas_fill_ellipse(*Canvas, f64, f64, f64, f64, types.uint32) void;
@@ -785,6 +860,8 @@ pub fn create(
     step_sequencers: []const StepSequencerDescription,
     file_drops: []const FileDropDescription,
     action_buttons: []const ActionButtonDescription,
+    editable_labels: []const EditableLabelDescription,
+    progress_indicators: []const ProgressIndicatorDescription,
     skin: Skin,
     composition: Composition,
     callbacks: Callbacks,
@@ -802,6 +879,7 @@ pub fn create(
         preset_browsers.len > max_preset_browsers or action_menus.len > max_action_menus or pianos.len > max_pianos or
         step_sequencers.len > max_step_sequencers or
         file_drops.len > max_file_drops or action_buttons.len > max_action_buttons or
+        editable_labels.len > max_editable_labels or progress_indicators.len > max_progress_indicators or
         skin.assets.len > max_assets or composition.groups.len > max_groups)
     {
         if (telemetry_source) |source| source.release();
@@ -850,7 +928,7 @@ pub fn create(
         return null;
     };
     telemetry.* = .{ .source = telemetry_source, .controller_graph = controller_graph };
-    const editor = zig_vstgui_editor_create_widgets(
+    const editor = zig_vstgui_editor_create_components(
         &descriptions,
         @intCast(parameters.len),
         callbacks,
@@ -874,6 +952,10 @@ pub fn create(
         @intCast(file_drops.len),
         if (action_buttons.len == 0) null else action_buttons.ptr,
         @intCast(action_buttons.len),
+        if (editable_labels.len == 0) null else editable_labels.ptr,
+        @intCast(editable_labels.len),
+        if (progress_indicators.len == 0) null else progress_indicators.ptr,
+        @intCast(progress_indicators.len),
         .{
             .assets = if (skin.assets.len == 0) null else &assets,
             .asset_count = @intCast(skin.assets.len),

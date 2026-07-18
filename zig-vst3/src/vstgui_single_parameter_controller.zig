@@ -10,6 +10,7 @@ const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const vstgui_adapter_enabled = @import("zig-vst3-gui-options").vstgui_adapter_enabled;
 const gui_graph = @import("zig-vst3-plugin-core").gui_graph;
 const gui_file_drop = @import("zig-vst3-plugin-core").gui_file_drop;
+const gui_progress = @import("zig-vst3-plugin-core").gui_progress;
 const editor_state = @import("zig-vst3-plugin-core").editor_state;
 
 const ProtocolView = vst_plug_view.PlugView(4, struct {});
@@ -162,6 +163,77 @@ pub fn validateActionButtons(actions: []const ActionButton) ActionButtonError!vo
     }
 }
 
+pub const EditableLabel = struct {
+    field_id: u32,
+    label: [*:0]const u8,
+    accessible_label: [*:0]const u8,
+    placeholder: [*:0]const u8 = "",
+    error_text: [*:0]const u8 = "Value was not accepted",
+    maximum_bytes: u32 = editor_state.maximum_text_bytes,
+    enabled: bool = true,
+};
+
+pub const EditableLabelError = error{
+    InvalidFieldId,
+    EmptyLabel,
+    InvalidMaximumBytes,
+    DuplicateFieldId,
+};
+
+pub fn validateEditableLabels(labels: []const EditableLabel) EditableLabelError!void {
+    for (labels, 0..) |label, index| {
+        if (label.field_id == 0) return error.InvalidFieldId;
+        if (std.mem.span(label.label).len == 0 or std.mem.span(label.accessible_label).len == 0 or
+            std.mem.span(label.error_text).len == 0) return error.EmptyLabel;
+        if (label.maximum_bytes == 0 or label.maximum_bytes > editor_state.maximum_text_bytes) {
+            return error.InvalidMaximumBytes;
+        }
+        for (labels[0..index]) |previous| {
+            if (previous.field_id == label.field_id) return error.DuplicateFieldId;
+        }
+    }
+}
+
+pub const ProgressMode = gui_progress.Mode;
+pub const ProgressState = gui_progress.State;
+pub const ProgressSnapshot = gui_progress.Snapshot;
+
+pub const ProgressIndicator = struct {
+    source_id: u32,
+    label: [*:0]const u8,
+    accessible_label: [*:0]const u8,
+    idle_text: [*:0]const u8 = "Waiting",
+    running_text: [*:0]const u8 = "Working",
+    complete_text: [*:0]const u8 = "Complete",
+    failure_text: [*:0]const u8 = "Could not finish",
+    maximum_refresh_hz: u32 = 20,
+};
+
+pub const ProgressIndicatorError = error{
+    InvalidSourceId,
+    EmptyLabel,
+    InvalidRefreshRate,
+    DuplicateSourceId,
+};
+
+pub fn validateProgressIndicators(indicators: []const ProgressIndicator) ProgressIndicatorError!void {
+    for (indicators, 0..) |indicator, index| {
+        if (indicator.source_id == 0) return error.InvalidSourceId;
+        if (std.mem.span(indicator.label).len == 0 or std.mem.span(indicator.accessible_label).len == 0 or
+            std.mem.span(indicator.idle_text).len == 0 or std.mem.span(indicator.running_text).len == 0 or
+            std.mem.span(indicator.complete_text).len == 0 or std.mem.span(indicator.failure_text).len == 0)
+        {
+            return error.EmptyLabel;
+        }
+        if (indicator.maximum_refresh_hz == 0 or indicator.maximum_refresh_hz > 60) {
+            return error.InvalidRefreshRate;
+        }
+        for (indicators[0..index]) |previous| {
+            if (previous.source_id == indicator.source_id) return error.DuplicateSourceId;
+        }
+    }
+}
+
 pub const Piano = struct {
     title: [*:0]const u8 = "Keyboard",
     first_note: u8 = 48,
@@ -249,6 +321,8 @@ pub const EditorDescription = struct {
     preset_browsers: []const PresetBrowser = &.{},
     action_menus: []const ActionMenu = &.{},
     action_buttons: []const ActionButton = &.{},
+    editable_labels: []const EditableLabel = &.{},
+    progress_indicators: []const ProgressIndicator = &.{},
     pianos: []const Piano = &.{},
     step_sequencers: []const StepSequencer = &.{},
     file_importers: []const FileImporter = &.{},
@@ -302,6 +376,8 @@ pub fn createMultiViewWithSkin(
         &.{},
         &.{},
         &.{},
+        &.{},
+        &.{},
         skin,
         .{},
     );
@@ -329,6 +405,8 @@ pub fn createEditor(
         description.preset_browsers,
         description.action_menus,
         description.action_buttons,
+        description.editable_labels,
+        description.progress_indicators,
         description.pianos,
         description.step_sequencers,
         file_importers,
@@ -348,6 +426,8 @@ fn createConfiguredView(
     preset_browsers: []const PresetBrowser,
     action_menus: []const ActionMenu,
     action_buttons: []const ActionButton,
+    editable_labels: []const EditableLabel,
+    progress_indicators: []const ProgressIndicator,
     pianos: []const Piano,
     step_sequencers: []const StepSequencer,
     file_importers: []const FileImporter,
@@ -374,6 +454,8 @@ fn createConfiguredView(
             preset_browsers.len > vstgui_editor_view.max_preset_browsers or
             action_menus.len > vstgui_editor_view.max_action_menus or
             action_buttons.len > vstgui_editor_view.max_action_buttons or
+            editable_labels.len > vstgui_editor_view.max_editable_labels or
+            progress_indicators.len > vstgui_editor_view.max_progress_indicators or
             pianos.len > vstgui_editor_view.max_pianos or
             step_sequencers.len > vstgui_editor_view.max_step_sequencers) return null;
         if (file_importers.len > vstgui_editor_view.max_file_drops) return null;
@@ -387,6 +469,14 @@ fn createConfiguredView(
             if (action_buttons.len > 0) return null;
         }
         validateActionButtons(action_buttons) catch return null;
+        if (comptime !Controller.hasEditorState) {
+            if (editable_labels.len > 0) return null;
+        }
+        if (comptime !Controller.hasGuiProgressSource) {
+            if (progress_indicators.len > 0) return null;
+        }
+        validateEditableLabels(editable_labels) catch return null;
+        validateProgressIndicators(progress_indicators) catch return null;
         if (comptime !Controller.hasFileDropHandler) {
             if (file_importers.len > 0) return null;
         }
@@ -725,11 +815,46 @@ fn createConfiguredView(
                 .enabled = @intFromBool(action.enabled),
             };
         }
+        var editable_label_descriptions: [vstgui_editor_view.max_editable_labels]vstgui_editor_view.EditableLabelDescription = undefined;
+        var editable_label_text: [vstgui_editor_view.max_editable_labels][editor_state.maximum_text_bytes + 1]u8 = @splat(@splat(0));
+        if (comptime Controller.hasEditorState) {
+            for (editable_labels, 0..) |label, index| {
+                const stored = switch (Controller.editorState(controller).get(label.field_id) orelse return null) {
+                    .text => |value| value,
+                    else => return null,
+                };
+                if (stored.len > label.maximum_bytes) return null;
+                @memcpy(editable_label_text[index][0..stored.len], stored.slice());
+                editable_label_descriptions[index] = .{
+                    .field_id = label.field_id,
+                    .label = label.label,
+                    .accessible_label = label.accessible_label,
+                    .placeholder = label.placeholder,
+                    .error_text = label.error_text,
+                    .initial_text = @ptrCast(&editable_label_text[index]),
+                    .maximum_bytes = label.maximum_bytes,
+                    .enabled = @intFromBool(label.enabled),
+                };
+            }
+        }
+        var progress_descriptions: [vstgui_editor_view.max_progress_indicators]vstgui_editor_view.ProgressIndicatorDescription = undefined;
+        for (progress_indicators, 0..) |progress, index| {
+            progress_descriptions[index] = .{
+                .source_id = progress.source_id,
+                .label = progress.label,
+                .accessible_label = progress.accessible_label,
+                .idle_text = progress.idle_text,
+                .running_text = progress.running_text,
+                .complete_text = progress.complete_text,
+                .failure_text = progress.failure_text,
+                .maximum_refresh_hz = progress.maximum_refresh_hz,
+            };
+        }
         const telemetry_source = if (comptime @hasDecl(Controller, "retainGuiTelemetry"))
             Controller.retainGuiTelemetry(controller)
         else
             null;
-        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], menu_descriptions[0..action_menus.len], piano_descriptions[0..pianos.len], step_sequencer_descriptions[0..step_sequencers.len], file_drop_descriptions[0..file_importers.len], action_button_descriptions[0..action_buttons.len], skin, composition, .{
+        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], menu_descriptions[0..action_menus.len], piano_descriptions[0..pianos.len], step_sequencer_descriptions[0..step_sequencers.len], file_drop_descriptions[0..file_importers.len], action_button_descriptions[0..action_buttons.len], editable_label_descriptions[0..editable_labels.len], progress_descriptions[0..progress_indicators.len], skin, composition, .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
             .perform_edit = Bridge.performEdit,
@@ -749,6 +874,8 @@ fn createConfiguredView(
             .import_files = Bridge.importFiles,
             .load_file_import = Bridge.loadFileImport,
             .command_file_import = Bridge.commandFileImport,
+            .load_editor_text = Bridge.loadEditorText,
+            .load_progress = Bridge.loadProgress,
         }, .{
             .userdata = controller,
             .subscribe = Bridge.subscribe,
@@ -836,9 +963,48 @@ fn NativeBridge(comptime Controller: type) type {
 
         fn storeEditorText(userdata: ?*anyopaque, field_id: u32, text: [*:0]const u8) callconv(.c) types.int32 {
             if (comptime !Controller.hasEditorState) return -1;
-            const value = editor_state.Text.init(std.mem.span(text)) catch return -1;
             const iface = controller(userdata) orelse return -1;
+            const bytes = std.mem.span(text);
+            if (Controller.validateEditorText(iface, field_id, bytes) != types.kResultOk) return -1;
+            const value = editor_state.Text.init(bytes) catch return -1;
             Controller.editorState(iface).set(field_id, .{ .text = value }) catch return -1;
+            return 0;
+        }
+
+        fn loadEditorText(
+            userdata: ?*anyopaque,
+            field_id: u32,
+            output: [*]u8,
+            capacity: u32,
+        ) callconv(.c) types.int32 {
+            if (comptime !Controller.hasEditorState) return -1;
+            if (capacity == 0) return -1;
+            const iface = controller(userdata) orelse return -1;
+            const value = Controller.editorState(iface).get(field_id) orelse return -1;
+            const stored = switch (value) {
+                .text => |text| text,
+                else => return -1,
+            };
+            if (stored.len >= capacity) return -1;
+            @memcpy(output[0..stored.len], stored.slice());
+            output[stored.len] = 0;
+            return @intCast(stored.len);
+        }
+
+        fn loadProgress(
+            userdata: ?*anyopaque,
+            source_id: u32,
+            output: *vstgui_editor_view.ProgressSnapshot,
+        ) callconv(.c) types.int32 {
+            const iface = controller(userdata) orelse return -1;
+            const snapshot = Controller.loadGuiProgress(iface, source_id) orelse return -1;
+            snapshot.validate() catch return -1;
+            output.* = .{
+                .mode = @enumFromInt(@intFromEnum(snapshot.mode)),
+                .state = @enumFromInt(@intFromEnum(snapshot.state)),
+                .value = snapshot.value,
+                .generation = snapshot.generation,
+            };
             return 0;
         }
 
@@ -1009,5 +1175,52 @@ test "action buttons require one dominant action and safe destructive grouping" 
     try std.testing.expectError(error.UnsafeDestructiveGrouping, validateActionButtons(&.{
         .{ .group_id = 1, .id = 1, .label = "Apply", .accessible_label = "Apply", .role = .primary },
         .{ .group_id = 1, .id = 2, .label = "Clear", .accessible_label = "Clear", .role = .destructive, .confirmation_label = "Confirm Clear" },
+    }));
+}
+
+test "editable labels enforce bounded persistent text fields" {
+    try validateEditableLabels(&.{.{
+        .field_id = 1,
+        .label = "IR Name",
+        .accessible_label = "Impulse response name",
+        .maximum_bytes = 64,
+    }});
+    try std.testing.expectError(error.InvalidFieldId, validateEditableLabels(&.{.{
+        .field_id = 0,
+        .label = "Name",
+        .accessible_label = "Name",
+    }}));
+    try std.testing.expectError(error.InvalidMaximumBytes, validateEditableLabels(&.{.{
+        .field_id = 1,
+        .label = "Name",
+        .accessible_label = "Name",
+        .maximum_bytes = editor_state.maximum_text_bytes + 1,
+    }}));
+    try std.testing.expectError(error.DuplicateFieldId, validateEditableLabels(&.{
+        .{ .field_id = 1, .label = "One", .accessible_label = "One" },
+        .{ .field_id = 1, .label = "Two", .accessible_label = "Two" },
+    }));
+}
+
+test "progress indicators require bounded unique sources and readable states" {
+    try validateProgressIndicators(&.{.{
+        .source_id = 1,
+        .label = "Import",
+        .accessible_label = "Import progress",
+    }});
+    try std.testing.expectError(error.InvalidSourceId, validateProgressIndicators(&.{.{
+        .source_id = 0,
+        .label = "Import",
+        .accessible_label = "Import progress",
+    }}));
+    try std.testing.expectError(error.InvalidRefreshRate, validateProgressIndicators(&.{.{
+        .source_id = 1,
+        .label = "Import",
+        .accessible_label = "Import progress",
+        .maximum_refresh_hz = 61,
+    }}));
+    try std.testing.expectError(error.DuplicateSourceId, validateProgressIndicators(&.{
+        .{ .source_id = 1, .label = "One", .accessible_label = "One" },
+        .{ .source_id = 1, .label = "Two", .accessible_label = "Two" },
     }));
 }

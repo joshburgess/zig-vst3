@@ -99,6 +99,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         pub const hasFileImportStatus = @hasDecl(Config, "loadFileImport");
         pub const hasFileImportCommandHandler = @hasDecl(Config, "performFileImportCommand");
         pub const hasGuiGraphSource = @hasDecl(Config, "loadGuiGraph");
+        pub const hasGuiProgressSource = @hasDecl(Config, "loadGuiProgress");
         pub const EditorStateType = EditorState;
         pub const ControllerStateType = ControllerState;
         const editor_state_migrations: []const plug_core.editor_state.Migration = if (@hasDecl(Config, "editor_state_migrations"))
@@ -269,6 +270,25 @@ pub fn ReflectedEditController(comptime Config: type) type {
         ) usize {
             if (comptime @hasDecl(Config, "loadGuiGraph")) return Config.loadGuiGraph(iface, source_id, output);
             return 0;
+        }
+
+        pub fn validateEditorText(
+            iface: *ivsteditcontroller.IEditController,
+            field_id: u32,
+            text: []const u8,
+        ) types.tresult {
+            if (comptime @hasDecl(Config, "validateEditorText")) {
+                return Config.validateEditorText(iface, field_id, text);
+            }
+            return types.kResultOk;
+        }
+
+        pub fn loadGuiProgress(
+            iface: *ivsteditcontroller.IEditController,
+            source_id: u32,
+        ) ?plug_core.gui_progress.Snapshot {
+            if (comptime @hasDecl(Config, "loadGuiProgress")) return Config.loadGuiProgress(iface, source_id);
+            return null;
         }
 
         pub fn sendGuiNote(

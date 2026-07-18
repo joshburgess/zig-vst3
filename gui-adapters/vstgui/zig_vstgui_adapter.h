@@ -74,6 +74,8 @@ typedef struct ZigVstguiCallbacks {
     int32_t (*import_files)(void* userdata, uint32_t drop_id, ZigVstguiFileImportEntryPoint entry_point, const char* const* paths, uint32_t count);
     int32_t (*load_file_import)(void* userdata, uint32_t drop_id, ZigVstguiFileImportSnapshot* snapshot);
     int32_t (*command_file_import)(void* userdata, uint32_t drop_id, ZigVstguiFileImportCommand command);
+    int32_t (*load_editor_text)(void* userdata, uint32_t field_id, char* output, uint32_t capacity);
+    int32_t (*load_progress)(void* userdata, uint32_t source_id, struct ZigVstguiProgressSnapshot* snapshot);
 } ZigVstguiCallbacks;
 
 typedef struct ZigVstguiParameterInfo {
@@ -193,6 +195,51 @@ typedef struct ZigVstguiActionButtonDescription {
 } ZigVstguiActionButtonDescription;
 
 enum { ZIG_VSTGUI_MAX_ACTION_BUTTONS = 12 };
+
+typedef struct ZigVstguiEditableLabelDescription {
+    uint32_t field_id;
+    const char* label;
+    const char* accessible_label;
+    const char* placeholder;
+    const char* error_text;
+    const char* initial_text;
+    uint32_t maximum_bytes;
+    int32_t enabled;
+} ZigVstguiEditableLabelDescription;
+
+enum { ZIG_VSTGUI_MAX_EDITABLE_LABELS = 4 };
+
+typedef enum ZigVstguiProgressMode {
+    ZIG_VSTGUI_PROGRESS_DETERMINATE = 0,
+    ZIG_VSTGUI_PROGRESS_INDETERMINATE = 1
+} ZigVstguiProgressMode;
+
+typedef enum ZigVstguiProgressState {
+    ZIG_VSTGUI_PROGRESS_IDLE = 0,
+    ZIG_VSTGUI_PROGRESS_RUNNING = 1,
+    ZIG_VSTGUI_PROGRESS_COMPLETE = 2,
+    ZIG_VSTGUI_PROGRESS_FAILED = 3
+} ZigVstguiProgressState;
+
+typedef struct ZigVstguiProgressSnapshot {
+    ZigVstguiProgressMode mode;
+    ZigVstguiProgressState state;
+    double value;
+    uint64_t generation;
+} ZigVstguiProgressSnapshot;
+
+typedef struct ZigVstguiProgressIndicatorDescription {
+    uint32_t source_id;
+    const char* label;
+    const char* accessible_label;
+    const char* idle_text;
+    const char* running_text;
+    const char* complete_text;
+    const char* failure_text;
+    uint32_t maximum_refresh_hz;
+} ZigVstguiProgressIndicatorDescription;
+
+enum { ZIG_VSTGUI_MAX_PROGRESS_INDICATORS = 4 };
 
 typedef struct ZigVstguiPianoDescription {
     const char* title;
@@ -606,6 +653,37 @@ ZigVstguiEditor* zig_vstgui_editor_create_widgets(
     uint32_t file_drop_count,
     const ZigVstguiActionButtonDescription* action_buttons,
     uint32_t action_button_count,
+    ZigVstguiSkinDescription skin
+);
+
+ZigVstguiEditor* zig_vstgui_editor_create_components(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
+    const ZigVstguiXYPadDescription* xy_pads,
+    uint32_t xy_pad_count,
+    const ZigVstguiPresetBrowserDescription* preset_browsers,
+    uint32_t preset_browser_count,
+    const ZigVstguiActionMenuDescription* action_menus,
+    uint32_t action_menu_count,
+    const ZigVstguiPianoDescription* pianos,
+    uint32_t piano_count,
+    const ZigVstguiStepSequencerDescription* step_sequencers,
+    uint32_t step_sequencer_count,
+    const ZigVstguiFileDropDescription* file_drops,
+    uint32_t file_drop_count,
+    const ZigVstguiActionButtonDescription* action_buttons,
+    uint32_t action_button_count,
+    const ZigVstguiEditableLabelDescription* editable_labels,
+    uint32_t editable_label_count,
+    const ZigVstguiProgressIndicatorDescription* progress_indicators,
+    uint32_t progress_indicator_count,
     ZigVstguiSkinDescription skin
 );
 void zig_vstgui_canvas_fill_rect(

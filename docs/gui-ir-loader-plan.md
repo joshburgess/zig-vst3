@@ -65,8 +65,8 @@ Completion evidence:
 
 - [x] Add action buttons with primary, secondary, and destructive roles.
 - [x] Add icon buttons with required accessible labels and optional visible text.
-- [ ] Add editable labels with commit, cancel, validation, and external-update behavior.
-- [ ] Add determinate and indeterminate progress indicators with textual semantics.
+- [x] Add editable labels with commit, cancel, validation, and external-update behavior.
+- [x] Add determinate and indeterminate progress indicators with textual semantics.
 - [ ] Add bounded scrollable and zoomable viewports.
 - [x] Add toolbar and grouped-action layout declarations.
 - [x] Add confirmation and recoverable-error presentation without modal dependence where an inline choice is sufficient.
@@ -88,7 +88,16 @@ Action-control completion evidence:
 - Deterministic visual coverage records primary, destructive confirmation, and recoverable failure states in `action-buttons.png`. The strictness 10 run measured a 40.2 us warm action-button render average against the 300 us budget.
 - `zig build test --summary all` passed 54 of 54 steps and 3,631 of 3,631 tests. Raw ABI checks passed 107 of 107 steps, example validation passed 59 of 59 steps, and all eleven bundles passed their 47 Steinberg validator tests.
 - Linux and Windows cross-target bundle matrices each passed 35 of 35 steps. Serialized pluginval strictness 5 and strictness 10 matrices each passed 48 of 48 steps across all eleven plugin bundles.
-- Editable labels, progress indicators, and bounded viewports remain open. Milestone 3 is not complete until those independent primitives meet the same exit criteria.
+
+Editable-label and progress completion evidence:
+
+- `EditableLabel` binds a bounded text field to typed editor state. A controller may reject a commit through `validateEditorText`; rejection keeps the last accepted value, presents inline text, and updates the semantic description. Escape restores the accepted value. External state is refreshed when the editor regains focus or its controller values refresh.
+- `ProgressIndicator` reads a validated `ProgressSnapshot` at a declared rate from 1 to 60 Hz. Determinate states expose a bounded value and percentage. Indeterminate, idle, complete, and failed states use explicit text, so meaning does not depend on color or motion.
+- The gallery and IR loader use the same declarations and callbacks through the public `vstgui` API. The IR loader maps its bounded importer status and generation directly into the generic progress contract.
+- Native interaction tests cover accepted and rejected edits, external text refresh, determinate and indeterminate progress, completion, invalid declarations, and component construction. The macOS bridge test verifies native text-field and progress-indicator roles, value editing, and the determinate range.
+- `editable-labels-progress.png` records accepted text, inline validation feedback, and idle, determinate, indeterminate, and failed progress states. The strictness 10 gate measured the progress view at 13.5 us against the 300 us budget.
+- Post-change validation passed 54 of 54 Zig build steps and 3,646 of 3,646 tests. Raw ABI and Steinberg validation passed 152 of 152 steps. Linux and Windows cross-target bundle matrices each passed 35 of 35 steps. Serialized pluginval strictness 5 and strictness 10 matrices each passed 48 of 48 steps across all eleven bundles.
+- Bounded viewports remain open. Milestone 3 is not complete until the viewport contract meets the same lifecycle, interaction, accessibility, visual, and performance criteria.
 
 ## Milestone 4: IR Waveform Editor
 
@@ -148,5 +157,6 @@ Validation evidence for the bounded convolution milestone:
 API status after this milestone:
 
 - `FileImporter` is supported. The gallery, channel strip, and IR loader use the same public declaration and lifecycle contract. `FileDrop` remains a compatibility alias for existing source.
+- `EditableLabel`, `ProgressIndicator`, and `ProgressSnapshot` are supported. The gallery and IR loader share their public declarations, bounded callbacks, native semantics, and lifecycle behavior.
 - `DecodedAudioFileImporter`, decoded-audio controller transport, processor lifecycle hooks, and partitioned convolution remain experimental. The decoded importer and transport have only one production consumer.
 - Existing graph, parameter attachment, and composition declarations keep their current status. This milestone does not promote them.

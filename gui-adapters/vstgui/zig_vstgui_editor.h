@@ -15,6 +15,7 @@
 #include "zig_vstgui_preset_browser.h"
 #include "zig_vstgui_step_sequencer.h"
 #include "zig_vstgui_theme.h"
+#include "zig_vstgui_text_progress.h"
 #include "zig_vstgui_xy_pad.h"
 
 #include "vstgui/lib/cframe.h"
@@ -51,7 +52,11 @@ struct ZigVstguiEditor {
         const ZigVstguiFileDropDescription* file_drops = nullptr,
         uint32_t file_drop_count = 0,
         const ZigVstguiActionButtonDescription* action_buttons = nullptr,
-        uint32_t action_button_count = 0
+        uint32_t action_button_count = 0,
+        const ZigVstguiEditableLabelDescription* editable_labels = nullptr,
+        uint32_t editable_label_count = 0,
+        const ZigVstguiProgressIndicatorDescription* progress_indicators = nullptr,
+        uint32_t progress_indicator_count = 0
     );
     ~ZigVstguiEditor();
 
@@ -75,6 +80,8 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode* stepSequencerAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* fileDropAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* actionButtonAccessibility(uint32_t index) const;
+    const ZigVstgui::AccessibilityNode* editableLabelAccessibility(uint32_t index) const;
+    const ZigVstgui::AccessibilityNode* progressAccessibility(uint32_t index) const;
     bool tickMeter(uint32_t index, double elapsed_ms);
     bool refreshGraph(uint32_t index);
     uint32_t graphPointCount(uint32_t index) const;
@@ -104,6 +111,8 @@ private:
     void layoutStepSequencers(double left, double top, double right, double bottom);
     void layoutFileDrops(double left, double top, double right, double bottom);
     void layoutActionButtons(double left, double top, double right, double bottom);
+    void layoutEditableLabels(double left, double top, double right, double bottom);
+    void layoutProgressIndicators(double left, double top, double right, double bottom);
     void reportMetrics() const;
     bool focusNext(bool reverse);
     const ZigVstgui::ThemeResolver& stylesForParameter(uint32_t index) const;
@@ -195,6 +204,23 @@ private:
     std::array<std::string, ZIG_VSTGUI_MAX_ACTION_BUTTONS> action_button_confirmation_labels;
     std::array<std::string, ZIG_VSTGUI_MAX_ACTION_BUTTONS> action_button_failure_labels;
     uint32_t action_button_count {0};
+    std::array<std::unique_ptr<ZigVstgui::EditableLabelControl>, ZIG_VSTGUI_MAX_EDITABLE_LABELS> editable_label_controls;
+    std::array<ZigVstguiEditableLabelDescription, ZIG_VSTGUI_MAX_EDITABLE_LABELS> editable_label_descriptions {};
+    std::array<std::string, ZIG_VSTGUI_MAX_EDITABLE_LABELS> editable_label_labels;
+    std::array<std::string, ZIG_VSTGUI_MAX_EDITABLE_LABELS> editable_label_accessible_labels;
+    std::array<std::string, ZIG_VSTGUI_MAX_EDITABLE_LABELS> editable_label_placeholders;
+    std::array<std::string, ZIG_VSTGUI_MAX_EDITABLE_LABELS> editable_label_errors;
+    std::array<std::string, ZIG_VSTGUI_MAX_EDITABLE_LABELS> editable_label_initial_text;
+    uint32_t editable_label_count {0};
+    std::array<std::unique_ptr<ZigVstgui::ProgressIndicatorControl>, ZIG_VSTGUI_MAX_PROGRESS_INDICATORS> progress_controls;
+    std::array<ZigVstguiProgressIndicatorDescription, ZIG_VSTGUI_MAX_PROGRESS_INDICATORS> progress_descriptions {};
+    std::array<std::string, ZIG_VSTGUI_MAX_PROGRESS_INDICATORS> progress_labels;
+    std::array<std::string, ZIG_VSTGUI_MAX_PROGRESS_INDICATORS> progress_accessible_labels;
+    std::array<std::string, ZIG_VSTGUI_MAX_PROGRESS_INDICATORS> progress_idle_text;
+    std::array<std::string, ZIG_VSTGUI_MAX_PROGRESS_INDICATORS> progress_running_text;
+    std::array<std::string, ZIG_VSTGUI_MAX_PROGRESS_INDICATORS> progress_complete_text;
+    std::array<std::string, ZIG_VSTGUI_MAX_PROGRESS_INDICATORS> progress_failure_text;
+    uint32_t progress_indicator_count {0};
     ZigVstgui::AssetStore asset_store;
     ZigVstguiDrawingCallbacks drawing_callbacks {};
     ZigVstgui::ResizeControl resize_control;
