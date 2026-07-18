@@ -3,10 +3,12 @@
 #include "zig_vstgui_assets.h"
 #include "zig_vstgui_editor.h"
 #include "zig_vstgui_fonts.h"
+#include "zig_vstgui_graphs.h"
 #include "zig_vstgui_layout.h"
 #include "zig_vstgui_meters.h"
 
 #include "pluginterfaces/base/keycodes.h"
+#include "vstgui/lib/vstguiinit.h"
 
 #include <cmath>
 #include <cstdint>
@@ -26,6 +28,9 @@ struct CallbackState {
     int32_t context_x {0};
     int32_t context_y {0};
     double meter_values[4] {0.0, 0.0, 0.0, 0.0};
+    ZigVstguiGraphPoint graph_points[4] {};
+    uint32_t graph_count {0};
+    uint32_t graph_load_count {0};
 };
 
 struct AccessibilityObserverState {
@@ -71,6 +76,14 @@ int32_t showContextMenu(void* userdata, uint32_t parameter_id, int32_t x, int32_
 double loadMeter(void* userdata, uint32_t source_id) {
     auto* state = static_cast<CallbackState*>(userdata);
     return source_id < 4 ? state->meter_values[source_id] : 0.0;
+}
+
+uint32_t loadGraph(void* userdata, uint32_t, ZigVstguiGraphPoint* output, uint32_t capacity) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->graph_load_count += 1;
+    const uint32_t count = std::min(state->graph_count, capacity);
+    for (uint32_t index = 0; index < count; ++index) output[index] = state->graph_points[index];
+    return count;
 }
 
 bool closeEnough(double left, double right) {
@@ -538,7 +551,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 5) return 1;
+    if (zig_vstgui_adapter_version() != 6) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -555,6 +568,34 @@ int testMeterAbi() {
             ZIG_VSTGUI_MAX_METERS + 1,
             {}
         )) return 3;
+    if (zig_vstgui_editor_create_configured(&parameter, 1, {}, nullptr, 0, {}, nullptr, 1, {}, {})) return 4;
+    const ZigVstguiGraphPoint points[] = {{-2.0, -2.0}, {0.0, 0.0}, {2.0, 2.0}};
+    const ZigVstguiGraphDescription graph {
+        "Transfer",
+        ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION,
+        ZIG_VSTGUI_GRAPH_PRIMARY,
+        {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Input"},
+        {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Output"},
+        points,
+        3,
+        0,
+        0,
+        0,
+    };
+    const ZigVstguiGroupDescription group {"Graph", 0, 1, 0, 0, {}, 0, 1};
+    ZigVstguiSkinDescription skin {};
+    skin.groups = &group;
+    skin.group_count = 1;
+    auto* editor = zig_vstgui_editor_create_configured(&parameter, 1, {}, nullptr, 0, {}, &graph, 1, {}, skin);
+    if (!editor || editor->graphPointCount(0) != 3) return 5;
+    const auto* semantics = editor->graphAccessibility(0);
+    if (!semantics || semantics->role() != ZigVstgui::AccessibilityRole::graph ||
+        semantics->name() != "Transfer" || !semantics->state().read_only) return 6;
+    if (!editor->resize(640, 480) || !editor->setScale(2.0)) return 7;
+    zig_vstgui_editor_destroy(editor);
+    auto invalid_graph = graph;
+    invalid_graph.point_count = ZIG_VSTGUI_MAX_GRAPH_POINTS + 1;
+    if (zig_vstgui_editor_create_configured(&parameter, 1, {}, nullptr, 0, {}, &invalid_graph, 1, {}, {})) return 8;
     return 0;
 }
 
@@ -745,6 +786,79 @@ int testMeterBallistics() {
     return 0;
 }
 
+int testGraphs() {
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    ZigVstgui::AccessibilityNode accessibility;
+    const ZigVstguiGraphPoint clipped[] = {{-2.0, 2.0}, {0.0, 0.0}, {2.0, -2.0}};
+    ZigVstguiGraphDescription static_graph {
+        "Transfer",
+        ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION,
+        ZIG_VSTGUI_GRAPH_PRIMARY,
+        {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Input"},
+        {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Output"},
+        clipped,
+        3,
+        0,
+        0,
+        0,
+    };
+    ZigVstgui::GraphView graph(VSTGUI::CRect(0, 0, 200, 100), static_graph, styles, &accessibility);
+    if (!graph.valid() || graph.pointCount() != 3) return 1;
+
+    auto invalid_axis = static_graph;
+    invalid_axis.x_axis.maximum = invalid_axis.x_axis.minimum;
+    ZigVstgui::GraphView invalid_range(VSTGUI::CRect(), invalid_axis, styles, &accessibility);
+    if (invalid_range.valid()) return 2;
+    auto invalid_points = static_graph;
+    const ZigVstguiGraphPoint nan_point[] = {{0.0, std::nan("")}};
+    invalid_points.points = nan_point;
+    invalid_points.point_count = 1;
+    ZigVstgui::GraphView invalid_data(VSTGUI::CRect(), invalid_points, styles, &accessibility);
+    if (invalid_data.valid()) return 3;
+    auto empty_graph = static_graph;
+    empty_graph.points = nullptr;
+    empty_graph.point_count = 0;
+    ZigVstgui::GraphView empty(VSTGUI::CRect(), empty_graph, styles, &accessibility);
+    if (!empty.valid() || empty.pointCount() != 0) return 4;
+
+    CallbackState state;
+    state.graph_points[0] = {-1.0, -0.5};
+    state.graph_points[1] = {1.0, 0.5};
+    state.graph_count = 2;
+    auto dynamic_graph = empty_graph;
+    dynamic_graph.title = "Waveform";
+    dynamic_graph.kind = ZIG_VSTGUI_GRAPH_WAVEFORM;
+    dynamic_graph.dynamic = 1;
+    dynamic_graph.maximum_refresh_hz = 30;
+    ZigVstgui::GraphControl control;
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
+    if (!control.build(container, dynamic_graph, {&state, loadGraph}, styles)) return 5;
+    if (control.graphView()->pointCount() != 2 || state.graph_load_count != 1) return 6;
+    if (control.running()) return 7;
+    control.start();
+    if (!control.running()) return 8;
+    control.stop();
+    if (control.running()) return 9;
+    state.graph_points[1] = {1.0, 0.75};
+    if (!control.refresh() || control.graphView()->pointCount() != 2) return 10;
+    state.graph_points[0].y = std::nan("");
+    if (control.refresh() || control.graphView()->pointCount() != 2) return 11;
+    control.clear();
+
+    ZigVstgui::GraphControl static_control;
+    auto static_container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
+    if (!static_control.build(static_container, static_graph, {}, styles)) return 12;
+    static_control.start();
+    if (static_control.running()) return 13;
+    static_control.clear();
+
+    dynamic_graph.maximum_refresh_hz = 61;
+    ZigVstgui::GraphControl invalid_rate;
+    auto invalid_container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
+    if (invalid_rate.build(invalid_container, dynamic_graph, {&state, loadGraph}, styles)) return 14;
+    return 0;
+}
+
 }
 
 int main() {
@@ -759,6 +873,10 @@ int main() {
     if (const int result = testLayoutSolvers(); result != 0) return 110 + result;
     if (const int result = testGalleryLayoutExtents(); result != 0) return 130 + result;
     if (const int result = testMeterBallistics(); result != 0) return 150 + result;
+    VSTGUI::init(nullptr);
+    const int graph_result = testGraphs();
+    VSTGUI::exit();
+    if (graph_result != 0) return 160 + graph_result;
     if (const int result = testMeterAbi(); result != 0) return 170 + result;
     if (const int result = testAssetsAndFonts(); result != 0) return 190 + result;
     return 0;

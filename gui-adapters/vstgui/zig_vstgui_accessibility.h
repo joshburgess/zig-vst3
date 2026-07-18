@@ -13,6 +13,7 @@ enum class AccessibilityRole {
     choice,
     text_field,
     meter,
+    graph,
     group,
 };
 

@@ -28,6 +28,7 @@ add_library(zig_vstgui_adapter STATIC
     zig_vstgui_drawing.cpp
     zig_vstgui_editor.cpp
     zig_vstgui_fonts.cpp
+    zig_vstgui_graphs.cpp
     zig_vstgui_layout.cpp
     zig_vstgui_meters.cpp
     zig_vstgui_platform.cpp

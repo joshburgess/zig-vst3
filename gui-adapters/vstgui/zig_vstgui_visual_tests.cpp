@@ -1,5 +1,6 @@
 #include "zig_vstgui_assets.h"
 #include "zig_vstgui_controls.h"
+#include "zig_vstgui_graphs.h"
 #include "zig_vstgui_meters.h"
 #include "zig_vstgui_theme.h"
 
@@ -282,6 +283,38 @@ Snapshot productionControls() {
     };
 }
 
+Snapshot graphs() {
+    return {
+        "graphs.png",
+        480,
+        180,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+            context.setFillColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            context.drawRect(VSTGUI::CRect(0, 0, 480, 180), VSTGUI::kDrawFilled);
+            const ZigVstguiGraphPoint transfer[] = {
+                {-2.0, -1.1}, {-1.0, -0.9}, {-0.5, -0.6}, {0.0, 0.0}, {0.5, 0.6}, {1.0, 0.9}, {2.0, 1.1},
+            };
+            const ZigVstguiGraphPoint waveform[] = {
+                {-1.0, 0.0}, {-0.75, 0.8}, {-0.5, 0.0}, {-0.25, -0.8}, {0.0, 0.0}, {0.25, 0.8}, {0.5, 0.0}, {0.75, -0.8}, {1.0, 0.0},
+            };
+            ZigVstgui::AccessibilityNode nodes[3];
+            const ZigVstguiGraphDescription descriptions[] = {
+                {"Transfer", ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION, ZIG_VSTGUI_GRAPH_PRIMARY, {-2.0, 2.0, ZIG_VSTGUI_GRAPH_LINEAR, "Input"}, {-1.2, 1.2, ZIG_VSTGUI_GRAPH_LINEAR, "Output"}, transfer, 7, 0, 0, 0},
+                {"Waveform", ZIG_VSTGUI_GRAPH_WAVEFORM, ZIG_VSTGUI_GRAPH_MODULATION, {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Time"}, {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"}, waveform, 9, 0, 0, 0},
+                {"Empty", ZIG_VSTGUI_GRAPH_SPECTRUM, ZIG_VSTGUI_GRAPH_SECONDARY, {20.0, 20000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"}, {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"}, nullptr, 0, 0, 0, 0},
+            };
+            ZigVstgui::GraphView views[] = {
+                {VSTGUI::CRect(8, 8, 152, 172), descriptions[0], styles, &nodes[0]},
+                {VSTGUI::CRect(168, 8, 312, 172), descriptions[1], styles, &nodes[1]},
+                {VSTGUI::CRect(328, 8, 472, 172), descriptions[2], styles, &nodes[2]},
+            };
+            for (auto& view : views) view.draw(&context);
+        },
+    };
+}
+
 int runSnapshot(
     const Snapshot& snapshot,
     const std::filesystem::path& references,
@@ -307,7 +340,7 @@ int runSnapshot(
 
 double benchmarkWarmDraw() {
     ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
-    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 160, 64)));
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 64)));
     container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
     auto* slider = new ZigVstgui::GainSlider(
         VSTGUI::CRect(8, 18, 104, 46),
@@ -335,7 +368,18 @@ double benchmarkWarmDraw() {
     );
     meter->tick(0.0);
     container->addView(meter);
-    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(160, 64), 1.0);
+    const ZigVstguiGraphPoint graph_points[] = {{-1.0, -0.8}, {0.0, 0.0}, {1.0, 0.8}};
+    const ZigVstguiGraphDescription graph_description {
+        "Graph", ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION, ZIG_VSTGUI_GRAPH_PRIMARY,
+        {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Input"},
+        {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Output"},
+        graph_points, 3, 0, 0, 0,
+    };
+    ZigVstgui::AccessibilityNode graph_accessibility;
+    container->addView(new ZigVstgui::GraphView(
+        VSTGUI::CRect(160, 6, 232, 58), graph_description, styles, &graph_accessibility
+    ));
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(240, 64), 1.0);
     if (!offscreen) return 1e9;
     offscreen->beginDraw();
     container->drawRect(offscreen, container->getViewSize());
@@ -367,6 +411,7 @@ int main(int argc, char** argv) {
         controlStates(2.0),
         metersAndAssets(),
         productionControls(),
+        graphs(),
     };
     int result = 0;
     for (const auto& snapshot : snapshots) {

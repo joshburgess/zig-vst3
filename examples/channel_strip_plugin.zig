@@ -44,6 +44,16 @@ const ChannelStripDefinition = struct {
 pub const Spec = core.plugin.PluginSpec(ChannelStripDefinition);
 pub const channel_parameter_set = Spec.ParameterSet.init(.{});
 
+const transfer_points = blk: {
+    @setEvalBranchQuota(4_000);
+    var points: [33]vst3.vstgui.GraphPoint = undefined;
+    for (&points, 0..) |*point, index| {
+        const x = -2.0 + 4.0 * @as(f64, @floatFromInt(index)) / @as(f64, @floatFromInt(points.len - 1));
+        point.* = .{ .x = x, .y = std.math.tanh(x * 1.5) / std.math.tanh(@as(f64, 1.5)) };
+    }
+    break :blk points;
+};
+
 const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const controller_name = "ChannelStripController";
     pub const Params = Spec.Params;
@@ -84,6 +94,13 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .{ .title = "Stereo", .kind = .stereo, .first_source_id = 0, .second_source_id = 1 },
                 .{ .title = "Reduction", .kind = .gain_reduction, .first_source_id = 2 },
             },
+            .graphs = &.{.{
+                .title = "Console Transfer",
+                .kind = .transfer_function,
+                .x_axis = .{ .minimum = -2.0, .maximum = 2.0, .label = "Input" },
+                .y_axis = .{ .minimum = -1.2, .maximum = 1.2, .label = "Output" },
+                .points = &transfer_points,
+            }},
             .skin = .{
                 .theme = .alternate,
                 .layout = .compact_strip,
@@ -109,6 +126,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                         .first_meter = 0,
                         .meter_count = 2,
                         .style = .{ .accent = 0x35866aff, .border = 0x719789ff },
+                        .graph_count = 1,
                     },
                 },
             },

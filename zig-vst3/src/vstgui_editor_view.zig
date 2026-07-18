@@ -6,6 +6,7 @@ const types = @import("pluginterfaces/base/types.zig");
 const vst_plug_view = @import("vst_plug_view.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const gui_telemetry_source = @import("gui_telemetry_source.zig");
+const gui_graph = @import("zig-vst3-plugin-core").gui_graph;
 const vstgui_adapter_enabled = @import("zig-vst3-gui-options").vstgui_adapter_enabled;
 
 const Editor = opaque {};
@@ -62,6 +63,8 @@ pub const ParameterValue = extern struct {
 
 pub const max_parameters = 64;
 pub const max_meters = 8;
+pub const max_graphs = 8;
+pub const max_graph_points = 256;
 pub const max_meter_sources = 16;
 pub const max_assets = 16;
 pub const max_groups = 8;
@@ -82,6 +85,51 @@ pub const MeterDescription = extern struct {
 const MeterCallbacks = extern struct {
     userdata: ?*anyopaque,
     load: *const fn (?*anyopaque, types.uint32) callconv(.c) f64,
+};
+
+pub const GraphScale = enum(c_int) {
+    linear,
+    logarithmic,
+    decibels,
+};
+
+pub const GraphKind = enum(c_int) {
+    transfer_function,
+    envelope,
+    waveform,
+    spectrum,
+};
+
+pub const GraphStyleRole = enum(c_int) {
+    primary,
+    secondary,
+    modulation,
+    warning,
+};
+
+pub const GraphAxis = extern struct {
+    minimum: f64,
+    maximum: f64,
+    scale: GraphScale = .linear,
+    label: [*:0]const u8 = "",
+};
+
+pub const GraphDescription = extern struct {
+    title: [*:0]const u8,
+    kind: GraphKind,
+    style: GraphStyleRole,
+    x_axis: GraphAxis,
+    y_axis: GraphAxis,
+    points: ?[*]const gui_graph.Point,
+    point_count: types.uint32,
+    source_id: types.uint32,
+    dynamic: types.int32,
+    maximum_refresh_hz: types.uint32,
+};
+
+const GraphCallbacks = extern struct {
+    userdata: ?*anyopaque,
+    load: *const fn (?*anyopaque, types.uint32, [*]gui_graph.Point, types.uint32) callconv(.c) types.uint32,
 };
 
 pub const AssetFormat = enum(c_int) {
@@ -174,6 +222,8 @@ pub const Group = struct {
     first_meter: types.uint32 = 0,
     meter_count: types.uint32 = 0,
     style: StyleOverride = .{},
+    first_graph: types.uint32 = 0,
+    graph_count: types.uint32 = 0,
 };
 
 pub const Composition = struct {
@@ -218,6 +268,8 @@ const GroupDescription = extern struct {
     first_meter: types.uint32,
     meter_count: types.uint32,
     style: NativeStyleOverride,
+    first_graph: types.uint32,
+    graph_count: types.uint32,
 };
 
 pub const ObserverCallbacks = struct {
@@ -238,6 +290,18 @@ extern fn zig_vstgui_editor_create_with_skin(
     ?[*]const MeterDescription,
     types.uint32,
     MeterCallbacks,
+    SkinDescription,
+) ?*Editor;
+extern fn zig_vstgui_editor_create_configured(
+    [*]const ParameterDescription,
+    types.uint32,
+    Callbacks,
+    ?[*]const MeterDescription,
+    types.uint32,
+    MeterCallbacks,
+    ?[*]const GraphDescription,
+    types.uint32,
+    GraphCallbacks,
     SkinDescription,
 ) ?*Editor;
 extern fn zig_vstgui_canvas_fill_rect(*Canvas, f64, f64, f64, f64, types.uint32) void;
@@ -402,6 +466,7 @@ pub fn create(
     controller: *ivsteditcontroller.IEditController,
     parameters: []const ParameterInfoBinding,
     meters: []const MeterDescription,
+    graphs: []const GraphDescription,
     skin: Skin,
     composition: Composition,
     callbacks: Callbacks,
@@ -414,7 +479,7 @@ pub fn create(
         return null;
     }
     if (parameters.len == 0 or parameters.len > max_parameters or
-        meters.len > max_meters or skin.assets.len > max_assets or composition.groups.len > max_groups)
+        meters.len > max_meters or graphs.len > max_graphs or skin.assets.len > max_assets or composition.groups.len > max_groups)
     {
         if (telemetry_source) |source| source.release();
         return null;
@@ -451,6 +516,8 @@ pub fn create(
             .first_meter = group.first_meter,
             .meter_count = group.meter_count,
             .style = nativeStyle(group.style),
+            .first_graph = group.first_graph,
+            .graph_count = group.graph_count,
         };
     }
     const telemetry = std.heap.page_allocator.create(TelemetryState) catch {
@@ -458,13 +525,16 @@ pub fn create(
         return null;
     };
     telemetry.* = .{ .source = telemetry_source };
-    const editor = zig_vstgui_editor_create_with_skin(
+    const editor = zig_vstgui_editor_create_configured(
         &descriptions,
         @intCast(parameters.len),
         callbacks,
         if (meters.len == 0) null else meters.ptr,
         @intCast(meters.len),
         .{ .userdata = telemetry, .load = loadMeter },
+        if (graphs.len == 0) null else graphs.ptr,
+        @intCast(graphs.len),
+        .{ .userdata = telemetry, .load = loadGraph },
         .{
             .assets = if (skin.assets.len == 0) null else &assets,
             .asset_count = @intCast(skin.assets.len),
@@ -551,6 +621,17 @@ fn loadMeter(userdata: ?*anyopaque, source_id: types.uint32) callconv(.c) f64 {
     const state: *TelemetryState = @ptrCast(@alignCast(userdata orelse return 0.0));
     const source = state.source orelse return 0.0;
     return source.load(source_id);
+}
+
+fn loadGraph(
+    userdata: ?*anyopaque,
+    source_id: types.uint32,
+    output: [*]gui_graph.Point,
+    capacity: types.uint32,
+) callconv(.c) types.uint32 {
+    const state: *TelemetryState = @ptrCast(@alignCast(userdata orelse return 0));
+    const source = state.source orelse return 0;
+    return @intCast(source.loadGraph(source_id, output[0..capacity]));
 }
 
 fn requestEditorResize(userdata: ?*anyopaque, width: types.uint32, height: types.uint32) callconv(.c) types.int32 {

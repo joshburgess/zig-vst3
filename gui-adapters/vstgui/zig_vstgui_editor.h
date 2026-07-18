@@ -5,6 +5,7 @@
 #include "zig_vstgui_assets.h"
 #include "zig_vstgui_component.h"
 #include "zig_vstgui_controls.h"
+#include "zig_vstgui_graphs.h"
 #include "zig_vstgui_meters.h"
 #include "zig_vstgui_theme.h"
 
@@ -23,7 +24,10 @@ struct ZigVstguiEditor {
         const ZigVstguiMeterDescription* meters = nullptr,
         uint32_t meter_count = 0,
         ZigVstguiMeterCallbacks meter_callbacks = {},
-        ZigVstguiSkinDescription skin = {}
+        ZigVstguiSkinDescription skin = {},
+        const ZigVstguiGraphDescription* graphs = nullptr,
+        uint32_t graph_count = 0,
+        ZigVstguiGraphCallbacks graph_callbacks = {}
     );
     ~ZigVstguiEditor();
 
@@ -39,7 +43,10 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode* parameterAccessibility(uint32_t parameter_id, bool exact_value) const;
     const ZigVstgui::AccessibilityNode& resizeAccessibility() const;
     const ZigVstgui::AccessibilityNode* meterAccessibility(uint32_t index) const;
+    const ZigVstgui::AccessibilityNode* graphAccessibility(uint32_t index) const;
     bool tickMeter(uint32_t index, double elapsed_ms);
+    bool refreshGraph(uint32_t index);
+    uint32_t graphPointCount(uint32_t index) const;
     double meterLevel(uint32_t index, uint32_t channel) const;
     double meterPeak(uint32_t index, uint32_t channel) const;
     bool resetMeterPeaks(uint32_t index);
@@ -61,6 +68,7 @@ private:
     bool focusNext(bool reverse);
     const ZigVstgui::ThemeResolver& stylesForParameter(uint32_t index) const;
     const ZigVstgui::ThemeResolver& stylesForMeter(uint32_t index) const;
+    const ZigVstgui::ThemeResolver& stylesForGraph(uint32_t index) const;
     ZigVstgui::ParameterControl* findControl(uint32_t parameter_id);
     const ZigVstgui::ParameterControl* findControl(uint32_t parameter_id) const;
 
@@ -88,6 +96,14 @@ private:
     std::array<ZigVstguiMeterDescription, ZIG_VSTGUI_MAX_METERS> meter_descriptions {};
     uint32_t meter_count {0};
     ZigVstguiMeterCallbacks meter_callbacks {};
+    std::array<std::unique_ptr<ZigVstgui::GraphControl>, ZIG_VSTGUI_MAX_GRAPHS> graph_controls;
+    std::array<ZigVstguiGraphDescription, ZIG_VSTGUI_MAX_GRAPHS> graph_descriptions {};
+    std::array<std::string, ZIG_VSTGUI_MAX_GRAPHS> graph_titles;
+    std::array<std::string, ZIG_VSTGUI_MAX_GRAPHS> graph_x_labels;
+    std::array<std::string, ZIG_VSTGUI_MAX_GRAPHS> graph_y_labels;
+    std::array<std::vector<ZigVstguiGraphPoint>, ZIG_VSTGUI_MAX_GRAPHS> graph_static_points;
+    uint32_t graph_count {0};
+    ZigVstguiGraphCallbacks graph_callbacks {};
     ZigVstgui::AssetStore asset_store;
     ZigVstguiDrawingCallbacks drawing_callbacks {};
     ZigVstgui::ResizeControl resize_control;

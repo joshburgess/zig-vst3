@@ -71,6 +71,59 @@ typedef struct ZigVstguiMeterCallbacks {
 
 enum { ZIG_VSTGUI_MAX_METERS = 8 };
 
+typedef struct ZigVstguiGraphPoint {
+    double x;
+    double y;
+} ZigVstguiGraphPoint;
+
+typedef enum ZigVstguiGraphScale {
+    ZIG_VSTGUI_GRAPH_LINEAR = 0,
+    ZIG_VSTGUI_GRAPH_LOGARITHMIC = 1,
+    ZIG_VSTGUI_GRAPH_DECIBELS = 2
+} ZigVstguiGraphScale;
+
+typedef enum ZigVstguiGraphKind {
+    ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION = 0,
+    ZIG_VSTGUI_GRAPH_ENVELOPE = 1,
+    ZIG_VSTGUI_GRAPH_WAVEFORM = 2,
+    ZIG_VSTGUI_GRAPH_SPECTRUM = 3
+} ZigVstguiGraphKind;
+
+typedef enum ZigVstguiGraphStyleRole {
+    ZIG_VSTGUI_GRAPH_PRIMARY = 0,
+    ZIG_VSTGUI_GRAPH_SECONDARY = 1,
+    ZIG_VSTGUI_GRAPH_MODULATION = 2,
+    ZIG_VSTGUI_GRAPH_WARNING = 3
+} ZigVstguiGraphStyleRole;
+
+typedef struct ZigVstguiGraphAxis {
+    double minimum;
+    double maximum;
+    ZigVstguiGraphScale scale;
+    const char* label;
+} ZigVstguiGraphAxis;
+
+typedef struct ZigVstguiGraphDescription {
+    const char* title;
+    ZigVstguiGraphKind kind;
+    ZigVstguiGraphStyleRole style;
+    ZigVstguiGraphAxis x_axis;
+    ZigVstguiGraphAxis y_axis;
+    const ZigVstguiGraphPoint* points;
+    uint32_t point_count;
+    uint32_t source_id;
+    int32_t dynamic;
+    uint32_t maximum_refresh_hz;
+} ZigVstguiGraphDescription;
+
+typedef struct ZigVstguiGraphCallbacks {
+    void* userdata;
+    uint32_t (*load)(void* userdata, uint32_t source_id, ZigVstguiGraphPoint* output, uint32_t capacity);
+} ZigVstguiGraphCallbacks;
+
+enum { ZIG_VSTGUI_MAX_GRAPHS = 8 };
+enum { ZIG_VSTGUI_MAX_GRAPH_POINTS = 256 };
+
 typedef enum ZigVstguiAssetFormat {
     ZIG_VSTGUI_ASSET_PNG = 0,
     ZIG_VSTGUI_ASSET_SVG = 1
@@ -171,6 +224,8 @@ typedef struct ZigVstguiGroupDescription {
     uint32_t first_meter;
     uint32_t meter_count;
     ZigVstguiStyleOverride style;
+    uint32_t first_graph;
+    uint32_t graph_count;
 } ZigVstguiGroupDescription;
 
 typedef struct ZigVstguiSkinDescription {
@@ -220,6 +275,18 @@ ZigVstguiEditor* zig_vstgui_editor_create_with_skin(
     const ZigVstguiMeterDescription* meters,
     uint32_t meter_count,
     ZigVstguiMeterCallbacks meter_callbacks,
+    ZigVstguiSkinDescription skin
+);
+ZigVstguiEditor* zig_vstgui_editor_create_configured(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
     ZigVstguiSkinDescription skin
 );
 void zig_vstgui_canvas_fill_rect(

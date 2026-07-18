@@ -79,6 +79,15 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .{ .title = "Stereo", .kind = .stereo, .first_source_id = 1, .second_source_id = 2 },
                 .{ .title = "Reduction", .kind = .gain_reduction, .first_source_id = 3 },
             },
+            .graphs = &.{.{
+                .title = "Waveform",
+                .kind = .waveform,
+                .x_axis = .{ .minimum = -1.0, .maximum = 1.0, .label = "Time" },
+                .y_axis = .{ .minimum = -1.0, .maximum = 1.0, .label = "Level" },
+                .source_id = 0,
+                .dynamic = true,
+                .maximum_refresh_hz = 30,
+            }},
             .skin = .{
                 .assets = &.{
                     .{ .id = checkmark_asset_id, .data = checkmark_svg, .format = .svg, .scale = .contain },
@@ -97,7 +106,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .groups = &.{
                     .{ .title = "Continuous", .parameter_count = 1, .style = .{ .accent = 0x7ce8c5ff } },
                     .{ .title = "Discrete", .first_parameter = 1, .parameter_count = 3, .style = .{ .accent = 0xe8c77cff } },
-                    .{ .title = "Telemetry", .first_parameter = 4, .meter_count = 3, .style = .{ .accent = 0x7caee8ff } },
+                    .{ .title = "Telemetry", .first_parameter = 4, .meter_count = 3, .style = .{ .accent = 0x7caee8ff }, .graph_count = 1 },
                 },
             },
         });

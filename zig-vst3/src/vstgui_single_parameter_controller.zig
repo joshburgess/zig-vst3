@@ -8,6 +8,7 @@ const vst_plug_view = @import("vst_plug_view.zig");
 const vstgui_editor_view = @import("vstgui_editor_view.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const vstgui_adapter_enabled = @import("zig-vst3-gui-options").vstgui_adapter_enabled;
+const gui_graph = @import("zig-vst3-plugin-core").gui_graph;
 
 const ProtocolView = vst_plug_view.PlugView(4, struct {});
 
@@ -29,6 +30,30 @@ pub const Meter = struct {
     second_source_id: types.uint32 = 0,
 };
 
+pub const GraphPoint = gui_graph.Point;
+pub const GraphScale = vstgui_editor_view.GraphScale;
+pub const GraphKind = vstgui_editor_view.GraphKind;
+pub const GraphStyleRole = vstgui_editor_view.GraphStyleRole;
+
+pub const GraphAxis = struct {
+    minimum: f64,
+    maximum: f64,
+    scale: GraphScale = .linear,
+    label: [*:0]const u8 = "",
+};
+
+pub const Graph = struct {
+    title: [*:0]const u8,
+    kind: GraphKind,
+    style: GraphStyleRole = .primary,
+    x_axis: GraphAxis,
+    y_axis: GraphAxis,
+    points: []const GraphPoint = &.{},
+    source_id: types.uint32 = 0,
+    dynamic: bool = false,
+    maximum_refresh_hz: types.uint32 = 30,
+};
+
 pub const Asset = vstgui_editor_view.Asset;
 pub const AssetFormat = vstgui_editor_view.AssetFormat;
 pub const AssetScale = vstgui_editor_view.AssetScale;
@@ -48,6 +73,7 @@ pub const Composition = vstgui_editor_view.Composition;
 pub const EditorDescription = struct {
     parameters: []const Parameter,
     meters: []const Meter = &.{},
+    graphs: []const Graph = &.{},
     skin: Skin = .{},
     composition: Composition = .{},
 };
@@ -83,7 +109,7 @@ pub fn createMultiViewWithSkin(
     meters: []const Meter,
     skin: Skin,
 ) ?*iplugview.IPlugView {
-    return createConfiguredView(Controller, controller, name, parameters, meters, skin, .{});
+    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, skin, .{});
 }
 
 pub fn createEditor(
@@ -98,6 +124,7 @@ pub fn createEditor(
         name,
         description.parameters,
         description.meters,
+        description.graphs,
         description.skin,
         description.composition,
     );
@@ -109,6 +136,7 @@ fn createConfiguredView(
     name: types.FIDString,
     parameters: []const Parameter,
     meters: []const Meter,
+    graphs: []const Graph,
     skin: Skin,
     composition: Composition,
 ) ?*iplugview.IPlugView {
@@ -151,11 +179,40 @@ fn createConfiguredView(
                 .second_source_id = meter.second_source_id,
             };
         }
+        if (graphs.len > vstgui_editor_view.max_graphs) return null;
+        var graph_descriptions: [vstgui_editor_view.max_graphs]vstgui_editor_view.GraphDescription = undefined;
+        for (graphs, 0..) |graph, index| {
+            if (graph.points.len > vstgui_editor_view.max_graph_points or
+                graph.x_axis.maximum <= graph.x_axis.minimum or graph.y_axis.maximum <= graph.y_axis.minimum or
+                (graph.dynamic and (graph.maximum_refresh_hz == 0 or graph.maximum_refresh_hz > 60))) return null;
+            graph_descriptions[index] = .{
+                .title = graph.title,
+                .kind = graph.kind,
+                .style = graph.style,
+                .x_axis = .{
+                    .minimum = graph.x_axis.minimum,
+                    .maximum = graph.x_axis.maximum,
+                    .scale = graph.x_axis.scale,
+                    .label = graph.x_axis.label,
+                },
+                .y_axis = .{
+                    .minimum = graph.y_axis.minimum,
+                    .maximum = graph.y_axis.maximum,
+                    .scale = graph.y_axis.scale,
+                    .label = graph.y_axis.label,
+                },
+                .points = if (graph.points.len == 0) null else graph.points.ptr,
+                .point_count = @intCast(graph.points.len),
+                .source_id = graph.source_id,
+                .dynamic = @intFromBool(graph.dynamic),
+                .maximum_refresh_hz = graph.maximum_refresh_hz,
+            };
+        }
         const telemetry_source = if (comptime @hasDecl(Controller, "retainGuiTelemetry"))
             Controller.retainGuiTelemetry(controller)
         else
             null;
-        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], skin, composition, .{
+        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], skin, composition, .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
             .perform_edit = Bridge.performEdit,

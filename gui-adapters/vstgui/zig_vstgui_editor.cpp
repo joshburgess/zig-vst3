@@ -53,10 +53,15 @@ ZigVstguiEditor::ZigVstguiEditor(
     const ZigVstguiMeterDescription* meters,
     uint32_t value_meter_count,
     ZigVstguiMeterCallbacks value_meter_callbacks,
-    ZigVstguiSkinDescription skin
+    ZigVstguiSkinDescription skin,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t value_graph_count,
+    ZigVstguiGraphCallbacks value_graph_callbacks
 )
 : meter_count(value_meter_count),
   meter_callbacks(value_meter_callbacks),
+  graph_count(value_graph_count),
+  graph_callbacks(value_graph_callbacks),
   drawing_callbacks(skin.drawing),
   theme_resolver(selectedTheme(skin.theme)),
   theme_kind(skin.theme),
@@ -97,14 +102,32 @@ ZigVstguiEditor::ZigVstguiEditor(
         meter_controls[index].reset(new (std::nothrow) ZigVstgui::MeterControl());
         if (!meter_controls[index]) return;
     }
+    for (uint32_t index = 0; index < graph_count; ++index) {
+        if (!graphs[index].title) return;
+        graph_titles[index] = graphs[index].title;
+        graph_x_labels[index] = graphs[index].x_axis.label ? graphs[index].x_axis.label : "";
+        graph_y_labels[index] = graphs[index].y_axis.label ? graphs[index].y_axis.label : "";
+        graph_descriptions[index] = graphs[index];
+        graph_descriptions[index].title = graph_titles[index].c_str();
+        graph_descriptions[index].x_axis.label = graph_x_labels[index].c_str();
+        graph_descriptions[index].y_axis.label = graph_y_labels[index].c_str();
+        if (!graphs[index].dynamic && graphs[index].point_count > 0) {
+            graph_static_points[index].assign(graphs[index].points, graphs[index].points + graphs[index].point_count);
+            graph_descriptions[index].points = graph_static_points[index].data();
+        }
+        graph_controls[index].reset(new (std::nothrow) ZigVstgui::GraphControl());
+        if (!graph_controls[index]) return;
+    }
     uint32_t next_parameter = 0;
     uint32_t next_meter = 0;
+    uint32_t next_graph = 0;
     for (uint32_t index = 0; index < skin.group_count; ++index) {
         const auto& group = skin.groups[index];
-        if (!group.title || (group.parameter_count == 0 && group.meter_count == 0)) return;
-        if (group.first_parameter != next_parameter || group.first_meter != next_meter) return;
+        if (!group.title || (group.parameter_count == 0 && group.meter_count == 0 && group.graph_count == 0)) return;
+        if (group.first_parameter != next_parameter || group.first_meter != next_meter || group.first_graph != next_graph) return;
         if (group.parameter_count > parameter_count - next_parameter) return;
         if (group.meter_count > meter_count - next_meter) return;
+        if (group.graph_count > graph_count - next_graph) return;
         group_titles[index] = group.title;
         group_descriptions[index] = group;
         group_descriptions[index].title = group_titles[index].c_str();
@@ -123,9 +146,10 @@ ZigVstguiEditor::ZigVstguiEditor(
         ZigVstgui::applyFontDescription(skin.fonts, *resolver);
         next_parameter += group.parameter_count;
         next_meter += group.meter_count;
+        next_graph += group.graph_count;
         group_count += 1;
     }
-    if (group_count > 0 && (next_parameter != parameter_count || next_meter != meter_count)) return;
+    if (group_count > 0 && (next_parameter != parameter_count || next_meter != meter_count || next_graph != graph_count)) return;
     buildFrame();
 }
 
@@ -146,15 +170,18 @@ bool ZigVstguiEditor::open(void* parent, ZigVstguiPlatform platform) {
     if (!ZigVstgui::openFrame(frame, parent, platform, plug_frame, wayland_host)) return false;
     metrics.open_count += 1;
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->start();
+    for (uint32_t index = 0; index < graph_count; ++index) graph_controls[index]->start();
     return true;
 }
 
 void ZigVstguiEditor::close() {
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->stop();
+    for (uint32_t index = 0; index < graph_count; ++index) graph_controls[index]->stop();
     if (!frame || !frame->getPlatformFrame()) return;
     for (uint32_t index = 0; index < parameter_count; ++index) parameter_controls[index]->clear();
     resize_control.clear();
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->clear();
+    for (uint32_t index = 0; index < graph_count; ++index) graph_controls[index]->clear();
     title_component.clear();
     help_component.clear();
     for (uint32_t index = 0; index < group_count; ++index) group_components[index].clear();
@@ -233,8 +260,21 @@ const ZigVstgui::AccessibilityNode* ZigVstguiEditor::meterAccessibility(uint32_t
     return index < meter_count ? &meter_controls[index]->accessibilityNode() : nullptr;
 }
 
+const ZigVstgui::AccessibilityNode* ZigVstguiEditor::graphAccessibility(uint32_t index) const {
+    return index < graph_count ? &graph_controls[index]->accessibilityNode() : nullptr;
+}
+
 bool ZigVstguiEditor::tickMeter(uint32_t index, double elapsed_ms) {
     return index < meter_count && meter_controls[index]->tick(elapsed_ms);
+}
+
+bool ZigVstguiEditor::refreshGraph(uint32_t index) {
+    return index < graph_count && graph_controls[index]->refresh();
+}
+
+uint32_t ZigVstguiEditor::graphPointCount(uint32_t index) const {
+    if (index >= graph_count || !graph_controls[index]->graphView()) return 0;
+    return graph_controls[index]->graphView()->pointCount();
 }
 
 double ZigVstguiEditor::meterLevel(uint32_t index, uint32_t channel) const {
@@ -441,6 +481,13 @@ void ZigVstguiEditor::buildFrame() {
             stylesForMeter(index)
         );
     }
+    for (uint32_t index = 0; index < graph_count; ++index) {
+        if (!graph_controls[index]->build(
+                content,
+                graph_descriptions[index],
+                graph_callbacks,
+                stylesForGraph(index))) return;
+    }
     resize_control.build(content, theme_resolver);
     resize_control.setSize(width, height);
     layout();
@@ -491,7 +538,8 @@ void ZigVstguiEditor::layout() {
             group_components[group_index].setBounds(VSTGUI::CRect(left, top, group_right, top + 28.0));
             const auto& group = group_descriptions[group_index];
             const double content_top = top + 28.0 + theme.spacing.small;
-            const double parameter_fraction = group.meter_count > 0 && group.parameter_count > 0 ? 0.58 : 1.0;
+            const bool has_visuals = group.meter_count > 0 || group.graph_count > 0;
+            const double parameter_fraction = has_visuals && group.parameter_count > 0 ? 0.45 : 1.0;
             const double parameter_bottom = content_top + (bottom - content_top) * parameter_fraction;
             const double control_gap = theme.spacing.small;
             const double control_height = group.parameter_count > 0
@@ -530,8 +578,25 @@ void ZigVstguiEditor::layout() {
                 );
                 parameter_controls[index]->setBounds(cells[0], cells[1], cells[2]);
             }
+            double visuals_top = group.parameter_count > 0 ? parameter_bottom + theme.spacing.small : content_top;
+            if (group.graph_count > 0) {
+                const double graph_bottom = group.meter_count > 0
+                    ? visuals_top + (bottom - visuals_top) * 0.58
+                    : bottom;
+                const double graph_gap = theme.spacing.small;
+                const double graph_width = (cell_width - graph_gap * (group.graph_count - 1)) / group.graph_count;
+                for (uint32_t offset = 0; offset < group.graph_count; ++offset) {
+                    const uint32_t index = group.first_graph + offset;
+                    const double graph_left = left + offset * (graph_width + graph_gap);
+                    graph_controls[index]->setBounds(
+                        VSTGUI::CRect(graph_left, visuals_top, graph_left + graph_width, visuals_top + 18.0),
+                        VSTGUI::CRect(graph_left, visuals_top + 18.0, graph_left + graph_width, graph_bottom)
+                    );
+                }
+                visuals_top = graph_bottom + theme.spacing.small;
+            }
             if (group.meter_count > 0) {
-                const double meters_top = group.parameter_count > 0 ? parameter_bottom + theme.spacing.small : content_top;
+                const double meters_top = visuals_top;
                 const double meter_gap = theme.spacing.small;
                 const double meter_width = (cell_width - meter_gap * (group.meter_count - 1)) / group.meter_count;
                 for (uint32_t offset = 0; offset < group.meter_count; ++offset) {
@@ -558,7 +623,9 @@ void ZigVstguiEditor::layout() {
         help_component.setVisible(false);
         title_component.setBounds(VSTGUI::CRect(margin, 16, right, 52));
         const double footer_top = static_cast<double>(height) - margin - theme.control_metrics.compact_control_height;
-        const double parameter_bottom = meter_count > 0
+        const double parameter_bottom = graph_count > 0
+            ? std::max(84.0, footer_top * 0.48)
+            : meter_count > 0
             ? std::max(84.0, footer_top * 0.62)
             : footer_top - theme.spacing.medium;
         const double row_height = std::max(32.0, std::min(52.0, (parameter_bottom - 68.0) / parameter_count));
@@ -596,8 +663,24 @@ void ZigVstguiEditor::layout() {
             parameter_controls[index]->setBounds(cells[0], cells[1], cells[2]);
             row_top += row_height + theme.spacing.small;
         }
+        double visuals_top = parameter_bottom + theme.spacing.small;
+        if (graph_count > 0) {
+            const double graph_bottom = meter_count > 0
+                ? visuals_top + (footer_top - visuals_top) * 0.56
+                : footer_top - theme.spacing.medium;
+            const double gap = theme.spacing.small;
+            const double graph_width = std::max(1.0, (right - margin - gap * (graph_count - 1)) / graph_count);
+            for (uint32_t index = 0; index < graph_count; ++index) {
+                const double left = margin + index * (graph_width + gap);
+                graph_controls[index]->setBounds(
+                    VSTGUI::CRect(left, visuals_top, left + graph_width, visuals_top + 18.0),
+                    VSTGUI::CRect(left, visuals_top + 18.0, left + graph_width, graph_bottom)
+                );
+            }
+            visuals_top = graph_bottom + theme.spacing.small;
+        }
         if (meter_count > 0) {
-            const double meters_top = parameter_bottom + theme.spacing.small;
+            const double meters_top = visuals_top;
             const double meters_bottom = footer_top - theme.spacing.medium;
             const double gap = theme.spacing.small;
             const double meter_width = std::max(1.0, (right - margin - gap * (meter_count - 1)) / meter_count);
@@ -646,7 +729,10 @@ void ZigVstguiEditor::layout() {
         title_component.setVisible(expanded);
         help_component.setVisible(expanded);
         const double controls_top = expanded ? 92.0 : theme.spacing.medium;
-        const double controls_bottom = static_cast<double>(height) - margin - theme.control_metrics.compact_control_height - theme.spacing.medium;
+        const double available_bottom = static_cast<double>(height) - margin - theme.control_metrics.compact_control_height - theme.spacing.medium;
+        const double controls_bottom = (graph_count > 0 || meter_count > 0)
+            ? controls_top + (available_bottom - controls_top) * (graph_count > 0 ? 0.45 : 0.62)
+            : available_bottom;
         const double row_gap = mode == ZigVstgui::LayoutMode::expanded ? theme.spacing.small : 0.0;
         std::array<ZigVstgui::StackItem, ZIG_VSTGUI_MAX_PARAMETERS> row_items {};
         std::array<VSTGUI::CRect, ZIG_VSTGUI_MAX_PARAMETERS> row_bounds {};
@@ -703,10 +789,26 @@ void ZigVstguiEditor::layout() {
         }
         meters_top = row_bounds[parameter_count - 1].bottom + theme.spacing.small;
     }
+    const double visuals_bottom = static_cast<double>(height) - margin -
+        theme.control_metrics.compact_control_height - theme.spacing.medium;
+    if (graph_count > 0) {
+        const double graph_bottom = meter_count > 0
+            ? meters_top + (visuals_bottom - meters_top) * 0.58
+            : visuals_bottom;
+        const double gap = theme.spacing.small;
+        const double graph_width = std::max(1.0, (right - margin - gap * (graph_count - 1)) / graph_count);
+        for (uint32_t index = 0; index < graph_count; ++index) {
+            const double left = margin + index * (graph_width + gap);
+            graph_controls[index]->setBounds(
+                VSTGUI::CRect(left, meters_top, left + graph_width, meters_top + 18.0),
+                VSTGUI::CRect(left, meters_top + 18.0, left + graph_width, graph_bottom)
+            );
+        }
+        meters_top = graph_bottom + theme.spacing.small;
+    }
     if (meter_count > 0) {
         const bool expanded = ZigVstgui::layoutMode(width, height) == ZigVstgui::LayoutMode::expanded;
-        const double meters_bottom = static_cast<double>(height) - margin -
-            theme.control_metrics.compact_control_height - theme.spacing.medium;
+        const double meters_bottom = visuals_bottom;
         const double available_height = std::max(1.0, meters_bottom - meters_top);
         const double meter_gap = theme.spacing.small;
         const double available_width = right - margin - meter_gap * (meter_count - 1);
@@ -758,6 +860,17 @@ const ZigVstgui::ThemeResolver& ZigVstguiEditor::stylesForMeter(uint32_t index) 
     for (uint32_t group_index = 0; group_index < group_count; ++group_index) {
         const auto& group = group_descriptions[group_index];
         if (index >= group.first_meter && index < group.first_meter + group.meter_count) {
+            return *group_styles[group_index];
+        }
+    }
+    return theme_resolver;
+}
+
+
+const ZigVstgui::ThemeResolver& ZigVstguiEditor::stylesForGraph(uint32_t index) const {
+    for (uint32_t group_index = 0; group_index < group_count; ++group_index) {
+        const auto& group = group_descriptions[group_index];
+        if (index >= group.first_graph && index < group.first_graph + group.graph_count) {
             return *group_styles[group_index];
         }
     }

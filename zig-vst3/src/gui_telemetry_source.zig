@@ -1,5 +1,7 @@
+const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
 const tuid = @import("tuid.zig");
+const gui_graph = @import("zig-vst3-plugin-core").gui_graph;
 
 pub const iid = tuid.inlineUid(0x7CB6A8A1, 0x532E49D8, 0xA32BD0B4, 0x21D827F6);
 
@@ -10,6 +12,7 @@ pub const VTable = extern struct {
     load: *const fn (*anyopaque, types.uint32) callconv(.c) f64,
     editorOpened: *const fn (*anyopaque) callconv(.c) void,
     editorClosed: *const fn (*anyopaque) callconv(.c) void,
+    loadGraph: *const fn (*anyopaque, types.uint32, [*]gui_graph.Point, types.uint32) callconv(.c) types.uint32,
 };
 
 pub const Interface = extern struct {
@@ -39,6 +42,11 @@ pub const RetainedSource = struct {
     pub fn editorClosed(self: RetainedSource) void {
         self.iface.vtable.editorClosed(self.iface);
     }
+
+    pub fn loadGraph(self: RetainedSource, source_id: types.uint32, output: []gui_graph.Point) usize {
+        if (output.len > std.math.maxInt(types.uint32)) return 0;
+        return self.iface.vtable.loadGraph(self.iface, source_id, output.ptr, @intCast(output.len));
+    }
 };
 
 pub fn query(peer: anytype) ?RetainedSource {
@@ -48,6 +56,6 @@ pub fn query(peer: anytype) ?RetainedSource {
 }
 
 test "telemetry interface has an FUnknown prefix" {
-    try @import("std").testing.expectEqual(@as(usize, 6), @typeInfo(VTable).@"struct".fields.len);
-    try @import("std").testing.expectEqual(@sizeOf(usize), @sizeOf(Interface));
+    try std.testing.expectEqual(@as(usize, 7), @typeInfo(VTable).@"struct".fields.len);
+    try std.testing.expectEqual(@sizeOf(usize), @sizeOf(Interface));
 }

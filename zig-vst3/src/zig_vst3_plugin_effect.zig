@@ -2039,6 +2039,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             .load = telemetryLoad,
             .editorOpened = telemetryEditorOpened,
             .editorClosed = telemetryEditorClosed,
+            .loadGraph = telemetryLoadGraph,
         };
 
         fn telemetryLoad(ptr: *anyopaque, source_id: types.uint32) callconv(.c) f64 {
@@ -2059,6 +2060,19 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             if (comptime @hasDecl(Config.Processor, "guiTelemetryEditorClosed")) {
                 ownerFromTelemetrySource(ptr).processor_impl.guiTelemetryEditorClosed();
             }
+        }
+
+        fn telemetryLoadGraph(
+            ptr: *anyopaque,
+            source_id: types.uint32,
+            output: [*]plug_core.gui_graph.Point,
+            capacity: types.uint32,
+        ) callconv(.c) types.uint32 {
+            if (comptime @hasDecl(Config.Processor, "guiGraphLoad")) {
+                const count = ownerFromTelemetrySource(ptr).processor_impl.guiGraphLoad(source_id, output[0..capacity]);
+                return @intCast(@min(count, capacity));
+            }
+            return 0;
         }
 
         fn initialize(ptr: *anyopaque, context: ?*anyopaque) callconv(.c) types.tresult {

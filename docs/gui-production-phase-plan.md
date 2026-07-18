@@ -115,18 +115,28 @@ Completion evidence:
 
 ## Milestone 5: Toolkit-neutral Graph Foundation
 
-- [ ] Define bounded graph series, axes, ranges, and style roles without toolkit types.
-- [ ] Support static transfer functions and envelopes from fixed point storage.
-- [ ] Support waveform and spectrum snapshots through bounded latest-value or SPSC transport.
-- [ ] Add activity-driven invalidation and an explicit maximum update rate.
-- [ ] Render a channel-strip transfer curve and a gallery waveform or spectrum fixture.
-- [ ] Add empty, invalid-data, clipped-data, resize, scale, and visual-regression tests.
+- [x] Define bounded graph series, axes, ranges, and style roles without toolkit types.
+- [x] Support static transfer functions and envelopes from fixed point storage.
+- [x] Support waveform and spectrum snapshots through bounded latest-value transport.
+- [x] Add activity-driven invalidation and an explicit maximum update rate.
+- [x] Render a channel-strip transfer curve and a gallery waveform fixture.
+- [x] Add empty, invalid-data, clipped-data, resize, scale, and visual-regression tests.
 
 Exit criteria:
 
 - Static graphs perform no continuous repaint.
 - Dynamic graph publication is bounded and may drop visualization data instead of waiting.
 - A custom graph reuses theme resolution, layout, semantic metadata, and editor lifecycle.
+
+Completion evidence:
+
+- `gui_graph` defines finite points, validated linear, logarithmic, and decibel axes, fixed series, style roles, and a fixed-capacity atomic snapshot. Snapshot reads retry at most three times. Producers drop inactive, invalid, or oversized visualization frames. Readers abandon contended frames instead of waiting.
+- `EditorDescription.graphs` and `Group` graph ranges expose composition without VSTGUI types. Native descriptions copy titles, labels, and static points per editor instance.
+- Static graphs allocate no timer. Dynamic graphs require a 1 to 60 Hz cap, poll only while the editor is open, and invalidate only when their bounded point set changes.
+- The channel strip renders a 33-point console transfer curve. The component gallery publishes a 64-point waveform snapshot from processed audio through the same per-instance connection used by meters.
+- Native tests cover empty graphs, invalid ranges and points, clipped coordinates, static versus dynamic scheduling, source refresh, resize, scale, semantics, and ABI limits. The graph visual reference covers primary, modulation, logarithmic, decibel, and empty-state rendering.
+- The warm-render benchmark includes controls, a meter, and a graph and remains below the 300 microsecond budget.
+- Zig tests, raw ABI checks, every native Steinberg validator run, native adapter and visual tests, and Linux and Windows example bundle cross-builds pass. Native Windows, X11, and Wayland graph interaction checks remain deferred to their platform environments.
 
 ## Milestone 6: Native Accessibility Bridges
 

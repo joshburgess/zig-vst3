@@ -95,7 +95,7 @@ Both layouts accept host resize requests from 320 by 240 through 1000 by 700, us
 | --- | --- |
 | Continuous | Rotary gain control and exact numeric entry |
 | Discrete | Bypass toggle, mode dropdown, and segmented voice count |
-| Telemetry | Peak, stereo, and gain-reduction meters |
+| Telemetry | Peak, stereo, and gain-reduction meters plus a live waveform graph |
 | Resources | Embedded PNG, deterministic SVG, font fallback, and custom overlay drawing |
 | Lifecycle | Adaptive breakpoint, resize action, drag handle, scaling, and independent editor instances |
 
@@ -117,6 +117,33 @@ The drawing callback receives a component kind, visual state, parameter ID, norm
 
 Keep drawing callbacks deterministic, bounded, and allocation-free. Return a nonzero result when drawing cannot complete. An unknown asset ID paints a visible red crossed placeholder instead of leaving a blank interactive area. The supported SVG subset and font fallback rules are documented in [Plugin Editors](gui.md#assets-fonts-and-custom-drawing).
 
+## Graphs
+
+Add graphs through `EditorDescription.graphs`. A `Graph` declares a title, series kind, style role, x and y axes, and either fixed points or a dynamic source ID. `Group` places contiguous graph ranges alongside parameters and meters.
+
+```zig
+.graphs = &.{.{
+    .title = "Transfer",
+    .kind = .transfer_function,
+    .x_axis = .{ .minimum = -2.0, .maximum = 2.0, .label = "Input" },
+    .y_axis = .{ .minimum = -1.2, .maximum = 1.2, .label = "Output" },
+    .points = &transfer_points,
+}},
+```
+
+Fixed graphs copy at most 256 finite points when the editor is created and never create a refresh timer. Use `gui_graph.SnapshotSeries` for waveforms or spectra produced at runtime. Dynamic graphs require `maximum_refresh_hz` from 1 through 60. Publication stops while no editor is open, and a busy reader may drop a visualization frame rather than blocking the producer.
+
+A `SimpleStereoEffect` processor exposes dynamic points with `guiGraphLoad`. Its existing telemetry open and close hooks should update the graph snapshot activity count:
+
+```zig
+pub fn guiGraphLoad(self: *Processor, source_id: u32, output: []gui_graph.Point) usize {
+    if (source_id != waveform_source) return 0;
+    return self.waveform.read(output) orelse 0;
+}
+```
+
+The renderer clamps coordinates to the declared range, supports linear and logarithmic axes, and treats decibel axes as linear dB values. An empty series displays `No graph data` instead of a blank panel. Axis labels, graph title, update mode, and point count are available through toolkit-neutral semantics.
+
 ## API Status
 
 The project remains pre-1.0, so even the supported surface does not yet carry a long-term compatibility promise. Milestone 10 narrows the component API according to evidence from both the gallery and Voice Mix editors.
@@ -126,12 +153,14 @@ Supported authoring surface:
 - `Parameter`, `ControlKind`, `Theme`, `Layout`, and the four `create*View` functions.
 - `EditorDescription`, `Composition`, `Group`, `StyleOverride`, and `createEditor`.
 - `Meter`, meter source wiring, `MeterBank`, and GUI telemetry presentation.
+- `Graph`, graph axes and style roles, fixed graph series, and grouped graph composition.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.
 
 Experimental extensions:
 
 - `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and `Canvas` drawing functions.
+- Dynamic graph sources and `SnapshotSeries`. The gallery is their only production consumer so far.
 - Native assistive-technology bridges. Toolkit-neutral semantics exist, but platform screen-reader exposure does not.
 - New analyzer, modulation, timeline, GPU, preset-browser, and drag-and-drop components.
 
