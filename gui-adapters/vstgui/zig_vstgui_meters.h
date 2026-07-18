@@ -5,6 +5,7 @@
 
 #include "vstgui/lib/cvstguitimer.h"
 #include "vstgui/lib/controls/ctextlabel.h"
+#include "vstgui/lib/iviewlistener.h"
 
 #include <cstdint>
 
@@ -74,7 +75,7 @@ private:
     MeterBallistics second;
 };
 
-class MeterControl {
+class MeterControl : public VSTGUI::ViewListenerAdapter {
 public:
     ~MeterControl();
     void build(
@@ -98,8 +99,16 @@ public:
     void resetPeaks();
     const AccessibilityNode& accessibilityNode() const;
     const MeterView* meterView() const;
+    void viewLostFocus(VSTGUI::CView* view) override;
+    void viewTookFocus(VSTGUI::CView* view) override;
 
 private:
+    static bool accessibilityAction(
+        void* userdata,
+        const AccessibilityNode& node,
+        const AccessibilityActionRequest& request
+    );
+    bool performAccessibilityAction(const AccessibilityActionRequest& request);
     VSTGUI::CTextLabel* label {nullptr};
     MeterView* meter {nullptr};
     VSTGUI::CVSTGUITimer* timer {nullptr};

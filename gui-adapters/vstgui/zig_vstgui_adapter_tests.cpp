@@ -36,12 +36,29 @@ struct CallbackState {
 struct AccessibilityObserverState {
     uint32_t count {0};
     ZigVstgui::AccessibilityChange last {ZigVstgui::AccessibilityChange::role};
+    uint32_t action_count {0};
+    ZigVstgui::AccessibilityAction last_action {ZigVstgui::AccessibilityAction::focus};
+    double last_action_value {0.0};
+    std::string last_action_text;
 };
 
 void accessibilityChanged(void* userdata, ZigVstgui::AccessibilityChange change) {
     auto* state = static_cast<AccessibilityObserverState*>(userdata);
     state->count += 1;
     state->last = change;
+}
+
+bool accessibilityAction(
+    void* userdata,
+    const ZigVstgui::AccessibilityNode&,
+    const ZigVstgui::AccessibilityActionRequest& request
+) {
+    auto* state = static_cast<AccessibilityObserverState*>(userdata);
+    state->action_count += 1;
+    state->last_action = request.action;
+    state->last_action_value = request.value;
+    state->last_action_text = request.text ? request.text : "";
+    return true;
 }
 
 void beginEdit(void* userdata, uint32_t parameter_id) {
@@ -117,6 +134,12 @@ int testAccessibilityNode() {
     AccessibilityObserverState observer;
     ZigVstgui::AccessibilityNode node;
     node.setObserver(&observer, accessibilityChanged);
+    node.setActionHandler(
+        &observer,
+        accessibilityAction,
+        static_cast<uint32_t>(ZigVstgui::AccessibilityAction::press) |
+            static_cast<uint32_t>(ZigVstgui::AccessibilityAction::set_value)
+    );
     node.setRole(ZigVstgui::AccessibilityRole::meter);
     node.setName("Output level");
     node.setDescription("Stereo peak level");
@@ -139,6 +162,16 @@ int testAccessibilityNode() {
     if (node.generation() != generation) return 7;
     node.clearRange();
     if (node.range().present || observer.last != ZigVstgui::AccessibilityChange::range) return 8;
+    if (node.perform(ZigVstgui::AccessibilityAction::press)) return 9;
+    node.setEnabled(true);
+    node.setReadOnly(false);
+    if (!node.supports(ZigVstgui::AccessibilityAction::press) ||
+        node.supports(ZigVstgui::AccessibilityAction::increment)) return 10;
+    if (!node.perform(ZigVstgui::AccessibilityAction::set_value, 0.75, "75%")) return 11;
+    if (observer.action_count != 1 || observer.last_action != ZigVstgui::AccessibilityAction::set_value ||
+        !closeEnough(observer.last_action_value, 0.75) || observer.last_action_text != "75%") return 12;
+    node.clearActionHandler();
+    if (node.perform(ZigVstgui::AccessibilityAction::press)) return 13;
     return 0;
 }
 
@@ -361,8 +394,16 @@ int testMultiParameterRouting() {
     if (!first.setParameter(30, 1.0)) return 2;
     if (!first.setModulation(10, 0.8) || first.setModulation(99, 0.5)) return 36;
     if (!toggle_accessibility->state().checked || toggle_accessibility->valueText().empty()) return 24;
+    const auto begin_before_accessibility = state.begin_count;
+    const auto perform_before_accessibility = state.perform_count;
+    const auto end_before_accessibility = state.end_count;
+    if (!slider_accessibility->perform(ZigVstgui::AccessibilityAction::increment)) return 43;
+    if (!toggle_accessibility->perform(ZigVstgui::AccessibilityAction::press)) return 44;
+    if (state.begin_count != begin_before_accessibility + 2 ||
+        state.perform_count != perform_before_accessibility + 2 ||
+        state.end_count != end_before_accessibility + 2) return 45;
     double value = 0.0;
-    if (!first.parameterValue(30, value) || !closeEnough(value, 1.0)) return 3;
+    if (!first.parameterValue(30, value) || !closeEnough(value, 0.0)) return 3;
     if (!first.parameterValue(20, value) || !closeEnough(value, 4.0 / 7.0)) return 4;
     if (!second.parameterValue(30, value) || !closeEnough(value, 0.0)) return 5;
     if (first.setParameter(99, 0.5)) return 6;

@@ -85,6 +85,45 @@ NSString* role(ZigVstgui::AccessibilityRole value) {
     return self.semanticNode && self.semanticNode->state().focused;
 }
 
+- (void)setAccessibilityFocused:(BOOL)focused {
+    if (focused && self.semanticNode) {
+        self.semanticNode->perform(ZigVstgui::AccessibilityAction::focus);
+    }
+}
+
+- (BOOL)accessibilityPerformPress {
+    return self.semanticNode &&
+        self.semanticNode->perform(ZigVstgui::AccessibilityAction::press);
+}
+
+- (BOOL)accessibilityPerformIncrement {
+    return self.semanticNode &&
+        self.semanticNode->perform(ZigVstgui::AccessibilityAction::increment);
+}
+
+- (BOOL)accessibilityPerformDecrement {
+    return self.semanticNode &&
+        self.semanticNode->perform(ZigVstgui::AccessibilityAction::decrement);
+}
+
+- (void)setAccessibilityValue:(id)value {
+    if (!self.semanticNode || !value) return;
+    if ([value isKindOfClass:[NSNumber class]]) {
+        self.semanticNode->perform(
+            ZigVstgui::AccessibilityAction::set_value,
+            [value doubleValue]
+        );
+        return;
+    }
+    if ([value isKindOfClass:[NSString class]]) {
+        self.semanticNode->perform(
+            ZigVstgui::AccessibilityAction::set_value,
+            0.0,
+            [(NSString*)value UTF8String]
+        );
+    }
+}
+
 - (NSRect)accessibilityFrameInParentSpace {
     if (!self.vstguiView) return NSZeroRect;
     const auto size = self.vstguiView->getViewSize();

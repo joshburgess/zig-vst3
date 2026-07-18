@@ -109,9 +109,9 @@ The same harness measures repeated warm drawing of a live slider and active peak
 
 ### Accessibility Semantics
 
-Every VSTGUI component carries toolkit-neutral accessibility metadata. Semantic roles cover sliders, buttons, toggles, choices, text fields, meters, and groups. Nodes also expose a name, description, formatted value, optional range, enabled state, focus state, toggle state, selection state, and read-only state. Value, focus, and state changes invoke an optional backend observer, so a future native bridge can forward the changes without changing parameter controls.
+Every VSTGUI component carries toolkit-neutral accessibility metadata. Semantic roles cover sliders, buttons, toggles, choices, text fields, meters, graphs, and groups. Nodes expose a name, description, formatted value, optional range, enabled state, focus state, toggle state, selection state, and read-only state. Nodes also expose supported focus, press, increment, decrement, and set-value actions. Value, focus, and state changes invoke a backend observer while native actions use the same component behavior as pointer and keyboard input.
 
-The pinned VSTGUI revision does not expose a native semantic accessibility API or screen-reader notification bridge on macOS, Windows, X11, or Wayland. The reference adapter therefore cannot make its internal nodes visible to VoiceOver, Narrator, Orca, or other platform assistive technology. Keyboard operation, visible focus, labels, exact entry, and semantic metadata are implemented, but they are not a substitute for native screen-reader access. Native platform bridges and screen-reader verification remain required before claiming accessible release support.
+The reference adapter supplies native semantic bridges because the pinned VSTGUI revision does not provide them for custom controls. macOS uses an `NSAccessibilityElement` hierarchy. Windows uses a UI Automation fragment provider with RangeValue, Toggle, Invoke, and Value patterns. X11 and Wayland retain keyboard operation, visible focus, and internal semantics but have no AT-SPI bridge. VoiceOver, Narrator, and AT-SPI behavior still require manual verification before claiming accessible release support.
 
 VSTGUI dependencies remain optional at the package boundary. A plugin can implement the same framework adapter with another toolkit or a custom renderer.
 

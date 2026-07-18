@@ -221,6 +221,12 @@ void MeterControl::build(
     meter_component.accessibility().setName(title ? title : "Meter");
     meter_component.accessibility().setDescription("Audio level. Activate to reset held peaks.");
     meter_component.accessibility().setReadOnly(false);
+    meter_component.accessibility().setActionHandler(
+        this,
+        accessibilityAction,
+        static_cast<uint32_t>(AccessibilityAction::focus) |
+            static_cast<uint32_t>(AccessibilityAction::press)
+    );
     meter = new MeterView(
         VSTGUI::CRect(),
         variant,
@@ -231,15 +237,19 @@ void MeterControl::build(
         &meter_component.accessibility()
     );
     parent->addView(meter);
+    meter->registerViewListener(this);
     meter_component.bind(meter);
+    meter_component.setFocusable(true);
     if (!timer) timer = new VSTGUI::CVSTGUITimer([this](VSTGUI::CVSTGUITimer*) { tick(); }, 33, false);
     tick(0.0);
 }
 
 void MeterControl::clear() {
     stop();
+    if (meter) meter->unregisterViewListener(this);
     label_component.clear();
     meter_component.clear();
+    meter_component.accessibility().clearActionHandler();
     label = nullptr;
     meter = nullptr;
 }
@@ -288,6 +298,35 @@ const AccessibilityNode& MeterControl::accessibilityNode() const {
 
 const MeterView* MeterControl::meterView() const {
     return meter;
+}
+
+void MeterControl::viewLostFocus(VSTGUI::CView* view) {
+    if (view == meter) meter_component.setFocused(false);
+}
+
+void MeterControl::viewTookFocus(VSTGUI::CView* view) {
+    if (view == meter) meter_component.setFocused(true);
+}
+
+bool MeterControl::accessibilityAction(
+    void* userdata,
+    const AccessibilityNode&,
+    const AccessibilityActionRequest& request
+) {
+    auto* control = static_cast<MeterControl*>(userdata);
+    return control && control->performAccessibilityAction(request);
+}
+
+bool MeterControl::performAccessibilityAction(const AccessibilityActionRequest& request) {
+    if (request.action == AccessibilityAction::focus) {
+        if (!meter || !meter->getFrame()) return false;
+        meter->getFrame()->setFocusView(meter);
+        meter_component.setFocused(true);
+        return true;
+    }
+    if (request.action != AccessibilityAction::press || !meter) return false;
+    meter->resetPeaks();
+    return true;
 }
 
 }

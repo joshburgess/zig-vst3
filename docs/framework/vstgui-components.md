@@ -164,11 +164,11 @@ The renderer clamps coordinates to the declared range, supports linear and logar
 
 ## Native Accessibility
 
-Every component keeps its role, name, description, value, range, enabled state, focus state, checked state, and read-only state in the toolkit-neutral accessibility model. Native bridges observe that model only while an editor is open. They do not change parameter attachment, keyboard behavior, focus order, or rendering.
+Every component keeps its role, name, description, value, range, enabled state, focus state, checked state, and read-only state in the toolkit-neutral accessibility model. Focus, press, increment, decrement, and set-value actions use the same model. Native bridges observe and operate it only while an editor is open. They do not create a second parameter attachment or gesture path.
 
-On macOS, the adapter attaches an `NSAccessibilityElement` hierarchy to VSTGUI's editor `NSView`. AppKit receives mapped roles, labels, help text, values, ranges, state, focus, and bounds. Value, focus, semantic, and layout changes post native accessibility notifications. An AppKit integration test opens a real editor view and verifies sliders, text fields, toggles, choices, meters, graphs, buttons, live updates, resize geometry, and teardown.
+On macOS, the adapter attaches an `NSAccessibilityElement` hierarchy to VSTGUI's editor `NSView`. AppKit receives mapped roles, labels, help text, values, ranges, state, focus, and bounds. Native focus, press, increment, decrement, and value methods dispatch toolkit-neutral actions. Value, focus, semantic, and layout changes post native accessibility notifications. An AppKit integration test opens a real editor view and verifies properties, actions, host gesture counts, resize geometry, and teardown.
 
-On Windows, the adapter provides a UI Automation fragment tree through `WM_GETOBJECT`. It maps the same semantic properties, exposes screen-space bounds and focus, and raises property, focus, and structure events. The Windows provider cross-compiles with Zig's Windows SDK headers during the native adapter test, but Narrator behavior has not been tested in a native Windows host.
+On Windows, the adapter provides a UI Automation fragment tree through `WM_GETOBJECT`. It maps the same semantic properties, exposes screen-space bounds and focus, and raises property, focus, and structure events. Sliders expose RangeValue, toggles expose Toggle, actionable buttons expose Invoke, and editable or choice values expose Value. The Windows provider cross-compiles with Zig's Windows SDK headers during the native adapter test, but Narrator behavior has not been tested in a native Windows host.
 
 X11 and Wayland retain the toolkit-neutral semantics, keyboard focus order, and visible focus rendering. No AT-SPI bridge is implemented yet. VoiceOver navigation, Narrator navigation, and AT-SPI host verification remain release checks for their respective platform environments.
 

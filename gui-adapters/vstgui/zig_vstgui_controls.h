@@ -123,6 +123,16 @@ public:
     const ParameterControlModel& model() const;
 
 private:
+    static bool accessibilityAction(
+        void* userdata,
+        const AccessibilityNode& node,
+        const AccessibilityActionRequest& request
+    );
+    bool performAccessibilityAction(
+        const AccessibilityNode& node,
+        const AccessibilityActionRequest& request
+    );
+    bool applyAccessibleValue(double normalized);
     void buildPrimaryControl(
         VSTGUI::CViewContainer* parent,
         ZigVstguiParameterInfo parameter_info,
@@ -197,6 +207,12 @@ public:
     void viewTookFocus(VSTGUI::CView* view) override;
 
 private:
+    static bool accessibilityAction(
+        void* userdata,
+        const AccessibilityNode& node,
+        const AccessibilityActionRequest& request
+    );
+    bool performAccessibilityAction(const AccessibilityActionRequest& request);
     VSTGUI::CTextButton* button {nullptr};
     ResizeHandle* handle {nullptr};
     Component button_component;

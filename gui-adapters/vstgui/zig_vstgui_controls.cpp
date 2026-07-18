@@ -21,6 +21,10 @@ constexpr int32_t kParameterTag = 1;
 constexpr int32_t kValueTag = 2;
 constexpr int32_t kResizeTag = 3;
 
+constexpr uint32_t actionMask(AccessibilityAction action) {
+    return static_cast<uint32_t>(action);
+}
+
 }
 
 double clampNormalized(double value) {
@@ -348,6 +352,11 @@ void ParameterControl::build(
     value_component.accessibility().setRole(AccessibilityRole::text_field);
     value_component.accessibility().setName(label_text + " value");
     value_component.accessibility().setDescription("Enter an exact value");
+    value_component.accessibility().setActionHandler(
+        this,
+        accessibilityAction,
+        actionMask(AccessibilityAction::focus) | actionMask(AccessibilityAction::set_value)
+    );
     syncViews();
 }
 
@@ -472,6 +481,14 @@ void ParameterControl::buildPrimaryControl(
     primary_component.accessibility().setRole(role);
     primary_component.accessibility().setName(label_text);
     primary_component.accessibility().setDescription(info.tooltip ? info.tooltip : "Plugin parameter");
+    uint32_t actions = actionMask(AccessibilityAction::focus) |
+        actionMask(AccessibilityAction::increment) |
+        actionMask(AccessibilityAction::decrement) |
+        actionMask(AccessibilityAction::set_value);
+    if (role == AccessibilityRole::toggle || role == AccessibilityRole::choice) {
+        actions |= actionMask(AccessibilityAction::press);
+    }
+    primary_component.accessibility().setActionHandler(this, accessibilityAction, actions);
     if (slider && info.has_modulation) slider->setModulation(info.modulation_normalized);
     if (drawing.draw_parameter) {
         ZigVstguiDrawingComponent drawing_component = ZIG_VSTGUI_DRAW_SLIDER;
@@ -517,6 +534,8 @@ void ParameterControl::clear() {
     label_component.clear();
     primary_component.clear();
     value_component.clear();
+    primary_component.accessibility().clearActionHandler();
+    value_component.accessibility().clearActionHandler();
     label = nullptr;
     slider = nullptr;
     knob = nullptr;
@@ -630,6 +649,64 @@ const AccessibilityNode& ParameterControl::primaryAccessibility() const {
 
 const AccessibilityNode* ParameterControl::valueAccessibility() const {
     return value_edit ? &value_component.accessibility() : nullptr;
+}
+
+bool ParameterControl::accessibilityAction(
+    void* userdata,
+    const AccessibilityNode& node,
+    const AccessibilityActionRequest& request
+) {
+    auto* control = static_cast<ParameterControl*>(userdata);
+    return control && control->performAccessibilityAction(node, request);
+}
+
+bool ParameterControl::performAccessibilityAction(
+    const AccessibilityNode& node,
+    const AccessibilityActionRequest& request
+) {
+    const bool exact_value = &node == &value_component.accessibility();
+    if (request.action == AccessibilityAction::focus) {
+        auto* target = exact_value ? static_cast<VSTGUI::CView*>(value_edit) : primary_control;
+        if (!target || !target->getFrame()) return false;
+        target->getFrame()->setFocusView(target);
+        setFocusedView(target);
+        return true;
+    }
+    if (request.action == AccessibilityAction::set_value) {
+        double normalized = request.value;
+        if (request.text) {
+            const auto& callbacks = control_model.callbacks();
+            if (!callbacks.parse_value || callbacks.parse_value(
+                    callbacks.userdata,
+                    control_model.parameterId(),
+                    request.text,
+                    &normalized
+                ) != 0) return false;
+        }
+        return applyAccessibleValue(normalized);
+    }
+    const double step = parameter_info.step_count > 0
+        ? 1.0 / static_cast<double>(parameter_info.step_count)
+        : 0.01;
+    if (request.action == AccessibilityAction::increment ||
+        (request.action == AccessibilityAction::press && control_kind != ZIG_VSTGUI_CONTROL_TOGGLE)) {
+        return applyAccessibleValue(control_model.acceptedValue() + step);
+    }
+    if (request.action == AccessibilityAction::decrement) {
+        return applyAccessibleValue(control_model.acceptedValue() - step);
+    }
+    if (request.action == AccessibilityAction::press && control_kind == ZIG_VSTGUI_CONTROL_TOGGLE) {
+        return applyAccessibleValue(control_model.acceptedValue() >= 0.5 ? 0.0 : 1.0);
+    }
+    return false;
+}
+
+bool ParameterControl::applyAccessibleValue(double normalized) {
+    if (!control_model.beginGesture()) return false;
+    const bool accepted = control_model.performEdit(normalized);
+    control_model.endGesture();
+    syncViews();
+    return accepted;
 }
 
 void ParameterControl::controlBeginEdit(VSTGUI::CControl*) {
@@ -817,6 +894,11 @@ void ResizeControl::build(VSTGUI::CViewContainer* parent, const ThemeResolver& s
     button_component.accessibility().setRole(AccessibilityRole::button);
     button_component.accessibility().setName("Editor size");
     button_component.accessibility().setDescription("Toggle compact and expanded editor size");
+    button_component.accessibility().setActionHandler(
+        this,
+        accessibilityAction,
+        actionMask(AccessibilityAction::focus) | actionMask(AccessibilityAction::press)
+    );
     handle = new ResizeHandle(VSTGUI::CRect(), this, styles);
     parent->addView(handle);
     handle_component.bind(handle);
@@ -830,6 +912,7 @@ void ResizeControl::clear() {
     if (button) button->unregisterViewListener(this);
     button_component.clear();
     handle_component.clear();
+    button_component.accessibility().clearActionHandler();
     button = nullptr;
     handle = nullptr;
 }
@@ -892,6 +975,27 @@ const AccessibilityNode& ResizeControl::buttonAccessibility() const {
 
 const AccessibilityNode& ResizeControl::handleAccessibility() const {
     return handle_component.accessibility();
+}
+
+bool ResizeControl::accessibilityAction(
+    void* userdata,
+    const AccessibilityNode&,
+    const AccessibilityActionRequest& request
+) {
+    auto* control = static_cast<ResizeControl*>(userdata);
+    return control && control->performAccessibilityAction(request);
+}
+
+bool ResizeControl::performAccessibilityAction(const AccessibilityActionRequest& request) {
+    if (request.action == AccessibilityAction::focus) {
+        if (!button || !button->getFrame()) return false;
+        button->getFrame()->setFocusView(button);
+        setFocusedView(button);
+        return true;
+    }
+    if (request.action != AccessibilityAction::press) return false;
+    const bool expanded = layoutMode(current_width, current_height) == LayoutMode::expanded;
+    return requestResize(expanded ? 400 : 640, expanded ? 300 : 420);
 }
 
 void ResizeControl::viewLostFocus(VSTGUI::CView* view) {

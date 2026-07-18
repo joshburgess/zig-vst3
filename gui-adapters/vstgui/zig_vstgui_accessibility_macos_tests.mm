@@ -5,12 +5,34 @@
 #import <AppKit/AppKit.h>
 
 #include <cmath>
+#include <cstdlib>
 
 namespace {
 
-void beginEdit(void*, uint32_t) {}
-int32_t performEdit(void*, uint32_t, double) { return 0; }
-void endEdit(void*, uint32_t) {}
+struct CallbackState {
+    uint32_t begin_count {0};
+    uint32_t perform_count {0};
+    uint32_t end_count {0};
+};
+
+void beginEdit(void* userdata, uint32_t) {
+    static_cast<CallbackState*>(userdata)->begin_count += 1;
+}
+int32_t performEdit(void* userdata, uint32_t, double) {
+    static_cast<CallbackState*>(userdata)->perform_count += 1;
+    return 0;
+}
+void endEdit(void* userdata, uint32_t) {
+    static_cast<CallbackState*>(userdata)->end_count += 1;
+}
+int32_t parseValue(void*, uint32_t, const char* text, double* value) {
+    if (!text || !value) return -1;
+    char* end = nullptr;
+    const double parsed = std::strtod(text, &end);
+    if (end == text || *end != '\0') return -1;
+    *value = parsed;
+    return 0;
+}
 double loadMeter(void*, uint32_t) { return 0.5; }
 
 id elementNamed(NSArray* elements, NSString* name) {
@@ -45,7 +67,13 @@ int main() {
             0,
             0,
         }};
-        ZigVstguiCallbacks callbacks {nullptr, beginEdit, performEdit, endEdit};
+        CallbackState state;
+        ZigVstguiCallbacks callbacks {};
+        callbacks.userdata = &state;
+        callbacks.begin_edit = beginEdit;
+        callbacks.perform_edit = performEdit;
+        callbacks.end_edit = endEdit;
+        callbacks.parse_value = parseValue;
         ZigVstguiSkinDescription skin {};
         skin.editor_title = "Accessibility Test";
         ZigVstguiEditor editor(parameters, 3, callbacks, meters, 1, {nullptr, loadMeter}, skin, graphs, 1, {});
@@ -75,7 +103,16 @@ int main() {
         if (!editor.setParameter(10, 0.75)) return 11;
         if (std::abs([[gain accessibilityValue] doubleValue] - 0.75) > 1e-9) return 12;
         if (!editor.setParameter(20, 1.0) || ![[bypass accessibilityValue] boolValue]) return 20;
-        if (!editor.keyDown(0, Steinberg::KEY_TAB, 0) || ![gain isAccessibilityFocused]) return 21;
+        [gain setAccessibilityFocused:YES];
+        if (![gain isAccessibilityFocused]) return 21;
+        [gain accessibilityPerformIncrement];
+        double value = 0.0;
+        if (!editor.parameterValue(10, value) || std::abs(value - 0.76) > 1e-9) return 22;
+        if (![bypass accessibilityPerformPress] ||
+            !editor.parameterValue(20, value) || std::abs(value) > 1e-9) return 23;
+        [exact setAccessibilityValue:@"0.42"];
+        if (!editor.parameterValue(10, value) || std::abs(value - 0.42) > 1e-9) return 24;
+        if (state.begin_count != 3 || state.perform_count != 3 || state.end_count != 3) return 25;
         const NSRect initial_frame = [gain accessibilityFrameInParentSpace];
         if (!editor.resize(640, 420)) return 13;
         const NSRect resized_frame = [gain accessibilityFrameInParentSpace];

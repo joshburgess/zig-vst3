@@ -10,6 +10,22 @@ void AccessibilityNode::setObserver(void* userdata, AccessibilityChangeCallback 
     observer_callback = callback;
 }
 
+void AccessibilityNode::setActionHandler(
+    void* userdata,
+    AccessibilityActionCallback callback,
+    uint32_t actions
+) {
+    action_userdata = userdata;
+    action_callback = callback;
+    supported_actions = callback ? actions : 0;
+}
+
+void AccessibilityNode::clearActionHandler() {
+    action_userdata = nullptr;
+    action_callback = nullptr;
+    supported_actions = 0;
+}
+
 void AccessibilityNode::setRole(AccessibilityRole role) {
     if (semantic_role == role) return;
     semantic_role = role;
@@ -111,6 +127,15 @@ const AccessibilityState& AccessibilityNode::state() const {
 
 uint64_t AccessibilityNode::generation() const {
     return change_generation;
+}
+
+bool AccessibilityNode::supports(AccessibilityAction action) const {
+    return (supported_actions & static_cast<uint32_t>(action)) != 0;
+}
+
+bool AccessibilityNode::perform(AccessibilityAction action, double value, const char* text) const {
+    if (!semantic_state.enabled || semantic_state.read_only || !supports(action) || !action_callback) return false;
+    return action_callback(action_userdata, *this, {action, value, text});
 }
 
 void AccessibilityNode::notify(AccessibilityChange change) {

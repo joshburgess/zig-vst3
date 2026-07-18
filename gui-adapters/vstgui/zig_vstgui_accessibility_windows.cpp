@@ -27,6 +27,16 @@ std::wstring wide(const std::string& value) {
     return result;
 }
 
+std::string narrow(const wchar_t* value) {
+    if (!value || value[0] == L'\0') return {};
+    const int length = WideCharToMultiByte(CP_UTF8, 0, value, -1, nullptr, 0, nullptr, nullptr);
+    if (length <= 1) return {};
+    std::string result(static_cast<std::size_t>(length), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, value, -1, result.data(), length, nullptr, nullptr);
+    result.resize(static_cast<std::size_t>(length - 1));
+    return result;
+}
+
 void setString(VARIANT* value, const std::string& text) {
     const auto converted = wide(text);
     value->vt = VT_BSTR;
@@ -55,7 +65,11 @@ struct WindowsState;
 
 class Provider final : public IRawElementProviderSimple,
                        public IRawElementProviderFragment,
-                       public IRawElementProviderFragmentRoot {
+                       public IRawElementProviderFragmentRoot,
+                       public IRangeValueProvider,
+                       public IToggleProvider,
+                       public IInvokeProvider,
+                       public IValueProvider {
 public:
     Provider(WindowsState* state, std::size_t index, bool root)
     : state(state), index(index), root(root) {}
@@ -72,11 +86,7 @@ public:
         *result = ProviderOptions_ServerSideProvider;
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE GetPatternProvider(PATTERNID, IUnknown** result) override {
-        if (!result) return E_INVALIDARG;
-        *result = nullptr;
-        return S_OK;
-    }
+    HRESULT STDMETHODCALLTYPE GetPatternProvider(PATTERNID pattern, IUnknown** result) override;
     HRESULT STDMETHODCALLTYPE GetPropertyValue(PROPERTYID property, VARIANT* result) override;
     HRESULT STDMETHODCALLTYPE get_HostRawElementProvider(IRawElementProviderSimple** result) override;
     HRESULT STDMETHODCALLTYPE Navigate(NavigateDirection direction, IRawElementProviderFragment** result) override;
@@ -91,8 +101,21 @@ public:
     HRESULT STDMETHODCALLTYPE get_FragmentRoot(IRawElementProviderFragmentRoot** result) override;
     HRESULT STDMETHODCALLTYPE ElementProviderFromPoint(double x, double y, IRawElementProviderFragment** result) override;
     HRESULT STDMETHODCALLTYPE GetFocus(IRawElementProviderFragment** result) override;
+    HRESULT STDMETHODCALLTYPE SetValue(double value) override;
+    HRESULT STDMETHODCALLTYPE get_Value(double* result) override;
+    HRESULT STDMETHODCALLTYPE get_IsReadOnly(BOOL* result) override;
+    HRESULT STDMETHODCALLTYPE get_Maximum(double* result) override;
+    HRESULT STDMETHODCALLTYPE get_Minimum(double* result) override;
+    HRESULT STDMETHODCALLTYPE get_LargeChange(double* result) override;
+    HRESULT STDMETHODCALLTYPE get_SmallChange(double* result) override;
+    HRESULT STDMETHODCALLTYPE Toggle() override;
+    HRESULT STDMETHODCALLTYPE get_ToggleState(ToggleState* result) override;
+    HRESULT STDMETHODCALLTYPE Invoke() override;
+    HRESULT STDMETHODCALLTYPE SetValue(LPCWSTR value) override;
+    HRESULT STDMETHODCALLTYPE get_Value(BSTR* result) override;
 
 private:
+    const AccessibilityNode* node() const;
     std::atomic<ULONG> references {1};
     WindowsState* state;
     std::size_t index;
@@ -127,11 +150,47 @@ HRESULT Provider::QueryInterface(REFIID id, void** result) {
         *result = static_cast<IRawElementProviderFragment*>(this);
     } else if (root && IsEqualIID(id, IID_IRawElementProviderFragmentRoot)) {
         *result = static_cast<IRawElementProviderFragmentRoot*>(this);
+    } else if (!root && IsEqualIID(id, __uuidof(IRangeValueProvider)) &&
+               node() && node()->range().present && node()->supports(AccessibilityAction::set_value)) {
+        *result = static_cast<IRangeValueProvider*>(this);
+    } else if (!root && IsEqualIID(id, __uuidof(IToggleProvider)) &&
+               node() && node()->role() == AccessibilityRole::toggle &&
+               node()->supports(AccessibilityAction::press)) {
+        *result = static_cast<IToggleProvider*>(this);
+    } else if (!root && IsEqualIID(id, __uuidof(IInvokeProvider)) &&
+               node() && node()->supports(AccessibilityAction::press) &&
+               node()->role() != AccessibilityRole::toggle) {
+        *result = static_cast<IInvokeProvider*>(this);
+    } else if (!root && IsEqualIID(id, __uuidof(IValueProvider)) && node() &&
+               node()->supports(AccessibilityAction::set_value) &&
+               (node()->role() == AccessibilityRole::text_field || node()->role() == AccessibilityRole::choice)) {
+        *result = static_cast<IValueProvider*>(this);
     } else {
         return E_NOINTERFACE;
     }
     AddRef();
     return S_OK;
+}
+
+const AccessibilityNode* Provider::node() const {
+    if (root || !state || index >= state->entries.size()) return nullptr;
+    return state->entries[index].node;
+}
+
+HRESULT Provider::GetPatternProvider(PATTERNID pattern, IUnknown** result) {
+    if (!result) return E_INVALIDARG;
+    *result = nullptr;
+    HRESULT status = S_OK;
+    if (pattern == UIA_RangeValuePatternId) {
+        status = QueryInterface(__uuidof(IRangeValueProvider), reinterpret_cast<void**>(result));
+    } else if (pattern == UIA_TogglePatternId) {
+        status = QueryInterface(__uuidof(IToggleProvider), reinterpret_cast<void**>(result));
+    } else if (pattern == UIA_InvokePatternId) {
+        status = QueryInterface(__uuidof(IInvokeProvider), reinterpret_cast<void**>(result));
+    } else if (pattern == UIA_ValuePatternId) {
+        status = QueryInterface(__uuidof(IValueProvider), reinterpret_cast<void**>(result));
+    }
+    return status == E_NOINTERFACE ? S_OK : status;
 }
 
 HRESULT Provider::GetPropertyValue(PROPERTYID property, VARIANT* result) {
@@ -251,9 +310,7 @@ HRESULT Provider::get_BoundingRectangle(UiaRect* result) {
 
 HRESULT Provider::SetFocus() {
     if (root || !state || index >= state->entries.size()) return S_OK;
-    auto* view = const_cast<VSTGUI::CView*>(state->entries[index].view);
-    if (auto* frame = view->getFrame()) frame->setFocusView(view);
-    return S_OK;
+    return state->entries[index].node->perform(AccessibilityAction::focus) ? S_OK : UIA_E_NOTSUPPORTED;
 }
 
 HRESULT Provider::get_FragmentRoot(IRawElementProviderFragmentRoot** result) {
@@ -288,6 +345,84 @@ HRESULT Provider::GetFocus(IRawElementProviderFragment** result) {
         break;
     }
     return S_OK;
+}
+
+HRESULT Provider::SetValue(double value) {
+    const auto* semantic = node();
+    return semantic && semantic->perform(AccessibilityAction::set_value, value) ? S_OK : UIA_E_NOTSUPPORTED;
+}
+
+HRESULT Provider::get_Value(double* result) {
+    const auto* semantic = node();
+    if (!result || !semantic || !semantic->range().present) return E_INVALIDARG;
+    *result = semantic->range().current;
+    return S_OK;
+}
+
+HRESULT Provider::get_IsReadOnly(BOOL* result) {
+    const auto* semantic = node();
+    if (!result || !semantic) return E_INVALIDARG;
+    *result = semantic->state().read_only || !semantic->supports(AccessibilityAction::set_value);
+    return S_OK;
+}
+
+HRESULT Provider::get_Maximum(double* result) {
+    const auto* semantic = node();
+    if (!result || !semantic || !semantic->range().present) return E_INVALIDARG;
+    *result = semantic->range().maximum;
+    return S_OK;
+}
+
+HRESULT Provider::get_Minimum(double* result) {
+    const auto* semantic = node();
+    if (!result || !semantic || !semantic->range().present) return E_INVALIDARG;
+    *result = semantic->range().minimum;
+    return S_OK;
+}
+
+HRESULT Provider::get_LargeChange(double* result) {
+    if (!result) return E_INVALIDARG;
+    *result = 0.1;
+    return S_OK;
+}
+
+HRESULT Provider::get_SmallChange(double* result) {
+    if (!result) return E_INVALIDARG;
+    *result = 0.01;
+    return S_OK;
+}
+
+HRESULT Provider::Toggle() {
+    const auto* semantic = node();
+    return semantic && semantic->perform(AccessibilityAction::press) ? S_OK : UIA_E_NOTSUPPORTED;
+}
+
+HRESULT Provider::get_ToggleState(ToggleState* result) {
+    const auto* semantic = node();
+    if (!result || !semantic) return E_INVALIDARG;
+    *result = semantic->state().checked ? ToggleState_On : ToggleState_Off;
+    return S_OK;
+}
+
+HRESULT Provider::Invoke() {
+    const auto* semantic = node();
+    return semantic && semantic->perform(AccessibilityAction::press) ? S_OK : UIA_E_NOTSUPPORTED;
+}
+
+HRESULT Provider::SetValue(LPCWSTR value) {
+    const auto* semantic = node();
+    const auto converted = narrow(value);
+    return semantic && semantic->perform(AccessibilityAction::set_value, 0.0, converted.c_str())
+        ? S_OK
+        : UIA_E_NOTSUPPORTED;
+}
+
+HRESULT Provider::get_Value(BSTR* result) {
+    const auto* semantic = node();
+    if (!result || !semantic) return E_INVALIDARG;
+    const auto converted = wide(semantic->valueText());
+    *result = SysAllocStringLen(converted.data(), static_cast<UINT>(converted.size()));
+    return *result ? S_OK : E_OUTOFMEMORY;
 }
 
 void accessibilityChanged(void* userdata, AccessibilityChange change) {

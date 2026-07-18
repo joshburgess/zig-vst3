@@ -27,6 +27,20 @@ enum class AccessibilityChange {
     focus,
 };
 
+enum class AccessibilityAction : uint32_t {
+    focus = 1u << 0,
+    press = 1u << 1,
+    increment = 1u << 2,
+    decrement = 1u << 3,
+    set_value = 1u << 4,
+};
+
+struct AccessibilityActionRequest {
+    AccessibilityAction action {AccessibilityAction::focus};
+    double value {0.0};
+    const char* text {nullptr};
+};
+
 struct AccessibilityRange {
     bool present {false};
     double minimum {0.0};
@@ -43,10 +57,14 @@ struct AccessibilityState {
 };
 
 using AccessibilityChangeCallback = void (*)(void*, AccessibilityChange);
+class AccessibilityNode;
+using AccessibilityActionCallback = bool (*)(void*, const AccessibilityNode&, const AccessibilityActionRequest&);
 
 class AccessibilityNode {
 public:
     void setObserver(void* userdata, AccessibilityChangeCallback callback) const;
+    void setActionHandler(void* userdata, AccessibilityActionCallback callback, uint32_t actions);
+    void clearActionHandler();
     void setRole(AccessibilityRole role);
     void setName(std::string name);
     void setDescription(std::string description);
@@ -66,6 +84,8 @@ public:
     const AccessibilityRange& range() const;
     const AccessibilityState& state() const;
     uint64_t generation() const;
+    bool supports(AccessibilityAction action) const;
+    bool perform(AccessibilityAction action, double value = 0.0, const char* text = nullptr) const;
 
 private:
     void notify(AccessibilityChange change);
@@ -78,6 +98,9 @@ private:
     AccessibilityState semantic_state;
     mutable void* observer_userdata {nullptr};
     mutable AccessibilityChangeCallback observer_callback {nullptr};
+    void* action_userdata {nullptr};
+    AccessibilityActionCallback action_callback {nullptr};
+    uint32_t supported_actions {0};
     uint64_t change_generation {0};
 };
 
