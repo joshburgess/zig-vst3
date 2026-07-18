@@ -62,6 +62,7 @@ struct CallbackState {
     uint32_t invoked_action_id {0};
     uint32_t action_count {0};
     bool reject_action {false};
+    bool clear_import_on_action {false};
     bool reject_bool_store {false};
     uint32_t note_count {0};
     int32_t last_note_pitch {-1};
@@ -175,6 +176,7 @@ int32_t invokeAction(void* userdata, uint32_t group_id, uint32_t action_id) {
     state->invoked_action_group_id = group_id;
     state->invoked_action_id = action_id;
     state->action_count += 1;
+    if (state->clear_import_on_action) state->import_snapshot.status = ZIG_VSTGUI_FILE_IMPORT_IDLE;
     return state->reject_action ? -1 : 0;
 }
 
@@ -1988,9 +1990,10 @@ int testActionButtons() {
     }
     state.import_snapshot.status = ZIG_VSTGUI_FILE_IMPORT_READY;
     editor->setFocus(true);
+    state.clear_import_on_action = true;
     if (!button_accessibility->perform(ZigVstgui::AccessibilityAction::press) ||
         !button_accessibility->perform(ZigVstgui::AccessibilityAction::press) ||
-        !editor->fileDropAccessibility(0)->state().focused) {
+        button_accessibility->state().enabled || !editor->fileDropAccessibility(0)->state().focused) {
         zig_vstgui_editor_destroy(editor);
         return 9;
     }

@@ -208,4 +208,5 @@ API status after this milestone:
 - `Viewport`, `ViewportAxes`, and persistent graph transforms are supported. The gallery and IR loader share the declaration, interaction, rendering, state, and accessibility contracts.
 - `RangeSelection`, `RangeSelectionHandle`, and persistent graph ranges are supported. The gallery and IR loader share the declaration, interaction, rendering, state, and accessibility contracts.
 - `DecodedAudioFileImporter`, decoded-audio controller transport, processor lifecycle hooks, and partitioned convolution remain experimental. The decoded importer and transport have only one production consumer.
+- Post-success importer focus and importer-readiness action dependencies remain experimental fields on the supported `ActionButton` contract. The IR loader is their only production consumer.
 - Existing graph, parameter attachment, and composition declarations keep their current status. This milestone does not promote them.

@@ -513,6 +513,7 @@ Supported authoring surface:
 Experimental extensions:
 
 - `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and `Canvas` drawing functions.
+- `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader is their only production consumer.
 - Rotary controls currently have no plugin consumer. Bipolar and decibel controls each have one.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
