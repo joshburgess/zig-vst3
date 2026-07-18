@@ -11,6 +11,8 @@ pub const gain_param_id: u32 = 0;
 pub const bypass_param_id: u32 = 1;
 pub const mode_param_id: u32 = 2;
 pub const drive_param_id: u32 = 3;
+pub const audio_import_id: u32 = 1;
+pub const imported_waveform_source_id: u32 = 100;
 
 pub const input_panel_expanded_state_id: u32 = 1;
 pub const analyzer_mode_state_id: u32 = 2;
@@ -92,6 +94,18 @@ const persisted_envelope = core.editor_state.Envelope.init(&.{
 }) catch unreachable;
 const empty_preset_search = core.editor_state.Text.init("") catch unreachable;
 
+const ChannelStripControllerState = struct {
+    importer: vst3.vstgui.AudioFileImporter,
+
+    pub fn init() ChannelStripControllerState {
+        return .{ .importer = .init() };
+    }
+
+    pub fn deinit(self: *ChannelStripControllerState) void {
+        self.importer.deinit();
+    }
+};
+
 pub const ChannelStripEditorState = core.editor_state.Store(1, &.{
     .{ .id = input_panel_expanded_state_id, .default = .{ .boolean = true } },
     .{ .id = analyzer_mode_state_id, .default = .{ .index = 0 } },
@@ -140,6 +154,58 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const Params = Spec.Params;
     pub const parameter_set = &channel_parameter_set;
     pub const EditorState = ChannelStripEditorState;
+    pub const ControllerState = ChannelStripControllerState;
+
+    pub fn handleFileImport(
+        controller: *vst.ivsteditcontroller.IEditController,
+        import_id: u32,
+        entry_point: vst3.vstgui.FileImportEntryPoint,
+        paths: []const []const u8,
+    ) types.tresult {
+        if (import_id != audio_import_id) return types.kInvalidArgument;
+        return if (Controller.controllerState(controller).importer.begin(entry_point, paths))
+            types.kResultOk
+        else
+            types.kResultFalse;
+    }
+
+    pub fn loadFileImport(
+        controller: *vst.ivsteditcontroller.IEditController,
+        import_id: u32,
+    ) ?vst3.vstgui.AudioFileImportSnapshot {
+        if (import_id != audio_import_id) return null;
+        return Controller.controllerState(controller).importer.snapshot();
+    }
+
+    pub fn performFileImportCommand(
+        controller: *vst.ivsteditcontroller.IEditController,
+        import_id: u32,
+        command: vst3.vstgui.FileImportCommand,
+    ) types.tresult {
+        if (import_id != audio_import_id) return types.kInvalidArgument;
+        const importer = &Controller.controllerState(controller).importer;
+        const handled = switch (command) {
+            .cancel => importer.requestCancel(),
+            .retry => importer.retry(),
+            .reset => importer.reset(),
+        };
+        return if (handled) types.kResultOk else types.kResultFalse;
+    }
+
+    pub fn loadGuiGraph(
+        controller: *vst.ivsteditcontroller.IEditController,
+        source_id: u32,
+        output: []vst3.vstgui.GraphPoint,
+    ) usize {
+        if (source_id != imported_waveform_source_id) return 0;
+        var preview: [vst3.vstgui.audio_file_preview_capacity]vst3.vstgui.AudioFilePreviewPoint = undefined;
+        const count = Controller.controllerState(controller).importer.copyPreview(&preview);
+        const copied = @min(count, output.len);
+        for (preview[0..copied], output[0..copied]) |point, *destination| {
+            destination.* = .{ .x = point.x, .y = point.y };
+        }
+        return copied;
+    }
 
     pub fn loadPreset(controller: *vst.ivsteditcontroller.IEditController, preset_id: u32) types.tresult {
         const ids = [_]u32{ gain_param_id, drive_param_id, bypass_param_id, mode_param_id };
@@ -264,7 +330,27 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .dynamic = true,
                     .maximum_refresh_hz = 30,
                 },
+                .{
+                    .title = "Imported Waveform",
+                    .kind = .waveform,
+                    .style = .secondary,
+                    .x_axis = .{ .minimum = 0.0, .maximum = 1.0, .label = "File" },
+                    .y_axis = .{ .minimum = -1.0, .maximum = 1.0, .label = "Level" },
+                    .source_id = imported_waveform_source_id,
+                    .source = .controller,
+                    .dynamic = true,
+                    .maximum_refresh_hz = 20,
+                },
             },
+            .file_drops = &.{.{
+                .id = audio_import_id,
+                .title = "Audio Reference",
+                .prompt = "Drop a PCM WAV file here",
+                .picker_label = "Choose Audio File",
+                .picker_title = "Choose a PCM WAV File",
+                .extensions = &.{".wav"},
+                .maximum_files = 1,
+            }},
             .preset_browsers = &.{.{
                 .title = "Channel Presets",
                 .presets = &.{
@@ -314,7 +400,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                         .meter_count = 2,
                         .first_xy_pad = 1,
                         .style = .{ .accent = 0x35866aff, .border = 0x719789ff },
-                        .graph_count = 4,
+                        .graph_count = 5,
                     },
                 },
             },
@@ -507,6 +593,67 @@ test "channel strip controller creates independent public API views" {
     try std.testing.expectEqual(@as(types.int32, 600), second_size.bottom);
 }
 
+test "channel strip importer survives editor reopen and publishes its controller graph" {
+    const frame_count = 1024;
+    var wav_bytes: [44 + frame_count * 2]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&wav_bytes);
+    try writer.writeAll("RIFF");
+    try writer.writeInt(u32, wav_bytes.len - 8, .little);
+    try writer.writeAll("WAVEfmt ");
+    try writer.writeInt(u32, 16, .little);
+    try writer.writeInt(u16, 1, .little);
+    try writer.writeInt(u16, 1, .little);
+    try writer.writeInt(u32, 48_000, .little);
+    try writer.writeInt(u32, 96_000, .little);
+    try writer.writeInt(u16, 2, .little);
+    try writer.writeInt(u16, 16, .little);
+    try writer.writeAll("data");
+    try writer.writeInt(u32, frame_count * 2, .little);
+    for (0..frame_count) |index| {
+        const sample: i16 = if (index % 2 == 0) 12_000 else -12_000;
+        try writer.writeInt(i16, sample, .little);
+    }
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "reference.wav", .data = writer.buffered() });
+    var path: [1024]u8 = undefined;
+    const path_length = try temporary.dir.realPathFile(std.testing.io, "reference.wav", &path);
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &out));
+    const controller: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(out orelse return error.MissingController));
+    defer _ = controller.vtable.release(controller);
+    const first_view = controller.vtable.createView(controller, vst.ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
+    try std.testing.expectEqual(types.kResultOk, Controller.handleFileImport(
+        controller,
+        audio_import_id,
+        .picker,
+        &.{path[0..path_length]},
+    ));
+    _ = first_view.vtable.release(first_view);
+    const second_view = controller.vtable.createView(controller, vst.ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
+    defer _ = second_view.vtable.release(second_view);
+
+    var attempts: usize = 0;
+    while (attempts < 1_000_000) : (attempts += 1) {
+        const snapshot = Controller.loadFileImport(controller, audio_import_id) orelse return error.MissingImportState;
+        if (snapshot.import.status == .ready) break;
+        if (snapshot.import.status != .validating and snapshot.import.status != .importing) return error.ImportFailed;
+        std.Thread.yield() catch {};
+    }
+    try std.testing.expect(attempts < 1_000_000);
+    const snapshot = Controller.loadFileImport(controller, audio_import_id) orelse return error.MissingImportState;
+    try std.testing.expectEqual(core.gui_file_importer.Status.ready, snapshot.import.status);
+    try std.testing.expectEqual(core.gui_file_importer.EntryPoint.picker, snapshot.import.entry_point);
+    var graph: [vst3.vstgui.audio_file_preview_capacity]vst3.vstgui.GraphPoint = undefined;
+    try std.testing.expectEqual(
+        @as(usize, vst3.vstgui.audio_file_preview_capacity),
+        Controller.loadGuiGraph(controller, imported_waveform_source_id, &graph),
+    );
+    try std.testing.expectEqual(@as(f64, 0.0), graph[0].x);
+    try std.testing.expectEqual(@as(f64, 1.0), graph[graph.len - 1].x);
+}
+
 test "channel strip controller state is serialized and instance isolated" {
     var first_out: ?*anyopaque = null;
     var second_out: ?*anyopaque = null;
@@ -529,6 +676,10 @@ test "channel strip controller state is serialized and instance isolated" {
     try std.testing.expect(!Controller.editorState(second).get(input_panel_expanded_state_id).?.boolean);
     try std.testing.expect(!Controller.editorState(second).get(show_analyzer_state_id).?.boolean);
     try std.testing.expectEqual(@as(f64, 0.5), Controller.getNormalized(second, gain_param_id));
+    try std.testing.expectEqual(
+        core.gui_file_importer.Status.idle,
+        (Controller.loadFileImport(second, audio_import_id) orelse return error.MissingImportState).import.status,
+    );
 }
 
 test "channel strip component instances keep independent parameter state" {

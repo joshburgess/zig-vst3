@@ -37,6 +37,10 @@ pub const EnvelopePoint = vstgui_editor_view.EnvelopePoint;
 pub const GraphScale = vstgui_editor_view.GraphScale;
 pub const GraphKind = vstgui_editor_view.GraphKind;
 pub const GraphStyleRole = vstgui_editor_view.GraphStyleRole;
+pub const GraphSource = enum {
+    component,
+    controller,
+};
 
 pub const GraphAxis = struct {
     minimum: f64,
@@ -53,6 +57,7 @@ pub const Graph = struct {
     y_axis: GraphAxis,
     points: []const GraphPoint = &.{},
     source_id: types.uint32 = 0,
+    source: GraphSource = .component,
     dynamic: bool = false,
     maximum_refresh_hz: types.uint32 = 30,
     editable_points: []const EnvelopePoint = &.{},
@@ -328,6 +333,7 @@ fn createConfiguredView(
             } else if (graph.selection_state_id != 0 or graph.envelope_state_id != 0) return null;
             if (graph.points.len > vstgui_editor_view.max_graph_points or
                 editable_points.len > vstgui_editor_view.max_graph_points or
+                (graph.dynamic and graph.source_id & vstgui_editor_view.controller_graph_source_flag != 0) or
                 graph.x_axis.maximum <= graph.x_axis.minimum or graph.y_axis.maximum <= graph.y_axis.minimum or
                 (graph.dynamic and (graph.maximum_refresh_hz == 0 or graph.maximum_refresh_hz > 60)) or
                 (graph.point_capacity == 0 and (graph.editable_points.len > 0 or graph.minimum_point_count > 0 or
@@ -378,7 +384,10 @@ fn createConfiguredView(
                 },
                 .points = if (graph.points.len == 0) null else graph.points.ptr,
                 .point_count = @intCast(graph.points.len),
-                .source_id = graph.source_id,
+                .source_id = graph.source_id | if (graph.source == .controller)
+                    vstgui_editor_view.controller_graph_source_flag
+                else
+                    0,
                 .dynamic = @intFromBool(graph.dynamic),
                 .maximum_refresh_hz = graph.maximum_refresh_hz,
                 .editable_points = if (editable_points.len == 0) null else editable_points.ptr,
@@ -611,11 +620,17 @@ fn createConfiguredView(
             .invoke_menu_action = Bridge.invokeMenuAction,
             .send_note = Bridge.sendNote,
             .drop_files = Bridge.dropFiles,
+            .import_files = Bridge.importFiles,
+            .load_file_import = Bridge.loadFileImport,
+            .command_file_import = Bridge.commandFileImport,
         }, .{
             .userdata = controller,
             .subscribe = Bridge.subscribe,
             .unsubscribe = Bridge.unsubscribe,
-        }, wayland_host, telemetry_source);
+        }, wayland_host, telemetry_source, .{
+            .userdata = controller,
+            .load = Bridge.loadGuiGraph,
+        });
     }
 
     const view = ProtocolView.create() orelse return null;
@@ -734,6 +749,69 @@ fn NativeBridge(comptime Controller: type) type {
             var slices: [vstgui_editor_view.max_drop_files][]const u8 = undefined;
             for (0..count) |index| slices[index] = std.mem.span(paths[index]);
             return if (Controller.handleFileDrop(iface, drop_id, slices[0..count]) == types.kResultOk) 0 else -1;
+        }
+
+        fn importFiles(
+            userdata: ?*anyopaque,
+            drop_id: types.uint32,
+            entry_point: vstgui_editor_view.FileImportEntryPoint,
+            paths: [*]const [*:0]const u8,
+            count: types.uint32,
+        ) callconv(.c) types.int32 {
+            if (count == 0 or count > vstgui_editor_view.max_drop_files) return -1;
+            const iface = controller(userdata) orelse return -1;
+            var slices: [vstgui_editor_view.max_drop_files][]const u8 = undefined;
+            for (0..count) |index| slices[index] = std.mem.span(paths[index]);
+            return if (Controller.handleFileImport(
+                iface,
+                drop_id,
+                @enumFromInt(@intFromEnum(entry_point)),
+                slices[0..count],
+            ) == types.kResultOk) 0 else -1;
+        }
+
+        fn loadFileImport(
+            userdata: ?*anyopaque,
+            drop_id: types.uint32,
+            output: *vstgui_editor_view.FileImportSnapshot,
+        ) callconv(.c) types.int32 {
+            const iface = controller(userdata) orelse return -1;
+            const snapshot = Controller.loadFileImport(iface, drop_id) orelse return -1;
+            output.* = .{
+                .status = @enumFromInt(@intFromEnum(snapshot.import.status)),
+                .failure = @enumFromInt(@intFromEnum(snapshot.failure)),
+                .entry_point = @enumFromInt(@intFromEnum(snapshot.import.entry_point)),
+                .progress = snapshot.import.progress(),
+                .generation = snapshot.import.generation,
+                .sample_rate = snapshot.sample_rate,
+                .channels = snapshot.channels,
+                .sample_frames = snapshot.sample_frames,
+                .preview_points = @intCast(snapshot.preview_points),
+            };
+            return 0;
+        }
+
+        fn commandFileImport(
+            userdata: ?*anyopaque,
+            drop_id: types.uint32,
+            command: vstgui_editor_view.FileImportCommand,
+        ) callconv(.c) types.int32 {
+            const iface = controller(userdata) orelse return -1;
+            return if (Controller.performFileImportCommand(
+                iface,
+                drop_id,
+                @enumFromInt(@intFromEnum(command)),
+            ) == types.kResultOk) 0 else -1;
+        }
+
+        fn loadGuiGraph(
+            userdata: ?*anyopaque,
+            source_id: types.uint32,
+            output: [*]gui_graph.Point,
+            capacity: types.uint32,
+        ) callconv(.c) types.uint32 {
+            const iface = controller(userdata) orelse return 0;
+            return @intCast(Controller.loadGuiGraph(iface, source_id, output[0..capacity]));
         }
 
         fn sendNote(

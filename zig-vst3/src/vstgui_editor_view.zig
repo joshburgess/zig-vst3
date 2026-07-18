@@ -19,6 +19,53 @@ const Platform = enum(c_int) {
     wayland,
 };
 
+pub const FileImportEntryPoint = enum(c_int) {
+    drop,
+    picker,
+};
+
+pub const FileImportStatus = enum(c_int) {
+    idle,
+    validating,
+    importing,
+    ready,
+    empty,
+    unsupported_file,
+    capacity_limit,
+    invalid_path,
+    cancelled,
+    failed,
+};
+
+pub const FileImportFailure = enum(c_int) {
+    none,
+    open_failed,
+    too_large,
+    malformed,
+    truncated,
+    unsupported_format,
+    cancelled,
+    worker_unavailable,
+};
+
+pub const FileImportCommand = enum(c_int) {
+    cancel,
+    retry,
+    reset,
+};
+
+pub const FileImportSnapshot = extern struct {
+    status: FileImportStatus,
+    failure: FileImportFailure,
+    entry_point: FileImportEntryPoint,
+    progress: f64,
+    generation: u64,
+    sample_rate: types.uint32,
+    channels: types.uint32,
+    sample_frames: u64,
+    preview_points: types.uint32,
+};
+
 pub const Callbacks = extern struct {
     userdata: ?*anyopaque,
     begin_edit: *const fn (?*anyopaque, vsttypes.ParamID) callconv(.c) void,
@@ -35,6 +82,9 @@ pub const Callbacks = extern struct {
     invoke_menu_action: *const fn (?*anyopaque, types.uint32, types.uint32, types.int32) callconv(.c) types.int32,
     send_note: *const fn (?*anyopaque, types.int32, types.int32, f64, types.int32) callconv(.c) types.int32,
     drop_files: *const fn (?*anyopaque, types.uint32, [*]const [*:0]const u8, types.uint32) callconv(.c) types.int32,
+    import_files: *const fn (?*anyopaque, types.uint32, FileImportEntryPoint, [*]const [*:0]const u8, types.uint32) callconv(.c) types.int32,
+    load_file_import: *const fn (?*anyopaque, types.uint32, *FileImportSnapshot) callconv(.c) types.int32,
+    command_file_import: *const fn (?*anyopaque, types.uint32, FileImportCommand) callconv(.c) types.int32,
 };
 
 pub const ParameterInfo = extern struct {
@@ -249,6 +299,13 @@ const GraphCallbacks = extern struct {
     userdata: ?*anyopaque,
     load: *const fn (?*anyopaque, types.uint32, [*]gui_graph.Point, types.uint32) callconv(.c) types.uint32,
 };
+
+pub const ControllerGraphCallbacks = struct {
+    userdata: ?*anyopaque,
+    load: *const fn (?*anyopaque, types.uint32, [*]gui_graph.Point, types.uint32) callconv(.c) types.uint32,
+};
+
+pub const controller_graph_source_flag: types.uint32 = 1 << 31;
 
 pub const AssetFormat = enum(c_int) {
     png,
@@ -523,6 +580,7 @@ const Binding = struct {
 
 const TelemetryState = struct {
     source: ?gui_telemetry_source.RetainedSource,
+    controller_graph: ControllerGraphCallbacks,
 
     fn opened(self: *TelemetryState) void {
         if (self.source) |source| source.editorOpened();
@@ -676,6 +734,7 @@ pub fn create(
     observer_callbacks: ObserverCallbacks,
     wayland_host: ?*anyopaque,
     telemetry_source: ?gui_telemetry_source.RetainedSource,
+    controller_graph: ControllerGraphCallbacks,
 ) ?*iplugview.IPlugView {
     if (builtin.os.tag != .macos and builtin.os.tag != .windows and builtin.os.tag != .linux) {
         if (telemetry_source) |source| source.release();
@@ -733,7 +792,7 @@ pub fn create(
         if (telemetry_source) |source| source.release();
         return null;
     };
-    telemetry.* = .{ .source = telemetry_source };
+    telemetry.* = .{ .source = telemetry_source, .controller_graph = controller_graph };
     const editor = zig_vstgui_editor_create_latest(
         &descriptions,
         @intCast(parameters.len),
@@ -856,6 +915,14 @@ fn loadGraph(
     capacity: types.uint32,
 ) callconv(.c) types.uint32 {
     const state: *TelemetryState = @ptrCast(@alignCast(userdata orelse return 0));
+    if (source_id & controller_graph_source_flag != 0) {
+        return state.controller_graph.load(
+            state.controller_graph.userdata,
+            source_id & ~controller_graph_source_flag,
+            output,
+            capacity,
+        );
+    }
     const source = state.source orelse return 0;
     return @intCast(source.loadGraph(source_id, output[0..capacity]));
 }

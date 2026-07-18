@@ -89,7 +89,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
         pub const hasControllerState = has_controller_state;
         pub const hasPresetLoader = @hasDecl(Config, "loadPreset");
         pub const hasMenuActionHandler = @hasDecl(Config, "performMenuAction");
-        pub const hasFileDropHandler = @hasDecl(Config, "handleFileDrop");
+        pub const hasFileDropHandler = @hasDecl(Config, "handleFileImport") or @hasDecl(Config, "handleFileDrop");
+        pub const hasFileImportStatus = @hasDecl(Config, "loadFileImport");
+        pub const hasFileImportCommandHandler = @hasDecl(Config, "performFileImportCommand");
+        pub const hasGuiGraphSource = @hasDecl(Config, "loadGuiGraph");
         pub const EditorStateType = EditorState;
         pub const ControllerStateType = ControllerState;
         const editor_state_migrations: []const plug_core.editor_state.Migration = if (@hasDecl(Config, "editor_state_migrations"))
@@ -206,6 +209,46 @@ pub fn ReflectedEditController(comptime Config: type) type {
                 return Config.handleFileDrop(iface, drop_id, paths);
             }
             return types.kResultFalse;
+        }
+
+        pub fn handleFileImport(
+            iface: *ivsteditcontroller.IEditController,
+            drop_id: u32,
+            entry_point: plug_core.gui_file_importer.EntryPoint,
+            paths: []const []const u8,
+        ) types.tresult {
+            if (comptime @hasDecl(Config, "handleFileImport")) {
+                return Config.handleFileImport(iface, drop_id, entry_point, paths);
+            }
+            return handleFileDrop(iface, drop_id, paths);
+        }
+
+        pub fn loadFileImport(
+            iface: *ivsteditcontroller.IEditController,
+            drop_id: u32,
+        ) ?plug_core.gui_audio_file_importer.Snapshot {
+            if (comptime @hasDecl(Config, "loadFileImport")) return Config.loadFileImport(iface, drop_id);
+            return null;
+        }
+
+        pub fn performFileImportCommand(
+            iface: *ivsteditcontroller.IEditController,
+            drop_id: u32,
+            command: plug_core.gui_file_importer.Command,
+        ) types.tresult {
+            if (comptime @hasDecl(Config, "performFileImportCommand")) {
+                return Config.performFileImportCommand(iface, drop_id, command);
+            }
+            return types.kResultFalse;
+        }
+
+        pub fn loadGuiGraph(
+            iface: *ivsteditcontroller.IEditController,
+            source_id: u32,
+            output: []plug_core.gui_graph.Point,
+        ) usize {
+            if (comptime @hasDecl(Config, "loadGuiGraph")) return Config.loadGuiGraph(iface, source_id, output);
+            return 0;
         }
 
         pub fn sendGuiNote(

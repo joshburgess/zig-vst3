@@ -76,6 +76,7 @@ pub fn main() !void {
     (try benchGuiScalarSnapshot()).print();
     (try benchWaveformCapture()).print();
     (try benchSpectrumAnalyzer()).print();
+    try benchAudioFileImport();
 }
 
 fn benchRawStream() !Benchmark {
@@ -228,6 +229,52 @@ fn benchSpectrumAnalyzer() !Benchmark {
     }
     std.mem.doNotOptimizeAway(checksum);
     return .{ .name = "GUI 128-point spectrum analysis/read", .iterations = iterations, .elapsed_ns = try timer.read() };
+}
+
+fn benchAudioFileImport() !void {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const path = ".zig-cache/audio-import-benchmark.wav";
+    defer std.Io.Dir.cwd().deleteFile(io, path) catch {};
+    const data_bytes = 8 * 1024 * 1024;
+    var header: [44]u8 = undefined;
+    var header_writer = std.Io.Writer.fixed(&header);
+    try header_writer.writeAll("RIFF");
+    try header_writer.writeInt(u32, 36 + data_bytes, .little);
+    try header_writer.writeAll("WAVEfmt ");
+    try header_writer.writeInt(u32, 16, .little);
+    try header_writer.writeInt(u16, 1, .little);
+    try header_writer.writeInt(u16, 1, .little);
+    try header_writer.writeInt(u32, 48_000, .little);
+    try header_writer.writeInt(u32, 96_000, .little);
+    try header_writer.writeInt(u16, 2, .little);
+    try header_writer.writeInt(u16, 16, .little);
+    try header_writer.writeAll("data");
+    try header_writer.writeInt(u32, data_bytes, .little);
+    {
+        var file = try std.Io.Dir.cwd().createFile(io, path, .{});
+        defer file.close(io);
+        try file.writeStreamingAll(io, header_writer.buffered());
+        const samples = [_]u8{0} ** 4096;
+        var written: usize = 0;
+        while (written < data_bytes) : (written += samples.len) try file.writeStreamingAll(io, &samples);
+    }
+
+    var importer = plug.gui_audio_file_importer.Importer.init();
+    defer importer.deinit();
+    var timer = try Timer.start();
+    if (!importer.begin(.picker, &.{path})) return error.BenchmarkImportStartFailed;
+    while (true) {
+        const snapshot = importer.snapshot();
+        if (snapshot.import.status == .ready) break;
+        if (snapshot.import.status != .validating and snapshot.import.status != .importing) {
+            return error.BenchmarkImportFailed;
+        }
+        std.Thread.yield() catch {};
+    }
+    const elapsed_ns = try timer.read();
+    const mebibytes_per_second = @as(f64, @floatFromInt(data_bytes)) * @as(f64, std.time.ns_per_s) /
+        (@as(f64, @floatFromInt(elapsed_ns)) * 1024.0 * 1024.0);
+    std.debug.print("bounded PCM WAV worker: {d:.1} MiB/s ({d} bytes)\n", .{ mebibytes_per_second, data_bytes });
 }
 
 fn fillInput(buffer: []f32, scale: f32) void {

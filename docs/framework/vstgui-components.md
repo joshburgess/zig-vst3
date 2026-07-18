@@ -320,6 +320,8 @@ Declare a bounded operating-system file target through `EditorDescription.file_d
     .id = 1,
     .title = "Audio Import",
     .prompt = "Drop WAV or AIFF files here",
+    .picker_title = "Choose Audio File",
+    .picker_action = "Choose Audio File",
     .extensions = &.{ ".wav", ".aiff", ".aif" },
     .maximum_files = 2,
 }},
@@ -327,9 +329,11 @@ Declare a bounded operating-system file target through `EditorDescription.file_d
 
 The adapter accepts only VSTGUI file-path payloads. Matching is case-insensitive and occurs before plugin code runs. One target may accept 1–8 files and 1–8 extensions. Each copied path is limited to 1,024 bytes. The callback receives borrowed slices backed by adapter-owned copies and must finish synchronously. Host package storage and pointers never escape the drag callback.
 
-Idle, acceptable, unsupported type, excessive count, invalid path, handler failure, accepted, and disabled states have distinct visible text and semantic values. A callback failure keeps the target available and tells the user to drop again. The target is an accessibility group rather than a keyboard focus stop because the operation begins in the operating system's file browser. A future production consumer should provide an equivalent keyboard-accessible file chooser before this API is promoted.
+The operating-system picker is the primary action. Pointer activation, Enter, Space, and the accessibility press action all open it. Drag and drop is an equivalent shortcut. Both paths copy and validate files through the same public callback, restore focus after picker completion, and reject late callbacks after teardown.
 
-`FileDrop` remains experimental. The component gallery exercises the native contract, but no production editor imports files yet. Its callback shape and accessible fallback may change when a real importer becomes the second consumer.
+Idle, drag hover, validating, importing, ready, empty, unsupported type, excessive count, invalid path, cancelled, recoverable failure, and disabled states have distinct visible text and semantic values. Active imports expose bounded progress. Cancel and Retry replace the primary action only while those commands are available. Status, icons or shapes, action labels, and accessibility values carry meaning without relying on color.
+
+`FileDrop` is supported. The component gallery and production channel-strip importer use the same public declaration, bounded path callback, picker fallback, keyboard interaction, accessibility semantics, and lifecycle contract.
 
 ## API Status
 
@@ -349,6 +353,7 @@ Supported authoring surface:
 - `ActionMenu`, action, toggle, separator, disabled and destructive item states, anchored overlays, and persistent toggle fields.
 - `Piano`, bounded note ranges, GUI note transport, computer-key input, pointer glissando, and accessible note selection.
 - `StepSequencer`, bounded parameter-backed patterns, persistent multi-selection, activity-gated playhead telemetry, and accessible editing.
+- `FileDrop`, bounded extension filtering and path copying, an accessible operating-system picker fallback, keyboard interaction, progress presentation, cancellation, retry, and recoverable rejection feedback.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.
 
@@ -358,7 +363,7 @@ Experimental extensions:
 - Rotary controls currently have no plugin consumer. Bipolar and decibel controls each have one.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
-- `FileDrop`, bounded extension filtering, synchronous path copying, and recoverable rejection feedback. It currently has one gallery consumer.
+- `AudioFileImporter`, controller-owned import status and command callbacks, and controller-sourced graph snapshots. The channel strip is their only authoring consumer, so their exact composition shape may still change.
 - New modulation and GPU components.
 
 Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.

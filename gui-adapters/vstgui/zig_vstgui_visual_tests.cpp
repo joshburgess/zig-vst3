@@ -544,6 +544,52 @@ Snapshot fileDrops() {
     };
 }
 
+Snapshot fileImportStates() {
+    return {
+        "file-import-states.png",
+        960,
+        360,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            context.setFillColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            context.drawRect(VSTGUI::CRect(0, 0, 960, 360), VSTGUI::kDrawFilled);
+            const char* extensions[] = {".wav"};
+            const ZigVstguiFileDropDescription description {
+                1, "Audio Reference", "Drop a PCM WAV file here", extensions, 1, 1, 1,
+                "Choose Audio File", "Choose a PCM WAV File",
+            };
+            ZigVstgui::AccessibilityNode nodes[9];
+            ZigVstgui::FileDropView views[] = {
+                {VSTGUI::CRect(8, 8, 312, 112), description, {}, styles, &nodes[0]},
+                {VSTGUI::CRect(328, 8, 632, 112), description, {}, styles, &nodes[1]},
+                {VSTGUI::CRect(648, 8, 952, 112), description, {}, styles, &nodes[2]},
+                {VSTGUI::CRect(8, 128, 312, 232), description, {}, styles, &nodes[3]},
+                {VSTGUI::CRect(328, 128, 632, 232), description, {}, styles, &nodes[4]},
+                {VSTGUI::CRect(648, 128, 952, 232), description, {}, styles, &nodes[5]},
+                {VSTGUI::CRect(8, 248, 312, 352), description, {}, styles, &nodes[6]},
+                {VSTGUI::CRect(328, 248, 632, 352), description, {}, styles, &nodes[7]},
+                {VSTGUI::CRect(648, 248, 952, 352), description, {}, styles, &nodes[8]},
+            };
+            ZigVstguiFileImportSnapshot snapshots[] = {
+                {ZIG_VSTGUI_FILE_IMPORT_VALIDATING, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE, ZIG_VSTGUI_FILE_IMPORT_PICKER, 0.0, 1, 0, 0, 0, 0},
+                {ZIG_VSTGUI_FILE_IMPORT_IMPORTING, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE, ZIG_VSTGUI_FILE_IMPORT_DROP, 0.42, 2, 48000, 2, 4096, 0},
+                {ZIG_VSTGUI_FILE_IMPORT_READY, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE, ZIG_VSTGUI_FILE_IMPORT_PICKER, 1.0, 3, 48000, 2, 4096, 256},
+                {ZIG_VSTGUI_FILE_IMPORT_EMPTY, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE, ZIG_VSTGUI_FILE_IMPORT_DROP, 1.0, 4, 48000, 1, 0, 0},
+                {ZIG_VSTGUI_FILE_IMPORT_UNSUPPORTED_FILE, ZIG_VSTGUI_FILE_IMPORT_FAILURE_UNSUPPORTED_FORMAT, ZIG_VSTGUI_FILE_IMPORT_PICKER, 0.0, 5, 0, 0, 0, 0},
+                {ZIG_VSTGUI_FILE_IMPORT_CAPACITY_LIMIT, ZIG_VSTGUI_FILE_IMPORT_FAILURE_TOO_LARGE, ZIG_VSTGUI_FILE_IMPORT_DROP, 0.0, 6, 0, 0, 0, 0},
+                {ZIG_VSTGUI_FILE_IMPORT_INVALID_PATH, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE, ZIG_VSTGUI_FILE_IMPORT_PICKER, 0.0, 7, 0, 0, 0, 0},
+                {ZIG_VSTGUI_FILE_IMPORT_CANCELLED, ZIG_VSTGUI_FILE_IMPORT_FAILURE_CANCELLED, ZIG_VSTGUI_FILE_IMPORT_DROP, 0.25, 8, 0, 0, 0, 0},
+                {ZIG_VSTGUI_FILE_IMPORT_FAILED, ZIG_VSTGUI_FILE_IMPORT_FAILURE_TRUNCATED, ZIG_VSTGUI_FILE_IMPORT_PICKER, 0.67, 9, 0, 0, 0, 0},
+            };
+            for (uint32_t index = 0; index < 9; ++index) {
+                views[index].applyImportSnapshot(snapshots[index]);
+                views[index].draw(&context);
+            }
+        },
+    };
+}
+
 Snapshot presetBrowsers() {
     return {
         "preset-browsers.png",
@@ -790,7 +836,7 @@ double benchmarkStepSequencerDraw() {
 
 double benchmarkFileDropDraw() {
     ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
-    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 480, 90)));
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 480, 120)));
     container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
     const char* extensions[] = {".wav", ".aiff"};
     const ZigVstguiFileDropDescription description {
@@ -799,10 +845,14 @@ double benchmarkFileDropDraw() {
     };
     ZigVstgui::AccessibilityNode accessibility;
     auto* view = new ZigVstgui::FileDropView(
-        VSTGUI::CRect(8, 8, 472, 82), description, {}, styles, &accessibility
+        VSTGUI::CRect(8, 8, 472, 112), description, {}, styles, &accessibility
     );
+    view->applyImportSnapshot({
+        ZIG_VSTGUI_FILE_IMPORT_IMPORTING, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE,
+        ZIG_VSTGUI_FILE_IMPORT_PICKER, 0.42, 2, 48000, 2, 4096, 0,
+    });
     container->addView(view);
-    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(480, 90), 1.0);
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(480, 120), 1.0);
     return benchmarkDraw(container, offscreen);
 }
 
@@ -857,6 +907,7 @@ int main(int argc, char** argv) {
         pianoKeyboard(),
         stepSequencer(),
         fileDrops(),
+        fileImportStates(),
     };
     int result = 0;
     for (const auto& snapshot : snapshots) {

@@ -1,4 +1,5 @@
 const implementation = @import("vstgui_single_parameter_controller.zig");
+const plugin_core = @import("zig-vst3-plugin-core");
 
 pub const Parameter = implementation.Parameter;
 pub const Meter = implementation.Meter;
@@ -7,6 +8,7 @@ pub const EnvelopePoint = implementation.EnvelopePoint;
 pub const GraphScale = implementation.GraphScale;
 pub const GraphKind = implementation.GraphKind;
 pub const GraphStyleRole = implementation.GraphStyleRole;
+pub const GraphSource = implementation.GraphSource;
 pub const GraphAxis = implementation.GraphAxis;
 pub const Graph = implementation.Graph;
 pub const XYPad = implementation.XYPad;
@@ -18,6 +20,13 @@ pub const ActionMenu = implementation.ActionMenu;
 pub const Piano = implementation.Piano;
 pub const StepSequencer = implementation.StepSequencer;
 pub const FileDrop = implementation.FileDrop;
+pub const FileImportEntryPoint = plugin_core.gui_file_importer.EntryPoint;
+pub const FileImportCommand = plugin_core.gui_file_importer.Command;
+pub const FileImportStatus = plugin_core.gui_file_importer.Status;
+pub const AudioFileImporter = plugin_core.gui_audio_file_importer.Importer;
+pub const AudioFileImportSnapshot = plugin_core.gui_audio_file_importer.Snapshot;
+pub const AudioFilePreviewPoint = plugin_core.gui_audio_file_importer.PreviewPoint;
+pub const audio_file_preview_capacity = plugin_core.gui_audio_file_importer.preview_capacity;
 pub const Asset = implementation.Asset;
 pub const AssetFormat = implementation.AssetFormat;
 pub const AssetScale = implementation.AssetScale;

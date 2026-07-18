@@ -282,7 +282,7 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_latest(
         }
     }
     if ((!file_drops && file_drop_count > 0) || file_drop_count > ZIG_VSTGUI_MAX_FILE_DROPS ||
-        (file_drop_count > 0 && !callbacks.drop_files)) return nullptr;
+        (file_drop_count > 0 && !callbacks.import_files && !callbacks.drop_files)) return nullptr;
     for (uint32_t index = 0; index < file_drop_count; ++index) {
         const auto& drop = file_drops[index];
         if (drop.drop_id == 0 || !drop.title || drop.title[0] == 0 || !drop.prompt || drop.prompt[0] == 0 ||

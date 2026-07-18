@@ -6,6 +6,12 @@ pub const EntryPoint = enum {
     picker,
 };
 
+pub const Command = enum {
+    cancel,
+    retry,
+    reset,
+};
+
 pub const Status = enum {
     idle,
     validating,

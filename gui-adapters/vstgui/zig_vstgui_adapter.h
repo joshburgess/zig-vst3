@@ -7,6 +7,53 @@
 extern "C" {
 #endif
 
+typedef enum ZigVstguiFileImportEntryPoint {
+    ZIG_VSTGUI_FILE_IMPORT_DROP = 0,
+    ZIG_VSTGUI_FILE_IMPORT_PICKER = 1
+} ZigVstguiFileImportEntryPoint;
+
+typedef enum ZigVstguiFileImportStatus {
+    ZIG_VSTGUI_FILE_IMPORT_IDLE = 0,
+    ZIG_VSTGUI_FILE_IMPORT_VALIDATING = 1,
+    ZIG_VSTGUI_FILE_IMPORT_IMPORTING = 2,
+    ZIG_VSTGUI_FILE_IMPORT_READY = 3,
+    ZIG_VSTGUI_FILE_IMPORT_EMPTY = 4,
+    ZIG_VSTGUI_FILE_IMPORT_UNSUPPORTED_FILE = 5,
+    ZIG_VSTGUI_FILE_IMPORT_CAPACITY_LIMIT = 6,
+    ZIG_VSTGUI_FILE_IMPORT_INVALID_PATH = 7,
+    ZIG_VSTGUI_FILE_IMPORT_CANCELLED = 8,
+    ZIG_VSTGUI_FILE_IMPORT_FAILED = 9
+} ZigVstguiFileImportStatus;
+
+typedef enum ZigVstguiFileImportFailure {
+    ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE = 0,
+    ZIG_VSTGUI_FILE_IMPORT_FAILURE_OPEN = 1,
+    ZIG_VSTGUI_FILE_IMPORT_FAILURE_TOO_LARGE = 2,
+    ZIG_VSTGUI_FILE_IMPORT_FAILURE_MALFORMED = 3,
+    ZIG_VSTGUI_FILE_IMPORT_FAILURE_TRUNCATED = 4,
+    ZIG_VSTGUI_FILE_IMPORT_FAILURE_UNSUPPORTED_FORMAT = 5,
+    ZIG_VSTGUI_FILE_IMPORT_FAILURE_CANCELLED = 6,
+    ZIG_VSTGUI_FILE_IMPORT_FAILURE_WORKER_UNAVAILABLE = 7
+} ZigVstguiFileImportFailure;
+
+typedef enum ZigVstguiFileImportCommand {
+    ZIG_VSTGUI_FILE_IMPORT_CANCEL = 0,
+    ZIG_VSTGUI_FILE_IMPORT_RETRY = 1,
+    ZIG_VSTGUI_FILE_IMPORT_RESET = 2
+} ZigVstguiFileImportCommand;
+
+typedef struct ZigVstguiFileImportSnapshot {
+    ZigVstguiFileImportStatus status;
+    ZigVstguiFileImportFailure failure;
+    ZigVstguiFileImportEntryPoint entry_point;
+    double progress;
+    uint64_t generation;
+    uint32_t sample_rate;
+    uint32_t channels;
+    uint64_t sample_frames;
+    uint32_t preview_points;
+} ZigVstguiFileImportSnapshot;
+
 typedef struct ZigVstguiCallbacks {
     void* userdata;
     void (*begin_edit)(void* userdata, uint32_t parameter_id);
@@ -23,6 +70,9 @@ typedef struct ZigVstguiCallbacks {
     int32_t (*invoke_menu_action)(void* userdata, uint32_t menu_id, uint32_t item_id, int32_t checked);
     int32_t (*send_note)(void* userdata, int32_t channel, int32_t pitch, double velocity, int32_t pressed);
     int32_t (*drop_files)(void* userdata, uint32_t drop_id, const char* const* paths, uint32_t count);
+    int32_t (*import_files)(void* userdata, uint32_t drop_id, ZigVstguiFileImportEntryPoint entry_point, const char* const* paths, uint32_t count);
+    int32_t (*load_file_import)(void* userdata, uint32_t drop_id, ZigVstguiFileImportSnapshot* snapshot);
+    int32_t (*command_file_import)(void* userdata, uint32_t drop_id, ZigVstguiFileImportCommand command);
 } ZigVstguiCallbacks;
 
 typedef struct ZigVstguiParameterInfo {

@@ -65,6 +65,11 @@ struct CallbackState {
     std::string dropped_path;
     bool reject_drop {false};
     uint32_t picker_launch_count {0};
+    ZigVstguiFileImportEntryPoint import_entry {ZIG_VSTGUI_FILE_IMPORT_DROP};
+    ZigVstguiFileImportSnapshot import_snapshot {};
+    bool import_snapshot_available {false};
+    uint32_t import_command_count {0};
+    ZigVstguiFileImportCommand import_command {ZIG_VSTGUI_FILE_IMPORT_RESET};
 };
 
 class TestDataPackage final : public VSTGUI::IDataPackage {
@@ -99,6 +104,32 @@ int32_t dropFiles(void* userdata, uint32_t drop_id, const char* const* paths, ui
     state->dropped_count = count;
     state->dropped_path = count > 0 && paths && paths[0] ? paths[0] : "";
     return state->reject_drop ? -1 : 0;
+}
+
+int32_t importFiles(
+    void* userdata,
+    uint32_t drop_id,
+    ZigVstguiFileImportEntryPoint entry_point,
+    const char* const* paths,
+    uint32_t count
+) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->import_entry = entry_point;
+    return dropFiles(userdata, drop_id, paths, count);
+}
+
+int32_t loadFileImport(void* userdata, uint32_t, ZigVstguiFileImportSnapshot* snapshot) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    if (!state->import_snapshot_available || !snapshot) return -1;
+    *snapshot = state->import_snapshot;
+    return 0;
+}
+
+int32_t commandFileImport(void* userdata, uint32_t, ZigVstguiFileImportCommand command) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->import_command_count += 1;
+    state->import_command = command;
+    return 0;
 }
 
 bool launchTestPicker(void* userdata, ZigVstgui::FileDropControl& control) {
@@ -1796,6 +1827,9 @@ int testFileDrop() {
     ZigVstguiCallbacks callbacks {};
     callbacks.userdata = &state;
     callbacks.drop_files = dropFiles;
+    callbacks.import_files = importFiles;
+    callbacks.load_file_import = loadFileImport;
+    callbacks.command_file_import = commandFileImport;
     const char* extensions[] = {".wav", ".aiff"};
     const ZigVstguiFileDropDescription description {
         4, "Audio Import", "Drop audio here", extensions, 2, 2, 1,
@@ -1819,7 +1853,8 @@ int testFileDrop() {
             VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
         );
         view->onMouseDownEvent(picker_click);
-        if (!picker_click.consumed || state.picker_launch_count != 1 || state.dropped_path != "/tmp/picker.wav") {
+        if (!picker_click.consumed || state.picker_launch_count != 1 || state.dropped_path != "/tmp/picker.wav" ||
+            state.import_entry != ZIG_VSTGUI_FILE_IMPORT_PICKER) {
             VSTGUI::exit();
             return 1;
         }
@@ -1854,7 +1889,8 @@ int testFileDrop() {
         auto package = VSTGUI::owned(new TestDataPackage("/tmp/room.wav"));
         VSTGUI::DragEventData drag_event {package, {}, {}};
         if (view->onDragEnter(drag_event) != VSTGUI::DragOperation::Copy ||
-            !view->onDrop(drag_event) || state.dropped_path != "/tmp/room.wav") {
+            !view->onDrop(drag_event) || state.dropped_path != "/tmp/room.wav" ||
+            state.import_entry != ZIG_VSTGUI_FILE_IMPORT_DROP) {
             VSTGUI::exit();
             return 6;
         }
@@ -1875,6 +1911,26 @@ int testFileDrop() {
             VSTGUI::exit();
             return 8;
         }
+        state.import_snapshot_available = true;
+        state.import_snapshot.status = ZIG_VSTGUI_FILE_IMPORT_IMPORTING;
+        state.import_snapshot.failure = ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE;
+        state.import_snapshot.entry_point = ZIG_VSTGUI_FILE_IMPORT_PICKER;
+        state.import_snapshot.progress = 0.42;
+        state.import_snapshot.generation = 2;
+        if (!control.handleKey(0, Steinberg::KEY_RETURN, 0) || state.import_command_count != 1 ||
+            state.import_command != ZIG_VSTGUI_FILE_IMPORT_CANCEL || state.picker_launch_count != 3 ||
+            control.accessibilityNode().name() != "Cancel Import" ||
+            control.accessibilityNode().valueText().find("42%") == std::string::npos) {
+            VSTGUI::exit();
+            return 9;
+        }
+        state.import_snapshot.status = ZIG_VSTGUI_FILE_IMPORT_FAILED;
+        state.import_snapshot.failure = ZIG_VSTGUI_FILE_IMPORT_FAILURE_TRUNCATED;
+        if (!control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::press) ||
+            state.import_command_count != 2 || state.import_command != ZIG_VSTGUI_FILE_IMPORT_RETRY) {
+            VSTGUI::exit();
+            return 10;
+        }
         control.clear();
 
         auto disabled_description = description;
@@ -1886,7 +1942,7 @@ int testFileDrop() {
             disabled.accessibilityNode().perform(ZigVstgui::AccessibilityAction::press) ||
             state.picker_launch_count != 3) {
             VSTGUI::exit();
-            return 9;
+            return 11;
         }
         disabled.clear();
     }
@@ -1901,7 +1957,7 @@ int testFileDrop() {
     );
     if (!editor || !editor->fileDropAccessibility(0)) {
         zig_vstgui_editor_destroy(editor);
-        return 10;
+        return 12;
     }
     zig_vstgui_editor_destroy(editor);
     auto invalid = description;

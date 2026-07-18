@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 
 namespace ZigVstgui {
@@ -75,19 +76,30 @@ void FileDropView::draw(VSTGUI::CDrawContext* context) {
     context->setFont(styles.font(TypographyRole::body));
     context->setFontColor(description.enabled == 0 ? disabled.foreground : normal.foreground);
     VSTGUI::CRect title_bounds = bounds;
-    title_bounds.bottom = title_bounds.top + bounds.getHeight() * 0.38;
+    title_bounds.bottom = title_bounds.top + bounds.getHeight() * 0.30;
     context->drawString(title.c_str(), title_bounds, VSTGUI::kCenterText);
     context->setFont(styles.font(TypographyRole::value));
     VSTGUI::CRect status_bounds = bounds;
     status_bounds.top = title_bounds.bottom;
-    if (current_status == FileDropStatus::idle) status_bounds.bottom = bounds.top + bounds.getHeight() * 0.74;
+    status_bounds.bottom = bounds.top + bounds.getHeight() * 0.60;
     context->drawString(statusText(), status_bounds, VSTGUI::kCenterText);
-    if (current_status == FileDropStatus::idle) {
-        context->setFont(styles.font(TypographyRole::body));
-        context->setFontColor(description.enabled == 0 ? disabled.foreground : styles.theme().colors.text_secondary);
-        VSTGUI::CRect prompt_bounds = bounds;
-        prompt_bounds.top = status_bounds.bottom;
-        context->drawString(prompt.c_str(), prompt_bounds, VSTGUI::kCenterText);
+    context->setFont(styles.font(TypographyRole::body));
+    context->setFontColor(description.enabled == 0 ? disabled.foreground : styles.theme().colors.text_secondary);
+    VSTGUI::CRect detail_bounds = bounds;
+    detail_bounds.top = status_bounds.bottom;
+    detail_bounds.bottom = bounds.top + bounds.getHeight() * 0.80;
+    context->drawString(detailText(), detail_bounds, VSTGUI::kCenterText);
+    VSTGUI::CRect action_bounds = bounds;
+    action_bounds.top = detail_bounds.bottom;
+    context->setFontColor(description.enabled == 0 ? disabled.foreground : normal.accent);
+    context->drawString(actionText(), action_bounds, VSTGUI::kCenterText);
+    if (has_import_snapshot && import_snapshot.status == ZIG_VSTGUI_FILE_IMPORT_IMPORTING) {
+        VSTGUI::CRect progress_bounds = bounds;
+        progress_bounds.top = progress_bounds.bottom - 3.0;
+        progress_bounds.right = progress_bounds.left + progress_bounds.getWidth() *
+            std::clamp(import_snapshot.progress, 0.0, 1.0);
+        context->setFillColor(normal.accent);
+        context->drawRect(progress_bounds, VSTGUI::kDrawFilled);
     }
     setDirty(false);
 }
@@ -114,7 +126,7 @@ bool FileDropView::onDrop(VSTGUI::DragEventData event_data) {
 void FileDropView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
     if (description.enabled == 0 || !event.buttonState.isLeft() || !owner) return;
     if (getFrame()) getFrame()->setFocusView(this);
-    event.consumed = owner->activatePicker();
+    event.consumed = owner->activatePrimaryAction();
 }
 
 void FileDropView::onKeyboardEvent(VSTGUI::KeyboardEvent& event) {
@@ -152,18 +164,29 @@ FileDropStatus FileDropView::inspectPaths(const char* const* values, uint32_t co
     return current_status;
 }
 
-bool FileDropView::dispatchInspected() {
-    if (current_status != FileDropStatus::acceptable || path_count == 0 || !callbacks.drop_files) return false;
+bool FileDropView::dispatchInspected(ZigVstguiFileImportEntryPoint entry_point) {
+    if (current_status != FileDropStatus::acceptable || path_count == 0 ||
+        (!callbacks.import_files && !callbacks.drop_files)) return false;
     std::array<const char*, ZIG_VSTGUI_MAX_DROP_FILES> pointers {};
     for (uint32_t index = 0; index < path_count; ++index) pointers[index] = paths[index].c_str();
-    const bool accepted = callbacks.drop_files(callbacks.userdata, description.drop_id, pointers.data(), path_count) == 0;
+    const bool accepted = callbacks.import_files
+        ? callbacks.import_files(callbacks.userdata, description.drop_id, entry_point, pointers.data(), path_count) == 0
+        : callbacks.drop_files(callbacks.userdata, description.drop_id, pointers.data(), path_count) == 0;
     setStatus(accepted ? FileDropStatus::accepted : FileDropStatus::handler_failed);
+    if (accepted && owner) owner->startRefresh();
     return accepted;
 }
 
 void FileDropView::cancelSelection() {
     path_count = 0;
     setStatus(FileDropStatus::idle);
+}
+
+void FileDropView::applyImportSnapshot(const ZigVstguiFileImportSnapshot& snapshot) {
+    import_snapshot = snapshot;
+    has_import_snapshot = true;
+    syncAccessibility();
+    invalid();
 }
 
 FileDropStatus FileDropView::status() const { return current_status; }
@@ -224,12 +247,14 @@ void FileDropView::setStatus(FileDropStatus next) {
 
 void FileDropView::syncAccessibility() {
     if (!accessibility) return;
+    const char* action = actionText();
+    accessibility->setName(action[0] == 0 ? picker_label.c_str() : action);
     accessibility->setValueText(statusText());
 }
 
 const char* FileDropView::statusText() const {
     if (description.enabled == 0) return "File import disabled";
-    switch (current_status) {
+    if (showingLocalStatus()) switch (current_status) {
         case FileDropStatus::idle: return picker_label.c_str();
         case FileDropStatus::acceptable: return "Release to import";
         case FileDropStatus::rejected_type: return "Unsupported file type";
@@ -238,7 +263,73 @@ const char* FileDropView::statusText() const {
         case FileDropStatus::handler_failed: return "Import failed. Drop again to retry";
         case FileDropStatus::accepted: return "Import complete";
     }
-    return prompt.c_str();
+    if (!has_import_snapshot) return picker_label.c_str();
+    switch (import_snapshot.status) {
+        case ZIG_VSTGUI_FILE_IMPORT_IDLE: return "No audio loaded";
+        case ZIG_VSTGUI_FILE_IMPORT_VALIDATING: return "Validating audio file";
+        case ZIG_VSTGUI_FILE_IMPORT_IMPORTING:
+            std::snprintf(status_buffer.data(), status_buffer.size(), "Importing %u%%",
+                static_cast<unsigned>(std::clamp(import_snapshot.progress, 0.0, 1.0) * 100.0));
+            return status_buffer.data();
+        case ZIG_VSTGUI_FILE_IMPORT_READY: return "Audio ready";
+        case ZIG_VSTGUI_FILE_IMPORT_EMPTY: return "No audio samples found";
+        case ZIG_VSTGUI_FILE_IMPORT_UNSUPPORTED_FILE: return "Unsupported WAV format";
+        case ZIG_VSTGUI_FILE_IMPORT_CAPACITY_LIMIT: return "File exceeds import limits";
+        case ZIG_VSTGUI_FILE_IMPORT_INVALID_PATH: return "Invalid file path";
+        case ZIG_VSTGUI_FILE_IMPORT_CANCELLED: return "Import cancelled";
+        case ZIG_VSTGUI_FILE_IMPORT_FAILED: return "Import could not finish";
+    }
+    return "Import unavailable";
+}
+
+const char* FileDropView::actionText() const {
+    if (description.enabled == 0) return "File import disabled";
+    if (showingLocalStatus()) return current_status == FileDropStatus::acceptable ? "" : picker_label.c_str();
+    if (!has_import_snapshot) return "";
+    switch (import_snapshot.status) {
+        case ZIG_VSTGUI_FILE_IMPORT_VALIDATING:
+        case ZIG_VSTGUI_FILE_IMPORT_IMPORTING: return "Cancel Import";
+        case ZIG_VSTGUI_FILE_IMPORT_CANCELLED:
+        case ZIG_VSTGUI_FILE_IMPORT_FAILED: return "Retry Import";
+        case ZIG_VSTGUI_FILE_IMPORT_READY: return "Choose Another File";
+        default: return picker_label.c_str();
+    }
+}
+
+const char* FileDropView::detailText() const {
+    if (showingLocalStatus()) return current_status == FileDropStatus::acceptable ? prompt.c_str() : "";
+    if (!has_import_snapshot || import_snapshot.status == ZIG_VSTGUI_FILE_IMPORT_IDLE) return prompt.c_str();
+    switch (import_snapshot.status) {
+        case ZIG_VSTGUI_FILE_IMPORT_VALIDATING: return "Checking WAV structure and limits";
+        case ZIG_VSTGUI_FILE_IMPORT_IMPORTING: return "Building a bounded waveform preview";
+        case ZIG_VSTGUI_FILE_IMPORT_READY:
+            std::snprintf(detail_buffer.data(), detail_buffer.size(), "%u Hz, %u channel%s, %llu frames",
+                import_snapshot.sample_rate, import_snapshot.channels, import_snapshot.channels == 1 ? "" : "s",
+                static_cast<unsigned long long>(import_snapshot.sample_frames));
+            return detail_buffer.data();
+        case ZIG_VSTGUI_FILE_IMPORT_EMPTY: return "Choose a WAV file that contains audio";
+        case ZIG_VSTGUI_FILE_IMPORT_UNSUPPORTED_FILE: return "Use 16, 24, or 32-bit integer PCM WAV";
+        case ZIG_VSTGUI_FILE_IMPORT_CAPACITY_LIMIT: return "Maximum 32 MiB and 8,388,608 frames";
+        case ZIG_VSTGUI_FILE_IMPORT_INVALID_PATH: return "Choose a local file with a valid path";
+        case ZIG_VSTGUI_FILE_IMPORT_CANCELLED: return "No partial preview was published";
+        case ZIG_VSTGUI_FILE_IMPORT_FAILED:
+            switch (import_snapshot.failure) {
+                case ZIG_VSTGUI_FILE_IMPORT_FAILURE_OPEN: return "The file could not be opened";
+                case ZIG_VSTGUI_FILE_IMPORT_FAILURE_MALFORMED: return "The WAV structure is invalid";
+                case ZIG_VSTGUI_FILE_IMPORT_FAILURE_TRUNCATED: return "The file ended unexpectedly";
+                case ZIG_VSTGUI_FILE_IMPORT_FAILURE_WORKER_UNAVAILABLE: return "The import worker could not start";
+                default: return "Retry the import or choose another file";
+            }
+        default: return prompt.c_str();
+    }
+}
+
+bool FileDropView::showingLocalStatus() const {
+    return current_status == FileDropStatus::acceptable ||
+        current_status == FileDropStatus::rejected_type ||
+        current_status == FileDropStatus::rejected_count ||
+        current_status == FileDropStatus::rejected_path ||
+        current_status == FileDropStatus::handler_failed;
 }
 
 struct FileDropControl::PickerLifetime {
@@ -247,6 +338,11 @@ struct FileDropControl::PickerLifetime {
 
 FileDropControl::FileDropControl(ZigVstguiFileDropDescription value_description, ZigVstguiCallbacks value_callbacks)
 : description(value_description), callbacks(value_callbacks) {}
+
+FileDropControl::~FileDropControl() {
+    stopRefresh();
+    if (refresh_timer) refresh_timer->forget();
+}
 
 void FileDropControl::build(VSTGUI::CViewContainer* parent, const ThemeResolver& styles) {
     if (!parent || view) return;
@@ -267,9 +363,13 @@ void FileDropControl::build(VSTGUI::CViewContainer* parent, const ThemeResolver&
     component.bind(view);
     component.setEnabled(description.enabled != 0);
     component.setFocusable(true);
+    if (refreshImportState() &&
+        (import_snapshot.status == ZIG_VSTGUI_FILE_IMPORT_VALIDATING ||
+            import_snapshot.status == ZIG_VSTGUI_FILE_IMPORT_IMPORTING)) startRefresh();
 }
 
 void FileDropControl::clear() {
+    stopRefresh();
     if (picker_lifetime) picker_lifetime->owner = nullptr;
     if (picker) picker->cancel();
     picker = nullptr;
@@ -288,6 +388,34 @@ bool FileDropControl::handleKey(uint16_t, int16_t key_code, int16_t) {
     if (key_code != Steinberg::KEY_RETURN && key_code != Steinberg::KEY_ENTER && key_code != Steinberg::KEY_SPACE) {
         return false;
     }
+    return activatePrimaryAction();
+}
+
+bool FileDropControl::activatePrimaryAction() {
+    if (!view || description.enabled == 0) return false;
+    refreshImportState();
+    if (has_import_snapshot && callbacks.command_file_import) {
+        ZigVstguiFileImportCommand command;
+        bool has_command = true;
+        switch (import_snapshot.status) {
+            case ZIG_VSTGUI_FILE_IMPORT_VALIDATING:
+            case ZIG_VSTGUI_FILE_IMPORT_IMPORTING:
+                command = ZIG_VSTGUI_FILE_IMPORT_CANCEL;
+                break;
+            case ZIG_VSTGUI_FILE_IMPORT_CANCELLED:
+            case ZIG_VSTGUI_FILE_IMPORT_FAILED:
+                command = ZIG_VSTGUI_FILE_IMPORT_RETRY;
+                break;
+            default:
+                has_command = false;
+                break;
+        }
+        if (has_command) {
+            if (callbacks.command_file_import(callbacks.userdata, description.drop_id, command) != 0) return false;
+            startRefresh();
+            return true;
+        }
+    }
     return activatePicker();
 }
 
@@ -300,7 +428,7 @@ bool FileDropControl::activatePicker() {
 
 bool FileDropControl::dispatchPickerPaths(const char* const* paths, uint32_t count) {
     if (!view || view->inspectPaths(paths, count) != FileDropStatus::acceptable) return false;
-    return view->dispatchInspected();
+    return view->dispatchInspected(ZIG_VSTGUI_FILE_IMPORT_PICKER);
 }
 
 void FileDropControl::setPickerLauncher(void* userdata, PickerLauncher launcher) {
@@ -332,7 +460,7 @@ bool FileDropControl::performAccessibilityAction(const AccessibilityActionReques
         view->getFrame()->setFocusView(view);
         return true;
     }
-    return request.action == AccessibilityAction::press && activatePicker();
+    return request.action == AccessibilityAction::press && activatePrimaryAction();
 }
 
 bool FileDropControl::openNativePicker() {
@@ -373,6 +501,42 @@ void FileDropControl::pickerFinished(VSTGUI::CNewFileSelector* completed) {
         dispatchPickerPaths(paths.data(), count);
     }
     if (view->getFrame()) view->getFrame()->setFocusView(view);
+}
+
+bool FileDropControl::refreshImportState() {
+    if (!view || !callbacks.load_file_import) return false;
+    ZigVstguiFileImportSnapshot next {};
+    if (callbacks.load_file_import(callbacks.userdata, description.drop_id, &next) != 0 ||
+        next.status < ZIG_VSTGUI_FILE_IMPORT_IDLE || next.status > ZIG_VSTGUI_FILE_IMPORT_FAILED ||
+        next.failure < ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE ||
+        next.failure > ZIG_VSTGUI_FILE_IMPORT_FAILURE_WORKER_UNAVAILABLE ||
+        next.entry_point < ZIG_VSTGUI_FILE_IMPORT_DROP || next.entry_point > ZIG_VSTGUI_FILE_IMPORT_PICKER ||
+        !std::isfinite(next.progress) || next.progress < 0.0 || next.progress > 1.0 ||
+        next.preview_points > ZIG_VSTGUI_MAX_GRAPH_POINTS) return false;
+    import_snapshot = next;
+    has_import_snapshot = true;
+    view->applyImportSnapshot(next);
+    if (next.status != ZIG_VSTGUI_FILE_IMPORT_VALIDATING &&
+        next.status != ZIG_VSTGUI_FILE_IMPORT_IMPORTING) stopRefresh();
+    return true;
+}
+
+void FileDropControl::startRefresh() {
+    if (!view || !callbacks.load_file_import) return;
+    refreshImportState();
+    if (!has_import_snapshot ||
+        (import_snapshot.status != ZIG_VSTGUI_FILE_IMPORT_VALIDATING &&
+            import_snapshot.status != ZIG_VSTGUI_FILE_IMPORT_IMPORTING)) return;
+    if (!refresh_timer) {
+        refresh_timer = new VSTGUI::CVSTGUITimer(
+            [this](VSTGUI::CVSTGUITimer*) { refreshImportState(); }, 50, false
+        );
+    }
+    refresh_timer->start();
+}
+
+void FileDropControl::stopRefresh() {
+    if (refresh_timer) refresh_timer->stop();
 }
 
 }

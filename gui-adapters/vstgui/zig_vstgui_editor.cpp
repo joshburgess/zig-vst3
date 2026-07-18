@@ -965,7 +965,7 @@ void ZigVstguiEditor::layout() {
         : 0.0;
     const double sequencer_bottom = piano_count > 0 ? piano_top - theme.spacing.medium : lower_content_bottom;
     const double sequencer_top = sequencer_bottom - sequencer_height;
-    const double file_drop_height = file_drop_count > 0 ? 72.0 : 0.0;
+    const double file_drop_height = file_drop_count > 0 ? 112.0 : 0.0;
     const double file_drop_bottom = step_sequencer_count > 0
         ? sequencer_top - theme.spacing.medium
         : (piano_count > 0 ? piano_top - theme.spacing.medium : lower_content_bottom);

@@ -67,7 +67,7 @@ Completion evidence:
 - [x] Enforce file-size, channel-count, sample-format, sample-count, and preview-point limits.
 - [x] Publish progress and waveform snapshots without exposing partially written data.
 - [x] Support cancellation, retry, and controller teardown.
-- [ ] Verify that an active or completed import survives editor close and reopen.
+- [x] Verify that an active or completed import survives editor close and reopen.
 - [x] Keep every worker, path, status, and preview isolated per plugin instance.
 - [x] Commit the bounded worker foundation.
 
@@ -86,15 +86,16 @@ Worker foundation evidence:
 - Tests generate valid, malformed, truncated, unsupported-format, and multi-megabyte cancellation fixtures in temporary directories. They cover preview publication, retry, instance isolation, cancellation acknowledgement, teardown joining, and controller-state lifecycle.
 - The complete local gate passed 193 of 193 build steps and 3,586 of 3,586 tests. Raw ABI checks, all ten Steinberg validators, native adapter tests, macOS accessibility tests, visual regression, warm-render budgets, the Windows accessibility bridge cross-compile, and all ten Linux and Windows cross-target bundles passed.
 - The first full bundle attempt exhausted disk space and damaged one local Zig cache manifest. Removing only reproducible temporary and repository-local Zig caches restored a clean passing run.
+- A channel-strip integration test starts an import, closes the first editor view, opens a second view on the same controller, and observes the completed 256-point preview. Controller teardown still cancels and joins pending work.
 
 ## Milestone 4: Production Importer UI
 
-- [ ] Add the importer to the channel-strip editor using only `@import("zig-vst3").vstgui` declarations.
-- [ ] Render idle, drag-hover, validating, importing, ready, empty, unsupported-file, capacity-limit, cancelled, and recoverable-error states.
-- [ ] Render bounded progress and the imported waveform preview.
-- [ ] Add Cancel and Retry actions only when they are available.
-- [ ] Keep labels, status text, icons or shapes, focus, and contrast understandable without color.
-- [ ] Make layout responsive at supported editor sizes and scales.
+- [x] Add the importer to the channel-strip editor using only `@import("zig-vst3").vstgui` declarations.
+- [x] Render idle, drag-hover, validating, importing, ready, empty, unsupported-file, capacity-limit, cancelled, and recoverable-error states.
+- [x] Render bounded progress and the imported waveform preview.
+- [x] Add Cancel and Retry actions only when they are available.
+- [x] Keep labels, status text, icons or shapes, focus, and contrast understandable without color.
+- [x] Make layout responsive at supported editor sizes and scales.
 
 Exit criteria:
 
@@ -103,17 +104,26 @@ Exit criteria:
 - Keyboard order follows the visible reading order.
 - Tooltips supplement visible labels and do not carry required instructions.
 
+Completion evidence:
+
+- The channel strip declares one WAV importer and one controller-sourced waveform through the public `vst3.vstgui` authoring surface. Ordinary composition does not import or edit adapter internals.
+- Drop and picker callbacks preserve their entry point but enter the same validation and worker path. The native view polls only while work is active and stops its timer at every terminal state.
+- The primary action is `Choose Audio File` while idle. It becomes Cancel during validation or import and Retry after cancellation or recoverable failure. Enter, Space, pointer activation, and the accessibility press action use the same current command.
+- Ready state reports file metadata and renders the fixed 256-point imported waveform. Empty and all rejection states present explicit text and a next action without relying on color.
+- Import state belongs to the controller, so closing and reopening an editor preserves active and completed work. Host state restoration intentionally starts a new controller in idle state instead of reopening a stale path or performing hidden file I/O.
+- The importer participates in responsive channel-strip layout, host resizing, deterministic focus order, visible focus, and per-instance teardown.
+
 ## Milestone 5: Coverage and API Decision
 
-- [ ] Add unit tests for the model, WAV decoder, worker lifecycle, and instance isolation.
-- [ ] Add native pointer, keyboard, picker, drop, cancellation, retry, accessibility, resize, scale, teardown, and callback-rejection tests.
-- [ ] Add deterministic generated fixtures for valid, empty, oversized, malformed, truncated, and unsupported files.
-- [ ] Add visual references for the importer state set and production editor.
-- [ ] Add bounded warm-render and worker throughput measurements.
-- [ ] Run Zig tests, raw ABI checks, native adapter tests, macOS accessibility tests, visual tests, Steinberg validators, and Linux and Windows cross-target bundle builds.
-- [ ] Run serialized pluginval suites at strictness 5 and 10.
-- [ ] Decide whether `FileDrop` is ready for promotion. Record any remaining experimental surface precisely.
-- [ ] Commit the completed production integration and evidence.
+- [x] Add unit tests for the model, WAV decoder, worker lifecycle, and instance isolation.
+- [x] Add native pointer, keyboard, picker, drop, cancellation, retry, accessibility, resize, scale, teardown, and callback-rejection tests.
+- [x] Add deterministic generated fixtures for valid, empty, oversized, malformed, truncated, and unsupported files.
+- [x] Add visual references for the importer state set and production editor.
+- [x] Add bounded warm-render and worker throughput measurements.
+- [x] Run Zig tests, raw ABI checks, native adapter tests, macOS accessibility tests, visual tests, Steinberg validators, and Linux and Windows cross-target bundle builds.
+- [x] Run serialized pluginval suites at strictness 5 and 10.
+- [x] Decide whether `FileDrop` is ready for promotion. Record any remaining experimental surface precisely.
+- [x] Commit the completed production integration and evidence.
 
 Exit criteria:
 
@@ -121,6 +131,24 @@ Exit criteria:
 - Every locally executable validation gate passes.
 - Pluginval stops at the first unexpected exit and preserves its artifacts.
 - VoiceOver, Narrator, native Windows, X11, Wayland, and AT-SPI checks remain explicit external items when unavailable.
+
+API decision:
+
+- Promote `FileDrop`. The component gallery and channel strip use the same public declaration, bounded callback, picker fallback, keyboard behavior, accessibility semantics, focus restoration, and teardown contract.
+- Keep `AudioFileImporter`, controller-owned import status and command hooks, and controller-sourced graph snapshots experimental. They currently have one authoring consumer and may need composition changes when a second production importer appears.
+
+Current measurements:
+
+- The production importing state rendered in 48.6 microseconds per warm frame during the final strictness 10 gate, against the 300 microsecond budget.
+- The bounded worker decoded and reduced an 8 MiB generated PCM WAV fixture at 1,608.4 MiB/s during the final benchmark run.
+
+Final validation evidence:
+
+- `zig build validate-examples test raw-api-abi --summary all` completed 193 of 193 build steps and 3,587 of 3,587 tests. Raw ABI checks, native adapter tests, macOS accessibility bridge tests, visual regressions, warm-render budgets, and all ten Steinberg validators passed.
+- `zig build benchmark --summary all` completed four of four steps. The imported waveform worker remained bounded and exceeded the recorded throughput baseline.
+- Linux and Windows cross-target matrices each completed 32 of 32 build steps and produced all ten example bundles.
+- Serialized pluginval strictness 5 and strictness 10 matrices each completed 44 of 44 build steps. All ten plugins passed. The channel strip passed editor creation, editor-while-processing, automation, state restoration, background-thread state, parameter thread safety, and parameter fuzzing.
+- The automated macOS accessibility bridge passed. Manual VoiceOver use, the native macOS picker in a host, Narrator, native Windows, X11, Wayland, and AT-SPI remain external checks.
 
 ## External Checks
 
