@@ -33,6 +33,7 @@ enum class ComponentKind : std::size_t {
     resize_button,
     meter,
     graph,
+    xy_pad,
     count,
 };
 

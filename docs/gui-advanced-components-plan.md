@@ -40,19 +40,29 @@ Completion evidence:
 
 ## Milestone 9: Multi-Parameter Gestures and XY Pad
 
-- [ ] Define a public multi-parameter attachment that owns an ordered set of parameter IDs.
-- [ ] Begin each parameter once, publish accepted values in stable order, and end every begun parameter once.
-- [ ] Roll back the complete visible gesture when a host rejects any value.
-- [ ] Cancel active gestures during editor close without leaving host edits open.
-- [ ] Build a reusable XY pad with pointer, keyboard, and accessible axis actions.
-- [ ] Add the XY pad to the component gallery and channel strip through the public API.
-- [ ] Test automation, cancellation, rejection, focus order, resize, and instance isolation.
+- [x] Define a public multi-parameter attachment that owns an ordered set of parameter IDs.
+- [x] Begin each parameter once, publish accepted values in stable order, and end every begun parameter once.
+- [x] Roll back the complete visible gesture when a host rejects any value.
+- [x] Cancel active gestures during editor close without leaving host edits open.
+- [x] Build a reusable XY pad with pointer, keyboard, and accessible axis actions.
+- [x] Add the XY pad to the component gallery and channel strip through the public API.
+- [x] Test automation, cancellation, rejection, focus order, resize, and instance isolation.
 
 Exit criteria:
 
 - One interaction can edit two parameters without adapter-specific composition code.
 - Host callback order is deterministic for success, partial rejection, cancellation, and teardown.
 - Each axis has an accessible name, value, range, and independent adjustment path.
+
+Completion evidence:
+
+- `MultiParameterAttachment(count)` rejects duplicate IDs and provides ordered begin, set, finish, cancel, host-update, and value operations without depending on a rendering toolkit.
+- Adapter ABI version 9 adds up to eight XY pads. The public `XYPad` declaration references two ordinary editor parameters, while the adapter owns pointer, keyboard, theme, layout, host-update, and accessibility behavior.
+- The component gallery links Bipolar and Voices. The channel strip links Gain and Drive and processes Drive as an independent reflected parameter. Neither editor imports adapter internals.
+- Zig and native interaction tests cover success order, partial rejection rollback, cancellation, host automation, keyboard input, per-axis accessible edits, invalid descriptions, resize, scale, focus order, and instance isolation.
+- The `xy-pad.png` visual reference covers the grid, themed surface, and position handle. The final warm-render average was 32.2 microseconds against the 300 microsecond budget.
+- Zig tests, raw ABI checks, native adapter tests, AppKit integration tests, all ten Steinberg example validators, and Linux and Windows example cross-bundles pass.
+- Pluginval was not relaunched because prior macOS runs produced repeated crash dialogs. Native Windows, X11, Wayland, VoiceOver, and Narrator interaction remain external checks.
 
 ## Milestone 10: Editable Envelope Graph
 

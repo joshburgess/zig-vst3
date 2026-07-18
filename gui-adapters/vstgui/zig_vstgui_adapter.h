@@ -51,6 +51,16 @@ typedef struct ZigVstguiParameterValue {
 
 enum { ZIG_VSTGUI_MAX_PARAMETERS = 64 };
 
+typedef struct ZigVstguiXYPadDescription {
+    const char* title;
+    uint32_t x_parameter_id;
+    uint32_t y_parameter_id;
+    const char* x_label;
+    const char* y_label;
+} ZigVstguiXYPadDescription;
+
+enum { ZIG_VSTGUI_MAX_XY_PADS = 8 };
+
 typedef enum ZigVstguiMeterKind {
     ZIG_VSTGUI_METER_PEAK = 0,
     ZIG_VSTGUI_METER_STEREO = 1,
@@ -226,6 +236,8 @@ typedef struct ZigVstguiGroupDescription {
     ZigVstguiStyleOverride style;
     uint32_t first_graph;
     uint32_t graph_count;
+    uint32_t first_xy_pad;
+    uint32_t xy_pad_count;
 } ZigVstguiGroupDescription;
 
 typedef struct ZigVstguiSkinDescription {
@@ -287,6 +299,20 @@ ZigVstguiEditor* zig_vstgui_editor_create_configured(
     const ZigVstguiGraphDescription* graphs,
     uint32_t graph_count,
     ZigVstguiGraphCallbacks graph_callbacks,
+    ZigVstguiSkinDescription skin
+);
+ZigVstguiEditor* zig_vstgui_editor_create_advanced(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
+    const ZigVstguiXYPadDescription* xy_pads,
+    uint32_t xy_pad_count,
     ZigVstguiSkinDescription skin
 );
 void zig_vstgui_canvas_fill_rect(

@@ -3,6 +3,7 @@
 #include "zig_vstgui_graphs.h"
 #include "zig_vstgui_meters.h"
 #include "zig_vstgui_theme.h"
+#include "zig_vstgui_xy_pad.h"
 
 #include "vstgui/lib/cbitmap.h"
 #include "vstgui/lib/coffscreencontext.h"
@@ -315,6 +316,24 @@ Snapshot graphs() {
     };
 }
 
+Snapshot xyPad() {
+    return {
+        "xy-pad.png",
+        220,
+        180,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 220, 180)));
+            container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            auto* pad = new ZigVstgui::XYPadView(VSTGUI::CRect(12, 12, 208, 168), nullptr, styles);
+            pad->setXY(0.72, 0.34);
+            container->addView(pad);
+            container->drawRect(&context, container->getViewSize());
+        },
+    };
+}
+
 int runSnapshot(
     const Snapshot& snapshot,
     const std::filesystem::path& references,
@@ -412,6 +431,7 @@ int main(int argc, char** argv) {
         metersAndAssets(),
         productionControls(),
         graphs(),
+        xyPad(),
     };
     int result = 0;
     for (const auto& snapshot : snapshots) {

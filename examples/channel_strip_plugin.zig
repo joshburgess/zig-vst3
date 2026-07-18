@@ -10,6 +10,7 @@ const types = base.types;
 pub const gain_param_id: u32 = 0;
 pub const bypass_param_id: u32 = 1;
 pub const mode_param_id: u32 = 2;
+pub const drive_param_id: u32 = 3;
 
 pub const Mode = enum { clean, console, limit };
 pub const ModeParam = core.parameters.EnumParam(Mode);
@@ -37,6 +38,14 @@ const ChannelStripDefinition = struct {
             .id = mode_param_id,
             .name = "Mode",
             .default = .clean,
+        },
+        drive: core.parameters.FloatParam = .{
+            .id = drive_param_id,
+            .name = "Drive",
+            .units = "dB",
+            .min = -12.0,
+            .max = 12.0,
+            .default = 0.0,
         },
     };
 };
@@ -76,6 +85,15 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .modulation_normalized = 0.64,
                 },
                 .{
+                    .id = drive_param_id,
+                    .title = "Drive",
+                    .units = "dB",
+                    .step_count = 0,
+                    .default_normalized = 0.5,
+                    .control_kind = .decibel_slider,
+                    .tooltip = "Drive into the selected character stage.",
+                },
+                .{
                     .id = bypass_param_id,
                     .title = "Bypass",
                     .step_count = 1,
@@ -90,6 +108,13 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .control_kind = .enum_dropdown,
                 },
             },
+            .xy_pads = &.{.{
+                .title = "Gain and Drive",
+                .x_parameter_id = gain_param_id,
+                .y_parameter_id = drive_param_id,
+                .x_label = "Gain",
+                .y_label = "Drive",
+            }},
             .meters = &.{
                 .{ .title = "Stereo", .kind = .stereo, .first_source_id = 0, .second_source_id = 1 },
                 .{ .title = "Reduction", .kind = .gain_reduction, .first_source_id = 2 },
@@ -111,20 +136,23 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .groups = &.{
                     .{
                         .title = "Input",
-                        .parameter_count = 1,
+                        .parameter_count = 2,
                         .style = .{ .accent = 0x3578baff, .border = 0x7994aaff },
+                        .xy_pad_count = 1,
                     },
                     .{
                         .title = "Character",
-                        .first_parameter = 1,
+                        .first_parameter = 2,
                         .parameter_count = 2,
+                        .first_xy_pad = 1,
                         .style = .{ .accent = 0xb96b32ff, .border = 0xac8b73ff },
                     },
                     .{
                         .title = "Output",
-                        .first_parameter = 3,
+                        .first_parameter = 4,
                         .first_meter = 0,
                         .meter_count = 2,
+                        .first_xy_pad = 1,
                         .style = .{ .accent = 0x35866aff, .border = 0x719789ff },
                         .graph_count = 1,
                     },
@@ -154,10 +182,20 @@ const ChannelStripProcessor = struct {
             .default = 0.0,
         };
         const mode_parameter = ModeParam{ .id = mode_param_id, .name = "Mode", .default = .clean };
+        const drive_parameter = core.parameters.FloatParam{
+            .id = drive_param_id,
+            .name = "Drive",
+            .units = "dB",
+            .min = -12.0,
+            .max = 12.0,
+            .default = 0.0,
+        };
         const gain_db = gain_parameter.denormalize(parameters.getNormalizedById(gain_param_id));
         const gain = std.math.pow(f64, 10.0, gain_db / 20.0);
         const bypassed = parameters.getNormalizedById(bypass_param_id) >= 0.5;
         const mode = mode_parameter.denormalize(parameters.getNormalizedById(mode_param_id));
+        const drive_db = drive_parameter.denormalize(parameters.getNormalizedById(drive_param_id));
+        const drive = std.math.pow(f64, 10.0, drive_db / 20.0);
 
         const telemetry_active = self.meters.producing();
         var peaks = [_]f64{ 0.0, 0.0 };
@@ -168,12 +206,12 @@ const ChannelStripProcessor = struct {
             const output = context.outputChannel(channel) orelse continue;
             for (0..context.frameCount()) |sample_index| {
                 const input_sample = input[sample_index];
-                const output_sample = processSample(Sample, input_sample, gain, bypassed, mode);
+                const output_sample = processSample(Sample, input_sample, gain, drive, bypassed, mode);
                 output[sample_index] = output_sample;
                 if (telemetry_active) {
                     const output_magnitude = @abs(@as(f64, @floatCast(output_sample)));
                     if (channel < peaks.len) peaks[channel] = @max(peaks[channel], output_magnitude);
-                    maximum_unshaped = @max(maximum_unshaped, @abs(@as(f64, @floatCast(input_sample))) * gain);
+                    maximum_unshaped = @max(maximum_unshaped, @abs(@as(f64, @floatCast(input_sample))) * drive * gain);
                     maximum_shaped = @max(maximum_shaped, output_magnitude);
                 }
             }
@@ -206,15 +244,15 @@ const ChannelStripProcessor = struct {
     }
 };
 
-fn processSample(comptime Sample: type, input: Sample, gain: f64, bypassed: bool, mode: Mode) Sample {
+fn processSample(comptime Sample: type, input: Sample, gain: f64, drive: f64, bypassed: bool, mode: Mode) Sample {
     if (bypassed) return input;
-    const amplified = @as(f64, @floatCast(input)) * gain;
+    const driven = @as(f64, @floatCast(input)) * drive;
     const shaped = switch (mode) {
-        .clean => amplified,
-        .console => std.math.tanh(amplified * 1.5) / std.math.tanh(@as(f64, 1.5)),
-        .limit => std.math.clamp(amplified, -1.0, 1.0),
+        .clean => driven,
+        .console => std.math.tanh(driven * 1.5) / std.math.tanh(@as(f64, 1.5)),
+        .limit => std.math.clamp(driven, -1.0, 1.0),
     };
-    return @floatCast(shaped);
+    return @floatCast(shaped * gain);
 }
 
 const Effect = vst3.zig_vst3_plugin_effect.SimpleStereoEffect(struct {
@@ -261,10 +299,10 @@ test "channel strip exports component and controller classes" {
 }
 
 test "channel strip processing modes preserve their contracts" {
-    try std.testing.expectApproxEqAbs(@as(f32, 0.5), processSample(f32, 0.5, 1.0, false, .clean), 0.0001);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.5), processSample(f32, 0.5, 4.0, true, .limit), 0.0001);
-    try std.testing.expectApproxEqAbs(@as(f32, 1.0), processSample(f32, 0.75, 2.0, false, .limit), 0.0001);
-    try std.testing.expect(processSample(f64, 0.75, 2.0, false, .console) < 1.1);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), processSample(f32, 0.5, 1.0, 1.0, false, .clean), 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), processSample(f32, 0.5, 4.0, 2.0, true, .limit), 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.5), processSample(f32, 0.75, 2.0, 1.0, false, .limit), 0.0001);
+    try std.testing.expect(processSample(f64, 0.75, 2.0, 1.0, false, .console) < 2.0);
 }
 
 test "channel strip controller creates independent public API views" {

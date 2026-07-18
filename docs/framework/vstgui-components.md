@@ -34,7 +34,7 @@ pub fn createView(
 
 Use `createView` for one default slider, `createMultiView` for standard parameter controls, `createMultiViewWithMeters` for telemetry, or `createMultiViewWithSkin` for explicit theme, layout, fonts, assets, and drawing.
 
-Use `createEditor` when the editor needs an explicit composition. `EditorDescription` combines parameter, meter, and graph slices with a skin and a bounded `Composition`. Each `Group` names contiguous ranges from those slices. Groups must cover every slice once, in order. Invalid, overlapping, incomplete, or empty groups reject editor creation.
+Use `createEditor` when the editor needs an explicit composition. `EditorDescription` combines parameter, meter, graph, and XY-pad slices with a skin and a bounded `Composition`. Each `Group` names contiguous ranges from those slices. Groups must cover every slice once, in order. Invalid, overlapping, incomplete, or empty groups reject editor creation.
 
 ```zig
 return ui.createEditor(Controller, controller, name, .{
@@ -70,7 +70,7 @@ The complete [channel strip example](../../examples/channel_strip_plugin.zig) us
 
 6. Select a theme and layout in `Skin`, then use editor and group style overrides only for semantic colors.
 
-The channel strip combines a decibel gain control, bypass toggle, mode dropdown, stereo and gain-reduction meters, and a fixed transfer graph. The component gallery exercises the same description, grouping, telemetry, graph, resize, focus, and lifecycle contracts with different component variants. Ordinary editor composition should require changes only to the plugin's public declarations.
+The channel strip combines gain and drive controls, a linked XY pad, bypass toggle, mode dropdown, stereo and gain-reduction meters, and a fixed transfer graph. The component gallery exercises the same description, grouping, XY interaction, telemetry, graph, resize, focus, and lifecycle contracts with different component variants. Ordinary editor composition should require changes only to the plugin's public declarations.
 
 Each `Parameter` needs the stable parameter ID used by the controller, its display metadata, its step count, its normalized default, and a presentation kind:
 
@@ -105,13 +105,29 @@ Both layouts accept host resize requests from 320 by 240 through 1000 by 700, us
 
 `Composition.style` and `Group.style` override semantic background, foreground, border, and accent colors using `0xRRGGBBAA` values. Editor values apply first and group values apply to controls within that group. Typography, state contrast, spacing, radii, and control metrics still come from the selected theme. Prefer changing the accent or border at group scope. Replacing every color increases the chance of losing hover, focus, disabled, or editing contrast.
 
+## XY Pads
+
+Add an `XYPad` to `EditorDescription.xy_pads` with two distinct parameter IDs. Both IDs must also appear in `EditorDescription.parameters`. A group owns a contiguous XY-pad range through `first_xy_pad` and `xy_pad_count`, following the same complete, ordered coverage rule as parameters, meters, and graphs.
+
+```zig
+.xy_pads = &.{.{
+    .title = "Gain and Drive",
+    .x_parameter_id = gain_param_id,
+    .y_parameter_id = drive_param_id,
+    .x_label = "Gain",
+    .y_label = "Drive",
+}},
+```
+
+Dragging edits both parameters as one ordered gesture. Left and Right adjust the horizontal axis. Up and Down adjust the vertical axis. Home moves both axes to their minima, End moves both to their maxima, and Shift enables fine adjustment. Each axis is exposed as a separately named accessible slider with its own value and adjustment actions. Host automation updates the pad without starting a new gesture. A rejected axis update restores both axes to their values at gesture start.
+
 ## Component Gallery
 
 `zig_vst3_editor_smoke` exercises the broad surface in one real plugin:
 
 | Gallery area | Components and behavior |
 | --- | --- |
-| Continuous | Bipolar control, modulation marker, and exact numeric entry |
+| Continuous | Bipolar control, modulation marker, exact numeric entry, and linked XY pad |
 | Discrete | Bypass toggle, mode dropdown, and segmented voice count |
 | Telemetry | Peak, stereo, and gain-reduction meters plus a live waveform graph |
 | Resources | Embedded PNG, deterministic SVG, font fallback, and custom overlay drawing |
@@ -182,6 +198,7 @@ Supported authoring surface:
 - `EditorDescription`, `Composition`, `Group`, `StyleOverride`, and `createEditor`.
 - `Meter`, meter source wiring, `MeterBank`, and GUI telemetry presentation.
 - `Graph`, graph axes and style roles, and grouped graph composition.
+- `XYPad`, ordered two-parameter gestures, per-axis semantics, and grouped XY-pad composition.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.
 

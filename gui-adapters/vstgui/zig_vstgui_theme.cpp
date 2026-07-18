@@ -90,6 +90,7 @@ Theme makeTheme(const ColorTokens& colors) {
         0.0,
     };
     theme.component_styles[index(ComponentKind::graph)] = theme.component_styles[index(ComponentKind::meter)];
+    theme.component_styles[index(ComponentKind::xy_pad)] = theme.component_styles[index(ComponentKind::slider)];
 
     for (std::size_t kind = 0; kind < index(ComponentKind::count); ++kind) {
         theme.state_overrides[kind][index(VisualState::hovered)].accent = colors.control_fill_highlighted;

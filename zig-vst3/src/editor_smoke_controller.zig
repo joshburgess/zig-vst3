@@ -88,6 +88,13 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .dynamic = true,
                 .maximum_refresh_hz = 30,
             }},
+            .xy_pads = &.{.{
+                .title = "Bipolar and Voices",
+                .x_parameter_id = gain_param_id,
+                .y_parameter_id = voices_param_id,
+                .x_label = "Bipolar",
+                .y_label = "Voices",
+            }},
             .skin = .{
                 .assets = &.{
                     .{ .id = checkmark_asset_id, .data = checkmark_svg, .format = .svg, .scale = .contain },
@@ -104,9 +111,9 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
             .composition = .{
                 .title = "Component Gallery",
                 .groups = &.{
-                    .{ .title = "Continuous", .parameter_count = 1, .style = .{ .accent = 0x7ce8c5ff } },
-                    .{ .title = "Discrete", .first_parameter = 1, .parameter_count = 3, .style = .{ .accent = 0xe8c77cff } },
-                    .{ .title = "Telemetry", .first_parameter = 4, .meter_count = 3, .style = .{ .accent = 0x7caee8ff }, .graph_count = 1 },
+                    .{ .title = "Continuous", .parameter_count = 1, .style = .{ .accent = 0x7ce8c5ff }, .xy_pad_count = 1 },
+                    .{ .title = "Discrete", .first_parameter = 1, .parameter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0xe8c77cff } },
+                    .{ .title = "Telemetry", .first_parameter = 4, .meter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0x7caee8ff }, .graph_count = 1 },
                 },
             },
         });

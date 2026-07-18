@@ -9,6 +9,7 @@
 #include "zig_vstgui_graphs.h"
 #include "zig_vstgui_meters.h"
 #include "zig_vstgui_theme.h"
+#include "zig_vstgui_xy_pad.h"
 
 #include "vstgui/lib/cframe.h"
 #include "vstgui/lib/controls/ctextlabel.h"
@@ -30,7 +31,9 @@ struct ZigVstguiEditor {
         ZigVstguiSkinDescription skin = {},
         const ZigVstguiGraphDescription* graphs = nullptr,
         uint32_t graph_count = 0,
-        ZigVstguiGraphCallbacks graph_callbacks = {}
+        ZigVstguiGraphCallbacks graph_callbacks = {},
+        const ZigVstguiXYPadDescription* xy_pads = nullptr,
+        uint32_t xy_pad_count = 0
     );
     ~ZigVstguiEditor();
 
@@ -47,6 +50,7 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode& resizeAccessibility() const;
     const ZigVstgui::AccessibilityNode* meterAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* graphAccessibility(uint32_t index) const;
+    const ZigVstgui::AccessibilityNode* xyPadAccessibility(uint32_t index, uint32_t axis) const;
     bool tickMeter(uint32_t index, double elapsed_ms);
     bool refreshGraph(uint32_t index);
     uint32_t graphPointCount(uint32_t index) const;
@@ -74,6 +78,7 @@ private:
     const ZigVstgui::ThemeResolver& stylesForParameter(uint32_t index) const;
     const ZigVstgui::ThemeResolver& stylesForMeter(uint32_t index) const;
     const ZigVstgui::ThemeResolver& stylesForGraph(uint32_t index) const;
+    const ZigVstgui::ThemeResolver& stylesForXYPad(uint32_t index) const;
     std::vector<ZigVstgui::AccessibilityEntry> accessibilityEntries() const;
     ZigVstgui::ParameterControl* findControl(uint32_t parameter_id);
     const ZigVstgui::ParameterControl* findControl(uint32_t parameter_id) const;
@@ -110,6 +115,12 @@ private:
     std::array<std::vector<ZigVstguiGraphPoint>, ZIG_VSTGUI_MAX_GRAPHS> graph_static_points;
     uint32_t graph_count {0};
     ZigVstguiGraphCallbacks graph_callbacks {};
+    std::array<std::unique_ptr<ZigVstgui::XYPadControl>, ZIG_VSTGUI_MAX_XY_PADS> xy_pad_controls;
+    std::array<ZigVstguiXYPadDescription, ZIG_VSTGUI_MAX_XY_PADS> xy_pad_descriptions {};
+    std::array<std::string, ZIG_VSTGUI_MAX_XY_PADS> xy_pad_titles;
+    std::array<std::string, ZIG_VSTGUI_MAX_XY_PADS> xy_pad_x_labels;
+    std::array<std::string, ZIG_VSTGUI_MAX_XY_PADS> xy_pad_y_labels;
+    uint32_t xy_pad_count {0};
     ZigVstgui::AssetStore asset_store;
     ZigVstguiDrawingCallbacks drawing_callbacks {};
     ZigVstgui::ResizeControl resize_control;

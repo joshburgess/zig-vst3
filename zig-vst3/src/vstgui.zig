@@ -8,6 +8,7 @@ pub const GraphKind = implementation.GraphKind;
 pub const GraphStyleRole = implementation.GraphStyleRole;
 pub const GraphAxis = implementation.GraphAxis;
 pub const Graph = implementation.Graph;
+pub const XYPad = implementation.XYPad;
 pub const Asset = implementation.Asset;
 pub const AssetFormat = implementation.AssetFormat;
 pub const AssetScale = implementation.AssetScale;

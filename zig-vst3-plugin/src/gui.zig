@@ -219,6 +219,75 @@ pub const ParameterAttachment = struct {
     }
 };
 
+pub fn MultiParameterAttachment(comptime parameter_count: usize) type {
+    if (parameter_count == 0) @compileError("a multi-parameter attachment requires at least one parameter");
+    return struct {
+        attachments: [parameter_count]ParameterAttachment,
+        active: bool = false,
+
+        pub fn init(context: Context, ids: [parameter_count]ParameterId) Error!@This() {
+            for (ids, 0..) |id, index| {
+                for (ids[0..index]) |previous| {
+                    if (id == previous) return error.InvalidParameter;
+                }
+            }
+            var result: @This() = undefined;
+            result.active = false;
+            for (ids, 0..) |id, index| {
+                result.attachments[index] = try ParameterAttachment.init(context, id);
+            }
+            return result;
+        }
+
+        pub fn begin(self: *@This()) Error!void {
+            if (self.active) return error.Rejected;
+            var begun: usize = 0;
+            errdefer {
+                for (self.attachments[0..begun]) |*attachment| attachment.finish();
+            }
+            for (&self.attachments) |*attachment| {
+                try attachment.begin();
+                begun += 1;
+            }
+            self.active = true;
+        }
+
+        pub fn set(self: *@This(), requested: [parameter_count]NormalizedValue) Error!void {
+            if (!self.active) return error.Rejected;
+            for (&self.attachments, requested) |*attachment, value| {
+                attachment.set(value) catch |err| {
+                    self.cancel();
+                    return err;
+                };
+            }
+        }
+
+        pub fn finish(self: *@This()) void {
+            if (!self.active) return;
+            for (&self.attachments) |*attachment| attachment.finish();
+            self.active = false;
+        }
+
+        pub fn cancel(self: *@This()) void {
+            if (!self.active) return;
+            for (&self.attachments) |*attachment| attachment.cancel();
+            self.active = false;
+        }
+
+        pub fn hostChanged(self: *@This(), id: ParameterId, value: NormalizedValue) void {
+            for (&self.attachments) |*attachment| {
+                if (attachment.metadata.id == id) attachment.hostChanged(value);
+            }
+        }
+
+        pub fn values(self: *const @This()) [parameter_count]NormalizedValue {
+            var result: [parameter_count]NormalizedValue = undefined;
+            for (self.attachments, 0..) |attachment, index| result[index] = attachment.value;
+            return result;
+        }
+    };
+}
+
 /// A fixed-size development panel built entirely from reflected parameter IDs.
 pub fn ParameterPanel(comptime parameter_count: usize) type {
     return struct {
@@ -503,6 +572,104 @@ fn fakeEditor(fake: *Fake) Editor {
     };
 }
 
+const MultiOperation = struct { kind: u8, id: ParameterId };
+
+const MultiFake = struct {
+    values: [2]NormalizedValue = .{ 0.25, 0.75 },
+    reject_id: ?ParameterId = null,
+    operations: [24]MultiOperation = undefined,
+    operation_count: usize = 0,
+
+    fn record(self: *MultiFake, kind: u8, id: ParameterId) void {
+        self.operations[self.operation_count] = .{ .kind = kind, .id = id };
+        self.operation_count += 1;
+    }
+
+    fn context(self: *MultiFake) Context {
+        return .{ .userdata = self, .vtable = &context_vtable };
+    }
+
+    fn from(ptr: *anyopaque) *MultiFake {
+        return @ptrCast(@alignCast(ptr));
+    }
+
+    fn index(id: ParameterId) ?usize {
+        return switch (id) {
+            10 => 0,
+            20 => 1,
+            else => null,
+        };
+    }
+
+    fn begin(ptr: *anyopaque, id: ParameterId) Error!void {
+        const self = from(ptr);
+        if (index(id) == null) return error.InvalidParameter;
+        self.record('b', id);
+    }
+
+    fn perform(ptr: *anyopaque, id: ParameterId, value: NormalizedValue) Error!void {
+        const self = from(ptr);
+        const value_index = index(id) orelse return error.InvalidParameter;
+        self.record('p', id);
+        if (self.reject_id == id) return error.Rejected;
+        self.values[value_index] = value;
+    }
+
+    fn end(ptr: *anyopaque, id: ParameterId) void {
+        from(ptr).record('e', id);
+    }
+
+    fn getValue(ptr: *anyopaque, id: ParameterId) ?NormalizedValue {
+        return from(ptr).values[index(id) orelse return null];
+    }
+
+    fn getMetadata(_: *anyopaque, id: ParameterId) ?ParameterMetadata {
+        _ = index(id) orelse return null;
+        return .{
+            .id = id,
+            .name = if (id == 10) "X" else "Y",
+            .short_name = if (id == 10) "X" else "Y",
+            .units = "",
+            .default_normalized = 0.5,
+            .step_count = 0,
+        };
+    }
+
+    fn formatValue(_: *anyopaque, id: ParameterId, value: NormalizedValue, buffer: []u8) Error!usize {
+        _ = index(id) orelse return error.InvalidParameter;
+        const text = std.fmt.bufPrint(buffer, "{d:.3}", .{value}) catch return error.Rejected;
+        return text.len;
+    }
+
+    fn parseValue(_: *anyopaque, id: ParameterId, text: []const u8) Error!NormalizedValue {
+        _ = index(id) orelse return error.InvalidParameter;
+        return std.fmt.parseFloat(f64, text) catch return error.Rejected;
+    }
+
+    fn requestResize(_: *anyopaque, size: Size) Error!Size {
+        return size;
+    }
+
+    fn repaint(_: *anyopaque) void {}
+
+    fn contextMenu(_: *anyopaque, id: ParameterId, _: i32, _: i32) Error!void {
+        _ = index(id) orelse return error.InvalidParameter;
+    }
+
+    const context_vtable = Context.VTable{
+        .begin_edit = begin,
+        .perform_edit = perform,
+        .end_edit = end,
+        .value = getValue,
+        .metadata = getMetadata,
+        .format = formatValue,
+        .parse = parseValue,
+        .request_resize = requestResize,
+        .request_repaint = repaint,
+        .open_context_menu = contextMenu,
+    };
+};
+
 test "editor orders complete parameter gestures" {
     var fake = Fake{};
     var editor = fakeEditor(&fake);
@@ -578,6 +745,54 @@ test "parameter attachment owns gestures and exact text entry" {
 
     var buffer: [32]u8 = undefined;
     try std.testing.expectEqualStrings("0.625 dB", try attachment.format(&buffer));
+}
+
+test "multi-parameter attachment orders complete gestures" {
+    var fake = MultiFake{};
+    var attachment = try MultiParameterAttachment(2).init(fake.context(), .{ 10, 20 });
+    try attachment.begin();
+    try attachment.set(.{ 0.4, 0.6 });
+    attachment.finish();
+
+    const expected = [_]MultiOperation{
+        .{ .kind = 'b', .id = 10 },
+        .{ .kind = 'b', .id = 20 },
+        .{ .kind = 'p', .id = 10 },
+        .{ .kind = 'p', .id = 20 },
+        .{ .kind = 'e', .id = 10 },
+        .{ .kind = 'e', .id = 20 },
+    };
+    try std.testing.expectEqualSlices(@TypeOf(expected[0]), &expected, fake.operations[0..fake.operation_count]);
+    try std.testing.expectEqual([2]NormalizedValue{ 0.4, 0.6 }, attachment.values());
+}
+
+test "multi-parameter attachment cancels every axis after rejection" {
+    var fake = MultiFake{};
+    var attachment = try MultiParameterAttachment(2).init(fake.context(), .{ 10, 20 });
+    try attachment.begin();
+    fake.reject_id = 20;
+    try std.testing.expectError(error.Rejected, attachment.set(.{ 0.9, 0.1 }));
+
+    try std.testing.expect(!attachment.active);
+    try std.testing.expectEqual([2]NormalizedValue{ 0.25, 0.75 }, attachment.values());
+    try std.testing.expectEqual([2]NormalizedValue{ 0.25, 0.75 }, fake.values);
+    var end_count: usize = 0;
+    for (fake.operations[0..fake.operation_count]) |operation| {
+        if (operation.kind == 'e') end_count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 2), end_count);
+}
+
+test "multi-parameter attachment rejects duplicate IDs and tracks host automation" {
+    var fake = MultiFake{};
+    try std.testing.expectError(
+        error.InvalidParameter,
+        MultiParameterAttachment(2).init(fake.context(), .{ 10, 10 }),
+    );
+    var attachment = try MultiParameterAttachment(2).init(fake.context(), .{ 10, 20 });
+    attachment.hostChanged(20, 0.3);
+    try std.testing.expectEqual([2]NormalizedValue{ 0.25, 0.3 }, attachment.values());
+    try std.testing.expectEqual(@as(usize, 0), fake.operation_count);
 }
 
 test "parameter attachment rejects invalid IDs and rejected values" {

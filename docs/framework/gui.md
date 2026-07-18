@@ -13,6 +13,7 @@ const plug = @import("zig-vst3-plugin");
 
 const Editor = plug.gui.Editor;
 const ParameterAttachment = plug.gui.ParameterAttachment;
+const XYAttachment = plug.gui.MultiParameterAttachment(2);
 ```
 
 Implement `plug.gui.Context.VTable` in the controller. It provides current values and reflected metadata, formats and parses values, delegates resize and repaint requests, and forwards host parameter context menus. Implement `plug.gui.Adapter.VTable` in the toolkit integration. It receives attach, detach, resize, scale, focus, parameter-change, and destruction callbacks.
@@ -28,6 +29,8 @@ All editor, context, and adapter callbacks run on the host GUI thread. A plugin 
 - Fine adjustment without replacing exact text entry.
 - Host automation updates that do not emit a second gesture.
 - Formatting and parsing through controller metadata.
+
+`MultiParameterAttachment(count)` composes a fixed, duplicate-free set of parameter attachments into one interaction. It begins, publishes, and ends every parameter in declaration order. If any host edit is rejected, it restores every visible value to the gesture's initial values and ends every parameter that began. Host automation can update either axis without emitting a gesture. This is the toolkit-neutral binding used by the XY pad and future linked controls.
 
 `ParameterPanel(count)` creates a fixed-size development panel model from reflected parameter IDs. Adapters can use its attachments to generate ordinary float, integer, boolean, and enum controls without duplicating gesture logic.
 
@@ -60,7 +63,7 @@ zig build pluginval-gain
 
 The current visible reference control supports pointer dragging, arrow keys, Home and End, exact text entry, resize constraints, and content scale. Default reset uses Command-click on macOS and Control-click on Windows and Linux. Host parameter changes are broadcast through a bounded per-controller observer list, so open views follow automation and restored state without producing a new gesture.
 
-The native adapter creation contract accepts 1–64 parameter descriptions. Each description carries its parameter ID, initial normalized value, label, units, step count, default, and presentation kind. Host updates and bulk state refreshes are addressed by parameter ID. The adapter rejects duplicate IDs and validates a bulk refresh before changing any control. `zig_vst3_editor_smoke` is the multi-parameter integration fixture: one editor binds continuous, integer, boolean, and enum parameters.
+The native adapter creation contract at ABI version 9 accepts 1–64 parameter descriptions and up to eight XY pads. Each parameter carries its ID, initial normalized value, label, units, step count, default, and presentation kind. Host updates and bulk state refreshes are addressed by parameter ID. The adapter rejects duplicate parameter IDs, invalid XY axis references, and validates a bulk refresh before changing any control. `zig_vst3_editor_smoke` is the multi-parameter integration fixture: one editor binds continuous, integer, boolean, enum, and linked XY interactions.
 
 Each description also selects a presentation kind: `linear_slider`, `rotary_knob`, `toggle`, `enum_dropdown`, or `segmented_enum`. The control keeps reflected formatting, parsing, quantization, automation gestures, host playback, default reset, focus, and context-menu behavior regardless of presentation. Numeric controls include exact text entry. Labels append units when supplied. Editors provide both a compact/expand action and a draggable lower-right resize handle.
 

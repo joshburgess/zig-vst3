@@ -57,6 +57,36 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_configured(
     ZigVstguiGraphCallbacks graph_callbacks,
     ZigVstguiSkinDescription skin
 ) {
+    return zig_vstgui_editor_create_advanced(
+        parameters,
+        parameter_count,
+        callbacks,
+        meters,
+        meter_count,
+        meter_callbacks,
+        graphs,
+        graph_count,
+        graph_callbacks,
+        nullptr,
+        0,
+        skin
+    );
+}
+
+extern "C" ZigVstguiEditor* zig_vstgui_editor_create_advanced(
+    const ZigVstguiParameterDescription* parameters,
+    uint32_t parameter_count,
+    ZigVstguiCallbacks callbacks,
+    const ZigVstguiMeterDescription* meters,
+    uint32_t meter_count,
+    ZigVstguiMeterCallbacks meter_callbacks,
+    const ZigVstguiGraphDescription* graphs,
+    uint32_t graph_count,
+    ZigVstguiGraphCallbacks graph_callbacks,
+    const ZigVstguiXYPadDescription* xy_pads,
+    uint32_t xy_pad_count,
+    ZigVstguiSkinDescription skin
+) {
     constexpr uint32_t style_mask = ZIG_VSTGUI_STYLE_BACKGROUND |
         ZIG_VSTGUI_STYLE_FOREGROUND |
         ZIG_VSTGUI_STYLE_BORDER |
@@ -64,6 +94,7 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_configured(
     if (!parameters || parameter_count == 0 || parameter_count > ZIG_VSTGUI_MAX_PARAMETERS) return nullptr;
     if ((!meters && meter_count > 0) || meter_count > ZIG_VSTGUI_MAX_METERS) return nullptr;
     if ((!graphs && graph_count > 0) || graph_count > ZIG_VSTGUI_MAX_GRAPHS) return nullptr;
+    if ((!xy_pads && xy_pad_count > 0) || xy_pad_count > ZIG_VSTGUI_MAX_XY_PADS) return nullptr;
     for (uint32_t index = 0; index < graph_count; ++index) {
         const auto& graph = graphs[index];
         if (!graph.title || graph.point_count > ZIG_VSTGUI_MAX_GRAPH_POINTS ||
@@ -81,6 +112,18 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_configured(
         for (uint32_t point = 0; point < graph.point_count; ++point) {
             if (!std::isfinite(graph.points[point].x) || !std::isfinite(graph.points[point].y)) return nullptr;
         }
+    }
+    for (uint32_t index = 0; index < xy_pad_count; ++index) {
+        const auto& xy_pad = xy_pads[index];
+        if (!xy_pad.title || !xy_pad.x_label || !xy_pad.y_label ||
+            xy_pad.x_parameter_id == xy_pad.y_parameter_id) return nullptr;
+        bool found_x = false;
+        bool found_y = false;
+        for (uint32_t parameter = 0; parameter < parameter_count; ++parameter) {
+            found_x = found_x || parameters[parameter].parameter_id == xy_pad.x_parameter_id;
+            found_y = found_y || parameters[parameter].parameter_id == xy_pad.y_parameter_id;
+        }
+        if (!found_x || !found_y) return nullptr;
     }
     if ((!skin.assets && skin.asset_count > 0) || skin.asset_count > ZIG_VSTGUI_MAX_ASSETS) return nullptr;
     if ((!skin.groups && skin.group_count > 0) || skin.group_count > ZIG_VSTGUI_MAX_GROUPS) return nullptr;
@@ -100,7 +143,9 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_configured(
         skin,
         graphs,
         graph_count,
-        graph_callbacks
+        graph_callbacks,
+        xy_pads,
+        xy_pad_count
     );
     if (editor && !editor->valid()) {
         delete editor;
@@ -190,5 +235,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 6;
+    return 9;
 }

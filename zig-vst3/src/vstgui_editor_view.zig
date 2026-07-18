@@ -62,12 +62,21 @@ pub const ParameterValue = extern struct {
 };
 
 pub const max_parameters = 64;
+pub const max_xy_pads = 8;
 pub const max_meters = 8;
 pub const max_graphs = 8;
 pub const max_graph_points = 256;
 pub const max_meter_sources = 16;
 pub const max_assets = 16;
 pub const max_groups = 8;
+
+pub const XYPadDescription = extern struct {
+    title: [*:0]const u8,
+    x_parameter_id: vsttypes.ParamID,
+    y_parameter_id: vsttypes.ParamID,
+    x_label: [*:0]const u8,
+    y_label: [*:0]const u8,
+};
 
 pub const MeterKind = enum(c_int) {
     peak,
@@ -224,6 +233,8 @@ pub const Group = struct {
     style: StyleOverride = .{},
     first_graph: types.uint32 = 0,
     graph_count: types.uint32 = 0,
+    first_xy_pad: types.uint32 = 0,
+    xy_pad_count: types.uint32 = 0,
 };
 
 pub const Composition = struct {
@@ -270,6 +281,8 @@ const GroupDescription = extern struct {
     style: NativeStyleOverride,
     first_graph: types.uint32,
     graph_count: types.uint32,
+    first_xy_pad: types.uint32,
+    xy_pad_count: types.uint32,
 };
 
 pub const ObserverCallbacks = struct {
@@ -302,6 +315,20 @@ extern fn zig_vstgui_editor_create_configured(
     ?[*]const GraphDescription,
     types.uint32,
     GraphCallbacks,
+    SkinDescription,
+) ?*Editor;
+extern fn zig_vstgui_editor_create_advanced(
+    [*]const ParameterDescription,
+    types.uint32,
+    Callbacks,
+    ?[*]const MeterDescription,
+    types.uint32,
+    MeterCallbacks,
+    ?[*]const GraphDescription,
+    types.uint32,
+    GraphCallbacks,
+    ?[*]const XYPadDescription,
+    types.uint32,
     SkinDescription,
 ) ?*Editor;
 extern fn zig_vstgui_canvas_fill_rect(*Canvas, f64, f64, f64, f64, types.uint32) void;
@@ -467,6 +494,7 @@ pub fn create(
     parameters: []const ParameterInfoBinding,
     meters: []const MeterDescription,
     graphs: []const GraphDescription,
+    xy_pads: []const XYPadDescription,
     skin: Skin,
     composition: Composition,
     callbacks: Callbacks,
@@ -479,7 +507,8 @@ pub fn create(
         return null;
     }
     if (parameters.len == 0 or parameters.len > max_parameters or
-        meters.len > max_meters or graphs.len > max_graphs or skin.assets.len > max_assets or composition.groups.len > max_groups)
+        meters.len > max_meters or graphs.len > max_graphs or xy_pads.len > max_xy_pads or
+        skin.assets.len > max_assets or composition.groups.len > max_groups)
     {
         if (telemetry_source) |source| source.release();
         return null;
@@ -518,6 +547,8 @@ pub fn create(
             .style = nativeStyle(group.style),
             .first_graph = group.first_graph,
             .graph_count = group.graph_count,
+            .first_xy_pad = group.first_xy_pad,
+            .xy_pad_count = group.xy_pad_count,
         };
     }
     const telemetry = std.heap.page_allocator.create(TelemetryState) catch {
@@ -525,7 +556,7 @@ pub fn create(
         return null;
     };
     telemetry.* = .{ .source = telemetry_source };
-    const editor = zig_vstgui_editor_create_configured(
+    const editor = zig_vstgui_editor_create_advanced(
         &descriptions,
         @intCast(parameters.len),
         callbacks,
@@ -535,6 +566,8 @@ pub fn create(
         if (graphs.len == 0) null else graphs.ptr,
         @intCast(graphs.len),
         .{ .userdata = telemetry, .load = loadGraph },
+        if (xy_pads.len == 0) null else xy_pads.ptr,
+        @intCast(xy_pads.len),
         .{
             .assets = if (skin.assets.len == 0) null else &assets,
             .asset_count = @intCast(skin.assets.len),

@@ -31,7 +31,18 @@ struct CallbackState {
     ZigVstguiGraphPoint graph_points[4] {};
     uint32_t graph_count {0};
     uint32_t graph_load_count {0};
+    char operation_kinds[32] {};
+    uint32_t operation_ids[32] {};
+    uint32_t operation_count {0};
+    uint32_t reject_parameter_id {UINT32_MAX};
 };
+
+void recordOperation(CallbackState* state, char kind, uint32_t parameter_id) {
+    if (state->operation_count >= 32) return;
+    state->operation_kinds[state->operation_count] = kind;
+    state->operation_ids[state->operation_count] = parameter_id;
+    state->operation_count += 1;
+}
 
 struct AccessibilityObserverState {
     uint32_t count {0};
@@ -65,6 +76,7 @@ void beginEdit(void* userdata, uint32_t parameter_id) {
     auto* state = static_cast<CallbackState*>(userdata);
     state->begin_count += 1;
     state->last_parameter_id = parameter_id;
+    recordOperation(state, 'b', parameter_id);
 }
 
 int32_t performEdit(void* userdata, uint32_t parameter_id, double value) {
@@ -72,13 +84,15 @@ int32_t performEdit(void* userdata, uint32_t parameter_id, double value) {
     state->perform_count += 1;
     state->last_parameter_id = parameter_id;
     state->last_value = value;
-    return state->reject ? -1 : 0;
+    recordOperation(state, 'p', parameter_id);
+    return state->reject || state->reject_parameter_id == parameter_id ? -1 : 0;
 }
 
 void endEdit(void* userdata, uint32_t parameter_id) {
     auto* state = static_cast<CallbackState*>(userdata);
     state->end_count += 1;
     state->last_parameter_id = parameter_id;
+    recordOperation(state, 'e', parameter_id);
 }
 
 int32_t showContextMenu(void* userdata, uint32_t parameter_id, int32_t x, int32_t y) {
@@ -306,6 +320,115 @@ int testThemeResolution() {
     const auto alternate_slider = alternate_styles.resolve(ZigVstgui::ComponentKind::slider);
     if (sameColor(alternate_slider.background, normal.background)) return 6;
     if (!closeEnough(alternate_slider.thumb_radius, normal.thumb_radius)) return 7;
+    return 0;
+}
+
+int testMultiParameterAttachmentAndXYPad() {
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.begin_edit = beginEdit;
+    callbacks.perform_edit = performEdit;
+    callbacks.end_edit = endEdit;
+
+    ZigVstgui::MultiParameterControlModel model(10, 0.25, 0, 20, 0.75, 0, callbacks);
+    if (!model.beginGesture() || !model.performEdit(0.4, 0.6)) return 1;
+    model.endGesture();
+    const char expected_kinds[] = {'b', 'b', 'p', 'p', 'e', 'e'};
+    const uint32_t expected_ids[] = {10, 20, 10, 20, 10, 20};
+    if (state.operation_count != 6) return 2;
+    for (uint32_t index = 0; index < 6; ++index) {
+        if (state.operation_kinds[index] != expected_kinds[index] ||
+            state.operation_ids[index] != expected_ids[index]) return 3;
+    }
+    if (!closeEnough(model.acceptedValue(0), 0.4) || !closeEnough(model.acceptedValue(1), 0.6)) return 4;
+    if (!model.hostChanged(20, 0.3) || !closeEnough(model.acceptedValue(1), 0.3) ||
+        state.operation_count != 6) return 5;
+
+    state.operation_count = 0;
+    state.reject_parameter_id = 20;
+    if (!model.beginGesture() || model.performEdit(0.9, 0.1)) return 6;
+    model.cancelGesture();
+    if (model.gestureActive() || !closeEnough(model.acceptedValue(0), 0.4) ||
+        !closeEnough(model.acceptedValue(1), 0.3) || state.end_count != 4) return 7;
+    state.reject_parameter_id = UINT32_MAX;
+
+    CallbackState isolated_state;
+    auto isolated_callbacks = callbacks;
+    isolated_callbacks.userdata = &isolated_state;
+    ZigVstgui::MultiParameterControlModel isolated(10, 0.1, 0, 20, 0.9, 0, isolated_callbacks);
+    if (!isolated.hostChanged(10, 0.8) || !closeEnough(isolated.acceptedValue(0), 0.8) ||
+        !closeEnough(model.acceptedValue(0), 0.4) || state.operation_count == 0 ||
+        isolated_state.operation_count != 0) return 8;
+
+    VSTGUI::init(nullptr);
+    bool direct_keyboard_ok = false;
+    {
+        ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+        auto xy_container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 200, 160)));
+        const ZigVstguiXYPadDescription direct_description {"Direct", 10, 20, "X", "Y"};
+        const ZigVstguiParameterInfo x_info {"X", "", 0, 0.5};
+        const ZigVstguiParameterInfo y_info {"Y", "", 0, 0.5};
+        ZigVstgui::XYPadControl direct_control(direct_description, x_info, 0.25, y_info, 0.75, callbacks);
+        direct_control.build(xy_container, styles);
+        const uint32_t direct_begin_before = state.begin_count;
+        const uint32_t direct_perform_before = state.perform_count;
+        const uint32_t direct_end_before = state.end_count;
+        direct_keyboard_ok = direct_control.handleKey(0, Steinberg::KEY_UP, 0) &&
+            state.begin_count == direct_begin_before + 2 &&
+            state.perform_count == direct_perform_before + 2 &&
+            state.end_count == direct_end_before + 2 &&
+            direct_control.model().acceptedValue(1) > 0.75;
+        direct_control.clear();
+    }
+    VSTGUI::exit();
+    if (!direct_keyboard_ok) return 9;
+
+    const ZigVstguiParameterDescription parameters[] = {
+        {10, 0.25, {"Horizontal", "x", 0, 0.5}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER},
+        {20, 0.75, {"Vertical", "y", 0, 0.5}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER},
+    };
+    const ZigVstguiXYPadDescription xy_pad {"Position", 10, 20, "Pan", "Depth"};
+    auto* editor = zig_vstgui_editor_create_advanced(
+        parameters,
+        2,
+        callbacks,
+        nullptr,
+        0,
+        {},
+        nullptr,
+        0,
+        {},
+        &xy_pad,
+        1,
+        {}
+    );
+    if (!editor) return 10;
+    if (!editor->resize(720, 480) || !editor->setScale(2.0)) return 11;
+    const auto* x_accessibility = editor->xyPadAccessibility(0, 0);
+    const auto* y_accessibility = editor->xyPadAccessibility(0, 1);
+    if (!x_accessibility || !y_accessibility ||
+        x_accessibility->role() != ZigVstgui::AccessibilityRole::slider ||
+        y_accessibility->role() != ZigVstgui::AccessibilityRole::slider ||
+        x_accessibility->name() != "Position Pan" || y_accessibility->name() != "Position Depth") return 12;
+    for (uint32_t index = 0; index < 5; ++index) {
+        if (!editor->keyDown(0, Steinberg::KEY_TAB, 0)) return 13;
+    }
+    if (editor->focusPosition() != 4) return 14;
+    const uint32_t begin_before = state.begin_count;
+    const uint32_t perform_before = state.perform_count;
+    const uint32_t end_before = state.end_count;
+    if (!y_accessibility->perform(ZigVstgui::AccessibilityAction::set_value, 0.2)) return 15;
+    if (state.begin_count != begin_before + 2 || state.perform_count != perform_before + 2 ||
+        state.end_count != end_before + 2 || !closeEnough(y_accessibility->range().current, 0.2)) return 16;
+    if (editor->xyPadAccessibility(1, 0) || editor->xyPadAccessibility(0, 2)) return 17;
+    zig_vstgui_editor_destroy(editor);
+
+    auto invalid_xy_pad = xy_pad;
+    invalid_xy_pad.y_parameter_id = 10;
+    if (zig_vstgui_editor_create_advanced(
+            parameters, 2, callbacks, nullptr, 0, {}, nullptr, 0, {}, &invalid_xy_pad, 1, {}
+        )) return 18;
     return 0;
 }
 
@@ -592,7 +715,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 6) return 1;
+    if (zig_vstgui_adapter_version() != 9) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -910,6 +1033,7 @@ int main() {
     if (const int result = testSteppedGestureQuantization(); result != 0) return 55 + result;
     if (const int result = testParameterContextMenu(); result != 0) return 60 + result;
     if (const int result = testThemeResolution(); result != 0) return 70 + result;
+    if (const int result = testMultiParameterAttachmentAndXYPad(); result != 0) return 80 + result;
     if (const int result = testMultiParameterRouting(); result != 0) return 90 + result;
     if (const int result = testLayoutSolvers(); result != 0) return 110 + result;
     if (const int result = testGalleryLayoutExtents(); result != 0) return 130 + result;

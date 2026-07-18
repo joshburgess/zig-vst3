@@ -54,6 +54,14 @@ pub const Graph = struct {
     maximum_refresh_hz: types.uint32 = 30,
 };
 
+pub const XYPad = struct {
+    title: [*:0]const u8,
+    x_parameter_id: vsttypes.ParamID,
+    y_parameter_id: vsttypes.ParamID,
+    x_label: [*:0]const u8 = "X",
+    y_label: [*:0]const u8 = "Y",
+};
+
 pub const Asset = vstgui_editor_view.Asset;
 pub const AssetFormat = vstgui_editor_view.AssetFormat;
 pub const AssetScale = vstgui_editor_view.AssetScale;
@@ -74,6 +82,7 @@ pub const EditorDescription = struct {
     parameters: []const Parameter,
     meters: []const Meter = &.{},
     graphs: []const Graph = &.{},
+    xy_pads: []const XYPad = &.{},
     skin: Skin = .{},
     composition: Composition = .{},
 };
@@ -109,7 +118,7 @@ pub fn createMultiViewWithSkin(
     meters: []const Meter,
     skin: Skin,
 ) ?*iplugview.IPlugView {
-    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, skin, .{});
+    return createConfiguredView(Controller, controller, name, parameters, meters, &.{}, &.{}, skin, .{});
 }
 
 pub fn createEditor(
@@ -125,6 +134,7 @@ pub fn createEditor(
         description.parameters,
         description.meters,
         description.graphs,
+        description.xy_pads,
         description.skin,
         description.composition,
     );
@@ -137,6 +147,7 @@ fn createConfiguredView(
     parameters: []const Parameter,
     meters: []const Meter,
     graphs: []const Graph,
+    xy_pads: []const XYPad,
     skin: Skin,
     composition: Composition,
 ) ?*iplugview.IPlugView {
@@ -208,11 +219,30 @@ fn createConfiguredView(
                 .maximum_refresh_hz = graph.maximum_refresh_hz,
             };
         }
+        if (xy_pads.len > vstgui_editor_view.max_xy_pads) return null;
+        var xy_pad_descriptions: [vstgui_editor_view.max_xy_pads]vstgui_editor_view.XYPadDescription = undefined;
+        for (xy_pads, 0..) |xy_pad, index| {
+            if (xy_pad.x_parameter_id == xy_pad.y_parameter_id) return null;
+            var found_x = false;
+            var found_y = false;
+            for (parameters) |parameter| {
+                found_x = found_x or parameter.id == xy_pad.x_parameter_id;
+                found_y = found_y or parameter.id == xy_pad.y_parameter_id;
+            }
+            if (!found_x or !found_y) return null;
+            xy_pad_descriptions[index] = .{
+                .title = xy_pad.title,
+                .x_parameter_id = xy_pad.x_parameter_id,
+                .y_parameter_id = xy_pad.y_parameter_id,
+                .x_label = xy_pad.x_label,
+                .y_label = xy_pad.y_label,
+            };
+        }
         const telemetry_source = if (comptime @hasDecl(Controller, "retainGuiTelemetry"))
             Controller.retainGuiTelemetry(controller)
         else
             null;
-        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], skin, composition, .{
+        return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], skin, composition, .{
             .userdata = controller,
             .begin_edit = Bridge.beginEdit,
             .perform_edit = Bridge.performEdit,
