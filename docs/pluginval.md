@@ -44,6 +44,8 @@ Run the strictness level 10 gate:
 zig build pluginval-strict-examples
 ```
 
+The aggregate targets serialize their per-plugin runs. Each invocation writes pluginval artifacts under `${TMPDIR:-/tmp}/zig-vst3-pluginval`. Set `PLUGINVAL_OUTPUT_DIR` to retain them elsewhere. The wrapper prints the exact run directory before starting pluginval.
+
 The default strictness level is `5`, matching pluginval's usual minimum compatibility bar. Override it with `PLUGINVAL_STRICTNESS`:
 
 ```sh
@@ -56,7 +58,9 @@ Pass extra command-line flags with `PLUGINVAL_ARGS`. For Linux CI without a disp
 PLUGINVAL_ARGS=--skip-gui-tests zig build pluginval-examples
 ```
 
-On macOS, prefer individual targets such as `zig build pluginval-channel-strip`. The aggregate example targets allow independent validations to run concurrently. pluginval 1.0.4 produced repeated macOS crash dialogs during concurrent runs on July 17, 2026. The crash reports abort in `NSApplication` and `_RegisterApplication` before plugin scanning or loading, so they do not identify a plugin failure. A later isolated channel-strip run passed the complete strictness-5 suite, including editor open, open while processing, automation, and editor automation. Stop after the first startup crash instead of relaunching pluginval repeatedly.
+On macOS, individual targets such as `zig build pluginval-channel-strip` are useful for isolating one plugin. The aggregate targets now serialize their runs. Earlier aggregate targets scheduled independent validations concurrently, and pluginval 1.0.4 produced repeated crash dialogs during one such run on July 17, 2026. Those specific reports abort in `NSApplication` and `_RegisterApplication` before plugin scanning or loading, so they describe a concurrent pluginval startup failure rather than a plugin result. A later isolated channel-strip run passed the complete strictness-5 suite, including editor open, open while processing, automation, and editor automation.
+
+Do not use the historical concurrent-startup reports to explain an isolated pluginval exit. If an individual target quits unexpectedly after startup, preserve its log and crash report and treat it as a plugin regression until isolation proves otherwise. Stop after the first unexpected exit instead of repeatedly relaunching the process.
 
 The CI pluginval jobs run on macOS, Linux, and Windows. The Linux job installs the pluginval runtime libraries, runs under `xvfb-run`, and sets `--skip-gui-tests` because the runners have no display server. The headless command-line path does not verify native editor behavior.
 

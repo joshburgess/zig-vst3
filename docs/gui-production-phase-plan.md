@@ -13,7 +13,7 @@ The phase is complete when both editors use the public `@import("zig-vst3").vstg
 - Every component, controller, editor, telemetry source, gesture, and resource belongs to one plugin instance unless its data is immutable.
 - Keyboard order follows visible reading order. Tooltips supplement labels and never carry essential information alone.
 - New API stays experimental until the gallery and channel strip both use the same contract successfully.
-- pluginval runs serially. Stop after the first macOS crash dialog and continue with non-pluginval gates.
+- pluginval runs serially. Stop after the first unexpected exit or crash dialog, preserve its artifacts, and treat it as a plugin failure until isolation proves otherwise.
 
 ## Milestone 1: Production Channel Strip
 
@@ -168,7 +168,7 @@ Completion evidence:
 - [x] Run native unit, interaction, accessibility, visual, and performance tests.
 - [x] Run Zig tests, raw ABI checks, and every Steinberg example validator.
 - [x] Cross-build all example bundles for Linux and Windows.
-- [x] Diagnose pluginval serially and stop after the first crash dialog.
+- [ ] Diagnose the recent isolated pluginval exit without conflating it with historical concurrent startup crashes.
 - [x] Record manual macOS and unavailable native Windows, X11, and Wayland host checks.
 - [x] Confirm the worktree contains no uncommitted milestone work.
 
@@ -199,7 +199,7 @@ env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache zig build bundle-examples-li
 env ZIG_GLOBAL_CACHE_DIR=/tmp/zig-vst3-global-cache zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu
 ```
 
-Run pluginval examples one at a time only after the other gates pass. Do not use the aggregate parallel target on macOS while its crash behavior remains unresolved.
+Run pluginval only after the other gates pass. The aggregate target is serialized. Stop at the first unexpected exit, preserve its artifact directory and crash report, and isolate that plugin before continuing.
 
 Also verify:
 

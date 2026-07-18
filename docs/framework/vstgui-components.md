@@ -373,4 +373,4 @@ zig build test raw-api-abi validate-examples
 zig build pluginval-channel-strip
 ```
 
-The native suite covers parameter routing, interaction, layout selection, theme selection, assets, accessibility semantics, visual references, and the warm-render budget. The example suites verify both editor styles through real plugin bundles. Run pluginval examples one at a time on macOS. Stop after the first crash dialog rather than relaunching the application or using the aggregate parallel target.
+The native suite covers parameter routing, interaction, layout selection, theme selection, assets, accessibility semantics, visual references, and the warm-render budget. The example suites verify both editor styles through real plugin bundles. The aggregate pluginval target is serialized. Stop after the first unexpected exit, preserve its artifacts, and treat it as a plugin failure until isolation proves otherwise.

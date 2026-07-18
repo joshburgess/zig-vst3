@@ -232,6 +232,10 @@ pub fn build(b: *std.Build) void {
             .strictness = "10",
         });
     }
+    for (1..example_plugin_options.len) |index| {
+        pluginval_example_steps[index].dependOn(pluginval_example_steps[index - 1]);
+        pluginval_strict_example_steps[index].dependOn(pluginval_strict_example_steps[index - 1]);
+    }
     const pluginval_examples_step = b.step("pluginval-examples", "Build and run pluginval for all native VST3 example bundles");
     addStepDependencies(pluginval_examples_step, &pluginval_example_steps);
     const pluginval_strict_examples_step = b.step("pluginval-strict-examples", "Build and run pluginval strictness 10 for all native VST3 example bundles");
@@ -492,10 +496,12 @@ fn addPluginvalStep(
         }
         pluginval.step.dependOn(bundle_step);
         pluginval_step.dependOn(&pluginval.step);
+        return &pluginval.step;
     } else {
-        pluginval_step.dependOn(&b.addFail(b.fmt("{s} currently supports macOS, Linux, and Windows targets", .{step_name})).step);
+        const failure = &b.addFail(b.fmt("{s} currently supports macOS, Linux, and Windows targets", .{step_name})).step;
+        pluginval_step.dependOn(failure);
+        return failure;
     }
-    return pluginval_step;
 }
 
 const Vst3BundleOptions = struct {

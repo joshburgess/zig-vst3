@@ -35,7 +35,7 @@ Completion evidence:
 - Native and generic tests cover focus, value changes, toggling, unsupported actions, disabled and read-only rejection, callback counts, and bridge teardown.
 - Local Zig tests, raw ABI checks, native adapter tests, AppKit integration tests, visual regression, and all Steinberg example validators pass. The warm-render average remained below 45 microseconds against the 300 microsecond budget.
 - Linux and Windows example bundles cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`. The Windows UIA provider also cross-compiles directly with all four pattern interfaces.
-- Pluginval was not relaunched for this milestone. Prior concurrent runs produced macOS AppKit startup crashes before plugin loading, while the last isolated channel-strip run passed. Native action behavior is outside pluginval's coverage.
+- Pluginval was not run for this milestone. Historical concurrent startup crashes occurred before plugin loading, but they do not explain recent isolated exits. Treat an isolated exit as a plugin regression until diagnosis proves otherwise. Native action behavior is outside pluginval's coverage.
 - VoiceOver and Narrator navigation remain external checks because no automated screen-reader driver is available locally.
 
 ## Milestone 9: Multi-Parameter Gestures and XY Pad
@@ -62,7 +62,7 @@ Completion evidence:
 - Zig and native interaction tests cover success order, partial rejection rollback, cancellation, host automation, keyboard input, per-axis accessible edits, invalid descriptions, resize, scale, focus order, and instance isolation.
 - The `xy-pad.png` visual reference covers the grid, themed surface, and position handle. The final warm-render average was 32.2 microseconds against the 300 microsecond budget.
 - Zig tests, raw ABI checks, native adapter tests, AppKit integration tests, all ten Steinberg example validators, and Linux and Windows example cross-bundles pass.
-- Pluginval was not relaunched because prior macOS runs produced repeated crash dialogs. Native Windows, X11, Wayland, VoiceOver, and Narrator interaction remain external checks.
+- Pluginval coverage is pending because recent isolated runs quit unexpectedly. Treat that as an unresolved plugin defect, separate from historical concurrent startup crashes. Native Windows, X11, Wayland, VoiceOver, and Narrator interaction remain external checks.
 
 ## Milestone 10: Editable Envelope Graph
 
@@ -89,7 +89,7 @@ Completion evidence:
 - Unit and interaction tests cover stable IDs, insertion, snapping, movement constraints, capacity, selection wrap, minimum counts, cancellation, pointer editing, keyboard editing, accessible actions, parameter callback order, partial rejection, automation, focus order, invalid descriptions, resize, and scale.
 - The `editable-envelope.png` reference covers populated, selected, and empty states. The warm benchmark draws an editable envelope in its steady state and completed at 42.2 microseconds against the 300 microsecond budget.
 - Zig tests, raw ABI checks, native adapter tests, AppKit integration tests, all ten Steinberg example validators, and Linux and Windows example cross-bundles pass.
-- Pluginval was not relaunched because prior macOS runs produced repeated crash dialogs. Native Windows, X11, Wayland, VoiceOver, and Narrator interaction remain external checks.
+- Pluginval coverage is pending because recent isolated runs quit unexpectedly. Treat that as an unresolved plugin defect, separate from historical concurrent startup crashes. Native Windows, X11, Wayland, VoiceOver, and Narrator interaction remain external checks.
 
 ## Milestone 11: Persistent Editor State
 
@@ -116,7 +116,7 @@ Completion evidence:
 - `gui_preset_browser.Browser(capacity)` adds bounded search, filtered selection navigation, and load status on top of persistent text and selection fields. It remains experimental until the native component milestone.
 - Unit and native interaction tests cover every value type, successful and malformed round trips, unknown fields, migration, instance isolation, parameter separation, editor reopen, restored selection, and envelope callbacks.
 - Zig tests, raw ABI checks, native adapter tests, AppKit integration tests, all ten Steinberg example validators, and Linux and Windows example cross-bundles pass. The final measured warm-render average was 61.3 microseconds against the 300 microsecond budget.
-- Pluginval was not relaunched because prior macOS runs produced repeated crash dialogs. Native Windows, X11, Wayland, VoiceOver, and Narrator interaction remain external checks.
+- Pluginval coverage is pending because recent isolated runs quit unexpectedly. Treat that as an unresolved plugin defect, separate from historical concurrent startup crashes. Native Windows, X11, Wayland, VoiceOver, and Narrator interaction remain external checks.
 
 ## Milestone 12: Higher-Level Components
 
@@ -128,6 +128,7 @@ Completion evidence:
 - [x] Add waveform and spectrum views on the graph source contract.
 - [x] Exercise every promoted component in both the gallery and a production editor.
 - [x] Add interaction, visual-regression, performance, lifecycle, and instance-isolation coverage.
+- [ ] Restore serial pluginval strictness 5 and 10 coverage, isolating the first plugin that exits unexpectedly.
 
 Exit criteria:
 
@@ -145,7 +146,7 @@ Preset browser completion evidence:
 - Native interaction tests cover filtering, persisted state callbacks, keyboard selection, accessible search and load actions, empty results, successful load, failed load, retry status, invalid declarations, and editor integration. `preset-browsers.png` covers populated, filtered-error, and empty states.
 - All Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, and all ten Steinberg example validators pass. The final warm-render average, including the browser, is 77.9 microseconds against the 300 microsecond budget.
 - All examples cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`. The Windows UI Automation provider also cross-compiles through the native adapter test script.
-- Pluginval was not launched because it repeatedly produced macOS crash dialogs in earlier milestones. Manual macOS host interaction and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+- Pluginval coverage is pending because recent isolated runs quit unexpectedly. Treat that as an unresolved plugin defect, separate from historical concurrent startup crashes. Manual host interaction and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
 - Action menus, piano input, sequencing, file drop, and production waveform or spectrum components remain separate slices of this milestone.
 
 Action menu completion evidence:
@@ -158,7 +159,7 @@ Action menu completion evidence:
 - Native tests cover keyboard and pointer activation, disabled and separator skipping, toggle persistence, action rejection, store rollback, retry, outside dismissal, maximum-size scrolling, accessibility actions, invalid declarations, multiple-menu coordination, editor integration, and instance-owned descriptions.
 - `action-menu-closed.png` covers the closed trigger. `action-menus.png` covers checked, disabled, separator, destructive, selected, and recoverable error states. The final warm-render average, including an open menu, was 82.7 microseconds against the 300 microsecond budget.
 - Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, and all ten Steinberg example validators pass. All examples cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`.
-- Pluginval was not launched because earlier runs repeatedly produced macOS crash dialogs. Manual menu interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+- Pluginval coverage is pending because recent isolated runs quit unexpectedly. Treat that as an unresolved plugin defect, separate from historical concurrent startup crashes. Manual menu interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
 - Piano input is complete. Sequencing, file drop, and production waveform or spectrum components remain separate slices of this milestone.
 
 Piano keyboard completion evidence:
@@ -171,7 +172,7 @@ Piano keyboard completion evidence:
 - `gui_piano.Keyboard(capacity)` supplies the toolkit-neutral note-range, selection, pressed-state, computer-key mapping, and bounded release model. The native choice semantic exposes the selected note, range, playing state, focus, press, increment, and decrement through the shared accessibility action path.
 - Unit and native tests cover range validation, selection wrap, idempotent presses, bounded release, note naming, key mapping, pointer hit testing, key-up behavior, accessibility actions, invalid declarations, processor delivery, note-off delivery, and editor integration.
 - `piano-keyboard.png` covers standard key geometry, octave labels, selection, and a pressed note. Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, all ten Steinberg validators, and Linux and Windows example cross-bundles pass. The final piano-only warm-render average was 120.6 microseconds against the 300 microsecond budget. The complete warm-render scene averaged 201.8 microseconds during the same final validation run.
-- Pluginval was not launched because earlier runs repeatedly produced macOS crash dialogs. Manual piano interaction in a macOS host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+- Pluginval coverage is pending because recent isolated runs quit unexpectedly. Treat that as an unresolved plugin defect, separate from historical concurrent startup crashes. Manual piano interaction in a macOS host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
 - Sequencing, file drop, and production waveform or spectrum components remain separate slices of this milestone.
 
 Step sequencer completion evidence:
@@ -184,7 +185,7 @@ Step sequencer completion evidence:
 - Unit and native tests cover bounded masks, navigation, range and additive selection, painting, multi-parameter gestures, external host updates, rejected edits, disabled behavior, accessibility actions, invalid declarations, DSP gating, telemetry activity, editor integration, teardown, and instance-owned descriptions.
 - `step-sequencer.png` covers active, inactive, multi-selected, and playhead states without relying on color alone. The dedicated 16-step warm-render benchmark completed at 145.1 microseconds against the 300 microsecond budget during final release validation.
 - Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, and all ten Steinberg validators pass. All examples cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`. The benchmark harness now uses the best of three fixed-size batches so scheduler preemption does not create a false regression.
-- Pluginval was not launched because earlier runs repeatedly produced macOS crash dialogs. Manual sequencer interaction in a macOS host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+- Pluginval coverage is pending because recent isolated runs quit unexpectedly. Treat that as an unresolved plugin defect, separate from historical concurrent startup crashes. Manual sequencer interaction in a macOS host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
 - Production waveform and spectrum components remain the final separate slice of this milestone.
 
 File drop completion evidence:
@@ -196,7 +197,7 @@ File drop completion evidence:
 - Toolkit-neutral unit tests cover copied caller lifetimes, count and path bounds, case-insensitive filtering, malformed declarations, duplicate extensions, and handler rejection. Native tests exercise real VSTGUI drag enter and drop events, unsupported data packages, copied storage, callback failure and retry semantics, invalid ABI declarations, and editor integration.
 - `file-drops.png` covers idle, acceptable, and recoverable failure states without relying on text alone. The dedicated warm-render benchmark completed at 26.1 microseconds against the 300 microsecond budget during final release validation.
 - `FileDrop` remains experimental because it has only the gallery consumer. Promotion also requires a production importer with a keyboard-accessible file-picker alternative.
-- Pluginval was not launched because earlier runs repeatedly produced macOS crash dialogs. Manual file-drop interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+- Pluginval coverage is pending because recent isolated runs quit unexpectedly. Treat that as an unresolved plugin defect, separate from historical concurrent startup crashes. Manual file-drop interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
 - Production waveform and spectrum components complete the local slices of this milestone.
 
 Waveform and spectrum completion evidence:
@@ -209,7 +210,7 @@ Waveform and spectrum completion evidence:
 - Unit tests cover activity gating, deterministic waveform reduction, maximum capacity, deterministic FFT peak frequency and level, invalid sample rate, source selection, editor counts, and instance isolation. Native tests cover empty and populated semantics, dynamic refresh, invalid data, timer lifecycle, and unchanged-frame suppression.
 - `signal-views.png` covers populated waveform, populated spectrum, and empty spectrum states. A dedicated benchmark renders a maximum-capacity 256-point waveform and 256-bin spectrum against the 300 microsecond warm-frame budget.
 - Final local measurements were 273.7 microseconds for the maximum-capacity signal pair, 263 nanoseconds for 128-point waveform capture plus snapshot read, and 2.19 microseconds for a 128-point FFT plus snapshot read. All Zig tests, raw API ABI checks, native adapter tests, macOS accessibility bridge tests, visual regression tests, and all ten Steinberg validators pass. All examples cross-build for `x86_64-linux-gnu` and `x86_64-windows-gnu`.
-- Pluginval remains unavailable because earlier invocations repeatedly produced macOS crash dialogs. Manual signal-view interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
+- Pluginval coverage is pending because recent isolated runs quit unexpectedly. Treat that as an unresolved plugin defect, separate from historical concurrent startup crashes. Manual signal-view interaction in a macOS plugin host and native Windows, X11, Wayland, VoiceOver, Narrator, and AT-SPI checks remain pending.
 
 ## Validation After Each Milestone
 
@@ -218,7 +219,7 @@ Waveform and spectrum completion evidence:
 - Cross-compile the Windows accessibility provider.
 - Run every Steinberg validator example.
 - Cross-build Linux and Windows example bundles.
-- Run pluginval examples serially. Stop after the first macOS crash dialog.
+- Run pluginval examples serially. Stop after the first unexpected exit or crash dialog, preserve its artifacts, and treat it as a plugin failure until isolation proves otherwise.
 - Perform manual macOS host checks when practical.
 - Record native Windows, VoiceOver, Narrator, X11, Wayland, and AT-SPI checks as pending when their environments are unavailable.
 
