@@ -9,6 +9,7 @@ pub const gui_graph = @import("gui_graph.zig");
 pub const gui_piano = @import("gui_piano.zig");
 pub const gui_step_sequencer = @import("gui_step_sequencer.zig");
 pub const gui_file_drop = @import("gui_file_drop.zig");
+pub const gui_file_importer = @import("gui_file_importer.zig");
 pub const plugin = @import("plugin.zig");
 pub const process = @import("process.zig");
 pub const state = @import("state.zig");
@@ -24,6 +25,7 @@ test {
     std.testing.refAllDecls(gui_piano);
     std.testing.refAllDecls(gui_step_sequencer);
     std.testing.refAllDecls(gui_file_drop);
+    std.testing.refAllDecls(gui_file_importer);
     std.testing.refAllDecls(plugin);
     std.testing.refAllDecls(process);
     std.testing.refAllDecls(state);
