@@ -3,6 +3,7 @@ const implementation = @import("vstgui_single_parameter_controller.zig");
 pub const Parameter = implementation.Parameter;
 pub const Meter = implementation.Meter;
 pub const GraphPoint = implementation.GraphPoint;
+pub const EnvelopePoint = implementation.EnvelopePoint;
 pub const GraphScale = implementation.GraphScale;
 pub const GraphKind = implementation.GraphKind;
 pub const GraphStyleRole = implementation.GraphStyleRole;

@@ -97,6 +97,7 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_advanced(
     if ((!xy_pads && xy_pad_count > 0) || xy_pad_count > ZIG_VSTGUI_MAX_XY_PADS) return nullptr;
     for (uint32_t index = 0; index < graph_count; ++index) {
         const auto& graph = graphs[index];
+        const bool editable = graph.point_capacity > 0;
         if (!graph.title || graph.point_count > ZIG_VSTGUI_MAX_GRAPH_POINTS ||
             (!graph.points && graph.point_count > 0) ||
             !std::isfinite(graph.x_axis.minimum) || !std::isfinite(graph.x_axis.maximum) ||
@@ -108,9 +109,42 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_advanced(
             graph.style < ZIG_VSTGUI_GRAPH_PRIMARY || graph.style > ZIG_VSTGUI_GRAPH_WARNING ||
             graph.x_axis.scale < ZIG_VSTGUI_GRAPH_LINEAR || graph.x_axis.scale > ZIG_VSTGUI_GRAPH_DECIBELS ||
             graph.y_axis.scale < ZIG_VSTGUI_GRAPH_LINEAR || graph.y_axis.scale > ZIG_VSTGUI_GRAPH_DECIBELS ||
-            (graph.dynamic && (!graph_callbacks.load || graph.maximum_refresh_hz == 0 || graph.maximum_refresh_hz > 60))) return nullptr;
+            (graph.dynamic && (!graph_callbacks.load || graph.maximum_refresh_hz == 0 || graph.maximum_refresh_hz > 60)) ||
+            (!editable && (graph.editable_points || graph.editable_point_count > 0 ||
+                graph.minimum_point_count > 0 || graph.snap_x != 0.0 || graph.snap_y != 0.0)) ||
+            (editable && (graph.kind != ZIG_VSTGUI_GRAPH_ENVELOPE || graph.dynamic || graph.point_count > 0 ||
+                graph.point_capacity > ZIG_VSTGUI_MAX_GRAPH_POINTS ||
+                graph.editable_point_count > graph.point_capacity ||
+                graph.minimum_point_count > graph.editable_point_count ||
+                (!graph.editable_points && graph.editable_point_count > 0) ||
+                !std::isfinite(graph.snap_x) || !std::isfinite(graph.snap_y) ||
+                graph.snap_x < 0.0 || graph.snap_y < 0.0))) return nullptr;
         for (uint32_t point = 0; point < graph.point_count; ++point) {
             if (!std::isfinite(graph.points[point].x) || !std::isfinite(graph.points[point].y)) return nullptr;
+        }
+        for (uint32_t point = 0; point < graph.editable_point_count; ++point) {
+            const auto& editable_point = graph.editable_points[point];
+            if (editable_point.point_id == 0 || !std::isfinite(editable_point.x) ||
+                !std::isfinite(editable_point.y) ||
+                (editable_point.parameter_mask & ~3u) != 0 ||
+                editable_point.x_step_count < 0 || editable_point.y_step_count < 0 ||
+                (editable_point.parameter_mask != 0 && (editable_point.parameter_mask != 3 ||
+                    editable_point.x_parameter_id == editable_point.y_parameter_id)) ||
+                editable_point.x < graph.x_axis.minimum || editable_point.x > graph.x_axis.maximum ||
+                editable_point.y < graph.y_axis.minimum || editable_point.y > graph.y_axis.maximum ||
+                (point > 0 && graph.editable_points[point - 1].x > editable_point.x)) return nullptr;
+            for (uint32_t previous = 0; previous < point; ++previous) {
+                if (graph.editable_points[previous].point_id == editable_point.point_id) return nullptr;
+            }
+            if (editable_point.parameter_mask == 3) {
+                bool found_x = false;
+                bool found_y = false;
+                for (uint32_t parameter = 0; parameter < parameter_count; ++parameter) {
+                    found_x = found_x || parameters[parameter].parameter_id == editable_point.x_parameter_id;
+                    found_y = found_y || parameters[parameter].parameter_id == editable_point.y_parameter_id;
+                }
+                if (!found_x || !found_y) return nullptr;
+            }
         }
     }
     for (uint32_t index = 0; index < xy_pad_count; ++index) {
@@ -235,5 +269,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 9;
+    return 10;
 }

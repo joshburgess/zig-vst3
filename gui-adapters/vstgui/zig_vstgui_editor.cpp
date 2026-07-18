@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -44,6 +45,15 @@ ZigVstgui::StyleOverride styleOverride(const ZigVstguiStyleOverride& value) {
     return result;
 }
 
+double graphAxisValue(double normalized, const ZigVstguiGraphAxis& axis) {
+    const double value = std::clamp(normalized, 0.0, 1.0);
+    if (axis.scale == ZIG_VSTGUI_GRAPH_LOGARITHMIC) {
+        const double minimum = std::log10(axis.minimum);
+        return std::pow(10.0, minimum + value * (std::log10(axis.maximum) - minimum));
+    }
+    return axis.minimum + value * (axis.maximum - axis.minimum);
+}
+
 }
 
 ZigVstguiEditor::ZigVstguiEditor(
@@ -60,7 +70,8 @@ ZigVstguiEditor::ZigVstguiEditor(
     const ZigVstguiXYPadDescription* xy_pads,
     uint32_t value_xy_pad_count
 )
-: meter_count(value_meter_count),
+: parameter_callbacks(callbacks),
+  meter_count(value_meter_count),
   meter_callbacks(value_meter_callbacks),
   graph_count(value_graph_count),
   graph_callbacks(value_graph_callbacks),
@@ -117,6 +128,44 @@ ZigVstguiEditor::ZigVstguiEditor(
         if (!graphs[index].dynamic && graphs[index].point_count > 0) {
             graph_static_points[index].assign(graphs[index].points, graphs[index].points + graphs[index].point_count);
             graph_descriptions[index].points = graph_static_points[index].data();
+        }
+        if (graphs[index].editable_point_count > 0) {
+            graph_editable_points[index].assign(
+                graphs[index].editable_points,
+                graphs[index].editable_points + graphs[index].editable_point_count
+            );
+            for (auto& point : graph_editable_points[index]) {
+                if (point.parameter_mask != 3) continue;
+                bool found_x = false;
+                bool found_y = false;
+                for (uint32_t parameter = 0; parameter < parameter_count; ++parameter) {
+                    if (parameter_controls[parameter]->model().parameterId() == point.x_parameter_id) {
+                        point.x_step_count = parameter_info[parameter].step_count;
+                        point.x = graphAxisValue(
+                            parameter_controls[parameter]->model().acceptedValue(),
+                            graphs[index].x_axis
+                        );
+                        found_x = true;
+                    }
+                    if (parameter_controls[parameter]->model().parameterId() == point.y_parameter_id) {
+                        point.y_step_count = parameter_info[parameter].step_count;
+                        point.y = graphAxisValue(
+                            parameter_controls[parameter]->model().acceptedValue(),
+                            graphs[index].y_axis
+                        );
+                        found_y = true;
+                    }
+                }
+                if (!found_x || !found_y) return;
+            }
+            std::stable_sort(
+                graph_editable_points[index].begin(),
+                graph_editable_points[index].end(),
+                [](const ZigVstguiEnvelopePoint& left, const ZigVstguiEnvelopePoint& right) {
+                    return left.x < right.x;
+                }
+            );
+            graph_descriptions[index].editable_points = graph_editable_points[index].data();
         }
         graph_controls[index].reset(new (std::nothrow) ZigVstgui::GraphControl());
         if (!graph_controls[index]) return;
@@ -256,6 +305,9 @@ bool ZigVstguiEditor::setParameter(uint32_t parameter_id, double normalized) {
     for (uint32_t index = 0; index < xy_pad_count; ++index) {
         found = xy_pad_controls[index]->setParameter(parameter_id, normalized) || found;
     }
+    for (uint32_t index = 0; index < graph_count; ++index) {
+        found = graph_controls[index]->setParameter(parameter_id, normalized) || found;
+    }
     if (!found) return false;
     metrics.parameter_update_count += 1;
     return true;
@@ -364,6 +416,10 @@ bool ZigVstguiEditor::keyDown(uint16_t key, int16_t key_code, int16_t modifiers)
         auto& meter = *meter_controls[index];
         if (focused == meter.focusView() && meter.handleKey(key, key_code)) return true;
     }
+    for (uint32_t index = 0; index < graph_count; ++index) {
+        auto& graph = *graph_controls[index];
+        if (focused == graph.focusView() && graph.handleKey(key, key_code, modifiers)) return true;
+    }
     for (uint32_t index = 0; index < xy_pad_count; ++index) {
         auto& xy_pad = *xy_pad_controls[index];
         if (focused == xy_pad.focusView() && xy_pad.handleKey(key, key_code, modifiers)) return true;
@@ -377,7 +433,8 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
     if (!frame) return false;
     std::array<
         VSTGUI::CView*,
-        ZIG_VSTGUI_MAX_PARAMETERS * 2 + ZIG_VSTGUI_MAX_METERS + ZIG_VSTGUI_MAX_XY_PADS + 1
+        ZIG_VSTGUI_MAX_PARAMETERS * 2 + ZIG_VSTGUI_MAX_METERS + ZIG_VSTGUI_MAX_GRAPHS +
+            ZIG_VSTGUI_MAX_XY_PADS + 1
     > focus_order {};
     uint32_t focus_count = 0;
     for (uint32_t index = 0; index < parameter_count; ++index) {
@@ -386,6 +443,9 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
     }
     for (uint32_t index = 0; index < meter_count; ++index) {
         if (auto* meter = meter_controls[index]->focusView()) focus_order[focus_count++] = meter;
+    }
+    for (uint32_t index = 0; index < graph_count; ++index) {
+        if (auto* graph = graph_controls[index]->focusView()) focus_order[focus_count++] = graph;
     }
     for (uint32_t index = 0; index < xy_pad_count; ++index) {
         if (auto* xy_pad = xy_pad_controls[index]->focusView()) focus_order[focus_count++] = xy_pad;
@@ -410,6 +470,9 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
     for (uint32_t index = 0; index < parameter_count; ++index) {
         parameter_controls[index]->setFocusedView(next_view);
     }
+    for (uint32_t index = 0; index < graph_count; ++index) {
+        graph_controls[index]->setFocusedView(next_view);
+    }
     for (uint32_t index = 0; index < xy_pad_count; ++index) {
         xy_pad_controls[index]->setFocusedView(next_view);
     }
@@ -424,6 +487,9 @@ void ZigVstguiEditor::setFocus(bool focused) {
     if (!focused) {
         for (uint32_t index = 0; index < parameter_count; ++index) {
             parameter_controls[index]->setFocusedView(nullptr);
+        }
+        for (uint32_t index = 0; index < graph_count; ++index) {
+            graph_controls[index]->setFocusedView(nullptr);
         }
         for (uint32_t index = 0; index < xy_pad_count; ++index) {
             xy_pad_controls[index]->setFocusedView(nullptr);
@@ -595,6 +661,7 @@ void ZigVstguiEditor::buildFrame() {
                 content,
                 graph_descriptions[index],
                 graph_callbacks,
+                parameter_callbacks,
                 stylesForGraph(index))) return;
     }
     for (uint32_t index = 0; index < xy_pad_count; ++index) {

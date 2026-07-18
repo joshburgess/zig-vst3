@@ -66,18 +66,30 @@ Completion evidence:
 
 ## Milestone 10: Editable Envelope Graph
 
-- [ ] Extend the graph contract with bounded editable points and stable point identifiers.
-- [ ] Implement hit testing, point creation, dragging, deletion, selection, and snapping.
-- [ ] Add keyboard traversal and adjustment with a visible selected-point state.
-- [ ] Expose point count, selection, coordinates, and edit actions through toolkit-neutral semantics.
-- [ ] Reuse multi-parameter gestures for parameter-backed envelopes and editor state for non-parameter envelopes.
-- [ ] Add deterministic interaction, visual, resize, scale, and performance coverage.
+- [x] Extend the graph contract with bounded editable points and stable point identifiers.
+- [x] Implement hit testing, point creation, dragging, deletion, selection, and snapping.
+- [x] Add keyboard traversal and adjustment with a visible selected-point state.
+- [x] Expose point count, selection, coordinates, and edit actions through toolkit-neutral semantics.
+- [x] Reuse multi-parameter gestures for parameter-backed envelopes and editor state for non-parameter envelopes.
+- [x] Add deterministic interaction, visual, resize, scale, and performance coverage.
 
 Exit criteria:
 
 - Editing remains bounded by a declared point capacity.
 - Pointer, keyboard, and assistive edits share snapping, validation, and undoable gesture boundaries.
 - Static graphs retain zero continuous repaint, and editable graphs repaint only changed regions during activity.
+
+Completion evidence:
+
+- `gui_graph.EditableEnvelope(capacity)` owns fixed storage, stable IDs, ordered points, selection, snapping, capacity checks, minimum-count deletion, and transactional finish or rollback behavior.
+- `ParameterEnvelopeAttachment(count)` maps stable point IDs to the existing two-parameter attachment contract. Native parameter-backed handles use the same ordered model for host gestures, rejection rollback, and automation updates.
+- Adapter ABI version 10 carries bounded editable points, minimum count, snap intervals, and optional parameter bindings. Validation rejects malformed IDs, ordering, ranges, capacities, masks, and parameter references before editor creation.
+- The VSTGUI envelope supports pointer creation, hit testing, drag, right-click deletion, keyboard traversal and editing, accessible selection and value actions, visible selected handles, and bounded partial invalidation.
+- Both the component gallery and channel strip declare editable envelopes through `@import("zig-vst3").vstgui`. Each includes an unbound editor-state handle and a point backed by two ordinary parameters.
+- Unit and interaction tests cover stable IDs, insertion, snapping, movement constraints, capacity, selection wrap, minimum counts, cancellation, pointer editing, keyboard editing, accessible actions, parameter callback order, partial rejection, automation, focus order, invalid descriptions, resize, and scale.
+- The `editable-envelope.png` reference covers populated, selected, and empty states. The warm benchmark draws an editable envelope in its steady state and completed at 42.2 microseconds against the 300 microsecond budget.
+- Zig tests, raw ABI checks, native adapter tests, AppKit integration tests, all ten Steinberg example validators, and Linux and Windows example cross-bundles pass.
+- Pluginval was not relaunched because prior macOS runs produced repeated crash dialogs. Native Windows, X11, Wayland, VoiceOver, and Narrator interaction remain external checks.
 
 ## Milestone 11: Persistent Editor State
 

@@ -33,6 +33,10 @@ enum class AccessibilityAction : uint32_t {
     increment = 1u << 2,
     decrement = 1u << 3,
     set_value = 1u << 4,
+    select_previous = 1u << 5,
+    select_next = 1u << 6,
+    add_point = 1u << 7,
+    delete_selected = 1u << 8,
 };
 
 struct AccessibilityActionRequest {

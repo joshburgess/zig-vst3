@@ -103,6 +103,7 @@ private:
     std::array<std::string, ZIG_VSTGUI_MAX_PARAMETERS> parameter_tooltips;
     std::array<ZigVstguiControlKind, ZIG_VSTGUI_MAX_PARAMETERS> parameter_control_kinds {};
     uint32_t parameter_count {0};
+    ZigVstguiCallbacks parameter_callbacks {};
     std::array<std::unique_ptr<ZigVstgui::MeterControl>, ZIG_VSTGUI_MAX_METERS> meter_controls;
     std::array<ZigVstguiMeterDescription, ZIG_VSTGUI_MAX_METERS> meter_descriptions {};
     uint32_t meter_count {0};
@@ -113,6 +114,7 @@ private:
     std::array<std::string, ZIG_VSTGUI_MAX_GRAPHS> graph_x_labels;
     std::array<std::string, ZIG_VSTGUI_MAX_GRAPHS> graph_y_labels;
     std::array<std::vector<ZigVstguiGraphPoint>, ZIG_VSTGUI_MAX_GRAPHS> graph_static_points;
+    std::array<std::vector<ZigVstguiEnvelopePoint>, ZIG_VSTGUI_MAX_GRAPHS> graph_editable_points;
     uint32_t graph_count {0};
     ZigVstguiGraphCallbacks graph_callbacks {};
     std::array<std::unique_ptr<ZigVstgui::XYPadControl>, ZIG_VSTGUI_MAX_XY_PADS> xy_pad_controls;

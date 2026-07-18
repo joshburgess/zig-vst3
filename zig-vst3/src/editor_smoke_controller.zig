@@ -79,15 +79,39 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .{ .title = "Stereo", .kind = .stereo, .first_source_id = 1, .second_source_id = 2 },
                 .{ .title = "Reduction", .kind = .gain_reduction, .first_source_id = 3 },
             },
-            .graphs = &.{.{
-                .title = "Waveform",
-                .kind = .waveform,
-                .x_axis = .{ .minimum = -1.0, .maximum = 1.0, .label = "Time" },
-                .y_axis = .{ .minimum = -1.0, .maximum = 1.0, .label = "Level" },
-                .source_id = 0,
-                .dynamic = true,
-                .maximum_refresh_hz = 30,
-            }},
+            .graphs = &.{
+                .{
+                    .title = "Waveform",
+                    .kind = .waveform,
+                    .x_axis = .{ .minimum = -1.0, .maximum = 1.0, .label = "Time" },
+                    .y_axis = .{ .minimum = -1.0, .maximum = 1.0, .label = "Level" },
+                    .source_id = 0,
+                    .dynamic = true,
+                    .maximum_refresh_hz = 30,
+                },
+                .{
+                    .title = "Envelope",
+                    .kind = .envelope,
+                    .x_axis = .{ .minimum = 0.0, .maximum = 1.0, .label = "Time" },
+                    .y_axis = .{ .minimum = 0.0, .maximum = 1.0, .label = "Level" },
+                    .editable_points = &.{
+                        .{ .point_id = 1, .x = 0.0, .y = 0.0 },
+                        .{
+                            .point_id = 2,
+                            .x = 0.5,
+                            .y = 0.0,
+                            .x_parameter_id = gain_param_id,
+                            .y_parameter_id = voices_param_id,
+                            .parameter_mask = 3,
+                        },
+                        .{ .point_id = 3, .x = 1.0, .y = 0.0 },
+                    },
+                    .point_capacity = 8,
+                    .minimum_point_count = 2,
+                    .snap_x = 0.05,
+                    .snap_y = 0.05,
+                },
+            },
             .xy_pads = &.{.{
                 .title = "Bipolar and Voices",
                 .x_parameter_id = gain_param_id,
@@ -113,7 +137,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .groups = &.{
                     .{ .title = "Continuous", .parameter_count = 1, .style = .{ .accent = 0x7ce8c5ff }, .xy_pad_count = 1 },
                     .{ .title = "Discrete", .first_parameter = 1, .parameter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0xe8c77cff } },
-                    .{ .title = "Telemetry", .first_parameter = 4, .meter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0x7caee8ff }, .graph_count = 1 },
+                    .{ .title = "Telemetry", .first_parameter = 4, .meter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0x7caee8ff }, .graph_count = 2 },
                 },
             },
         });

@@ -288,6 +288,81 @@ pub fn MultiParameterAttachment(comptime parameter_count: usize) type {
     };
 }
 
+pub fn ParameterEnvelopeAttachment(comptime point_count: usize) type {
+    if (point_count == 0) @compileError("a parameter envelope attachment requires at least one point");
+    return struct {
+        pub const Binding = struct {
+            point_id: u32,
+            x_parameter_id: ParameterId,
+            y_parameter_id: ParameterId,
+        };
+
+        bindings: [point_count]Binding,
+        points: [point_count]MultiParameterAttachment(2),
+        active_index: ?usize = null,
+
+        pub fn init(context: Context, bindings: [point_count]Binding) Error!@This() {
+            var result: @This() = undefined;
+            result.bindings = bindings;
+            result.active_index = null;
+            for (bindings, 0..) |binding, index| {
+                if (binding.point_id == 0) return error.InvalidParameter;
+                for (bindings[0..index]) |previous| {
+                    if (previous.point_id == binding.point_id) return error.InvalidParameter;
+                }
+                result.points[index] = try MultiParameterAttachment(2).init(
+                    context,
+                    .{ binding.x_parameter_id, binding.y_parameter_id },
+                );
+            }
+            return result;
+        }
+
+        pub fn begin(self: *@This(), point_id: u32) Error!void {
+            if (self.active_index != null) return error.Rejected;
+            const index = self.indexOf(point_id) orelse return error.InvalidParameter;
+            try self.points[index].begin();
+            self.active_index = index;
+        }
+
+        pub fn set(self: *@This(), values_to_set: [2]NormalizedValue) Error!void {
+            const index = self.active_index orelse return error.Rejected;
+            self.points[index].set(values_to_set) catch |err| {
+                self.active_index = null;
+                return err;
+            };
+        }
+
+        pub fn finish(self: *@This()) void {
+            const index = self.active_index orelse return;
+            self.points[index].finish();
+            self.active_index = null;
+        }
+
+        pub fn cancel(self: *@This()) void {
+            const index = self.active_index orelse return;
+            self.points[index].cancel();
+            self.active_index = null;
+        }
+
+        pub fn hostChanged(self: *@This(), parameter_id: ParameterId, value: NormalizedValue) void {
+            for (&self.points) |*point| point.hostChanged(parameter_id, value);
+        }
+
+        pub fn pointValues(self: *const @This(), point_id: u32) ?[2]NormalizedValue {
+            const index = self.indexOf(point_id) orelse return null;
+            return self.points[index].values();
+        }
+
+        fn indexOf(self: *const @This(), point_id: u32) ?usize {
+            for (self.bindings, 0..) |binding, index| {
+                if (binding.point_id == point_id) return index;
+            }
+            return null;
+        }
+    };
+}
+
 /// A fixed-size development panel built entirely from reflected parameter IDs.
 pub fn ParameterPanel(comptime parameter_count: usize) type {
     return struct {
@@ -793,6 +868,24 @@ test "multi-parameter attachment rejects duplicate IDs and tracks host automatio
     attachment.hostChanged(20, 0.3);
     try std.testing.expectEqual([2]NormalizedValue{ 0.25, 0.3 }, attachment.values());
     try std.testing.expectEqual(@as(usize, 0), fake.operation_count);
+}
+
+test "parameter envelope attachment reuses ordered two-axis gestures" {
+    var fake = MultiFake{};
+    const Envelope = ParameterEnvelopeAttachment(1);
+    var envelope = try Envelope.init(fake.context(), .{.{
+        .point_id = 7,
+        .x_parameter_id = 10,
+        .y_parameter_id = 20,
+    }});
+    try envelope.begin(7);
+    try envelope.set(.{ 0.4, 0.6 });
+    envelope.finish();
+    try std.testing.expectEqual([2]NormalizedValue{ 0.4, 0.6 }, envelope.pointValues(7).?);
+    try std.testing.expectEqual(@as(usize, 6), fake.operation_count);
+    envelope.hostChanged(20, 0.2);
+    try std.testing.expectEqual([2]NormalizedValue{ 0.4, 0.2 }, envelope.pointValues(7).?);
+    try std.testing.expectError(error.InvalidParameter, envelope.begin(99));
 }
 
 test "parameter attachment rejects invalid IDs and rejected values" {

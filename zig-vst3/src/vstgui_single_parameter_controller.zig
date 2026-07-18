@@ -31,6 +31,7 @@ pub const Meter = struct {
 };
 
 pub const GraphPoint = gui_graph.Point;
+pub const EnvelopePoint = vstgui_editor_view.EnvelopePoint;
 pub const GraphScale = vstgui_editor_view.GraphScale;
 pub const GraphKind = vstgui_editor_view.GraphKind;
 pub const GraphStyleRole = vstgui_editor_view.GraphStyleRole;
@@ -52,6 +53,11 @@ pub const Graph = struct {
     source_id: types.uint32 = 0,
     dynamic: bool = false,
     maximum_refresh_hz: types.uint32 = 30,
+    editable_points: []const EnvelopePoint = &.{},
+    point_capacity: types.uint32 = 0,
+    minimum_point_count: types.uint32 = 0,
+    snap_x: f64 = 0.0,
+    snap_y: f64 = 0.0,
 };
 
 pub const XYPad = struct {
@@ -194,8 +200,39 @@ fn createConfiguredView(
         var graph_descriptions: [vstgui_editor_view.max_graphs]vstgui_editor_view.GraphDescription = undefined;
         for (graphs, 0..) |graph, index| {
             if (graph.points.len > vstgui_editor_view.max_graph_points or
+                graph.editable_points.len > vstgui_editor_view.max_graph_points or
                 graph.x_axis.maximum <= graph.x_axis.minimum or graph.y_axis.maximum <= graph.y_axis.minimum or
-                (graph.dynamic and (graph.maximum_refresh_hz == 0 or graph.maximum_refresh_hz > 60))) return null;
+                (graph.dynamic and (graph.maximum_refresh_hz == 0 or graph.maximum_refresh_hz > 60)) or
+                (graph.point_capacity == 0 and (graph.editable_points.len > 0 or graph.minimum_point_count > 0 or
+                    graph.snap_x != 0.0 or graph.snap_y != 0.0)) or
+                (graph.point_capacity > 0 and (graph.kind != .envelope or graph.dynamic or graph.points.len > 0 or
+                    graph.point_capacity > vstgui_editor_view.max_graph_points or
+                    graph.editable_points.len > graph.point_capacity or
+                    graph.minimum_point_count > graph.editable_points.len or
+                    !std.math.isFinite(graph.snap_x) or !std.math.isFinite(graph.snap_y) or
+                    graph.snap_x < 0.0 or graph.snap_y < 0.0))) return null;
+            for (graph.editable_points, 0..) |point, point_index| {
+                if (point.point_id == 0 or !std.math.isFinite(point.x) or !std.math.isFinite(point.y) or
+                    point.parameter_mask & ~@as(types.uint32, 3) != 0 or
+                    point.x_step_count < 0 or point.y_step_count < 0 or
+                    (point.parameter_mask != 0 and (point.parameter_mask != 3 or
+                        point.x_parameter_id == point.y_parameter_id)) or
+                    point.x < graph.x_axis.minimum or point.x > graph.x_axis.maximum or
+                    point.y < graph.y_axis.minimum or point.y > graph.y_axis.maximum or
+                    (point_index > 0 and graph.editable_points[point_index - 1].x > point.x)) return null;
+                for (graph.editable_points[0..point_index]) |previous| {
+                    if (previous.point_id == point.point_id) return null;
+                }
+                if (point.parameter_mask == 3) {
+                    var found_x = false;
+                    var found_y = false;
+                    for (parameters) |parameter| {
+                        found_x = found_x or parameter.id == point.x_parameter_id;
+                        found_y = found_y or parameter.id == point.y_parameter_id;
+                    }
+                    if (!found_x or !found_y) return null;
+                }
+            }
             graph_descriptions[index] = .{
                 .title = graph.title,
                 .kind = graph.kind,
@@ -217,6 +254,12 @@ fn createConfiguredView(
                 .source_id = graph.source_id,
                 .dynamic = @intFromBool(graph.dynamic),
                 .maximum_refresh_hz = graph.maximum_refresh_hz,
+                .editable_points = if (graph.editable_points.len == 0) null else graph.editable_points.ptr,
+                .editable_point_count = @intCast(graph.editable_points.len),
+                .point_capacity = graph.point_capacity,
+                .minimum_point_count = graph.minimum_point_count,
+                .snap_x = graph.snap_x,
+                .snap_y = graph.snap_y,
             };
         }
         if (xy_pads.len > vstgui_editor_view.max_xy_pads) return null;

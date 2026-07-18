@@ -8,6 +8,7 @@
 #include "zig_vstgui_meters.h"
 
 #include "pluginterfaces/base/keycodes.h"
+#include "vstgui/lib/events.h"
 #include "vstgui/lib/vstguiinit.h"
 
 #include <cmath>
@@ -715,7 +716,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 9) return 1;
+    if (zig_vstgui_adapter_version() != 10) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -760,6 +761,32 @@ int testMeterAbi() {
     auto invalid_graph = graph;
     invalid_graph.point_count = ZIG_VSTGUI_MAX_GRAPH_POINTS + 1;
     if (zig_vstgui_editor_create_configured(&parameter, 1, {}, nullptr, 0, {}, &invalid_graph, 1, {}, {})) return 8;
+    const ZigVstguiEnvelopePoint envelope_points[] = {{1, 0.0, 0.0}, {2, 1.0, 1.0}};
+    const ZigVstguiGraphDescription editable_graph {
+        "Envelope",
+        ZIG_VSTGUI_GRAPH_ENVELOPE,
+        ZIG_VSTGUI_GRAPH_PRIMARY,
+        {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Time"},
+        {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"},
+        nullptr, 0, 0, 0, 0,
+        envelope_points, 2, 4, 1, 0.1, 0.1,
+    };
+    auto* editable_editor = zig_vstgui_editor_create_configured(
+        &parameter, 1, {}, nullptr, 0, {}, &editable_graph, 1, {}, {}
+    );
+    if (!editable_editor) return 9;
+    const auto* editable_semantics = editable_editor->graphAccessibility(0);
+    if (!editable_semantics || editable_semantics->state().read_only ||
+        !editable_editor->resize(720, 480) || !editable_editor->setScale(2.0)) return 10;
+    if (!editable_editor->keyDown(0, Steinberg::KEY_TAB, 0) ||
+        !editable_editor->keyDown(0, Steinberg::KEY_TAB, 0) ||
+        !editable_editor->keyDown(0, Steinberg::KEY_TAB, 0) ||
+        editable_editor->focusPosition() != 2 ||
+        !editable_semantics->perform(ZigVstgui::AccessibilityAction::select_next) ||
+        !editable_semantics->perform(ZigVstgui::AccessibilityAction::increment)) return 11;
+    if (!editable_semantics->state().selected || !editable_semantics->range().present ||
+        editable_semantics->range().current <= 0.0) return 12;
+    zig_vstgui_editor_destroy(editable_editor);
     return 0;
 }
 
@@ -996,7 +1023,7 @@ int testGraphs() {
     dynamic_graph.maximum_refresh_hz = 30;
     ZigVstgui::GraphControl control;
     auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
-    if (!control.build(container, dynamic_graph, {&state, loadGraph}, styles)) return 5;
+    if (!control.build(container, dynamic_graph, {&state, loadGraph}, {}, styles)) return 5;
     if (control.graphView()->pointCount() != 2 || state.graph_load_count != 1) return 6;
     if (control.running()) return 7;
     control.start();
@@ -1011,7 +1038,7 @@ int testGraphs() {
 
     ZigVstgui::GraphControl static_control;
     auto static_container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
-    if (!static_control.build(static_container, static_graph, {}, styles)) return 12;
+    if (!static_control.build(static_container, static_graph, {}, {}, styles)) return 12;
     static_control.start();
     if (static_control.running()) return 13;
     static_control.clear();
@@ -1019,7 +1046,148 @@ int testGraphs() {
     dynamic_graph.maximum_refresh_hz = 61;
     ZigVstgui::GraphControl invalid_rate;
     auto invalid_container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
-    if (invalid_rate.build(invalid_container, dynamic_graph, {&state, loadGraph}, styles)) return 14;
+    if (invalid_rate.build(invalid_container, dynamic_graph, {&state, loadGraph}, {}, styles)) return 14;
+
+    const ZigVstguiEnvelopePoint envelope_points[] = {
+        {10, 0.0, 0.0},
+        {20, 1.0, 1.0},
+    };
+    ZigVstguiGraphDescription editable_graph {
+        "Envelope",
+        ZIG_VSTGUI_GRAPH_ENVELOPE,
+        ZIG_VSTGUI_GRAPH_PRIMARY,
+        {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Time"},
+        {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"},
+        nullptr,
+        0,
+        0,
+        0,
+        0,
+        envelope_points,
+        2,
+        4,
+        1,
+        0.25,
+        0.25,
+    };
+    ZigVstgui::AccessibilityNode envelope_accessibility;
+    ZigVstgui::GraphView envelope(
+        VSTGUI::CRect(0, 0, 200, 100), editable_graph, styles, &envelope_accessibility
+    );
+    if (!envelope.valid() || !envelope.editable() || envelope.pointCount() != 2) return 15;
+    if (!envelope.selectAdjacent(true)) return 16;
+    ZigVstguiEnvelopePoint selected {};
+    if (!envelope.selectedPoint(selected) || selected.point_id != 10) return 17;
+    if (!envelope.beginTransaction() || !envelope.addPoint(0.61, 0.62)) return 18;
+    if (!envelope.selectedPoint(selected) || selected.point_id != 21 ||
+        !closeEnough(selected.x, 0.5) || !closeEnough(selected.y, 0.5)) return 19;
+    envelope.finishTransaction();
+    if (!envelope.beginTransaction() || !envelope.moveSelected(2.0, -2.0)) return 20;
+    envelope.cancelTransaction();
+    if (!envelope.selectedPoint(selected) || !closeEnough(selected.x, 0.5) || !closeEnough(selected.y, 0.5)) return 21;
+    if (!envelope.handleKey(0, Steinberg::KEY_UP, 0) || !envelope.selectedPoint(selected) ||
+        !closeEnough(selected.y, 0.75)) return 22;
+    if (!envelope.handleKey('[', 0, 0) || !envelope.selectedPoint(selected) || selected.point_id != 10) return 23;
+
+    ZigVstgui::AccessibilityNode mouse_accessibility;
+    ZigVstgui::GraphView mouse_envelope(
+        VSTGUI::CRect(0, 0, 200, 100), editable_graph, styles, &mouse_accessibility
+    );
+    VSTGUI::MouseDownEvent mouse_down(
+        VSTGUI::CPoint(100, 50),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    mouse_envelope.onMouseDownEvent(mouse_down);
+    VSTGUI::MouseMoveEvent mouse_move(
+        VSTGUI::CPoint(150, 25),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    mouse_envelope.onMouseMoveEvent(mouse_move);
+    VSTGUI::MouseUpEvent mouse_up(
+        VSTGUI::CPoint(150, 25),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    mouse_envelope.onMouseUpEvent(mouse_up);
+    if (!mouse_down.consumed || !mouse_move.consumed || !mouse_up.consumed ||
+        mouse_envelope.pointCount() != 3 || !mouse_envelope.selectedPoint(selected) ||
+        !closeEnough(selected.x, 0.75) || !closeEnough(selected.y, 0.75)) return 24;
+    VSTGUI::MouseDownEvent right_click(
+        VSTGUI::CPoint(150, 25),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Right)
+    );
+    mouse_envelope.onMouseDownEvent(right_click);
+    if (!right_click.consumed || mouse_envelope.pointCount() != 2) return 25;
+
+    ZigVstgui::GraphControl editable_control;
+    auto editable_container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
+    if (!editable_control.build(editable_container, editable_graph, {}, {}, styles)) return 26;
+    editable_control.start();
+    if (editable_control.running()) return 36;
+    const auto& editable_semantics = editable_control.accessibilityNode();
+    if (editable_semantics.state().read_only ||
+        !editable_semantics.supports(ZigVstgui::AccessibilityAction::add_point) ||
+        !editable_semantics.perform(ZigVstgui::AccessibilityAction::select_next) ||
+        !editable_semantics.perform(ZigVstgui::AccessibilityAction::increment) ||
+        !editable_semantics.perform(ZigVstgui::AccessibilityAction::add_point, 0.5) ||
+        editable_control.graphView()->pointCount() != 3 ||
+        !editable_semantics.perform(ZigVstgui::AccessibilityAction::delete_selected) ||
+        editable_control.graphView()->pointCount() != 2) return 27;
+    editable_control.clear();
+
+    auto invalid_editable = editable_graph;
+    invalid_editable.point_capacity = 1;
+    ZigVstgui::GraphView invalid_capacity(VSTGUI::CRect(), invalid_editable, styles, &envelope_accessibility);
+    if (invalid_capacity.valid()) return 28;
+
+    CallbackState parameter_state;
+    ZigVstguiCallbacks parameter_callbacks {};
+    parameter_callbacks.userdata = &parameter_state;
+    parameter_callbacks.begin_edit = beginEdit;
+    parameter_callbacks.perform_edit = performEdit;
+    parameter_callbacks.end_edit = endEdit;
+    const ZigVstguiEnvelopePoint bound_point {31, 0.25, 0.75, 10, 20, 3, 0, 3};
+    auto bound_graph = editable_graph;
+    bound_graph.editable_points = &bound_point;
+    bound_graph.editable_point_count = 1;
+    bound_graph.point_capacity = 1;
+    bound_graph.minimum_point_count = 1;
+    ZigVstgui::AccessibilityNode bound_accessibility;
+    ZigVstgui::GraphView bound_envelope(
+        VSTGUI::CRect(0, 0, 200, 100),
+        bound_graph,
+        styles,
+        &bound_accessibility,
+        parameter_callbacks
+    );
+    if (!bound_envelope.valid() || !bound_envelope.selectPoint(31) ||
+        !bound_envelope.beginTransaction() || !bound_envelope.moveSelected(0.5, 0.5)) return 29;
+    bound_envelope.finishTransaction();
+    if (parameter_state.begin_count != 2 || parameter_state.perform_count != 2 ||
+        parameter_state.end_count != 2) return 30;
+    parameter_state.reject_parameter_id = 20;
+    if (!bound_envelope.beginTransaction() || bound_envelope.moveSelected(0.75, 0.25) ||
+        bound_envelope.transactionActive()) return 31;
+    if (!bound_envelope.selectedPoint(selected) || !closeEnough(selected.x, 0.5) ||
+        !closeEnough(selected.y, 2.0 / 3.0)) return 32;
+    parameter_state.reject_parameter_id = UINT32_MAX;
+    if (!bound_envelope.setParameter(20, 0.25) || !bound_envelope.selectedPoint(selected) ||
+        !closeEnough(selected.y, 1.0 / 3.0)) return 33;
+    CallbackState teardown_state;
+    auto teardown_callbacks = parameter_callbacks;
+    teardown_callbacks.userdata = &teardown_state;
+    {
+        ZigVstgui::AccessibilityNode teardown_accessibility;
+        ZigVstgui::GraphView teardown_envelope(
+            VSTGUI::CRect(0, 0, 200, 100),
+            bound_graph,
+            styles,
+            &teardown_accessibility,
+            teardown_callbacks
+        );
+        if (!teardown_envelope.selectPoint(31) || !teardown_envelope.beginTransaction() ||
+            !teardown_envelope.moveSelected(0.5, 0.5)) return 34;
+    }
+    if (teardown_state.end_count != 2 || teardown_state.perform_count != 4) return 35;
     return 0;
 }
 

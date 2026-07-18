@@ -178,6 +178,33 @@ pub fn guiGraphLoad(self: *Processor, source_id: u32, output: []gui_graph.Point)
 
 The renderer clamps coordinates to the declared range, supports linear and logarithmic axes, and treats decibel axes as linear dB values. An empty series displays `No graph data` instead of a blank panel. Axis labels, graph title, update mode, and point count are available through toolkit-neutral semantics.
 
+### Editable Envelopes
+
+An envelope becomes editable when `point_capacity` is nonzero. Supply stable, nonzero point IDs through `editable_points`, declare the minimum point count, and optionally set positive x and y snap intervals. Points must be finite, inside both axis ranges, ordered by x, unique by ID, and no more numerous than the declared capacity.
+
+```zig
+.graphs = &.{.{
+    .title = "Envelope",
+    .kind = .envelope,
+    .x_axis = .{ .minimum = 0.0, .maximum = 1.0, .label = "Time" },
+    .y_axis = .{ .minimum = 0.0, .maximum = 1.0, .label = "Level" },
+    .editable_points = &.{
+        .{ .point_id = 1, .x = 0.0, .y = 0.0 },
+        .{ .point_id = 2, .x = 1.0, .y = 1.0 },
+    },
+    .point_capacity = 8,
+    .minimum_point_count = 2,
+    .snap_x = 0.05,
+    .snap_y = 0.05,
+}},
+```
+
+Clicking an empty location creates and selects a point. Dragging moves the selected point, and right-clicking it deletes it when the minimum count permits. Brackets select adjacent points. Arrow keys adjust coordinates, Shift enables fine movement, Home and End select boundary points, Return creates a point, and Delete removes the selection. A canceled pointer gesture restores points, selection, and ID allocation from the transaction snapshot.
+
+The graph semantic value reports point count, selected ID, and selected coordinates. Standard focus, press, increment, decrement, and set-value actions operate the selected point. Toolkit-neutral actions also expose previous, next, add, and delete operations. Static graphs remain read-only and never acquire an edit timer.
+
+To bind a point to two automatable parameters, set `parameter_mask = 3` with distinct `x_parameter_id` and `y_parameter_id` values. Both parameters must be declared in the same editor. Movement then uses the standard ordered multi-parameter gesture, rejection restores both coordinates, and host automation updates the handle without emitting another gesture. Unbound points use isolated per-editor transactional state. Persistent serialization of that state belongs to the persistent editor-state milestone.
+
 ## Native Accessibility
 
 Every component keeps its role, name, description, value, range, enabled state, focus state, checked state, and read-only state in the toolkit-neutral accessibility model. Focus, press, increment, decrement, and set-value actions use the same model. Native bridges observe and operate it only while an editor is open. They do not create a second parameter attachment or gesture path.
@@ -198,6 +225,7 @@ Supported authoring surface:
 - `EditorDescription`, `Composition`, `Group`, `StyleOverride`, and `createEditor`.
 - `Meter`, meter source wiring, `MeterBank`, and GUI telemetry presentation.
 - `Graph`, graph axes and style roles, and grouped graph composition.
+- `EnvelopePoint`, bounded editable envelopes, stable selection, snapping, and parameter-backed point gestures.
 - `XYPad`, ordered two-parameter gestures, per-axis semantics, and grouped XY-pad composition.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.

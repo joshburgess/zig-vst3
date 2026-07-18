@@ -134,6 +134,23 @@ pub const GraphDescription = extern struct {
     source_id: types.uint32,
     dynamic: types.int32,
     maximum_refresh_hz: types.uint32,
+    editable_points: ?[*]const EnvelopePoint = null,
+    editable_point_count: types.uint32 = 0,
+    point_capacity: types.uint32 = 0,
+    minimum_point_count: types.uint32 = 0,
+    snap_x: f64 = 0.0,
+    snap_y: f64 = 0.0,
+};
+
+pub const EnvelopePoint = extern struct {
+    point_id: types.uint32,
+    x: f64,
+    y: f64,
+    x_parameter_id: vsttypes.ParamID = 0,
+    y_parameter_id: vsttypes.ParamID = 0,
+    parameter_mask: types.uint32 = 0,
+    x_step_count: types.int32 = 0,
+    y_step_count: types.int32 = 0,
 };
 
 const GraphCallbacks = extern struct {

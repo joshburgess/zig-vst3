@@ -113,6 +113,17 @@ typedef struct ZigVstguiGraphAxis {
     const char* label;
 } ZigVstguiGraphAxis;
 
+typedef struct ZigVstguiEnvelopePoint {
+    uint32_t point_id;
+    double x;
+    double y;
+    uint32_t x_parameter_id;
+    uint32_t y_parameter_id;
+    uint32_t parameter_mask;
+    int32_t x_step_count;
+    int32_t y_step_count;
+} ZigVstguiEnvelopePoint;
+
 typedef struct ZigVstguiGraphDescription {
     const char* title;
     ZigVstguiGraphKind kind;
@@ -124,6 +135,12 @@ typedef struct ZigVstguiGraphDescription {
     uint32_t source_id;
     int32_t dynamic;
     uint32_t maximum_refresh_hz;
+    const ZigVstguiEnvelopePoint* editable_points;
+    uint32_t editable_point_count;
+    uint32_t point_capacity;
+    uint32_t minimum_point_count;
+    double snap_x;
+    double snap_y;
 } ZigVstguiGraphDescription;
 
 typedef struct ZigVstguiGraphCallbacks {

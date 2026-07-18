@@ -63,6 +63,19 @@ const transfer_points = blk: {
     break :blk points;
 };
 
+const envelope_points = [_]vst3.vstgui.EnvelopePoint{
+    .{ .point_id = 1, .x = 0.0, .y = 0.0 },
+    .{
+        .point_id = 2,
+        .x = 0.5,
+        .y = 0.5,
+        .x_parameter_id = gain_param_id,
+        .y_parameter_id = drive_param_id,
+        .parameter_mask = 3,
+    },
+    .{ .point_id = 3, .x = 1.0, .y = 0.0 },
+};
+
 const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const controller_name = "ChannelStripController";
     pub const Params = Spec.Params;
@@ -119,13 +132,26 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .{ .title = "Stereo", .kind = .stereo, .first_source_id = 0, .second_source_id = 1 },
                 .{ .title = "Reduction", .kind = .gain_reduction, .first_source_id = 2 },
             },
-            .graphs = &.{.{
-                .title = "Console Transfer",
-                .kind = .transfer_function,
-                .x_axis = .{ .minimum = -2.0, .maximum = 2.0, .label = "Input" },
-                .y_axis = .{ .minimum = -1.2, .maximum = 1.2, .label = "Output" },
-                .points = &transfer_points,
-            }},
+            .graphs = &.{
+                .{
+                    .title = "Console Transfer",
+                    .kind = .transfer_function,
+                    .x_axis = .{ .minimum = -2.0, .maximum = 2.0, .label = "Input" },
+                    .y_axis = .{ .minimum = -1.2, .maximum = 1.2, .label = "Output" },
+                    .points = &transfer_points,
+                },
+                .{
+                    .title = "Dynamics Envelope",
+                    .kind = .envelope,
+                    .x_axis = .{ .minimum = 0.0, .maximum = 1.0, .label = "Time" },
+                    .y_axis = .{ .minimum = 0.0, .maximum = 1.0, .label = "Level" },
+                    .editable_points = &envelope_points,
+                    .point_capacity = 8,
+                    .minimum_point_count = 2,
+                    .snap_x = 0.05,
+                    .snap_y = 0.05,
+                },
+            },
             .skin = .{
                 .theme = .alternate,
                 .layout = .compact_strip,
@@ -154,7 +180,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                         .meter_count = 2,
                         .first_xy_pad = 1,
                         .style = .{ .accent = 0x35866aff, .border = 0x719789ff },
-                        .graph_count = 1,
+                        .graph_count = 2,
                     },
                 },
             },

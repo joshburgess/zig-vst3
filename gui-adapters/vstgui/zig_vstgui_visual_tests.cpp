@@ -334,6 +334,46 @@ Snapshot xyPad() {
     };
 }
 
+Snapshot editableEnvelope() {
+    return {
+        "editable-envelope.png",
+        480,
+        180,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            context.setFillColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            context.drawRect(VSTGUI::CRect(0, 0, 480, 180), VSTGUI::kDrawFilled);
+            const ZigVstguiEnvelopePoint points[] = {
+                {1, 0.0, 0.0},
+                {2, 0.2, 0.9},
+                {3, 0.65, 0.55},
+                {4, 1.0, 0.0},
+            };
+            const ZigVstguiGraphDescription populated {
+                "Envelope",
+                ZIG_VSTGUI_GRAPH_ENVELOPE,
+                ZIG_VSTGUI_GRAPH_PRIMARY,
+                {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Time"},
+                {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"},
+                nullptr, 0, 0, 0, 0,
+                points, 4, 8, 2, 0.05, 0.05,
+            };
+            auto empty = populated;
+            empty.editable_points = nullptr;
+            empty.editable_point_count = 0;
+            empty.minimum_point_count = 0;
+            ZigVstgui::AccessibilityNode nodes[2];
+            ZigVstgui::GraphView views[] = {
+                {VSTGUI::CRect(8, 8, 232, 172), populated, styles, &nodes[0]},
+                {VSTGUI::CRect(248, 8, 472, 172), empty, styles, &nodes[1]},
+            };
+            views[0].selectPoint(2);
+            for (auto& view : views) view.draw(&context);
+        },
+    };
+}
+
 int runSnapshot(
     const Snapshot& snapshot,
     const std::filesystem::path& references,
@@ -387,12 +427,13 @@ double benchmarkWarmDraw() {
     );
     meter->tick(0.0);
     container->addView(meter);
-    const ZigVstguiGraphPoint graph_points[] = {{-1.0, -0.8}, {0.0, 0.0}, {1.0, 0.8}};
+    const ZigVstguiEnvelopePoint graph_points[] = {{1, -1.0, -0.8}, {2, 0.0, 0.0}, {3, 1.0, 0.8}};
     const ZigVstguiGraphDescription graph_description {
-        "Graph", ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION, ZIG_VSTGUI_GRAPH_PRIMARY,
+        "Graph", ZIG_VSTGUI_GRAPH_ENVELOPE, ZIG_VSTGUI_GRAPH_PRIMARY,
         {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Input"},
         {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Output"},
-        graph_points, 3, 0, 0, 0,
+        nullptr, 0, 0, 0, 0,
+        graph_points, 3, 8, 1, 0.05, 0.05,
     };
     ZigVstgui::AccessibilityNode graph_accessibility;
     container->addView(new ZigVstgui::GraphView(
@@ -432,6 +473,7 @@ int main(int argc, char** argv) {
         productionControls(),
         graphs(),
         xyPad(),
+        editableEnvelope(),
     };
     int result = 0;
     for (const auto& snapshot : snapshots) {
