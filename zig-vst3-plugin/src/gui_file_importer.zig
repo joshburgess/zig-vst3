@@ -105,8 +105,16 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
         }
 
         pub fn fail(self: *Self) !void {
+            try self.finishWith(.failed);
+        }
+
+        pub fn finishWith(self: *Self, status: Status) !void {
             if (self.status != .validating and self.status != .importing) return error.InvalidImportTransition;
-            self.status = .failed;
+            switch (status) {
+                .empty, .unsupported_file, .capacity_limit, .invalid_path, .cancelled, .failed => {},
+                else => return error.InvalidTerminalStatus,
+            }
+            self.status = status;
         }
 
         pub fn requestCancel(self: *Self) !void {
@@ -229,6 +237,9 @@ test "import model rejects invalid transitions without losing progress" {
     try std.testing.expectError(error.InvalidImportProgress, importer.advance(5));
     try std.testing.expectEqual(@as(usize, 2), importer.snapshot().completed_units);
     try std.testing.expectError(error.InvalidImportTransition, importer.complete(10));
+    try std.testing.expectError(error.InvalidTerminalStatus, importer.finishWith(.ready));
+    try importer.finishWith(.capacity_limit);
+    try std.testing.expectEqual(Status.capacity_limit, importer.snapshot().status);
     importer.reset();
     try std.testing.expectEqual(Status.idle, importer.snapshot().status);
     try std.testing.expectEqual(@as(?[]const u8, null), importer.path(0));

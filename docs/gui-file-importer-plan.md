@@ -62,12 +62,14 @@ Completion evidence:
 
 ## Milestone 3: Instance-Owned Import Worker
 
-- [ ] Add optional controller instance state to the reflected controller without changing ordinary plugin composition.
-- [ ] Implement a single bounded worker for PCM WAV validation and preview decoding.
-- [ ] Enforce file-size, channel-count, sample-format, sample-count, and preview-point limits.
-- [ ] Publish progress and waveform snapshots without exposing partially written data.
-- [ ] Support cancellation, retry, editor reopen, and controller teardown.
-- [ ] Keep every worker, path, status, and preview isolated per plugin instance.
+- [x] Add optional controller instance state to the reflected controller without changing ordinary plugin composition.
+- [x] Implement a single bounded worker for PCM WAV validation and preview decoding.
+- [x] Enforce file-size, channel-count, sample-format, sample-count, and preview-point limits.
+- [x] Publish progress and waveform snapshots without exposing partially written data.
+- [x] Support cancellation, retry, and controller teardown.
+- [ ] Verify that an active or completed import survives editor close and reopen.
+- [x] Keep every worker, path, status, and preview isolated per plugin instance.
+- [x] Commit the bounded worker foundation.
 
 Exit criteria:
 
@@ -75,6 +77,15 @@ Exit criteria:
 - Controller teardown cannot race a pending callback or worker write.
 - The audio processor performs no file-import work and acquires no import locks.
 - Malformed and truncated WAV files produce recoverable failures.
+
+Worker foundation evidence:
+
+- `ReflectedEditController` now offers opt-in `ControllerState` initialization, access, per-instance storage, and teardown. Controllers without state retain the existing empty contract.
+- `gui_audio_file_importer.Importer` owns one worker, one copied path, a 32 MiB input ceiling, an 8,388,608-frame ceiling, one or two channels, 16-bit, 24-bit, or 32-bit integer PCM, and at most 256 published waveform points.
+- File I/O and decoding run only on the worker. The GUI-facing snapshot and preview copy are bounded. The audio processor has no importer reference, import lock, allocation, or file operation.
+- Tests generate valid, malformed, truncated, unsupported-format, and multi-megabyte cancellation fixtures in temporary directories. They cover preview publication, retry, instance isolation, cancellation acknowledgement, teardown joining, and controller-state lifecycle.
+- The complete local gate passed 193 of 193 build steps and 3,586 of 3,586 tests. Raw ABI checks, all ten Steinberg validators, native adapter tests, macOS accessibility tests, visual regression, warm-render budgets, the Windows accessibility bridge cross-compile, and all ten Linux and Windows cross-target bundles passed.
+- The first full bundle attempt exhausted disk space and damaged one local Zig cache manifest. Removing only reproducible temporary and repository-local Zig caches restored a clean passing run.
 
 ## Milestone 4: Production Importer UI
 

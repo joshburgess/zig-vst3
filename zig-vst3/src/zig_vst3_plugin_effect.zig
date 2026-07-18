@@ -59,6 +59,8 @@ var test_data_exchange_last_block_size: types.uint32 = 0;
 var test_data_exchange_last_num_blocks: types.uint32 = 0;
 var test_data_exchange_last_block_id: ivstdataexchange.DataExchangeBlockID = 0;
 var test_data_exchange_last_background_flag: types.TBool = 0;
+var test_controller_state_init_count: usize = 0;
+var test_controller_state_deinit_count: usize = 0;
 
 fn failInfo(out: anytype) types.tresult {
     out.* = .{};
@@ -81,11 +83,15 @@ pub fn ReflectedEditController(comptime Config: type) type {
         const ParameterController = zig_vst3_plugin_bridge.ParameterController(Params);
         const has_editor_state = @hasDecl(Config, "EditorState");
         const EditorState = if (has_editor_state) Config.EditorState else struct {};
+        const has_controller_state = @hasDecl(Config, "ControllerState");
+        const ControllerState = if (has_controller_state) Config.ControllerState else struct {};
         pub const hasEditorState = has_editor_state;
+        pub const hasControllerState = has_controller_state;
         pub const hasPresetLoader = @hasDecl(Config, "loadPreset");
         pub const hasMenuActionHandler = @hasDecl(Config, "performMenuAction");
         pub const hasFileDropHandler = @hasDecl(Config, "handleFileDrop");
         pub const EditorStateType = EditorState;
+        pub const ControllerStateType = ControllerState;
         const editor_state_migrations: []const plug_core.editor_state.Migration = if (@hasDecl(Config, "editor_state_migrations"))
             Config.editor_state_migrations
         else
@@ -123,6 +129,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
             parameter_state: ParameterState,
             parameters: ParameterController,
             editor_state: EditorState,
+            controller_state: ControllerState,
             parameter_observers: [parameter_observer_capacity]?ParameterObserver = @splat(null),
             ref_count: std.atomic.Value(types.uint32) = std.atomic.Value(types.uint32).init(1),
 
@@ -131,6 +138,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
                     .parameter_state = ParameterState.init(Config.parameter_set),
                     .parameters = undefined,
                     .editor_state = if (has_editor_state) EditorState.init() else .{},
+                    .controller_state = if (has_controller_state and @hasDecl(ControllerState, "init"))
+                        ControllerState.init()
+                    else
+                        .{},
                 };
                 self.parameters = .{
                     .set = Config.parameter_set,
@@ -163,6 +174,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
 
         pub fn editorState(iface: *ivsteditcontroller.IEditController) *EditorState {
             return &instance(iface).editor_state;
+        }
+
+        pub fn controllerState(iface: *ivsteditcontroller.IEditController) *ControllerState {
+            return &instance(iface).controller_state;
         }
 
         pub fn loadPreset(iface: *ivsteditcontroller.IEditController, preset_id: u32) types.tresult {
@@ -416,6 +431,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
             const next = funknown.decrementRefCount(&self.ref_count, Config.controller_name);
             if (next == 0) {
                 _ = self.ref_count.load(.acquire);
+                if (comptime has_controller_state and @hasDecl(ControllerState, "deinit")) {
+                    self.controller_state.deinit();
+                }
                 releaseConnectionPeer(&self.connected_peer);
                 releaseTelemetrySource(&self.telemetry_source);
                 releaseComponentHandlers(self);
@@ -1006,6 +1024,49 @@ test "reflected edit controller clears unsupported query outputs" {
     try std.testing.expectEqual(types.kNoInterface, unit_info.vtable.queryInterface(unit_info, &tuid.zero, &queried));
     try std.testing.expectEqual(@as(?*anyopaque, null), queried);
     try std.testing.expect(unit_info.vtable.release(unit_info) >= 1);
+}
+
+test "reflected edit controller owns isolated optional controller state" {
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const State = struct {
+        value: usize = 7,
+
+        pub fn init() @This() {
+            test_controller_state_init_count += 1;
+            return .{};
+        }
+
+        pub fn deinit(_: *@This()) void {
+            test_controller_state_deinit_count += 1;
+        }
+    };
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "StatefulController";
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+        pub const ControllerState = State;
+    });
+
+    test_controller_state_init_count = 0;
+    test_controller_state_deinit_count = 0;
+    var first_out: ?*anyopaque = null;
+    var second_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &first_out));
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &second_out));
+    const first: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(first_out orelse return error.MissingController));
+    const second: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(second_out orelse return error.MissingController));
+
+    try std.testing.expect(TestController.hasControllerState);
+    try std.testing.expectEqual(@as(usize, 2), test_controller_state_init_count);
+    try std.testing.expectEqual(@as(usize, 7), TestController.controllerState(first).value);
+    TestController.controllerState(first).value = 19;
+    try std.testing.expectEqual(@as(usize, 7), TestController.controllerState(second).value);
+
+    _ = first.vtable.release(first);
+    try std.testing.expectEqual(@as(usize, 1), test_controller_state_deinit_count);
+    _ = second.vtable.release(second);
+    try std.testing.expectEqual(@as(usize, 2), test_controller_state_deinit_count);
 }
 
 test "reflected edit controller releases replaced component handlers" {
