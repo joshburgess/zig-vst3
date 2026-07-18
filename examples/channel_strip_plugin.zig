@@ -342,7 +342,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .maximum_refresh_hz = 20,
                 },
             },
-            .file_drops = &.{.{
+            .file_importers = &.{.{
                 .id = audio_import_id,
                 .title = "Audio Reference",
                 .prompt = "Drop a PCM WAV file here",

@@ -187,7 +187,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .dynamic = true,
                 .maximum_refresh_hz = 20,
             }},
-            .file_drops = &.{.{
+            .file_importers = &.{.{
                 .id = ir_import_id,
                 .title = "Impulse Response",
                 .prompt = "Drop a PCM WAV impulse response here",

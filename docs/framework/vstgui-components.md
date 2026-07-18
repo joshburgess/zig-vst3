@@ -311,17 +311,17 @@ Clicking a cell selects and toggles it. Dragging paints the first cell's new sta
 
 The sequencer is one focus stop with choice semantics. Accessibility increment and decrement move the cursor, and press toggles the selected steps. Disabled declarations reject pointer, keyboard, and accessibility edits. A rejected host edit keeps the old parameter value and exposes visible and semantic retry feedback. The component supports 1–32 steps; an empty pattern is rejected at editor creation rather than producing an ambiguous empty control.
 
-## File Drop
+## File Importer
 
-Declare a bounded operating-system file target through `EditorDescription.file_drops`:
+Declare a bounded operating-system file target through `EditorDescription.file_importers`:
 
 ```zig
-.file_drops = &.{.{
+.file_importers = &.{.{
     .id = 1,
     .title = "Audio Import",
     .prompt = "Drop WAV or AIFF files here",
     .picker_title = "Choose Audio File",
-    .picker_action = "Choose Audio File",
+    .picker_label = "Choose Audio File",
     .extensions = &.{ ".wav", ".aiff", ".aif" },
     .maximum_files = 2,
 }},
@@ -333,7 +333,7 @@ The operating-system picker is the primary action. Pointer activation, Enter, Sp
 
 Idle, drag hover, validating, importing, ready, empty, unsupported type, excessive count, invalid path, cancelled, recoverable failure, and disabled states have distinct visible text and semantic values. Active imports expose bounded progress. Cancel and Retry replace the primary action only while those commands are available. Status, icons or shapes, action labels, and accessibility values carry meaning without relying on color.
 
-`FileDrop` is supported. The component gallery and production channel-strip importer use the same public declaration, bounded path callback, picker fallback, keyboard interaction, accessibility semantics, and lifecycle contract.
+`FileImporter` is supported. The component gallery, production channel strip, and production IR loader use the same public declaration, bounded path callback, picker fallback, keyboard interaction, accessibility semantics, and lifecycle contract. `FileDrop` remains a source-compatible alias. New code should use `FileImporter` and `EditorDescription.file_importers`.
 
 ## API Status
 
@@ -353,7 +353,7 @@ Supported authoring surface:
 - `ActionMenu`, action, toggle, separator, disabled and destructive item states, anchored overlays, and persistent toggle fields.
 - `Piano`, bounded note ranges, GUI note transport, computer-key input, pointer glissando, and accessible note selection.
 - `StepSequencer`, bounded parameter-backed patterns, persistent multi-selection, activity-gated playhead telemetry, and accessible editing.
-- `FileDrop`, bounded extension filtering and path copying, an accessible operating-system picker fallback, keyboard interaction, progress presentation, cancellation, retry, and recoverable rejection feedback.
+- `FileImporter`, bounded extension filtering and path copying, an accessible operating-system picker fallback, keyboard interaction, progress presentation, cancellation, retry, and recoverable rejection feedback.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.
 

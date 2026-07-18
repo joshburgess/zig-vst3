@@ -40,17 +40,26 @@ Completion evidence:
 
 ## Milestone 2: Reusable Importer Composition
 
-- [ ] Extract a public `FileImporter` composition declaration from the channel-strip importer.
-- [ ] Keep picker, drop, progress, cancellation, retry, reset, and graph preview on one shared contract.
-- [ ] Migrate the channel strip and component gallery to the reusable declaration.
-- [ ] Use the same declaration in the IR plugin without adapter-internal imports or edits.
-- [ ] Cover declaration validation, instance ownership, callback rejection, editor reopen, resize, and state restoration.
+- [x] Extract a public `FileImporter` composition declaration from the channel-strip importer.
+- [x] Keep picker, drop, progress, cancellation, retry, reset, and graph preview on one shared contract.
+- [x] Migrate the channel strip and component gallery to the reusable declaration.
+- [x] Use the same declaration in the IR plugin without adapter-internal imports or edits.
+- [x] Cover declaration validation, instance ownership, callback rejection, editor reopen, resize, and state restoration.
 
 Exit criteria:
 
 - Authors declare an importer as one composition component rather than coordinating separate adapter hooks.
 - The gallery, channel strip, and IR plugin share the same public declaration.
 - Unsupported formats and capacity failures remain recoverable.
+
+Completion evidence:
+
+- `FileImporter` is exported from the public `vstgui` module. Its validation rejects missing identifiers or labels, malformed or duplicate extensions, excessive extension counts, and invalid file-count limits before native editor creation.
+- The component gallery, channel strip, and IR loader declare `EditorDescription.file_importers`. Ordinary composition needs no adapter-internal imports or edits.
+- Picker and drop entry paths lower to the same bounded callback, status, progress, cancel, retry, and reset contract. Existing native interaction, accessibility, resize, rejection, teardown, and repeated-editor tests exercise that shared implementation.
+- `FileDrop` and `EditorDescription.file_drops` remain compatibility aliases. A description that sets both the current and compatibility fields is rejected instead of silently choosing one.
+- Host state restores parameters and editor state only. Imported paths and media are intentionally excluded, preventing hidden file I/O and stale absolute-path restoration.
+- Post-change validation passed 3,624 of 3,624 Zig tests, 152 of 152 raw ABI and Steinberg validation steps, 35 of 35 Linux cross-build steps, and 35 of 35 Windows cross-build steps. Serialized pluginval strictness 5 and strictness 10 matrices each passed 48 of 48 steps across all eleven plugin bundles.
 
 ## Milestone 3: General UI Primitives
 
@@ -127,5 +136,6 @@ Validation evidence for the bounded convolution milestone:
 
 API status after this milestone:
 
+- `FileImporter` is supported. The gallery, channel strip, and IR loader use the same public declaration and lifecycle contract. `FileDrop` remains a compatibility alias for existing source.
 - `DecodedAudioFileImporter`, decoded-audio controller transport, processor lifecycle hooks, and partitioned convolution remain experimental. The decoded importer and transport have only one production consumer.
-- Existing file drop, graph, parameter attachment, and composition declarations keep their current status. This milestone does not promote them.
+- Existing graph, parameter attachment, and composition declarations keep their current status. This milestone does not promote them.

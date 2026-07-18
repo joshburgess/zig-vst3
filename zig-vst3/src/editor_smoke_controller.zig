@@ -283,7 +283,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .selection_state_id = step_selection_state_id,
                 .playhead_source_id = 4,
             }},
-            .file_drops = &.{.{
+            .file_importers = &.{.{
                 .id = 1,
                 .title = "Audio Import",
                 .prompt = "Drop WAV or AIFF files here",
