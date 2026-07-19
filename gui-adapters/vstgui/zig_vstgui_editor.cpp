@@ -644,6 +644,11 @@ VSTGUI::CRect ZigVstguiEditor::actionButtonBounds(uint32_t index) const {
     return index < action_button_count ? action_button_controls[index]->bounds() : VSTGUI::CRect();
 }
 
+double ZigVstguiEditor::parameterControlValueGap(uint32_t parameter_id) const {
+    const auto* control = findControl(parameter_id);
+    return control ? control->primaryValueGap() : 0.0;
+}
+
 const ZigVstgui::AccessibilityNode* ZigVstguiEditor::editableLabelAccessibility(uint32_t index) const {
     return index < editable_label_count ? &editable_label_controls[index]->accessibilityNode() : nullptr;
 }
@@ -1541,17 +1546,24 @@ void ZigVstguiEditor::layout() {
     if (parameter_count == 1) {
         title_component.setVisible(true);
         help_component.setVisible(true);
-        const double track_top = std::clamp(
+        const double initial_track_top = std::clamp(
             content_height * 0.42,
             92.0,
             content_height - 116.0
+        );
+        const double value_top = content_bottom - theme.control_metrics.compact_control_height;
+        const double initial_gap = value_top -
+            (initial_track_top + theme.control_metrics.control_height);
+        const double track_top = std::max(
+            92.0,
+            initial_track_top - std::max(0.0, theme.spacing.medium - initial_gap)
         );
         parameter_controls[0]->setBounds(
             VSTGUI::CRect(),
             VSTGUI::CRect(margin, track_top, right, track_top + theme.control_metrics.control_height),
             VSTGUI::CRect(
                 margin,
-                content_bottom - theme.control_metrics.compact_control_height,
+                value_top,
                 margin + value_width,
                 content_bottom
             )

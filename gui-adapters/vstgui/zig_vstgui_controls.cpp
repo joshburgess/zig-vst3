@@ -656,6 +656,11 @@ VSTGUI::CPoint ParameterControl::labelTextInset() const {
     return label ? label->getTextInset() : VSTGUI::CPoint();
 }
 
+double ParameterControl::primaryValueGap() const {
+    if (!primary_control || !value_edit) return 0.0;
+    return value_edit->getViewSize().top - primary_control->getViewSize().bottom;
+}
+
 bool ParameterControl::accessibilityAction(
     void* userdata,
     const AccessibilityNode& node,

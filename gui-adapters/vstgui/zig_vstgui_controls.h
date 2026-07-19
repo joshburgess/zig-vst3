@@ -113,6 +113,7 @@ public:
     const AccessibilityNode& primaryAccessibility() const;
     const AccessibilityNode* valueAccessibility() const;
     VSTGUI::CPoint labelTextInset() const;
+    double primaryValueGap() const;
 
     void controlBeginEdit(VSTGUI::CControl* control) override;
     void valueChanged(VSTGUI::CControl* control) override;

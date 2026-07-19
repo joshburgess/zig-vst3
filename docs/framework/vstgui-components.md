@@ -155,6 +155,8 @@ The gallery and IR loader use the same public declaration. The gallery covers pr
 
 Parameter labels, editable values, progress text, preset rows, and action-menu rows receive a themed inner text inset. Borders are never used as the text origin. Native geometry tests enforce the inset and action-button minimum width so a valid editor cannot silently regress to edge-touching or overlapping labels.
 
+A compact single-parameter editor preserves at least the themed medium gap between its primary control and exact-value field. The layout only shifts the primary control when the available default-size gap is too small, so expanded geometry keeps its existing spacing.
+
 Each `Parameter` needs the stable parameter ID used by the controller, its display metadata, its step count, its normalized default, and a presentation kind:
 
 | Kind | Intended parameter | Exact entry |

@@ -94,6 +94,7 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode* fileDropAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* actionButtonAccessibility(uint32_t index) const;
     VSTGUI::CRect actionButtonBounds(uint32_t index) const;
+    double parameterControlValueGap(uint32_t parameter_id) const;
     const ZigVstgui::AccessibilityNode* editableLabelAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* progressAccessibility(uint32_t index) const;
     bool tickMeter(uint32_t index, double elapsed_ms);

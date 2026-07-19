@@ -439,6 +439,10 @@ int testEditorRuntimeFontLifecycle() {
             zig_vstgui_editor_destroy(editor);
             return static_cast<int>(iteration + 1);
         }
+        if (editor->parameterControlValueGap(1) < ZigVstgui::defaultTheme().spacing.medium) {
+            zig_vstgui_editor_destroy(editor);
+            return static_cast<int>(iteration + 3);
+        }
         zig_vstgui_editor_destroy(editor);
     }
     return 0;
