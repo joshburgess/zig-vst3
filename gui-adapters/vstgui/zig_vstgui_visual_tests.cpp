@@ -282,6 +282,49 @@ Snapshot controlStates(double scale) {
     };
 }
 
+Snapshot rotaryControls() {
+    return {
+        "rotary-controls.png",
+        480,
+        96,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+            auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 480, 96)));
+            container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            constexpr ZigVstgui::VisualState states[] = {
+                ZigVstgui::VisualState::normal,
+                ZigVstgui::VisualState::hovered,
+                ZigVstgui::VisualState::pressed,
+                ZigVstgui::VisualState::focused,
+                ZigVstgui::VisualState::disabled,
+                ZigVstgui::VisualState::editing,
+            };
+            for (uint32_t index = 0; index < 6; ++index) {
+                const double left = 8.0 + index * 78.0;
+                auto* knob = new ZigVstgui::RotaryKnob(
+                    VSTGUI::CRect(left, 10.0, left + 68.0, 78.0),
+                    nullptr,
+                    static_cast<int32_t>(index),
+                    styles,
+                    0.5
+                );
+                knob->setValueNormalized(static_cast<float>((index + 1.0) / 7.0));
+                if (index == 1) knob->setModulation(0.82);
+                knob->forceVisualStateForTesting(states[index]);
+                if (states[index] == ZigVstgui::VisualState::disabled) {
+                    knob->setAlphaValue(styles.resolve(
+                        ZigVstgui::ComponentKind::knob,
+                        ZigVstgui::VisualState::disabled
+                    ).alpha);
+                }
+                container->addView(knob);
+            }
+            container->drawRect(&context, container->getViewSize());
+        },
+    };
+}
+
 Snapshot metersAndAssets() {
     return {
         "meters-assets.png",
@@ -1185,6 +1228,21 @@ double benchmarkActionButtonDraw() {
     return average;
 }
 
+double benchmarkRotaryDraw() {
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 96, 96)));
+    container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+    auto* knob = new ZigVstgui::RotaryKnob(
+        VSTGUI::CRect(12, 12, 84, 84), nullptr, 1, styles, 0.5
+    );
+    knob->setValueNormalized(0.67f);
+    knob->setModulation(0.82);
+    container->addView(knob);
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(96, 96), 1.0);
+    if (!offscreen) return 1e9;
+    return benchmarkDraw(container, offscreen);
+}
+
 double benchmarkProgressDraw() {
     ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
     auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 72)));
@@ -1274,6 +1332,7 @@ int main(int argc, char** argv) {
     const Snapshot snapshots[] = {
         controlStates(1.0),
         controlStates(2.0),
+        rotaryControls(),
         metersAndAssets(),
         productionControls(),
         graphs(),
@@ -1302,6 +1361,7 @@ int main(int argc, char** argv) {
         const double step_sequencer_average = benchmarkStepSequencerDraw();
         const double file_drop_average = benchmarkFileDropDraw();
         const double action_button_average = benchmarkActionButtonDraw();
+        const double rotary_average = benchmarkRotaryDraw();
         const double progress_average = benchmarkProgressDraw();
         const double signal_views_average = benchmarkSignalViewsDraw();
         const double viewport_average = benchmarkViewportDraw();
@@ -1311,13 +1371,15 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "step sequencer warm render average: %.1f us\n", step_sequencer_average);
         std::fprintf(stderr, "file drop warm render average: %.1f us\n", file_drop_average);
         std::fprintf(stderr, "action button warm render average: %.1f us\n", action_button_average);
+        std::fprintf(stderr, "rotary warm render average: %.1f us\n", rotary_average);
         std::fprintf(stderr, "progress warm render average: %.1f us\n", progress_average);
         std::fprintf(stderr, "signal views warm render average: %.1f us\n", signal_views_average);
         std::fprintf(stderr, "viewport warm render average: %.1f us\n", viewport_average);
         std::fprintf(stderr, "range selection warm render average: %.1f us\n", range_selection_average);
         if (average > warm_draw_budget_us || piano_average > warm_draw_budget_us ||
             step_sequencer_average > warm_draw_budget_us || file_drop_average > warm_draw_budget_us ||
-            action_button_average > warm_draw_budget_us || progress_average > warm_draw_budget_us ||
+            action_button_average > warm_draw_budget_us || rotary_average > warm_draw_budget_us ||
+            progress_average > warm_draw_budget_us ||
             signal_views_average > signal_views_budget_us || viewport_average > warm_draw_budget_us ||
             range_selection_average > warm_draw_budget_us) result = std::max(result, 6);
     }

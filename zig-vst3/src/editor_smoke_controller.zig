@@ -17,6 +17,7 @@ pub const gain_param_id: vsttypes.ParamID = editor_smoke_spec.gain_param_id;
 pub const voices_param_id: vsttypes.ParamID = editor_smoke_spec.voices_param_id;
 pub const bypass_param_id: vsttypes.ParamID = editor_smoke_spec.bypass_param_id;
 pub const mode_param_id: vsttypes.ParamID = editor_smoke_spec.mode_param_id;
+pub const tone_param_id: vsttypes.ParamID = editor_smoke_spec.tone_param_id;
 
 pub const panel_expanded_state_id: u32 = 1;
 pub const analyzer_mode_state_id: u32 = 2;
@@ -123,11 +124,6 @@ fn drawGalleryParameter(
     canvas: *parameter_editor.Canvas,
 ) callconv(.c) types.int32 {
     switch (request.component) {
-        .knob => {
-            const side = @min(request.width, request.height);
-            parameter_editor.fillEllipse(canvas, 2.0, 2.0, side - 2.0, side - 2.0, 0x192029ff);
-            _ = parameter_editor.drawAsset(canvas, checkmark_asset_id, side * 0.25, side * 0.25, side * 0.75, side * 0.75, 1.0);
-        },
         .dropdown => {
             _ = parameter_editor.drawAsset(
                 canvas,
@@ -151,11 +147,11 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const EditorState = GalleryEditorState;
 
     pub fn loadPreset(controller: *ivsteditcontroller.IEditController, preset_id: u32) types.tresult {
-        const ids = [_]vsttypes.ParamID{ gain_param_id, voices_param_id, bypass_param_id, mode_param_id };
+        const ids = [_]vsttypes.ParamID{ gain_param_id, voices_param_id, bypass_param_id, mode_param_id, tone_param_id };
         const values = switch (preset_id) {
-            1 => [_]f64{ 0.5, 0.0, 0.0, 0.0 },
-            2 => [_]f64{ 0.75, 2.0 / 3.0, 0.0, 0.5 },
-            3 => [_]f64{ 0.5, 0.0, 1.0, 0.0 },
+            1 => [_]f64{ 0.5, 0.0, 0.0, 0.0, 0.5 },
+            2 => [_]f64{ 0.75, 2.0 / 3.0, 0.0, 0.5, 0.8 },
+            3 => [_]f64{ 0.5, 0.0, 1.0, 0.0, 0.5 },
             else => return types.kInvalidArgument,
         };
         return applyPreset(Controller, controller, &ids, &values);
@@ -239,6 +235,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
         return parameter_editor.createEditor(Controller, controller, name, .{
             .parameters = &.{
                 .{ .id = gain_param_id, .title = "Bipolar", .units = "±", .step_count = 0, .default_normalized = 0.5, .control_kind = .bipolar_slider, .tooltip = "Drag around the center line; the outlined marker shows modulation.", .modulation_normalized = 0.75 },
+                .{ .id = tone_param_id, .title = "Rotary", .units = "%", .step_count = 0, .default_normalized = 0.5, .control_kind = .rotary_knob, .tooltip = "Drag vertically. Hold Shift for fine adjustment; Command-click resets.", .modulation_normalized = 0.72 },
                 .{ .id = voices_param_id, .title = "Voices", .units = "voices", .step_count = 3, .default_normalized = 0.0, .control_kind = .segmented_enum },
                 .{ .id = bypass_param_id, .title = "Bypass", .step_count = 1, .default_normalized = 0.0, .control_kind = .toggle },
                 .{ .id = mode_param_id, .title = "Mode", .step_count = 2, .default_normalized = 0.0, .control_kind = .enum_dropdown },
@@ -418,9 +415,9 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
             .composition = .{
                 .title = "Component Gallery",
                 .groups = &.{
-                    .{ .title = "Continuous", .parameter_count = 1, .style = .{ .accent = 0x7ce8c5ff }, .xy_pad_count = 1 },
-                    .{ .title = "Discrete", .first_parameter = 1, .parameter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0xe8c77cff } },
-                    .{ .title = "Telemetry", .first_parameter = 4, .meter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0x7caee8ff }, .graph_count = 3 },
+                    .{ .title = "Continuous", .parameter_count = 2, .style = .{ .accent = 0x7ce8c5ff }, .xy_pad_count = 1 },
+                    .{ .title = "Discrete", .first_parameter = 2, .parameter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0xe8c77cff } },
+                    .{ .title = "Telemetry", .first_parameter = 5, .meter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0x7caee8ff }, .graph_count = 3 },
                 },
             },
         });
@@ -505,6 +502,7 @@ test "editor smoke controller persists UI state without changing parameters" {
     try editorState(source).set(show_analyzer_state_id, .{ .boolean = false });
     try std.testing.expectEqual(source_gain_before, Controller.getNormalized(source, gain_param_id));
     try std.testing.expectEqual(types.kResultOk, Controller.setNormalized(source, gain_param_id, 0.75));
+    try std.testing.expectEqual(types.kResultOk, Controller.setNormalized(source, tone_param_id, 0.8));
     const Stream = vst_stream.FixedBufferStream(65536);
     var stream = Stream{};
     try std.testing.expectEqual(types.kResultOk, source.vtable.getState(source, stream.asStream()));
@@ -516,6 +514,7 @@ test "editor smoke controller persists UI state without changing parameters" {
     try std.testing.expectEqual(@as(u32, 2), editorState(restored).get(preset_selection_state_id).?.index);
     try std.testing.expect(!editorState(restored).get(show_analyzer_state_id).?.boolean);
     try std.testing.expectEqual(@as(f64, 0.75), Controller.getNormalized(restored, gain_param_id));
+    try std.testing.expectEqual(@as(f64, 0.8), Controller.getNormalized(restored, tone_param_id));
     const first = restored.vtable.createView(restored, ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
     _ = first.vtable.release(first);
     const reopened = restored.vtable.createView(restored, ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;

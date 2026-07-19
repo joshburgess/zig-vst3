@@ -35,12 +35,12 @@ Exit criteria:
 
 ## Milestone 2: Production Rotary Controls
 
-- [ ] Replace the current generic knob presentation with a production rotary component.
-- [ ] Draw a bounded value arc, default marker, center or unity marker where applicable, and modulation overlay.
-- [ ] Support drag, fine adjustment, arrow keys, Home and End through laptop-safe alternatives, Command-click reset, exact entry, and context menus.
-- [ ] Keep the numeric field and units readable at the minimum accepted size.
-- [ ] Expose native adjustable semantics, formatted value, range, default reset, and tooltip text.
-- [ ] Exercise the same rotary contract in the component gallery and EQ.
+- [x] Replace the current generic knob presentation with a production rotary component.
+- [x] Draw a bounded value arc, default marker, center or unity marker where applicable, and modulation overlay.
+- [x] Support drag, fine adjustment, arrow keys, Home and End through laptop-safe alternatives, Command-click reset, exact entry, and context menus.
+- [x] Keep the numeric field and units readable at the minimum accepted size.
+- [x] Expose native adjustable semantics, formatted value, range, default reset, and tooltip text.
+- [x] Exercise the same rotary contract in the component gallery and EQ.
 
 Exit criteria:
 
@@ -135,3 +135,17 @@ Record each committed milestone here with test counts, performance measurements,
 - Serialized pluginval strictness 5 and strictness 10 passed through the EQ with no unexpected exit. Artifacts remain under the run-specific `zig-vst3-pluginval` temporary directories.
 - Latest shared warm-render measurements during this milestone: visual regression 93.9 us, piano 102.7 us, step sequencer 153.4 us, file drop 49.2 us, action button 39.7 us, progress 13.5 us, signal views 262.4 us, viewport 51.4 us, and range selection 105.5 us.
 - Manual visual acceptance of the EQ is deferred until the linked response graph and production rotary milestones are ready for host review.
+
+### Milestone 2
+
+- Added a dedicated rotary component with a bounded 270-degree track, value arc, default marker, radial indicator, modulation marker, and theme-resolved normal, hover, press, focus, edit, and disabled states.
+- Preserved the standard parameter attachment contract for pointer gestures, Shift fine adjustment, arrows, Home and End, Command-click reset, exact text entry, context menus, host updates, and rejected-edit rollback.
+- Added adjustable accessibility semantics, formatted values, normalized range and default information, increment and decrement actions, and concise tooltips.
+- Added the rotary to both the public-API component gallery and the parametric EQ. Gallery state persistence and production preset paths include its independent parameter.
+- Added a six-state rotary visual reference with modulation coverage and native tests for keyboard limits, fine adjustment, rejection rollback, accessibility adjustment, and runtime modulation updates.
+- `zig build test --summary all`: 58/58 steps and 3,692/3,692 tests passed.
+- Raw ABI checks passed. Every native example passed the Steinberg validator, including 47/47 tests for the parametric EQ.
+- Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` cross-target matrices each passed 38/38 steps.
+- Serialized pluginval strictness 5 and strictness 10 passed all examples without an unexpected exit or GUI crash. The strictness 10 matrix passed 52/52 build steps.
+- Latest rotary warm-render measurements ranged from 31.2 us to 38.1 us, within the 250 us scene budget. The final full test run measured 33.1 us.
+- Manual REAPER acceptance remains pending until the linked response graph is implemented, so the knob and graph can be reviewed as one production editing flow.

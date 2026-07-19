@@ -154,6 +154,21 @@ fn parameterControl(
         .step_count = step_count,
         .default_normalized = default_normalized,
         .control_kind = control_kind,
+        .tooltip = parameterTooltip(id),
+        .modulation_normalized = if (id == mid_gain_param_id) 0.68 else null,
+    };
+}
+
+fn parameterTooltip(id: u32) [*:0]const u8 {
+    return switch (id) {
+        low_frequency_param_id, mid_frequency_param_id, high_frequency_param_id => "Set the band frequency. Hold Shift for fine adjustment; Command-click resets.",
+        low_gain_param_id, mid_gain_param_id, high_gain_param_id => "Set the band gain. Hold Shift for fine adjustment; Command-click resets.",
+        low_q_param_id, mid_q_param_id, high_q_param_id => "Set the band width. Hold Shift for fine adjustment; Command-click resets.",
+        bypass_param_id => "Bypass all EQ processing.",
+        output_param_id => "Adjust the EQ output level.",
+        low_enabled_param_id, mid_enabled_param_id, high_enabled_param_id => "Enable or disable this band.",
+        low_type_param_id, mid_type_param_id, high_type_param_id => "Choose the band filter type.",
+        else => "Adjust this parameter.",
     };
 }
 

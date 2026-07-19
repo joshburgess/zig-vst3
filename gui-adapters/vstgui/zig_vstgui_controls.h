@@ -80,6 +80,39 @@ private:
     std::optional<VisualState> forced_state;
 };
 
+class RotaryKnob final : public VSTGUI::CKnob {
+public:
+    RotaryKnob(
+        const VSTGUI::CRect& size,
+        VSTGUI::IControlListener* listener,
+        int32_t tag,
+        const ThemeResolver& styles,
+        double default_normalized
+    );
+
+    void setModulation(double normalized);
+    std::optional<double> modulationValue() const;
+    void forceVisualStateForTesting(std::optional<VisualState> state);
+    void draw(VSTGUI::CDrawContext* context) override;
+    void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override;
+    void onMouseUpEvent(VSTGUI::MouseUpEvent& event) override;
+    void onMouseCancelEvent(VSTGUI::MouseCancelEvent& event) override;
+    void onMouseEnterEvent(VSTGUI::MouseEnterEvent& event) override;
+    void onMouseExitEvent(VSTGUI::MouseExitEvent& event) override;
+    void onKeyboardEvent(VSTGUI::KeyboardEvent& event) override;
+
+private:
+    VisualState visualState() const;
+    VSTGUI::CPoint pointAt(double angle_degrees, double radius) const;
+
+    const ThemeResolver& styles;
+    double default_normalized {0.0};
+    bool hovered {false};
+    bool pressed {false};
+    std::optional<double> modulation;
+    std::optional<VisualState> forced_state;
+};
+
 class ParameterControl final :
     public VSTGUI::IControlListener,
     public VSTGUI::IViewEventListener,
@@ -153,7 +186,7 @@ private:
     float disabled_alpha {0.45f};
     VSTGUI::CTextLabel* label {nullptr};
     GainSlider* slider {nullptr};
-    VSTGUI::CKnob* knob {nullptr};
+    RotaryKnob* knob {nullptr};
     VSTGUI::CTextButton* toggle {nullptr};
     VSTGUI::COptionMenu* dropdown {nullptr};
     VSTGUI::CSegmentButton* segmented {nullptr};

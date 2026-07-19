@@ -256,6 +256,176 @@ VisualState GainSlider::visualState() const {
     return VisualState::normal;
 }
 
+RotaryKnob::RotaryKnob(
+    const VSTGUI::CRect& size,
+    VSTGUI::IControlListener* listener,
+    int32_t tag,
+    const ThemeResolver& value_styles,
+    double value_default_normalized
+)
+: CKnob(
+      size,
+      listener,
+      tag,
+      nullptr,
+      nullptr,
+      VSTGUI::CPoint(),
+      VSTGUI::CKnob::kSkipHandleDrawing
+  ),
+  styles(value_styles),
+  default_normalized(clampNormalized(value_default_normalized)) {
+    setZoomFactor(10.f);
+}
+
+void RotaryKnob::setModulation(double normalized) {
+    modulation = clampNormalized(normalized);
+    invalid();
+}
+
+std::optional<double> RotaryKnob::modulationValue() const {
+    return modulation;
+}
+
+void RotaryKnob::forceVisualStateForTesting(std::optional<VisualState> state) {
+    forced_state = state;
+    invalid();
+}
+
+VSTGUI::CPoint RotaryKnob::pointAt(double angle_degrees, double radius) const {
+    const auto bounds = getViewSize();
+    const double radians = angle_degrees * 3.14159265358979323846 / 180.0;
+    return VSTGUI::CPoint(
+        bounds.left + bounds.getWidth() * 0.5 + std::cos(radians) * radius,
+        bounds.top + bounds.getHeight() * 0.5 + std::sin(radians) * radius
+    );
+}
+
+void RotaryKnob::draw(VSTGUI::CDrawContext* context) {
+    const auto style = styles.resolve(ComponentKind::knob, visualState());
+    const auto bounds = getViewSize();
+    const double side = std::min(bounds.getWidth(), bounds.getHeight());
+    const double center_x = bounds.left + bounds.getWidth() * 0.5;
+    const double center_y = bounds.top + bounds.getHeight() * 0.5;
+    const double outer_radius = std::max(4.0, side * 0.5 - style.frame_width - 1.0);
+    const double body_radius = std::max(3.0, outer_radius - std::max(5.0, side * 0.11));
+    const double start_angle = 135.0;
+    const double sweep_angle = 270.0;
+    const double value_angle = start_angle + sweep_angle * getValueNormalized();
+    const double default_angle = start_angle + sweep_angle * default_normalized;
+    const VSTGUI::CRect arc_bounds(
+        center_x - outer_radius,
+        center_y - outer_radius,
+        center_x + outer_radius,
+        center_y + outer_radius
+    );
+    const VSTGUI::CRect body_bounds(
+        center_x - body_radius,
+        center_y - body_radius,
+        center_x + body_radius,
+        center_y + body_radius
+    );
+
+    context->setDrawMode(VSTGUI::kAntiAliasing);
+    context->setLineWidth(std::max(1.0, style.frame_width));
+    context->setFrameColor(style.border);
+    context->drawArc(arc_bounds, start_angle, start_angle + sweep_angle);
+    if (getValueNormalized() > 0.f) {
+        context->setFrameColor(style.accent);
+        context->setLineWidth(std::max(2.0, style.frame_width + 1.0));
+        context->drawArc(arc_bounds, start_angle, value_angle);
+    }
+
+    context->setFillColor(style.background);
+    context->setFrameColor(style.border);
+    context->setLineWidth(std::max(1.0, style.frame_width));
+    context->drawEllipse(body_bounds, VSTGUI::kDrawFilledAndStroked);
+
+    const double marker_outer = outer_radius + 1.0;
+    const double marker_inner = std::max(body_radius + 1.0, outer_radius - 5.0);
+    context->setFrameColor(style.foreground);
+    context->setLineWidth(std::max(1.0, style.frame_width));
+    context->drawLine(pointAt(default_angle, marker_inner), pointAt(default_angle, marker_outer));
+
+    if (modulation) {
+        const double modulation_angle = start_angle + sweep_angle * *modulation;
+        VSTGUI::CRect modulation_bounds = arc_bounds;
+        modulation_bounds.extend(3.0, 3.0);
+        context->setFrameColor(style.accent);
+        context->setLineWidth(std::max(1.0, style.frame_width));
+        context->drawArc(modulation_bounds, modulation_angle - 2.5, modulation_angle + 2.5);
+    }
+
+    context->setFrameColor(style.foreground);
+    context->setLineWidth(std::max(2.0, style.frame_width + 1.0));
+    context->drawLine(
+        VSTGUI::CPoint(center_x, center_y),
+        pointAt(value_angle, body_radius * 0.72)
+    );
+    const double hub_radius = std::max(2.0, side * 0.035);
+    context->setFillColor(style.foreground);
+    context->drawEllipse(VSTGUI::CRect(
+        center_x - hub_radius,
+        center_y - hub_radius,
+        center_x + hub_radius,
+        center_y + hub_radius
+    ), VSTGUI::kDrawFilled);
+}
+
+void RotaryKnob::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
+    pressed = true;
+    invalid();
+    CKnob::onMouseDownEvent(event);
+}
+
+void RotaryKnob::onMouseUpEvent(VSTGUI::MouseUpEvent& event) {
+    pressed = false;
+    invalid();
+    CKnob::onMouseUpEvent(event);
+}
+
+void RotaryKnob::onMouseCancelEvent(VSTGUI::MouseCancelEvent& event) {
+    pressed = false;
+    invalid();
+    CKnob::onMouseCancelEvent(event);
+}
+
+void RotaryKnob::onMouseEnterEvent(VSTGUI::MouseEnterEvent& event) {
+    hovered = true;
+    invalid();
+    CKnob::onMouseEnterEvent(event);
+}
+
+void RotaryKnob::onMouseExitEvent(VSTGUI::MouseExitEvent& event) {
+    hovered = false;
+    invalid();
+    CKnob::onMouseExitEvent(event);
+}
+
+void RotaryKnob::onKeyboardEvent(VSTGUI::KeyboardEvent& event) {
+    if (event.type == VSTGUI::EventType::KeyDown &&
+        (event.virt == VSTGUI::VirtualKey::Home || event.virt == VSTGUI::VirtualKey::End)) {
+        beginEdit();
+        setValueNormalized(event.virt == VSTGUI::VirtualKey::Home ? 0.f : 1.f);
+        valueChanged();
+        endEdit();
+        invalid();
+        event.consumed = true;
+        return;
+    }
+    CKnob::onKeyboardEvent(event);
+}
+
+VisualState RotaryKnob::visualState() const {
+    if (forced_state) return *forced_state;
+    if (!getMouseEnabled()) return VisualState::disabled;
+    if (isEditing()) return VisualState::editing;
+    if (pressed) return VisualState::pressed;
+    if (hovered) return VisualState::hovered;
+    const auto* frame = getFrame();
+    if (frame && frame->getFocusView() == this) return VisualState::focused;
+    return VisualState::normal;
+}
+
 ParameterControl::ParameterControl(uint32_t parameter_id, double initial, ZigVstguiCallbacks callbacks)
 : control_model(parameter_id, initial, callbacks) {}
 
@@ -375,20 +545,13 @@ void ParameterControl::buildPrimaryControl(
     switch (kind) {
         case ZIG_VSTGUI_CONTROL_ROTARY_KNOB: {
             component_kind = ComponentKind::knob;
-            knob = new VSTGUI::CKnob(
+            knob = new RotaryKnob(
                 VSTGUI::CRect(),
                 this,
                 kParameterTag,
-                nullptr,
-                nullptr,
-                VSTGUI::CPoint(),
-                VSTGUI::CKnob::kCoronaDrawing | VSTGUI::CKnob::kCoronaOutline
+                styles,
+                info.default_normalized
             );
-            const auto style = styles.resolve(component_kind);
-            knob->setCoronaColor(style.accent);
-            knob->setColorHandle(style.foreground);
-            knob->setColorShadowHandle(style.background);
-            knob->setHandleLineWidth(style.frame_width);
             primary_control = knob;
             break;
         }
@@ -518,6 +681,7 @@ void ParameterControl::buildPrimaryControl(
     }
     primary_component.accessibility().setActionHandler(this, accessibilityAction, actions);
     if (slider && info.has_modulation) slider->setModulation(info.modulation_normalized);
+    if (knob && info.has_modulation) knob->setModulation(info.modulation_normalized);
     if (drawing.draw_parameter) {
         ZigVstguiDrawingComponent drawing_component = ZIG_VSTGUI_DRAW_SLIDER;
         if (kind == ZIG_VSTGUI_CONTROL_ROTARY_KNOB) drawing_component = ZIG_VSTGUI_DRAW_KNOB;
@@ -584,6 +748,7 @@ void ParameterControl::setValue(double value) {
 
 void ParameterControl::setModulation(double normalized) {
     if (slider) slider->setModulation(normalized);
+    if (knob) knob->setModulation(normalized);
 }
 
 void ParameterControl::setEnabled(bool enabled) {

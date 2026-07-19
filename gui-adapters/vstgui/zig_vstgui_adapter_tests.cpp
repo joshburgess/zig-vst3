@@ -506,6 +506,72 @@ int testParameterContextMenu() {
     return 0;
 }
 
+int testRotaryKnob() {
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.begin_edit = beginEdit;
+    callbacks.perform_edit = performEdit;
+    callbacks.end_edit = endEdit;
+    VSTGUI::init(nullptr);
+    {
+        ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+        auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 180, 180)));
+        ZigVstguiParameterInfo info {"Gain", "dB", 0, 0.5};
+        info.has_modulation = 1;
+        info.modulation_normalized = 0.75;
+        ZigVstgui::ParameterControl control(78, 0.5, callbacks);
+        control.build(container, info, ZIG_VSTGUI_CONTROL_ROTARY_KNOB, styles);
+        control.setBounds(
+            VSTGUI::CRect(8, 8, 172, 32),
+            VSTGUI::CRect(42, 36, 138, 132),
+            VSTGUI::CRect(42, 140, 138, 172)
+        );
+        auto* knob = dynamic_cast<ZigVstgui::RotaryKnob*>(control.focusView());
+        if (!knob || !knob->modulationValue() ||
+            !closeEnough(*knob->modulationValue(), 0.75) ||
+            !closeEnough(knob->getDefaultValue(), 0.5)) {
+            control.clear();
+            VSTGUI::exit();
+            return 1;
+        }
+        if (!control.handleKey(0, Steinberg::KEY_END, 0) ||
+            !closeEnough(control.model().acceptedValue(), 1.0) ||
+            state.begin_count != 1 || state.perform_count != 1 || state.end_count != 1) {
+            control.clear();
+            VSTGUI::exit();
+            return 2;
+        }
+        state.reject = true;
+        if (!control.handleKey(0, Steinberg::KEY_HOME, 0) ||
+            !closeEnough(control.model().acceptedValue(), 1.0) ||
+            !closeEnough(knob->getValueNormalized(), 1.0)) {
+            control.clear();
+            VSTGUI::exit();
+            return 3;
+        }
+        state.reject = false;
+        control.setValue(0.5);
+        if (!control.handleKey(0, Steinberg::KEY_RIGHT, 1) ||
+            std::abs(control.model().acceptedValue() - 0.501) > 0.00001 ||
+            !control.primaryAccessibility().perform(ZigVstgui::AccessibilityAction::decrement) ||
+            std::abs(control.model().acceptedValue() - 0.491) > 0.00001) {
+            control.clear();
+            VSTGUI::exit();
+            return 4;
+        }
+        control.setModulation(0.25);
+        if (!knob->modulationValue() || !closeEnough(*knob->modulationValue(), 0.25)) {
+            control.clear();
+            VSTGUI::exit();
+            return 5;
+        }
+        control.clear();
+    }
+    VSTGUI::exit();
+    return 0;
+}
+
 int testParameterPointerControls() {
     CallbackState state;
     ZigVstguiCallbacks callbacks {};
@@ -792,6 +858,7 @@ int testMultiParameterRouting() {
     callbacks.end_edit = endEdit;
     const ZigVstguiParameterDescription descriptions[] = {
         {10, 0.25, {"Continuous", "x", 0, 0.5, "Bipolar control", 0.75, 1}, ZIG_VSTGUI_CONTROL_BIPOLAR_SLIDER},
+        {50, 0.50, {"Rotary", "%", 0, 0.5, "Rotary control", 0.72, 1}, ZIG_VSTGUI_CONTROL_ROTARY_KNOB},
         {20, 0.50, {"Integer", "voices", 7, 3.0 / 7.0}, ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM},
         {30, 0.00, {"Boolean", "", 1, 0.0}, ZIG_VSTGUI_CONTROL_TOGGLE},
         {40, 1.00, {"Enum", "", 2, 0.0}, ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN},
@@ -802,16 +869,16 @@ int testMultiParameterRouting() {
         {"Reduction", ZIG_VSTGUI_METER_GAIN_REDUCTION, 3, 0},
     };
     const ZigVstguiGroupDescription groups[] = {
-        {"Continuous", 0, 1, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x7ce8c5ff}},
-        {"Discrete", 1, 3, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0xe8c77cff}},
-        {"Telemetry", 4, 0, 0, 3, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x7caee8ff}},
+        {"Continuous", 0, 2, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x7ce8c5ff}},
+        {"Discrete", 2, 3, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0xe8c77cff}},
+        {"Telemetry", 5, 0, 0, 3, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x7caee8ff}},
     };
     ZigVstguiSkinDescription skin {};
     skin.editor_title = "Component Gallery";
     skin.groups = groups;
     skin.group_count = 3;
-    ZigVstguiEditor first(descriptions, 4, callbacks, meters, 3, {&state, loadMeter}, skin);
-    ZigVstguiEditor second(descriptions, 4, callbacks);
+    ZigVstguiEditor first(descriptions, 5, callbacks, meters, 3, {&state, loadMeter}, skin);
+    ZigVstguiEditor second(descriptions, 5, callbacks);
     if (!first.valid() || !second.valid()) return 1;
     if (first.groupCount() != 3 || second.groupCount() != 0) return 35;
     const double initial_scroll_limit = first.contentHeight() - 300.0;
@@ -823,6 +890,7 @@ int testMultiParameterRouting() {
         !closeEnough(first.visibleContentTop(), -first.verticalScrollOffset())) return 44;
     if (!first.setVerticalScrollOffset(0.0)) return 45;
     const auto* slider_accessibility = first.parameterAccessibility(10, false);
+    const auto* rotary_accessibility = first.parameterAccessibility(50, false);
     const auto* exact_accessibility = first.parameterAccessibility(10, true);
     const auto* choice_accessibility = first.parameterAccessibility(20, false);
     const auto* toggle_accessibility = first.parameterAccessibility(30, false);
@@ -830,6 +898,9 @@ int testMultiParameterRouting() {
     if (slider_accessibility->name() != "Continuous (x)" ||
         slider_accessibility->description() != "Bipolar control" ||
         !slider_accessibility->range().present) return 17;
+    if (!rotary_accessibility || rotary_accessibility->role() != ZigVstgui::AccessibilityRole::slider ||
+        rotary_accessibility->description() != "Rotary control" ||
+        !rotary_accessibility->range().present) return 36;
     if (!exact_accessibility || exact_accessibility->role() != ZigVstgui::AccessibilityRole::text_field) return 18;
     if (!choice_accessibility || choice_accessibility->role() != ZigVstgui::AccessibilityRole::choice) return 19;
     if (!toggle_accessibility || toggle_accessibility->role() != ZigVstgui::AccessibilityRole::toggle) return 20;
@@ -2795,6 +2866,7 @@ int main() {
     if (const int result = testActiveGestureCleanup(); result != 0) return 50 + result;
     if (const int result = testSteppedGestureQuantization(); result != 0) return 55 + result;
     if (const int result = testParameterContextMenu(); result != 0) return 60 + result;
+    if (const int result = testRotaryKnob(); result != 0) return 62 + result;
     if (const int result = testParameterPointerControls(); result != 0) return 65 + result;
     if (const int result = testThemeResolution(); result != 0) return 70 + result;
     if (const int result = testEditorRuntimeFontLifecycle(); result != 0) return 75 + result;
