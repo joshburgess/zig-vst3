@@ -484,7 +484,9 @@ void ZigVstguiEditor::close() {
 
 bool ZigVstguiEditor::resize(uint32_t new_width, uint32_t new_height) {
     if (!frame || new_width < 320 || new_height < 240) return false;
-    if (!frame->setSize(new_width, new_height)) return false;
+    const double scale = frame->getZoom();
+    if (!std::isfinite(scale) || scale <= 0.0 ||
+        !frame->setSize(new_width * scale, new_height * scale)) return false;
     width = new_width;
     height = new_height;
     metrics.resize_count += 1;
@@ -495,7 +497,7 @@ bool ZigVstguiEditor::resize(uint32_t new_width, uint32_t new_height) {
 }
 
 bool ZigVstguiEditor::setScale(double scale) {
-    if (!frame || scale <= 0.0 || !frame->setZoom(scale)) return false;
+    if (!frame || !std::isfinite(scale) || scale <= 0.0 || !frame->setZoom(scale)) return false;
     metrics.scale_count += 1;
     accessibility_bridge.layoutChanged();
     return true;

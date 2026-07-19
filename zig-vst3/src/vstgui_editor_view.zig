@@ -790,7 +790,23 @@ const Binding = struct {
     minimum_height: types.int32 = 240,
     maximum_width: types.int32 = 1_000,
     maximum_height: types.int32 = 700,
+    logical_width: types.int32 = 400,
+    logical_height: types.int32 = 300,
+    content_scale: f32 = 1.0,
 };
+
+fn scaledDimension(logical: types.int32, scale: f32) ?types.int32 {
+    const scaled = @as(f64, @floatFromInt(logical)) * @as(f64, scale);
+    if (!std.math.isFinite(scaled) or scaled < 1 or scaled > std.math.maxInt(types.int32)) return null;
+    return @intFromFloat(@floor(scaled));
+}
+
+fn logicalDimension(physical: types.int32, scale: f32) ?types.int32 {
+    if (physical < 0 or !std.math.isFinite(scale) or scale <= 0) return null;
+    const logical = @as(f64, @floatFromInt(physical)) / @as(f64, scale);
+    if (!std.math.isFinite(logical) or logical > std.math.maxInt(types.int32)) return null;
+    return @intFromFloat(@round(logical));
+}
 
 const TelemetryState = struct {
     source: ?gui_telemetry_source.RetainedSource,
@@ -852,12 +868,20 @@ const View = vst_plug_view.PlugView(1, struct {
         const width = rect.right - rect.left;
         const height = rect.bottom - rect.top;
         const state = binding(self) orelse return types.kResultFalse;
-        if (width < state.minimum_width or height < state.minimum_height or
-            width > state.maximum_width or height > state.maximum_height) return types.kResultFalse;
-        if (zig_vstgui_editor_resize(state.editor, @intCast(width), @intCast(height)) != 0) {
-            std.log.err("VSTGUI editor rejected size {d}x{d}", .{ width, height });
+        const minimum_width = scaledDimension(state.minimum_width, state.content_scale) orelse return types.kResultFalse;
+        const minimum_height = scaledDimension(state.minimum_height, state.content_scale) orelse return types.kResultFalse;
+        const maximum_width = scaledDimension(state.maximum_width, state.content_scale) orelse return types.kResultFalse;
+        const maximum_height = scaledDimension(state.maximum_height, state.content_scale) orelse return types.kResultFalse;
+        if (width < minimum_width or height < minimum_height or
+            width > maximum_width or height > maximum_height) return types.kResultFalse;
+        const logical_width = logicalDimension(width, state.content_scale) orelse return types.kResultFalse;
+        const logical_height = logicalDimension(height, state.content_scale) orelse return types.kResultFalse;
+        if (zig_vstgui_editor_resize(state.editor, @intCast(logical_width), @intCast(logical_height)) != 0) {
+            std.log.err("VSTGUI editor rejected logical size {d}x{d}", .{ logical_width, logical_height });
             return types.kResultFalse;
         }
+        state.logical_width = logical_width;
+        state.logical_height = logical_height;
         return types.kResultOk;
     }
 
@@ -893,16 +917,36 @@ const View = vst_plug_view.PlugView(1, struct {
 
     pub fn checkSizeConstraint(self: anytype, rect: *iplugview.ViewRect) types.tresult {
         const state = binding(self) orelse return types.kResultFalse;
-        rect.right = std.math.clamp(rect.right, state.minimum_width, state.maximum_width);
-        rect.bottom = std.math.clamp(rect.bottom, state.minimum_height, state.maximum_height);
+        const minimum_width = scaledDimension(state.minimum_width, state.content_scale) orelse return types.kResultFalse;
+        const minimum_height = scaledDimension(state.minimum_height, state.content_scale) orelse return types.kResultFalse;
+        const maximum_width = scaledDimension(state.maximum_width, state.content_scale) orelse return types.kResultFalse;
+        const maximum_height = scaledDimension(state.maximum_height, state.content_scale) orelse return types.kResultFalse;
+        rect.right = rect.left + std.math.clamp(rect.right - rect.left, minimum_width, maximum_width);
+        rect.bottom = rect.top + std.math.clamp(rect.bottom - rect.top, minimum_height, maximum_height);
         return types.kResultOk;
     }
 
     pub fn setContentScaleFactor(self: anytype, factor: f32) types.tresult {
         const state = binding(self) orelse return types.kResultFalse;
+        const scaled_width = scaledDimension(state.logical_width, factor) orelse return types.kInvalidArgument;
+        const scaled_height = scaledDimension(state.logical_height, factor) orelse return types.kInvalidArgument;
         if (zig_vstgui_editor_set_scale(state.editor, factor) != 0) {
             std.log.err("VSTGUI editor rejected content scale {d}", .{factor});
             return types.kResultFalse;
+        }
+        const previous_scale = state.content_scale;
+        const previous_rect = self.rect;
+        state.content_scale = factor;
+        self.rect.right = self.rect.left + scaled_width;
+        self.rect.bottom = self.rect.top + scaled_height;
+        if (self.frame) |frame| {
+            const result = frame.vtable.resizeView(frame, &self.iface, &self.rect);
+            if (result != types.kResultOk) {
+                self.rect = previous_rect;
+                state.content_scale = previous_scale;
+                _ = zig_vstgui_editor_set_scale(state.editor, previous_scale);
+                return result;
+            }
         }
         return types.kResultOk;
     }
@@ -1068,6 +1112,8 @@ pub fn create(
         .has_preset_browser = preset_browsers.len > 0,
         .minimum_width = if (skin.layout == .parameter_workspace) 400 else if (preset_browsers.len > 0) 480 else 320,
         .minimum_height = if (skin.layout == .parameter_workspace) 360 else if (preset_browsers.len > 0) 480 else 240,
+        .logical_width = if (skin.layout == .parameter_workspace or preset_browsers.len > 0) 720 else 400,
+        .logical_height = if (skin.layout == .parameter_workspace) 660 else if (preset_browsers.len > 0) 600 else 300,
     };
     if (!observer_callbacks.subscribe(observer_callbacks.userdata, editor)) {
         std.heap.page_allocator.destroy(state);
@@ -1155,11 +1201,16 @@ fn loadGraph(
 
 fn requestEditorResize(userdata: ?*anyopaque, width: types.uint32, height: types.uint32) callconv(.c) types.int32 {
     const view: *View = @ptrCast(@alignCast(userdata orelse return -1));
+    const state = binding(view) orelse return -1;
+    const logical_width = std.math.cast(types.int32, width) orelse return -1;
+    const logical_height = std.math.cast(types.int32, height) orelse return -1;
+    const physical_width = scaledDimension(logical_width, state.content_scale) orelse return -1;
+    const physical_height = scaledDimension(logical_height, state.content_scale) orelse return -1;
     const result = view.requestResize(.{
         .left = 0,
         .top = 0,
-        .right = @intCast(width),
-        .bottom = @intCast(height),
+        .right = physical_width,
+        .bottom = physical_height,
     });
     if (result != types.kResultOk) {
         std.log.err("host rejected VSTGUI editor resize {d}x{d}", .{ width, height });

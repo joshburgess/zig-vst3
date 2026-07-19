@@ -119,6 +119,16 @@ External checks remain pending when the required environment is unavailable:
 - AT-SPI names, roles, values, focus, and actions
 - Multi-monitor display-scale changes where the host exposes them
 
+## Follow-up: Display Scale and Platform Verification
+
+- [x] Keep layout, breakpoints, and component geometry in logical coordinates.
+- [x] Scale `getSize`, host resize requests, and minimum and maximum constraints through `IPlugViewContentScaleSupport`.
+- [x] Accept scale changes before and after attachment and roll back rejected host resize requests.
+- [x] Cover repeated 1x, 1.5x, and 2x geometry with deterministic tests.
+- [ ] Move an attached editor between displays with different scale factors in a native host.
+- [ ] Verify the shared semantics with Narrator in a native Windows host.
+- [ ] Verify native X11 and Wayland attachment, scale, and AT-SPI behavior.
+
 ## Completion Evidence
 
 Record each committed milestone here with test counts, performance measurements, host observations, API decisions, and deferred external checks. Do not use pluginval as evidence of visual correctness.
@@ -198,3 +208,10 @@ Record each committed milestone here with test counts, performance measurements,
 - Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` cross-target bundle matrices each passed 38/38 steps.
 - Latest warm-render measurements: full visual suite 86.7 us, rotary 31.1 us, signal views 254.1 us, and linked EQ with analyzer 220.7 us. Every scene remains within its recorded budget.
 - Pluginval was not relaunched because its preserved startup abort remains under the stop-on-exit policy. Post-fix REAPER confirmation of compact, standard, expanded, manual resize, multiple-instance, and reopen behavior remains pending.
+
+### Display-scale follow-up
+
+- Fixed the shared VSTGUI binding so host rectangles, constraints, and resize requests scale while the component layout remains in logical coordinates.
+- Scale changes now work before or after frame attachment. A host rejection restores the prior frame zoom, view rectangle, and accepted scale.
+- Added EQ coverage for pre-attach 2x sizing, nonzero-origin constraints, attached 1.5x sizing, host resize notification, accepted `onSize`, and rejected-scale rollback. Native adapter coverage rejects zero, non-finite, and infinite scales and verifies layout remains stable across scale changes.
+- `zig build test` passed 58/58 steps and 3,706/3,706 tests. Raw ABI checks, all twelve Steinberg validators, native adapter tests, macOS accessibility tests, visual comparisons, and both 38-step Linux and Windows cross-target bundle matrices passed. The final linked-EQ warm render measured 229.4 us against its 300 us budget.

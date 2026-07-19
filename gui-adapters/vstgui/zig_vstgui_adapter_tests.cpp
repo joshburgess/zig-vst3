@@ -22,6 +22,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -1544,6 +1545,8 @@ int testParameterWorkspaceLayout() {
     if (editor.groupCount() != 4) return 3;
     if (editor.contentHeight() > 660.0) return 4;
     if (editor.contentScrollingActive()) return 5;
+    if (editor.setScale(0.0) || editor.setScale(std::nan("")) || editor.setScale(std::numeric_limits<double>::infinity()) ||
+        !editor.setScale(2.0) || !editor.resize(720, 660) || !editor.setScale(1.0)) return 21;
     editor.setResizeCallbacks({&state, requestResize});
     if (editor.resizeAccessibility().valueText() != "Standard" ||
         !editor.resizeAccessibility().perform(ZigVstgui::AccessibilityAction::press) ||

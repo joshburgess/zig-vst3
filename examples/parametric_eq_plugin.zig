@@ -454,6 +454,85 @@ test "parametric EQ workspace sizes and selection state are instance local" {
     try std.testing.expectEqual(@as(u32, 2), Controller.editorState(second).get(selected_band_state_id).?.point_id);
 }
 
+test "parametric EQ scales host geometry before and after attachment" {
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &controller_out),
+    );
+    const controller: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out orelse return error.MissingController));
+    defer _ = controller.vtable.release(controller);
+    const view = controller.vtable.createView(controller, vst.ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
+    defer _ = view.vtable.release(view);
+
+    const scale_support = gui.iplugviewcontentscalesupport;
+    var scale_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        view.vtable.queryInterface(view, &scale_support.iplug_view_content_scale_support_iid, &scale_out),
+    );
+    const scale: *scale_support.IPlugViewContentScaleSupport = @ptrCast(@alignCast(scale_out orelse return error.MissingScaleSupport));
+    defer _ = scale.vtable.release(scale);
+
+    try std.testing.expectEqual(types.kInvalidArgument, scale.vtable.setContentScaleFactor(scale, std.math.floatMin(f32)));
+    try std.testing.expectEqual(types.kInvalidArgument, scale.vtable.setContentScaleFactor(scale, std.math.floatMax(f32)));
+    try std.testing.expectEqual(types.kResultOk, scale.vtable.setContentScaleFactor(scale, 2.0));
+    var size = gui.iplugview.ViewRect{};
+    try std.testing.expectEqual(types.kResultOk, view.vtable.getSize(view, &size));
+    try std.testing.expectEqual(@as(types.int32, 1_440), size.right);
+    try std.testing.expectEqual(@as(types.int32, 1_320), size.bottom);
+
+    var constrained = gui.iplugview.ViewRect{ .left = 10, .top = 20, .right = 100, .bottom = 120 };
+    try std.testing.expectEqual(types.kResultOk, view.vtable.checkSizeConstraint(view, &constrained));
+    try std.testing.expectEqual(@as(types.int32, 810), constrained.right);
+    try std.testing.expectEqual(@as(types.int32, 740), constrained.bottom);
+
+    const Frame = vst3.vst_plug_frame.PlugFrame(struct {});
+    var frame = Frame{};
+    try std.testing.expectEqual(types.kResultOk, view.vtable.setFrame(view, frame.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, scale.vtable.setContentScaleFactor(scale, 1.5));
+    try std.testing.expectEqual(@as(types.uint32, 1), frame.resize_count);
+    try std.testing.expectEqual(@as(types.int32, 1_080), frame.last_rect.right);
+    try std.testing.expectEqual(@as(types.int32, 990), frame.last_rect.bottom);
+    try std.testing.expectEqual(types.kResultOk, view.vtable.onSize(view, &frame.last_rect));
+    try std.testing.expectEqual(types.kResultOk, view.vtable.getSize(view, &size));
+    try std.testing.expectEqual(frame.last_rect, size);
+}
+
+test "parametric EQ rolls back a rejected display scale change" {
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &controller_out),
+    );
+    const controller: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out orelse return error.MissingController));
+    defer _ = controller.vtable.release(controller);
+    const view = controller.vtable.createView(controller, vst.ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
+    defer _ = view.vtable.release(view);
+
+    const scale_support = gui.iplugviewcontentscalesupport;
+    var scale_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        view.vtable.queryInterface(view, &scale_support.iplug_view_content_scale_support_iid, &scale_out),
+    );
+    const scale: *scale_support.IPlugViewContentScaleSupport = @ptrCast(@alignCast(scale_out orelse return error.MissingScaleSupport));
+    defer _ = scale.vtable.release(scale);
+
+    const Frame = vst3.vst_plug_frame.PlugFrame(struct {
+        pub fn resizeView(_: ?*gui.iplugview.IPlugView, _: *gui.iplugview.ViewRect) types.tresult {
+            return types.kResultFalse;
+        }
+    });
+    var frame = Frame{};
+    try std.testing.expectEqual(types.kResultOk, view.vtable.setFrame(view, frame.asInterface()));
+    try std.testing.expectEqual(types.kResultFalse, scale.vtable.setContentScaleFactor(scale, 2.0));
+    var size = gui.iplugview.ViewRect{};
+    try std.testing.expectEqual(types.kResultOk, view.vtable.getSize(view, &size));
+    try std.testing.expectEqual(@as(types.int32, 720), size.right);
+    try std.testing.expectEqual(@as(types.int32, 660), size.bottom);
+}
+
 test "parametric EQ component instances isolate parameter state" {
     var first_out: ?*anyopaque = null;
     var second_out: ?*anyopaque = null;
