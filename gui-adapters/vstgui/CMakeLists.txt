@@ -10,6 +10,7 @@ set(VSTGUI_STANDALONE_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(VSTGUI_TOOLS OFF CACHE BOOL "" FORCE)
 set(VSTGUI_DISABLE_UNITTESTS ON CACHE BOOL "" FORCE)
 set(VSTGUI_UISCRIPTING OFF CACHE BOOL "" FORCE)
+set(VSTGUI_ENABLE_DEPRECATED_METHODS ON CACHE BOOL "" FORCE)
 set(VSTGUI_ENABLE_OPENGL_SUPPORT OFF CACHE BOOL "" FORCE)
 set(VSTGUI_ENABLE_XMLPARSER OFF CACHE BOOL "" FORCE)
 if(UNIX AND NOT APPLE)
@@ -54,17 +55,28 @@ set(ZIG_VSTGUI_ADAPTER_SOURCES
     zig_vstgui_xy_pad.cpp
 )
 if(APPLE)
-    list(APPEND ZIG_VSTGUI_ADAPTER_SOURCES zig_vstgui_accessibility_macos.mm)
+    list(APPEND ZIG_VSTGUI_ADAPTER_SOURCES
+        zig_vstgui_accessibility_macos.mm
+        zig_vstgui_platform_macos.mm
+    )
 elseif(WIN32)
     list(APPEND ZIG_VSTGUI_ADAPTER_SOURCES zig_vstgui_accessibility_windows.cpp)
 endif()
 
 add_library(zig_vstgui_adapter STATIC ${ZIG_VSTGUI_ADAPTER_SOURCES})
 if(APPLE)
-    set_source_files_properties(zig_vstgui_accessibility_macos.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    set_source_files_properties(
+        zig_vstgui_accessibility_macos.mm
+        zig_vstgui_platform_macos.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
+    )
 endif()
 target_compile_features(zig_vstgui_adapter PRIVATE cxx_std_17)
-target_compile_definitions(zig_vstgui_adapter PRIVATE VSTGUI_ENABLE_XML_PARSER=0)
+target_compile_definitions(zig_vstgui_adapter PUBLIC
+    VSTGUI_ENABLE_DEPRECATED_METHODS=1
+    VSTGUI_ENABLE_XML_PARSER=0
+    VSTGUI_OPENGL_SUPPORT=0
+)
 target_include_directories(zig_vstgui_adapter PRIVATE
     "${VSTGUI_SOURCE_DIR}"
     "${CMAKE_CURRENT_LIST_DIR}/../../.vst3-sdk/vst3sdk"

@@ -6,6 +6,7 @@
 #import <objc/runtime.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -63,6 +64,16 @@ id elementNamed(NSArray* elements, NSString* name) {
         if ([[element accessibilityLabel] isEqualToString:name]) return element;
     }
     return nil;
+}
+
+void* nativeFramePointer(NSView* view) {
+    if (!view) return nullptr;
+    auto* frame_ivar = class_getInstanceVariable(object_getClass(view), "_nsViewFrame");
+    if (!frame_ivar) return nullptr;
+    auto* storage = reinterpret_cast<void**>(
+        reinterpret_cast<std::byte*>((__bridge void*)view) + ivar_getOffset(frame_ivar)
+    );
+    return *storage;
 }
 
 }
@@ -186,8 +197,30 @@ int main() {
         if (!editor.resize(640, 420)) return 13;
         const NSRect resized_frame = [gain accessibilityFrameInParentSpace];
         if (NSEqualRects(initial_frame, resized_frame)) return 14;
+        if (!nativeFramePointer(native_view)) return 35;
         editor.close();
         if (native_view.accessibilityChildren.count != 0 || editor.nativeAccessibilityActive()) return 15;
+        if (nativeFramePointer(native_view)) return 36;
+
+        auto* retained_views = [NSMutableArray arrayWithObject:native_view];
+        for (uint32_t cycle = 0; cycle < 16; ++cycle) {
+            if (!editor.open((__bridge void*)parent, ZIG_VSTGUI_PLATFORM_MACOS)) return 37;
+            auto* cycle_view = parent.subviews.lastObject;
+            if (!cycle_view || !nativeFramePointer(cycle_view)) return 38;
+            [retained_views addObject:cycle_view];
+            [cycle_view updateTrackingAreas];
+            [cycle_view setNeedsDisplay:YES];
+            [cycle_view displayIfNeeded];
+            editor.close();
+            if (nativeFramePointer(cycle_view)) return 39;
+        }
+        for (NSView* retained_view in retained_views) {
+            [retained_view updateTrackingAreas];
+            [retained_view setNeedsDisplay:YES];
+            [retained_view displayIfNeeded];
+        }
+        [[NSRunLoop currentRunLoop]
+            runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
     }
     return 0;
 }

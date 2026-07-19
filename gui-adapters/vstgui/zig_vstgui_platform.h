@@ -14,6 +14,8 @@ bool openFrame(
     void* wayland_host
 );
 
+void prepareFrameForClose(VSTGUI::CFrame* frame);
+
 void replacePlugFrame(void*& current, void* replacement);
 void replaceWaylandHost(void*& current, void* replacement);
 void releasePlatformInterfaces(void*& plug_frame, void*& wayland_host);

@@ -133,6 +133,14 @@ Record each committed milestone here with test counts, performance measurements,
 - Steinberg validator: 47/47 tests passed for the EQ across single and double precision.
 - Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` cross-target bundles passed.
 - Serialized pluginval strictness 5 and strictness 10 passed through the EQ with no unexpected exit. Artifacts remain under the run-specific `zig-vst3-pluginval` temporary directories.
+
+### macOS host lifecycle correction
+
+- REAPER crash reports from July 18 and 19 identified faults in Editor Smoke's VSTGUI `NSViewFrame` tracking and drawing callbacks while the multi-plugin audit chain was loaded.
+- The adapter and VSTGUI library used inconsistent conditional virtual-interface definitions. The build now pins and propagates matching deprecated-method and OpenGL settings, with compile-time drift checks.
+- macOS frame close now disconnects the native view from its raw C++ frame pointer and removes queued tracking, notification, and delegated-layer paths before destruction.
+- The native macOS suite retains native views across 16 open, draw, tracking, and close cycles, calls those views again after teardown, and completes without stale frame access.
+- The post-fix automated gate passed 213 of 213 build steps and 3,696 of 3,696 tests, all raw ABI checks, all twelve Steinberg example validators, and both 38-step Linux and Windows cross-target bundle matrices. The rebuilt REAPER multi-plugin rerun remains pending manual confirmation.
 - Latest shared warm-render measurements during this milestone: visual regression 93.9 us, piano 102.7 us, step sequencer 153.4 us, file drop 49.2 us, action button 39.7 us, progress 13.5 us, signal views 262.4 us, viewport 51.4 us, and range selection 105.5 us.
 - Manual visual acceptance of the EQ is deferred until the linked response graph and production rotary milestones are ready for host review.
 

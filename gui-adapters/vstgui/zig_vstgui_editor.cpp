@@ -463,6 +463,7 @@ void ZigVstguiEditor::close() {
     help_component.clear();
     for (uint32_t index = 0; index < group_count; ++index) group_components[index].clear();
     metrics.close_count += 1;
+    ZigVstgui::prepareFrameForClose(frame);
     frame->close();
     clearFrameReferences();
 }

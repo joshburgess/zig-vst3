@@ -2,6 +2,14 @@
 
 #include <new>
 
+#if !defined(VSTGUI_ENABLE_DEPRECATED_METHODS) || VSTGUI_ENABLE_DEPRECATED_METHODS != 1
+#error "zig-vst3 and VSTGUI must agree on deprecated interface methods"
+#endif
+
+#if !defined(VSTGUI_OPENGL_SUPPORT) || VSTGUI_OPENGL_SUPPORT != 0
+#error "zig-vst3 and VSTGUI must agree on OpenGL interface methods"
+#endif
+
 #if defined(LINUX)
 #define INIT_CLASS_IID
 #include "pluginterfaces/base/funknownimpl.h"
@@ -207,6 +215,10 @@ bool openFrame(
 #endif
     return frame->open(parent, native_type);
 }
+
+#if !defined(__APPLE__)
+void prepareFrameForClose(VSTGUI::CFrame*) {}
+#endif
 
 void replacePlugFrame(void*& current, void* replacement) {
 #if defined(LINUX)
