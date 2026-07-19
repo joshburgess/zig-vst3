@@ -928,6 +928,20 @@ bool ZigVstguiEditor::contentScrollingActive() const {
 
 double ZigVstguiEditor::contentHeight() const { return content_height; }
 
+bool ZigVstguiEditor::setVerticalScrollOffset(double offset) {
+    if (!scroll_view) return false;
+    scroll_view->setScrollOffset(VSTGUI::CPoint(0.0, offset));
+    return true;
+}
+
+double ZigVstguiEditor::verticalScrollOffset() const {
+    return scroll_view ? scroll_view->getScrollOffset().y : 0.0;
+}
+
+double ZigVstguiEditor::visibleContentTop() const {
+    return content ? content->getViewSize().top : 0.0;
+}
+
 std::size_t ZigVstguiEditor::nativeAccessibilityElementCount() const {
     return accessibility_bridge.elementCount();
 }
@@ -1187,11 +1201,23 @@ void ZigVstguiEditor::clearFrameReferences() {
 void ZigVstguiEditor::layout() {
     if (!frame) return;
     content_height = minimumContentHeight();
+    VSTGUI::CPoint retained_scroll_offset {};
     if (scroll_view) {
+        retained_scroll_offset = scroll_view->getScrollOffset();
+        scroll_view->resetScrollOffset();
         scroll_view->setViewSize(VSTGUI::CRect(0, 0, width, height), true);
-        scroll_view->setContainerSize(VSTGUI::CRect(0, 0, width, content_height), true);
+        scroll_view->setContainerSize(VSTGUI::CRect(0, 0, width, content_height), false);
     }
     if (content) content->setViewSize(VSTGUI::CRect(0, 0, width, content_height), true);
+    if (scroll_view) {
+        retained_scroll_offset.x = 0.0;
+        retained_scroll_offset.y = std::clamp(
+            retained_scroll_offset.y,
+            0.0,
+            std::max(0.0, content_height - static_cast<double>(height))
+        );
+        scroll_view->setScrollOffset(retained_scroll_offset);
+    }
     const auto& theme = theme_resolver.theme();
     const double margin = theme.spacing.large;
     const double right = std::max(margin + 1.0, static_cast<double>(width) - margin);
@@ -1348,13 +1374,33 @@ void ZigVstguiEditor::layout() {
                     ? visuals_top + (bottom - visuals_top) * 0.58
                     : bottom;
                 const double graph_gap = theme.spacing.small;
-                const double graph_width = (group_width - graph_gap * (group.graph_count - 1)) / group.graph_count;
+                const uint32_t graph_columns = ZigVstgui::responsiveColumnCount(
+                    group_width,
+                    graph_gap,
+                    120.0,
+                    group.graph_count
+                );
+                const uint32_t graph_rows = (group.graph_count + graph_columns - 1) / graph_columns;
+                const double graph_width =
+                    (group_width - graph_gap * (graph_columns - 1)) / graph_columns;
+                const double graph_height = std::max(
+                    1.0,
+                    (graph_bottom - visuals_top - graph_gap * (graph_rows - 1)) / graph_rows
+                );
                 for (uint32_t offset = 0; offset < group.graph_count; ++offset) {
                     const uint32_t index = group.first_graph + offset;
-                    const double graph_left = left + offset * (graph_width + graph_gap);
+                    const uint32_t graph_column = offset % graph_columns;
+                    const uint32_t graph_row = offset / graph_columns;
+                    const double graph_left = left + graph_column * (graph_width + graph_gap);
+                    const double graph_top = visuals_top + graph_row * (graph_height + graph_gap);
                     graph_controls[index]->setBounds(
-                        VSTGUI::CRect(graph_left, visuals_top, graph_left + graph_width, visuals_top + 18.0),
-                        VSTGUI::CRect(graph_left, visuals_top + 18.0, graph_left + graph_width, graph_bottom)
+                        VSTGUI::CRect(graph_left, graph_top, graph_left + graph_width, graph_top + 18.0),
+                        VSTGUI::CRect(
+                            graph_left,
+                            graph_top + 18.0,
+                            graph_left + graph_width,
+                            graph_top + graph_height
+                        )
                     );
                 }
                 visuals_top = graph_bottom + theme.spacing.small;

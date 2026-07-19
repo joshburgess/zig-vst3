@@ -115,6 +115,9 @@ struct ZigVstguiEditor {
     std::size_t nativeAccessibilityElementCount() const;
     bool contentScrollingActive() const;
     double contentHeight() const;
+    bool setVerticalScrollOffset(double offset);
+    double verticalScrollOffset() const;
+    double visibleContentTop() const;
 
 private:
     void buildFrame();

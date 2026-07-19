@@ -695,6 +695,14 @@ int testMultiParameterRouting() {
     ZigVstguiEditor second(descriptions, 4, callbacks);
     if (!first.valid() || !second.valid()) return 1;
     if (first.groupCount() != 3 || second.groupCount() != 0) return 35;
+    const double initial_scroll_limit = first.contentHeight() - 300.0;
+    if (initial_scroll_limit <= 0.0 || !first.setVerticalScrollOffset(initial_scroll_limit) ||
+        !closeEnough(first.visibleContentTop(), -first.verticalScrollOffset())) return 43;
+    if (!first.resize(720, 600) || !first.resize(400, 300) ||
+        first.verticalScrollOffset() < 0.0 ||
+        first.verticalScrollOffset() > first.contentHeight() - 300.0 ||
+        !closeEnough(first.visibleContentTop(), -first.verticalScrollOffset())) return 44;
+    if (!first.setVerticalScrollOffset(0.0)) return 45;
     const auto* slider_accessibility = first.parameterAccessibility(10, false);
     const auto* exact_accessibility = first.parameterAccessibility(10, true);
     const auto* choice_accessibility = first.parameterAccessibility(20, false);
@@ -846,6 +854,10 @@ int testLayoutSolvers() {
         )) return 9;
     if (ZigVstgui::layoutMode(519, 700) != ZigVstgui::LayoutMode::compact) return 10;
     if (ZigVstgui::layoutMode(520, 360) != ZigVstgui::LayoutMode::expanded) return 11;
+    if (ZigVstgui::responsiveColumnCount(352.0, 8.0, 120.0, 5) != 2) return 12;
+    if (ZigVstgui::responsiveColumnCount(672.0, 8.0, 120.0, 5) != 5) return 13;
+    if (ZigVstgui::responsiveColumnCount(10.0, 8.0, 120.0, 5) != 1) return 14;
+    if (ZigVstgui::responsiveColumnCount(352.0, 8.0, 120.0, 0) != 0) return 15;
     return 0;
 }
 

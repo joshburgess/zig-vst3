@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace ZigVstgui {
 
@@ -140,6 +141,22 @@ bool layoutGrid(
 
 LayoutMode layoutMode(uint32_t width, uint32_t height) {
     return width >= 520 && height >= 360 ? LayoutMode::expanded : LayoutMode::compact;
+}
+
+uint32_t responsiveColumnCount(
+    double available,
+    double gap,
+    double minimum_item,
+    uint32_t item_count
+) {
+    if (item_count == 0) return 0;
+    const double safe_gap = std::max(0.0, gap);
+    const double safe_minimum = std::max(1.0, minimum_item);
+    const auto fitting = static_cast<uint32_t>(std::max(
+        1.0,
+        std::floor((std::max(0.0, available) + safe_gap) / (safe_minimum + safe_gap))
+    ));
+    return std::min(item_count, fitting);
 }
 
 }
