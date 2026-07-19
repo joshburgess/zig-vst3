@@ -85,6 +85,7 @@ struct CallbackState {
     double stored_scalar_values[3] {};
     uint32_t stored_scalar_count {0};
     bool reject_scalar_store {false};
+    uint32_t selected_group_index {UINT32_MAX};
 };
 
 class TestDataPackage final : public VSTGUI::IDataPackage {
@@ -273,6 +274,10 @@ uint32_t loadGraph(void* userdata, uint32_t, ZigVstguiGraphPoint* output, uint32
     const uint32_t count = std::min(state->graph_count, capacity);
     for (uint32_t index = 0; index < count; ++index) output[index] = state->graph_points[index];
     return count;
+}
+
+void graphSelectionChanged(void* userdata, uint32_t group_index) {
+    static_cast<CallbackState*>(userdata)->selected_group_index = group_index;
 }
 
 int32_t storeEditorIndex(void* userdata, uint32_t field_id, uint32_t value) {
@@ -1149,7 +1154,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 21) return 1;
+    if (zig_vstgui_adapter_version() != 22) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -1830,6 +1835,107 @@ int testGraphs() {
             !teardown_envelope.moveSelected(0.5, 0.5)) return 34;
     }
     if (teardown_state.end_count != 2 || teardown_state.perform_count != 4) return 35;
+
+    CallbackState handle_state;
+    handle_state.graph_points[0] = {-1.0, -0.25};
+    handle_state.graph_points[1] = {1.0, 0.25};
+    handle_state.graph_count = 2;
+    ZigVstguiCallbacks handle_callbacks {};
+    handle_callbacks.userdata = &handle_state;
+    handle_callbacks.begin_edit = beginEdit;
+    handle_callbacks.perform_edit = performEdit;
+    handle_callbacks.end_edit = endEdit;
+    const ZigVstguiGraphHandleDescription graph_handles[] = {
+        {1, "Low", 10, 11, 0.25, 0.5, 0, 0, 1, 12, "Q", 0.5, 0.1, 1, 13, 1, 1},
+        {2, "High", 20, 21, 0.75, 0.5, 0, 0, 1, 22, "Q", 0.5, 0.1, 1, 23, 0, 2},
+    };
+    auto handle_graph = empty_graph;
+    handle_graph.handles = graph_handles;
+    handle_graph.handle_count = 2;
+    handle_graph.parameter_driven = 1;
+    const ZigVstguiGraphLayerDescription graph_layers[] = {
+        {ZIG_VSTGUI_GRAPH_SECONDARY, nullptr, 0, 7},
+    };
+    handle_graph.layers = graph_layers;
+    handle_graph.layer_count = 1;
+    ZigVstgui::GraphControl handle_control;
+    auto handle_container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
+    if (!handle_control.build(
+            handle_container,
+            handle_graph,
+            {&handle_state, loadGraph},
+            handle_callbacks,
+            styles,
+            &handle_state,
+            graphSelectionChanged
+        ) || handle_state.graph_load_count != 2 || handle_control.graphView()->pointCount() != 2 ||
+        !handle_control.graphView()->editable() || handle_control.accessibilityNode().state().read_only ||
+        handle_control.accessibilityNode().supports(ZigVstgui::AccessibilityAction::add_point) ||
+        !handle_control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::select_next) ||
+        !handle_control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::select_next) ||
+        handle_control.accessibilityNode().valueText().find("High, disabled") == std::string::npos ||
+        !handle_control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::select_previous) ||
+        handle_state.selected_group_index != 1) return 52;
+    if (!handle_control.graphView()->selectPoint(1) ||
+        handle_control.accessibilityNode().valueText().find("Low") == std::string::npos ||
+        !handle_control.graphView()->beginTransaction() ||
+        !handle_control.graphView()->moveSelected(0.0, 0.5)) return 53;
+    handle_control.graphView()->finishTransaction();
+    if (handle_state.begin_count != 2 || handle_state.perform_count != 2 || handle_state.end_count != 2) return 54;
+    if (!handle_control.handleKey(0, Steinberg::KEY_PAGEUP, 0) ||
+        handle_state.last_parameter_id != 12 || handle_state.last_value <= 0.5) return 55;
+    const uint32_t load_count_before_host_change = handle_state.graph_load_count;
+    const uint32_t begin_count_before_host_change = handle_state.begin_count;
+    if (!handle_control.setParameter(10, 0.8) ||
+        handle_state.graph_load_count != load_count_before_host_change + 2 ||
+        handle_state.begin_count != begin_count_before_host_change) return 56;
+    const uint32_t load_count_before_dependency = handle_state.graph_load_count;
+    handle_control.setParameter(99, 0.5);
+    if (handle_state.graph_load_count != load_count_before_dependency + 2) return 57;
+    handle_state.reject_parameter_id = 11;
+    ZigVstguiEnvelopePoint handle_before {};
+    if (!handle_control.graphView()->selectedPoint(handle_before) ||
+        !handle_control.graphView()->beginTransaction() ||
+        handle_control.graphView()->moveSelected(-0.5, -0.5) ||
+        handle_control.graphView()->transactionActive()) return 58;
+    ZigVstguiEnvelopePoint handle_after {};
+    if (!handle_control.graphView()->selectedPoint(handle_after) ||
+        !closeEnough(handle_after.x, handle_before.x) || !closeEnough(handle_after.y, handle_before.y)) return 59;
+    auto invalid_handle_graph = handle_graph;
+    auto invalid_handles = std::array<ZigVstguiGraphHandleDescription, 2>{graph_handles[0], graph_handles[1]};
+    invalid_handles[0].adjustment_parameter_id = invalid_handles[0].x_parameter_id;
+    invalid_handle_graph.handles = invalid_handles.data();
+    ZigVstgui::AccessibilityNode invalid_handle_accessibility;
+    ZigVstgui::GraphView invalid_handle_view(
+        VSTGUI::CRect(), invalid_handle_graph, styles, &invalid_handle_accessibility, handle_callbacks
+    );
+    if (invalid_handle_view.valid()) return 60;
+    CallbackState pointer_handle_state;
+    auto pointer_handle_callbacks = handle_callbacks;
+    pointer_handle_callbacks.userdata = &pointer_handle_state;
+    ZigVstgui::AccessibilityNode pointer_handle_accessibility;
+    ZigVstgui::GraphView pointer_handle_view(
+        VSTGUI::CRect(0, 0, 200, 100), handle_graph, styles, &pointer_handle_accessibility, pointer_handle_callbacks
+    );
+    VSTGUI::MouseDownEvent handle_down(
+        VSTGUI::CPoint(50, 50), VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    pointer_handle_view.onMouseDownEvent(handle_down);
+    VSTGUI::MouseMoveEvent handle_move(
+        VSTGUI::CPoint(100, 25), VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    pointer_handle_view.onMouseMoveEvent(handle_move);
+    VSTGUI::MouseUpEvent handle_up(
+        VSTGUI::CPoint(100, 25), VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    pointer_handle_view.onMouseUpEvent(handle_up);
+    ZigVstguiEnvelopePoint pointer_handle_position {};
+    if (!handle_down.consumed || !handle_move.consumed || !handle_up.consumed ||
+        pointer_handle_state.begin_count != 2 || pointer_handle_state.perform_count != 2 ||
+        pointer_handle_state.end_count != 2 ||
+        !pointer_handle_view.selectedPoint(pointer_handle_position) ||
+        !closeEnough(pointer_handle_position.x, 0.0) || !closeEnough(pointer_handle_position.y, 0.5)) return 61;
+    handle_control.clear();
     return 0;
 }
 

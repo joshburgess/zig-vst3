@@ -406,7 +406,39 @@ typedef struct ZigVstguiGraphDescription {
     uint32_t initial_selected_point_id;
     ZigVstguiViewportDescription viewport;
     ZigVstguiRangeSelectionDescription range_selection;
+    const struct ZigVstguiGraphHandleDescription* handles;
+    uint32_t handle_count;
+    int32_t parameter_driven;
+    const struct ZigVstguiGraphLayerDescription* layers;
+    uint32_t layer_count;
 } ZigVstguiGraphDescription;
+
+typedef struct ZigVstguiGraphLayerDescription {
+    ZigVstguiGraphStyleRole style;
+    const ZigVstguiGraphPoint* points;
+    uint32_t point_count;
+    uint32_t source_id;
+} ZigVstguiGraphLayerDescription;
+
+typedef struct ZigVstguiGraphHandleDescription {
+    uint32_t handle_id;
+    const char* name;
+    uint32_t x_parameter_id;
+    uint32_t y_parameter_id;
+    double x_normalized;
+    double y_normalized;
+    int32_t x_step_count;
+    int32_t y_step_count;
+    int32_t has_adjustment;
+    uint32_t adjustment_parameter_id;
+    const char* adjustment_label;
+    double adjustment_normalized;
+    double adjustment_step;
+    int32_t has_enabled;
+    uint32_t enabled_parameter_id;
+    int32_t enabled;
+    uint32_t highlight_group_index;
+} ZigVstguiGraphHandleDescription;
 
 typedef struct ZigVstguiGraphCallbacks {
     void* userdata;
@@ -415,6 +447,8 @@ typedef struct ZigVstguiGraphCallbacks {
 
 enum { ZIG_VSTGUI_MAX_GRAPHS = 8 };
 enum { ZIG_VSTGUI_MAX_GRAPH_POINTS = 256 };
+enum { ZIG_VSTGUI_MAX_GRAPH_HANDLES = 16 };
+enum { ZIG_VSTGUI_MAX_GRAPH_LAYERS = 4 };
 
 typedef enum ZigVstguiAssetFormat {
     ZIG_VSTGUI_ASSET_PNG = 0,

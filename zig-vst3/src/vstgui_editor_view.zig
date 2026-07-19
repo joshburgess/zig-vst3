@@ -141,6 +141,8 @@ pub const max_drop_files = 8;
 pub const max_meters = 8;
 pub const max_graphs = 8;
 pub const max_graph_points = 256;
+pub const max_graph_handles = 16;
+pub const max_graph_layers = 4;
 pub const max_meter_sources = 16;
 pub const max_assets = 16;
 pub const max_groups = 8;
@@ -364,6 +366,38 @@ pub const GraphDescription = extern struct {
     initial_selected_point_id: types.uint32 = 0,
     viewport: ViewportDescription = .{},
     range_selection: RangeSelectionDescription = .{},
+    handles: ?[*]const GraphHandleDescription = null,
+    handle_count: types.uint32 = 0,
+    parameter_driven: types.int32 = 0,
+    layers: ?[*]const GraphLayerDescription = null,
+    layer_count: types.uint32 = 0,
+};
+
+pub const GraphLayerDescription = extern struct {
+    style: GraphStyleRole,
+    points: ?[*]const gui_graph.Point,
+    point_count: types.uint32,
+    source_id: types.uint32,
+};
+
+pub const GraphHandleDescription = extern struct {
+    handle_id: types.uint32,
+    name: [*:0]const u8,
+    x_parameter_id: vsttypes.ParamID,
+    y_parameter_id: vsttypes.ParamID,
+    x_normalized: f64,
+    y_normalized: f64,
+    x_step_count: types.int32 = 0,
+    y_step_count: types.int32 = 0,
+    has_adjustment: types.int32 = 0,
+    adjustment_parameter_id: vsttypes.ParamID = 0,
+    adjustment_label: [*:0]const u8 = "",
+    adjustment_normalized: f64 = 0.0,
+    adjustment_step: f64 = 0.01,
+    has_enabled: types.int32 = 0,
+    enabled_parameter_id: vsttypes.ParamID = 0,
+    enabled: types.int32 = 1,
+    highlight_group_index: types.uint32 = std.math.maxInt(types.uint32),
 };
 
 pub const EnvelopePoint = extern struct {

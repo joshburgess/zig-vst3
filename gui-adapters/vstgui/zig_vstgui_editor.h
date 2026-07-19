@@ -145,6 +145,8 @@ private:
     const ZigVstgui::ThemeResolver& stylesForXYPad(uint32_t index) const;
     static void actionMenuWillOpen(void* userdata, ZigVstgui::ActionMenuControl* opening);
     void closeOtherActionMenus(ZigVstgui::ActionMenuControl* opening);
+    static void graphSelectionChanged(void* userdata, uint32_t group_index);
+    void updateSelectedGroup(uint32_t group_index);
     std::vector<ZigVstgui::AccessibilityEntry> accessibilityEntries() const;
     double minimumContentHeight() const;
     double actionButtonAreaWidth() const;
@@ -168,6 +170,7 @@ private:
     std::array<VSTGUI::CTextLabel*, ZIG_VSTGUI_MAX_GROUPS> group_labels {};
     std::array<ZigVstgui::Component, ZIG_VSTGUI_MAX_GROUPS> group_components;
     uint32_t group_count {0};
+    uint32_t selected_group_index {UINT32_MAX};
     std::array<std::unique_ptr<ZigVstgui::ParameterControl>, ZIG_VSTGUI_MAX_PARAMETERS> parameter_controls;
     std::array<ZigVstguiParameterInfo, ZIG_VSTGUI_MAX_PARAMETERS> parameter_info {};
     std::array<std::string, ZIG_VSTGUI_MAX_PARAMETERS> parameter_titles;

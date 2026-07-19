@@ -7,6 +7,7 @@
 #include "vstgui/lib/events.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <limits>
@@ -33,13 +34,17 @@ GraphView::GraphView(
     const ZigVstguiGraphDescription& value_description,
     const ThemeResolver& value_styles,
     AccessibilityNode* value_accessibility,
-    ZigVstguiCallbacks value_parameter_callbacks
+    ZigVstguiCallbacks value_parameter_callbacks,
+    void* value_selection_userdata,
+    void (*value_selection_changed)(void*, uint32_t)
 )
 : CView(size),
   description(value_description),
   styles(value_styles),
   accessibility(value_accessibility),
-  parameter_callbacks(value_parameter_callbacks) {
+  parameter_callbacks(value_parameter_callbacks),
+  selection_userdata(value_selection_userdata),
+  selection_changed(value_selection_changed) {
     valid_description = description.title && validAxis(description.x_axis) && validAxis(description.y_axis) &&
         description.kind >= ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION && description.kind <= ZIG_VSTGUI_GRAPH_SPECTRUM &&
         description.style >= ZIG_VSTGUI_GRAPH_PRIMARY && description.style <= ZIG_VSTGUI_GRAPH_WARNING;
@@ -51,7 +56,7 @@ GraphView::GraphView(
         )) valid_description = false;
     if (!valid_description) return;
 
-    if (editable()) {
+    if (envelopeEditable()) {
         if (range_selection.enabled() || description.kind != ZIG_VSTGUI_GRAPH_ENVELOPE ||
             description.dynamic || description.point_count != 0 ||
             description.point_capacity == 0 || description.point_capacity > ZIG_VSTGUI_MAX_GRAPH_POINTS ||
@@ -123,6 +128,112 @@ GraphView::GraphView(
             points.push_back({index + 1, description.points[index]});
         }
     }
+    if (description.handle_count > 0) {
+        if (envelopeEditable() || range_selection.enabled() ||
+            description.handle_count > ZIG_VSTGUI_MAX_GRAPH_HANDLES || !description.handles) {
+            valid_description = false;
+            return;
+        }
+        for (uint32_t index = 0; index < description.handle_count; ++index) {
+            const auto& source = description.handles[index];
+            const bool adjustment_collides = source.has_adjustment != 0 &&
+                (source.adjustment_parameter_id == source.x_parameter_id ||
+                    source.adjustment_parameter_id == source.y_parameter_id);
+            const bool enabled_collides = source.has_enabled != 0 &&
+                (source.enabled_parameter_id == source.x_parameter_id ||
+                    source.enabled_parameter_id == source.y_parameter_id ||
+                    (source.has_adjustment != 0 &&
+                        source.enabled_parameter_id == source.adjustment_parameter_id));
+            if (source.handle_id == 0 || !source.name || source.name[0] == '\0' ||
+                source.x_parameter_id == source.y_parameter_id ||
+                !std::isfinite(source.x_normalized) || !std::isfinite(source.y_normalized) ||
+                source.x_normalized < 0.0 || source.x_normalized > 1.0 ||
+                source.y_normalized < 0.0 || source.y_normalized > 1.0 ||
+                source.x_step_count < 0 || source.y_step_count < 0 ||
+                (source.has_adjustment != 0 && (!source.adjustment_label ||
+                    !std::isfinite(source.adjustment_normalized) ||
+                    source.adjustment_normalized < 0.0 || source.adjustment_normalized > 1.0 ||
+                    !std::isfinite(source.adjustment_step) || source.adjustment_step <= 0.0)) ||
+                adjustment_collides || enabled_collides) {
+                valid_description = false;
+                return;
+            }
+            for (const auto& previous : handles) {
+                if (previous.id == source.handle_id) {
+                    valid_description = false;
+                    return;
+                }
+            }
+            PointState handle {
+                source.handle_id,
+                {
+                    denormalize(source.x_normalized, description.x_axis),
+                    denormalize(source.y_normalized, description.y_axis),
+                },
+                source.x_parameter_id,
+                source.y_parameter_id,
+                3,
+                std::make_shared<MultiParameterControlModel>(
+                    source.x_parameter_id,
+                    source.x_normalized,
+                    source.x_step_count,
+                    source.y_parameter_id,
+                    source.y_normalized,
+                    source.y_step_count,
+                    parameter_callbacks
+                ),
+            };
+            handle.name = source.name;
+            if (source.has_adjustment != 0) {
+                handle.adjustment_model = std::make_shared<ParameterControlModel>(
+                    source.adjustment_parameter_id,
+                    source.adjustment_normalized,
+                    parameter_callbacks
+                );
+                handle.adjustment_label = source.adjustment_label;
+                handle.adjustment_step = source.adjustment_step;
+            }
+            handle.enabled_parameter_id = source.enabled_parameter_id;
+            handle.has_enabled = source.has_enabled != 0;
+            handle.enabled = source.has_enabled == 0 || source.enabled != 0;
+            handle.highlight_group_index = source.highlight_group_index;
+            handles.push_back(std::move(handle));
+        }
+        if (description.initial_selected_point_id != 0 && indexOf(description.initial_selected_point_id)) {
+            selected_id = description.initial_selected_point_id;
+        }
+    } else if (description.handles) {
+        valid_description = false;
+        return;
+    }
+    if (description.layer_count > ZIG_VSTGUI_MAX_GRAPH_LAYERS ||
+        (description.layer_count > 0 && !description.layers) ||
+        (description.layer_count == 0 && description.layers)) {
+        valid_description = false;
+        return;
+    }
+    for (uint32_t layer_index = 0; layer_index < description.layer_count; ++layer_index) {
+        const auto& source = description.layers[layer_index];
+        if (source.style < ZIG_VSTGUI_GRAPH_PRIMARY || source.style > ZIG_VSTGUI_GRAPH_WARNING ||
+            source.point_count > ZIG_VSTGUI_MAX_GRAPH_POINTS ||
+            (source.point_count > 0 && !source.points) ||
+            (description.parameter_driven != 0 && source.point_count != 0)) {
+            valid_description = false;
+            return;
+        }
+        LayerState layer;
+        layer.style = source.style;
+        layer.points.reserve(source.point_count);
+        for (uint32_t point_index = 0; point_index < source.point_count; ++point_index) {
+            const auto& point = source.points[point_index];
+            if (!std::isfinite(point.x) || !std::isfinite(point.y)) {
+                valid_description = false;
+                return;
+            }
+            layer.points.push_back({point_index + 1, point});
+        }
+        layers.push_back(std::move(layer));
+    }
     if (editable() || viewport.enabled() || range_selection.enabled()) setWantsFocus(true);
     syncAccessibility();
 }
@@ -132,11 +243,27 @@ bool GraphView::valid() const {
 }
 
 bool GraphView::editable() const {
+    return envelopeEditable() || handleEditable();
+}
+
+bool GraphView::envelopeEditable() const {
     return description.point_capacity > 0 || description.editable_point_count > 0;
 }
 
+bool GraphView::handleEditable() const {
+    return description.handle_count > 0;
+}
+
+std::vector<GraphView::PointState>& GraphView::interactivePoints() {
+    return handleEditable() ? handles : points;
+}
+
+const std::vector<GraphView::PointState>& GraphView::interactivePoints() const {
+    return handleEditable() ? handles : points;
+}
+
 bool GraphView::setPoints(const ZigVstguiGraphPoint* next, uint32_t count) {
-    if (editable() || count > ZIG_VSTGUI_MAX_GRAPH_POINTS || (count > 0 && !next)) return false;
+    if (envelopeEditable() || count > ZIG_VSTGUI_MAX_GRAPH_POINTS || (count > 0 && !next)) return false;
     for (uint32_t index = 0; index < count; ++index) {
         if (!std::isfinite(next[index].x) || !std::isfinite(next[index].y)) return false;
     }
@@ -155,6 +282,27 @@ bool GraphView::setPoints(const ZigVstguiGraphPoint* next, uint32_t count) {
     return true;
 }
 
+bool GraphView::setLayerPoints(uint32_t layer_index, const ZigVstguiGraphPoint* next, uint32_t count) {
+    if (layer_index >= layers.size() || count > ZIG_VSTGUI_MAX_GRAPH_POINTS || (count > 0 && !next)) return false;
+    for (uint32_t index = 0; index < count; ++index) {
+        if (!std::isfinite(next[index].x) || !std::isfinite(next[index].y)) return false;
+    }
+    auto& layer = layers[layer_index];
+    bool changed = layer.points.size() != count;
+    if (!changed) {
+        for (uint32_t index = 0; index < count; ++index) {
+            changed = changed || layer.points[index].position.x != next[index].x ||
+                layer.points[index].position.y != next[index].y;
+        }
+    }
+    if (!changed) return false;
+    layer.points.clear();
+    layer.points.reserve(count);
+    for (uint32_t index = 0; index < count; ++index) layer.points.push_back({index + 1, next[index]});
+    invalid();
+    return true;
+}
+
 uint32_t GraphView::pointCount() const {
     return static_cast<uint32_t>(points.size());
 }
@@ -165,7 +313,7 @@ bool GraphView::transactionActive() const {
 
 bool GraphView::beginTransaction() {
     if (!editable() || transaction_active) return false;
-    transaction_points = points;
+    transaction_points = interactivePoints();
     transaction_selected_id = selected_id;
     transaction_next_point_id = next_point_id;
     transaction_active = true;
@@ -173,8 +321,9 @@ bool GraphView::beginTransaction() {
 }
 
 void GraphView::finishTransaction() {
-    for (auto& point : points) {
+    for (auto& point : interactivePoints()) {
         if (point.parameter_model && point.parameter_model->gestureActive()) point.parameter_model->endGesture();
+        if (point.adjustment_model && point.adjustment_model->gestureActive()) point.adjustment_model->endGesture();
     }
     transaction_active = false;
     transaction_points.clear();
@@ -191,11 +340,13 @@ void GraphView::cancelTransaction() {
         invalid();
     }
     if (!transaction_active) return;
-    const auto before = points;
-    for (auto& point : points) {
+    auto& values = interactivePoints();
+    const auto before = values;
+    for (auto& point : values) {
         if (point.parameter_model && point.parameter_model->gestureActive()) point.parameter_model->cancelGesture();
+        if (point.adjustment_model && point.adjustment_model->gestureActive()) point.adjustment_model->cancelGesture();
     }
-    points = transaction_points;
+    values = transaction_points;
     selected_id = transaction_selected_id;
     next_point_id = transaction_next_point_id;
     transaction_active = false;
@@ -203,26 +354,32 @@ void GraphView::cancelTransaction() {
     dragging = false;
     syncAccessibility();
     auto dirty = contentBounds(before);
-    dirty.unite(contentBounds(points));
+    dirty.unite(contentBounds(values));
     invalidRect(dirty);
 }
 
 std::optional<std::size_t> GraphView::indexOf(uint32_t point_id) const {
-    for (std::size_t index = 0; index < points.size(); ++index) {
-        if (points[index].id == point_id) return index;
+    const auto& values = interactivePoints();
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (values[index].id == point_id) return index;
     }
     return std::nullopt;
 }
 
 bool GraphView::selectPoint(uint32_t point_id) {
+    const auto& values = interactivePoints();
     const auto index = indexOf(point_id);
     if (!index) return false;
     const auto previous = selected_id ? indexOf(*selected_id) : std::nullopt;
     if (selected_id == point_id) return true;
     selected_id = point_id;
+    if (handleEditable() && selection_changed &&
+        values[*index].highlight_group_index != UINT32_MAX) {
+        selection_changed(selection_userdata, values[*index].highlight_group_index);
+    }
     syncAccessibility();
-    if (previous) invalidRect(affectedBounds(points, *previous));
-    invalidRect(affectedBounds(points, *index));
+    if (previous) invalidRect(affectedBounds(values, *previous));
+    invalidRect(affectedBounds(values, *index));
     if (!transaction_active) persistSelection();
     return true;
 }
@@ -237,7 +394,7 @@ void GraphView::persistSelection() {
 }
 
 void GraphView::persistEnvelope() {
-    if (description.envelope_state_id == 0 || !parameter_callbacks.store_editor_envelope) return;
+    if (!envelopeEditable() || description.envelope_state_id == 0 || !parameter_callbacks.store_editor_envelope) return;
     std::vector<ZigVstguiEnvelopePoint> stored;
     stored.reserve(points.size());
     for (const auto& point : points) {
@@ -309,20 +466,21 @@ bool GraphView::persistRangeSelection(const RangeSelectionModel& previous) {
 }
 
 bool GraphView::selectAdjacent(bool next) {
-    if (!editable() || points.empty()) return false;
-    std::size_t index = next ? 0 : points.size() - 1;
+    const auto& values = interactivePoints();
+    if (!editable() || values.empty()) return false;
+    std::size_t index = next ? 0 : values.size() - 1;
     if (selected_id) {
         const auto current = indexOf(*selected_id);
-        if (current) index = next ? (*current + 1) % points.size() : (*current == 0 ? points.size() - 1 : *current - 1);
+        if (current) index = next ? (*current + 1) % values.size() : (*current == 0 ? values.size() - 1 : *current - 1);
     }
-    return selectPoint(points[index].id);
+    return selectPoint(values[index].id);
 }
 
 bool GraphView::selectedPoint(ZigVstguiEnvelopePoint& point) const {
     if (!selected_id) return false;
     const auto index = indexOf(*selected_id);
     if (!index) return false;
-    const auto& selected = points[*index];
+    const auto& selected = interactivePoints()[*index];
     point = {selected.id, selected.position.x, selected.position.y};
     return true;
 }
@@ -340,7 +498,8 @@ uint32_t GraphView::allocatePointId() {
 }
 
 bool GraphView::addPoint(double x, double y) {
-    if (!transaction_active || points.size() >= description.point_capacity || !std::isfinite(x) || !std::isfinite(y)) return false;
+    if (!envelopeEditable() || !transaction_active || points.size() >= description.point_capacity ||
+        !std::isfinite(x) || !std::isfinite(y)) return false;
     const ZigVstguiGraphPoint position {
         snap(x, description.x_axis, description.snap_x),
         snap(y, description.y_axis, description.snap_y),
@@ -366,14 +525,15 @@ bool GraphView::moveSelected(double x, double y) {
     if (!transaction_active || !selected_id || !std::isfinite(x) || !std::isfinite(y)) return false;
     const auto index = indexOf(*selected_id);
     if (!index) return false;
-    const auto before = points;
+    auto& values = interactivePoints();
+    const auto before = values;
     auto position = ZigVstguiGraphPoint {
         snap(x, description.x_axis, description.snap_x),
         snap(y, description.y_axis, description.snap_y),
     };
-    if (*index > 0) position.x = std::max(position.x, points[*index - 1].position.x);
-    if (*index + 1 < points.size()) position.x = std::min(position.x, points[*index + 1].position.x);
-    auto& selected = points[*index];
+    if (envelopeEditable() && *index > 0) position.x = std::max(position.x, values[*index - 1].position.x);
+    if (envelopeEditable() && *index + 1 < values.size()) position.x = std::min(position.x, values[*index + 1].position.x);
+    auto& selected = values[*index];
     if (selected.parameter_model) {
         if (!selected.parameter_model->gestureActive() && !selected.parameter_model->beginGesture()) return false;
         if (!selected.parameter_model->performEdit(
@@ -386,15 +546,15 @@ bool GraphView::moveSelected(double x, double y) {
         }
         position.x = denormalize(selected.parameter_model->acceptedValue(0), description.x_axis);
         position.y = denormalize(selected.parameter_model->acceptedValue(1), description.y_axis);
-        if ((*index > 0 && position.x < points[*index - 1].position.x) ||
-            (*index + 1 < points.size() && position.x > points[*index + 1].position.x)) {
+        if (envelopeEditable() && ((*index > 0 && position.x < values[*index - 1].position.x) ||
+            (*index + 1 < values.size() && position.x > values[*index + 1].position.x))) {
             selected.parameter_model->cancelGesture();
             cancelTransaction();
             return false;
         }
     }
-    if (position.x == points[*index].position.x && position.y == points[*index].position.y) return true;
-    points[*index].position = position;
+    if (position.x == values[*index].position.x && position.y == values[*index].position.y) return true;
+    values[*index].position = position;
     syncAccessibility();
     invalidateChange(before, *index, *index);
     return true;
@@ -405,8 +565,28 @@ bool GraphView::adjustSelected(double x_delta, double y_delta) {
     return selectedPoint(selected) && moveSelected(selected.x + x_delta, selected.y + y_delta);
 }
 
+bool GraphView::adjustSelectedAdjustment(double steps) {
+    if (!handleEditable() || !transaction_active || !selected_id || !std::isfinite(steps)) return false;
+    const auto index = indexOf(*selected_id);
+    if (!index) return false;
+    auto& selected = handles[*index];
+    if (!selected.adjustment_model) return false;
+    if (!selected.adjustment_model->gestureActive() && !selected.adjustment_model->beginGesture()) return false;
+    if (!selected.adjustment_model->performEdit(
+            selected.adjustment_model->acceptedValue() + selected.adjustment_step * steps
+        )) {
+        selected.adjustment_model->cancelGesture();
+        cancelTransaction();
+        return false;
+    }
+    syncAccessibility();
+    invalidRect(affectedBounds(handles, *index));
+    return true;
+}
+
 bool GraphView::deleteSelected() {
-    if (!transaction_active || !selected_id || points.size() <= description.minimum_point_count) return false;
+    if (!envelopeEditable() || !transaction_active || !selected_id ||
+        points.size() <= description.minimum_point_count) return false;
     const auto index = indexOf(*selected_id);
     if (!index) return false;
     if (points[*index].parameter_model) return false;
@@ -421,23 +601,35 @@ bool GraphView::deleteSelected() {
 
 bool GraphView::setParameter(uint32_t parameter_id, double normalized) {
     if (!editable()) return false;
-    const auto before = points;
+    auto& values = interactivePoints();
+    const auto before = values;
     bool found = false;
-    for (auto& point : points) {
-        if (!point.parameter_model ||
-            (point.x_parameter_id != parameter_id && point.y_parameter_id != parameter_id)) continue;
-        point.parameter_model->hostChanged(parameter_id, normalized);
-        point.position.x = denormalize(point.parameter_model->acceptedValue(0), description.x_axis);
-        point.position.y = denormalize(point.parameter_model->acceptedValue(1), description.y_axis);
-        found = true;
+    for (auto& point : values) {
+        if (point.parameter_model &&
+            (point.x_parameter_id == parameter_id || point.y_parameter_id == parameter_id)) {
+            point.parameter_model->hostChanged(parameter_id, normalized);
+            point.position.x = denormalize(point.parameter_model->acceptedValue(0), description.x_axis);
+            point.position.y = denormalize(point.parameter_model->acceptedValue(1), description.y_axis);
+            found = true;
+        }
+        if (point.adjustment_model && point.adjustment_model->parameterId() == parameter_id) {
+            point.adjustment_model->hostChanged(normalized);
+            found = true;
+        }
+        if (point.has_enabled && point.enabled_parameter_id == parameter_id) {
+            point.enabled = normalized >= 0.5;
+            found = true;
+        }
     }
     if (!found) return false;
-    std::stable_sort(points.begin(), points.end(), [](const PointState& left, const PointState& right) {
-        return left.position.x < right.position.x;
-    });
+    if (envelopeEditable()) {
+        std::stable_sort(points.begin(), points.end(), [](const PointState& left, const PointState& right) {
+            return left.position.x < right.position.x;
+        });
+    }
     syncAccessibility();
     auto dirty = contentBounds(before);
-    dirty.unite(contentBounds(points));
+    dirty.unite(contentBounds(values));
     invalidRect(dirty);
     return true;
 }
@@ -590,9 +782,10 @@ ZigVstguiGraphPoint GraphView::graphPoint(const VSTGUI::CPoint& point) const {
 
 std::optional<std::size_t> GraphView::hitTestPoint(const VSTGUI::CPoint& point) const {
     constexpr double hit_radius = 9.0;
-    for (std::size_t offset = 0; offset < points.size(); ++offset) {
-        const std::size_t index = points.size() - offset - 1;
-        const auto candidate = viewPoint(points[index].position);
+    const auto& values = interactivePoints();
+    for (std::size_t offset = 0; offset < values.size(); ++offset) {
+        const std::size_t index = values.size() - offset - 1;
+        const auto candidate = viewPoint(values[index].position);
         const double x = candidate.x - point.x;
         const double y = candidate.y - point.y;
         if (x * x + y * y <= hit_radius * hit_radius) return index;
@@ -645,7 +838,7 @@ void GraphView::invalidateChange(
     std::size_t after_index
 ) {
     auto dirty = affectedBounds(before, before_index);
-    dirty.unite(affectedBounds(points, after_index));
+    dirty.unite(affectedBounds(interactivePoints(), after_index));
     invalidRect(dirty);
 }
 
@@ -654,15 +847,50 @@ void GraphView::syncAccessibility() {
     char text[160] {};
     ZigVstguiEnvelopePoint selected {};
     if (selectedPoint(selected)) {
-        std::snprintf(
-            text,
-            sizeof(text),
-            "%u points. Selected %u at %.3f, %.3f",
-            static_cast<uint32_t>(points.size()),
-            selected.point_id,
-            selected.x,
-            selected.y
-        );
+        const char* x_label = description.x_axis.label ? description.x_axis.label : "";
+        const char* y_label = description.y_axis.label ? description.y_axis.label : "";
+        const auto& values = interactivePoints();
+        const auto selected_index = indexOf(selected.point_id);
+        const auto& selected_state = values[*selected_index];
+        if (handleEditable()) {
+            if (selected_state.adjustment_model) {
+                std::snprintf(
+                    text,
+                    sizeof(text),
+                    "%s, %s. %.1f %s, %.1f %s, %s %.3f",
+                    selected_state.name.c_str(),
+                    selected_state.enabled ? "enabled" : "disabled",
+                    selected.x,
+                    x_label,
+                    selected.y,
+                    y_label,
+                    selected_state.adjustment_label.c_str(),
+                    selected_state.adjustment_model->acceptedValue()
+                );
+            } else {
+                std::snprintf(
+                    text,
+                    sizeof(text),
+                    "%s, %s. %.1f %s, %.1f %s",
+                    selected_state.name.c_str(),
+                    selected_state.enabled ? "enabled" : "disabled",
+                    selected.x,
+                    x_label,
+                    selected.y,
+                    y_label
+                );
+            }
+        } else {
+            std::snprintf(
+                text,
+                sizeof(text),
+                "%u points. Selected %u at %.3f, %.3f",
+                static_cast<uint32_t>(values.size()),
+                selected.point_id,
+                selected.x,
+                selected.y
+            );
+        }
         accessibility->setRange(description.y_axis.minimum, description.y_axis.maximum, selected.y);
         accessibility->setSelected(true);
     } else if (description.kind == ZIG_VSTGUI_GRAPH_WAVEFORM) {
@@ -691,7 +919,13 @@ void GraphView::syncAccessibility() {
         accessibility->clearRange();
         accessibility->setSelected(false);
     } else {
-        std::snprintf(text, sizeof(text), "%u points. No point selected", static_cast<uint32_t>(points.size()));
+        const auto& values = interactivePoints();
+        std::snprintf(
+            text,
+            sizeof(text),
+            handleEditable() ? "%u handles. No band selected" : "%u points. No point selected",
+            static_cast<uint32_t>(values.size())
+        );
         accessibility->clearRange();
         accessibility->setSelected(false);
     }
@@ -842,10 +1076,13 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
         context->drawLine(VSTGUI::CPoint(bounds.left, zero), VSTGUI::CPoint(bounds.right, zero));
     }
 
-    if (points.empty()) {
+    const bool layers_empty = std::all_of(layers.begin(), layers.end(), [](const LayerState& layer) {
+        return layer.points.empty();
+    });
+    if (points.empty() && handles.empty() && layers_empty) {
         context->setFont(styles.font(TypographyRole::body));
         context->setFontColor(style.foreground);
-        const char* message = editable() ? "Press Return or click to add a point" :
+        const char* message = envelopeEditable() ? "Press Return or click to add a point" :
             description.kind == ZIG_VSTGUI_GRAPH_WAVEFORM ? "No waveform data" :
             description.kind == ZIG_VSTGUI_GRAPH_SPECTRUM ? "No spectrum data" : "No graph data";
         context->drawString(message, bounds, VSTGUI::kCenterText);
@@ -854,14 +1091,36 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
         return;
     }
 
-    auto curve_color = style.accent;
-    if (description.style == ZIG_VSTGUI_GRAPH_SECONDARY) curve_color = style.border;
-    if (description.style == ZIG_VSTGUI_GRAPH_MODULATION) curve_color = style.foreground;
-    if (description.style == ZIG_VSTGUI_GRAPH_WARNING) {
-        curve_color = styles.resolve(ComponentKind::graph, VisualState::pressed).accent;
+    const auto color_for_style = [&](ZigVstguiGraphStyleRole role) {
+        auto color = style.accent;
+        if (role == ZIG_VSTGUI_GRAPH_SECONDARY) color = style.border;
+        if (role == ZIG_VSTGUI_GRAPH_MODULATION) color = style.foreground;
+        if (role == ZIG_VSTGUI_GRAPH_WARNING) {
+            color = styles.resolve(ComponentKind::graph, VisualState::pressed).accent;
+        }
+        return color;
+    };
+    for (const auto& layer : layers) {
+        if (layer.points.empty()) continue;
+        auto layer_color = color_for_style(layer.style);
+        layer_color.alpha = static_cast<uint8_t>(std::max(72, layer_color.alpha * 2 / 3));
+        context->setFrameColor(layer_color);
+        context->setLineWidth(1.25);
+        if (auto path = VSTGUI::owned(context->createGraphicsPath())) {
+            path->beginSubpath(viewPoint(layer.points.front().position));
+            for (std::size_t index = 1; index < layer.points.size(); ++index) {
+                path->addLine(viewPoint(layer.points[index].position));
+            }
+            context->drawGraphicsPath(path, VSTGUI::CDrawContext::kPathStroked);
+        } else {
+            for (std::size_t index = 1; index < layer.points.size(); ++index) {
+                context->drawLine(viewPoint(layer.points[index - 1].position), viewPoint(layer.points[index].position));
+            }
+        }
     }
+    const auto curve_color = color_for_style(description.style);
     context->setFrameColor(curve_color);
-    if (description.kind == ZIG_VSTGUI_GRAPH_SPECTRUM) {
+    if (!points.empty() && description.kind == ZIG_VSTGUI_GRAPH_SPECTRUM) {
         context->setLineWidth(std::clamp(bounds.getWidth() / std::max(1.0, static_cast<double>(points.size())) * 0.7, 1.0, 5.0));
         if (auto path = VSTGUI::owned(context->createGraphicsPath())) {
             for (const auto& point : points) {
@@ -879,7 +1138,7 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
                 );
             }
         }
-    } else {
+    } else if (!points.empty()) {
         context->setLineWidth(2.0);
         if (auto path = VSTGUI::owned(context->createGraphicsPath())) {
             path->beginSubpath(viewPoint(points.front().position));
@@ -893,7 +1152,7 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
     }
     if (editable()) {
         const bool focused = getFrame() && getFrame()->getFocusView() == this;
-        for (const auto& point : points) {
+        for (const auto& point : interactivePoints()) {
             const auto center = viewPoint(point.position);
             const bool selected = selected_id == point.id;
             const double radius = selected ? 6.0 : 4.0;
@@ -901,7 +1160,9 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
                 ComponentKind::graph,
                 selected && focused ? VisualState::focused : selected ? VisualState::pressed : VisualState::normal
             );
-            context->setFillColor(selected ? point_style.accent : point_style.foreground);
+            auto fill = selected ? point_style.accent : point_style.foreground;
+            if (!point.enabled) fill.alpha = static_cast<uint8_t>(std::max(48, fill.alpha / 2));
+            context->setFillColor(fill);
             context->setFrameColor(selected && focused ? point_style.border : curve_color);
             context->setLineWidth(selected ? 2.0 : 1.0);
             context->drawEllipse(
@@ -939,8 +1200,8 @@ void GraphView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
     if (!editable()) return;
     const auto hit = hitTestPoint(event.mousePosition);
     if (event.buttonState.isRight()) {
-        if (hit && beginTransaction()) {
-            selectPoint(points[*hit].id);
+        if (envelopeEditable() && hit && beginTransaction()) {
+            selectPoint(interactivePoints()[*hit].id);
             if (deleteSelected()) finishTransaction();
             else cancelTransaction();
             event.consumed = true;
@@ -950,8 +1211,12 @@ void GraphView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
     if (!event.buttonState.isLeft() || !beginTransaction()) return;
     if (getFrame()) getFrame()->setFocusView(this);
     if (hit) {
-        selectPoint(points[*hit].id);
+        selectPoint(interactivePoints()[*hit].id);
     } else {
+        if (handleEditable()) {
+            cancelTransaction();
+            return;
+        }
         const auto position = graphPoint(event.mousePosition);
         if (!addPoint(position.x, position.y)) {
             cancelTransaction();
@@ -1112,12 +1377,17 @@ void GraphView::onKeyboardEvent(VSTGUI::KeyboardEvent& event) {
         return;
     }
     if (event.virt == VSTGUI::VirtualKey::Home || event.virt == VSTGUI::VirtualKey::End) {
-        if (!points.empty() && selectPoint(event.virt == VSTGUI::VirtualKey::Home ? points.front().id : points.back().id)) {
+        const auto& values = interactivePoints();
+        if (!values.empty() && selectPoint(event.virt == VSTGUI::VirtualKey::Home ? values.front().id : values.back().id)) {
             event.consumed = true;
         }
         return;
     }
     if (event.virt == VSTGUI::VirtualKey::Return) {
+        if (handleEditable()) {
+            if (selectAdjacent(true)) event.consumed = true;
+            return;
+        }
         if (!beginTransaction()) return;
         double x = (description.x_axis.minimum + description.x_axis.maximum) * 0.5;
         double y = (description.y_axis.minimum + description.y_axis.maximum) * 0.5;
@@ -1132,8 +1402,21 @@ void GraphView::onKeyboardEvent(VSTGUI::KeyboardEvent& event) {
         return;
     }
     if (event.virt == VSTGUI::VirtualKey::Delete || event.virt == VSTGUI::VirtualKey::Back) {
+        if (handleEditable()) return;
         if (!beginTransaction()) return;
         if (deleteSelected()) finishTransaction();
+        else cancelTransaction();
+        event.consumed = true;
+        return;
+    }
+    if (handleEditable() && (event.virt == VSTGUI::VirtualKey::PageUp ||
+        event.virt == VSTGUI::VirtualKey::PageDown)) {
+        if (!selected_id && !selectAdjacent(true)) return;
+        const auto index = indexOf(*selected_id);
+        if (!index || !handles[*index].adjustment_model || !beginTransaction()) return;
+        const double direction = event.virt == VSTGUI::VirtualKey::PageUp ? 1.0 : -1.0;
+        const double fine = event.modifiers.has(VSTGUI::ModifierKey::Shift) ? 0.1 : 1.0;
+        if (adjustSelectedAdjustment(direction * fine)) finishTransaction();
         else cancelTransaction();
         event.consumed = true;
         return;
@@ -1152,6 +1435,17 @@ void GraphView::onKeyboardEvent(VSTGUI::KeyboardEvent& event) {
     if (event.virt == VSTGUI::VirtualKey::Right) x_delta = x_step;
     if (event.virt == VSTGUI::VirtualKey::Down) y_delta = -y_step;
     if (event.virt == VSTGUI::VirtualKey::Up) y_delta = y_step;
+    if (handleEditable() && (event.virt == VSTGUI::VirtualKey::Left ||
+        event.virt == VSTGUI::VirtualKey::Right)) {
+        ZigVstguiEnvelopePoint selected {};
+        if (!selectedPoint(selected)) return;
+        const double direction = event.virt == VSTGUI::VirtualKey::Left ? -1.0 : 1.0;
+        const double next = denormalize(
+            normalize(selected.x, description.x_axis) + direction * 0.01 * fine,
+            description.x_axis
+        );
+        x_delta = next - selected.x;
+    }
     if (!beginTransaction()) return;
     if (adjustSelected(x_delta, y_delta)) finishTransaction();
     else cancelTransaction();
@@ -1168,13 +1462,29 @@ bool GraphControl::build(
     const ZigVstguiGraphDescription& value_description,
     ZigVstguiGraphCallbacks value_callbacks,
     ZigVstguiCallbacks value_parameter_callbacks,
-    const ThemeResolver& styles
+    const ThemeResolver& styles,
+    void* selection_userdata,
+    void (*selection_changed)(void*, uint32_t)
 ) {
     if (!parent || label || graph) return false;
     description = value_description;
     callbacks = value_callbacks;
+    layer_source_ids.clear();
+    if (description.layer_count > ZIG_VSTGUI_MAX_GRAPH_LAYERS ||
+        (description.layer_count > 0 && !description.layers)) return false;
+    for (uint32_t index = 0; index < description.layer_count; ++index) {
+        if (description.parameter_driven != 0) {
+            if (description.layers[index].source_id == description.source_id) return false;
+            for (uint32_t previous = 0; previous < index; ++previous) {
+                if (description.layers[previous].source_id == description.layers[index].source_id) return false;
+            }
+        }
+        layer_source_ids.push_back(description.layers[index].source_id);
+    }
+    if ((description.dynamic || description.parameter_driven != 0) && !callbacks.load) return false;
     if (description.dynamic &&
-        (!callbacks.load || description.maximum_refresh_hz == 0 || description.maximum_refresh_hz > 60)) return false;
+        (description.maximum_refresh_hz == 0 || description.maximum_refresh_hz > 60)) return false;
+    if (description.dynamic && description.parameter_driven != 0) return false;
     const auto label_style = styles.resolve(ComponentKind::title);
     label = new VSTGUI::CTextLabel(VSTGUI::CRect(), description.title ? description.title : "Graph");
     label->setFont(styles.font(TypographyRole::body));
@@ -1196,6 +1506,9 @@ bool GraphControl::build(
         semantic_description = description.dynamic ? "Updating frequency spectrum" : "Static frequency spectrum";
     }
     if (description.point_capacity > 0) semantic_description = "Editable envelope. Brackets select points. Arrows adjust. Return adds. Delete removes.";
+    if (description.handle_count > 0) {
+        semantic_description = "Linked parameter handles. Brackets or Return select bands. Arrows adjust frequency and gain. Page Up and Page Down adjust the secondary parameter.";
+    }
     if (description.viewport.enabled != 0) {
         semantic_description += description.point_capacity > 0 || description.range_selection.enabled != 0
             ? " Plus and minus zoom. Command with arrows pans. Zero resets the view."
@@ -1209,14 +1522,16 @@ bool GraphControl::build(
     graph_component.accessibility().setDescription(semantic_description);
     graph_component.accessibility().setReadOnly(
         description.point_capacity == 0 && description.viewport.enabled == 0 &&
-        description.range_selection.enabled == 0
+        description.range_selection.enabled == 0 && description.handle_count == 0
     );
     graph = new GraphView(
         VSTGUI::CRect(),
         description,
         styles,
         &graph_component.accessibility(),
-        value_parameter_callbacks
+        value_parameter_callbacks,
+        selection_userdata,
+        selection_changed
     );
     if (!graph->valid()) {
         graph->forget();
@@ -1244,9 +1559,11 @@ bool GraphControl::build(
                 actionMask(AccessibilityAction::decrement) |
                 actionMask(AccessibilityAction::set_value) |
                 actionMask(AccessibilityAction::select_previous) |
-                actionMask(AccessibilityAction::select_next) |
-                actionMask(AccessibilityAction::add_point) |
-                actionMask(AccessibilityAction::delete_selected);
+                actionMask(AccessibilityAction::select_next);
+            if (description.handle_count == 0) {
+                actions |= actionMask(AccessibilityAction::add_point) |
+                    actionMask(AccessibilityAction::delete_selected);
+            }
         }
         if (graph->rangeSelectionEnabled()) {
             actions |= actionMask(AccessibilityAction::press) |
@@ -1267,6 +1584,8 @@ bool GraphControl::build(
         const uint32_t interval = std::max(16u, (1000u + description.maximum_refresh_hz - 1) / description.maximum_refresh_hz);
         timer = new VSTGUI::CVSTGUITimer([this](VSTGUI::CVSTGUITimer*) { refresh(); }, interval, false);
         refresh();
+    } else if (description.parameter_driven != 0 && !refresh()) {
+        return false;
     }
     return true;
 }
@@ -1301,15 +1620,44 @@ bool GraphControl::running() const {
 }
 
 bool GraphControl::refresh() {
-    if (!graph || !description.dynamic || !callbacks.load) return false;
-    ZigVstguiGraphPoint next[ZIG_VSTGUI_MAX_GRAPH_POINTS] {};
-    const uint32_t count = callbacks.load(callbacks.userdata, description.source_id, next, ZIG_VSTGUI_MAX_GRAPH_POINTS);
+    if (!graph || (description.dynamic == 0 && description.parameter_driven == 0) || !callbacks.load) return false;
+    std::array<ZigVstguiGraphPoint, ZIG_VSTGUI_MAX_GRAPH_POINTS> next {};
+    std::array<std::array<ZigVstguiGraphPoint, ZIG_VSTGUI_MAX_GRAPH_POINTS>, ZIG_VSTGUI_MAX_GRAPH_LAYERS> layer_points {};
+    std::array<uint32_t, ZIG_VSTGUI_MAX_GRAPH_LAYERS> layer_counts {};
+    const uint32_t count = callbacks.load(callbacks.userdata, description.source_id, next.data(), ZIG_VSTGUI_MAX_GRAPH_POINTS);
     if (count > ZIG_VSTGUI_MAX_GRAPH_POINTS) return false;
-    return graph->setPoints(next, count);
+    for (uint32_t index = 0; index < count; ++index) {
+        if (!std::isfinite(next[index].x) || !std::isfinite(next[index].y)) return false;
+    }
+    for (std::size_t layer = 0; layer < layer_source_ids.size(); ++layer) {
+        layer_counts[layer] = callbacks.load(
+            callbacks.userdata,
+            layer_source_ids[layer],
+            layer_points[layer].data(),
+            ZIG_VSTGUI_MAX_GRAPH_POINTS
+        );
+        if (layer_counts[layer] > ZIG_VSTGUI_MAX_GRAPH_POINTS) return false;
+        for (uint32_t index = 0; index < layer_counts[layer]; ++index) {
+            if (!std::isfinite(layer_points[layer][index].x) ||
+                !std::isfinite(layer_points[layer][index].y)) return false;
+        }
+    }
+    bool changed = graph->setPoints(next.data(), count);
+    for (std::size_t layer = 0; layer < layer_source_ids.size(); ++layer) {
+        changed = graph->setLayerPoints(
+            static_cast<uint32_t>(layer),
+            layer_points[layer].data(),
+            layer_counts[layer]
+        ) || changed;
+    }
+    return changed;
 }
 
 bool GraphControl::setParameter(uint32_t parameter_id, double normalized) {
-    return graph && graph->setParameter(parameter_id, normalized);
+    if (!graph) return false;
+    const bool changed = graph->setParameter(parameter_id, normalized);
+    if (description.parameter_driven != 0) return refresh() || changed;
+    return changed;
 }
 
 bool GraphControl::handleKey(uint16_t key, int16_t key_code, int16_t modifiers) {
@@ -1417,7 +1765,11 @@ bool GraphControl::performAccessibilityAction(const AccessibilityActionRequest& 
     const double y_step = description.snap_y > 0.0
         ? description.snap_y
         : (description.y_axis.maximum - description.y_axis.minimum) * 0.01;
-    if (request.action == AccessibilityAction::increment) accepted = graph->adjustSelected(0.0, y_step);
+    if (description.handle_count > 0 && request.action == AccessibilityAction::increment) {
+        accepted = graph->adjustSelectedAdjustment(1.0);
+    } else if (description.handle_count > 0 && request.action == AccessibilityAction::decrement) {
+        accepted = graph->adjustSelectedAdjustment(-1.0);
+    } else if (request.action == AccessibilityAction::increment) accepted = graph->adjustSelected(0.0, y_step);
     else if (request.action == AccessibilityAction::decrement) accepted = graph->adjustSelected(0.0, -y_step);
     else if (request.action == AccessibilityAction::set_value) accepted = graph->moveSelected(selected.x, request.value);
     if (accepted) graph->finishTransaction();

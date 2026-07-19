@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace ZigVstgui {
@@ -25,11 +26,14 @@ public:
         const ZigVstguiGraphDescription& description,
         const ThemeResolver& styles,
         AccessibilityNode* accessibility,
-        ZigVstguiCallbacks parameter_callbacks = {}
+        ZigVstguiCallbacks parameter_callbacks = {},
+        void* selection_userdata = nullptr,
+        void (*selection_changed)(void* userdata, uint32_t group_index) = nullptr
     );
 
     bool valid() const;
     bool setPoints(const ZigVstguiGraphPoint* points, uint32_t count);
+    bool setLayerPoints(uint32_t layer, const ZigVstguiGraphPoint* points, uint32_t count);
     uint32_t pointCount() const;
     bool editable() const;
     bool transactionActive() const;
@@ -42,6 +46,7 @@ public:
     bool addPoint(double x, double y);
     bool moveSelected(double x, double y);
     bool adjustSelected(double x_delta, double y_delta);
+    bool adjustSelectedAdjustment(double delta);
     bool deleteSelected();
     bool setParameter(uint32_t parameter_id, double normalized);
     bool viewportEnabled() const;
@@ -80,8 +85,24 @@ private:
         uint32_t y_parameter_id {0};
         uint32_t parameter_mask {0};
         std::shared_ptr<MultiParameterControlModel> parameter_model;
+        std::string name;
+        std::shared_ptr<ParameterControlModel> adjustment_model;
+        std::string adjustment_label;
+        double adjustment_step {0.01};
+        uint32_t enabled_parameter_id {0};
+        bool has_enabled {false};
+        bool enabled {true};
+        uint32_t highlight_group_index {UINT32_MAX};
+    };
+    struct LayerState {
+        ZigVstguiGraphStyleRole style {ZIG_VSTGUI_GRAPH_SECONDARY};
+        std::vector<PointState> points;
     };
 
+    bool envelopeEditable() const;
+    bool handleEditable() const;
+    std::vector<PointState>& interactivePoints();
+    const std::vector<PointState>& interactivePoints() const;
     double normalize(double value, const ZigVstguiGraphAxis& axis) const;
     double denormalize(double value, const ZigVstguiGraphAxis& axis) const;
     double snap(double value, const ZigVstguiGraphAxis& axis, double step) const;
@@ -107,6 +128,8 @@ private:
     AccessibilityNode* accessibility;
     ZigVstguiCallbacks parameter_callbacks {};
     std::vector<PointState> points;
+    std::vector<PointState> handles;
+    std::vector<LayerState> layers;
     std::vector<PointState> transaction_points;
     std::optional<uint32_t> selected_id;
     std::optional<uint32_t> transaction_selected_id;
@@ -121,6 +144,8 @@ private:
     ViewportModel viewport;
     RangeSelectionModel range_selection;
     RangeSelectionModel range_transaction;
+    void* selection_userdata {nullptr};
+    void (*selection_changed)(void* userdata, uint32_t group_index) {nullptr};
 };
 
 class GraphControl final : public VSTGUI::ViewListenerAdapter {
@@ -131,7 +156,9 @@ public:
         const ZigVstguiGraphDescription& description,
         ZigVstguiGraphCallbacks callbacks,
         ZigVstguiCallbacks parameter_callbacks,
-        const ThemeResolver& styles
+        const ThemeResolver& styles,
+        void* selection_userdata = nullptr,
+        void (*selection_changed)(void* userdata, uint32_t group_index) = nullptr
     );
     void clear();
     void setBounds(const VSTGUI::CRect& label_bounds, const VSTGUI::CRect& graph_bounds);
@@ -164,6 +191,7 @@ private:
     Component graph_component;
     ZigVstguiGraphDescription description {};
     ZigVstguiGraphCallbacks callbacks {};
+    std::vector<uint32_t> layer_source_ids;
     bool active {false};
 };
 

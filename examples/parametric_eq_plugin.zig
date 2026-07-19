@@ -24,6 +24,11 @@ pub const high_type_param_id: u32 = 31;
 pub const high_frequency_param_id: u32 = 32;
 pub const high_gain_param_id: u32 = 33;
 pub const high_q_param_id: u32 = 34;
+const response_graph_source_id: u32 = 1;
+const low_response_source_id: u32 = 2;
+const mid_response_source_id: u32 = 3;
+const high_response_source_id: u32 = 4;
+const response_point_count: usize = 97;
 
 pub const FilterType = enum { low_shelf, bell, high_shelf };
 pub const FilterTypeParam = core.parameters.EnumParam(FilterType);
@@ -55,29 +60,6 @@ const Definition = struct {
 
 pub const Spec = core.plugin.PluginSpec(Definition);
 pub const eq_parameter_set = Spec.ParameterSet.init(.{});
-
-const response_points = blk: {
-    @setEvalBranchQuota(100_000);
-    var points: [97]vst3.vstgui.GraphPoint = undefined;
-    const configs = [_]core.dsp.BiquadConfig{
-        .{ .kind = .low_shelf, .sample_rate = 48_000.0, .frequency_hz = 120.0, .gain_db = 0.0, .q = 0.707 },
-        .{ .kind = .bell, .sample_rate = 48_000.0, .frequency_hz = 1_000.0, .gain_db = 0.0, .q = 1.0 },
-        .{ .kind = .high_shelf, .sample_rate = 48_000.0, .frequency_hz = 8_000.0, .gain_db = 0.0, .q = 0.707 },
-    };
-    const coefficients = [_]core.dsp.BiquadCoefficients{
-        configs[0].coefficients() catch unreachable,
-        configs[1].coefficients() catch unreachable,
-        configs[2].coefficients() catch unreachable,
-    };
-    for (&points, 0..) |*point, index| {
-        const normalized = @as(f64, @floatFromInt(index)) / @as(f64, @floatFromInt(points.len - 1));
-        const frequency = 20.0 * std.math.pow(f64, 1_000.0, normalized);
-        var magnitude_db: f64 = 0.0;
-        for (coefficients) |filter| magnitude_db += filter.magnitudeDb(48_000.0, frequency);
-        point.* = .{ .x = frequency, .y = magnitude_db };
-    }
-    break :blk points;
-};
 
 const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const controller_name = "ParametricEqController";
@@ -114,7 +96,19 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .kind = .transfer_function,
                     .x_axis = .{ .minimum = 20.0, .maximum = 20_000.0, .scale = .logarithmic, .label = "Hz" },
                     .y_axis = .{ .minimum = -24.0, .maximum = 24.0, .scale = .decibels, .label = "dB" },
-                    .points = &response_points,
+                    .source_id = response_graph_source_id,
+                    .source = .controller,
+                    .parameter_driven = true,
+                    .handles = &.{
+                        .{ .id = 1, .name = "Low", .x_parameter_id = low_frequency_param_id, .y_parameter_id = low_gain_param_id, .adjustment_parameter_id = low_q_param_id, .adjustment_label = "Q", .enabled_parameter_id = low_enabled_param_id, .highlight_group_index = 1 },
+                        .{ .id = 2, .name = "Mid", .x_parameter_id = mid_frequency_param_id, .y_parameter_id = mid_gain_param_id, .adjustment_parameter_id = mid_q_param_id, .adjustment_label = "Q", .enabled_parameter_id = mid_enabled_param_id, .highlight_group_index = 2 },
+                        .{ .id = 3, .name = "High", .x_parameter_id = high_frequency_param_id, .y_parameter_id = high_gain_param_id, .adjustment_parameter_id = high_q_param_id, .adjustment_label = "Q", .enabled_parameter_id = high_enabled_param_id, .highlight_group_index = 3 },
+                    },
+                    .layers = &.{
+                        .{ .style = .secondary, .source_id = low_response_source_id, .source = .controller },
+                        .{ .style = .modulation, .source_id = mid_response_source_id, .source = .controller },
+                        .{ .style = .secondary, .source_id = high_response_source_id, .source = .controller },
+                    },
                 },
                 .{
                     .title = "Spectrum",
@@ -136,6 +130,54 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 },
             },
         });
+    }
+
+    pub fn loadGuiGraph(
+        controller: *vst.ivsteditcontroller.IEditController,
+        source_id: u32,
+        output: []vst3.vstgui.GraphPoint,
+    ) usize {
+        if (source_id < response_graph_source_id or source_id > high_response_source_id or
+            output.len < response_point_count) return 0;
+        const bypassed = Controller.getNormalized(controller, bypass_param_id) >= 0.5;
+        const output_db = eq_parameter_set.plainFromNormalizedById(
+            output_param_id,
+            Controller.getNormalized(controller, output_param_id),
+        ) orelse 0.0;
+        var coefficients: [band_parameter_ids.len]core.dsp.BiquadCoefficients = undefined;
+        for (band_parameter_ids, 0..) |ids, index| {
+            const enabled = !bypassed and Controller.getNormalized(controller, ids.enabled) >= 0.5;
+            const filter_type = (FilterTypeParam{ .id = ids.filter_type, .name = "Type", .default = .bell }).denormalize(
+                Controller.getNormalized(controller, ids.filter_type),
+            );
+            coefficients[index] = if (enabled)
+                (core.dsp.BiquadConfig{
+                    .kind = switch (filter_type) {
+                        .low_shelf => .low_shelf,
+                        .bell => .bell,
+                        .high_shelf => .high_shelf,
+                    },
+                    .sample_rate = 48_000.0,
+                    .frequency_hz = eq_parameter_set.plainFromNormalizedById(ids.frequency, Controller.getNormalized(controller, ids.frequency)) orelse 1_000.0,
+                    .gain_db = eq_parameter_set.plainFromNormalizedById(ids.gain, Controller.getNormalized(controller, ids.gain)) orelse 0.0,
+                    .q = eq_parameter_set.plainFromNormalizedById(ids.q, Controller.getNormalized(controller, ids.q)) orelse 1.0,
+                }).coefficients() catch core.dsp.BiquadCoefficients.identity()
+            else
+                core.dsp.BiquadCoefficients.identity();
+        }
+        for (output[0..response_point_count], 0..) |*point, index| {
+            const normalized = @as(f64, @floatFromInt(index)) / @as(f64, @floatFromInt(response_point_count - 1));
+            const frequency = 20.0 * std.math.pow(f64, 1_000.0, normalized);
+            var magnitude_db: f64 = 0.0;
+            if (source_id == response_graph_source_id) {
+                magnitude_db = if (bypassed) 0.0 else output_db;
+                for (coefficients) |filter| magnitude_db += filter.magnitudeDb(48_000.0, frequency);
+            } else {
+                magnitude_db = coefficients[source_id - low_response_source_id].magnitudeDb(48_000.0, frequency);
+            }
+            point.* = .{ .x = frequency, .y = magnitude_db };
+        }
+        return response_point_count;
     }
 });
 
@@ -325,11 +367,30 @@ test "parametric EQ component instances isolate parameter state" {
 }
 
 test "parametric EQ response is finite across its display range" {
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &out));
+    const controller: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(out orelse return error.MissingController));
+    defer _ = controller.vtable.release(controller);
+    var response_points: [response_point_count]vst3.vstgui.GraphPoint = undefined;
+    try std.testing.expectEqual(response_points.len, Controller.loadGuiGraph(controller, response_graph_source_id, &response_points));
     for (response_points) |point| {
         try std.testing.expect(std.math.isFinite(point.x));
         try std.testing.expect(std.math.isFinite(point.y));
         try std.testing.expect(point.x >= 20.0 and point.x <= 20_000.0);
     }
+    try std.testing.expectEqual(types.kResultOk, controller.vtable.setParamNormalized(controller, mid_gain_param_id, 0.75));
+    try std.testing.expectEqual(response_points.len, Controller.loadGuiGraph(controller, response_graph_source_id, &response_points));
+    var maximum_gain: f64 = -std.math.inf(f64);
+    for (response_points) |point| maximum_gain = @max(maximum_gain, point.y);
+    try std.testing.expect(maximum_gain > 8.0);
+    var mid_response: [response_point_count]vst3.vstgui.GraphPoint = undefined;
+    try std.testing.expectEqual(mid_response.len, Controller.loadGuiGraph(controller, mid_response_source_id, &mid_response));
+    var maximum_mid_gain: f64 = -std.math.inf(f64);
+    for (mid_response) |point| maximum_mid_gain = @max(maximum_mid_gain, point.y);
+    try std.testing.expect(maximum_mid_gain > 8.0);
+    try std.testing.expectEqual(types.kResultOk, controller.vtable.setParamNormalized(controller, bypass_param_id, 1.0));
+    try std.testing.expectEqual(response_points.len, Controller.loadGuiGraph(controller, response_graph_source_id, &response_points));
+    for (response_points) |point| try std.testing.expectApproxEqAbs(@as(f64, 0.0), point.y, 0.0000001);
 }
 
 const TestParameters = struct {

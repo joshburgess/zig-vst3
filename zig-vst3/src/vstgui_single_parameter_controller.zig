@@ -37,6 +37,25 @@ pub const Meter = struct {
 
 pub const GraphPoint = gui_graph.Point;
 pub const EnvelopePoint = vstgui_editor_view.EnvelopePoint;
+pub const GraphHandle = struct {
+    id: u32,
+    name: [*:0]const u8,
+    x_parameter_id: vsttypes.ParamID,
+    y_parameter_id: vsttypes.ParamID,
+    x_step_count: types.int32 = 0,
+    y_step_count: types.int32 = 0,
+    adjustment_parameter_id: ?vsttypes.ParamID = null,
+    adjustment_label: [*:0]const u8 = "",
+    adjustment_step: f64 = 0.01,
+    enabled_parameter_id: ?vsttypes.ParamID = null,
+    highlight_group_index: ?u32 = null,
+};
+pub const GraphLayer = struct {
+    style: GraphStyleRole = .secondary,
+    points: []const GraphPoint = &.{},
+    source_id: types.uint32 = 0,
+    source: GraphSource = .component,
+};
 pub const GraphScale = vstgui_editor_view.GraphScale;
 pub const GraphKind = vstgui_editor_view.GraphKind;
 pub const GraphStyleRole = vstgui_editor_view.GraphStyleRole;
@@ -143,6 +162,9 @@ pub const Graph = struct {
     envelope_state_id: u32 = 0,
     viewport: ?Viewport = null,
     range_selection: ?RangeSelection = null,
+    handles: []const GraphHandle = &.{},
+    parameter_driven: bool = false,
+    layers: []const GraphLayer = &.{},
 };
 
 pub const XYPad = struct {
@@ -602,6 +624,8 @@ fn createConfiguredView(
         if (graphs.len > vstgui_editor_view.max_graphs) return null;
         var graph_descriptions: [vstgui_editor_view.max_graphs]vstgui_editor_view.GraphDescription = undefined;
         var persisted_points: [vstgui_editor_view.max_graphs][editor_state.maximum_envelope_points]EnvelopePoint = undefined;
+        var graph_handles: [vstgui_editor_view.max_graphs][vstgui_editor_view.max_graph_handles]vstgui_editor_view.GraphHandleDescription = undefined;
+        var graph_layers: [vstgui_editor_view.max_graphs][vstgui_editor_view.max_graph_layers]vstgui_editor_view.GraphLayerDescription = undefined;
         for (graphs, 0..) |graph, index| {
             var editable_points = graph.editable_points;
             var initial_selected_point_id: u32 = 0;
@@ -742,9 +766,13 @@ fn createConfiguredView(
             }
             if (graph.points.len > vstgui_editor_view.max_graph_points or
                 editable_points.len > vstgui_editor_view.max_graph_points or
-                (graph.dynamic and graph.source_id & vstgui_editor_view.controller_graph_source_flag != 0) or
+                graph.handles.len > vstgui_editor_view.max_graph_handles or
+                graph.layers.len > vstgui_editor_view.max_graph_layers or
+                (graph.parameter_driven and (graph.dynamic or graph.source != .controller)) or
+                (graph.source_id & vstgui_editor_view.controller_graph_source_flag != 0) or
                 graph.x_axis.maximum <= graph.x_axis.minimum or graph.y_axis.maximum <= graph.y_axis.minimum or
-                (graph.range_selection != null and graph.point_capacity > 0) or
+                (graph.range_selection != null and (graph.point_capacity > 0 or graph.handles.len > 0)) or
+                (graph.point_capacity > 0 and graph.handles.len > 0) or
                 (graph.dynamic and (graph.maximum_refresh_hz == 0 or graph.maximum_refresh_hz > 60)) or
                 (graph.point_capacity == 0 and (graph.editable_points.len > 0 or graph.minimum_point_count > 0 or
                     graph.snap_x != 0.0 or graph.snap_y != 0.0)) or
@@ -754,6 +782,27 @@ fn createConfiguredView(
                     graph.minimum_point_count > editable_points.len or
                     !std.math.isFinite(graph.snap_x) or !std.math.isFinite(graph.snap_y) or
                     graph.snap_x < 0.0 or graph.snap_y < 0.0))) return null;
+            for (graph.layers, 0..) |layer, layer_index| {
+                if (layer.points.len > vstgui_editor_view.max_graph_points or
+                    layer.source_id & vstgui_editor_view.controller_graph_source_flag != 0 or
+                    (graph.parameter_driven and (layer.points.len != 0 or layer.source != .controller)) or
+                    (!graph.parameter_driven and layer.source == .controller)) return null;
+                if (graph.parameter_driven) {
+                    if (layer.source_id == graph.source_id) return null;
+                    for (graph.layers[0..layer_index]) |previous| {
+                        if (previous.source_id == layer.source_id) return null;
+                    }
+                }
+                graph_layers[index][layer_index] = .{
+                    .style = layer.style,
+                    .points = if (layer.points.len == 0) null else layer.points.ptr,
+                    .point_count = @intCast(layer.points.len),
+                    .source_id = layer.source_id | if (layer.source == .controller)
+                        vstgui_editor_view.controller_graph_source_flag
+                    else
+                        0,
+                };
+            }
             for (editable_points, 0..) |point, point_index| {
                 if (point.point_id == 0 or !std.math.isFinite(point.x) or !std.math.isFinite(point.y) or
                     point.parameter_mask & ~@as(types.uint32, 3) != 0 or
@@ -775,6 +824,65 @@ fn createConfiguredView(
                     }
                     if (!found_x or !found_y) return null;
                 }
+            }
+            for (graph.handles, 0..) |handle, handle_index| {
+                if (handle.id == 0 or std.mem.span(handle.name).len == 0 or
+                    handle.x_parameter_id == handle.y_parameter_id or
+                    handle.x_step_count < 0 or handle.y_step_count < 0 or
+                    !std.math.isFinite(handle.adjustment_step) or handle.adjustment_step <= 0.0) return null;
+                if (handle.highlight_group_index) |group_index| {
+                    if (group_index >= composition.groups.len) return null;
+                }
+                for (graph.handles[0..handle_index]) |previous| {
+                    if (previous.id == handle.id) return null;
+                }
+                var found_x = false;
+                var found_y = false;
+                var found_adjustment = handle.adjustment_parameter_id == null;
+                var found_enabled = handle.enabled_parameter_id == null;
+                for (parameters) |parameter| {
+                    found_x = found_x or parameter.id == handle.x_parameter_id;
+                    found_y = found_y or parameter.id == handle.y_parameter_id;
+                    if (handle.adjustment_parameter_id) |parameter_id| {
+                        found_adjustment = found_adjustment or parameter.id == parameter_id;
+                    }
+                    if (handle.enabled_parameter_id) |parameter_id| {
+                        found_enabled = found_enabled or parameter.id == parameter_id;
+                    }
+                }
+                if (!found_x or !found_y or !found_adjustment or !found_enabled) return null;
+                if (handle.adjustment_parameter_id) |parameter_id| {
+                    if (parameter_id == handle.x_parameter_id or parameter_id == handle.y_parameter_id) return null;
+                }
+                if (handle.enabled_parameter_id) |parameter_id| {
+                    if (parameter_id == handle.x_parameter_id or parameter_id == handle.y_parameter_id or
+                        (handle.adjustment_parameter_id != null and parameter_id == handle.adjustment_parameter_id.?)) return null;
+                }
+                graph_handles[index][handle_index] = .{
+                    .handle_id = handle.id,
+                    .name = handle.name,
+                    .x_parameter_id = handle.x_parameter_id,
+                    .y_parameter_id = handle.y_parameter_id,
+                    .x_normalized = Controller.getNormalized(controller, handle.x_parameter_id),
+                    .y_normalized = Controller.getNormalized(controller, handle.y_parameter_id),
+                    .x_step_count = handle.x_step_count,
+                    .y_step_count = handle.y_step_count,
+                    .has_adjustment = @intFromBool(handle.adjustment_parameter_id != null),
+                    .adjustment_parameter_id = handle.adjustment_parameter_id orelse 0,
+                    .adjustment_label = handle.adjustment_label,
+                    .adjustment_normalized = if (handle.adjustment_parameter_id) |parameter_id|
+                        Controller.getNormalized(controller, parameter_id)
+                    else
+                        0.0,
+                    .adjustment_step = handle.adjustment_step,
+                    .has_enabled = @intFromBool(handle.enabled_parameter_id != null),
+                    .enabled_parameter_id = handle.enabled_parameter_id orelse 0,
+                    .enabled = if (handle.enabled_parameter_id) |parameter_id|
+                        @intFromBool(Controller.getNormalized(controller, parameter_id) >= 0.5)
+                    else
+                        1,
+                    .highlight_group_index = handle.highlight_group_index orelse std.math.maxInt(types.uint32),
+                };
             }
             graph_descriptions[index] = .{
                 .title = graph.title,
@@ -811,6 +919,11 @@ fn createConfiguredView(
                 .initial_selected_point_id = initial_selected_point_id,
                 .viewport = viewport_description,
                 .range_selection = range_selection_description,
+                .handles = if (graph.handles.len == 0) null else &graph_handles[index],
+                .handle_count = @intCast(graph.handles.len),
+                .parameter_driven = @intFromBool(graph.parameter_driven),
+                .layers = if (graph.layers.len == 0) null else &graph_layers[index],
+                .layer_count = @intCast(graph.layers.len),
             };
         }
         if (xy_pads.len > vstgui_editor_view.max_xy_pads) return null;

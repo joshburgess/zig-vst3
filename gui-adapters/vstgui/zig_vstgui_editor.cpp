@@ -1144,7 +1144,9 @@ void ZigVstguiEditor::buildFrame() {
                 graph_descriptions[index],
                 graph_callbacks,
                 parameter_callbacks,
-                stylesForGraph(index))) return;
+                stylesForGraph(index),
+                this,
+                graphSelectionChanged)) return;
     }
     resize_control.build(content, theme_resolver);
     resize_control.setSize(width, height);
@@ -1892,6 +1894,30 @@ void ZigVstguiEditor::closeOtherActionMenus(ZigVstgui::ActionMenuControl* openin
     for (uint32_t index = 0; index < action_menu_count; ++index) {
         auto* menu = action_menu_controls[index].get();
         if (menu != opening) menu->close(false);
+    }
+}
+
+void ZigVstguiEditor::graphSelectionChanged(void* userdata, uint32_t group_index) {
+    auto* editor = static_cast<ZigVstguiEditor*>(userdata);
+    if (editor) editor->updateSelectedGroup(group_index);
+}
+
+void ZigVstguiEditor::updateSelectedGroup(uint32_t group_index) {
+    if (group_index >= group_count || selected_group_index == group_index) return;
+    selected_group_index = group_index;
+    for (uint32_t index = 0; index < group_count; ++index) {
+        auto* label = group_labels[index];
+        if (!label) continue;
+        const auto state = index == selected_group_index
+            ? ZigVstgui::VisualState::focused
+            : ZigVstgui::VisualState::normal;
+        const auto style = group_styles[index]->resolve(ZigVstgui::ComponentKind::title, state);
+        label->setFontColor(style.foreground);
+        label->setBackColor(style.background);
+        label->setFrameColor(style.border);
+        label->setFrameWidth(index == selected_group_index ? std::max(2.0, style.frame_width) : style.frame_width);
+        label->invalid();
+        group_components[index].accessibility().setSelected(index == selected_group_index);
     }
 }
 

@@ -301,6 +301,14 @@ To bind a point to two automatable parameters, set `parameter_mask = 3` with dis
 
 Set `selection_state_id` and `envelope_state_id` to fields in the controller's public `editor_state.Store` to persist non-parameter selection and geometry. The store restores before each view is built. VSTGUI writes completed envelope transactions and selection changes back through toolkit-neutral callbacks. Parameter-backed points recover their declared bindings by stable point ID, so restoring UI geometry does not emit automation or change parameter state.
 
+### Linked Parameter Handles and Layers
+
+A transfer graph may declare fixed `GraphHandle` values independently from its curve points. Each handle binds x and y to distinct parameters. An optional adjustment parameter provides a third dimension such as Q, and an optional enabled parameter dims the handle without removing its accessible state. `highlight_group_index` links selection to a declared parameter group so the matching panel heading receives visible selected styling and selected accessibility state.
+
+Set `parameter_driven = true` and `source = .controller` when the controller calculates the curve from accepted parameter values. The adapter loads it when the editor opens and after parameter notifications. It does not start a refresh timer. Up to four `GraphLayer` overlays may provide bounded band or reference curves through separate controller source IDs. Every primary or layered curve remains limited to 256 finite points.
+
+Pointer movement edits x and y through one ordered grouped gesture. Arrows adjust both axes, Page Up and Page Down adjust the optional third parameter, and brackets select adjacent handles. Host changes update the matching handle without emitting a graph gesture. A rejected edit restores both axes. Accessibility exposes the selected handle name, enabled state, axes, and optional adjustment value.
+
 ## Native Accessibility
 
 Every component keeps its role, name, description, value, range, enabled state, focus state, checked state, and read-only state in the toolkit-neutral accessibility model. Focus, press, increment, decrement, and set-value actions use the same model. Native bridges observe and operate it only while an editor is open. They do not create a second parameter attachment or gesture path.
@@ -522,7 +530,8 @@ Experimental extensions:
 
 - `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and `Canvas` drawing functions.
 - `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader is their only production consumer.
-- Rotary controls currently have no plugin consumer. Bipolar and decibel controls each have one.
+- Rotary controls are shared by the gallery and parametric EQ, but remain experimental until the EQ release gates and manual host checks pass. Bipolar and decibel controls each have one production consumer.
+- `GraphHandle`, `GraphLayer`, and parameter-driven controller curves. The parametric EQ is currently their only production consumer.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
 - `AudioFileImporter`, controller-owned import status and command callbacks, and controller-sourced graph snapshots. The channel strip and IR loader use the contract, but decoded audio transport still has one production consumer.

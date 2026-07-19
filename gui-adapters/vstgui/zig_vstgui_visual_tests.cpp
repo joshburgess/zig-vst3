@@ -463,6 +463,59 @@ Snapshot signalViews() {
     };
 }
 
+Snapshot linkedEqResponse() {
+    return {
+        "linked-eq-response.png",
+        640,
+        220,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            context.setFillColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            context.drawRect(VSTGUI::CRect(0, 0, 640, 220), VSTGUI::kDrawFilled);
+            std::array<ZigVstguiGraphPoint, 97> response {};
+            std::array<ZigVstguiGraphPoint, 97> low_response {};
+            std::array<ZigVstguiGraphPoint, 97> mid_response {};
+            std::array<ZigVstguiGraphPoint, 97> high_response {};
+            for (std::size_t index = 0; index < response.size(); ++index) {
+                const double normalized = static_cast<double>(index) / static_cast<double>(response.size() - 1);
+                const double frequency = 20.0 * std::pow(1000.0, normalized);
+                const double low = 7.0 / (1.0 + std::exp((normalized - 0.25) * 24.0));
+                const double mid = -8.0 * std::exp(-std::pow((normalized - 0.57) / 0.09, 2.0));
+                const double high = 5.0 / (1.0 + std::exp(-(normalized - 0.82) * 28.0));
+                response[index] = {frequency, low + mid + high};
+                low_response[index] = {frequency, low};
+                mid_response[index] = {frequency, mid};
+                high_response[index] = {frequency, high};
+            }
+            const ZigVstguiGraphHandleDescription handles[] = {
+                {1, "Low", 10, 11, 0.25, 0.65, 0, 0, 1, 12, "Q", 0.35, 0.01, 1, 13, 1, 1},
+                {2, "Mid", 20, 21, 0.57, 0.33, 0, 0, 1, 22, "Q", 0.72, 0.01, 1, 23, 1, 2},
+                {3, "High", 30, 31, 0.82, 0.60, 0, 0, 1, 32, "Q", 0.42, 0.01, 1, 33, 0, 3},
+            };
+            ZigVstguiGraphDescription description {
+                "EQ Response", ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION, ZIG_VSTGUI_GRAPH_PRIMARY,
+                {20.0, 20'000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"},
+                {-24.0, 24.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+                response.data(), static_cast<uint32_t>(response.size()), 0, 0, 0,
+            };
+            description.handles = handles;
+            description.handle_count = 3;
+            const ZigVstguiGraphLayerDescription layers[] = {
+                {ZIG_VSTGUI_GRAPH_SECONDARY, low_response.data(), static_cast<uint32_t>(low_response.size()), 0},
+                {ZIG_VSTGUI_GRAPH_MODULATION, mid_response.data(), static_cast<uint32_t>(mid_response.size()), 0},
+                {ZIG_VSTGUI_GRAPH_SECONDARY, high_response.data(), static_cast<uint32_t>(high_response.size()), 0},
+            };
+            description.layers = layers;
+            description.layer_count = 3;
+            ZigVstgui::AccessibilityNode accessibility;
+            ZigVstgui::GraphView graph(VSTGUI::CRect(12, 12, 628, 208), description, styles, &accessibility);
+            graph.selectPoint(2);
+            graph.draw(&context);
+        },
+    };
+}
+
 Snapshot graphViewports() {
     return {
         "graph-viewports.png",
@@ -1290,6 +1343,43 @@ double benchmarkSignalViewsDraw() {
     return benchmarkDraw(container, offscreen);
 }
 
+double benchmarkLinkedEqResponseDraw() {
+    ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 640, 220)));
+    container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+    std::array<ZigVstguiGraphPoint, 256> response {};
+    for (std::size_t index = 0; index < response.size(); ++index) {
+        const double normalized = static_cast<double>(index) / static_cast<double>(response.size() - 1);
+        response[index] = {20.0 * std::pow(1000.0, normalized), 12.0 * std::sin(normalized * 6.28318530718)};
+    }
+    const ZigVstguiGraphHandleDescription handles[] = {
+        {1, "Low", 10, 11, 0.25, 0.65, 0, 0, 1, 12, "Q", 0.35, 0.01, 1, 13, 1, 1},
+        {2, "Mid", 20, 21, 0.57, 0.33, 0, 0, 1, 22, "Q", 0.72, 0.01, 1, 23, 1, 2},
+        {3, "High", 30, 31, 0.82, 0.60, 0, 0, 1, 32, "Q", 0.42, 0.01, 1, 33, 0, 3},
+    };
+    ZigVstguiGraphDescription description {
+        "EQ Response", ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION, ZIG_VSTGUI_GRAPH_PRIMARY,
+        {20.0, 20'000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"},
+        {-24.0, 24.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+        response.data(), static_cast<uint32_t>(response.size()), 0, 0, 0,
+    };
+    description.handles = handles;
+    description.handle_count = 3;
+    const ZigVstguiGraphLayerDescription layers[] = {
+        {ZIG_VSTGUI_GRAPH_SECONDARY, response.data(), static_cast<uint32_t>(response.size()), 0},
+        {ZIG_VSTGUI_GRAPH_MODULATION, response.data(), static_cast<uint32_t>(response.size()), 0},
+        {ZIG_VSTGUI_GRAPH_SECONDARY, response.data(), static_cast<uint32_t>(response.size()), 0},
+    };
+    description.layers = layers;
+    description.layer_count = 3;
+    ZigVstgui::AccessibilityNode accessibility;
+    container->addView(new ZigVstgui::GraphView(
+        VSTGUI::CRect(8, 8, 632, 212), description, styles, &accessibility
+    ));
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(640, 220), 1.0);
+    return benchmarkDraw(container, offscreen);
+}
+
 double benchmarkGraphOverlayDraw(bool with_selection) {
     ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
     auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 180)));
@@ -1338,6 +1428,7 @@ int main(int argc, char** argv) {
         graphs(),
         graphViewports(),
         signalViews(),
+        linkedEqResponse(),
         xyPad(),
         editableEnvelope(),
         presetBrowsers(),
@@ -1364,6 +1455,7 @@ int main(int argc, char** argv) {
         const double rotary_average = benchmarkRotaryDraw();
         const double progress_average = benchmarkProgressDraw();
         const double signal_views_average = benchmarkSignalViewsDraw();
+        const double linked_eq_average = benchmarkLinkedEqResponseDraw();
         const double viewport_average = benchmarkViewportDraw();
         const double range_selection_average = benchmarkRangeSelectionDraw();
         std::fprintf(stderr, "visual regression warm render average: %.1f us\n", average);
@@ -1374,13 +1466,15 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "rotary warm render average: %.1f us\n", rotary_average);
         std::fprintf(stderr, "progress warm render average: %.1f us\n", progress_average);
         std::fprintf(stderr, "signal views warm render average: %.1f us\n", signal_views_average);
+        std::fprintf(stderr, "linked EQ warm render average: %.1f us\n", linked_eq_average);
         std::fprintf(stderr, "viewport warm render average: %.1f us\n", viewport_average);
         std::fprintf(stderr, "range selection warm render average: %.1f us\n", range_selection_average);
         if (average > warm_draw_budget_us || piano_average > warm_draw_budget_us ||
             step_sequencer_average > warm_draw_budget_us || file_drop_average > warm_draw_budget_us ||
             action_button_average > warm_draw_budget_us || rotary_average > warm_draw_budget_us ||
             progress_average > warm_draw_budget_us ||
-            signal_views_average > signal_views_budget_us || viewport_average > warm_draw_budget_us ||
+            signal_views_average > signal_views_budget_us || linked_eq_average > warm_draw_budget_us ||
+            viewport_average > warm_draw_budget_us ||
             range_selection_average > warm_draw_budget_us) result = std::max(result, 6);
     }
     VSTGUI::exit();

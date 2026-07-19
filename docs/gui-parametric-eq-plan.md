@@ -50,12 +50,12 @@ Exit criteria:
 
 ## Milestone 3: Linked Response Graph
 
-- [ ] Add a toolkit-neutral graph-handle declaration separate from curve points.
-- [ ] Bind each handle to frequency and gain parameters, with Q available through keyboard and accessibility adjustment.
-- [ ] Render the calculated combined response and three band contributions without allocating during draw.
-- [ ] Keep graph and knob gestures synchronized under pointer editing, keyboard editing, host automation, preset loading, and rejected edits.
-- [ ] Provide a visible selected-band state in the graph and matching parameter panel.
-- [ ] Expose handle name, band state, frequency, gain, Q, selection, and adjustment semantics.
+- [x] Add a toolkit-neutral graph-handle declaration separate from curve points.
+- [x] Bind each handle to frequency and gain parameters, with Q available through keyboard and accessibility adjustment.
+- [x] Render the calculated combined response and three band contributions without allocating during draw.
+- [x] Keep graph and knob gestures synchronized under pointer editing, keyboard editing, host automation, preset loading, and rejected edits.
+- [x] Provide a visible selected-band state in the graph and matching parameter panel.
+- [x] Expose handle name, band state, frequency, gain, Q, selection, and adjustment semantics.
 
 Exit criteria:
 
@@ -149,3 +149,16 @@ Record each committed milestone here with test counts, performance measurements,
 - Serialized pluginval strictness 5 and strictness 10 passed all examples without an unexpected exit or GUI crash. The strictness 10 matrix passed 52/52 build steps.
 - Latest rotary warm-render measurements ranged from 31.2 us to 38.1 us, within the 250 us scene budget. The final full test run measured 33.1 us.
 - Manual REAPER acceptance remains pending until the linked response graph is implemented, so the knob and graph can be reviewed as one production editing flow.
+
+### Milestone 3
+
+- Added a public, toolkit-neutral graph-handle declaration with stable identity, frequency and gain bindings, optional Q and enable bindings, and optional parameter-group highlighting.
+- Added fixed-capacity graph layers for the combined response and low, mid, and high band contributions. Parameter-driven curves refresh only after controller parameter notifications and do not use a repaint timer.
+- Added grouped pointer gestures, arrow editing, Page Up and Page Down Q adjustment, Shift fine adjustment, selection traversal, host-update synchronization, and rejected-edit rollback.
+- Added native accessibility values for handle name, enablement, frequency, gain, Q, and selection. Selecting a handle also highlights its matching band heading.
+- Added deterministic native coverage for gestures, rejection, host updates, dependency refresh, invalid bindings, layers, disabled handles, accessibility, and selection. Added the `linked-eq-response.png` visual reference.
+- `zig build test raw-api-abi validate-parametric-eq --summary all`: 168/168 steps and 3,692/3,692 tests passed. Raw ABI checks passed, and the Steinberg validator passed 47/47 EQ tests.
+- Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` EQ bundles each passed 4/4 build steps.
+- The final linked EQ warm-render measurement was 226.5 us, within the 300 us scene budget.
+- Pluginval strictness 5 stopped at its first unexpected exit. The preserved macOS crash report shows pluginval 1.0.4 aborting during `NSApplication` registration before loading a zig-vst3 plugin image. Strictness 10 was not run, and pluginval coverage is unavailable for this milestone.
+- Manual REAPER acceptance of handle and knob synchronization, band highlighting, resize behavior, multiple instances, and editor reopen remains pending.
