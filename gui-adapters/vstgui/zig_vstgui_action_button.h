@@ -33,6 +33,7 @@ public:
     bool failed() const;
     bool enabled() const;
     VSTGUI::CView* focusView() const;
+    VSTGUI::CRect bounds() const;
     void setFocusedView(VSTGUI::CView* view);
     const AccessibilityNode& accessibilityNode() const;
 

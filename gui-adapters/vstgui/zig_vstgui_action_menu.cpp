@@ -327,7 +327,11 @@ void ActionMenuView::draw(VSTGUI::CDrawContext* context) {
                         : selected_entry ? styles.resolve(ComponentKind::editor).background : style.foreground
                 );
                 const auto& label = entry.checked ? entry.display_checked : entry.display_unchecked;
-                context->drawString(label.c_str(), row, VSTGUI::kLeftText);
+                context->drawString(
+                    label.c_str(),
+                    VSTGUI::CRect(row.left + 8.0, row.top, row.right - 8.0, row.bottom),
+                    VSTGUI::kLeftText
+                );
                 top += row_height;
             }
         }

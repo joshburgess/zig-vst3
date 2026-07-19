@@ -290,6 +290,7 @@ void ParameterControl::build(
     label->setBackColor(label_style.background);
     label->setFrameColor(label_style.border);
     label->setHoriAlign(VSTGUI::kLeftText);
+    label->setTextInset(VSTGUI::CPoint(styles.theme().spacing.small, 0.0));
     parent->addView(label);
     label_component.bind(label);
     label_component.accessibility().setRole(AccessibilityRole::group);
@@ -649,6 +650,10 @@ const AccessibilityNode& ParameterControl::primaryAccessibility() const {
 
 const AccessibilityNode* ParameterControl::valueAccessibility() const {
     return value_edit ? &value_component.accessibility() : nullptr;
+}
+
+VSTGUI::CPoint ParameterControl::labelTextInset() const {
+    return label ? label->getTextInset() : VSTGUI::CPoint();
 }
 
 bool ParameterControl::accessibilityAction(

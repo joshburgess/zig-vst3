@@ -28,6 +28,8 @@ public:
     bool handleKey(uint16_t key, int16_t key_code);
     VSTGUI::CView* focusView() const;
     VSTGUI::CView* accessibilityView() const;
+    VSTGUI::CPoint labelTextInset() const;
+    VSTGUI::CPoint valueTextInset() const;
     void setFocusedView(VSTGUI::CView* view);
     const AccessibilityNode& accessibilityNode() const;
 
@@ -90,6 +92,7 @@ public:
     const AccessibilityNode& accessibilityNode() const;
     VSTGUI::CView* accessibilityView() const;
     const ProgressView* progressView() const;
+    VSTGUI::CPoint labelTextInset() const;
 
 private:
     VSTGUI::CTextLabel* label {nullptr};

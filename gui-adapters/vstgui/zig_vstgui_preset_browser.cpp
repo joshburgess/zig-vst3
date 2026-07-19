@@ -271,7 +271,11 @@ void PresetBrowserView::draw(VSTGUI::CDrawContext* context) {
             context->drawRect(row_bounds, VSTGUI::kDrawFilled);
         }
         context->setFontColor(style.foreground);
-        context->drawString(presets[index].name.c_str(), row_bounds, VSTGUI::kLeftText);
+        context->drawString(
+            presets[index].name.c_str(),
+            VSTGUI::CRect(row_bounds.left + 8.0, row_bounds.top, row_bounds.right - 8.0, row_bounds.bottom),
+            VSTGUI::kLeftText
+        );
     }
     if (visible.count == 0 || !status.empty()) {
         context->setFontColor(style.foreground);

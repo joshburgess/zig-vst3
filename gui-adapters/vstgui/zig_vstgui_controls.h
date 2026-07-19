@@ -112,6 +112,7 @@ public:
     bool showContextMenu(int32_t x, int32_t y);
     const AccessibilityNode& primaryAccessibility() const;
     const AccessibilityNode* valueAccessibility() const;
+    VSTGUI::CPoint labelTextInset() const;
 
     void controlBeginEdit(VSTGUI::CControl* control) override;
     void valueChanged(VSTGUI::CControl* control) override;

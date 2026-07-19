@@ -93,6 +93,7 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode* stepSequencerAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* fileDropAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* actionButtonAccessibility(uint32_t index) const;
+    VSTGUI::CRect actionButtonBounds(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* editableLabelAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* progressAccessibility(uint32_t index) const;
     bool tickMeter(uint32_t index, double elapsed_ms);
@@ -145,6 +146,9 @@ private:
     void closeOtherActionMenus(ZigVstgui::ActionMenuControl* opening);
     std::vector<ZigVstgui::AccessibilityEntry> accessibilityEntries() const;
     double minimumContentHeight() const;
+    double actionButtonAreaWidth() const;
+    uint32_t actionButtonColumnCount(double available) const;
+    double footerHeight() const;
     ZigVstgui::ParameterControl* findControl(uint32_t parameter_id);
     const ZigVstgui::ParameterControl* findControl(uint32_t parameter_id) const;
 

@@ -485,6 +485,20 @@ int testParameterContextMenu() {
     if (!control.showContextMenu(12, 34)) return 1;
     if (state.context_menu_count != 1 || state.last_parameter_id != 77) return 2;
     if (state.context_x != 12 || state.context_y != 34) return 3;
+    VSTGUI::init(nullptr);
+    {
+        ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+        auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 80)));
+        const ZigVstguiParameterInfo info {"Gain", "dB", 0, 0.5};
+        control.build(container, info, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER, styles);
+        if (control.labelTextInset().x < styles.theme().spacing.small) {
+            control.clear();
+            VSTGUI::exit();
+            return 4;
+        }
+        control.clear();
+    }
+    VSTGUI::exit();
     return 0;
 }
 
@@ -2030,6 +2044,39 @@ int testActionButtons() {
     }
     zig_vstgui_editor_destroy(idle_editor);
 
+    const ZigVstguiActionButtonDescription dense_actions[] = {
+        {1, 1, "Trim", "Trim", nullptr, nullptr, nullptr, ZIG_VSTGUI_ACTION_PRIMARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1},
+        {1, 2, "Normalize", "Normalize", nullptr, nullptr, nullptr, ZIG_VSTGUI_ACTION_SECONDARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1},
+        {1, 3, "Reverse", "Reverse", nullptr, nullptr, nullptr, ZIG_VSTGUI_ACTION_SECONDARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1},
+        {1, 4, "Fade In", "Fade in", nullptr, nullptr, nullptr, ZIG_VSTGUI_ACTION_SECONDARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1},
+        {1, 5, "Fade Out", "Fade out", nullptr, nullptr, nullptr, ZIG_VSTGUI_ACTION_SECONDARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1},
+        {1, 6, "Reset", "Reset", nullptr, nullptr, nullptr, ZIG_VSTGUI_ACTION_SECONDARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1},
+        {2, 7, "Clear", "Clear", nullptr, nullptr, nullptr, ZIG_VSTGUI_ACTION_SECONDARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1},
+    };
+    auto* dense_editor = zig_vstgui_editor_create_widgets(
+        &parameter, 1, callbacks, nullptr, 0, {}, nullptr, 0, {}, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
+        dense_actions, 7, {}
+    );
+    if (!dense_editor || !dense_editor->resize(400, 300) || !dense_editor->contentScrollingActive()) {
+        zig_vstgui_editor_destroy(dense_editor);
+        return 15;
+    }
+    const double minimum_button_width = ZigVstgui::defaultTheme().control_metrics.button_width;
+    for (uint32_t index = 0; index < 7; ++index) {
+        if (dense_editor->actionButtonBounds(index).getWidth() < minimum_button_width) {
+            zig_vstgui_editor_destroy(dense_editor);
+            return 16;
+        }
+    }
+    if (!closeEnough(dense_editor->actionButtonBounds(0).top, dense_editor->actionButtonBounds(1).top) ||
+        dense_editor->actionButtonBounds(2).top <= dense_editor->actionButtonBounds(0).top ||
+        dense_editor->actionButtonBounds(6).top <= dense_editor->actionButtonBounds(4).top) {
+        zig_vstgui_editor_destroy(dense_editor);
+        return 17;
+    }
+    zig_vstgui_editor_destroy(dense_editor);
+
     auto invalid = description;
     invalid.confirmation_label = nullptr;
     if (zig_vstgui_editor_create_widgets(
@@ -2420,6 +2467,8 @@ int testEditableLabelsAndProgress() {
         if (!label.build(container, editable, callbacks, styles) ||
             label.accessibilityNode().role() != ZigVstgui::AccessibilityRole::text_field ||
             label.accessibilityNode().valueText() != "Studio Plate" ||
+            label.labelTextInset().x < styles.theme().spacing.small ||
+            label.valueTextInset().x < styles.theme().spacing.small ||
             !label.accessibilityNode().perform(ZigVstgui::AccessibilityAction::set_value, 0.0, "Bright Hall") ||
             state.editor_text != "Bright Hall" || state.stored_state_field != 11) {
             VSTGUI::exit();
@@ -2465,6 +2514,7 @@ int testEditableLabelsAndProgress() {
         state.progress_snapshot = {ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_IDLE, 0.0, 0};
         ZigVstgui::ProgressIndicatorControl indicator;
         if (!indicator.build(container, progress, callbacks, styles) ||
+            indicator.labelTextInset().x < styles.theme().spacing.small ||
             indicator.accessibilityNode().role() != ZigVstgui::AccessibilityRole::meter ||
             indicator.accessibilityNode().valueText() != "Choose an IR to begin") {
             VSTGUI::exit();

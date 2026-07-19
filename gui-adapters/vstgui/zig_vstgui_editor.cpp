@@ -640,6 +640,10 @@ const ZigVstgui::AccessibilityNode* ZigVstguiEditor::actionButtonAccessibility(u
     return index < action_button_count ? &action_button_controls[index]->accessibilityNode() : nullptr;
 }
 
+VSTGUI::CRect ZigVstguiEditor::actionButtonBounds(uint32_t index) const {
+    return index < action_button_count ? action_button_controls[index]->bounds() : VSTGUI::CRect();
+}
+
 const ZigVstgui::AccessibilityNode* ZigVstguiEditor::editableLabelAccessibility(uint32_t index) const {
     return index < editable_label_count ? &editable_label_controls[index]->accessibilityNode() : nullptr;
 }
@@ -1225,7 +1229,9 @@ void ZigVstguiEditor::layout() {
         theme.control_metrics.value_width,
         static_cast<double>(width) - margin * 2.0
     );
-    const double footer_top = content_height - margin - theme.control_metrics.compact_control_height;
+    const double footer_bottom = content_height - margin;
+    const double footer_control_top = footer_bottom - theme.control_metrics.compact_control_height;
+    const double footer_top = footer_bottom - footerHeight();
     const double browser_height = preset_browser_count > 0
         ? std::clamp(content_height * 0.22, 104.0, 156.0)
         : 0.0;
@@ -1277,11 +1283,11 @@ void ZigVstguiEditor::layout() {
     if (action_button_count > 0 && action_menu_count > 0) {
         const double split = margin + (footer_right - margin) * 0.68;
         layoutActionButtons(margin, footer_top, split - theme.spacing.small, content_height - margin);
-        layoutActionMenus(split, footer_top, footer_right, content_height - margin);
+        layoutActionMenus(split, footer_control_top, footer_right, footer_bottom);
     } else if (action_button_count > 0) {
-        layoutActionButtons(margin, footer_top, footer_right, content_height - margin);
+        layoutActionButtons(margin, footer_top, footer_right, footer_bottom);
     } else {
-        layoutActionMenus(margin, footer_top, footer_right, content_height - margin);
+        layoutActionMenus(margin, footer_control_top, footer_right, footer_bottom);
     }
     if (group_count > 0) {
         const bool wide = width >= 620;
@@ -1422,9 +1428,9 @@ void ZigVstguiEditor::layout() {
         }
         resize_control.setBounds(VSTGUI::CRect(
             right - theme.control_metrics.button_width,
-            footer_top,
+            footer_control_top,
             right,
-            content_height - margin
+            footer_bottom
         ));
         return;
     }
@@ -1523,9 +1529,9 @@ void ZigVstguiEditor::layout() {
         }
         resize_control.setBounds(VSTGUI::CRect(
             right - theme.control_metrics.button_width,
-            footer_top,
+            footer_control_top,
             right,
-            content_height - margin
+            footer_bottom
         ));
         return;
     }
@@ -1673,16 +1679,15 @@ void ZigVstguiEditor::layout() {
     }
     resize_control.setBounds(VSTGUI::CRect(
         right - theme.control_metrics.button_width,
-        content_height - margin - theme.control_metrics.compact_control_height,
+        footer_control_top,
         right,
-        content_height - margin
+        footer_bottom
     ));
 }
 
 double ZigVstguiEditor::minimumContentHeight() const {
     const auto& spacing = theme_resolver.theme().spacing;
-    const auto& control_metrics = theme_resolver.theme().control_metrics;
-    double tail = spacing.large + control_metrics.compact_control_height + spacing.small;
+    double tail = spacing.large + footerHeight() + spacing.small;
     if (preset_browser_count > 0) tail += 156.0 + spacing.medium;
     if (piano_count > 0) tail += 140.0 + spacing.medium;
     if (step_sequencer_count > 0) tail += 94.0 + spacing.medium;
@@ -1700,6 +1705,35 @@ double ZigVstguiEditor::minimumContentHeight() const {
         upper = 82.0 + rows * 300.0 + (rows - 1) * spacing.medium;
     }
     return std::max(static_cast<double>(height), upper + tail);
+}
+
+double ZigVstguiEditor::actionButtonAreaWidth() const {
+    if (action_button_count == 0) return 0.0;
+    const auto& theme = theme_resolver.theme();
+    const double margin = theme.spacing.large;
+    const double right = std::max(margin + 1.0, static_cast<double>(width) - margin);
+    const double footer_right = right - theme.control_metrics.button_width - theme.spacing.small;
+    if (action_menu_count == 0) return std::max(1.0, footer_right - margin);
+    const double split = margin + (footer_right - margin) * 0.68;
+    return std::max(1.0, split - theme.spacing.small - margin);
+}
+
+uint32_t ZigVstguiEditor::actionButtonColumnCount(double available) const {
+    return ZigVstgui::responsiveColumnCount(
+        available,
+        theme_resolver.theme().spacing.small,
+        theme_resolver.theme().control_metrics.button_width,
+        action_button_count
+    );
+}
+
+double ZigVstguiEditor::footerHeight() const {
+    const auto& theme = theme_resolver.theme();
+    if (action_button_count == 0) return theme.control_metrics.compact_control_height;
+    const uint32_t columns = actionButtonColumnCount(actionButtonAreaWidth());
+    const uint32_t rows = (action_button_count + columns - 1) / columns;
+    return rows * theme.control_metrics.compact_control_height +
+        (rows - 1) * theme.spacing.small;
 }
 
 void ZigVstguiEditor::layoutPresetBrowsers(double left, double top, double right, double bottom) {
@@ -1733,22 +1767,40 @@ void ZigVstguiEditor::layoutActionMenus(double left, double top, double right, d
 void ZigVstguiEditor::layoutActionButtons(double left, double top, double right, double bottom) {
     if (action_button_count == 0) return;
     const auto& spacing = theme_resolver.theme().spacing;
-    double total_gap = spacing.small * (action_button_count - 1);
-    for (uint32_t index = 1; index < action_button_count; ++index) {
-        if (action_button_descriptions[index - 1].group_id != action_button_descriptions[index].group_id) {
-            total_gap += spacing.medium - spacing.small;
+    const double available = std::max(1.0, right - left);
+    const uint32_t columns = actionButtonColumnCount(available);
+    const uint32_t rows = (action_button_count + columns - 1) / columns;
+    const double row_height = std::max(
+        1.0,
+        (bottom - top - spacing.small * (rows - 1)) / rows
+    );
+    for (uint32_t row = 0; row < rows; ++row) {
+        const uint32_t first = row * columns;
+        const uint32_t count = std::min(columns, action_button_count - first);
+        double total_gap = spacing.small * (count - 1);
+        for (uint32_t column = 1; column < count; ++column) {
+            if (action_button_descriptions[first + column - 1].group_id !=
+                action_button_descriptions[first + column].group_id) {
+                total_gap += spacing.medium - spacing.small;
+            }
         }
-    }
-    const double button_width = std::max(1.0, (right - left - total_gap) / action_button_count);
-    double button_left = left;
-    for (uint32_t index = 0; index < action_button_count; ++index) {
-        action_button_controls[index]->setBounds(
-            VSTGUI::CRect(button_left, top, button_left + button_width, bottom)
-        );
-        button_left += button_width;
-        if (index + 1 < action_button_count) {
-            button_left += action_button_descriptions[index].group_id == action_button_descriptions[index + 1].group_id
-                ? spacing.small : spacing.medium;
+        const double button_width = std::max(1.0, (available - total_gap) / count);
+        double button_left = left;
+        const double button_top = top + row * (row_height + spacing.small);
+        for (uint32_t column = 0; column < count; ++column) {
+            const uint32_t index = first + column;
+            action_button_controls[index]->setBounds(VSTGUI::CRect(
+                button_left,
+                button_top,
+                button_left + button_width,
+                button_top + row_height
+            ));
+            button_left += button_width;
+            if (column + 1 < count) {
+                button_left += action_button_descriptions[index].group_id ==
+                    action_button_descriptions[index + 1].group_id
+                    ? spacing.small : spacing.medium;
+            }
         }
     }
 }

@@ -151,7 +151,9 @@ The reflected controller implements `performAction(controller, group_id, action_
 
 An editor may declare one primary button. Destructive buttons require confirmation text and cannot share a group with the primary action. Icon-only buttons require `accessible_label`; the icon never supplies the semantic name. Return and Space activate the focused button. Escape cancels pending confirmation or dismisses failure feedback. Rejected commands retain focus and replace the label with bounded retry text. `success_focus_importer_id` may name a declared file importer that receives focus after an accepted command. `ready_importer_id` disables the button until that importer reaches Ready and removes it from focus traversal while unavailable. Unknown targets reject editor creation.
 
-The gallery and IR loader use the same public declaration. The gallery covers primary, secondary, destructive, text, and icon-only variants. The IR loader uses the destructive confirmation contract for clearing imported media.
+The gallery and IR loader use the same public declaration. The gallery covers primary, secondary, destructive, text, and icon-only variants. The IR loader uses the destructive confirmation contract for clearing imported media. Footer actions retain at least the themed button width. When the accepted editor width cannot preserve that minimum, actions wrap into additional rows and the virtual content height grows to keep every label readable. Group boundaries retain wider spacing within a row.
+
+Parameter labels, editable values, progress text, preset rows, and action-menu rows receive a themed inner text inset. Borders are never used as the text origin. Native geometry tests enforce the inset and action-button minimum width so a valid editor cannot silently regress to edge-touching or overlapping labels.
 
 Each `Parameter` needs the stable parameter ID used by the controller, its display metadata, its step count, its normalized default, and a presentation kind:
 

@@ -153,6 +153,10 @@ bool ActionButtonControl::failed() const { return action_failed; }
 bool ActionButtonControl::enabled() const { return component.state().enabled; }
 VSTGUI::CView* ActionButtonControl::focusView() const { return button; }
 
+VSTGUI::CRect ActionButtonControl::bounds() const {
+    return button ? button->getViewSize() : VSTGUI::CRect();
+}
+
 void ActionButtonControl::setFocusedView(VSTGUI::CView* view) {
     component.setFocused(view && view == button);
 }

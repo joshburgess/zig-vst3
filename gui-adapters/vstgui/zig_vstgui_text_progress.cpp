@@ -38,12 +38,14 @@ bool EditableLabelControl::build(VSTGUI::CViewContainer* parent,
     label->setFontColor(label_style.foreground);
     label->setBackColor(label_style.background);
     label->setHoriAlign(VSTGUI::kLeftText);
+    label->setTextInset(VSTGUI::CPoint(styles.theme().spacing.small, 0.0));
     edit->setFont(styles.font(TypographyRole::value));
     edit->setFontColor(value_style.foreground);
     edit->setBackColor(value_style.background);
     edit->setFrameColor(value_style.border);
     edit->setFrameWidth(value_style.frame_width);
     edit->setRoundRectRadius(value_style.radius);
+    edit->setTextInset(VSTGUI::CPoint(styles.theme().spacing.small, 0.0));
     edit->setPlaceholderString(description.placeholder);
     if (description.read_only != 0) {
         edit->setBackColor(label_style.background);
@@ -54,6 +56,7 @@ bool EditableLabelControl::build(VSTGUI::CViewContainer* parent,
     message->setFontColor(VSTGUI::CColor(196, 72, 72, 255));
     message->setBackColor(label_style.background);
     message->setHoriAlign(VSTGUI::kLeftText);
+    message->setTextInset(VSTGUI::CPoint(styles.theme().spacing.small, 0.0));
 
     parent->addView(label);
     parent->addView(edit);
@@ -154,6 +157,14 @@ VSTGUI::CView* EditableLabelControl::focusView() const {
 }
 
 VSTGUI::CView* EditableLabelControl::accessibilityView() const { return edit; }
+
+VSTGUI::CPoint EditableLabelControl::labelTextInset() const {
+    return label ? label->getTextInset() : VSTGUI::CPoint();
+}
+
+VSTGUI::CPoint EditableLabelControl::valueTextInset() const {
+    return edit ? edit->getTextInset() : VSTGUI::CPoint();
+}
 
 void EditableLabelControl::setFocusedView(VSTGUI::CView* view) {
     edit_component.setFocused(view && view == edit);
@@ -302,6 +313,7 @@ bool ProgressIndicatorControl::build(VSTGUI::CViewContainer* parent,
     label->setFontColor(label_style.foreground);
     label->setBackColor(label_style.background);
     label->setHoriAlign(VSTGUI::kLeftText);
+    label->setTextInset(VSTGUI::CPoint(styles.theme().spacing.small, 0.0));
     parent->addView(label);
     label_component.bind(label);
     label_component.accessibility().setRole(AccessibilityRole::group);
@@ -353,5 +365,9 @@ const AccessibilityNode& ProgressIndicatorControl::accessibilityNode() const {
 }
 VSTGUI::CView* ProgressIndicatorControl::accessibilityView() const { return progress; }
 const ProgressView* ProgressIndicatorControl::progressView() const { return progress; }
+
+VSTGUI::CPoint ProgressIndicatorControl::labelTextInset() const {
+    return label ? label->getTextInset() : VSTGUI::CPoint();
+}
 
 }
