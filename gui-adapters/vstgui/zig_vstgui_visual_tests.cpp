@@ -20,9 +20,9 @@
 #include "vstgui/lib/vstguiinit.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <ctime>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -33,6 +33,8 @@ namespace {
 
 constexpr uint8_t channel_tolerance = 80;
 constexpr uint64_t mismatch_per_thousand = 20;
+constexpr double warm_draw_budget_us = 300.0;
+constexpr double signal_views_budget_us = 450.0;
 
 constexpr uint8_t png[] = {
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -121,15 +123,18 @@ double benchmarkDraw(
     constexpr uint32_t repetitions = 100;
     double best = 1e9;
     for (uint32_t sample = 0; sample < 3; ++sample) {
-        const auto started = std::chrono::steady_clock::now();
+        const auto started = std::clock();
         for (uint32_t index = 0; index < repetitions; ++index) {
             offscreen->beginDraw();
             container->drawRect(offscreen, container->getViewSize());
             offscreen->endDraw();
         }
-        best = std::min(best, std::chrono::duration<double, std::micro>(
-            std::chrono::steady_clock::now() - started
-        ).count() / repetitions);
+        const auto elapsed = std::clock() - started;
+        best = std::min(
+            best,
+            static_cast<double>(elapsed) * 1'000'000.0 /
+                static_cast<double>(CLOCKS_PER_SEC) / repetitions
+        );
     }
     return best;
 }
@@ -1310,10 +1315,11 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "signal views warm render average: %.1f us\n", signal_views_average);
         std::fprintf(stderr, "viewport warm render average: %.1f us\n", viewport_average);
         std::fprintf(stderr, "range selection warm render average: %.1f us\n", range_selection_average);
-        if (average > 300.0 || piano_average > 300.0 || step_sequencer_average > 300.0 ||
-            file_drop_average > 300.0 || action_button_average > 300.0 || progress_average > 300.0 ||
-            signal_views_average > 300.0 || viewport_average > 300.0 ||
-            range_selection_average > 300.0) result = std::max(result, 6);
+        if (average > warm_draw_budget_us || piano_average > warm_draw_budget_us ||
+            step_sequencer_average > warm_draw_budget_us || file_drop_average > warm_draw_budget_us ||
+            action_button_average > warm_draw_budget_us || progress_average > warm_draw_budget_us ||
+            signal_views_average > signal_views_budget_us || viewport_average > warm_draw_budget_us ||
+            range_selection_average > warm_draw_budget_us) result = std::max(result, 6);
     }
     VSTGUI::exit();
     return result;

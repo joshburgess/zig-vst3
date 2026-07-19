@@ -1,5 +1,7 @@
 #include "zig_vstgui_theme.h"
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace ZigVstgui {
@@ -23,6 +25,19 @@ void apply(ComponentStyle& target, const StyleOverride& source) {
     if (source.frame_width) target.frame_width = *source.frame_width;
     if (source.radius) target.radius = *source.radius;
     if (source.thumb_radius) target.thumb_radius = *source.thumb_radius;
+}
+
+double linearChannel(uint8_t channel) {
+    const double normalized = static_cast<double>(channel) / 255.0;
+    return normalized <= 0.04045
+        ? normalized / 12.92
+        : std::pow((normalized + 0.055) / 1.055, 2.4);
+}
+
+double relativeLuminance(const VSTGUI::CColor& color) {
+    return 0.2126 * linearChannel(color.red) +
+        0.7152 * linearChannel(color.green) +
+        0.0722 * linearChannel(color.blue);
 }
 
 Theme makeTheme(const ColorTokens& colors) {
@@ -181,6 +196,20 @@ const Theme& alternateTheme() {
         VSTGUI::CColor(169, 75, 46, 255),
     });
     return theme;
+}
+
+double contrastRatio(const VSTGUI::CColor& foreground, const VSTGUI::CColor& background) {
+    const double lighter = std::max(relativeLuminance(foreground), relativeLuminance(background));
+    const double darker = std::min(relativeLuminance(foreground), relativeLuminance(background));
+    return (lighter + 0.05) / (darker + 0.05);
+}
+
+VSTGUI::CColor contrastingTextColor(
+    const VSTGUI::CColor& background,
+    const VSTGUI::CColor& first,
+    const VSTGUI::CColor& second
+) {
+    return contrastRatio(first, background) >= contrastRatio(second, background) ? first : second;
 }
 
 }

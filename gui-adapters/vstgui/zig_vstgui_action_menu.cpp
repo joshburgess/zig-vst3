@@ -3,6 +3,7 @@
 #include "pluginterfaces/base/keycodes.h"
 #include "vstgui/lib/cdrawcontext.h"
 #include "vstgui/lib/cframe.h"
+#include "vstgui/lib/cgradient.h"
 #include "vstgui/lib/events.h"
 
 #include <algorithm>
@@ -111,6 +112,7 @@ void ActionMenuView::open() {
 void ActionMenuView::close(bool restore_focus) {
     if (!open_state) return;
     open_state = false;
+    pressed_row.reset();
     setVisible(false);
     syncAccessibility();
     if (owner) {
@@ -324,7 +326,11 @@ void ActionMenuView::draw(VSTGUI::CDrawContext* context) {
                 context->setFontColor(
                     !entry.enabled
                         ? styles.theme().colors.text_secondary
-                        : selected_entry ? styles.resolve(ComponentKind::editor).background : style.foreground
+                        : selected_entry ? contrastingTextColor(
+                            selected_style.accent,
+                            VSTGUI::kBlackCColor,
+                            VSTGUI::kWhiteCColor
+                        ) : style.foreground
                 );
                 const auto& label = entry.checked ? entry.display_checked : entry.display_unchecked;
                 context->drawString(
@@ -365,12 +371,46 @@ void ActionMenuView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
     }
     if (selectable(*row)) {
         selected = *row;
+        pressed_row = *row;
         status.clear();
         updateLayout();
         syncAccessibility();
         invalid();
+    }
+    event.consumed = true;
+}
+
+void ActionMenuView::onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) {
+    if (!open_state) return;
+    const auto row = rowAt(event.mousePosition.y);
+    if (!row || !panel_bounds.pointInside(event.mousePosition) || !selectable(*row)) return;
+    if (!selected || *selected != *row) {
+        selected = *row;
+        status.clear();
+        updateLayout();
+        syncAccessibility();
+        invalid();
+    }
+    event.consumed = true;
+}
+
+void ActionMenuView::onMouseUpEvent(VSTGUI::MouseUpEvent& event) {
+    if (!open_state || !pressed_row) return;
+    const auto row = rowAt(event.mousePosition.y);
+    const bool activate = row && panel_bounds.pointInside(event.mousePosition) &&
+        *row == *pressed_row && selectable(*row);
+    pressed_row.reset();
+    if (activate) {
+        selected = *row;
         activateSelected();
     }
+    event.consumed = true;
+}
+
+void ActionMenuView::onMouseCancelEvent(VSTGUI::MouseCancelEvent& event) {
+    if (!pressed_row) return;
+    pressed_row.reset();
+    invalid();
     event.consumed = true;
 }
 
@@ -392,12 +432,13 @@ void ActionMenuView::onKeyboardEvent(VSTGUI::KeyboardEvent& event) {
 }
 
 bool ActionMenuControl::build(
-    VSTGUI::CViewContainer* parent,
+    VSTGUI::CViewContainer* value_parent,
     const ZigVstguiActionMenuDescription& description,
     ZigVstguiCallbacks callbacks,
     const ThemeResolver& styles
 ) {
-    if (!parent || trigger || menu) return false;
+    if (!value_parent || trigger || menu) return false;
+    parent = value_parent;
     menu = new (std::nothrow) ActionMenuView(description, callbacks, styles, &component.accessibility(), this);
     if (!menu || !menu->valid()) {
         if (menu) menu->forget();
@@ -414,11 +455,21 @@ bool ActionMenuControl::build(
     }
     trigger->setFont(styles.font(TypographyRole::body));
     trigger->setTextColor(style.foreground);
-    trigger->setTextColorHighlighted(pressed.foreground);
+    trigger->setTextColorHighlighted(contrastingTextColor(
+        pressed.accent,
+        VSTGUI::kBlackCColor,
+        VSTGUI::kWhiteCColor
+    ));
     trigger->setFrameColor(style.border);
     trigger->setFrameColorHighlighted(pressed.border);
     trigger->setFrameWidth(style.frame_width);
     trigger->setRoundRadius(style.radius);
+    trigger->setGradient(VSTGUI::owned(VSTGUI::CGradient::create(
+        0, 1, style.background, style.background
+    )));
+    trigger->setGradientHighlighted(VSTGUI::owned(VSTGUI::CGradient::create(
+        0, 1, pressed.accent, pressed.accent
+    )));
     parent->addView(trigger);
     parent->addView(menu);
     trigger->registerViewListener(this);
@@ -441,6 +492,7 @@ void ActionMenuControl::clear() {
     component.clear();
     trigger = nullptr;
     menu = nullptr;
+    parent = nullptr;
 }
 
 void ActionMenuControl::setBounds(const VSTGUI::CRect& trigger_bounds, const VSTGUI::CRect& editor_bounds) {
@@ -456,6 +508,9 @@ void ActionMenuControl::setOpenCoordinator(void* userdata, WillOpenCallback call
 void ActionMenuControl::open() {
     if (!menu || menu->isOpen()) return;
     if (will_open) will_open(coordinator_userdata, this);
+    if (parent && parent->getNbViews() > 0) {
+        parent->changeViewZOrder(menu, parent->getNbViews() - 1);
+    }
     menu->open();
     setFocusedView(menu);
 }
@@ -496,7 +551,8 @@ const ActionMenuView* ActionMenuControl::menuView() const {
     return menu;
 }
 
-void ActionMenuControl::valueChanged(VSTGUI::CControl*) {
+void ActionMenuControl::valueChanged(VSTGUI::CControl* control) {
+    if (!control || control->getValue() != control->getMax()) return;
     if (menu && menu->isOpen()) close(true);
     else open();
 }

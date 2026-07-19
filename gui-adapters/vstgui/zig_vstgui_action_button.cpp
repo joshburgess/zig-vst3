@@ -4,6 +4,7 @@
 #include "vstgui/lib/cframe.h"
 #include "vstgui/lib/cgradient.h"
 
+#include <algorithm>
 #include <new>
 #include <utility>
 
@@ -50,30 +51,41 @@ bool ActionButtonControl::build(
     if (!button) return false;
     const auto style = styles.resolve(ComponentKind::resize_button);
     const auto pressed = styles.resolve(ComponentKind::resize_button, VisualState::pressed);
+    disabled_alpha = styles.resolve(ComponentKind::resize_button, VisualState::disabled).alpha;
     const auto& colors = styles.theme().colors;
-    button->setFont(styles.font(TypographyRole::body));
-    button->setTextColor(description.role == ZIG_VSTGUI_ACTION_PRIMARY ? colors.surface : style.foreground);
-    button->setTextColorHighlighted(description.role == ZIG_VSTGUI_ACTION_PRIMARY ? colors.surface : pressed.foreground);
-    button->setFrameColor(description.role == ZIG_VSTGUI_ACTION_DESTRUCTIVE
+    normal_top = description.role == ZIG_VSTGUI_ACTION_PRIMARY ? colors.button_top : colors.surface_raised;
+    normal_bottom = description.role == ZIG_VSTGUI_ACTION_PRIMARY ? colors.button_bottom : colors.surface_raised;
+    highlighted_top = colors.button_top_highlighted;
+    highlighted_bottom = colors.button_bottom_highlighted;
+    const auto normal_candidate = contrastingTextColor(
+        normal_top,
+        VSTGUI::kBlackCColor,
+        VSTGUI::kWhiteCColor
+    );
+    const auto alternate_candidate = normal_candidate == VSTGUI::kBlackCColor
+        ? VSTGUI::kWhiteCColor
+        : VSTGUI::kBlackCColor;
+    normal_text = std::min(
+        contrastRatio(normal_candidate, normal_top),
+        contrastRatio(normal_candidate, normal_bottom)
+    ) >= std::min(
+        contrastRatio(alternate_candidate, normal_top),
+        contrastRatio(alternate_candidate, normal_bottom)
+    ) ? normal_candidate : alternate_candidate;
+    highlighted_text = contrastingTextColor(
+        highlighted_top,
+        VSTGUI::kBlackCColor,
+        VSTGUI::kWhiteCColor
+    );
+    normal_frame = description.role == ZIG_VSTGUI_ACTION_DESTRUCTIVE
         ? VSTGUI::CColor(196, 72, 72, 255)
-        : description.role == ZIG_VSTGUI_ACTION_PRIMARY ? style.accent : style.border);
-    button->setFrameColorHighlighted(pressed.border);
+        : description.role == ZIG_VSTGUI_ACTION_PRIMARY ? style.accent : style.border;
+    highlighted_frame = pressed.border;
+    disabled_text = colors.text_secondary;
+    disabled_frame = colors.control_track;
+    disabled_background = colors.surface_raised;
+    button->setFont(styles.font(TypographyRole::body));
     button->setFrameWidth(style.frame_width);
-    if (description.role == ZIG_VSTGUI_ACTION_PRIMARY) {
-        button->setGradient(VSTGUI::owned(VSTGUI::CGradient::create(
-            0, 1, colors.button_top, colors.button_bottom
-        )));
-        button->setGradientHighlighted(VSTGUI::owned(VSTGUI::CGradient::create(
-            0, 1, colors.button_top_highlighted, colors.button_bottom_highlighted
-        )));
-    } else {
-        button->setGradient(VSTGUI::owned(VSTGUI::CGradient::create(
-            0, 1, colors.surface_raised, colors.surface_raised
-        )));
-        button->setGradientHighlighted(VSTGUI::owned(VSTGUI::CGradient::create(
-            0, 1, colors.button_top_highlighted, colors.button_bottom_highlighted
-        )));
-    }
     button->setRoundRadius(style.radius);
     if (!tooltip.empty()) button->setTooltipText(tooltip.c_str());
     parent->addView(button);
@@ -81,6 +93,7 @@ bool ActionButtonControl::build(
 
     component.bind(button);
     component.setEnabled(description.enabled != 0);
+    applyStyle();
     component.setFocusable(true);
     component.accessibility().setRole(AccessibilityRole::button);
     component.accessibility().setName(accessible_label);
@@ -112,6 +125,7 @@ void ActionButtonControl::setEnabled(bool enabled) {
         action_failed = false;
     }
     component.setEnabled(enabled);
+    applyStyle();
     syncState();
 }
 
@@ -165,7 +179,8 @@ const AccessibilityNode& ActionButtonControl::accessibilityNode() const {
     return component.accessibility();
 }
 
-void ActionButtonControl::valueChanged(VSTGUI::CControl*) {
+void ActionButtonControl::valueChanged(VSTGUI::CControl* control) {
+    if (!control || control->getValue() != control->getMax()) return;
     activate();
 }
 
@@ -196,6 +211,27 @@ bool ActionButtonControl::performAccessibilityAction(const AccessibilityActionRe
     }
     if (request.action == AccessibilityAction::press) return activate();
     return false;
+}
+
+void ActionButtonControl::applyStyle() {
+    if (!button) return;
+    const bool is_enabled = component.state().enabled;
+    button->setTextColor(is_enabled ? normal_text : disabled_text);
+    button->setTextColorHighlighted(is_enabled ? highlighted_text : disabled_text);
+    button->setFrameColor(is_enabled ? normal_frame : disabled_frame);
+    button->setFrameColorHighlighted(is_enabled ? highlighted_frame : disabled_frame);
+    button->setGradient(VSTGUI::owned(VSTGUI::CGradient::create(
+        0, 1,
+        is_enabled ? normal_top : disabled_background,
+        is_enabled ? normal_bottom : disabled_background
+    )));
+    button->setGradientHighlighted(VSTGUI::owned(VSTGUI::CGradient::create(
+        0, 1,
+        is_enabled ? highlighted_top : disabled_background,
+        is_enabled ? highlighted_bottom : disabled_background
+    )));
+    button->setAlphaValue(is_enabled ? 1.f : disabled_alpha);
+    button->invalid();
 }
 
 void ActionButtonControl::syncState() {

@@ -406,12 +406,12 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .maximum_files = 1,
             }},
             .action_buttons = &.{
-                .{ .group_id = ir_edit_action_group_id, .id = trim_action_id, .label = "Trim", .accessible_label = "Trim to selection", .failure_label = "Trim failed. Adjust the selection and retry", .role = .primary, .ready_importer_id = ir_import_id },
-                .{ .group_id = ir_edit_action_group_id, .id = normalize_action_id, .label = "Normalize", .accessible_label = "Normalize selection", .failure_label = "Normalize needs a selection with audio", .ready_importer_id = ir_import_id },
-                .{ .group_id = ir_edit_action_group_id, .id = reverse_action_id, .label = "Reverse", .accessible_label = "Reverse selection", .failure_label = "Reverse needs at least two frames", .ready_importer_id = ir_import_id },
-                .{ .group_id = ir_edit_action_group_id, .id = fade_in_action_id, .label = "Fade In", .accessible_label = "Fade in selection", .failure_label = "Fade in needs at least two frames", .ready_importer_id = ir_import_id },
-                .{ .group_id = ir_edit_action_group_id, .id = fade_out_action_id, .label = "Fade Out", .accessible_label = "Fade out selection", .failure_label = "Fade out needs at least two frames", .ready_importer_id = ir_import_id },
-                .{ .group_id = ir_edit_action_group_id, .id = reset_action_id, .label = "Reset", .accessible_label = "Reset all impulse response edits", .failure_label = "Nothing to reset", .ready_importer_id = ir_import_id },
+                .{ .group_id = ir_edit_action_group_id, .id = trim_action_id, .label = "Trim", .accessible_label = "Trim to selection", .tooltip = "Load an IR to enable trimming", .failure_label = "Trim failed. Adjust the selection and retry", .role = .primary, .ready_importer_id = ir_import_id },
+                .{ .group_id = ir_edit_action_group_id, .id = normalize_action_id, .label = "Normalize", .accessible_label = "Normalize selection", .tooltip = "Load an IR to enable normalization", .failure_label = "Normalize needs a selection with audio", .ready_importer_id = ir_import_id },
+                .{ .group_id = ir_edit_action_group_id, .id = reverse_action_id, .label = "Reverse", .accessible_label = "Reverse selection", .tooltip = "Load an IR to enable reversing", .failure_label = "Reverse needs at least two frames", .ready_importer_id = ir_import_id },
+                .{ .group_id = ir_edit_action_group_id, .id = fade_in_action_id, .label = "Fade In", .accessible_label = "Fade in selection", .tooltip = "Load an IR to enable fades", .failure_label = "Fade in needs at least two frames", .ready_importer_id = ir_import_id },
+                .{ .group_id = ir_edit_action_group_id, .id = fade_out_action_id, .label = "Fade Out", .accessible_label = "Fade out selection", .tooltip = "Load an IR to enable fades", .failure_label = "Fade out needs at least two frames", .ready_importer_id = ir_import_id },
+                .{ .group_id = ir_edit_action_group_id, .id = reset_action_id, .label = "Reset", .accessible_label = "Reset all impulse response edits", .tooltip = "Load an IR to enable reset", .failure_label = "Nothing to reset", .ready_importer_id = ir_import_id },
                 .{
                     .group_id = ir_destructive_action_group_id,
                     .id = clear_ir_action_id,

@@ -145,6 +145,12 @@ private:
 
 const Theme& defaultTheme();
 const Theme& alternateTheme();
+double contrastRatio(const VSTGUI::CColor& foreground, const VSTGUI::CColor& background);
+VSTGUI::CColor contrastingTextColor(
+    const VSTGUI::CColor& background,
+    const VSTGUI::CColor& first,
+    const VSTGUI::CColor& second
+);
 
 }
 

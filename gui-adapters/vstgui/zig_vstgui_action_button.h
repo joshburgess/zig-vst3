@@ -48,6 +48,7 @@ private:
         const AccessibilityActionRequest& request
     );
     bool performAccessibilityAction(const AccessibilityActionRequest& request);
+    void applyStyle();
     void syncState();
 
     ZigVstguiActionButtonDescription description {};
@@ -61,6 +62,18 @@ private:
     std::function<void(uint32_t)> accepted_handler;
     VSTGUI::CTextButton* button {nullptr};
     Component component;
+    VSTGUI::CColor normal_text;
+    VSTGUI::CColor highlighted_text;
+    VSTGUI::CColor normal_frame;
+    VSTGUI::CColor highlighted_frame;
+    VSTGUI::CColor normal_top;
+    VSTGUI::CColor normal_bottom;
+    VSTGUI::CColor highlighted_top;
+    VSTGUI::CColor highlighted_bottom;
+    VSTGUI::CColor disabled_text;
+    VSTGUI::CColor disabled_frame;
+    VSTGUI::CColor disabled_background;
+    float disabled_alpha {1.f};
     bool confirmation_pending {false};
     bool action_failed {false};
 };

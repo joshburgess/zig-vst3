@@ -170,6 +170,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
         if (menu_id != 1) return types.kInvalidArgument;
         switch (item_id) {
             1 => {
+                if (loadPreset(controller, 1) != types.kResultOk) return types.kResultFalse;
                 const state = Controller.editorState(controller);
                 state.set(panel_expanded_state_id, .{ .boolean = true }) catch return types.kResultFalse;
                 state.set(analyzer_mode_state_id, .{ .index = 0 }) catch return types.kResultFalse;
@@ -192,7 +193,16 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
         group_id: u32,
         action_id: u32,
     ) types.tresult {
-        return performMenuAction(controller, group_id, action_id, false);
+        if (group_id == 1 and action_id == 1) {
+            return performMenuAction(controller, 1, 1, false);
+        }
+        if (group_id == 1 and action_id == 2) {
+            return loadPreset(controller, 2);
+        }
+        if (group_id == 2 and action_id == 4) {
+            return performMenuAction(controller, 1, action_id, false);
+        }
+        return types.kInvalidArgument;
     }
 
     pub fn validateEditorText(
@@ -316,7 +326,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .id = 1,
                 .title = "Actions",
                 .items = &.{
-                    .{ .id = 1, .label = "Reset UI" },
+                    .{ .id = 1, .label = "Reset Controls" },
                     .{ .id = 2, .label = "Show Analyzer", .kind = .toggle, .checked_state_id = show_analyzer_state_id },
                     .{ .id = 3, .label = "Export Snapshot", .enabled = false },
                     .{ .kind = .separator },
@@ -327,15 +337,17 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .{
                     .group_id = 1,
                     .id = 1,
-                    .label = "Reset Layout",
-                    .accessible_label = "Reset gallery layout",
+                    .label = "Reset Controls",
+                    .accessible_label = "Reset gallery controls",
+                    .tooltip = "Restore the neutral preset and default gallery state.",
                     .role = .primary,
                 },
                 .{
                     .group_id = 1,
                     .id = 2,
-                    .label = "Audition",
-                    .accessible_label = "Audition current settings",
+                    .label = "Apply Wide Motion",
+                    .accessible_label = "Apply Wide Motion preset",
+                    .tooltip = "Load the Wide Motion preset.",
                     .role = .secondary,
                 },
                 .{
@@ -345,6 +357,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .accessible_label = "Clear envelope",
                     .tooltip = "Remove the editable envelope points.",
                     .confirmation_label = "Confirm Clear",
+                    .failure_label = "Clear failed. Try again",
                     .role = .destructive,
                 },
             },

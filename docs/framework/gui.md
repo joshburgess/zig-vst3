@@ -111,7 +111,7 @@ Each run compares decoded pixels with a channel tolerance of 80 and allows at mo
 cmake --build .vst3-sdk/vstgui-adapter-build --target zig_vstgui_visual_tests_update
 ```
 
-The same harness measures repeated warm drawing of a live slider, active peak meter, piano, step sequencer, file-drop target, and maximum-capacity waveform and spectrum pair. `file-drops.png` covers idle, acceptable, and recoverable handler-failure states. `signal-views.png` covers a waveform, populated spectrum, and empty spectrum. The harness reports the best of three 100-frame batches so an unrelated scheduler pause does not masquerade as rendering cost. Each dedicated benchmark fails above the 300 microsecond warm-frame budget recorded in `docs/gui-baseline.md`.
+The same harness measures repeated warm drawing of a live slider, active peak meter, piano, step sequencer, file-drop target, and maximum-capacity waveform and spectrum pair. `file-drops.png` covers idle, acceptable, and recoverable handler-failure states. `signal-views.png` covers a waveform, populated spectrum, and empty spectrum. The harness reports the best of three 100-frame CPU-time batches so an unrelated scheduler pause does not masquerade as rendering cost. Individual scenes fail above a 300 microsecond warm-frame budget. The combined maximum-capacity waveform and spectrum stress scene has a 450 microsecond budget because it draws two full graph surfaces per frame.
 
 ### Accessibility Semantics
 

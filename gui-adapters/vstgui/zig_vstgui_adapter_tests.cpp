@@ -506,6 +506,95 @@ int testParameterContextMenu() {
     return 0;
 }
 
+int testParameterPointerControls() {
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.begin_edit = beginEdit;
+    callbacks.perform_edit = performEdit;
+    callbacks.end_edit = endEdit;
+    VSTGUI::init(nullptr);
+    {
+        ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+        auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 180)));
+        const ZigVstguiParameterInfo toggle_info {"Bypass", "", 1, 0.0};
+        ZigVstgui::ParameterControl toggle_control(30, 0.0, callbacks);
+        toggle_control.build(container, toggle_info, ZIG_VSTGUI_CONTROL_TOGGLE, styles);
+        toggle_control.setBounds(
+            VSTGUI::CRect(8, 8, 80, 48),
+            VSTGUI::CRect(88, 8, 288, 48),
+            VSTGUI::CRect()
+        );
+        auto* toggle = dynamic_cast<VSTGUI::CTextButton*>(toggle_control.focusView());
+        if (!toggle || toggle->getStyle() != VSTGUI::CTextButton::kOnOffStyle) {
+            toggle_control.clear();
+            VSTGUI::exit();
+            return 1;
+        }
+        VSTGUI::CPoint toggle_point(180, 28);
+        const VSTGUI::CButtonState left_button(VSTGUI::kLButton);
+        toggle->onMouseDown(toggle_point, left_button);
+        toggle->onMouseUp(toggle_point, left_button);
+        if (!closeEnough(toggle_control.model().acceptedValue(), 1.0) || state.perform_count != 1 ||
+            !toggle_control.primaryAccessibility().state().checked) {
+            toggle_control.clear();
+            VSTGUI::exit();
+            return 2;
+        }
+        toggle->onMouseDown(toggle_point, left_button);
+        toggle->onMouseUp(toggle_point, left_button);
+        if (!closeEnough(toggle_control.model().acceptedValue(), 0.0) || state.perform_count != 2 ||
+            toggle_control.primaryAccessibility().state().checked) {
+            toggle_control.clear();
+            VSTGUI::exit();
+            return 3;
+        }
+        toggle_control.clear();
+
+        const ZigVstguiParameterInfo segmented_info {"Voices", "voices", 3, 0.0};
+        ZigVstgui::ParameterControl segmented_control(31, 0.0, callbacks);
+        segmented_control.build(container, segmented_info, ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM, styles);
+        segmented_control.setBounds(
+            VSTGUI::CRect(8, 64, 80, 104),
+            VSTGUI::CRect(88, 64, 288, 104),
+            VSTGUI::CRect(88, 112, 180, 152)
+        );
+        auto* segmented = dynamic_cast<VSTGUI::CSegmentButton*>(segmented_control.focusView());
+        if (!segmented || !segmented->getGradient() || !segmented->getGradientHighlighted()) {
+            segmented_control.clear();
+            VSTGUI::exit();
+            return 4;
+        }
+        segmented->setSelectedSegment(2);
+        if (segmented->getSelectedSegment() != 2) {
+            segmented_control.clear();
+            VSTGUI::exit();
+            return 5;
+        }
+        if (!segmented->isSegmentSelected(2)) {
+            segmented_control.clear();
+            VSTGUI::exit();
+            return 6;
+        }
+        if (!closeEnough(segmented_control.model().acceptedValue(), 2.0 / 3.0)) {
+            segmented_control.clear();
+            VSTGUI::exit();
+            return 7;
+        }
+        const uint32_t edits_before_host_update = state.perform_count;
+        segmented_control.setValue(0.0);
+        if (segmented->getSelectedSegment() != 0 || !segmented->isSegmentSelected(0) ||
+            state.perform_count != edits_before_host_update) {
+            segmented_control.clear();
+            VSTGUI::exit();
+            return 8;
+        }
+        segmented_control.clear();
+    }
+    VSTGUI::exit();
+    return 0;
+}
+
 int testThemeResolution() {
     const auto& default_theme = ZigVstgui::defaultTheme();
     const auto& alternate_theme = ZigVstgui::alternateTheme();
@@ -565,6 +654,18 @@ int testThemeResolution() {
     const auto alternate_slider = alternate_styles.resolve(ZigVstgui::ComponentKind::slider);
     if (sameColor(alternate_slider.background, normal.background)) return 6;
     if (!closeEnough(alternate_slider.thumb_radius, normal.thumb_radius)) return 7;
+    const auto alternate_selected_text = ZigVstgui::contrastingTextColor(
+        alternate_theme.colors.control_fill,
+        VSTGUI::kBlackCColor,
+        VSTGUI::kWhiteCColor
+    );
+    if (ZigVstgui::contrastRatio(alternate_selected_text, alternate_theme.colors.control_fill) < 4.5) return 9;
+    const auto default_selected_text = ZigVstgui::contrastingTextColor(
+        default_theme.colors.control_fill,
+        VSTGUI::kBlackCColor,
+        VSTGUI::kWhiteCColor
+    );
+    if (ZigVstgui::contrastRatio(default_selected_text, default_theme.colors.control_fill) < 4.5) return 10;
     return 0;
 }
 
@@ -1761,6 +1862,40 @@ int testActionMenus() {
     }
     control.setBounds(VSTGUI::CRect(20, 200, 180, 228), VSTGUI::CRect(0, 0, 360, 240));
     const auto& accessibility = control.accessibilityNode();
+    auto* trigger = dynamic_cast<VSTGUI::CTextButton*>(control.focusView());
+    auto* blocker = new VSTGUI::CView(VSTGUI::CRect(0, 0, 360, 240));
+    container->addView(blocker);
+    VSTGUI::CPoint trigger_point(100, 214);
+    const VSTGUI::CButtonState left_button(VSTGUI::kLButton);
+    if (!trigger) {
+        control.clear();
+        VSTGUI::exit();
+        return 16;
+    }
+    if (!trigger->getGradient() || !trigger->getGradientHighlighted() ||
+        ZigVstgui::contrastRatio(
+            trigger->getTextColor(),
+            styles.resolve(ZigVstgui::ComponentKind::dropdown).background
+        ) < 4.5) {
+        control.clear();
+        VSTGUI::exit();
+        return 21;
+    }
+    trigger->onMouseDown(trigger_point, left_button);
+    trigger->onMouseUp(trigger_point, left_button);
+    if (!control.menuView()->isOpen() ||
+        container->getView(container->getNbViews() - 1) != control.menuView()) {
+        control.clear();
+        VSTGUI::exit();
+        return 17;
+    }
+    trigger->onMouseDown(trigger_point, left_button);
+    trigger->onMouseUp(trigger_point, left_button);
+    if (control.menuView()->isOpen()) {
+        control.clear();
+        VSTGUI::exit();
+        return 18;
+    }
     reset_label[0] = 'X';
     if (accessibility.role() != ZigVstgui::AccessibilityRole::choice ||
         accessibility.name() != "Options" || !accessibility.perform(ZigVstgui::AccessibilityAction::press) ||
@@ -1826,17 +1961,40 @@ int testActionMenus() {
     }
     accessibility.perform(ZigVstgui::AccessibilityAction::press);
     const uint32_t actions_before_pointer = state.menu_action_count;
+    VSTGUI::MouseMoveEvent item_hover(
+        VSTGUI::CPoint(30, 174),
+        VSTGUI::MouseEventButtonState()
+    );
+    control.menuView()->onMouseMoveEvent(item_hover);
+    if (!item_hover.consumed || control.menuView()->selectedItem() != 4 ||
+        state.menu_action_count != actions_before_pointer) {
+        control.clear();
+        VSTGUI::exit();
+        return 19;
+    }
     VSTGUI::MouseDownEvent item_click(
         VSTGUI::CPoint(30, 75),
         VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
     );
     control.menuView()->onMouseDownEvent(item_click);
-    if (!item_click.consumed || control.menuView()->isOpen() ||
-        state.menu_action_count != actions_before_pointer + 1 || state.invoked_menu_item_id != 1) {
+    if (!item_click.consumed || !control.menuView()->isOpen() ||
+        state.menu_action_count != actions_before_pointer || control.menuView()->selectedItem() != 1) {
         control.clear();
         VSTGUI::exit();
         return 9;
     }
+    VSTGUI::MouseUpEvent item_release(
+        VSTGUI::CPoint(30, 75),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    control.menuView()->onMouseUpEvent(item_release);
+    if (!item_release.consumed || control.menuView()->isOpen() ||
+        state.menu_action_count != actions_before_pointer + 1 || state.invoked_menu_item_id != 1) {
+        control.clear();
+        VSTGUI::exit();
+        return 20;
+    }
+    container->removeView(blocker);
     control.clear();
     std::array<ZigVstguiMenuItemDescription, ZIG_VSTGUI_MAX_MENU_ITEMS> many_items {};
     for (std::size_t index = 0; index < many_items.size(); ++index) {
@@ -1937,6 +2095,22 @@ int testActionButtons() {
         control.setBounds(VSTGUI::CRect(8, 8, 180, 40));
         accessible_label[0] = 'X';
         const auto& accessibility = control.accessibilityNode();
+        auto* action_button = dynamic_cast<VSTGUI::CTextButton*>(control.focusView());
+        VSTGUI::CPoint action_point(80, 24);
+        const VSTGUI::CButtonState left_button(VSTGUI::kLButton);
+        if (!action_button) {
+            control.clear();
+            VSTGUI::exit();
+            return 18;
+        }
+        action_button->onMouseDown(action_point, left_button);
+        action_button->onMouseUp(action_point, left_button);
+        if (!control.confirming() || state.action_count != 0 ||
+            !control.handleKey(0, Steinberg::KEY_ESCAPE, 0)) {
+            control.clear();
+            VSTGUI::exit();
+            return 19;
+        }
         if (accessibility.role() != ZigVstgui::AccessibilityRole::button ||
             accessibility.name() != "Clear impulse response" ||
             !accessibility.perform(ZigVstgui::AccessibilityAction::press) || !control.confirming() ||
@@ -1948,7 +2122,8 @@ int testActionButtons() {
         if (!control.handleKey(0, Steinberg::KEY_ESCAPE, 0) || control.confirming() ||
             !control.handleKey(0, Steinberg::KEY_SPACE, 0) || !control.confirming() ||
             !control.handleKey(0, Steinberg::KEY_RETURN, 0) || state.action_count != 1 ||
-            state.invoked_action_group_id != 2 || state.invoked_action_id != 7 || control.failed()) {
+            state.invoked_action_group_id != 2 || state.invoked_action_id != 7 || control.failed() ||
+            accessibility.valueText() != "" || action_button->getTitle() != "Clear") {
             control.clear();
             VSTGUI::exit();
             return 3;
@@ -1963,7 +2138,7 @@ int testActionButtons() {
         }
         state.reject_action = false;
         if (!accessibility.perform(ZigVstgui::AccessibilityAction::press) || control.failed() ||
-            state.action_count != 3) {
+            accessibility.valueText() != "" || action_button->getTitle() != "Clear" || state.action_count != 3) {
             control.clear();
             VSTGUI::exit();
             return 5;
@@ -1975,7 +2150,8 @@ int testActionButtons() {
         ZigVstgui::ActionButtonControl disabled;
         if (!disabled.build(container, disabled_description, callbacks, styles) ||
             disabled.handleKey(0, Steinberg::KEY_SPACE, 0) ||
-            disabled.accessibilityNode().perform(ZigVstgui::AccessibilityAction::press)) {
+            disabled.accessibilityNode().perform(ZigVstgui::AccessibilityAction::press) ||
+            !disabled.focusView() || disabled.focusView()->getAlphaValue() >= 1.f) {
             disabled.clear();
             VSTGUI::exit();
             return 6;
@@ -2619,6 +2795,7 @@ int main() {
     if (const int result = testActiveGestureCleanup(); result != 0) return 50 + result;
     if (const int result = testSteppedGestureQuantization(); result != 0) return 55 + result;
     if (const int result = testParameterContextMenu(); result != 0) return 60 + result;
+    if (const int result = testParameterPointerControls(); result != 0) return 65 + result;
     if (const int result = testThemeResolution(); result != 0) return 70 + result;
     if (const int result = testEditorRuntimeFontLifecycle(); result != 0) return 75 + result;
     if (const int result = testMultiParameterAttachmentAndXYPad(); result != 0) return 80 + result;

@@ -396,14 +396,30 @@ void ParameterControl::buildPrimaryControl(
             component_kind = ComponentKind::toggle;
             const auto style = styles.resolve(component_kind);
             const auto pressed = styles.resolve(component_kind, VisualState::pressed);
-            toggle = new VSTGUI::CTextButton(VSTGUI::CRect(), this, kParameterTag, "Off");
+            toggle = new VSTGUI::CTextButton(
+                VSTGUI::CRect(),
+                this,
+                kParameterTag,
+                "Off",
+                VSTGUI::CTextButton::kOnOffStyle
+            );
             toggle->setFont(styles.font(TypographyRole::body));
             toggle->setTextColor(style.foreground);
-            toggle->setTextColorHighlighted(pressed.foreground);
+            toggle->setTextColorHighlighted(contrastingTextColor(
+                pressed.accent,
+                VSTGUI::kBlackCColor,
+                VSTGUI::kWhiteCColor
+            ));
             toggle->setFrameColor(style.border);
             toggle->setFrameColorHighlighted(pressed.border);
             toggle->setFrameWidth(style.frame_width);
             toggle->setRoundRadius(style.radius);
+            toggle->setGradient(VSTGUI::owned(VSTGUI::CGradient::create(
+                0, 1, style.background, style.background
+            )));
+            toggle->setGradientHighlighted(VSTGUI::owned(VSTGUI::CGradient::create(
+                0, 1, pressed.accent, pressed.accent
+            )));
             primary_control = toggle;
             break;
         }
@@ -429,13 +445,24 @@ void ParameterControl::buildPrimaryControl(
         case ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM: {
             component_kind = ComponentKind::segmented;
             const auto style = styles.resolve(component_kind);
+            const auto pressed = styles.resolve(component_kind, VisualState::pressed);
             segmented = new VSTGUI::CSegmentButton(VSTGUI::CRect(), this, kParameterTag);
             segmented->setFont(styles.font(TypographyRole::body));
             segmented->setTextColor(style.foreground);
-            segmented->setTextColorHighlighted(style.foreground);
+            segmented->setTextColorHighlighted(contrastingTextColor(
+                pressed.accent,
+                VSTGUI::kBlackCColor,
+                VSTGUI::kWhiteCColor
+            ));
             segmented->setFrameColor(style.border);
             segmented->setFrameWidth(style.frame_width);
             segmented->setRoundRadius(style.radius);
+            segmented->setGradient(VSTGUI::owned(VSTGUI::CGradient::create(
+                0, 1, style.background, style.background
+            )));
+            segmented->setGradientHighlighted(VSTGUI::owned(VSTGUI::CGradient::create(
+                0, 1, pressed.accent, pressed.accent
+            )));
             const int32_t option_count = std::max(1, info.step_count + 1);
             for (int32_t index = 0; index < option_count; ++index) {
                 VSTGUI::CSegmentButton::Segment segment;
@@ -794,7 +821,15 @@ void ParameterControl::syncViews() {
         control_kind == ZIG_VSTGUI_CONTROL_TOGGLE && normalized >= 0.5f
     );
     if (primary_control) {
-        primary_control->setValueNormalized(normalized);
+        if (segmented) {
+            auto* listener = segmented->getListener();
+            segmented->setListener(nullptr);
+            segmented->setValueNormalized(normalized);
+            segmented->valueChanged();
+            segmented->setListener(listener);
+        } else {
+            primary_control->setValueNormalized(normalized);
+        }
         if (toggle) toggle->setTitle(value_text.c_str());
         primary_control->invalid();
     }
@@ -882,10 +917,30 @@ void ResizeControl::build(VSTGUI::CViewContainer* parent, const ThemeResolver& s
     const auto style = styles.resolve(ComponentKind::resize_button);
     const auto highlighted = styles.resolve(ComponentKind::resize_button, VisualState::pressed);
     const auto& colors = styles.theme().colors;
+    const auto normal_text = contrastingTextColor(
+        colors.button_top,
+        VSTGUI::kBlackCColor,
+        VSTGUI::kWhiteCColor
+    );
+    const auto alternate_normal_text = normal_text == VSTGUI::kBlackCColor
+        ? VSTGUI::kWhiteCColor
+        : VSTGUI::kBlackCColor;
+    const auto normal_text_for_gradient = std::min(
+        contrastRatio(normal_text, colors.button_top),
+        contrastRatio(normal_text, colors.button_bottom)
+    ) >= std::min(
+        contrastRatio(alternate_normal_text, colors.button_top),
+        contrastRatio(alternate_normal_text, colors.button_bottom)
+    ) ? normal_text : alternate_normal_text;
+    const auto highlighted_text = contrastingTextColor(
+        colors.button_top_highlighted,
+        VSTGUI::kBlackCColor,
+        VSTGUI::kWhiteCColor
+    );
     button = new VSTGUI::CTextButton(VSTGUI::CRect(), this, kResizeTag, "Expand");
     button->setFont(styles.font(TypographyRole::body));
-    button->setTextColor(style.foreground);
-    button->setTextColorHighlighted(highlighted.foreground);
+    button->setTextColor(normal_text_for_gradient);
+    button->setTextColorHighlighted(highlighted_text);
     button->setFrameColor(style.border);
     button->setFrameColorHighlighted(highlighted.border);
     button->setFrameWidth(style.frame_width);

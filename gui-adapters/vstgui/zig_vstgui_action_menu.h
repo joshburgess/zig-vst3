@@ -38,6 +38,9 @@ public:
     const std::string& statusText() const;
     void draw(VSTGUI::CDrawContext* context) override;
     void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override;
+    void onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) override;
+    void onMouseUpEvent(VSTGUI::MouseUpEvent& event) override;
+    void onMouseCancelEvent(VSTGUI::MouseCancelEvent& event) override;
     void onKeyboardEvent(VSTGUI::KeyboardEvent& event) override;
     CLASS_METHODS_NOCOPY(ActionMenuView, VSTGUI::CView)
 
@@ -77,6 +80,7 @@ private:
     double visible_rows_height {0.0};
     double content_scroll {0.0};
     std::optional<std::size_t> selected;
+    std::optional<std::size_t> pressed_row;
     std::string status;
     bool valid_description {false};
     bool open_state {false};
@@ -117,6 +121,7 @@ private:
 
     VSTGUI::CTextButton* trigger {nullptr};
     ActionMenuView* menu {nullptr};
+    VSTGUI::CViewContainer* parent {nullptr};
     Component component;
     void* coordinator_userdata {nullptr};
     WillOpenCallback will_open {nullptr};
