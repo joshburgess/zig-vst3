@@ -23,7 +23,12 @@ const EditorSmokeProcessor = struct {
     processed_samples: u64 = 0,
 
     pub fn process(self: *EditorSmokeProcessor, parameters: anytype, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-        const gain: Sample = @floatCast(parameters.getNormalizedById(editor_smoke_controller.gain_param_id));
+        const output_db = editor_smoke_spec.parameter_set.plainFromNormalizedById(
+            editor_smoke_controller.output_param_id,
+            parameters.getNormalizedById(editor_smoke_controller.output_param_id),
+        ) orelse 0.0;
+        const gain: Sample = @floatCast(parameters.getNormalizedById(editor_smoke_controller.gain_param_id) *
+            std.math.pow(f64, 10.0, output_db / 20.0));
         const telemetry_active = self.meters.producing();
         var peaks = [_]f64{ 0.0, 0.0 };
         for (0..context.outputChannelCount()) |channel| {
@@ -85,6 +90,36 @@ const Effect = zig_vst3_plugin_effect.SimpleStereoEffect(struct {
 });
 
 pub const create = Effect.create;
+
+const TestParameters = struct {
+    values: editor_smoke_spec.Spec.ParameterValues = editor_smoke_spec.Spec.ParameterValues.init(&editor_smoke_spec.parameter_set),
+
+    fn getNormalizedById(self: *const TestParameters, id: u32) f64 {
+        return self.values.loadById(&editor_smoke_spec.parameter_set, id) orelse 0.0;
+    }
+
+    fn store(self: *TestParameters, id: u32, normalized: f64) void {
+        _ = self.values.storeById(&editor_smoke_spec.parameter_set, id, normalized);
+    }
+};
+
+test "editor smoke output gain follows the gallery decibel control" {
+    var processor = EditorSmokeProcessor{};
+    var parameters = TestParameters{};
+    parameters.store(editor_smoke_controller.gain_param_id, 1.0);
+    parameters.store(editor_smoke_controller.output_param_id, 0.625);
+    const input = [_]f64{ -0.5, 0.25, 0.75 };
+    var output = [_]f64{0.0} ** input.len;
+    const input_channels = [_][]const f64{&input};
+    const output_channels = [_][]f64{&output};
+    var context = try plug_process.ProcessContext(f64).init(48_000.0, &input_channels, &output_channels);
+
+    processor.process(&parameters, f64, &context);
+    const linear_gain = std.math.pow(f64, 10.0, 6.0 / 20.0);
+    for (input, output) |source, rendered| {
+        try std.testing.expectApproxEqAbs(source * linear_gain, rendered, 0.0000001);
+    }
+}
 
 test "editor smoke graph source publishes bounded waveform snapshots" {
     var out: ?*anyopaque = null;

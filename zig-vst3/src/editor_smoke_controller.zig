@@ -9,7 +9,9 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const parameter_editor = @import("vstgui.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+const vst_component_handler = @import("vst_component_handler.zig");
 const vst_stream = @import("vst_stream.zig");
+const zig_vst3_plugin_bridge = @import("zig_vst3_plugin_bridge.zig");
 const zig_vst3_plugin_effect = @import("zig_vst3_plugin_effect.zig");
 
 pub const cid = tuid.inlineUid(0xE14D2D24, 0x9BC84C72, 0x8A522122, 0x121C781D);
@@ -18,6 +20,7 @@ pub const voices_param_id: vsttypes.ParamID = editor_smoke_spec.voices_param_id;
 pub const bypass_param_id: vsttypes.ParamID = editor_smoke_spec.bypass_param_id;
 pub const mode_param_id: vsttypes.ParamID = editor_smoke_spec.mode_param_id;
 pub const tone_param_id: vsttypes.ParamID = editor_smoke_spec.tone_param_id;
+pub const output_param_id: vsttypes.ParamID = editor_smoke_spec.output_param_id;
 
 pub const panel_expanded_state_id: u32 = 1;
 pub const analyzer_mode_state_id: u32 = 2;
@@ -50,6 +53,15 @@ const cleared_gallery_envelope = plug_core.editor_state.Envelope.init(&.{
 const empty_preset_search = plug_core.editor_state.Text.init("") catch unreachable;
 const gallery_label = plug_core.editor_state.Text.init("Studio Plate") catch unreachable;
 const gallery_live_label = plug_core.editor_state.Text.init("48 kHz, stereo") catch unreachable;
+
+const gallery_parameters = [_]parameter_editor.Parameter{
+    .{ .id = gain_param_id, .title = "Bipolar", .units = "±", .step_count = 0, .default_normalized = 0.5, .control_kind = .bipolar_slider, .tooltip = "Drag around the center line; the outlined marker shows modulation.", .modulation_normalized = 0.75 },
+    .{ .id = tone_param_id, .title = "Rotary", .units = "%", .step_count = 0, .default_normalized = 0.5, .control_kind = .rotary_knob, .tooltip = "Drag vertically. Hold Shift for fine adjustment; Command-click resets.", .modulation_normalized = 0.72 },
+    .{ .id = output_param_id, .title = "Output", .units = "dB", .step_count = 0, .default_normalized = 0.5, .control_kind = .decibel_slider, .tooltip = "Adjust output level. Command-click resets to 0 dB." },
+    .{ .id = voices_param_id, .title = "Voices", .units = "voices", .step_count = 3, .default_normalized = 0.0, .control_kind = .segmented_enum },
+    .{ .id = bypass_param_id, .title = "Bypass", .step_count = 1, .default_normalized = 0.0, .control_kind = .toggle },
+    .{ .id = mode_param_id, .title = "Mode", .step_count = 2, .default_normalized = 0.0, .control_kind = .enum_dropdown },
+};
 
 pub const GalleryEditorState = plug_core.editor_state.Store(1, &.{
     .{ .id = panel_expanded_state_id, .default = .{ .boolean = true } },
@@ -100,6 +112,17 @@ fn applyPreset(
     for (ids) |id| _ = ControllerType.endEdit(iface, id);
     if (grouped and ControllerType.finishGroupEdit(iface) != types.kResultOk) return types.kResultFalse;
     return types.kResultOk;
+}
+
+fn loadGalleryPreset(controller: *ivsteditcontroller.IEditController, preset_id: u32) types.tresult {
+    const ids = [_]vsttypes.ParamID{ gain_param_id, tone_param_id, output_param_id, voices_param_id, bypass_param_id, mode_param_id };
+    const values = switch (preset_id) {
+        1 => [_]f64{ 0.5, 0.5, 0.5, 0.0, 0.0, 0.0 },
+        2 => [_]f64{ 0.75, 0.8, 0.625, 2.0 / 3.0, 0.0, 0.5 },
+        3 => [_]f64{ 0.5, 0.5, 0.5, 0.0, 1.0, 0.0 },
+        else => return types.kInvalidArgument,
+    };
+    return applyPreset(Controller, controller, &ids, &values);
 }
 
 const checkmark_asset_id: types.uint32 = 1;
@@ -169,16 +192,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
         return gallery_spectrum_overlay_points;
     }
 
-    pub fn loadPreset(controller: *ivsteditcontroller.IEditController, preset_id: u32) types.tresult {
-        const ids = [_]vsttypes.ParamID{ gain_param_id, voices_param_id, bypass_param_id, mode_param_id, tone_param_id };
-        const values = switch (preset_id) {
-            1 => [_]f64{ 0.5, 0.0, 0.0, 0.0, 0.5 },
-            2 => [_]f64{ 0.75, 2.0 / 3.0, 0.0, 0.5, 0.8 },
-            3 => [_]f64{ 0.5, 0.0, 1.0, 0.0, 0.5 },
-            else => return types.kInvalidArgument,
-        };
-        return applyPreset(Controller, controller, &ids, &values);
-    }
+    pub const loadPreset = loadGalleryPreset;
 
     pub fn performMenuAction(
         controller: *ivsteditcontroller.IEditController,
@@ -256,13 +270,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
 
     pub fn createView(controller: *ivsteditcontroller.IEditController, name: types.FIDString) ?*iplugview.IPlugView {
         return parameter_editor.createEditor(Controller, controller, name, .{
-            .parameters = &.{
-                .{ .id = gain_param_id, .title = "Bipolar", .units = "±", .step_count = 0, .default_normalized = 0.5, .control_kind = .bipolar_slider, .tooltip = "Drag around the center line; the outlined marker shows modulation.", .modulation_normalized = 0.75 },
-                .{ .id = tone_param_id, .title = "Rotary", .units = "%", .step_count = 0, .default_normalized = 0.5, .control_kind = .rotary_knob, .tooltip = "Drag vertically. Hold Shift for fine adjustment; Command-click resets.", .modulation_normalized = 0.72 },
-                .{ .id = voices_param_id, .title = "Voices", .units = "voices", .step_count = 3, .default_normalized = 0.0, .control_kind = .segmented_enum },
-                .{ .id = bypass_param_id, .title = "Bypass", .step_count = 1, .default_normalized = 0.0, .control_kind = .toggle },
-                .{ .id = mode_param_id, .title = "Mode", .step_count = 2, .default_normalized = 0.0, .control_kind = .enum_dropdown },
-            },
+            .parameters = &gallery_parameters,
             .meters = &.{
                 .{ .title = "Peak", .kind = .peak, .first_source_id = 0 },
                 .{ .title = "Stereo", .kind = .stereo, .first_source_id = 1, .second_source_id = 2 },
@@ -444,9 +452,9 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
             .composition = .{
                 .title = "Component Gallery",
                 .groups = &.{
-                    .{ .title = "Continuous", .parameter_count = 2, .style = .{ .accent = 0x7ce8c5ff }, .xy_pad_count = 1 },
-                    .{ .title = "Discrete", .first_parameter = 2, .parameter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0xe8c77cff } },
-                    .{ .title = "Telemetry", .first_parameter = 5, .meter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0x7caee8ff }, .graph_count = 3 },
+                    .{ .title = "Continuous", .parameter_count = 3, .style = .{ .accent = 0x7ce8c5ff }, .xy_pad_count = 1 },
+                    .{ .title = "Discrete", .first_parameter = 3, .parameter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0xe8c77cff } },
+                    .{ .title = "Telemetry", .first_parameter = 6, .meter_count = 3, .first_xy_pad = 1, .style = .{ .accent = 0x7caee8ff }, .graph_count = 3 },
                 },
             },
         });
@@ -490,6 +498,71 @@ test "editor smoke controller creates an editor view" {
     try std.testing.expectEqual(types.kResultOk, view.vtable.getSize(view, &rect));
     try std.testing.expectEqual(@as(types.int32, 720), rect.right);
     try std.testing.expectEqual(@as(types.int32, 600), rect.bottom);
+}
+
+test "editor smoke gallery uses the production decibel control contract" {
+    try std.testing.expectEqual(@as(usize, 6), gallery_parameters.len);
+    const output = gallery_parameters[2];
+    try std.testing.expectEqual(output_param_id, output.id);
+    try std.testing.expectEqual(@TypeOf(output.control_kind).decibel_slider, output.control_kind);
+    try std.testing.expectEqualStrings("Output", std.mem.span(output.title));
+    try std.testing.expectEqualStrings("dB", std.mem.span(output.units));
+    try std.testing.expectEqual(@as(f64, 0.5), output.default_normalized);
+    try std.testing.expectEqual(@as(?f64, 0.0), editor_smoke_spec.parameter_set.plainFromNormalizedById(output_param_id, 0.5));
+}
+
+test "editor smoke presets include output gain" {
+    const HostHandler = vst_component_handler.ComponentHandler2(struct {});
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &out));
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(out orelse return error.MissingController));
+    defer _ = controller_iface.vtable.release(controller_iface);
+    var handler = HostHandler{};
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
+    defer _ = controller_iface.vtable.setComponentHandler(controller_iface, null);
+
+    try std.testing.expectEqual(types.kResultOk, loadGalleryPreset(controller_iface, 2));
+    try std.testing.expectEqual(@as(f64, 0.625), Controller.getNormalized(controller_iface, output_param_id));
+    try std.testing.expectEqual(types.kResultOk, loadGalleryPreset(controller_iface, 1));
+    try std.testing.expectEqual(@as(f64, 0.5), Controller.getNormalized(controller_iface, output_param_id));
+    try std.testing.expectEqual(@as(types.uint32, 12), handler.begin_count);
+    try std.testing.expectEqual(@as(types.uint32, 12), handler.perform_count);
+    try std.testing.expectEqual(@as(types.uint32, 12), handler.end_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), handler.start_group_count);
+    try std.testing.expectEqual(@as(types.uint32, 2), handler.finish_group_count);
+}
+
+test "editor smoke restores legacy state with unity output gain" {
+    const LegacyParams = struct {
+        gain: plug_core.parameters.FloatParam = .{ .id = gain_param_id, .name = "Gain", .short_name = "Gain", .units = "x", .min = 0.0, .max = 1.0, .default = 1.0 },
+        voices: plug_core.parameters.IntParam = plug_core.parameters.IntParam.init(voices_param_id, "Voices", 1, 4, 1),
+        bypass: plug_core.parameters.BoolParam = .{ .id = bypass_param_id, .name = "Bypass", .default = false, .is_bypass = true },
+        mode: editor_smoke_spec.ModeParam = .{ .id = mode_param_id, .name = "Mode", .default = .clean },
+        tone: plug_core.parameters.FloatParam = .{ .id = tone_param_id, .name = "Tone", .short_name = "Tone", .units = "%", .min = 0.0, .max = 100.0, .default = 50.0 },
+    };
+    const LegacySet = plug_core.parameters.ParameterSet(LegacyParams);
+    const LegacyValues = plug_core.parameters.ParameterValues(LegacyParams);
+    const legacy_set = LegacySet.init(.{});
+    var legacy_values = LegacyValues.init(&legacy_set);
+    try std.testing.expect(legacy_values.storeField(&legacy_set, "gain", 0.25));
+    const Stream = vst_stream.FixedBufferStream(1024);
+    var stream = Stream{};
+    try std.testing.expectEqual(
+        types.kResultOk,
+        zig_vst3_plugin_bridge.writeParameterState(LegacyParams, stream.asStream(), &legacy_set, &legacy_values),
+    );
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &out));
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(out orelse return error.MissingController));
+    defer _ = controller_iface.vtable.release(controller_iface);
+    try std.testing.expectEqual(
+        types.kResultOk,
+        stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null),
+    );
+    try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentState(controller_iface, stream.asStream()));
+    try std.testing.expectEqual(@as(f64, 0.25), Controller.getNormalized(controller_iface, gain_param_id));
+    try std.testing.expectEqual(@as(f64, 0.5), Controller.getNormalized(controller_iface, output_param_id));
 }
 
 test "editor smoke controller creates independent views" {
@@ -551,6 +624,7 @@ test "editor smoke controller persists UI state without changing parameters" {
     try std.testing.expectEqual(source_gain_before, Controller.getNormalized(source, gain_param_id));
     try std.testing.expectEqual(types.kResultOk, Controller.setNormalized(source, gain_param_id, 0.75));
     try std.testing.expectEqual(types.kResultOk, Controller.setNormalized(source, tone_param_id, 0.8));
+    try std.testing.expectEqual(types.kResultOk, Controller.setNormalized(source, output_param_id, 0.625));
     const Stream = vst_stream.FixedBufferStream(65536);
     var stream = Stream{};
     try std.testing.expectEqual(types.kResultOk, source.vtable.getState(source, stream.asStream()));
@@ -563,6 +637,7 @@ test "editor smoke controller persists UI state without changing parameters" {
     try std.testing.expect(!editorState(restored).get(show_analyzer_state_id).?.boolean);
     try std.testing.expectEqual(@as(f64, 0.75), Controller.getNormalized(restored, gain_param_id));
     try std.testing.expectEqual(@as(f64, 0.8), Controller.getNormalized(restored, tone_param_id));
+    try std.testing.expectEqual(@as(f64, 0.625), Controller.getNormalized(restored, output_param_id));
     const first = restored.vtable.createView(restored, ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
     _ = first.vtable.release(first);
     const reopened = restored.vtable.createView(restored, ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;

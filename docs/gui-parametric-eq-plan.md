@@ -97,7 +97,8 @@ Exit criteria:
 ## Milestone 6: API Decisions and Release Gates
 
 - [ ] Promote rotary only if the gallery and EQ use one public contract and every local exit criterion passes.
-- [ ] Promote bipolar and decibel controls only after the EQ becomes their second production consumer.
+- [ ] Promote decibel controls after the final EQ host checks. The gallery, channel strip, IR loader, and EQ now share one public contract.
+- [ ] Keep the direct bipolar slider experimental until a production editor uses that presentation. Bipolar dB rotary behavior does not prove the slider contract.
 - [ ] Promote assets, fonts, and custom drawing only if the EQ and IR loader use the same contract successfully.
 - [ ] Keep analyzer transport experimental until a second production analyzer consumer establishes its required shape.
 - [ ] Document precise blockers for every retained experimental API.
@@ -215,3 +216,16 @@ Record each committed milestone here with test counts, performance measurements,
 - Scale changes now work before or after frame attachment. A host rejection restores the prior frame zoom, view rectangle, and accepted scale.
 - Added EQ coverage for pre-attach 2x sizing, nonzero-origin constraints, attached 1.5x sizing, host resize notification, accepted `onSize`, and rejected-scale rollback. Native adapter coverage rejects zero, non-finite, and infinite scales and verifies layout remains stable across scale changes.
 - `zig build test` passed 58/58 steps and 3,706/3,706 tests. Raw ABI checks, all twelve Steinberg validators, native adapter tests, macOS accessibility tests, visual comparisons, and both 38-step Linux and Windows cross-target bundle matrices passed. The final linked-EQ warm render measured 229.4 us against its 300 us budget.
+
+### Component Gallery contract audit
+
+- Added Output as a public `decibel_slider` in the gallery's Continuous group. Its -24 dB to +24 dB parameter defaults to 0 dB and applies the same dB-to-linear conversion used by production consumers.
+- Neutral and Safe Bypass restore 0 dB. Wide Motion sets +6 dB. Preset loading retains standard grouped host gestures.
+- Added deterministic coverage for the public declaration, preset values, grouped gesture counts, controller-state round trips, legacy state restoration at 0 dB, and rendered audio gain.
+- Corrected the concurrent audio-import replacement test to accept either valid linearization point: cleared media while decoding or the completed replacement. It still rejects exposure of the prior media and passed five additional aggregate runs with fresh seeds.
+- Decibel sliders now have one gallery consumer and three production consumers: Channel Strip, IR Loader, and Parametric EQ. Final supported status remains gated on the current EQ bundle's manual REAPER checks.
+- The direct bipolar slider remains experimental because only the gallery uses that presentation. The EQ's bipolar dB range uses rotary controls and does not validate the slider-specific contract.
+- `zig build test raw-api-abi validate-examples --summary all` passed 213/213 steps and 3,714/3,714 tests. Raw ABI checks and all twelve Steinberg example validators passed.
+- Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` cross-target bundle matrices each passed 38/38 steps.
+- Final warm-render measurements were 98.4 us for the full visual suite, 34.0 us for rotary, 281.0 us for signal views, and 245.0 us for linked EQ. Every scene remained within its recorded budget.
+- Pluginval was not relaunched because its preserved startup abort remains under the stop-on-exit policy. Manual REAPER validation of the current crash-fixed EQ bundle remains pending.

@@ -5,6 +5,7 @@ pub const voices_param_id: u32 = 1;
 pub const bypass_param_id: u32 = 2;
 pub const mode_param_id: u32 = 3;
 pub const tone_param_id: u32 = 4;
+pub const output_param_id: u32 = 5;
 pub const step_param_ids = [_]u32{ 100, 101, 102, 103, 104, 105, 106, 107 };
 pub const Mode = enum { clean, boost, mute };
 pub const ModeParam = plug.parameters.EnumParam(Mode);
@@ -19,6 +20,7 @@ const EditorSmokePlugin = struct {
         bypass: plug.parameters.BoolParam = .{ .id = bypass_param_id, .name = "Bypass", .default = false, .is_bypass = true },
         mode: ModeParam = .{ .id = mode_param_id, .name = "Mode", .default = .clean },
         tone: plug.parameters.FloatParam = .{ .id = tone_param_id, .name = "Tone", .short_name = "Tone", .units = "%", .min = 0.0, .max = 100.0, .default = 50.0 },
+        output: plug.parameters.FloatParam = .{ .id = output_param_id, .name = "Output", .short_name = "Output", .units = "dB", .min = -24.0, .max = 24.0, .default = 0.0 },
         step_1: plug.parameters.BoolParam = .{ .id = step_param_ids[0], .name = "Step 1", .default = true },
         step_2: plug.parameters.BoolParam = .{ .id = step_param_ids[1], .name = "Step 2", .default = false },
         step_3: plug.parameters.BoolParam = .{ .id = step_param_ids[2], .name = "Step 3", .default = true },

@@ -597,7 +597,9 @@ test "audio importer replaces completed media without exposing stale decoded dat
     try std.testing.expectEqual(@as(usize, 8), importer.snapshot().decoded_frames);
 
     try std.testing.expect(importer.begin(.drop, &.{second_path[0..second_length]}));
-    try std.testing.expectEqual(@as(usize, 0), importer.snapshot().decoded_frames);
+    const during_replacement = importer.snapshot();
+    try std.testing.expect(during_replacement.import.generation > first_generation);
+    try std.testing.expect(during_replacement.decoded_frames == 0 or during_replacement.decoded_frames == 16);
     waitForWorker(&importer);
     const replacement = importer.snapshot();
     try std.testing.expectEqual(gui_file_importer.Status.ready, replacement.import.status);

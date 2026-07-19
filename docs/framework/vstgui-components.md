@@ -221,7 +221,7 @@ Dragging edits both parameters as one ordered gesture. Left and Right adjust the
 
 | Gallery area | Components and behavior |
 | --- | --- |
-| Continuous | Bipolar control, modulation marker, exact numeric entry, and linked XY pad |
+| Continuous | Bipolar slider, rotary control, output dB slider, modulation markers, exact numeric entry, and linked XY pad |
 | Discrete | Bypass toggle, mode dropdown, and segmented voice count |
 | Telemetry | Peak, stereo, and gain-reduction meters plus live waveform and spectrum graphs |
 | Resources | Embedded PNG, deterministic SVG, font fallback, and custom overlay drawing |
@@ -539,7 +539,7 @@ Experimental extensions:
 
 - `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and `Canvas` drawing functions. The gallery, IR loader, and parametric EQ now use the same public contract; final promotion still depends on the EQ release gates and manual host checks.
 - `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader is their only production consumer.
-- Rotary controls are shared by the gallery and parametric EQ, but remain experimental until the EQ release gates and manual host checks pass. Bipolar and decibel controls each have one production consumer.
+- Rotary controls are shared by the gallery and parametric EQ, but remain experimental until the EQ release gates and manual host checks pass. Decibel sliders are shared by the gallery, channel strip, IR loader, and parametric EQ under one public contract, with final promotion pending the same host checks. The direct bipolar slider remains a gallery-only contract and needs a production consumer before promotion.
 - `GraphHandle`, `GraphLayer`, parameter-driven controller curves, and mixed-source graph layers. The gallery and parametric EQ share the layer contract; linked handles still have one production consumer and remain pending the EQ release gates.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
