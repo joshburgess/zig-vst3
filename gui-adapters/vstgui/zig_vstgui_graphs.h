@@ -96,6 +96,11 @@ private:
     };
     struct LayerState {
         ZigVstguiGraphStyleRole style {ZIG_VSTGUI_GRAPH_SECONDARY};
+        ZigVstguiGraphKind kind {ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION};
+        ZigVstguiGraphAxis y_axis {};
+        bool has_y_axis {false};
+        bool dynamic {false};
+        bool disabled {false};
         std::vector<PointState> points;
     };
 
@@ -107,6 +112,7 @@ private:
     double denormalize(double value, const ZigVstguiGraphAxis& axis) const;
     double snap(double value, const ZigVstguiGraphAxis& axis, double step) const;
     VSTGUI::CPoint viewPoint(const ZigVstguiGraphPoint& point) const;
+    VSTGUI::CPoint viewPoint(const ZigVstguiGraphPoint& point, const ZigVstguiGraphAxis& y_axis) const;
     ZigVstguiGraphPoint graphPoint(const VSTGUI::CPoint& point) const;
     std::optional<std::size_t> indexOf(uint32_t point_id) const;
     std::optional<std::size_t> hitTestPoint(const VSTGUI::CPoint& point) const;
@@ -177,12 +183,20 @@ public:
     void viewTookFocus(VSTGUI::CView* view) override;
 
 private:
+    struct LayerSource {
+        uint32_t layer_index {0};
+        uint32_t source_id {0};
+        bool dynamic {false};
+        bool parameter_driven {false};
+    };
+
     static bool accessibilityAction(
         void* userdata,
         const AccessibilityNode& node,
         const AccessibilityActionRequest& request
     );
     bool performAccessibilityAction(const AccessibilityActionRequest& request);
+    bool refreshSources(bool dynamic, bool parameter_driven);
 
     VSTGUI::CTextLabel* label {nullptr};
     GraphView* graph {nullptr};
@@ -191,7 +205,9 @@ private:
     Component graph_component;
     ZigVstguiGraphDescription description {};
     ZigVstguiGraphCallbacks callbacks {};
-    std::vector<uint32_t> layer_source_ids;
+    std::vector<LayerSource> layer_sources;
+    bool has_dynamic_source {false};
+    bool has_parameter_source {false};
     bool active {false};
 };
 

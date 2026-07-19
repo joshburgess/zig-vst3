@@ -17,6 +17,7 @@ struct CallbackState {
     uint32_t begin_count {0};
     uint32_t perform_count {0};
     uint32_t end_count {0};
+    uint32_t draw_count {0};
     std::string editor_text {"Studio Plate"};
     std::string live_text {"48 kHz, mono"};
 };
@@ -57,6 +58,13 @@ int32_t loadProgress(void*, uint32_t source_id, ZigVstguiProgressSnapshot* snaps
     if (source_id != 7 || !snapshot) return -1;
     *snapshot = {ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_RUNNING, 0.42, 1};
     return 0;
+}
+
+int32_t drawParameter(void* userdata, const ZigVstguiDrawRequest* request, ZigVstguiCanvas* canvas) {
+    if (!userdata || !request || !canvas) return -1;
+    static_cast<CallbackState*>(userdata)->draw_count += 1;
+    if (request->parameter_id != 20 || request->component != ZIG_VSTGUI_DRAW_TOGGLE) return 0;
+    return zig_vstgui_canvas_draw_asset(canvas, 1, 6.0, 6.0, 26.0, 26.0, 1.f);
 }
 
 id elementNamed(NSArray* elements, NSString* name) {
@@ -107,6 +115,16 @@ int main() {
         };
         graphs[0].range_selection = {1, 0.2, 0.8, 0.1, 0.05, 0, 0};
         CallbackState state;
+        static constexpr char test_svg[] =
+            "<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'>"
+            "<path d='M3 10l4 4 10-10' fill='none' stroke='#00a889' stroke-width='3'/></svg>";
+        const ZigVstguiAssetDescription assets[] = {{
+            1,
+            reinterpret_cast<const uint8_t*>(test_svg),
+            static_cast<uint32_t>(sizeof(test_svg) - 1),
+            ZIG_VSTGUI_ASSET_SVG,
+            ZIG_VSTGUI_ASSET_CONTAIN,
+        }};
         ZigVstguiCallbacks callbacks {};
         callbacks.userdata = &state;
         callbacks.begin_edit = beginEdit;
@@ -117,6 +135,10 @@ int main() {
         callbacks.load_editor_text = loadEditorText;
         callbacks.load_progress = loadProgress;
         ZigVstguiSkinDescription skin {};
+        skin.assets = assets;
+        skin.asset_count = 1;
+        skin.fonts = {"Avenir Next", "Avenir Next", "Menlo", "Arial"};
+        skin.drawing = {&state, drawParameter};
         skin.editor_title = "Accessibility Test";
         const ZigVstguiEditableLabelDescription editable[] = {
             {11, "IR Name", "Impulse response name", "Name this impulse response",
@@ -137,6 +159,9 @@ int main() {
         if (!editor.nativeAccessibilityActive() || editor.nativeAccessibilityElementCount() != 12) return 2;
         auto* native_view = parent.subviews.lastObject;
         if (!native_view) return 3;
+        [native_view setNeedsDisplay:YES];
+        [native_view displayIfNeeded];
+        if (state.draw_count == 0) return 40;
         NSArray* children = native_view.accessibilityChildren;
         if (children.count != 12) return 4;
         id gain = elementNamed(children, @"Gain (dB)");
@@ -203,6 +228,7 @@ int main() {
         if (nativeFramePointer(native_view)) return 36;
 
         auto* retained_views = [NSMutableArray arrayWithObject:native_view];
+        const uint32_t initial_draw_count = state.draw_count;
         for (uint32_t cycle = 0; cycle < 16; ++cycle) {
             if (!editor.open((__bridge void*)parent, ZIG_VSTGUI_PLATFORM_MACOS)) return 37;
             auto* cycle_view = parent.subviews.lastObject;
@@ -219,6 +245,7 @@ int main() {
             [retained_view setNeedsDisplay:YES];
             [retained_view displayIfNeeded];
         }
+        if (state.draw_count <= initial_draw_count) return 41;
         [[NSRunLoop currentRunLoop]
             runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
     }

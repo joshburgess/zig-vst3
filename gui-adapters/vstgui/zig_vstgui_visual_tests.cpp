@@ -477,6 +477,7 @@ Snapshot linkedEqResponse() {
             std::array<ZigVstguiGraphPoint, 97> low_response {};
             std::array<ZigVstguiGraphPoint, 97> mid_response {};
             std::array<ZigVstguiGraphPoint, 97> high_response {};
+            std::array<ZigVstguiGraphPoint, 64> spectrum {};
             for (std::size_t index = 0; index < response.size(); ++index) {
                 const double normalized = static_cast<double>(index) / static_cast<double>(response.size() - 1);
                 const double frequency = 20.0 * std::pow(1000.0, normalized);
@@ -487,6 +488,13 @@ Snapshot linkedEqResponse() {
                 low_response[index] = {frequency, low};
                 mid_response[index] = {frequency, mid};
                 high_response[index] = {frequency, high};
+            }
+            for (std::size_t index = 0; index < spectrum.size(); ++index) {
+                const double normalized = static_cast<double>(index) / static_cast<double>(spectrum.size() - 1);
+                spectrum[index] = {
+                    20.0 * std::pow(1000.0, normalized),
+                    -82.0 + 52.0 * std::exp(-std::pow((normalized - 0.58) / 0.24, 2.0)),
+                };
             }
             const ZigVstguiGraphHandleDescription handles[] = {
                 {1, "Low", 10, 11, 0.25, 0.65, 0, 0, 1, 12, "Q", 0.35, 0.01, 1, 13, 1, 1},
@@ -505,13 +513,76 @@ Snapshot linkedEqResponse() {
                 {ZIG_VSTGUI_GRAPH_SECONDARY, low_response.data(), static_cast<uint32_t>(low_response.size()), 0},
                 {ZIG_VSTGUI_GRAPH_MODULATION, mid_response.data(), static_cast<uint32_t>(mid_response.size()), 0},
                 {ZIG_VSTGUI_GRAPH_SECONDARY, high_response.data(), static_cast<uint32_t>(high_response.size()), 0},
+                {
+                    ZIG_VSTGUI_GRAPH_SECONDARY,
+                    spectrum.data(),
+                    static_cast<uint32_t>(spectrum.size()),
+                    0,
+                    ZIG_VSTGUI_GRAPH_SPECTRUM,
+                    0,
+                    0,
+                    1,
+                    {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+                    0,
+                },
             };
             description.layers = layers;
-            description.layer_count = 3;
+            description.layer_count = 4;
             ZigVstgui::AccessibilityNode accessibility;
             ZigVstgui::GraphView graph(VSTGUI::CRect(12, 12, 628, 208), description, styles, &accessibility);
             graph.selectPoint(2);
             graph.draw(&context);
+        },
+    };
+}
+
+Snapshot eqAnalyzerStates() {
+    return {
+        "eq-analyzer-states.png",
+        640,
+        180,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
+            context.setFillColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            context.drawRect(VSTGUI::CRect(0, 0, 640, 180), VSTGUI::kDrawFilled);
+            const ZigVstguiGraphPoint response[] = {
+                {20.0, 0.0}, {200.0, 4.0}, {2'000.0, -3.0}, {20'000.0, 0.0},
+            };
+            const ZigVstguiGraphPoint spectrum[] = {
+                {40.0, -72.0}, {160.0, -48.0}, {640.0, -24.0}, {2'560.0, -38.0}, {10'240.0, -64.0},
+            };
+            ZigVstgui::AccessibilityNode nodes[3];
+            const char* titles[] = {"Analyzer Off", "No Signal", "Analyzer Active"};
+            for (uint32_t index = 0; index < 3; ++index) {
+                ZigVstguiGraphLayerDescription layer {
+                    ZIG_VSTGUI_GRAPH_SECONDARY,
+                    index == 2 ? spectrum : nullptr,
+                    index == 2 ? 5u : 0u,
+                    9,
+                    ZIG_VSTGUI_GRAPH_SPECTRUM,
+                    index == 2 ? 0 : 1,
+                    0,
+                    1,
+                    {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+                    index == 0 ? 1 : 0,
+                };
+                ZigVstguiGraphDescription description {
+                    titles[index], ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION, ZIG_VSTGUI_GRAPH_PRIMARY,
+                    {20.0, 20'000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"},
+                    {-24.0, 24.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+                    response, 4, 0, 0, 30,
+                };
+                description.layers = &layer;
+                description.layer_count = 1;
+                ZigVstgui::GraphView graph(
+                    VSTGUI::CRect(8.0 + index * 212.0, 8.0, 208.0 + index * 212.0, 172.0),
+                    description,
+                    styles,
+                    &nodes[index]
+                );
+                graph.draw(&context);
+            }
         },
     };
 }
@@ -1347,10 +1418,18 @@ double benchmarkLinkedEqResponseDraw() {
     ZigVstgui::ThemeResolver styles(ZigVstgui::alternateTheme());
     auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 640, 220)));
     container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
-    std::array<ZigVstguiGraphPoint, 256> response {};
+    std::array<ZigVstguiGraphPoint, 97> response {};
+    std::array<ZigVstguiGraphPoint, 64> spectrum {};
     for (std::size_t index = 0; index < response.size(); ++index) {
         const double normalized = static_cast<double>(index) / static_cast<double>(response.size() - 1);
         response[index] = {20.0 * std::pow(1000.0, normalized), 12.0 * std::sin(normalized * 6.28318530718)};
+    }
+    for (std::size_t index = 0; index < spectrum.size(); ++index) {
+        const double normalized = static_cast<double>(index) / static_cast<double>(spectrum.size() - 1);
+        spectrum[index] = {
+            20.0 * std::pow(1000.0, normalized),
+            -86.0 + 58.0 * std::abs(std::sin(normalized * 9.42477796077)),
+        };
     }
     const ZigVstguiGraphHandleDescription handles[] = {
         {1, "Low", 10, 11, 0.25, 0.65, 0, 0, 1, 12, "Q", 0.35, 0.01, 1, 13, 1, 1},
@@ -1369,9 +1448,21 @@ double benchmarkLinkedEqResponseDraw() {
         {ZIG_VSTGUI_GRAPH_SECONDARY, response.data(), static_cast<uint32_t>(response.size()), 0},
         {ZIG_VSTGUI_GRAPH_MODULATION, response.data(), static_cast<uint32_t>(response.size()), 0},
         {ZIG_VSTGUI_GRAPH_SECONDARY, response.data(), static_cast<uint32_t>(response.size()), 0},
+        {
+            ZIG_VSTGUI_GRAPH_SECONDARY,
+            spectrum.data(),
+            static_cast<uint32_t>(spectrum.size()),
+            0,
+            ZIG_VSTGUI_GRAPH_SPECTRUM,
+            0,
+            0,
+            1,
+            {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+            0,
+        },
     };
     description.layers = layers;
-    description.layer_count = 3;
+    description.layer_count = 4;
     ZigVstgui::AccessibilityNode accessibility;
     container->addView(new ZigVstgui::GraphView(
         VSTGUI::CRect(8, 8, 632, 212), description, styles, &accessibility
@@ -1429,6 +1520,7 @@ int main(int argc, char** argv) {
         graphViewports(),
         signalViews(),
         linkedEqResponse(),
+        eqAnalyzerStates(),
         xyPad(),
         editableEnvelope(),
         presetBrowsers(),

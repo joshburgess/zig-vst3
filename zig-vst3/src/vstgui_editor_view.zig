@@ -378,6 +378,12 @@ pub const GraphLayerDescription = extern struct {
     points: ?[*]const gui_graph.Point,
     point_count: types.uint32,
     source_id: types.uint32,
+    kind: GraphKind = .transfer_function,
+    dynamic: types.int32 = 0,
+    parameter_driven: types.int32 = 0,
+    has_y_axis: types.int32 = 0,
+    y_axis: GraphAxis = .{ .minimum = 0.0, .maximum = 1.0 },
+    disabled: types.int32 = 0,
 };
 
 pub const GraphHandleDescription = extern struct {

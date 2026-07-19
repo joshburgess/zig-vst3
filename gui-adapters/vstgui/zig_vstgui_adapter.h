@@ -418,6 +418,12 @@ typedef struct ZigVstguiGraphLayerDescription {
     const ZigVstguiGraphPoint* points;
     uint32_t point_count;
     uint32_t source_id;
+    ZigVstguiGraphKind kind;
+    int32_t dynamic;
+    int32_t parameter_driven;
+    int32_t has_y_axis;
+    ZigVstguiGraphAxis y_axis;
+    int32_t disabled;
 } ZigVstguiGraphLayerDescription;
 
 typedef struct ZigVstguiGraphHandleDescription {

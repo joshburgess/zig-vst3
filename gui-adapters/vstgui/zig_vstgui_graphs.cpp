@@ -215,14 +215,26 @@ GraphView::GraphView(
     for (uint32_t layer_index = 0; layer_index < description.layer_count; ++layer_index) {
         const auto& source = description.layers[layer_index];
         if (source.style < ZIG_VSTGUI_GRAPH_PRIMARY || source.style > ZIG_VSTGUI_GRAPH_WARNING ||
+            source.kind < ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION || source.kind > ZIG_VSTGUI_GRAPH_SPECTRUM ||
             source.point_count > ZIG_VSTGUI_MAX_GRAPH_POINTS ||
             (source.point_count > 0 && !source.points) ||
-            (description.parameter_driven != 0 && source.point_count != 0)) {
+            (source.dynamic != 0 && source.dynamic != 1) ||
+            (source.parameter_driven != 0 && source.parameter_driven != 1) ||
+            (source.has_y_axis != 0 && source.has_y_axis != 1) ||
+            (source.disabled != 0 && source.disabled != 1) ||
+            (source.dynamic != 0 && source.parameter_driven != 0) ||
+            ((source.dynamic != 0 || source.parameter_driven != 0) && source.point_count != 0) ||
+            (source.has_y_axis != 0 && !validAxis(source.y_axis))) {
             valid_description = false;
             return;
         }
         LayerState layer;
         layer.style = source.style;
+        layer.kind = source.kind;
+        layer.y_axis = source.y_axis;
+        layer.has_y_axis = source.has_y_axis != 0;
+        layer.dynamic = source.dynamic != 0;
+        layer.disabled = source.disabled != 0;
         layer.points.reserve(source.point_count);
         for (uint32_t point_index = 0; point_index < source.point_count; ++point_index) {
             const auto& point = source.points[point_index];
@@ -299,6 +311,7 @@ bool GraphView::setLayerPoints(uint32_t layer_index, const ZigVstguiGraphPoint* 
     layer.points.clear();
     layer.points.reserve(count);
     for (uint32_t index = 0; index < count; ++index) layer.points.push_back({index + 1, next[index]});
+    syncAccessibility();
     invalid();
     return true;
 }
@@ -749,9 +762,16 @@ double GraphView::snap(double value, const ZigVstguiGraphAxis& axis, double step
 }
 
 VSTGUI::CPoint GraphView::viewPoint(const ZigVstguiGraphPoint& point) const {
+    return viewPoint(point, description.y_axis);
+}
+
+VSTGUI::CPoint GraphView::viewPoint(
+    const ZigVstguiGraphPoint& point,
+    const ZigVstguiGraphAxis& y_axis
+) const {
     const auto bounds = getViewSize();
     const double x = normalize(point.x, description.x_axis);
-    const double y = normalize(point.y, description.y_axis);
+    const double y = normalize(point.y, y_axis);
     if (!viewport.enabled()) {
         return {
             bounds.left + bounds.getWidth() * x,
@@ -844,7 +864,7 @@ void GraphView::invalidateChange(
 
 void GraphView::syncAccessibility() {
     if (!accessibility) return;
-    char text[160] {};
+    char text[256] {};
     ZigVstguiEnvelopePoint selected {};
     if (selectedPoint(selected)) {
         const char* x_label = description.x_axis.label ? description.x_axis.label : "";
@@ -968,6 +988,32 @@ void GraphView::syncAccessibility() {
                 viewport.zoom()
             );
         }
+    }
+    for (const auto& layer : layers) {
+        if (layer.kind != ZIG_VSTGUI_GRAPH_SPECTRUM) continue;
+        const std::size_t length = std::char_traits<char>::length(text);
+        if (layer.disabled) {
+            std::snprintf(text + length, sizeof(text) - length, ". Analyzer off");
+        } else if (layer.points.empty()) {
+            std::snprintf(text + length, sizeof(text) - length, ". Analyzer waiting for signal");
+        } else {
+            const auto peak = std::max_element(
+                layer.points.begin(),
+                layer.points.end(),
+                [](const PointState& left, const PointState& right) {
+                    return left.position.y < right.position.y;
+                }
+            );
+            std::snprintf(
+                text + length,
+                sizeof(text) - length,
+                ". Analyzer active, %u bins, peak %.0f Hz at %.1f dB",
+                static_cast<uint32_t>(layer.points.size()),
+                peak->position.x,
+                peak->position.y
+            );
+        }
+        break;
     }
     accessibility->setValueText(text);
 }
@@ -1100,23 +1146,55 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
         }
         return color;
     };
-    for (const auto& layer : layers) {
-        if (layer.points.empty()) continue;
+    const auto draw_layer = [&](const LayerState& layer) {
+        if (layer.disabled || layer.points.empty()) return;
         auto layer_color = color_for_style(layer.style);
         layer_color.alpha = static_cast<uint8_t>(std::max(72, layer_color.alpha * 2 / 3));
         context->setFrameColor(layer_color);
-        context->setLineWidth(1.25);
-        if (auto path = VSTGUI::owned(context->createGraphicsPath())) {
-            path->beginSubpath(viewPoint(layer.points.front().position));
-            for (std::size_t index = 1; index < layer.points.size(); ++index) {
-                path->addLine(viewPoint(layer.points[index].position));
+        const auto& layer_y_axis = layer.has_y_axis ? layer.y_axis : description.y_axis;
+        if (layer.kind == ZIG_VSTGUI_GRAPH_SPECTRUM) {
+            context->setLineWidth(std::clamp(
+                bounds.getWidth() / std::max(1.0, static_cast<double>(layer.points.size())) * 0.7,
+                1.0,
+                5.0
+            ));
+            if (auto path = VSTGUI::owned(context->createGraphicsPath())) {
+                for (const auto& point : layer.points) {
+                    path->beginSubpath(viewPoint({point.position.x, layer_y_axis.minimum}, layer_y_axis));
+                    path->addLine(viewPoint(point.position, layer_y_axis));
+                }
+                context->drawGraphicsPath(path, VSTGUI::CDrawContext::kPathStroked);
+            } else {
+                for (const auto& point : layer.points) {
+                    context->drawLine(
+                        viewPoint({point.position.x, layer_y_axis.minimum}, layer_y_axis),
+                        viewPoint(point.position, layer_y_axis)
+                    );
+                }
             }
-            context->drawGraphicsPath(path, VSTGUI::CDrawContext::kPathStroked);
         } else {
-            for (std::size_t index = 1; index < layer.points.size(); ++index) {
-                context->drawLine(viewPoint(layer.points[index - 1].position), viewPoint(layer.points[index].position));
+            context->setLineWidth(1.25);
+            if (auto path = VSTGUI::owned(context->createGraphicsPath())) {
+                path->beginSubpath(viewPoint(layer.points.front().position, layer_y_axis));
+                for (std::size_t index = 1; index < layer.points.size(); ++index) {
+                    path->addLine(viewPoint(layer.points[index].position, layer_y_axis));
+                }
+                context->drawGraphicsPath(path, VSTGUI::CDrawContext::kPathStroked);
+            } else {
+                for (std::size_t index = 1; index < layer.points.size(); ++index) {
+                    context->drawLine(
+                        viewPoint(layer.points[index - 1].position, layer_y_axis),
+                        viewPoint(layer.points[index].position, layer_y_axis)
+                    );
+                }
             }
         }
+    };
+    for (const auto& layer : layers) {
+        if (layer.kind == ZIG_VSTGUI_GRAPH_SPECTRUM) draw_layer(layer);
+    }
+    for (const auto& layer : layers) {
+        if (layer.kind != ZIG_VSTGUI_GRAPH_SPECTRUM) draw_layer(layer);
     }
     const auto curve_color = color_for_style(description.style);
     context->setFrameColor(curve_color);
@@ -1170,6 +1248,18 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
                 VSTGUI::kDrawFilledAndStroked
             );
         }
+    }
+    for (const auto& layer : layers) {
+        if (layer.kind != ZIG_VSTGUI_GRAPH_SPECTRUM || (!layer.disabled && !layer.points.empty())) continue;
+        const auto status_style = styles.resolve(ComponentKind::value_field);
+        context->setFont(styles.font(TypographyRole::body));
+        context->setFontColor(status_style.foreground);
+        context->drawString(
+            layer.disabled ? "Analyzer off" : "Analyzer waiting for signal",
+            VSTGUI::CRect(bounds.left + 8.0, bounds.top + 6.0, bounds.right - 8.0, bounds.top + 24.0),
+            VSTGUI::kRightText
+        );
+        break;
     }
     drawRangeSelection(context, bounds);
     drawViewportOverlay(context, bounds);
@@ -1469,20 +1559,31 @@ bool GraphControl::build(
     if (!parent || label || graph) return false;
     description = value_description;
     callbacks = value_callbacks;
-    layer_source_ids.clear();
+    layer_sources.clear();
+    has_dynamic_source = description.dynamic != 0;
+    has_parameter_source = description.parameter_driven != 0;
     if (description.layer_count > ZIG_VSTGUI_MAX_GRAPH_LAYERS ||
         (description.layer_count > 0 && !description.layers)) return false;
     for (uint32_t index = 0; index < description.layer_count; ++index) {
-        if (description.parameter_driven != 0) {
-            if (description.layers[index].source_id == description.source_id) return false;
-            for (uint32_t previous = 0; previous < index; ++previous) {
-                if (description.layers[previous].source_id == description.layers[index].source_id) return false;
-            }
+        const auto& layer = description.layers[index];
+        if ((layer.dynamic != 0 && layer.dynamic != 1) ||
+            (layer.parameter_driven != 0 && layer.parameter_driven != 1) ||
+            (layer.has_y_axis != 0 && layer.has_y_axis != 1) ||
+            (layer.disabled != 0 && layer.disabled != 1)) return false;
+        if (layer.dynamic != 0 && layer.parameter_driven != 0) return false;
+        if (layer.dynamic == 0 && layer.parameter_driven == 0) continue;
+        if (layer.disabled != 0) continue;
+        has_dynamic_source = has_dynamic_source || layer.dynamic != 0;
+        has_parameter_source = has_parameter_source || layer.parameter_driven != 0;
+        if ((description.dynamic != 0 || description.parameter_driven != 0) &&
+            layer.source_id == description.source_id) return false;
+        for (const auto& previous : layer_sources) {
+            if (previous.source_id == layer.source_id) return false;
         }
-        layer_source_ids.push_back(description.layers[index].source_id);
+        layer_sources.push_back({index, layer.source_id, layer.dynamic != 0, layer.parameter_driven != 0});
     }
-    if ((description.dynamic || description.parameter_driven != 0) && !callbacks.load) return false;
-    if (description.dynamic &&
+    if ((has_dynamic_source || has_parameter_source) && !callbacks.load) return false;
+    if (has_dynamic_source &&
         (description.maximum_refresh_hz == 0 || description.maximum_refresh_hz > 60)) return false;
     if (description.dynamic && description.parameter_driven != 0) return false;
     const auto label_style = styles.resolve(ComponentKind::title);
@@ -1499,7 +1600,7 @@ bool GraphControl::build(
 
     graph_component.accessibility().setRole(AccessibilityRole::graph);
     graph_component.accessibility().setName(description.title ? description.title : "Graph");
-    std::string semantic_description = description.dynamic ? "Updating graph" : "Static graph";
+    std::string semantic_description = has_dynamic_source ? "Updating graph" : "Static graph";
     if (description.kind == ZIG_VSTGUI_GRAPH_WAVEFORM) {
         semantic_description = description.dynamic ? "Updating waveform" : "Static waveform";
     } else if (description.kind == ZIG_VSTGUI_GRAPH_SPECTRUM) {
@@ -1580,11 +1681,16 @@ bool GraphControl::build(
         );
     }
 
-    if (description.dynamic) {
+    if (has_dynamic_source) {
         const uint32_t interval = std::max(16u, (1000u + description.maximum_refresh_hz - 1) / description.maximum_refresh_hz);
-        timer = new VSTGUI::CVSTGUITimer([this](VSTGUI::CVSTGUITimer*) { refresh(); }, interval, false);
-        refresh();
-    } else if (description.parameter_driven != 0 && !refresh()) {
+        timer = new VSTGUI::CVSTGUITimer(
+            [this](VSTGUI::CVSTGUITimer*) { refreshSources(true, false); },
+            interval,
+            false
+        );
+        refreshSources(true, false);
+    }
+    if (has_parameter_source && !refreshSources(false, true)) {
         return false;
     }
     return true;
@@ -1620,19 +1726,38 @@ bool GraphControl::running() const {
 }
 
 bool GraphControl::refresh() {
-    if (!graph || (description.dynamic == 0 && description.parameter_driven == 0) || !callbacks.load) return false;
+    return refreshSources(true, true);
+}
+
+bool GraphControl::refreshSources(bool refresh_dynamic, bool refresh_parameter_driven) {
+    if (!graph || !callbacks.load) return false;
+    const bool load_primary =
+        (refresh_dynamic && description.dynamic != 0) ||
+        (refresh_parameter_driven && description.parameter_driven != 0);
     std::array<ZigVstguiGraphPoint, ZIG_VSTGUI_MAX_GRAPH_POINTS> next {};
     std::array<std::array<ZigVstguiGraphPoint, ZIG_VSTGUI_MAX_GRAPH_POINTS>, ZIG_VSTGUI_MAX_GRAPH_LAYERS> layer_points {};
     std::array<uint32_t, ZIG_VSTGUI_MAX_GRAPH_LAYERS> layer_counts {};
-    const uint32_t count = callbacks.load(callbacks.userdata, description.source_id, next.data(), ZIG_VSTGUI_MAX_GRAPH_POINTS);
-    if (count > ZIG_VSTGUI_MAX_GRAPH_POINTS) return false;
-    for (uint32_t index = 0; index < count; ++index) {
-        if (!std::isfinite(next[index].x) || !std::isfinite(next[index].y)) return false;
+    std::array<bool, ZIG_VSTGUI_MAX_GRAPH_LAYERS> load_layers {};
+    uint32_t count = 0;
+    bool loaded = false;
+    if (load_primary) {
+        loaded = true;
+        count = callbacks.load(callbacks.userdata, description.source_id, next.data(), ZIG_VSTGUI_MAX_GRAPH_POINTS);
+        if (count > ZIG_VSTGUI_MAX_GRAPH_POINTS) return false;
+        for (uint32_t index = 0; index < count; ++index) {
+            if (!std::isfinite(next[index].x) || !std::isfinite(next[index].y)) return false;
+        }
     }
-    for (std::size_t layer = 0; layer < layer_source_ids.size(); ++layer) {
+    for (const auto& source : layer_sources) {
+        const auto layer = source.layer_index;
+        load_layers[layer] =
+            (refresh_dynamic && source.dynamic) ||
+            (refresh_parameter_driven && source.parameter_driven);
+        if (!load_layers[layer]) continue;
+        loaded = true;
         layer_counts[layer] = callbacks.load(
             callbacks.userdata,
-            layer_source_ids[layer],
+            source.source_id,
             layer_points[layer].data(),
             ZIG_VSTGUI_MAX_GRAPH_POINTS
         );
@@ -1642,8 +1767,10 @@ bool GraphControl::refresh() {
                 !std::isfinite(layer_points[layer][index].y)) return false;
         }
     }
-    bool changed = graph->setPoints(next.data(), count);
-    for (std::size_t layer = 0; layer < layer_source_ids.size(); ++layer) {
+    if (!loaded) return false;
+    bool changed = load_primary && graph->setPoints(next.data(), count);
+    for (uint32_t layer = 0; layer < description.layer_count; ++layer) {
+        if (!load_layers[layer]) continue;
         changed = graph->setLayerPoints(
             static_cast<uint32_t>(layer),
             layer_points[layer].data(),
@@ -1656,7 +1783,7 @@ bool GraphControl::refresh() {
 bool GraphControl::setParameter(uint32_t parameter_id, double normalized) {
     if (!graph) return false;
     const bool changed = graph->setParameter(parameter_id, normalized);
-    if (description.parameter_driven != 0) return refresh() || changed;
+    if (has_parameter_source) return refreshSources(false, true) || changed;
     return changed;
 }
 

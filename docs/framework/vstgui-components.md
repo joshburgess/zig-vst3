@@ -305,7 +305,9 @@ Set `selection_state_id` and `envelope_state_id` to fields in the controller's p
 
 A transfer graph may declare fixed `GraphHandle` values independently from its curve points. Each handle binds x and y to distinct parameters. An optional adjustment parameter provides a third dimension such as Q, and an optional enabled parameter dims the handle without removing its accessible state. `highlight_group_index` links selection to a declared parameter group so the matching panel heading receives visible selected styling and selected accessibility state.
 
-Set `parameter_driven = true` and `source = .controller` when the controller calculates the curve from accepted parameter values. The adapter loads it when the editor opens and after parameter notifications. It does not start a refresh timer. Up to four `GraphLayer` overlays may provide bounded band or reference curves through separate controller source IDs. Every primary or layered curve remains limited to 256 finite points.
+Set `parameter_driven = true` and `source = .controller` when the controller calculates the curve from accepted parameter values. The adapter loads it when the editor opens and after parameter notifications. It does not start a refresh timer. Up to four `GraphLayer` overlays may provide bounded band, reference, waveform, or spectrum data. A layer independently declares fixed points, a parameter-driven controller source, or a timer-driven component source. Dynamic and parameter-driven sources in one graph refresh independently, so audio telemetry does not cause response recalculation and parameter changes do not poll the analyzer.
+
+Set a spectrum layer's `kind` to `.spectrum` and give it a decibel `y_axis` when it shares a transfer graph's logarithmic frequency axis. Spectrum bars render behind the response and handles. An empty live layer displays `Analyzer waiting for signal`; a disabled layer displays `Analyzer off`. The graph accessibility value reports the same state and includes bin count, peak frequency, and level when data is active. Every primary or layered source remains limited to 256 finite points.
 
 Pointer movement edits x and y through one ordered grouped gesture. Arrows adjust both axes, Page Up and Page Down adjust the optional third parameter, and brackets select adjacent handles. Host changes update the matching handle without emitting a graph gesture. A rejected edit restores both axes. Accessibility exposes the selected handle name, enabled state, axes, and optional adjustment value.
 
@@ -528,10 +530,10 @@ Supported authoring surface:
 
 Experimental extensions:
 
-- `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and `Canvas` drawing functions.
+- `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and `Canvas` drawing functions. The gallery, IR loader, and parametric EQ now use the same public contract; final promotion still depends on the EQ release gates and manual host checks.
 - `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader is their only production consumer.
 - Rotary controls are shared by the gallery and parametric EQ, but remain experimental until the EQ release gates and manual host checks pass. Bipolar and decibel controls each have one production consumer.
-- `GraphHandle`, `GraphLayer`, and parameter-driven controller curves. The parametric EQ is currently their only production consumer.
+- `GraphHandle`, `GraphLayer`, parameter-driven controller curves, and mixed-source graph layers. The gallery and parametric EQ share the layer contract; linked handles still have one production consumer and remain pending the EQ release gates.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
 - `AudioFileImporter`, controller-owned import status and command callbacks, and controller-sourced graph snapshots. The channel strip and IR loader use the contract, but decoded audio transport still has one production consumer.

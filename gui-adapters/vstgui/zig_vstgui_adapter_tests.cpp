@@ -1154,7 +1154,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 22) return 1;
+    if (zig_vstgui_adapter_version() != 23) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -1853,11 +1853,35 @@ int testGraphs() {
     handle_graph.handles = graph_handles;
     handle_graph.handle_count = 2;
     handle_graph.parameter_driven = 1;
+    handle_graph.maximum_refresh_hz = 30;
     const ZigVstguiGraphLayerDescription graph_layers[] = {
-        {ZIG_VSTGUI_GRAPH_SECONDARY, nullptr, 0, 7},
+        {
+            ZIG_VSTGUI_GRAPH_SECONDARY,
+            nullptr,
+            0,
+            7,
+            ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION,
+            0,
+            1,
+            0,
+            {},
+            0,
+        },
+        {
+            ZIG_VSTGUI_GRAPH_SECONDARY,
+            nullptr,
+            0,
+            8,
+            ZIG_VSTGUI_GRAPH_SPECTRUM,
+            1,
+            0,
+            1,
+            {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+            0,
+        },
     };
     handle_graph.layers = graph_layers;
-    handle_graph.layer_count = 1;
+    handle_graph.layer_count = 2;
     ZigVstgui::GraphControl handle_control;
     auto handle_container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140)));
     if (!handle_control.build(
@@ -1868,12 +1892,13 @@ int testGraphs() {
             styles,
             &handle_state,
             graphSelectionChanged
-        ) || handle_state.graph_load_count != 2 || handle_control.graphView()->pointCount() != 2 ||
+        ) || handle_state.graph_load_count != 3 || handle_control.graphView()->pointCount() != 2 ||
         !handle_control.graphView()->editable() || handle_control.accessibilityNode().state().read_only ||
         handle_control.accessibilityNode().supports(ZigVstgui::AccessibilityAction::add_point) ||
         !handle_control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::select_next) ||
         !handle_control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::select_next) ||
         handle_control.accessibilityNode().valueText().find("High, disabled") == std::string::npos ||
+        handle_control.accessibilityNode().valueText().find("Analyzer active") == std::string::npos ||
         !handle_control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::select_previous) ||
         handle_state.selected_group_index != 1) return 52;
     if (!handle_control.graphView()->selectPoint(1) ||
@@ -1892,6 +1917,9 @@ int testGraphs() {
     const uint32_t load_count_before_dependency = handle_state.graph_load_count;
     handle_control.setParameter(99, 0.5);
     if (handle_state.graph_load_count != load_count_before_dependency + 2) return 57;
+    const uint32_t load_count_before_full_refresh = handle_state.graph_load_count;
+    handle_control.refresh();
+    if (handle_state.graph_load_count != load_count_before_full_refresh + 3) return 57;
     handle_state.reject_parameter_id = 11;
     ZigVstguiEnvelopePoint handle_before {};
     if (!handle_control.graphView()->selectedPoint(handle_before) ||
@@ -1910,6 +1938,23 @@ int testGraphs() {
         VSTGUI::CRect(), invalid_handle_graph, styles, &invalid_handle_accessibility, handle_callbacks
     );
     if (invalid_handle_view.valid()) return 60;
+    auto invalid_layer_graph = handle_graph;
+    auto invalid_layers = std::array<ZigVstguiGraphLayerDescription, 2>{graph_layers[0], graph_layers[1]};
+    invalid_layers[0].dynamic = 2;
+    invalid_layer_graph.layers = invalid_layers.data();
+    ZigVstgui::AccessibilityNode invalid_layer_accessibility;
+    ZigVstgui::GraphView invalid_layer_view(
+        VSTGUI::CRect(), invalid_layer_graph, styles, &invalid_layer_accessibility, handle_callbacks
+    );
+    if (invalid_layer_view.valid()) return 61;
+    invalid_layers[0] = graph_layers[0];
+    invalid_layers[0].has_y_axis = 1;
+    invalid_layers[0].y_axis = {0.0, 20'000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"};
+    ZigVstgui::AccessibilityNode invalid_layer_axis_accessibility;
+    ZigVstgui::GraphView invalid_layer_axis_view(
+        VSTGUI::CRect(), invalid_layer_graph, styles, &invalid_layer_axis_accessibility, handle_callbacks
+    );
+    if (invalid_layer_axis_view.valid()) return 62;
     CallbackState pointer_handle_state;
     auto pointer_handle_callbacks = handle_callbacks;
     pointer_handle_callbacks.userdata = &pointer_handle_state;
@@ -1917,6 +1962,7 @@ int testGraphs() {
     ZigVstgui::GraphView pointer_handle_view(
         VSTGUI::CRect(0, 0, 200, 100), handle_graph, styles, &pointer_handle_accessibility, pointer_handle_callbacks
     );
+    if (pointer_handle_accessibility.valueText().find("Analyzer waiting for signal") == std::string::npos) return 60;
     VSTGUI::MouseDownEvent handle_down(
         VSTGUI::CPoint(50, 50), VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
     );
@@ -1934,7 +1980,7 @@ int testGraphs() {
         pointer_handle_state.begin_count != 2 || pointer_handle_state.perform_count != 2 ||
         pointer_handle_state.end_count != 2 ||
         !pointer_handle_view.selectedPoint(pointer_handle_position) ||
-        !closeEnough(pointer_handle_position.x, 0.0) || !closeEnough(pointer_handle_position.y, 0.5)) return 61;
+        !closeEnough(pointer_handle_position.x, 0.0) || !closeEnough(pointer_handle_position.y, 0.5)) return 63;
     handle_control.clear();
     return 0;
 }

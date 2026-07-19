@@ -29,6 +29,68 @@ const low_response_source_id: u32 = 2;
 const mid_response_source_id: u32 = 3;
 const high_response_source_id: u32 = 4;
 const response_point_count: usize = 97;
+const spectrum_source_id: u32 = 0;
+const eq_asset_id: u32 = 1;
+const eq_curve_svg =
+    "<svg viewBox=\"0 0 24 24\">" ++
+    "<path d=\"M2 17 C6 17 7 7 12 7 C17 7 18 15 22 15\" fill=\"none\" stroke=\"#d7f5ed\" stroke-width=\"2\"/>" ++
+    "</svg>";
+
+fn bandAccent(parameter_id: u32) u32 {
+    return if (parameter_id >= high_enabled_param_id)
+        0xf0ad65ff
+    else if (parameter_id >= mid_enabled_param_id)
+        0xb58ce8ff
+    else if (parameter_id >= low_enabled_param_id)
+        0x4ed9b4ff
+    else
+        0x75b9f0ff;
+}
+
+fn drawEqParameter(
+    _: ?*anyopaque,
+    request: *const vst3.vstgui.DrawRequest,
+    canvas: *vst3.vstgui.Canvas,
+) callconv(.c) types.int32 {
+    if (request.component == .knob) {
+        const diameter = @min(8.0, @min(request.width, request.height) * 0.12);
+        vst3.vstgui.fillEllipse(
+            canvas,
+            request.width - diameter - 5.0,
+            5.0,
+            request.width - 5.0,
+            5.0 + diameter,
+            bandAccent(request.parameter_id),
+        );
+        return 0;
+    }
+    if (request.parameter_id != bypass_param_id or request.component != .toggle) return 0;
+    const side = @min(request.height - 10.0, 22.0);
+    const top = (request.height - side) * 0.5;
+    const drawn = vst3.vstgui.drawAsset(
+        canvas,
+        eq_asset_id,
+        8.0,
+        top,
+        8.0 + side,
+        top + side,
+        if (request.state == .disabled) 0.45 else 1.0,
+    );
+    return if (drawn) 0 else -1;
+}
+
+const eq_skin: vst3.vstgui.Skin = .{
+    .assets = &.{.{ .id = eq_asset_id, .data = eq_curve_svg, .format = .svg }},
+    .fonts = .{
+        .title_family = "Avenir Next",
+        .body_family = "Avenir Next",
+        .value_family = "Menlo",
+        .fallback_family = "Arial",
+    },
+    .drawing = .{ .draw_parameter = drawEqParameter },
+    .theme = .default,
+    .layout = .adaptive,
+};
 
 pub const FilterType = enum { low_shelf, bell, high_shelf };
 pub const FilterTypeParam = core.parameters.EnumParam(FilterType);
@@ -99,34 +161,35 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .source_id = response_graph_source_id,
                     .source = .controller,
                     .parameter_driven = true,
+                    .maximum_refresh_hz = 30,
                     .handles = &.{
                         .{ .id = 1, .name = "Low", .x_parameter_id = low_frequency_param_id, .y_parameter_id = low_gain_param_id, .adjustment_parameter_id = low_q_param_id, .adjustment_label = "Q", .enabled_parameter_id = low_enabled_param_id, .highlight_group_index = 1 },
                         .{ .id = 2, .name = "Mid", .x_parameter_id = mid_frequency_param_id, .y_parameter_id = mid_gain_param_id, .adjustment_parameter_id = mid_q_param_id, .adjustment_label = "Q", .enabled_parameter_id = mid_enabled_param_id, .highlight_group_index = 2 },
                         .{ .id = 3, .name = "High", .x_parameter_id = high_frequency_param_id, .y_parameter_id = high_gain_param_id, .adjustment_parameter_id = high_q_param_id, .adjustment_label = "Q", .enabled_parameter_id = high_enabled_param_id, .highlight_group_index = 3 },
                     },
                     .layers = &.{
-                        .{ .style = .secondary, .source_id = low_response_source_id, .source = .controller },
-                        .{ .style = .modulation, .source_id = mid_response_source_id, .source = .controller },
-                        .{ .style = .secondary, .source_id = high_response_source_id, .source = .controller },
+                        .{ .style = .secondary, .source_id = low_response_source_id, .source = .controller, .parameter_driven = true },
+                        .{ .style = .modulation, .source_id = mid_response_source_id, .source = .controller, .parameter_driven = true },
+                        .{ .style = .secondary, .source_id = high_response_source_id, .source = .controller, .parameter_driven = true },
+                        .{
+                            .style = .secondary,
+                            .kind = .spectrum,
+                            .source_id = spectrum_source_id,
+                            .dynamic = true,
+                            .y_axis = .{ .minimum = -96.0, .maximum = 0.0, .scale = .decibels, .label = "dB" },
+                        },
                     },
                 },
-                .{
-                    .title = "Spectrum",
-                    .kind = .spectrum,
-                    .x_axis = .{ .minimum = 20.0, .maximum = 20_000.0, .scale = .logarithmic, .label = "Hz" },
-                    .y_axis = .{ .minimum = -96.0, .maximum = 0.0, .scale = .decibels, .label = "dB" },
-                    .source_id = 0,
-                    .dynamic = true,
-                    .maximum_refresh_hz = 30,
-                },
             },
+            .skin = eq_skin,
             .composition = .{
                 .title = "Parametric EQ",
+                .style = .{ .background = 0x101720ff, .foreground = 0xe9f1f5ff },
                 .groups = &.{
-                    .{ .title = "Master", .parameter_count = 2, .graph_count = 2 },
-                    .{ .title = "Low", .first_parameter = 2, .parameter_count = 5, .first_graph = 2 },
-                    .{ .title = "Mid", .first_parameter = 7, .parameter_count = 5, .first_graph = 2 },
-                    .{ .title = "High", .first_parameter = 12, .parameter_count = 5, .first_graph = 2 },
+                    .{ .title = "Master", .parameter_count = 2, .graph_count = 1, .style = .{ .accent = 0x75b9f0ff } },
+                    .{ .title = "Low", .first_parameter = 2, .parameter_count = 5, .first_graph = 1, .style = .{ .accent = 0x4ed9b4ff } },
+                    .{ .title = "Mid", .first_parameter = 7, .parameter_count = 5, .first_graph = 1, .style = .{ .accent = 0xb58ce8ff } },
+                    .{ .title = "High", .first_parameter = 12, .parameter_count = 5, .first_graph = 1, .style = .{ .accent = 0xf0ad65ff } },
                 },
             },
         });
@@ -433,4 +496,44 @@ test "parametric EQ unity settings preserve the input" {
 
     processor.process(&parameters, f64, &context);
     for (input, output) |expected, actual| try std.testing.expectApproxEqAbs(expected, actual, 0.0000001);
+}
+
+test "parametric EQ analyzer is bounded and editor activity gated" {
+    var active = EqProcessor{};
+    var inactive = EqProcessor{};
+    var parameters = TestParameters{};
+    var input: [128]f32 = undefined;
+    var active_output = [_]f32{0.0} ** input.len;
+    var inactive_output = [_]f32{0.0} ** input.len;
+    for (&input, 0..) |*sample, index| {
+        sample.* = @floatCast(std.math.sin(std.math.tau * 3_000.0 *
+            @as(f64, @floatFromInt(index)) / 48_000.0));
+    }
+    const input_channels = [_][]const f32{&input};
+    const active_channels = [_][]f32{&active_output};
+    const inactive_channels = [_][]f32{&inactive_output};
+    var active_context = try core.process.ProcessContext(f32).init(48_000.0, &input_channels, &active_channels);
+    var inactive_context = try core.process.ProcessContext(f32).init(48_000.0, &input_channels, &inactive_channels);
+
+    active.guiTelemetryEditorOpened();
+    active.guiTelemetryEditorOpened();
+    active.process(&parameters, f32, &active_context);
+    inactive.process(&parameters, f32, &inactive_context);
+
+    var points: [64]core.gui_graph.Point = undefined;
+    try std.testing.expectEqual(@as(usize, 64), active.guiGraphLoad(spectrum_source_id, &points));
+    try std.testing.expectEqual(@as(usize, 0), inactive.guiGraphLoad(spectrum_source_id, &points));
+    try std.testing.expect(active.spectrum.producing());
+    try std.testing.expect(!inactive.spectrum.producing());
+    active.guiTelemetryEditorClosed();
+    try std.testing.expect(active.spectrum.producing());
+    active.guiTelemetryEditorClosed();
+    try std.testing.expect(!active.spectrum.producing());
+}
+
+test "parametric EQ skin uses public assets fonts and custom drawing" {
+    try std.testing.expectEqual(@as(usize, 1), eq_skin.assets.len);
+    try std.testing.expectEqual(vst3.vstgui.AssetFormat.svg, eq_skin.assets[0].format);
+    try std.testing.expect(eq_skin.fonts.fallback_family != null);
+    try std.testing.expect(eq_skin.drawing.draw_parameter != null);
 }

@@ -52,9 +52,14 @@ pub const GraphHandle = struct {
 };
 pub const GraphLayer = struct {
     style: GraphStyleRole = .secondary,
+    kind: GraphKind = .transfer_function,
     points: []const GraphPoint = &.{},
     source_id: types.uint32 = 0,
     source: GraphSource = .component,
+    dynamic: bool = false,
+    parameter_driven: bool = false,
+    y_axis: ?GraphAxis = null,
+    disabled: bool = false,
 };
 pub const GraphScale = vstgui_editor_view.GraphScale;
 pub const GraphKind = vstgui_editor_view.GraphKind;
@@ -63,6 +68,13 @@ pub const GraphSource = enum {
     component,
     controller,
 };
+
+fn validGraphAxis(axis: GraphAxis) bool {
+    return std.math.isFinite(axis.minimum) and
+        std.math.isFinite(axis.maximum) and
+        axis.maximum > axis.minimum and
+        (axis.scale != .logarithmic or axis.minimum > 0.0);
+}
 
 pub const ViewportAxes = gui_viewport.Axes;
 pub const RangeSelectionHandle = gui_range_selection.Handle;
@@ -764,16 +776,19 @@ fn createConfiguredView(
                     if (previous == field_id) return null;
                 }
             }
+            var has_dynamic_layer = false;
+            for (graph.layers) |layer| has_dynamic_layer = has_dynamic_layer or (layer.dynamic and !layer.disabled);
             if (graph.points.len > vstgui_editor_view.max_graph_points or
                 editable_points.len > vstgui_editor_view.max_graph_points or
                 graph.handles.len > vstgui_editor_view.max_graph_handles or
                 graph.layers.len > vstgui_editor_view.max_graph_layers or
                 (graph.parameter_driven and (graph.dynamic or graph.source != .controller)) or
                 (graph.source_id & vstgui_editor_view.controller_graph_source_flag != 0) or
-                graph.x_axis.maximum <= graph.x_axis.minimum or graph.y_axis.maximum <= graph.y_axis.minimum or
+                !validGraphAxis(graph.x_axis) or !validGraphAxis(graph.y_axis) or
                 (graph.range_selection != null and (graph.point_capacity > 0 or graph.handles.len > 0)) or
                 (graph.point_capacity > 0 and graph.handles.len > 0) or
-                (graph.dynamic and (graph.maximum_refresh_hz == 0 or graph.maximum_refresh_hz > 60)) or
+                ((graph.dynamic or has_dynamic_layer) and
+                    (graph.maximum_refresh_hz == 0 or graph.maximum_refresh_hz > 60)) or
                 (graph.point_capacity == 0 and (graph.editable_points.len > 0 or graph.minimum_point_count > 0 or
                     graph.snap_x != 0.0 or graph.snap_y != 0.0)) or
                 (graph.point_capacity > 0 and (graph.kind != .envelope or graph.dynamic or graph.points.len > 0 or
@@ -785,12 +800,29 @@ fn createConfiguredView(
             for (graph.layers, 0..) |layer, layer_index| {
                 if (layer.points.len > vstgui_editor_view.max_graph_points or
                     layer.source_id & vstgui_editor_view.controller_graph_source_flag != 0 or
-                    (graph.parameter_driven and (layer.points.len != 0 or layer.source != .controller)) or
-                    (!graph.parameter_driven and layer.source == .controller)) return null;
-                if (graph.parameter_driven) {
-                    if (layer.source_id == graph.source_id) return null;
+                    (layer.dynamic and layer.parameter_driven) or
+                    ((layer.dynamic or layer.parameter_driven) and layer.points.len != 0) or
+                    (!layer.dynamic and !layer.parameter_driven and layer.points.len == 0) or
+                    (layer.parameter_driven and layer.source != .controller) or
+                    (layer.dynamic and layer.source != .component) or
+                    (layer.y_axis != null and !validGraphAxis(layer.y_axis.?))) return null;
+                if (layer.dynamic or layer.parameter_driven) {
+                    const encoded_source = layer.source_id | if (layer.source == .controller)
+                        vstgui_editor_view.controller_graph_source_flag
+                    else
+                        0;
+                    const graph_source = graph.source_id | if (graph.source == .controller)
+                        vstgui_editor_view.controller_graph_source_flag
+                    else
+                        0;
+                    if ((graph.dynamic or graph.parameter_driven) and encoded_source == graph_source) return null;
                     for (graph.layers[0..layer_index]) |previous| {
-                        if (previous.source_id == layer.source_id) return null;
+                        if (!previous.dynamic and !previous.parameter_driven) continue;
+                        const previous_source = previous.source_id | if (previous.source == .controller)
+                            vstgui_editor_view.controller_graph_source_flag
+                        else
+                            0;
+                        if (previous_source == encoded_source) return null;
                     }
                 }
                 graph_layers[index][layer_index] = .{
@@ -801,6 +833,17 @@ fn createConfiguredView(
                         vstgui_editor_view.controller_graph_source_flag
                     else
                         0,
+                    .kind = layer.kind,
+                    .dynamic = @intFromBool(layer.dynamic),
+                    .parameter_driven = @intFromBool(layer.parameter_driven),
+                    .has_y_axis = @intFromBool(layer.y_axis != null),
+                    .y_axis = if (layer.y_axis) |axis| .{
+                        .minimum = axis.minimum,
+                        .maximum = axis.maximum,
+                        .scale = axis.scale,
+                        .label = axis.label,
+                    } else .{ .minimum = 0.0, .maximum = 1.0 },
+                    .disabled = @intFromBool(layer.disabled),
                 };
             }
             for (editable_points, 0..) |point, point_index| {
@@ -1640,4 +1683,13 @@ test "graph range selections validate bounds and paired state fields" {
         .start_state_id = 20,
         .end_state_id = 20,
     }).validate(axis));
+}
+
+test "graph axes reject non-finite and invalid logarithmic ranges" {
+    try std.testing.expect(validGraphAxis(.{ .minimum = -24.0, .maximum = 24.0, .scale = .decibels }));
+    try std.testing.expect(validGraphAxis(.{ .minimum = 20.0, .maximum = 20_000.0, .scale = .logarithmic }));
+    try std.testing.expect(!validGraphAxis(.{ .minimum = std.math.nan(f64), .maximum = 1.0 }));
+    try std.testing.expect(!validGraphAxis(.{ .minimum = 0.0, .maximum = std.math.inf(f64) }));
+    try std.testing.expect(!validGraphAxis(.{ .minimum = 1.0, .maximum = 1.0 }));
+    try std.testing.expect(!validGraphAxis(.{ .minimum = 0.0, .maximum = 20_000.0, .scale = .logarithmic }));
 }

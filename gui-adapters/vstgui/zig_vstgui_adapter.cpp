@@ -462,6 +462,48 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         const bool editable = graph.point_capacity > 0;
         const auto& viewport = graph.viewport;
         const auto& range_selection = graph.range_selection;
+        if (graph.layer_count > ZIG_VSTGUI_MAX_GRAPH_LAYERS ||
+            (graph.layer_count > 0 && !graph.layers) ||
+            (graph.layer_count == 0 && graph.layers)) return nullptr;
+        bool has_dynamic_source = graph.dynamic != 0;
+        bool has_parameter_source = graph.parameter_driven != 0;
+        for (uint32_t layer_index = 0; layer_index < graph.layer_count; ++layer_index) {
+            const auto& layer = graph.layers[layer_index];
+            if (layer.style < ZIG_VSTGUI_GRAPH_PRIMARY || layer.style > ZIG_VSTGUI_GRAPH_WARNING ||
+                layer.kind < ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION || layer.kind > ZIG_VSTGUI_GRAPH_SPECTRUM ||
+                layer.point_count > ZIG_VSTGUI_MAX_GRAPH_POINTS ||
+                (layer.point_count > 0 && !layer.points) ||
+                (layer.dynamic != 0 && layer.dynamic != 1) ||
+                (layer.parameter_driven != 0 && layer.parameter_driven != 1) ||
+                (layer.has_y_axis != 0 && layer.has_y_axis != 1) ||
+                (layer.disabled != 0 && layer.disabled != 1) ||
+                (layer.dynamic != 0 && layer.parameter_driven != 0) ||
+                ((layer.dynamic != 0 || layer.parameter_driven != 0) && layer.point_count != 0) ||
+                (layer.has_y_axis != 0 &&
+                    (!std::isfinite(layer.y_axis.minimum) || !std::isfinite(layer.y_axis.maximum) ||
+                        layer.y_axis.maximum <= layer.y_axis.minimum ||
+                        layer.y_axis.scale < ZIG_VSTGUI_GRAPH_LINEAR ||
+                        layer.y_axis.scale > ZIG_VSTGUI_GRAPH_DECIBELS ||
+                        (layer.y_axis.scale == ZIG_VSTGUI_GRAPH_LOGARITHMIC && layer.y_axis.minimum <= 0.0)))) {
+                return nullptr;
+            }
+            for (uint32_t point = 0; point < layer.point_count; ++point) {
+                if (!std::isfinite(layer.points[point].x) || !std::isfinite(layer.points[point].y)) return nullptr;
+            }
+            if (layer.disabled == 0) {
+                has_dynamic_source = has_dynamic_source || layer.dynamic != 0;
+                has_parameter_source = has_parameter_source || layer.parameter_driven != 0;
+            }
+            if (layer.dynamic == 0 && layer.parameter_driven == 0) continue;
+            if ((graph.dynamic != 0 || graph.parameter_driven != 0) && layer.source_id == graph.source_id) {
+                return nullptr;
+            }
+            for (uint32_t previous = 0; previous < layer_index; ++previous) {
+                const auto& previous_layer = graph.layers[previous];
+                if ((previous_layer.dynamic != 0 || previous_layer.parameter_driven != 0) &&
+                    previous_layer.source_id == layer.source_id) return nullptr;
+            }
+        }
         if (viewport.enabled != 0 && viewport.enabled != 1) return nullptr;
         if (viewport.enabled != 0) {
             if (viewport.axes < ZIG_VSTGUI_VIEWPORT_HORIZONTAL || viewport.axes > ZIG_VSTGUI_VIEWPORT_BOTH ||
@@ -505,7 +547,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
             graph.style < ZIG_VSTGUI_GRAPH_PRIMARY || graph.style > ZIG_VSTGUI_GRAPH_WARNING ||
             graph.x_axis.scale < ZIG_VSTGUI_GRAPH_LINEAR || graph.x_axis.scale > ZIG_VSTGUI_GRAPH_DECIBELS ||
             graph.y_axis.scale < ZIG_VSTGUI_GRAPH_LINEAR || graph.y_axis.scale > ZIG_VSTGUI_GRAPH_DECIBELS ||
-            (graph.dynamic && (!graph_callbacks.load || graph.maximum_refresh_hz == 0 || graph.maximum_refresh_hz > 60)) ||
+            ((has_dynamic_source || has_parameter_source) && !graph_callbacks.load) ||
+            (has_dynamic_source && (graph.maximum_refresh_hz == 0 || graph.maximum_refresh_hz > 60)) ||
             (!editable && (graph.editable_points || graph.editable_point_count > 0 ||
                 graph.minimum_point_count > 0 || graph.snap_x != 0.0 || graph.snap_y != 0.0)) ||
             (editable && (graph.kind != ZIG_VSTGUI_GRAPH_ENVELOPE || graph.dynamic || graph.point_count > 0 ||
@@ -722,5 +765,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 22;
+    return 23;
 }

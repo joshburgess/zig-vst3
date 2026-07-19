@@ -66,11 +66,11 @@ Exit criteria:
 
 ## Milestone 4: Analyzer and Shared Skin
 
-- [ ] Add an activity-driven input or output spectrum backed by the existing bounded analyzer transport.
-- [ ] Compose the analyzer, combined response, band contributions, grid, and handles in one graph without increasing point limits.
-- [ ] Add a public skin with embedded assets, preferred and fallback fonts, and bounded custom drawing.
-- [ ] Use the same skin contracts in the gallery, IR loader, and EQ.
-- [ ] Keep analyzer absence and disabled state explicit instead of rendering an unexplained empty graph.
+- [x] Add an activity-driven input or output spectrum backed by the existing bounded analyzer transport.
+- [x] Compose the analyzer, combined response, band contributions, grid, and handles in one graph without increasing point limits.
+- [x] Add a public skin with embedded assets, preferred and fallback fonts, and bounded custom drawing.
+- [x] Use the same skin contracts in the gallery, IR loader, and EQ.
+- [x] Keep analyzer absence and disabled state explicit instead of rendering an unexplained empty graph.
 
 Exit criteria:
 
@@ -170,3 +170,18 @@ Record each committed milestone here with test counts, performance measurements,
 - The final linked EQ warm-render measurement was 226.5 us, within the 300 us scene budget.
 - Pluginval strictness 5 stopped at its first unexpected exit. The preserved macOS crash report shows pluginval 1.0.4 aborting during `NSApplication` registration before loading a zig-vst3 plugin image. Strictness 10 was not run, and pluginval coverage is unavailable for this milestone.
 - Manual REAPER acceptance of handle and knob synchronization, band highlighting, resize behavior, multiple instances, and editor reopen remains pending.
+
+### Milestone 4
+
+- Added mixed-source graph layers. The EQ now draws a 64-bin component spectrum behind its combined parameter-driven response, three band contributions, and linked handles in one graph. Dynamic telemetry refreshes only from the bounded timer, while parameter-driven curves refresh only after parameter notifications.
+- Kept every graph source under the existing 256-point limit. Source loads stage into fixed-capacity arrays and reject overflow or non-finite data before changing the visible graph. Layer flags and optional axes now reject malformed ABI values, non-finite ranges, and invalid logarithmic minima.
+- Reused the existing fixed-capacity, atomic `SpectrumAnalyzer(128)` transport. It performs no allocation, locking, file I/O, or editor access in processing, and skips capture unless at least one editor is open. Nested editor activity and two-instance isolation have deterministic tests.
+- Added explicit `Analyzer off`, `Analyzer waiting for signal`, and active analyzer states. Accessibility reports the same state and includes the active bin count, peak frequency, and peak level.
+- Added an EQ skin through only the public authoring API. It uses an embedded SVG, Avenir Next and Menlo preferences with Arial fallback, bounded knob and bypass drawing, a dark editor theme, and distinct band accents. The gallery, IR loader, and EQ now exercise the same asset, font, and drawing contract.
+- Added `eq-analyzer-states.png` and updated `linked-eq-response.png`. The shared visual suite covers analyzer off, no signal, active signal, selected band, bypass controls, and meter clipping.
+- Expanded the macOS lifecycle test to retain native views through 16 open, draw, tracking, and close cycles while an SVG asset, preferred and fallback fonts, and a custom drawing callback are active. Calls against retained native views after teardown complete without stale frame access.
+- `zig build test raw-api-abi validate-examples --summary all` passed. The test matrix contains 3,703 passing tests, all raw ABI checks, and all twelve Steinberg example validators.
+- Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` cross-target bundle matrices each passed 38/38 steps.
+- Latest warm-render measurements: full visual suite 97.0 us, signal views 278.2 us, and linked EQ with analyzer 241.5 us. The linked EQ remains within its 300 us scene budget.
+- Pluginval was not relaunched. Its preserved unexpected exit occurs during `NSApplication` registration before a zig-vst3 plugin image is loaded, so strictness coverage remains unavailable under the required stop-on-exit policy.
+- Manual REAPER confirmation of the rebuilt crash fix, shared skins across bundles, EQ analyzer rendering, and repeated editor reopen remains pending. Native Windows, X11, Wayland, Narrator, AT-SPI, and screen-reader workflows remain deferred to their required environments.

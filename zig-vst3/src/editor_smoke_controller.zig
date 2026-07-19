@@ -35,6 +35,8 @@ pub const waveform_x_offset_state_id: u32 = 13;
 pub const waveform_selection_start_state_id: u32 = 14;
 pub const waveform_selection_end_state_id: u32 = 15;
 pub const gallery_live_label_state_id: u32 = 16;
+const gallery_spectrum_overlay_source_id: u32 = 1;
+const gallery_spectrum_overlay_points: usize = 64;
 
 const gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
@@ -145,6 +147,27 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const Params = editor_smoke_spec.Spec.Params;
     pub const parameter_set = &editor_smoke_spec.parameter_set;
     pub const EditorState = GalleryEditorState;
+
+    pub fn loadGuiGraph(
+        controller: *ivsteditcontroller.IEditController,
+        source_id: u32,
+        output: []parameter_editor.GraphPoint,
+    ) usize {
+        if (source_id != gallery_spectrum_overlay_source_id or
+            output.len < gallery_spectrum_overlay_points) return 0;
+        const tone = Controller.getNormalized(controller, tone_param_id);
+        const gain_value = Controller.getNormalized(controller, gain_param_id);
+        for (output[0..gallery_spectrum_overlay_points], 0..) |*point, index| {
+            const normalized = @as(f64, @floatFromInt(index)) /
+                @as(f64, @floatFromInt(gallery_spectrum_overlay_points - 1));
+            const frequency = 20.0 * std.math.pow(f64, 1_200.0, normalized);
+            const center = 0.2 + tone * 0.6;
+            const level = -54.0 + gain_value * 18.0 + 12.0 *
+                std.math.exp(-std.math.pow(f64, (normalized - center) / 0.18, 2.0));
+            point.* = .{ .x = frequency, .y = level };
+        }
+        return gallery_spectrum_overlay_points;
+    }
 
     pub fn loadPreset(controller: *ivsteditcontroller.IEditController, preset_id: u32) types.tresult {
         const ids = [_]vsttypes.ParamID{ gain_param_id, voices_param_id, bypass_param_id, mode_param_id, tone_param_id };
@@ -276,6 +299,12 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .source_id = 1,
                     .dynamic = true,
                     .maximum_refresh_hz = 30,
+                    .layers = &.{.{
+                        .style = .modulation,
+                        .source_id = gallery_spectrum_overlay_source_id,
+                        .source = .controller,
+                        .parameter_driven = true,
+                    }},
                 },
                 .{
                     .title = "Envelope",
@@ -481,6 +510,25 @@ test "editor smoke controller creates independent views" {
     try std.testing.expectEqual(types.kResultOk, second.vtable.getSize(second, &second_size));
     try std.testing.expectEqual(@as(types.int32, 720), second_size.right);
     try std.testing.expectEqual(@as(types.int32, 600), second_size.bottom);
+}
+
+test "editor smoke controller provides the parameter-driven spectrum layer" {
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &out));
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(out orelse return error.MissingController));
+    defer _ = controller_iface.vtable.release(controller_iface);
+    var points: [gallery_spectrum_overlay_points]parameter_editor.GraphPoint = undefined;
+
+    try std.testing.expectEqual(
+        points.len,
+        Controller.loadGuiGraph(controller_iface, gallery_spectrum_overlay_source_id, &points),
+    );
+    for (points) |point| {
+        try std.testing.expect(std.math.isFinite(point.x));
+        try std.testing.expect(std.math.isFinite(point.y));
+        try std.testing.expect(point.x >= 20.0 and point.x <= 24_000.0);
+        try std.testing.expect(point.y >= -96.0 and point.y <= 0.0);
+    }
 }
 
 test "editor smoke controller persists UI state without changing parameters" {
