@@ -5,6 +5,7 @@ const descriptors = @import("descriptors.zig");
 const access = @import("access.zig");
 
 pub const FloatParam = descriptors.FloatParam;
+pub const LogFloatParam = descriptors.LogFloatParam;
 pub const IntParam = descriptors.IntParam;
 pub const BoolParam = descriptors.BoolParam;
 pub const EnumParam = descriptors.EnumParam;
@@ -748,7 +749,7 @@ pub fn ParameterSet(comptime Params: type) type {
 
 pub fn parameterStepCount(param: anytype) i32 {
     const Param = @TypeOf(param);
-    if (Param == FloatParam) return 0;
+    if (Param == FloatParam or Param == LogFloatParam) return 0;
     if (Param == BoolParam) return 1;
     if (Param == IntParam) {
         const range = std.math.sub(i64, param.max, param.min) catch return std.math.maxInt(i32);
@@ -767,14 +768,14 @@ pub fn parameterStepCount(param: anytype) i32 {
 
 pub fn parameterPlainMinimum(param: anytype) ?f64 {
     const Param = @TypeOf(param);
-    if (Param == FloatParam) return param.min;
+    if (Param == FloatParam or Param == LogFloatParam) return param.min;
     if (Param == IntParam) return @floatFromInt(param.min);
     return null;
 }
 
 pub fn parameterPlainMaximum(param: anytype) ?f64 {
     const Param = @TypeOf(param);
-    if (Param == FloatParam) return param.max;
+    if (Param == FloatParam or Param == LogFloatParam) return param.max;
     if (Param == IntParam) return @floatFromInt(param.max);
     return null;
 }
@@ -830,6 +831,18 @@ fn validateFloatParameterRange(param: FloatParam) ?anyerror {
     return null;
 }
 
+fn validateLogFloatParameterRange(param: LogFloatParam) ?anyerror {
+    if (!std.math.isFinite(param.min) or
+        !std.math.isFinite(param.max) or
+        param.min <= 0.0 or
+        param.max <= param.min)
+    {
+        return error.InvalidParameterRange;
+    }
+    if (!shared.isFiniteInRange(f64, param.default, param.min, param.max)) return error.InvalidParameterDefault;
+    return null;
+}
+
 fn validateIntParameterRange(param: IntParam) ?anyerror {
     if (param.max <= param.min) return error.InvalidParameterRange;
     if (param.default < param.min or param.default > param.max) return error.InvalidParameterDefault;
@@ -840,6 +853,7 @@ pub fn parameterDescriptorError(param: anytype) ?anyerror {
     const Param = @TypeOf(param);
     if (validateParameterMetadata(param)) |err| return err;
     if (Param == FloatParam) return validateFloatParameterRange(param);
+    if (Param == LogFloatParam) return validateLogFloatParameterRange(param);
     if (Param == IntParam) return validateIntParameterRange(param);
     return null;
 }
@@ -1241,6 +1255,12 @@ test "parameter set validates descriptor names and ranges" {
     const OutOfRangeFloatDefaultParams = struct {
         gain: FloatParam = .{ .id = 0, .name = "Gain", .min = 0.0, .max = 1.0, .default = 2.0 },
     };
+    const InvalidLogFloatParams = struct {
+        frequency: LogFloatParam = .{ .id = 0, .name = "Frequency", .min = 0.0, .max = 20_000.0, .default = 1_000.0 },
+    };
+    const InvalidLogFloatDefaultParams = struct {
+        frequency: LogFloatParam = .{ .id = 0, .name = "Frequency", .min = 20.0, .max = 20_000.0, .default = std.math.nan(f64) },
+    };
     const InvalidIntParams = struct {
         voices: IntParam = .{ .id = 0, .name = "Voices", .min = 4, .max = 4, .default = 4 },
     };
@@ -1255,6 +1275,8 @@ test "parameter set validates descriptor names and ranges" {
     const invalid_float_set = ParameterSet(InvalidFloatParams).init(.{});
     const invalid_float_default_set = ParameterSet(InvalidFloatDefaultParams).init(.{});
     const out_of_range_float_default_set = ParameterSet(OutOfRangeFloatDefaultParams).init(.{});
+    const invalid_log_float_set = ParameterSet(InvalidLogFloatParams).init(.{});
+    const invalid_log_float_default_set = ParameterSet(InvalidLogFloatDefaultParams).init(.{});
     const invalid_int_set = ParameterSet(InvalidIntParams).init(.{});
     const invalid_int_default_set = ParameterSet(InvalidIntDefaultParams).init(.{});
 
@@ -1270,6 +1292,8 @@ test "parameter set validates descriptor names and ranges" {
     try std.testing.expectError(error.InvalidParameterRange, invalid_float_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterDefault, invalid_float_default_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterDefault, out_of_range_float_default_set.validateDescriptors());
+    try std.testing.expectError(error.InvalidParameterRange, invalid_log_float_set.validateDescriptors());
+    try std.testing.expectError(error.InvalidParameterDefault, invalid_log_float_default_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterRange, invalid_int_set.validateDescriptors());
     try std.testing.expectError(error.InvalidParameterDefault, invalid_int_default_set.validateDescriptors());
 }

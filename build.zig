@@ -121,6 +121,14 @@ pub fn build(b: *std.Build) void {
             .bundle_id = "dev.zig-vst3.channel-strip",
         },
         .{
+            .short_name = "parametric-eq",
+            .display_name = "parametric EQ",
+            .artifact_name = "zig_vst3_parametric_eq",
+            .root_source_file = "examples/parametric_eq_plugin.zig",
+            .core_example_source_file = "examples/parametric_eq_core.zig",
+            .bundle_id = "dev.zig-vst3.parametric-eq",
+        },
+        .{
             .short_name = "ir-loader",
             .display_name = "IR loader",
             .artifact_name = "zig_vst3_ir_loader",
@@ -672,6 +680,7 @@ fn addExamplePlugin(
         std.mem.eql(u8, options.short_name, "sine-synth") or
         std.mem.eql(u8, options.short_name, "editor-smoke") or
         std.mem.eql(u8, options.short_name, "channel-strip") or
+        std.mem.eql(u8, options.short_name, "parametric-eq") or
         std.mem.eql(u8, options.short_name, "ir-loader");
     const library = addVst3PluginLibrary(b, target, optimize, zig_vst3_plugin_core, .{
         .artifact_name = options.artifact_name,

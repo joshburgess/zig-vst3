@@ -2,6 +2,7 @@ const std = @import("std");
 const common = @import("common.zig");
 
 pub const parameters = @import("parameters.zig");
+pub const dsp = @import("dsp.zig");
 pub const editor_state = @import("editor_state.zig");
 pub const gui_preset_browser = @import("gui_preset_browser.zig");
 pub const gui_telemetry = @import("gui_telemetry.zig");
@@ -24,6 +25,7 @@ pub const units = @import("units.zig");
 test {
     std.testing.refAllDecls(common);
     std.testing.refAllDecls(parameters);
+    std.testing.refAllDecls(dsp);
     std.testing.refAllDecls(editor_state);
     std.testing.refAllDecls(gui_preset_browser);
     std.testing.refAllDecls(gui_telemetry);

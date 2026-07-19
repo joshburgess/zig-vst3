@@ -86,6 +86,91 @@ pub const FloatParam = struct {
     }
 };
 
+pub const LogFloatParam = struct {
+    id: u32,
+    name: []const u8,
+    short_name: []const u8 = "",
+    units: []const u8 = "",
+    min: f64,
+    max: f64,
+    default: f64,
+    is_bypass: bool = false,
+    can_automate: bool = true,
+    is_read_only: bool = false,
+    unit_id: i32 = 0,
+
+    pub fn init(id: u32, name: []const u8, min: f64, max: f64, default: f64) LogFloatParam {
+        return initChecked(id, name, min, max, default) catch @panic("invalid logarithmic parameter range");
+    }
+
+    pub fn initChecked(id: u32, name: []const u8, min: f64, max: f64, default: f64) !LogFloatParam {
+        if (!validRange(min, max)) return error.InvalidParameterRange;
+        return .{
+            .id = id,
+            .name = name,
+            .min = min,
+            .max = max,
+            .default = clampPlainInRange(min, max, default),
+        };
+    }
+
+    pub fn containsPlain(self: LogFloatParam, plain: f64) bool {
+        return std.math.isFinite(plain) and plain >= self.min and plain <= self.max;
+    }
+
+    pub fn clampPlain(self: LogFloatParam, plain: f64) f64 {
+        if (std.math.isNan(plain)) return self.min;
+        return std.math.clamp(plain, self.min, self.max);
+    }
+
+    pub fn normalize(self: LogFloatParam, plain: f64) f64 {
+        return @log(self.clampPlain(plain) / self.min) / @log(self.max / self.min);
+    }
+
+    pub fn denormalize(self: LogFloatParam, normalized: f64) f64 {
+        return self.min * std.math.pow(f64, self.max / self.min, clampNormalized(normalized));
+    }
+
+    pub fn defaultNormalized(self: LogFloatParam) f64 {
+        return self.normalize(self.default);
+    }
+
+    pub fn formatPlain(self: LogFloatParam, normalized: f64, buffer: []u8) ![]const u8 {
+        const value = self.denormalize(normalized);
+        return if (value >= 1_000.0)
+            std.fmt.bufPrint(buffer, "{d:.2}k", .{value / 1_000.0})
+        else
+            std.fmt.bufPrint(buffer, "{d:.1}", .{value});
+    }
+
+    pub fn plainFromNormalized(self: LogFloatParam, normalized: f64) f64 {
+        return self.denormalize(normalized);
+    }
+
+    pub fn normalizedFromPlain(self: LogFloatParam, plain: f64) f64 {
+        return self.normalize(plain);
+    }
+
+    pub fn parsePlain(self: LogFloatParam, text: []const u8) !f64 {
+        const trimmed = trimPlainText(text);
+        if (trimmed.len == 0) return error.InvalidCharacter;
+        const suffix = trimmed[trimmed.len - 1];
+        const has_kilohertz_suffix = suffix == 'k' or suffix == 'K';
+        const number = if (has_kilohertz_suffix) trimmed[0 .. trimmed.len - 1] else trimmed;
+        const multiplier: f64 = if (has_kilohertz_suffix) 1_000.0 else 1.0;
+        return self.normalize((try std.fmt.parseFloat(f64, number)) * multiplier);
+    }
+
+    fn validRange(min: f64, max: f64) bool {
+        return std.math.isFinite(min) and std.math.isFinite(max) and min > 0.0 and max > min;
+    }
+
+    fn clampPlainInRange(min: f64, max: f64, plain: f64) f64 {
+        if (std.math.isNan(plain)) return min;
+        return std.math.clamp(plain, min, max);
+    }
+};
+
 pub const IntParam = struct {
     id: u32,
     name: []const u8,
@@ -358,6 +443,20 @@ test "float parameter clamps defaults and values" {
     try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "Flat", 1.0, 1.0, 1.0));
     try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "Inf", 0.0, std.math.inf(f64), 1.0));
     try std.testing.expectError(error.InvalidParameterRange, FloatParam.initChecked(1, "NaN", std.math.nan(f64), 1.0, 1.0));
+}
+
+test "logarithmic float parameter maps and formats perceptual ranges" {
+    const frequency = try LogFloatParam.initChecked(10, "Frequency", 20.0, 20_000.0, 1_000.0);
+    var buffer: [32]u8 = undefined;
+
+    try std.testing.expectApproxEqRel(@as(f64, 632.455532), frequency.denormalize(0.5), 0.000001);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.5), frequency.normalize(632.455532), 0.000001);
+    try std.testing.expectEqualStrings("1.00k", try frequency.formatPlain(frequency.normalize(1_000.0), &buffer));
+    try std.testing.expectApproxEqAbs(frequency.normalize(2_500.0), try frequency.parsePlain("2.5k"), 0.000001);
+    try std.testing.expectApproxEqAbs(frequency.normalize(2_500.0), try frequency.parsePlain(" 2.5K "), 0.000001);
+    try std.testing.expectEqual(@as(f64, 0.0), frequency.normalize(std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 1.0), frequency.normalize(std.math.inf(f64)));
+    try std.testing.expectError(error.InvalidParameterRange, LogFloatParam.initChecked(11, "Invalid", 0.0, 20_000.0, 1_000.0));
 }
 
 test "parameter descriptor parsing trims plain text consistently" {
