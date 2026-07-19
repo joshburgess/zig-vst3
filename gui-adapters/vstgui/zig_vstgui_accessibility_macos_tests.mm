@@ -3,6 +3,7 @@
 #include "pluginterfaces/base/keycodes.h"
 
 #import <AppKit/AppKit.h>
+#import <objc/runtime.h>
 
 #include <cmath>
 #include <cstdlib>
@@ -68,6 +69,7 @@ id elementNamed(NSArray* elements, NSString* name) {
 
 int main() {
     @autoreleasepool {
+        if (objc_getClass("ZigVstguiAccessibilityElement")) return 33;
         [NSApplication sharedApplication];
         auto* parent = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 640, 420)];
         const ZigVstguiParameterDescription parameters[] = {
@@ -137,6 +139,14 @@ int main() {
         id progress_element = elementNamed(children, @"Impulse response import progress");
         id resize = elementNamed(children, @"Editor size");
         if (!gain || !bypass || !exact || !mode || !meter || !graph || !editable_name || !live_value || !progress_element || !resize) return 5;
+        const char* element_class_name = object_getClassName(gain);
+        if (!element_class_name ||
+            std::strncmp(
+                element_class_name,
+                "ZigVstguiAccessibilityElement_",
+                sizeof("ZigVstguiAccessibilityElement_") - 1
+            ) != 0 ||
+            std::strcmp(element_class_name, "ZigVstguiAccessibilityElement") == 0) return 34;
         if (![[gain accessibilityRole] isEqualToString:NSAccessibilitySliderRole]) return 6;
         if (![[bypass accessibilityRole] isEqualToString:NSAccessibilityCheckBoxRole]) return 7;
         if (![[exact accessibilityRole] isEqualToString:NSAccessibilityTextFieldRole]) return 8;

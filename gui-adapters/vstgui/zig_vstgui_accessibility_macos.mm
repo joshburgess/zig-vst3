@@ -1,9 +1,12 @@
 #include "zig_vstgui_accessibility_bridge.h"
 
 #import <AppKit/AppKit.h>
+#import <objc/runtime.h>
 
 #include "vstgui/lib/platform/iplatformframe.h"
 
+#include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <utility>
 
@@ -28,95 +31,111 @@ NSString* role(ZigVstgui::AccessibilityRole value) {
     }
 }
 
+char semantic_node_key;
+char vstgui_view_key;
+
+const ZigVstgui::AccessibilityNode* semanticNode(id element) {
+    id value = objc_getAssociatedObject(element, &semantic_node_key);
+    return value ? static_cast<const ZigVstgui::AccessibilityNode*>([(NSValue*)value pointerValue]) : nullptr;
 }
 
-@interface ZigVstguiAccessibilityElement : NSAccessibilityElement
-@property(nonatomic, assign) const ZigVstgui::AccessibilityNode* semanticNode;
-@property(nonatomic, assign) const VSTGUI::CView* vstguiView;
-@end
-
-@implementation ZigVstguiAccessibilityElement
-
-- (BOOL)isAccessibilityElement {
-    return self.vstguiView && self.vstguiView->isVisible();
+const VSTGUI::CView* vstguiView(id element) {
+    id value = objc_getAssociatedObject(element, &vstgui_view_key);
+    return value ? static_cast<const VSTGUI::CView*>([(NSValue*)value pointerValue]) : nullptr;
 }
 
-- (NSString*)accessibilityRole {
-    return self.semanticNode ? role(self.semanticNode->role()) : NSAccessibilityGroupRole;
+BOOL isAccessibilityElement(id self, SEL) {
+    const auto* view = vstguiView(self);
+    return view && view->isVisible();
 }
 
-- (NSString*)accessibilityLabel {
-    return self.semanticNode ? string(self.semanticNode->name()) : @"";
+NSString* accessibilityRole(id self, SEL) {
+    const auto* node = semanticNode(self);
+    return node ? role(node->role()) : NSAccessibilityGroupRole;
 }
 
-- (NSString*)accessibilityHelp {
-    if (!self.semanticNode || self.semanticNode->description().empty()) return nil;
-    return string(self.semanticNode->description());
+NSString* accessibilityLabel(id self, SEL) {
+    const auto* node = semanticNode(self);
+    return node ? string(node->name()) : @"";
 }
 
-- (id)accessibilityValue {
-    if (!self.semanticNode) return nil;
-    const auto& node = *self.semanticNode;
+NSString* accessibilityHelp(id self, SEL) {
+    const auto* node = semanticNode(self);
+    if (!node || node->description().empty()) return nil;
+    return string(node->description());
+}
+
+id accessibilityValue(id self, SEL) {
+    const auto* semantic_node = semanticNode(self);
+    if (!semantic_node) return nil;
+    const auto& node = *semantic_node;
     if (node.role() == ZigVstgui::AccessibilityRole::toggle) return @(node.state().checked);
     if (node.range().present) return @(node.range().current);
     return node.valueText().empty() ? nil : string(node.valueText());
 }
 
-- (NSString*)accessibilityValueDescription {
-    if (!self.semanticNode || self.semanticNode->valueText().empty()) return nil;
-    return string(self.semanticNode->valueText());
+NSString* accessibilityValueDescription(id self, SEL) {
+    const auto* node = semanticNode(self);
+    if (!node || node->valueText().empty()) return nil;
+    return string(node->valueText());
 }
 
-- (id)accessibilityMinValue {
-    if (!self.semanticNode || !self.semanticNode->range().present) return nil;
-    return @(self.semanticNode->range().minimum);
+id accessibilityMinValue(id self, SEL) {
+    const auto* node = semanticNode(self);
+    if (!node || !node->range().present) return nil;
+    return @(node->range().minimum);
 }
 
-- (id)accessibilityMaxValue {
-    if (!self.semanticNode || !self.semanticNode->range().present) return nil;
-    return @(self.semanticNode->range().maximum);
+id accessibilityMaxValue(id self, SEL) {
+    const auto* node = semanticNode(self);
+    if (!node || !node->range().present) return nil;
+    return @(node->range().maximum);
 }
 
-- (BOOL)isAccessibilityEnabled {
-    return self.semanticNode && self.semanticNode->state().enabled;
+BOOL isAccessibilityEnabled(id self, SEL) {
+    const auto* node = semanticNode(self);
+    return node && node->state().enabled;
 }
 
-- (BOOL)isAccessibilityFocused {
-    return self.semanticNode && self.semanticNode->state().focused;
+BOOL isAccessibilityFocused(id self, SEL) {
+    const auto* node = semanticNode(self);
+    return node && node->state().focused;
 }
 
-- (void)setAccessibilityFocused:(BOOL)focused {
-    if (focused && self.semanticNode) {
-        self.semanticNode->perform(ZigVstgui::AccessibilityAction::focus);
+void setAccessibilityFocused(id self, SEL, BOOL focused) {
+    const auto* node = semanticNode(self);
+    if (focused && node) {
+        node->perform(ZigVstgui::AccessibilityAction::focus);
     }
 }
 
-- (BOOL)accessibilityPerformPress {
-    return self.semanticNode &&
-        self.semanticNode->perform(ZigVstgui::AccessibilityAction::press);
+BOOL accessibilityPerformPress(id self, SEL) {
+    const auto* node = semanticNode(self);
+    return node && node->perform(ZigVstgui::AccessibilityAction::press);
 }
 
-- (BOOL)accessibilityPerformIncrement {
-    return self.semanticNode &&
-        self.semanticNode->perform(ZigVstgui::AccessibilityAction::increment);
+BOOL accessibilityPerformIncrement(id self, SEL) {
+    const auto* node = semanticNode(self);
+    return node && node->perform(ZigVstgui::AccessibilityAction::increment);
 }
 
-- (BOOL)accessibilityPerformDecrement {
-    return self.semanticNode &&
-        self.semanticNode->perform(ZigVstgui::AccessibilityAction::decrement);
+BOOL accessibilityPerformDecrement(id self, SEL) {
+    const auto* node = semanticNode(self);
+    return node && node->perform(ZigVstgui::AccessibilityAction::decrement);
 }
 
-- (void)setAccessibilityValue:(id)value {
-    if (!self.semanticNode || !value) return;
+void setAccessibilityValue(id self, SEL, id value) {
+    const auto* node = semanticNode(self);
+    if (!node || !value) return;
     if ([value isKindOfClass:[NSNumber class]]) {
-        self.semanticNode->perform(
+        node->perform(
             ZigVstgui::AccessibilityAction::set_value,
             [value doubleValue]
         );
         return;
     }
     if ([value isKindOfClass:[NSString class]]) {
-        self.semanticNode->perform(
+        node->perform(
             ZigVstgui::AccessibilityAction::set_value,
             0.0,
             [(NSString*)value UTF8String]
@@ -124,21 +143,80 @@ NSString* role(ZigVstgui::AccessibilityRole value) {
     }
 }
 
-- (NSRect)accessibilityFrameInParentSpace {
-    if (!self.vstguiView) return NSZeroRect;
-    const auto size = self.vstguiView->getViewSize();
+NSRect accessibilityFrameInParentSpace(id self, SEL) {
+    const auto* view = vstguiView(self);
+    if (!view) return NSZeroRect;
+    const auto size = view->getViewSize();
     VSTGUI::CRect bounds(0.0, 0.0, size.getWidth(), size.getHeight());
-    self.vstguiView->translateToGlobal(bounds, true);
+    view->translateToGlobal(bounds, true);
     return NSMakeRect(bounds.left, bounds.top, bounds.getWidth(), bounds.getHeight());
 }
 
-@end
+void addOverride(Class target, SEL selector, IMP implementation) {
+    const auto inherited = class_getInstanceMethod([NSAccessibilityElement class], selector);
+    if (inherited) class_addMethod(target, selector, implementation, method_getTypeEncoding(inherited));
+}
+
+Class accessibilityElementClass() {
+    static Class element_class = [] {
+        char name[80] {};
+        std::snprintf(
+            name,
+            sizeof(name),
+            "ZigVstguiAccessibilityElement_%llx",
+            static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(&accessibilityElementClass))
+        );
+        Class dynamic_class = objc_allocateClassPair([NSAccessibilityElement class], name, 0);
+        if (!dynamic_class) return objc_getClass(name);
+        addOverride(dynamic_class, @selector(isAccessibilityElement), reinterpret_cast<IMP>(&isAccessibilityElement));
+        addOverride(dynamic_class, @selector(accessibilityRole), reinterpret_cast<IMP>(&accessibilityRole));
+        addOverride(dynamic_class, @selector(accessibilityLabel), reinterpret_cast<IMP>(&accessibilityLabel));
+        addOverride(dynamic_class, @selector(accessibilityHelp), reinterpret_cast<IMP>(&accessibilityHelp));
+        addOverride(dynamic_class, @selector(accessibilityValue), reinterpret_cast<IMP>(&accessibilityValue));
+        addOverride(dynamic_class, @selector(accessibilityValueDescription), reinterpret_cast<IMP>(&accessibilityValueDescription));
+        addOverride(dynamic_class, @selector(accessibilityMinValue), reinterpret_cast<IMP>(&accessibilityMinValue));
+        addOverride(dynamic_class, @selector(accessibilityMaxValue), reinterpret_cast<IMP>(&accessibilityMaxValue));
+        addOverride(dynamic_class, @selector(isAccessibilityEnabled), reinterpret_cast<IMP>(&isAccessibilityEnabled));
+        addOverride(dynamic_class, @selector(isAccessibilityFocused), reinterpret_cast<IMP>(&isAccessibilityFocused));
+        addOverride(dynamic_class, @selector(setAccessibilityFocused:), reinterpret_cast<IMP>(&setAccessibilityFocused));
+        addOverride(dynamic_class, @selector(accessibilityPerformPress), reinterpret_cast<IMP>(&accessibilityPerformPress));
+        addOverride(dynamic_class, @selector(accessibilityPerformIncrement), reinterpret_cast<IMP>(&accessibilityPerformIncrement));
+        addOverride(dynamic_class, @selector(accessibilityPerformDecrement), reinterpret_cast<IMP>(&accessibilityPerformDecrement));
+        addOverride(dynamic_class, @selector(setAccessibilityValue:), reinterpret_cast<IMP>(&setAccessibilityValue));
+        addOverride(dynamic_class, @selector(accessibilityFrameInParentSpace), reinterpret_cast<IMP>(&accessibilityFrameInParentSpace));
+        objc_registerClassPair(dynamic_class);
+        return dynamic_class;
+    }();
+    return element_class;
+}
+
+NSAccessibilityElement* makeAccessibilityElement(
+    const ZigVstgui::AccessibilityNode* node,
+    const VSTGUI::CView* view
+) {
+    NSAccessibilityElement* element = [[accessibilityElementClass() alloc] init];
+    objc_setAssociatedObject(
+        element,
+        &semantic_node_key,
+        [NSValue valueWithPointer:node],
+        OBJC_ASSOCIATION_RETAIN_NONATOMIC
+    );
+    objc_setAssociatedObject(
+        element,
+        &vstgui_view_key,
+        [NSValue valueWithPointer:view],
+        OBJC_ASSOCIATION_RETAIN_NONATOMIC
+    );
+    return element;
+}
+
+}
 
 namespace ZigVstgui {
 
 struct MacObserver {
     const AccessibilityNode* node {nullptr};
-    __weak ZigVstguiAccessibilityElement* element {nil};
+    __weak NSAccessibilityElement* element {nil};
 };
 
 void accessibilityChanged(void* userdata, AccessibilityChange change) {
@@ -155,7 +233,7 @@ void accessibilityChanged(void* userdata, AccessibilityChange change) {
 class NativeAccessibilityBridge::Impl {
 public:
     NSView* root {nil};
-    NSArray<ZigVstguiAccessibilityElement*>* elements {nil};
+    NSArray<NSAccessibilityElement*>* elements {nil};
     std::vector<std::unique_ptr<MacObserver>> observers;
 };
 
@@ -169,13 +247,11 @@ bool NativeAccessibilityBridge::open(VSTGUI::CFrame* frame, const std::vector<Ac
     if (!native_view) return false;
     auto next = std::make_unique<Impl>();
     next->root = native_view;
-    NSMutableArray<ZigVstguiAccessibilityElement*>* elements =
+    NSMutableArray<NSAccessibilityElement*>* elements =
         [[NSMutableArray alloc] initWithCapacity:entries.size()];
     for (const auto& entry : entries) {
         if (!entry.node || !entry.view) continue;
-        auto* element = [[ZigVstguiAccessibilityElement alloc] init];
-        element.semanticNode = entry.node;
-        element.vstguiView = entry.view;
+        auto* element = makeAccessibilityElement(entry.node, entry.view);
         element.accessibilityParent = native_view;
         [elements addObject:element];
         auto observer = std::make_unique<MacObserver>();

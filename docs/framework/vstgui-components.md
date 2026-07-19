@@ -303,6 +303,8 @@ Every component keeps its role, name, description, value, range, enabled state, 
 
 On macOS, the adapter attaches an `NSAccessibilityElement` hierarchy to VSTGUI's editor `NSView`. AppKit receives mapped roles, labels, help text, values, ranges, state, focus, and bounds. Native focus, press, increment, decrement, and value methods dispatch toolkit-neutral actions. Value, focus, semantic, and layout changes post native accessibility notifications. An AppKit integration test opens a real editor view and verifies properties, actions, host gesture counts, resize geometry, and teardown.
 
+Each macOS bundle keeps its VSTGUI and bridge implementation symbols private. Accessibility elements use an image-unique Objective-C runtime subclass instead of a fixed process-wide class name. This prevents one plugin's runtime, drawing callbacks, or native class methods from being interposed when a host loads several zig-vst3 bundles together.
+
 On Windows, the adapter provides a UI Automation fragment tree through `WM_GETOBJECT`. It maps the same semantic properties, exposes screen-space bounds and focus, and raises property, focus, and structure events. Sliders expose RangeValue, toggles expose Toggle, actionable buttons expose Invoke, and editable or choice values expose Value. The Windows provider cross-compiles with Zig's Windows SDK headers during the native adapter test, but Narrator behavior has not been tested in a native Windows host.
 
 X11 and Wayland retain the toolkit-neutral semantics, keyboard focus order, and visible focus rendering. No AT-SPI bridge is implemented yet. VoiceOver navigation, Narrator navigation, and AT-SPI host verification remain release checks for their respective platform environments.
