@@ -98,11 +98,11 @@ Exit criteria:
 
 - [ ] Promote rotary only if the gallery and EQ use one public contract and every local exit criterion passes.
 - [ ] Promote decibel controls after the final EQ host checks. The gallery, channel strip, IR loader, and EQ now share one public contract.
-- [ ] Keep the direct bipolar slider experimental until a production editor uses that presentation. Bipolar dB rotary behavior does not prove the slider contract.
+- [x] Keep the direct bipolar slider experimental until a production editor uses that presentation. Bipolar dB rotary behavior does not prove the slider contract.
 - [ ] Promote assets, fonts, and custom drawing only if the EQ and IR loader use the same contract successfully.
-- [ ] Keep analyzer transport experimental until a second production analyzer consumer establishes its required shape.
-- [ ] Document precise blockers for every retained experimental API.
-- [ ] Update component reference examples and status tables.
+- [x] Keep analyzer transport experimental until a second production analyzer consumer establishes its required shape.
+- [x] Document precise blockers for every retained experimental API.
+- [x] Update component reference examples and status tables.
 
 Release gates:
 
@@ -238,3 +238,25 @@ Record each committed milestone here with test counts, performance measurements,
 - `zig build test raw-api-abi validate-examples --summary all` passed. The matrix includes 3,716 passing tests, every raw ABI check, all twelve Steinberg example validators, native adapter tests, macOS accessibility tests, and visual regression. Final warm-render measurements were 93.7 us for the full visual suite, 31.4 us for rotary controls, 259.1 us for signal views, and 228.1 us for linked EQ.
 - Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` cross-target bundle matrices each passed 38/38 steps.
 - `GraphHandle` remains experimental because the gallery is a regression fixture and the parametric EQ is still its only production consumer. Manual validation of the current EQ bundle remains part of the release gate.
+
+## Current Completion Audit
+
+| Requirement | Evidence | Status |
+| --- | --- | --- |
+| Three-band EQ and output | Public 17-parameter plugin, DSP tests, raw ABI checks, and 47/47 Steinberg tests | Complete locally |
+| Rotary, bipolar dB, modulation, exact entry, reset, fine adjustment, tooltip, and keyboard paths | EQ and gallery declarations plus native interaction, accessibility, and visual tests | Complete locally; promotion awaits current-bundle REAPER checks |
+| Linked graph editing and automation | EQ and gallery use the same public `GraphHandle` contract; native tests cover grouped edits, host updates, rejection, selection, and accessibility | Complete locally; `GraphHandle` remains experimental with one production consumer |
+| Spectrum transport | Fixed-capacity `SpectrumAnalyzer(128)`, activity tests, instance isolation, and performance coverage | Complete locally; transport remains experimental with one production analyzer consumer |
+| Responsive layout and scaling | Compact, standard, expanded, resize-cycle, 1x, 1.5x, and 2x geometry tests and references | Complete locally; multi-monitor movement remains external |
+| Shared skin | Gallery, IR Loader, and EQ use the same asset, font, and drawing contracts; lifecycle and visual tests pass | Complete locally; promotion awaits current-bundle REAPER checks |
+| Accessibility | Toolkit-neutral semantics and macOS bridge tests cover parameters, handles, group selection, bypass, and analyzer state | Complete locally; VoiceOver, Narrator, and AT-SPI workflows remain external |
+| Cross-target and validator coverage | Raw ABI, all twelve Steinberg validators, Linux 38/38, and Windows 38/38 pass | Complete locally; native Windows, X11, and Wayland hosts remain external |
+| Pluginval | Earlier serialized runs passed. The latest preserved unexpected exit occurred during application startup before a plugin image appeared in the stack | Current-build coverage unavailable under the stop-on-first-exit policy |
+| REAPER | Earlier GUI passes found and verified shared fixes. The validated EQ binary differs from the installed binary while REAPER remains open | Pending safe bundle replacement and controlled current-build walkthrough |
+
+Retained experimental APIs:
+
+- Direct bipolar slider: only the Component Gallery uses the slider presentation. Bipolar EQ rotary controls do not validate it.
+- `GraphHandle` and mixed graph layers: the gallery validates the public contract, but the EQ remains the only production consumer.
+- Analyzer transport: the EQ remains the only production analyzer consumer.
+- Native assistive-technology bridges: automated macOS integration passes, but screen-reader workflows and native Windows and Linux bridges need their target environments.
