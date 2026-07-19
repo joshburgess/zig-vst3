@@ -229,3 +229,12 @@ Record each committed milestone here with test counts, performance measurements,
 - Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` cross-target bundle matrices each passed 38/38 steps.
 - Final warm-render measurements were 98.4 us for the full visual suite, 34.0 us for rotary, 281.0 us for signal views, and 245.0 us for linked EQ. Every scene remained within its recorded budget.
 - Pluginval was not relaunched because its preserved startup abort remains under the stop-on-exit policy. Manual REAPER validation of the current crash-fixed EQ bundle remains pending.
+
+### Linked GraphHandle gallery audit
+
+- Added a public-API `Linked Response` graph to the Component Gallery. Its handle binds Tone and Bipolar Amount, uses Output as the third adjustment parameter, persists selection through the controller state store, and highlights the existing Continuous group.
+- The controller curve is fixed at 64 points. It rejects undersized output storage, clamps every result to the declared axes, and changes deterministically with each of the three linked parameters.
+- The gallery and parametric EQ now exercise the same `GraphHandle`, parameter-driven controller source, selection, third-dimension adjustment, and linked-group highlight contracts. The existing native graph-handle suite covers grouped pointer edits, keyboard adjustment, host automation, rejection rollback, selection traversal, accessibility values, and teardown.
+- `zig build test raw-api-abi validate-examples --summary all` passed. The matrix includes 3,716 passing tests, every raw ABI check, all twelve Steinberg example validators, native adapter tests, macOS accessibility tests, and visual regression. Final warm-render measurements were 93.7 us for the full visual suite, 31.4 us for rotary controls, 259.1 us for signal views, and 228.1 us for linked EQ.
+- Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` cross-target bundle matrices each passed 38/38 steps.
+- `GraphHandle` remains experimental because the gallery is a regression fixture and the parametric EQ is still its only production consumer. Manual validation of the current EQ bundle remains part of the release gate.
