@@ -112,7 +112,11 @@ ZigVstguiEditor::ZigVstguiEditor(
   theme_kind(skin.theme),
   layout_kind(skin.layout) {
     profile_enabled = std::getenv("ZIG_VSTGUI_PROFILE") != nullptr;
-    if (preset_browser_count > 0) {
+    if (layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE) {
+        width = 720;
+        height = 660;
+        resize_control.setPresetSizes(480, 480, 960, 700, 840, 560);
+    } else if (preset_browser_count > 0) {
         width = 720;
         height = 600;
     }
@@ -411,6 +415,16 @@ ZigVstguiEditor::ZigVstguiEditor(
     }
     if (group_count > 0 && (next_parameter != parameter_count || next_meter != meter_count ||
         next_graph != graph_count || next_xy_pad != xy_pad_count)) return;
+    if (layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE) {
+        if (group_count < 2 || group_descriptions[0].graph_count != 1 ||
+            group_descriptions[0].parameter_count > 3 || group_descriptions[0].meter_count != 0 ||
+            group_descriptions[0].xy_pad_count != 0) return;
+        for (uint32_t index = 1; index < group_count; ++index) {
+            const auto& group = group_descriptions[index];
+            if (group.parameter_count == 0 || group.parameter_count > 5 || group.graph_count != 0 ||
+                group.meter_count != 0 || group.xy_pad_count != 0) return;
+        }
+    }
     buildFrame();
 }
 
@@ -648,6 +662,26 @@ VSTGUI::CRect ZigVstguiEditor::actionButtonBounds(uint32_t index) const {
 double ZigVstguiEditor::parameterControlValueGap(uint32_t parameter_id) const {
     const auto* control = findControl(parameter_id);
     return control ? control->primaryValueGap() : 0.0;
+}
+
+bool ZigVstguiEditor::parameterControlBounds(
+    uint32_t parameter_id,
+    VSTGUI::CRect& label_bounds,
+    VSTGUI::CRect& primary_bounds,
+    VSTGUI::CRect& value_bounds
+) const {
+    const auto* control = findControl(parameter_id);
+    return control && control->bounds(label_bounds, primary_bounds, value_bounds);
+}
+
+VSTGUI::CRect ZigVstguiEditor::groupBounds(uint32_t index) const {
+    auto* label = index < group_count ? group_labels[index] : nullptr;
+    return label ? label->getViewSize() : VSTGUI::CRect();
+}
+
+VSTGUI::CRect ZigVstguiEditor::graphBounds(uint32_t index) const {
+    auto* graph = index < graph_count ? graph_controls[index]->graphView() : nullptr;
+    return graph ? graph->getViewSize() : VSTGUI::CRect();
 }
 
 const ZigVstgui::AccessibilityNode* ZigVstguiEditor::editableLabelAccessibility(uint32_t index) const {
@@ -951,6 +985,8 @@ double ZigVstguiEditor::verticalScrollOffset() const {
 double ZigVstguiEditor::visibleContentTop() const {
     return content ? content->getViewSize().top : 0.0;
 }
+
+VSTGUI::CFrame* ZigVstguiEditor::frameView() const { return frame; }
 
 std::size_t ZigVstguiEditor::nativeAccessibilityElementCount() const {
     return accessibility_bridge.elementCount();
@@ -1296,6 +1332,10 @@ void ZigVstguiEditor::layout() {
         layoutActionButtons(margin, footer_top, footer_right, footer_bottom);
     } else {
         layoutActionMenus(margin, footer_control_top, footer_right, footer_bottom);
+    }
+    if (layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE) {
+        layoutParameterWorkspace(margin, right, content_bottom, footer_control_top, footer_bottom);
+        return;
     }
     if (group_count > 0) {
         const bool wide = width >= 620;
@@ -1700,6 +1740,161 @@ void ZigVstguiEditor::layout() {
     ));
 }
 
+void ZigVstguiEditor::layoutParameterWorkspace(
+    double margin,
+    double right,
+    double content_bottom,
+    double footer_control_top,
+    double footer_bottom
+) {
+    const auto& theme = theme_resolver.theme();
+    const bool compact = width < 620;
+    const bool expanded = width >= 840 && height >= 560;
+    title_component.setVisible(true);
+    help_component.setVisible(!compact);
+    title_component.setBounds(VSTGUI::CRect(margin, 12.0, right, 46.0));
+    help_component.setBounds(VSTGUI::CRect(margin, 46.0, right, 72.0));
+
+    const double workspace_top = compact ? 54.0 : 82.0;
+    const double hero_bottom = workspace_top + workspaceHeroHeight();
+    const auto& hero = group_descriptions[0];
+    group_components[0].setBounds(VSTGUI::CRect(margin, workspace_top, right, workspace_top + 28.0));
+    const double hero_content_top = workspace_top + 28.0 + theme.spacing.small;
+    const double gap = theme.spacing.small;
+
+    const auto layout_parameter_row = [&](uint32_t parameter_index, const VSTGUI::CRect& bounds) {
+        const double available = std::max(1.0, bounds.getWidth() - gap * 2.0);
+        const double label_width = std::clamp(available * 0.32, 88.0, 96.0);
+        const double value_width = std::clamp(available * 0.28, 60.0, 84.0);
+        const ZigVstgui::GridTrack columns[] = {
+            {label_width, 0.0},
+            {48.0, 1.0},
+            {value_width, 0.0},
+        };
+        const ZigVstgui::GridTrack rows[] = {{24.0, 1.0}};
+        const ZigVstgui::GridItem items[] = {
+            {0, 0, 1, 1},
+            {1, 0, 1, 1},
+            {2, 0, 1, 1},
+        };
+        VSTGUI::CRect cells[3];
+        ZigVstgui::layoutGrid(
+            bounds,
+            {},
+            gap,
+            0.0,
+            columns,
+            3,
+            rows,
+            1,
+            items,
+            3,
+            cells
+        );
+        parameter_controls[parameter_index]->setBounds(cells[0], cells[1], cells[2]);
+    };
+
+    if (compact) {
+        const double parameter_height = hero.parameter_count > 0
+            ? std::min(48.0, (hero_bottom - hero_content_top) * 0.24)
+            : 0.0;
+        const double parameter_block_height = hero.parameter_count * parameter_height +
+            (hero.parameter_count > 0 ? gap * (hero.parameter_count - 1) : 0.0);
+        const double graph_bottom = hero_bottom - parameter_block_height -
+            (hero.parameter_count > 0 ? gap : 0.0);
+        graph_controls[hero.first_graph]->setBounds(
+            VSTGUI::CRect(margin, hero_content_top, right, hero_content_top + 18.0),
+            VSTGUI::CRect(margin, hero_content_top + 18.0, right, graph_bottom)
+        );
+        double row_top = graph_bottom + gap;
+        for (uint32_t offset = 0; offset < hero.parameter_count; ++offset) {
+            layout_parameter_row(
+                hero.first_parameter + offset,
+                VSTGUI::CRect(margin, row_top, right, row_top + parameter_height)
+            );
+            row_top += parameter_height + gap;
+        }
+    } else {
+        const double parameter_width = std::clamp((right - margin) * (expanded ? 0.28 : 0.32), 220.0, 292.0);
+        const double graph_right = right - parameter_width - theme.spacing.medium;
+        graph_controls[hero.first_graph]->setBounds(
+            VSTGUI::CRect(margin, hero_content_top, graph_right, hero_content_top + 18.0),
+            VSTGUI::CRect(margin, hero_content_top + 18.0, graph_right, hero_bottom)
+        );
+        const double parameter_left = graph_right + theme.spacing.medium;
+        const double parameter_height = hero.parameter_count > 0
+            ? (hero_bottom - hero_content_top - gap * (hero.parameter_count - 1)) / hero.parameter_count
+            : 0.0;
+        for (uint32_t offset = 0; offset < hero.parameter_count; ++offset) {
+            const double row_top = hero_content_top + offset * (parameter_height + gap);
+            layout_parameter_row(
+                hero.first_parameter + offset,
+                VSTGUI::CRect(parameter_left, row_top, right, row_top + parameter_height)
+            );
+        }
+    }
+
+    const uint32_t panel_count = group_count - 1;
+    const uint32_t columns = workspacePanelColumns(right - margin);
+    const uint32_t rows = (panel_count + columns - 1) / columns;
+    const double panel_gap = theme.spacing.medium;
+    const double panel_width = (right - margin - panel_gap * (columns - 1)) / columns;
+    const double panel_height = workspacePanelHeight();
+    const double panels_top = hero_bottom + panel_gap;
+    for (uint32_t panel = 0; panel < panel_count; ++panel) {
+        const uint32_t group_index = panel + 1;
+        const uint32_t column = panel % columns;
+        const uint32_t row = panel / columns;
+        const bool spans_row = columns > 1 && row + 1 == rows &&
+            panel_count % columns == 1 && panel + 1 == panel_count;
+        const double panel_left = spans_row
+            ? margin
+            : margin + column * (panel_width + panel_gap);
+        const double panel_right = spans_row ? right : panel_left + panel_width;
+        const double panel_top = panels_top + row * (panel_height + panel_gap);
+        const auto& group = group_descriptions[group_index];
+        group_components[group_index].setBounds(
+            VSTGUI::CRect(panel_left, panel_top, panel_right, panel_top + 28.0)
+        );
+        const double rows_top = panel_top + 28.0 + gap;
+        const double row_height = (panel_height - 28.0 - gap * group.parameter_count) /
+            group.parameter_count;
+        for (uint32_t offset = 0; offset < group.parameter_count; ++offset) {
+            const double row_top = rows_top + offset * (row_height + gap);
+            layout_parameter_row(
+                group.first_parameter + offset,
+                VSTGUI::CRect(panel_left, row_top, panel_right, row_top + row_height)
+            );
+        }
+    }
+    resize_control.setBounds(VSTGUI::CRect(
+        right - theme.control_metrics.button_width,
+        footer_control_top,
+        right,
+        footer_bottom
+    ));
+    (void)content_bottom;
+}
+
+uint32_t ZigVstguiEditor::workspacePanelColumns(double available) const {
+    if (width < 620) return 1;
+    return ZigVstgui::responsiveColumnCount(
+        available,
+        theme_resolver.theme().spacing.medium,
+        208.0,
+        group_count > 0 ? group_count - 1 : 0
+    );
+}
+
+double ZigVstguiEditor::workspaceHeroHeight() const {
+    if (width < 620) return 330.0;
+    return width >= 840 && height >= 560 ? 280.0 : 240.0;
+}
+
+double ZigVstguiEditor::workspacePanelHeight() const {
+    return 250.0;
+}
+
 double ZigVstguiEditor::minimumContentHeight() const {
     const auto& spacing = theme_resolver.theme().spacing;
     double tail = spacing.large + footerHeight() + spacing.small;
@@ -1711,6 +1906,15 @@ double ZigVstguiEditor::minimumContentHeight() const {
     if (utility_count > 0) {
         tail += editable_label_count * 58.0 + progress_indicator_count * 48.0 +
             spacing.small * (utility_count - 1) + spacing.medium;
+    }
+    if (layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE && group_count > 1) {
+        const double available = std::max(1.0, static_cast<double>(width) - spacing.large * 2.0);
+        const uint32_t columns = workspacePanelColumns(available);
+        const uint32_t rows = (group_count - 1 + columns - 1) / columns;
+        const double top = width < 620 ? 54.0 : 82.0;
+        const double upper = top + workspaceHeroHeight() + spacing.medium +
+            rows * workspacePanelHeight() + (rows - 1) * spacing.medium;
+        return std::max(static_cast<double>(height), upper + tail);
     }
     double upper = 92.0 + parameter_count * 52.0;
     if (xy_pad_count > 0 || graph_count > 0 || meter_count > 0) upper += 240.0;

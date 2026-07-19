@@ -637,7 +637,8 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         if (skin.groups[index].style.mask & ~style_mask) return nullptr;
     }
     if (skin.theme != ZIG_VSTGUI_THEME_DEFAULT && skin.theme != ZIG_VSTGUI_THEME_ALTERNATE) return nullptr;
-    if (skin.layout != ZIG_VSTGUI_LAYOUT_ADAPTIVE && skin.layout != ZIG_VSTGUI_LAYOUT_COMPACT_STRIP) return nullptr;
+    if (skin.layout < ZIG_VSTGUI_LAYOUT_ADAPTIVE ||
+        skin.layout > ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE) return nullptr;
     auto* editor = new (std::nothrow) ZigVstguiEditor(
         parameters,
         parameter_count,
@@ -765,5 +766,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 23;
+    return 24;
 }

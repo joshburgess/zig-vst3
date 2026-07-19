@@ -247,6 +247,12 @@ GraphView::GraphView(
         layers.push_back(std::move(layer));
     }
     if (editable() || viewport.enabled() || range_selection.enabled()) setWantsFocus(true);
+    if (selected_id && handleEditable() && selection_changed) {
+        const auto selected = indexOf(*selected_id);
+        if (selected && handles[*selected].highlight_group_index != UINT32_MAX) {
+            selection_changed(selection_userdata, handles[*selected].highlight_group_index);
+        }
+    }
     syncAccessibility();
 }
 

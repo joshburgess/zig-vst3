@@ -853,6 +853,18 @@ double ParameterControl::primaryValueGap() const {
     return value_edit->getViewSize().top - primary_control->getViewSize().bottom;
 }
 
+bool ParameterControl::bounds(
+    VSTGUI::CRect& label_bounds,
+    VSTGUI::CRect& primary_bounds,
+    VSTGUI::CRect& value_bounds
+) const {
+    if (!label || !primary_control || !value_edit) return false;
+    label_bounds = label->getViewSize();
+    primary_bounds = primary_control->getViewSize();
+    value_bounds = value_edit->getViewSize();
+    return true;
+}
+
 bool ParameterControl::accessibilityAction(
     void* userdata,
     const AccessibilityNode& node,
@@ -1168,9 +1180,29 @@ void ResizeControl::setSize(uint32_t width, uint32_t height) {
     current_height = height;
     if (handle) handle->setCurrentSize(width, height);
     if (!button) return;
-    const bool expanded = layoutMode(width, height) == LayoutMode::expanded;
+    const bool expanded = width >= expanded_width_threshold && height >= expanded_height_threshold;
     button->setTitle(expanded ? "Compact" : "Expand");
-    button_component.accessibility().setValueText(expanded ? "Expanded" : "Compact");
+    const bool compact = width <= compact_width && height <= compact_height;
+    button_component.accessibility().setValueText(
+        expanded ? "Expanded" : compact ? "Compact" : "Standard"
+    );
+}
+
+void ResizeControl::setPresetSizes(
+    uint32_t value_compact_width,
+    uint32_t value_compact_height,
+    uint32_t value_expanded_width,
+    uint32_t value_expanded_height,
+    uint32_t value_expanded_width_threshold,
+    uint32_t value_expanded_height_threshold
+) {
+    compact_width = value_compact_width;
+    compact_height = value_compact_height;
+    expanded_width = value_expanded_width;
+    expanded_height = value_expanded_height;
+    expanded_width_threshold = value_expanded_width_threshold;
+    expanded_height_threshold = value_expanded_height_threshold;
+    setSize(current_width, current_height);
 }
 
 void ResizeControl::setCallbacks(ZigVstguiResizeCallbacks value_callbacks) {
@@ -1183,9 +1215,10 @@ bool ResizeControl::requestResize(uint32_t width, uint32_t height) {
 
 void ResizeControl::valueChanged(VSTGUI::CControl* control) {
     if (!control || control->getValue() != control->getMax()) return;
-    const bool expanded = layoutMode(current_width, current_height) == LayoutMode::expanded;
-    const uint32_t requested_width = expanded ? 400 : 640;
-    const uint32_t requested_height = expanded ? 300 : 420;
+    const bool expanded = current_width >= expanded_width_threshold &&
+        current_height >= expanded_height_threshold;
+    const uint32_t requested_width = expanded ? compact_width : expanded_width;
+    const uint32_t requested_height = expanded ? compact_height : expanded_height;
     if (!requestResize(requested_width, requested_height)) {
         if (button) button->setTitle("Resize unavailable");
     }
@@ -1224,8 +1257,12 @@ bool ResizeControl::performAccessibilityAction(const AccessibilityActionRequest&
         return true;
     }
     if (request.action != AccessibilityAction::press) return false;
-    const bool expanded = layoutMode(current_width, current_height) == LayoutMode::expanded;
-    return requestResize(expanded ? 400 : 640, expanded ? 300 : 420);
+    const bool expanded = current_width >= expanded_width_threshold &&
+        current_height >= expanded_height_threshold;
+    return requestResize(
+        expanded ? compact_width : expanded_width,
+        expanded ? compact_height : expanded_height
+    );
 }
 
 void ResizeControl::viewLostFocus(VSTGUI::CView* view) {

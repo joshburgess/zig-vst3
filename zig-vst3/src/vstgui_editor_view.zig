@@ -534,6 +534,7 @@ pub const Theme = enum(c_int) {
 pub const Layout = enum(c_int) {
     adaptive,
     compact_strip,
+    parameter_workspace,
 };
 
 pub const StyleOverride = struct {
@@ -785,6 +786,10 @@ const Binding = struct {
     telemetry: *TelemetryState,
     attached: bool = false,
     has_preset_browser: bool = false,
+    minimum_width: types.int32 = 320,
+    minimum_height: types.int32 = 240,
+    maximum_width: types.int32 = 1_000,
+    maximum_height: types.int32 = 700,
 };
 
 const TelemetryState = struct {
@@ -847,9 +852,8 @@ const View = vst_plug_view.PlugView(1, struct {
         const width = rect.right - rect.left;
         const height = rect.bottom - rect.top;
         const state = binding(self) orelse return types.kResultFalse;
-        const minimum_width: types.int32 = if (state.has_preset_browser) 480 else 320;
-        const minimum_height: types.int32 = if (state.has_preset_browser) 480 else 240;
-        if (width < minimum_width or height < minimum_height) return types.kResultFalse;
+        if (width < state.minimum_width or height < state.minimum_height or
+            width > state.maximum_width or height > state.maximum_height) return types.kResultFalse;
         if (zig_vstgui_editor_resize(state.editor, @intCast(width), @intCast(height)) != 0) {
             std.log.err("VSTGUI editor rejected size {d}x{d}", .{ width, height });
             return types.kResultFalse;
@@ -889,10 +893,8 @@ const View = vst_plug_view.PlugView(1, struct {
 
     pub fn checkSizeConstraint(self: anytype, rect: *iplugview.ViewRect) types.tresult {
         const state = binding(self) orelse return types.kResultFalse;
-        const minimum_width: types.int32 = if (state.has_preset_browser) 480 else 320;
-        const minimum_height: types.int32 = if (state.has_preset_browser) 480 else 240;
-        rect.right = std.math.clamp(rect.right, minimum_width, 1_000);
-        rect.bottom = std.math.clamp(rect.bottom, minimum_height, 700);
+        rect.right = std.math.clamp(rect.right, state.minimum_width, state.maximum_width);
+        rect.bottom = std.math.clamp(rect.bottom, state.minimum_height, state.maximum_height);
         return types.kResultOk;
     }
 
@@ -1064,6 +1066,8 @@ pub fn create(
         .observer_callbacks = observer_callbacks,
         .telemetry = telemetry,
         .has_preset_browser = preset_browsers.len > 0,
+        .minimum_width = if (skin.layout == .parameter_workspace) 400 else if (preset_browsers.len > 0) 480 else 320,
+        .minimum_height = if (skin.layout == .parameter_workspace) 360 else if (preset_browsers.len > 0) 480 else 240,
     };
     if (!observer_callbacks.subscribe(observer_callbacks.userdata, editor)) {
         std.heap.page_allocator.destroy(state);
@@ -1080,7 +1084,10 @@ pub fn create(
         zig_vstgui_editor_destroy(editor);
         return null;
     };
-    if (preset_browsers.len > 0) {
+    if (skin.layout == .parameter_workspace) {
+        view.rect.right = 720;
+        view.rect.bottom = 660;
+    } else if (preset_browsers.len > 0) {
         view.rect.right = 720;
         view.rect.bottom = 600;
     }

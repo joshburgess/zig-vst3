@@ -2,6 +2,7 @@
 #include "zig_vstgui_action_button.h"
 #include "zig_vstgui_action_menu.h"
 #include "zig_vstgui_controls.h"
+#include "zig_vstgui_editor.h"
 #include "zig_vstgui_graphs.h"
 #include "zig_vstgui_meters.h"
 #include "zig_vstgui_piano.h"
@@ -27,6 +28,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <string>
 
 namespace {
@@ -1161,6 +1163,118 @@ Snapshot editableLabelsAndProgress() {
     };
 }
 
+std::shared_ptr<ZigVstguiEditor> buildParameterWorkspace(uint32_t width, uint32_t height) {
+    const char* titles[] = {
+        "Bypass", "Output", "Enable", "Type", "Freq", "Gain", "Q",
+        "Enable", "Type", "Freq", "Gain", "Q",
+        "Enable", "Type", "Freq", "Gain", "Q",
+    };
+    const char* units[] = {
+        "", "dB", "", "", "Hz", "dB", "",
+        "", "", "Hz", "dB", "",
+        "", "", "Hz", "dB", "",
+    };
+    const int32_t steps[] = {1, 0, 1, 2, 0, 0, 0, 1, 2, 0, 0, 0, 1, 2, 0, 0, 0};
+    const ZigVstguiControlKind kinds[] = {
+        ZIG_VSTGUI_CONTROL_TOGGLE, ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER,
+        ZIG_VSTGUI_CONTROL_TOGGLE, ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB, ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_TOGGLE, ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB, ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_TOGGLE, ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB, ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+    };
+    const double values[] = {
+        0.0, 0.5, 1.0, 0.0, 0.26, 0.58, 0.30,
+        1.0, 0.5, 0.57, 0.42, 0.42,
+        1.0, 1.0, 0.87, 0.54, 0.30,
+    };
+    std::array<ZigVstguiParameterDescription, 17> parameters {};
+    for (uint32_t index = 0; index < parameters.size(); ++index) {
+        parameters[index] = {
+            index + 1,
+            values[index],
+            {titles[index], units[index], steps[index], values[index]},
+            kinds[index],
+        };
+    }
+    const ZigVstguiGraphPoint response[] = {
+        {20.0, 0.0}, {120.0, 4.0}, {1'000.0, -3.0}, {8'000.0, 2.0}, {20'000.0, 0.0},
+    };
+    const ZigVstguiGraphHandleDescription handles[] = {
+        {1, "Low", 5, 6, 0.26, 0.58, 0, 0, 1, 7, "Q", 0.30, 0.1, 1, 3, 1, 1},
+        {2, "Mid", 10, 11, 0.57, 0.42, 0, 0, 1, 12, "Q", 0.42, 0.1, 1, 8, 1, 2},
+        {3, "High", 15, 16, 0.87, 0.54, 0, 0, 1, 17, "Q", 0.30, 0.1, 1, 13, 1, 3},
+    };
+    ZigVstguiGraphDescription graph {
+        "EQ Response",
+        ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION,
+        ZIG_VSTGUI_GRAPH_PRIMARY,
+        {20.0, 20'000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"},
+        {-24.0, 24.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+        response,
+        5,
+        0,
+        0,
+        30,
+    };
+    graph.handles = handles;
+    graph.handle_count = 3;
+    graph.initial_selected_point_id = 2;
+    const ZigVstguiGroupDescription groups[] = {
+        {"Output", 0, 2, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x75b9f0ff}, 0, 1, 0, 0},
+        {"Low", 2, 5, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x4ed9b4ff}, 1, 0, 0, 0},
+        {"Mid", 7, 5, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0xb58ce8ff}, 1, 0, 0, 0},
+        {"High", 12, 5, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0xf0ad65ff}, 1, 0, 0, 0},
+    };
+    ZigVstguiSkinDescription skin {};
+    skin.layout = ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE;
+    skin.editor_title = "Parametric EQ";
+    skin.groups = groups;
+    skin.group_count = 4;
+    skin.editor_style = {
+        ZIG_VSTGUI_STYLE_BACKGROUND | ZIG_VSTGUI_STYLE_FOREGROUND,
+        0x101720ff,
+        0xe9f1f5ff,
+        0,
+        0,
+    };
+    ZigVstguiCallbacks callbacks {};
+    callbacks.begin_edit = acceptBegin;
+    callbacks.perform_edit = acceptEdit;
+    callbacks.end_edit = acceptEnd;
+    auto editor = std::make_shared<ZigVstguiEditor>(
+        parameters.data(),
+        static_cast<uint32_t>(parameters.size()),
+        callbacks,
+        nullptr,
+        0,
+        ZigVstguiMeterCallbacks {},
+        skin,
+        &graph,
+        1
+    );
+    if (!editor->valid() || !editor->resize(width, height) || !editor->frameView()) return {};
+    return editor;
+}
+
+Snapshot parameterWorkspace(const char* name, uint32_t width, uint32_t height) {
+    auto editor = buildParameterWorkspace(width, height);
+    return {
+        name,
+        width,
+        height,
+        1.0,
+        [editor](VSTGUI::CDrawContext& context) {
+            if (!editor || !editor->frameView()) return;
+            editor->frameView()->drawRect(&context, editor->frameView()->getViewSize());
+        },
+    };
+}
+
 int runSnapshot(
     const Snapshot& snapshot,
     const std::filesystem::path& references,
@@ -1510,33 +1624,35 @@ int main(int argc, char** argv) {
     if (update) std::filesystem::create_directories(references);
     std::filesystem::create_directories(output);
     VSTGUI::init(nullptr);
-    const Snapshot snapshots[] = {
-        controlStates(1.0),
-        controlStates(2.0),
-        rotaryControls(),
-        metersAndAssets(),
-        productionControls(),
-        graphs(),
-        graphViewports(),
-        signalViews(),
-        linkedEqResponse(),
-        eqAnalyzerStates(),
-        xyPad(),
-        editableEnvelope(),
-        presetBrowsers(),
-        closedActionMenu(),
-        actionMenus(),
-        actionButtons(),
-        editableLabelsAndProgress(),
-        pianoKeyboard(),
-        stepSequencer(),
-        fileDrops(),
-        fileImportStates(),
-        irWorkflowStates(),
-    };
     int result = 0;
-    for (const auto& snapshot : snapshots) {
-        result = std::max(result, runSnapshot(snapshot, references, output, update));
+    {
+        const Snapshot snapshots[] = {
+            controlStates(1.0),
+            controlStates(2.0),
+            rotaryControls(),
+            metersAndAssets(),
+            productionControls(),
+            graphs(),
+            graphViewports(),
+            signalViews(),
+            linkedEqResponse(),
+            eqAnalyzerStates(),
+            xyPad(),
+            editableEnvelope(),
+            presetBrowsers(),
+            closedActionMenu(),
+            actionMenus(),
+            actionButtons(),
+            editableLabelsAndProgress(),
+            pianoKeyboard(),
+            stepSequencer(),
+            fileDrops(),
+            fileImportStates(),
+            irWorkflowStates(),
+        };
+        for (const auto& snapshot : snapshots) {
+            result = std::max(result, runSnapshot(snapshot, references, output, update));
+        }
     }
     if (!update) {
         const double average = benchmarkWarmDraw();
@@ -1570,5 +1686,15 @@ int main(int argc, char** argv) {
             range_selection_average > warm_draw_budget_us) result = std::max(result, 6);
     }
     VSTGUI::exit();
+    {
+        const Snapshot workspace_snapshots[] = {
+            parameterWorkspace("eq-workspace-compact.png", 400, 360),
+            parameterWorkspace("eq-workspace-standard.png", 720, 660),
+            parameterWorkspace("eq-workspace-expanded.png", 960, 700),
+        };
+        for (const auto& snapshot : workspace_snapshots) {
+            result = std::max(result, runSnapshot(snapshot, references, output, update));
+        }
+    }
     return result;
 }

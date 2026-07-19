@@ -147,6 +147,11 @@ public:
     const AccessibilityNode* valueAccessibility() const;
     VSTGUI::CPoint labelTextInset() const;
     double primaryValueGap() const;
+    bool bounds(
+        VSTGUI::CRect& label_bounds,
+        VSTGUI::CRect& primary_bounds,
+        VSTGUI::CRect& value_bounds
+    ) const;
 
     void controlBeginEdit(VSTGUI::CControl* control) override;
     void valueChanged(VSTGUI::CControl* control) override;
@@ -230,6 +235,14 @@ public:
     void clear();
     void setBounds(const VSTGUI::CRect& bounds);
     void setSize(uint32_t width, uint32_t height);
+    void setPresetSizes(
+        uint32_t compact_width,
+        uint32_t compact_height,
+        uint32_t expanded_width,
+        uint32_t expanded_height,
+        uint32_t expanded_width_threshold,
+        uint32_t expanded_height_threshold
+    );
     void setCallbacks(ZigVstguiResizeCallbacks callbacks);
     bool requestResize(uint32_t width, uint32_t height);
     VSTGUI::CControl* focusView() const;
@@ -255,6 +268,12 @@ private:
     ZigVstguiResizeCallbacks callbacks {};
     uint32_t current_width {400};
     uint32_t current_height {300};
+    uint32_t compact_width {400};
+    uint32_t compact_height {300};
+    uint32_t expanded_width {640};
+    uint32_t expanded_height {420};
+    uint32_t expanded_width_threshold {520};
+    uint32_t expanded_height_threshold {360};
 };
 
 }

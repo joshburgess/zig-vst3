@@ -81,12 +81,12 @@ Exit criteria:
 
 ## Milestone 5: Responsive Production Editor
 
-- [ ] Provide compact, standard, and expanded layouts with stable resize round trips.
-- [ ] Use labeled band panels and a separate output section so the screen never presents more than five ungrouped decisions.
-- [ ] Keep Bypass visually distinct from band enable controls and away from reset actions.
-- [ ] Preserve selected band, focus order, scroll position, analyzer state, and accepted host size per instance.
+- [x] Provide compact, standard, and expanded layouts with stable resize round trips.
+- [x] Use labeled band panels and a separate output section so the screen never presents more than five ungrouped decisions.
+- [x] Keep Bypass visually distinct from band enable controls and away from reset actions.
+- [x] Preserve selected band, focus order, scroll position, analyzer state, and accepted host size per instance.
 - [ ] Verify repeated open and close, two simultaneous instances, manual resize, compact toggling, and state restoration.
-- [ ] Cover macOS accessibility directly and retain toolkit-neutral Windows semantics.
+- [x] Cover macOS accessibility directly and retain toolkit-neutral Windows semantics.
 
 Exit criteria:
 
@@ -105,10 +105,10 @@ Exit criteria:
 
 Release gates:
 
-- [ ] `zig build test raw-api-abi validate-examples --summary all`
-- [ ] Native adapter, macOS accessibility, visual-regression, and warm-render tests
-- [ ] `zig build bundle-examples-linux -Dtarget=aarch64-linux-gnu --summary all`
-- [ ] `zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu --summary all`
+- [x] `zig build test raw-api-abi validate-examples --summary all`
+- [x] Native adapter, macOS accessibility, visual-regression, and warm-render tests
+- [x] `zig build bundle-examples-linux -Dtarget=aarch64-linux-gnu --summary all`
+- [x] `zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu --summary all`
 - [ ] Serialized pluginval strictness 5 and strictness 10, stopping at the first unexpected exit
 - [ ] Manual REAPER checks for rendering, graph and knob synchronization, resize cycles, multiple instances, and editor reopen
 
@@ -185,3 +185,16 @@ Record each committed milestone here with test counts, performance measurements,
 - Latest warm-render measurements: full visual suite 97.0 us, signal views 278.2 us, and linked EQ with analyzer 241.5 us. The linked EQ remains within its 300 us scene budget.
 - Pluginval was not relaunched. Its preserved unexpected exit occurs during `NSApplication` registration before a zig-vst3 plugin image is loaded, so strictness coverage remains unavailable under the required stop-on-exit policy.
 - Manual REAPER confirmation of the rebuilt crash fix, shared skins across bundles, EQ analyzer rendering, and repeated editor reopen remains pending. Native Windows, X11, Wayland, Narrator, AT-SPI, and screen-reader workflows remain deferred to their required environments.
+
+### Milestone 5
+
+- Added the public `.parameter_workspace` layout and advanced the adapter ABI to version 24. Its first group owns one graph and up to three global parameters. Remaining groups contain one through five parameters each.
+- The EQ opens at 720 by 660. It accepts 400 by 360 through 1000 by 700 and provides 480 by 480 Compact and 960 by 700 Expanded presets. Compact mode scrolls vertically; standard and expanded presets fit without scrolling.
+- Added deterministic geometry coverage for all 17 EQ controls at compact, standard, and expanded sizes. The test checks positive bounds, horizontal containment, label, control, and value separation, graph and group containment, scroll clamping, and resize requests.
+- Increased workspace label tracks after the visual test exposed truncation in `Freq (Hz)`, `Output (dB)`, and `Bypass`. The accepted references show complete labels with separate control and value tracks at the default size.
+- Restoring a selected graph handle now restores its linked group highlight. The EQ stores Mid as its initial selection and tests editor-state isolation across two controller instances.
+- Added `eq-workspace-compact.png`, `eq-workspace-standard.png`, and `eq-workspace-expanded.png`. Full-editor snapshot rendering uses the editor-owned VSTGUI runtime so the harness does not nest or double-close platform initialization.
+- `zig build test raw-api-abi validate-examples --summary all`: 213/213 steps and 3,704/3,704 tests passed. Raw ABI checks and all twelve Steinberg example validators passed.
+- Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` cross-target bundle matrices each passed 38/38 steps.
+- Latest warm-render measurements: full visual suite 86.7 us, rotary 31.1 us, signal views 254.1 us, and linked EQ with analyzer 220.7 us. Every scene remains within its recorded budget.
+- Pluginval was not relaunched because its preserved startup abort remains under the stop-on-exit policy. Post-fix REAPER confirmation of compact, standard, expanded, manual resize, multiple-instance, and reopen behavior remains pending.

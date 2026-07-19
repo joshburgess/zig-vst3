@@ -86,6 +86,9 @@ struct CallbackState {
     uint32_t stored_scalar_count {0};
     bool reject_scalar_store {false};
     uint32_t selected_group_index {UINT32_MAX};
+    uint32_t resize_count {0};
+    uint32_t resize_width {0};
+    uint32_t resize_height {0};
 };
 
 class TestDataPackage final : public VSTGUI::IDataPackage {
@@ -278,6 +281,14 @@ uint32_t loadGraph(void* userdata, uint32_t, ZigVstguiGraphPoint* output, uint32
 
 void graphSelectionChanged(void* userdata, uint32_t group_index) {
     static_cast<CallbackState*>(userdata)->selected_group_index = group_index;
+}
+
+int32_t requestResize(void* userdata, uint32_t width, uint32_t height) {
+    auto* state = static_cast<CallbackState*>(userdata);
+    state->resize_count += 1;
+    state->resize_width = width;
+    state->resize_height = height;
+    return 0;
 }
 
 int32_t storeEditorIndex(void* userdata, uint32_t field_id, uint32_t value) {
@@ -1154,7 +1165,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 23) return 1;
+    if (zig_vstgui_adapter_version() != 24) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -1474,6 +1485,126 @@ int testAssetsAndFonts() {
     auto invalid_parameter = parameter;
     invalid_parameter.control_kind = static_cast<ZigVstguiControlKind>(99);
     if (zig_vstgui_editor_create_with_skin(&invalid_parameter, 1, {}, nullptr, 0, {}, {})) return 29;
+    return 0;
+}
+
+int testParameterWorkspaceLayout() {
+    CallbackState state;
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &state;
+    callbacks.begin_edit = beginEdit;
+    callbacks.perform_edit = performEdit;
+    callbacks.end_edit = endEdit;
+    std::array<ZigVstguiParameterDescription, 17> parameters {};
+    for (uint32_t index = 0; index < parameters.size(); ++index) {
+        parameters[index] = {
+            index + 1,
+            0.5,
+            {index % 5 == 4 ? "Freq" : "Control", index % 5 == 4 ? "Hz" : "", 0, 0.5},
+            index % 5 >= 2 ? ZIG_VSTGUI_CONTROL_ROTARY_KNOB : ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+        };
+    }
+    const ZigVstguiGraphPoint response[] = {{20.0, 0.0}, {1'000.0, 3.0}, {20'000.0, 0.0}};
+    ZigVstguiGraphDescription graph {
+        "Response",
+        ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION,
+        ZIG_VSTGUI_GRAPH_PRIMARY,
+        {20.0, 20'000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"},
+        {-24.0, 24.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+        response,
+        3,
+        0,
+        0,
+        30,
+    };
+    const ZigVstguiGroupDescription groups[] = {
+        {"Output", 0, 2, 0, 0, {}, 0, 1, 0, 0},
+        {"Low", 2, 5, 0, 0, {}, 1, 0, 0, 0},
+        {"Mid", 7, 5, 0, 0, {}, 1, 0, 0, 0},
+        {"High", 12, 5, 0, 0, {}, 1, 0, 0, 0},
+    };
+    ZigVstguiSkinDescription skin {};
+    skin.layout = ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE;
+    skin.editor_title = "Parametric EQ";
+    skin.groups = groups;
+    skin.group_count = 4;
+    ZigVstguiEditor editor(
+        parameters.data(),
+        static_cast<uint32_t>(parameters.size()),
+        callbacks,
+        nullptr,
+        0,
+        {},
+        skin,
+        &graph,
+        1
+    );
+    if (!editor.valid()) return 1;
+    if (editor.layoutKind() != ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE) return 2;
+    if (editor.groupCount() != 4) return 3;
+    if (editor.contentHeight() > 660.0) return 4;
+    if (editor.contentScrollingActive()) return 5;
+    editor.setResizeCallbacks({&state, requestResize});
+    if (editor.resizeAccessibility().valueText() != "Standard" ||
+        !editor.resizeAccessibility().perform(ZigVstgui::AccessibilityAction::press) ||
+        state.resize_count != 1 || state.resize_width != 960 || state.resize_height != 700) return 19;
+    if (!editor.resize(960, 700) || editor.resizeAccessibility().valueText() != "Expanded" ||
+        !editor.resizeAccessibility().perform(ZigVstgui::AccessibilityAction::press) ||
+        state.resize_count != 2 || state.resize_width != 480 || state.resize_height != 480) return 20;
+
+    const uint32_t sizes[][2] = {{400, 360}, {720, 660}, {960, 700}};
+    for (const auto& size : sizes) {
+        if (!editor.resize(size[0], size[1])) return 6;
+        const double margin = ZigVstgui::defaultTheme().spacing.large;
+        const double right = static_cast<double>(size[0]) - margin;
+        for (uint32_t parameter = 0; parameter < parameters.size(); ++parameter) {
+            VSTGUI::CRect label;
+            VSTGUI::CRect primary;
+            VSTGUI::CRect value;
+            if (!editor.parameterControlBounds(parameter + 1, label, primary, value)) return 7;
+            const VSTGUI::CRect parts[] = {label, primary, value};
+            for (const auto& part : parts) {
+                if (part.getWidth() <= 0.0 || part.getHeight() <= 0.0 ||
+                    part.left < margin || part.right > right ||
+                    part.top < 0.0 || part.bottom > editor.contentHeight()) return 8;
+            }
+            if (label.right > primary.left || primary.right > value.left) return 9;
+        }
+        const auto graph_bounds = editor.graphBounds(0);
+        if (graph_bounds.getWidth() <= 0.0 || graph_bounds.getHeight() < 100.0 ||
+            graph_bounds.left < margin || graph_bounds.right > right) return 10;
+        for (uint32_t group = 0; group < 4; ++group) {
+            const auto bounds = editor.groupBounds(group);
+            if (bounds.getWidth() <= 0.0 || bounds.getHeight() <= 0.0 ||
+                bounds.left < margin || bounds.right > right) return 11;
+        }
+        if ((size[0] == 400) != editor.contentScrollingActive()) {
+            return size[0] == 400 ? 12 : size[0] == 720 ? 13 : 14;
+        }
+    }
+    if (!editor.resize(400, 360)) return 15;
+    const double compact_scroll_limit = editor.contentHeight() - 360.0;
+    if (compact_scroll_limit <= 0.0 || !editor.setVerticalScrollOffset(compact_scroll_limit * 0.5)) return 16;
+    if (!editor.resize(720, 660) || editor.verticalScrollOffset() != 0.0) return 17;
+
+    auto invalid_skin = skin;
+    auto invalid_groups = std::array<ZigVstguiGroupDescription, 4>{groups[0], groups[1], groups[2], groups[3]};
+    invalid_groups[0].graph_count = 0;
+    invalid_groups[1].first_graph = 0;
+    invalid_groups[1].graph_count = 1;
+    invalid_skin.groups = invalid_groups.data();
+    ZigVstguiEditor invalid(
+        parameters.data(),
+        static_cast<uint32_t>(parameters.size()),
+        callbacks,
+        nullptr,
+        0,
+        {},
+        invalid_skin,
+        &graph,
+        1
+    );
+    if (invalid.valid()) return 18;
     return 0;
 }
 
@@ -1854,6 +1985,7 @@ int testGraphs() {
     handle_graph.handle_count = 2;
     handle_graph.parameter_driven = 1;
     handle_graph.maximum_refresh_hz = 30;
+    handle_graph.initial_selected_point_id = 2;
     const ZigVstguiGraphLayerDescription graph_layers[] = {
         {
             ZIG_VSTGUI_GRAPH_SECONDARY,
@@ -1895,6 +2027,7 @@ int testGraphs() {
         ) || handle_state.graph_load_count != 3 || handle_control.graphView()->pointCount() != 2 ||
         !handle_control.graphView()->editable() || handle_control.accessibilityNode().state().read_only ||
         handle_control.accessibilityNode().supports(ZigVstgui::AccessibilityAction::add_point) ||
+        handle_state.selected_group_index != 2 ||
         !handle_control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::select_next) ||
         !handle_control.accessibilityNode().perform(ZigVstgui::AccessibilityAction::select_next) ||
         handle_control.accessibilityNode().valueText().find("High, disabled") == std::string::npos ||
@@ -3026,6 +3159,7 @@ int main() {
     if (const int result = testMultiParameterRouting(); result != 0) return 90 + result;
     if (const int result = testLayoutSolvers(); result != 0) return 110 + result;
     if (const int result = testGalleryLayoutExtents(); result != 0) return 130 + result;
+    if (const int result = testParameterWorkspaceLayout(); result != 0) return 140 + result;
     if (const int result = testMeterBallistics(); result != 0) return 150 + result;
     VSTGUI::init(nullptr);
     const int graph_result = testGraphs();

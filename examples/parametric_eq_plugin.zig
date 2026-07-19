@@ -30,6 +30,7 @@ const mid_response_source_id: u32 = 3;
 const high_response_source_id: u32 = 4;
 const response_point_count: usize = 97;
 const spectrum_source_id: u32 = 0;
+const selected_band_state_id: u32 = 1;
 const eq_asset_id: u32 = 1;
 const eq_curve_svg =
     "<svg viewBox=\"0 0 24 24\">" ++
@@ -89,8 +90,12 @@ const eq_skin: vst3.vstgui.Skin = .{
     },
     .drawing = .{ .draw_parameter = drawEqParameter },
     .theme = .default,
-    .layout = .adaptive,
+    .layout = .parameter_workspace,
 };
+
+const EqEditorState = core.editor_state.Store(1, &.{
+    .{ .id = selected_band_state_id, .default = .{ .point_id = 2 } },
+});
 
 pub const FilterType = enum { low_shelf, bell, high_shelf };
 pub const FilterTypeParam = core.parameters.EnumParam(FilterType);
@@ -127,6 +132,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const controller_name = "ParametricEqController";
     pub const Params = Spec.Params;
     pub const parameter_set = &eq_parameter_set;
+    pub const EditorState = EqEditorState;
 
     pub fn createView(
         controller: *vst.ivsteditcontroller.IEditController,
@@ -138,17 +144,17 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 parameterControl(output_param_id, "Output", "dB", 0, 0.5, .decibel_slider),
                 parameterControl(low_enabled_param_id, "Enable", "", 1, 1.0, .toggle),
                 parameterControl(low_type_param_id, "Type", "", 2, 0.0, .enum_dropdown),
-                parameterControl(low_frequency_param_id, "Frequency", "Hz", 0, normalizedFrequency(120.0), .rotary_knob),
+                parameterControl(low_frequency_param_id, "Freq", "Hz", 0, normalizedFrequency(120.0), .rotary_knob),
                 parameterControl(low_gain_param_id, "Gain", "dB", 0, 0.5, .rotary_knob),
                 parameterControl(low_q_param_id, "Q", "", 0, normalizedQ(0.707), .rotary_knob),
                 parameterControl(mid_enabled_param_id, "Enable", "", 1, 1.0, .toggle),
                 parameterControl(mid_type_param_id, "Type", "", 2, 0.5, .enum_dropdown),
-                parameterControl(mid_frequency_param_id, "Frequency", "Hz", 0, normalizedFrequency(1_000.0), .rotary_knob),
+                parameterControl(mid_frequency_param_id, "Freq", "Hz", 0, normalizedFrequency(1_000.0), .rotary_knob),
                 parameterControl(mid_gain_param_id, "Gain", "dB", 0, 0.5, .rotary_knob),
                 parameterControl(mid_q_param_id, "Q", "", 0, normalizedQ(1.0), .rotary_knob),
                 parameterControl(high_enabled_param_id, "Enable", "", 1, 1.0, .toggle),
                 parameterControl(high_type_param_id, "Type", "", 2, 1.0, .enum_dropdown),
-                parameterControl(high_frequency_param_id, "Frequency", "Hz", 0, normalizedFrequency(8_000.0), .rotary_knob),
+                parameterControl(high_frequency_param_id, "Freq", "Hz", 0, normalizedFrequency(8_000.0), .rotary_knob),
                 parameterControl(high_gain_param_id, "Gain", "dB", 0, 0.5, .rotary_knob),
                 parameterControl(high_q_param_id, "Q", "", 0, normalizedQ(0.707), .rotary_knob),
             },
@@ -162,6 +168,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .source = .controller,
                     .parameter_driven = true,
                     .maximum_refresh_hz = 30,
+                    .selection_state_id = selected_band_state_id,
                     .handles = &.{
                         .{ .id = 1, .name = "Low", .x_parameter_id = low_frequency_param_id, .y_parameter_id = low_gain_param_id, .adjustment_parameter_id = low_q_param_id, .adjustment_label = "Q", .enabled_parameter_id = low_enabled_param_id, .highlight_group_index = 1 },
                         .{ .id = 2, .name = "Mid", .x_parameter_id = mid_frequency_param_id, .y_parameter_id = mid_gain_param_id, .adjustment_parameter_id = mid_q_param_id, .adjustment_label = "Q", .enabled_parameter_id = mid_enabled_param_id, .highlight_group_index = 2 },
@@ -186,7 +193,7 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .title = "Parametric EQ",
                 .style = .{ .background = 0x101720ff, .foreground = 0xe9f1f5ff },
                 .groups = &.{
-                    .{ .title = "Master", .parameter_count = 2, .graph_count = 1, .style = .{ .accent = 0x75b9f0ff } },
+                    .{ .title = "Output", .parameter_count = 2, .graph_count = 1, .style = .{ .accent = 0x75b9f0ff } },
                     .{ .title = "Low", .first_parameter = 2, .parameter_count = 5, .first_graph = 1, .style = .{ .accent = 0x4ed9b4ff } },
                     .{ .title = "Mid", .first_parameter = 7, .parameter_count = 5, .first_graph = 1, .style = .{ .accent = 0xb58ce8ff } },
                     .{ .title = "High", .first_parameter = 12, .parameter_count = 5, .first_graph = 1, .style = .{ .accent = 0xf0ad65ff } },
@@ -412,6 +419,39 @@ test "parametric EQ exports component and controller classes" {
     try std.testing.expectEqual(types.kResultOk, plugin_factory.vtable.getClassInfo(plugin_factory, 0, &class_info));
     try std.testing.expectEqualStrings("zig-vst3 Parametric EQ", std.mem.sliceTo(&class_info.name, 0));
     try eq_parameter_set.validate();
+}
+
+test "parametric EQ workspace sizes and selection state are instance local" {
+    var first_out: ?*anyopaque = null;
+    var second_out: ?*anyopaque = null;
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &first_out),
+    );
+    try std.testing.expectEqual(
+        types.kResultOk,
+        Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &second_out),
+    );
+    const first: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(first_out orelse return error.MissingController));
+    defer _ = first.vtable.release(first);
+    const second: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(second_out orelse return error.MissingController));
+    defer _ = second.vtable.release(second);
+    const view = first.vtable.createView(first, vst.ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
+    defer _ = view.vtable.release(view);
+
+    var initial = gui.iplugview.ViewRect{};
+    try std.testing.expectEqual(types.kResultOk, view.vtable.getSize(view, &initial));
+    try std.testing.expectEqual(@as(types.int32, 720), initial.right);
+    try std.testing.expectEqual(@as(types.int32, 660), initial.bottom);
+    var constrained = gui.iplugview.ViewRect{ .left = 0, .top = 0, .right = 120, .bottom = 100 };
+    try std.testing.expectEqual(types.kResultOk, view.vtable.checkSizeConstraint(view, &constrained));
+    try std.testing.expectEqual(@as(types.int32, 400), constrained.right);
+    try std.testing.expectEqual(@as(types.int32, 360), constrained.bottom);
+
+    try std.testing.expectEqual(@as(u32, 2), Controller.editorState(first).get(selected_band_state_id).?.point_id);
+    try Controller.editorState(first).set(selected_band_state_id, .{ .point_id = 3 });
+    try std.testing.expectEqual(@as(u32, 3), Controller.editorState(first).get(selected_band_state_id).?.point_id);
+    try std.testing.expectEqual(@as(u32, 2), Controller.editorState(second).get(selected_band_state_id).?.point_id);
 }
 
 test "parametric EQ component instances isolate parameter state" {

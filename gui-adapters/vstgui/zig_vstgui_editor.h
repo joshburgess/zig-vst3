@@ -95,6 +95,14 @@ struct ZigVstguiEditor {
     const ZigVstgui::AccessibilityNode* actionButtonAccessibility(uint32_t index) const;
     VSTGUI::CRect actionButtonBounds(uint32_t index) const;
     double parameterControlValueGap(uint32_t parameter_id) const;
+    bool parameterControlBounds(
+        uint32_t parameter_id,
+        VSTGUI::CRect& label_bounds,
+        VSTGUI::CRect& primary_bounds,
+        VSTGUI::CRect& value_bounds
+    ) const;
+    VSTGUI::CRect groupBounds(uint32_t index) const;
+    VSTGUI::CRect graphBounds(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* editableLabelAccessibility(uint32_t index) const;
     const ZigVstgui::AccessibilityNode* progressAccessibility(uint32_t index) const;
     bool tickMeter(uint32_t index, double elapsed_ms);
@@ -120,11 +128,19 @@ struct ZigVstguiEditor {
     bool setVerticalScrollOffset(double offset);
     double verticalScrollOffset() const;
     double visibleContentTop() const;
+    VSTGUI::CFrame* frameView() const;
 
 private:
     void buildFrame();
     void clearFrameReferences();
     void layout();
+    void layoutParameterWorkspace(
+        double margin,
+        double right,
+        double content_bottom,
+        double footer_control_top,
+        double footer_bottom
+    );
     void layoutPresetBrowsers(double left, double top, double right, double bottom);
     void layoutActionMenus(double left, double top, double right, double bottom);
     void layoutPianos(double left, double top, double right, double bottom);
@@ -152,6 +168,9 @@ private:
     double actionButtonAreaWidth() const;
     uint32_t actionButtonColumnCount(double available) const;
     double footerHeight() const;
+    uint32_t workspacePanelColumns(double available) const;
+    double workspaceHeroHeight() const;
+    double workspacePanelHeight() const;
     ZigVstgui::ParameterControl* findControl(uint32_t parameter_id);
     const ZigVstgui::ParameterControl* findControl(uint32_t parameter_id) const;
 
