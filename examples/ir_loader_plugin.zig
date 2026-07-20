@@ -599,6 +599,15 @@ test "IR loader creates a public API editor and bounded processor" {
     try std.testing.expectEqual(@as(u32, convolution_partition_size), processor.vtable.getLatencySamples(processor));
 }
 
+test "IR loader survives concurrent headless host lifecycle stress" {
+    const report = try vst3.testing.vstgui_headless_host.run(struct {
+        pub const component_create = Effect.create;
+        pub const controller_create = Controller.create;
+    }, .{});
+    try std.testing.expectEqual(@as(usize, 12), report.editor_lifecycles);
+    try std.testing.expect(report.process_blocks >= 128);
+}
+
 test "IR loader imports and clears one immutable processor generation" {
     var wav: [48]u8 = undefined;
     var writer = std.Io.Writer.fixed(&wav);

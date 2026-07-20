@@ -593,6 +593,15 @@ test "channel strip controller creates independent public API views" {
     try std.testing.expectEqual(@as(types.int32, 600), second_size.bottom);
 }
 
+test "channel strip survives concurrent headless host lifecycle stress" {
+    const report = try vst3.testing.vstgui_headless_host.run(struct {
+        pub const component_create = Effect.create;
+        pub const controller_create = Controller.create;
+    }, .{});
+    try std.testing.expectEqual(@as(usize, 12), report.editor_lifecycles);
+    try std.testing.expect(report.process_blocks >= 128);
+}
+
 test "channel strip importer survives editor reopen and publishes its controller graph" {
     const frame_count = 1024;
     var wav_bytes: [44 + frame_count * 2]u8 = undefined;

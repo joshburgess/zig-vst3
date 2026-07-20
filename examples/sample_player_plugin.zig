@@ -480,6 +480,15 @@ test "sample player creates its public API editor" {
     defer _ = view.vtable.release(view);
 }
 
+test "sample player survives concurrent headless host lifecycle stress" {
+    const report = try vst3.testing.vstgui_headless_host.run(struct {
+        pub const component_create = Effect.create;
+        pub const controller_create = Controller.create;
+    }, .{});
+    try std.testing.expectEqual(@as(usize, 12), report.editor_lifecycles);
+    try std.testing.expect(report.process_blocks >= 128);
+}
+
 test "sample player creates isolated responsive editor views" {
     var out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &out));

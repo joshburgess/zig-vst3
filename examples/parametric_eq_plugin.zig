@@ -650,6 +650,15 @@ test "parametric EQ analyzer is bounded and editor activity gated" {
     try std.testing.expect(!active.spectrum.producing());
 }
 
+test "parametric EQ survives concurrent headless host lifecycle stress" {
+    const report = try vst3.testing.vstgui_headless_host.run(struct {
+        pub const component_create = Effect.create;
+        pub const controller_create = Controller.create;
+    }, .{});
+    try std.testing.expectEqual(@as(usize, 12), report.editor_lifecycles);
+    try std.testing.expect(report.process_blocks >= 128);
+}
+
 test "parametric EQ skin uses public assets fonts and custom drawing" {
     try std.testing.expectEqual(@as(usize, 1), eq_skin.assets.len);
     try std.testing.expectEqual(vst3.vstgui.AssetFormat.svg, eq_skin.assets[0].format);

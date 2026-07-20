@@ -159,6 +159,19 @@ pub fn build(b: *std.Build) void {
         example_plugins[index] = addExamplePlugin(b, target, optimize, zig_vst3, zig_vst3_plugin_core, zig_vst3_plugin, gui_options, native_vstgui, entry_symbols_step, vstgui_adapter_step, options);
     }
 
+    const gui_lifecycle_step = b.step("test-gui-lifecycle", "Run headless lifecycle stress for every example editor");
+    for (example_plugin_options, example_plugins) |options, plugin| {
+        if (!hasReferenceEditor(options.short_name)) continue;
+        const plugin_step = b.step(
+            b.fmt("test-gui-lifecycle-{s}", .{options.short_name}),
+            b.fmt("Run headless lifecycle stress for the {s} editor", .{options.display_name}),
+        );
+        plugin_step.dependOn(&b.addRunArtifact(plugin.plugin_tests).step);
+        gui_lifecycle_step.dependOn(plugin_step);
+    }
+    const gui_lifecycle_soak_step = b.step("soak-gui-lifecycle", "Repeat every headless editor lifecycle test with crash artifacts");
+    gui_lifecycle_soak_step.dependOn(&b.addSystemCommand(&.{ "sh", "scripts/gui_lifecycle_soak.sh" }).step);
+
     var example_bundle_steps: [example_plugin_options.len]Vst3BundleSteps = undefined;
     for (example_plugins, 0..) |plugin, index| {
         example_bundle_steps[index] = plugin.bundles;
@@ -703,17 +716,7 @@ fn addExamplePlugin(
     vstgui_adapter_step: *std.Build.Step,
     options: ExamplePluginOptions,
 ) ExamplePluginSteps {
-    const has_reference_editor = std.mem.eql(u8, options.short_name, "gain") or
-        std.mem.eql(u8, options.short_name, "bypass") or
-        std.mem.eql(u8, options.short_name, "mode-gain") or
-        std.mem.eql(u8, options.short_name, "voice-mix") or
-        std.mem.eql(u8, options.short_name, "sine-synth") or
-        std.mem.eql(u8, options.short_name, "editor-smoke") or
-        std.mem.eql(u8, options.short_name, "channel-strip") or
-        std.mem.eql(u8, options.short_name, "parametric-eq") or
-        std.mem.eql(u8, options.short_name, "resonant-filter") or
-        std.mem.eql(u8, options.short_name, "ir-loader") or
-        std.mem.eql(u8, options.short_name, "sample-player");
+    const has_reference_editor = hasReferenceEditor(options.short_name);
     const library = addVst3PluginLibrary(b, target, optimize, zig_vst3_plugin_core, .{
         .artifact_name = options.artifact_name,
         .root_source_file = options.root_source_file,
@@ -745,6 +748,20 @@ fn addExamplePlugin(
         .plugin_tests = plugin_tests,
         .core_example_tests = addZigVst3PluginTest(b, target, optimize, zig_vst3_plugin, options.core_example_source_file),
     };
+}
+
+fn hasReferenceEditor(short_name: []const u8) bool {
+    return std.mem.eql(u8, short_name, "gain") or
+        std.mem.eql(u8, short_name, "bypass") or
+        std.mem.eql(u8, short_name, "mode-gain") or
+        std.mem.eql(u8, short_name, "voice-mix") or
+        std.mem.eql(u8, short_name, "sine-synth") or
+        std.mem.eql(u8, short_name, "editor-smoke") or
+        std.mem.eql(u8, short_name, "channel-strip") or
+        std.mem.eql(u8, short_name, "parametric-eq") or
+        std.mem.eql(u8, short_name, "resonant-filter") or
+        std.mem.eql(u8, short_name, "ir-loader") or
+        std.mem.eql(u8, short_name, "sample-player");
 }
 
 fn addVstguiAdapter(module: *std.Build.Module, target: std.Build.ResolvedTarget) void {

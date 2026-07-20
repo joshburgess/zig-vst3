@@ -384,6 +384,15 @@ test "resonant filter editor is available through the public authoring API" {
     try std.testing.expectEqual(@as(types.int32, 360), constrained.bottom);
 }
 
+test "resonant filter survives concurrent headless host lifecycle stress" {
+    const report = try vst3.testing.vstgui_headless_host.run(struct {
+        pub const component_create = Effect.create;
+        pub const controller_create = Controller.create;
+    }, .{});
+    try std.testing.expectEqual(@as(usize, 12), report.editor_lifecycles);
+    try std.testing.expect(report.process_blocks >= 128);
+}
+
 const TestParameters = struct {
     values: Spec.ParameterValues = Spec.ParameterValues.init(&filter_parameter_set),
 

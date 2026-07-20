@@ -6,6 +6,7 @@ const gain_spec = @import("gain_spec.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
+const vstgui_headless_host = @import("vstgui_headless_host.zig");
 
 const GainFactory = factory.StaticFactory3(.{
     .vendor = gain_spec.Spec.vendor,
@@ -59,4 +60,14 @@ test "gain plugin root exposes zig-vst3-plugin metadata" {
     try std.testing.expectEqual(@as(usize, 1), gain_spec.Spec.ParameterSet.count);
     try std.testing.expectEqual(@as(usize, 0), gain_spec.gain_param_index);
     try std.testing.expectEqual(@as(f64, 1.0), spec.values.view(&gain_spec.parameter_set).loadNormalized("gain"));
+}
+
+test "gain editor survives concurrent headless host lifecycle stress" {
+    const report = try vstgui_headless_host.run(struct {
+        pub const component_create = gain_component.create;
+        pub const controller_create = gain_controller.create;
+    }, .{});
+    try std.testing.expectEqual(@as(usize, 12), report.editor_lifecycles);
+    try std.testing.expect(report.process_blocks >= 128);
+    try std.testing.expectEqual(@as(usize, 1), report.automated_parameters);
 }
