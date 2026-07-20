@@ -1189,7 +1189,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 25) return 1;
+    if (zig_vstgui_adapter_version() != 26) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -1665,6 +1665,53 @@ int testParameterWorkspaceLayout() {
         1
     );
     if (invalid.valid()) return 18;
+
+    auto instrument_skin = skin;
+    instrument_skin.layout = ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE;
+    ZigVstguiEditor missing_importer(
+        parameters.data(), static_cast<uint32_t>(parameters.size()), callbacks,
+        nullptr, 0, {}, instrument_skin, &graph, 1
+    );
+    if (missing_importer.valid()) return 26;
+    state.import_snapshot_available = true;
+    state.import_snapshot = {
+        ZIG_VSTGUI_FILE_IMPORT_READY, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE,
+        ZIG_VSTGUI_FILE_IMPORT_PICKER, 1.0, 1, 48'000, 2, 48'000, 256,
+    };
+    state.progress_available = true;
+    state.progress_snapshot = {
+        ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_COMPLETE, 1.0, 1,
+    };
+    auto instrument_callbacks = callbacks;
+    instrument_callbacks.import_files = importFiles;
+    instrument_callbacks.load_file_import = loadFileImport;
+    instrument_callbacks.command_file_import = commandFileImport;
+    instrument_callbacks.load_progress = loadProgress;
+    const char* extensions[] = {".wav", ".aiff"};
+    const ZigVstguiFileDropDescription importer {
+        1, "Sample", "Drop a sample here", extensions, 2, 1, 1,
+        "Choose Sample", "Choose a Sample",
+    };
+    const ZigVstguiProgressIndicatorDescription progress {
+        1, "Import", "Sample import progress", "Choose a sample", "Importing sample",
+        "Sample ready", "Import failed", 30,
+    };
+    ZigVstguiEditor instrument(
+        parameters.data(), static_cast<uint32_t>(parameters.size()), instrument_callbacks,
+        nullptr, 0, {}, instrument_skin, &graph, 1, {}, nullptr, 0, nullptr, 0,
+        nullptr, 0, nullptr, 0, nullptr, 0, &importer, 1, nullptr, 0, nullptr, 0,
+        &progress, 1
+    );
+    if (!instrument.valid() || instrument.layoutKind() != ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE ||
+        !instrument.contentScrollingActive() || instrument.graphBounds(0).top < 250.0) return 27;
+    if (!instrument.resize(480, 480) || instrument.graphBounds(0).top < 220.0) return 28;
+    const double instrument_scroll_limit = instrument.contentHeight() - 480.0;
+    if (instrument_scroll_limit <= 0.0 ||
+        !instrument.setVerticalScrollOffset(instrument_scroll_limit)) return 29;
+    if (!instrument.resize(960, 700) || instrument.verticalScrollOffset() < 0.0 ||
+        instrument.verticalScrollOffset() > instrument.contentHeight() - 700.0) return 30;
+    if (!instrument.setVerticalScrollOffset(0.0) || !instrument.resize(720, 660) ||
+        instrument.verticalScrollOffset() != 0.0 || instrument.graphBounds(0).top < 250.0) return 31;
     return 0;
 }
 

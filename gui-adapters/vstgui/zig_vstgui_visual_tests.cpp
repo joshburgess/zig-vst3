@@ -83,6 +83,29 @@ int32_t rejectDrop(void*, uint32_t, const char* const*, uint32_t) { return -1; }
 int32_t acceptAction(void*, uint32_t, uint32_t) { return 0; }
 int32_t rejectAction(void*, uint32_t, uint32_t) { return -1; }
 int32_t acceptPreset(void*, uint32_t) { return 0; }
+int32_t acceptImport(
+    void*,
+    uint32_t,
+    ZigVstguiFileImportEntryPoint,
+    const char* const*,
+    uint32_t
+) { return 0; }
+int32_t acceptImportCommand(void*, uint32_t, ZigVstguiFileImportCommand) { return 0; }
+int32_t loadReadyImport(void*, uint32_t, ZigVstguiFileImportSnapshot* snapshot) {
+    if (!snapshot) return -1;
+    *snapshot = {
+        ZIG_VSTGUI_FILE_IMPORT_READY,
+        ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE,
+        ZIG_VSTGUI_FILE_IMPORT_PICKER,
+        1.0,
+        1,
+        48'000,
+        2,
+        48'000,
+        256,
+    };
+    return 0;
+}
 
 int32_t formatEqValue(void*, uint32_t parameter_id, double normalized, char* output, uint32_t capacity) {
     if (!output || capacity == 0) return -1;
@@ -103,6 +126,22 @@ int32_t formatFilterValue(void*, uint32_t parameter_id, double normalized, char*
         const char* value = normalized < 1.0 / 6.0 ? "low_pass" :
             normalized < 0.5 ? "high_pass" : normalized < 5.0 / 6.0 ? "band_pass" : "notch";
         const int written = std::snprintf(output, capacity, "%s", value);
+        return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+    }
+    const int written = std::snprintf(output, capacity, "%.3f", normalized);
+    return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+}
+
+int32_t formatSampleValue(void*, uint32_t parameter_id, double normalized, char* output, uint32_t capacity) {
+    if (!output || capacity == 0) return -1;
+    if (parameter_id == 15) {
+        const int written = std::snprintf(output, capacity, "%s", normalized < 0.5 ? "gate" : "one_shot");
+        return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+    }
+    if (parameter_id == 14) {
+        const char* values[] = {"mono", "two", "four", "eight"};
+        const auto index = static_cast<std::size_t>(std::clamp(std::round(normalized * 3.0), 0.0, 3.0));
+        const int written = std::snprintf(output, capacity, "%s", values[index]);
         return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
     }
     const int written = std::snprintf(output, capacity, "%.3f", normalized);
@@ -1501,6 +1540,140 @@ Snapshot resonantFilterWorkspace(const char* name, uint32_t width, uint32_t heig
     };
 }
 
+std::shared_ptr<ZigVstguiEditor> buildSamplePlayerWorkspace(uint32_t width, uint32_t height) {
+    const char* titles[] = {
+        "Start", "End", "Loop Start", "Loop End", "Gain", "Pan", "Coarse", "Fine",
+        "Loop", "Reverse", "Playback", "Voices", "Attack", "Decay", "Sustain", "Release",
+    };
+    const char* units[] = {
+        "%", "%", "%", "%", "dB", "%", "st", "cent", "", "", "", "", "ms", "ms", "%", "ms",
+    };
+    const int32_t steps[] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 3, 0, 0, 0, 0};
+    const double values[] = {
+        0.08, 0.92, 0.24, 0.68, 0.833, 0.5, 0.5, 0.5, 1.0, 0.0, 0.0, 1.0, 0.36, 0.62, 0.8, 0.64,
+    };
+    const uint32_t parameter_ids[] = {4, 5, 6, 7, 0, 1, 2, 3, 8, 9, 15, 14, 10, 11, 12, 13};
+    const ZigVstguiControlKind kinds[] = {
+        ZIG_VSTGUI_CONTROL_LINEAR_SLIDER, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+        ZIG_VSTGUI_CONTROL_LINEAR_SLIDER, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+        ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER, ZIG_VSTGUI_CONTROL_BIPOLAR_SLIDER,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB, ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_TOGGLE, ZIG_VSTGUI_CONTROL_TOGGLE,
+        ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM, ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB, ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB, ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+    };
+    std::array<ZigVstguiParameterDescription, 16> parameters {};
+    for (uint32_t index = 0; index < parameters.size(); ++index) {
+        parameters[index] = {
+            parameter_ids[index],
+            values[index],
+            {titles[index], units[index], steps[index], values[index]},
+            kinds[index],
+        };
+    }
+    std::array<ZigVstguiGraphPoint, 97> waveform {};
+    for (std::size_t index = 0; index < waveform.size(); ++index) {
+        const double x = static_cast<double>(index) / static_cast<double>(waveform.size() - 1);
+        waveform[index] = {x, std::sin(x * 31.4159265359) * std::exp(-2.4 * x)};
+    }
+    const ZigVstguiGraphPoint playhead[] = {{0.46, -1.0}, {0.46, 1.0}};
+    const ZigVstguiGraphLayerDescription playhead_layer {
+        ZIG_VSTGUI_GRAPH_WARNING, playhead, 2, 0, ZIG_VSTGUI_GRAPH_WAVEFORM, 0, 0, 0, {}, 0,
+    };
+    ZigVstguiGraphDescription graph {
+        "Sample Waveform", ZIG_VSTGUI_GRAPH_WAVEFORM, ZIG_VSTGUI_GRAPH_MODULATION,
+        {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Time"},
+        {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"},
+        waveform.data(), static_cast<uint32_t>(waveform.size()), 0, 0, 30,
+    };
+    graph.viewport = {
+        1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 128.0, 2.0, 0.18, 0.0, 1.25, 0.1, 0, 0, 0,
+    };
+    graph.range_selection = {1, 0.08, 0.92, 0.001, 0.001, 0, 0, 1, 4, 5, 0, 0};
+    graph.secondary_range_selection = {1, 0.24, 0.68, 0.001, 0.001, 0, 0, 1, 6, 7, 0, 0};
+    graph.layers = &playhead_layer;
+    graph.layer_count = 1;
+    const ZigVstguiGroupDescription groups[] = {
+        {"Waveform", 0, 2, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x79baf2ff}, 0, 1, 0, 0},
+        {"Loop Range", 2, 2, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x79baf2ff}, 1, 0, 0, 0},
+        {"Playback", 4, 4, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x52d5b0ff}, 1, 0, 0, 0},
+        {"Mode and Voices", 8, 4, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0xf0ad65ff}, 1, 0, 0, 0},
+        {"Envelope", 12, 4, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0xc58be8ff}, 1, 0, 0, 0},
+    };
+    ZigVstguiSkinDescription skin {};
+    skin.layout = ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE;
+    skin.editor_title = "Sample Player";
+    skin.groups = groups;
+    skin.group_count = 5;
+    skin.editor_style = {
+        ZIG_VSTGUI_STYLE_BACKGROUND | ZIG_VSTGUI_STYLE_FOREGROUND | ZIG_VSTGUI_STYLE_ACCENT,
+        0x111922ff, 0xeaf3f6ff, 0x52d5b0ff, 0,
+    };
+    const char* extensions[] = {".wav", ".aif", ".aiff"};
+    const ZigVstguiFileDropDescription importer {
+        1, "Sample", "Drop a PCM WAV or AIFF sample here", extensions, 3, 1, 1,
+        "Choose Sample", "Choose a Sample",
+    };
+    const ZigVstguiActionButtonDescription clear {
+        1, 1, nullptr, "Clear sample", "Remove the imported sample", "Confirm Clear Sample",
+        "Clear failed. Try again", ZIG_VSTGUI_ACTION_DESTRUCTIVE, ZIG_VSTGUI_ACTION_ICON_CLEAR, 1, 1, 1,
+    };
+    const ZigVstguiPianoDescription piano {"Sample Keyboard", 48, 25, 0, 0.8, 60};
+    const ZigVstguiProgressIndicatorDescription progress {
+        1, "Import", "Sample import progress", "Choose a sample to begin", "Importing sample",
+        "Sample ready", "Import failed. Retry or choose another file", 30,
+    };
+    const ZigVstguiEditableLabelDescription last_import {
+        3, "Last Import", "Last imported sample", "No previous sample", "Import name unavailable",
+        "Studio Piano.aiff", 64, 1, 1, 10,
+    };
+    static TextProgressVisualState visual_state;
+    visual_state.text = "Studio Piano.aiff";
+    visual_state.progress = {
+        ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_COMPLETE, 1.0, 1,
+    };
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = &visual_state;
+    callbacks.begin_edit = acceptBegin;
+    callbacks.perform_edit = acceptEdit;
+    callbacks.end_edit = acceptEnd;
+    callbacks.format_value = formatSampleValue;
+    callbacks.invoke_action = acceptAction;
+    callbacks.send_note = acceptNote;
+    callbacks.import_files = acceptImport;
+    callbacks.load_file_import = loadReadyImport;
+    callbacks.command_file_import = acceptImportCommand;
+    callbacks.load_editor_text = loadVisualText;
+    callbacks.load_progress = loadVisualProgress;
+    auto editor = std::make_shared<ZigVstguiEditor>(
+        parameters.data(), static_cast<uint32_t>(parameters.size()), callbacks,
+        nullptr, 0, ZigVstguiMeterCallbacks {}, skin, &graph, 1, ZigVstguiGraphCallbacks {},
+        nullptr, 0, nullptr, 0, nullptr, 0, &piano, 1, nullptr, 0, &importer, 1,
+        &clear, 1, &last_import, 1, &progress, 1
+    );
+    if (!editor->valid() || !editor->resize(width, height) || !editor->frameView()) return {};
+    return editor;
+}
+
+Snapshot samplePlayerWorkspace(const char* name, uint32_t width, uint32_t height) {
+    auto editor = buildSamplePlayerWorkspace(width, height);
+    return {
+        name,
+        width,
+        height,
+        1.0,
+        [editor, width, height](VSTGUI::CDrawContext& context) {
+            if (!editor || !editor->frameView()) return;
+            auto frame = VSTGUI::owned(new VSTGUI::CFrame(VSTGUI::CRect(0, 0, width, height), nullptr));
+            auto* view = editor->frameView();
+            view->attached(frame);
+            view->drawRect(&context, view->getViewSize());
+            view->removed(frame);
+        },
+    };
+}
+
 int runSnapshot(
     const Snapshot& snapshot,
     const std::filesystem::path& references,
@@ -1979,6 +2152,9 @@ int main(int argc, char** argv) {
             resonantFilterWorkspace("resonant-filter-compact.png", 480, 480),
             resonantFilterWorkspace("resonant-filter-standard.png", 720, 660),
             resonantFilterWorkspace("resonant-filter-expanded.png", 960, 700),
+            samplePlayerWorkspace("sample-player-compact.png", 480, 480),
+            samplePlayerWorkspace("sample-player-standard.png", 720, 660),
+            samplePlayerWorkspace("sample-player-expanded.png", 960, 700),
         };
         for (const auto& snapshot : workspace_snapshots) {
             result = std::max(result, runSnapshot(snapshot, references, output, update));

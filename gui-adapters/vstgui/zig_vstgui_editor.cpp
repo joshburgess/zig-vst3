@@ -112,7 +112,8 @@ ZigVstguiEditor::ZigVstguiEditor(
   theme_kind(skin.theme),
   layout_kind(skin.layout) {
     profile_enabled = std::getenv("ZIG_VSTGUI_PROFILE") != nullptr;
-    if (layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE) {
+    if (layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE ||
+        layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) {
         width = 720;
         height = 660;
         resize_control.setPresetSizes(480, 480, 960, 700, 840, 560);
@@ -415,7 +416,8 @@ ZigVstguiEditor::ZigVstguiEditor(
     }
     if (group_count > 0 && (next_parameter != parameter_count || next_meter != meter_count ||
         next_graph != graph_count || next_xy_pad != xy_pad_count)) return;
-    if (layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE) {
+    if (layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE ||
+        layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) {
         if (group_count < 2 || group_descriptions[0].graph_count != 1 ||
             group_descriptions[0].parameter_count > 3 || group_descriptions[0].meter_count != 0 ||
             group_descriptions[0].xy_pad_count != 0) return;
@@ -424,6 +426,8 @@ ZigVstguiEditor::ZigVstguiEditor(
             if (group.parameter_count == 0 || group.parameter_count > 5 || group.graph_count != 0 ||
                 group.meter_count != 0 || group.xy_pad_count != 0) return;
         }
+        if (layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE &&
+            (file_drop_count != 1 || progress_indicator_count != 1 || piano_count > 1)) return;
     }
     buildFrame();
 }
@@ -807,6 +811,14 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
             + ZIG_VSTGUI_MAX_EDITABLE_LABELS
     > focus_order {};
     uint32_t focus_count = 0;
+    if (layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) {
+        for (uint32_t index = 0; index < file_drop_count; ++index) {
+            if (auto* importer = file_drop_controls[index]->focusView()) focus_order[focus_count++] = importer;
+        }
+        for (uint32_t index = 0; index < graph_count; ++index) {
+            if (auto* graph = graph_controls[index]->focusView()) focus_order[focus_count++] = graph;
+        }
+    }
     for (uint32_t index = 0; index < parameter_count; ++index) {
         if (auto* primary = parameter_controls[index]->focusView()) focus_order[focus_count++] = primary;
         if (auto* value = parameter_controls[index]->valueFocusView()) focus_order[focus_count++] = value;
@@ -814,8 +826,10 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
     for (uint32_t index = 0; index < meter_count; ++index) {
         if (auto* meter = meter_controls[index]->focusView()) focus_order[focus_count++] = meter;
     }
-    for (uint32_t index = 0; index < graph_count; ++index) {
-        if (auto* graph = graph_controls[index]->focusView()) focus_order[focus_count++] = graph;
+    if (layout_kind != ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) {
+        for (uint32_t index = 0; index < graph_count; ++index) {
+            if (auto* graph = graph_controls[index]->focusView()) focus_order[focus_count++] = graph;
+        }
     }
     for (uint32_t index = 0; index < xy_pad_count; ++index) {
         if (auto* xy_pad = xy_pad_controls[index]->focusView()) focus_order[focus_count++] = xy_pad;
@@ -823,8 +837,10 @@ bool ZigVstguiEditor::focusNext(bool reverse) {
     for (uint32_t index = 0; index < editable_label_count; ++index) {
         if (auto* editable = editable_label_controls[index]->focusView()) focus_order[focus_count++] = editable;
     }
-    for (uint32_t index = 0; index < file_drop_count; ++index) {
-        if (auto* importer = file_drop_controls[index]->focusView()) focus_order[focus_count++] = importer;
+    if (layout_kind != ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) {
+        for (uint32_t index = 0; index < file_drop_count; ++index) {
+            if (auto* importer = file_drop_controls[index]->focusView()) focus_order[focus_count++] = importer;
+        }
     }
     for (uint32_t index = 0; index < step_sequencer_count; ++index) {
         if (auto* sequencer = step_sequencer_controls[index]->focusView()) focus_order[focus_count++] = sequencer;
@@ -1001,6 +1017,20 @@ std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries
         file_drop_count + action_button_count + editable_label_count + progress_indicator_count + 1);
     entries.push_back({&title_component.accessibility(), title_component.view()});
     entries.push_back({&help_component.accessibility(), help_component.view()});
+    if (layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) {
+        for (uint32_t index = 0; index < file_drop_count; ++index) {
+            entries.push_back({&file_drop_controls[index]->accessibilityNode(), file_drop_controls[index]->dropView()});
+        }
+        for (uint32_t index = 0; index < progress_indicator_count; ++index) {
+            entries.push_back({
+                &progress_controls[index]->accessibilityNode(),
+                progress_controls[index]->accessibilityView(),
+            });
+        }
+        for (uint32_t index = 0; index < graph_count; ++index) {
+            entries.push_back({&graph_controls[index]->accessibilityNode(), graph_controls[index]->graphView()});
+        }
+    }
     for (uint32_t index = 0; index < group_count; ++index) {
         entries.push_back({&group_components[index].accessibility(), group_components[index].view()});
     }
@@ -1014,8 +1044,10 @@ std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries
     for (uint32_t index = 0; index < meter_count; ++index) {
         entries.push_back({&meter_controls[index]->accessibilityNode(), meter_controls[index]->focusView()});
     }
-    for (uint32_t index = 0; index < graph_count; ++index) {
-        entries.push_back({&graph_controls[index]->accessibilityNode(), graph_controls[index]->graphView()});
+    if (layout_kind != ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) {
+        for (uint32_t index = 0; index < graph_count; ++index) {
+            entries.push_back({&graph_controls[index]->accessibilityNode(), graph_controls[index]->graphView()});
+        }
     }
     for (uint32_t index = 0; index < xy_pad_count; ++index) {
         const auto& xy_pad = *xy_pad_controls[index];
@@ -1028,14 +1060,16 @@ std::vector<ZigVstgui::AccessibilityEntry> ZigVstguiEditor::accessibilityEntries
             editable_label_controls[index]->accessibilityView(),
         });
     }
-    for (uint32_t index = 0; index < progress_indicator_count; ++index) {
-        entries.push_back({
-            &progress_controls[index]->accessibilityNode(),
-            progress_controls[index]->accessibilityView(),
-        });
-    }
-    for (uint32_t index = 0; index < file_drop_count; ++index) {
-        entries.push_back({&file_drop_controls[index]->accessibilityNode(), file_drop_controls[index]->dropView()});
+    if (layout_kind != ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) {
+        for (uint32_t index = 0; index < progress_indicator_count; ++index) {
+            entries.push_back({
+                &progress_controls[index]->accessibilityNode(),
+                progress_controls[index]->accessibilityView(),
+            });
+        }
+        for (uint32_t index = 0; index < file_drop_count; ++index) {
+            entries.push_back({&file_drop_controls[index]->accessibilityNode(), file_drop_controls[index]->dropView()});
+        }
     }
     for (uint32_t index = 0; index < step_sequencer_count; ++index) {
         entries.push_back({
@@ -1269,6 +1303,7 @@ void ZigVstguiEditor::layout() {
         scroll_view->setScrollOffset(retained_scroll_offset);
     }
     const auto& theme = theme_resolver.theme();
+    const bool instrument_workspace = layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE;
     const double margin = theme.spacing.large;
     const double right = std::max(margin + 1.0, static_cast<double>(width) - margin);
     const double value_width = std::min(
@@ -1296,15 +1331,16 @@ void ZigVstguiEditor::layout() {
         : 0.0;
     const double sequencer_bottom = piano_count > 0 ? piano_top - theme.spacing.medium : lower_content_bottom;
     const double sequencer_top = sequencer_bottom - sequencer_height;
-    const double file_drop_height = file_drop_count > 0 ? 112.0 : 0.0;
+    const double file_drop_height = file_drop_count > 0 && !instrument_workspace ? 112.0 : 0.0;
     const double file_drop_bottom = step_sequencer_count > 0
         ? sequencer_top - theme.spacing.medium
         : (piano_count > 0 ? piano_top - theme.spacing.medium : lower_content_bottom);
     const double file_drop_top = file_drop_bottom - file_drop_height;
-    const uint32_t utility_count = editable_label_count + progress_indicator_count;
+    const uint32_t utility_count = editable_label_count +
+        (instrument_workspace ? 0 : progress_indicator_count);
     const double utility_bottom = file_drop_count > 0 ? file_drop_top - theme.spacing.medium : file_drop_bottom;
     const double utility_height = utility_count > 0
-        ? editable_label_count * 58.0 + progress_indicator_count * 48.0 +
+        ? editable_label_count * 58.0 + (instrument_workspace ? 0.0 : progress_indicator_count * 48.0) +
             theme.spacing.small * (utility_count - 1)
         : 0.0;
     const double utility_top = utility_bottom - utility_height;
@@ -1314,7 +1350,9 @@ void ZigVstguiEditor::layout() {
     }
     if (piano_count > 0) layoutPianos(margin, piano_top, right, piano_bottom);
     if (step_sequencer_count > 0) layoutStepSequencers(margin, sequencer_top, right, sequencer_bottom);
-    if (file_drop_count > 0) layoutFileDrops(margin, file_drop_top, right, file_drop_bottom);
+    if (file_drop_count > 0 && !instrument_workspace) {
+        layoutFileDrops(margin, file_drop_top, right, file_drop_bottom);
+    }
     double utility_cursor = utility_top;
     if (editable_label_count > 0) {
         const double editable_bottom = utility_cursor + editable_label_count * 58.0 +
@@ -1322,8 +1360,18 @@ void ZigVstguiEditor::layout() {
         layoutEditableLabels(margin, utility_cursor, right, editable_bottom);
         utility_cursor = editable_bottom + (progress_indicator_count > 0 ? theme.spacing.small : 0.0);
     }
-    if (progress_indicator_count > 0) {
+    if (progress_indicator_count > 0 && !instrument_workspace) {
         layoutProgressIndicators(margin, utility_cursor, right, utility_bottom);
+    }
+    if (instrument_workspace) {
+        const double importer_top = 54.0;
+        layoutFileDrops(margin, importer_top, right, importer_top + 112.0);
+        layoutProgressIndicators(
+            margin,
+            importer_top + 112.0 + theme.spacing.small,
+            right,
+            importer_top + 160.0 + theme.spacing.small
+        );
     }
     const double footer_right = right - theme.control_metrics.button_width - theme.spacing.small;
     if (action_button_count > 0 && action_menu_count > 0) {
@@ -1335,7 +1383,8 @@ void ZigVstguiEditor::layout() {
     } else {
         layoutActionMenus(margin, footer_control_top, footer_right, footer_bottom);
     }
-    if (layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE) {
+    if (layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE ||
+        layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) {
         layoutParameterWorkspace(margin, right, content_bottom, footer_control_top, footer_bottom);
         return;
     }
@@ -1752,12 +1801,13 @@ void ZigVstguiEditor::layoutParameterWorkspace(
     const auto& theme = theme_resolver.theme();
     const bool compact = width < 620;
     const bool expanded = width >= 840 && height >= 560;
+    const bool instrument_workspace = layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE;
     title_component.setVisible(true);
-    help_component.setVisible(!compact);
+    help_component.setVisible(!compact && !instrument_workspace);
     title_component.setBounds(VSTGUI::CRect(margin, 12.0, right, 46.0));
     help_component.setBounds(VSTGUI::CRect(margin, 46.0, right, 72.0));
 
-    const double workspace_top = compact ? 54.0 : 82.0;
+    const double workspace_top = workspaceTop();
     const double hero_bottom = workspace_top + workspaceHeroHeight();
     const auto& hero = group_descriptions[0];
     group_components[0].setBounds(VSTGUI::CRect(margin, workspace_top, right, workspace_top + 28.0));
@@ -1907,24 +1957,36 @@ double ZigVstguiEditor::workspacePanelHeight() const {
     return 250.0;
 }
 
+double ZigVstguiEditor::workspaceTop() const {
+    const double top = layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE
+        ? 54.0
+        : (width < 620 ? 54.0 : 82.0);
+    if (layout_kind != ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) return top;
+    return top + 160.0 + theme_resolver.theme().spacing.small + theme_resolver.theme().spacing.medium;
+}
+
 double ZigVstguiEditor::minimumContentHeight() const {
     const auto& spacing = theme_resolver.theme().spacing;
     double tail = spacing.large + footerHeight() + spacing.small;
     if (preset_browser_count > 0) tail += 156.0 + spacing.medium;
     if (piano_count > 0) tail += 140.0 + spacing.medium;
     if (step_sequencer_count > 0) tail += 94.0 + spacing.medium;
-    if (file_drop_count > 0) tail += 112.0 + spacing.medium;
-    const uint32_t utility_count = editable_label_count + progress_indicator_count;
+    if (file_drop_count > 0 && layout_kind != ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) {
+        tail += 112.0 + spacing.medium;
+    }
+    const uint32_t utility_count = editable_label_count +
+        (layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE ? 0 : progress_indicator_count);
     if (utility_count > 0) {
-        tail += editable_label_count * 58.0 + progress_indicator_count * 48.0 +
+        tail += editable_label_count * 58.0 +
+            (layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE ? 0.0 : progress_indicator_count * 48.0) +
             spacing.small * (utility_count - 1) + spacing.medium;
     }
-    if (layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE && group_count > 1) {
+    if ((layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE ||
+            layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) && group_count > 1) {
         const double available = std::max(1.0, static_cast<double>(width) - spacing.large * 2.0);
         const uint32_t columns = workspacePanelColumns(available);
         const uint32_t rows = (group_count - 1 + columns - 1) / columns;
-        const double top = width < 620 ? 54.0 : 82.0;
-        const double upper = top + workspaceHeroHeight() + spacing.medium +
+        const double upper = workspaceTop() + workspaceHeroHeight() + spacing.medium +
             rows * workspacePanelHeight() + (rows - 1) * spacing.medium;
         return std::max(static_cast<double>(height), upper + tail);
     }

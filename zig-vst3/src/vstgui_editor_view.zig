@@ -541,6 +541,7 @@ pub const Layout = enum(c_int) {
     adaptive,
     compact_strip,
     parameter_workspace,
+    instrument_workspace,
 };
 
 pub const StyleOverride = struct {

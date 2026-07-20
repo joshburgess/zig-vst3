@@ -171,6 +171,7 @@ private:
     uint32_t workspacePanelColumns(double available) const;
     double workspaceHeroHeight() const;
     double workspacePanelHeight() const;
+    double workspaceTop() const;
     ZigVstgui::ParameterControl* findControl(uint32_t parameter_id);
     const ZigVstgui::ParameterControl* findControl(uint32_t parameter_id) const;
 

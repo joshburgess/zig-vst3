@@ -33,6 +33,8 @@ pub const maximum_voices: usize = 8;
 
 const zoom_state_id: u32 = 1;
 const x_offset_state_id: u32 = 2;
+const last_import_state_id: u32 = 3;
+const maximum_import_name_bytes: usize = 64;
 
 pub const VoiceCount = enum { mono, two, four, eight };
 pub const PlaybackMode = enum { gate, one_shot };
@@ -70,15 +72,18 @@ const AudioImporter = vst3.vstgui.DecodedAudioFileImporter(maximum_sample_frames
 const SamplePlayer = core.gui_sample_player.Player(maximum_sample_frames, maximum_voices);
 const PlayheadSeries = core.gui_graph.SnapshotSeries(2);
 
-const SamplePlayerEditorState = core.editor_state.Store(1, &.{
+const SamplePlayerEditorState = core.editor_state.Store(2, &.{
     .{ .id = zoom_state_id, .default = .{ .scalar = 1.0 } },
     .{ .id = x_offset_state_id, .default = .{ .scalar = 0.0 } },
+    .{ .id = last_import_state_id, .default = .{ .text = .{} } },
 });
 
 const SamplePlayerControllerState = struct {
     importer: AudioImporter,
     published_import_generation: u64 = 0,
     transfer_generation: u64 = 0,
+    pending_import_name: [maximum_import_name_bytes]u8 = @splat(0),
+    pending_import_name_len: u8 = 0,
 
     pub fn init() SamplePlayerControllerState {
         return .{ .importer = .init() };
@@ -102,8 +107,13 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
         entry_point: vst3.vstgui.FileImportEntryPoint,
         paths: []const []const u8,
     ) types.tresult {
-        if (import_id != sample_import_id) return types.kInvalidArgument;
-        return if (Controller.controllerState(controller).importer.begin(entry_point, paths)) types.kResultOk else types.kResultFalse;
+        if (import_id != sample_import_id or paths.len != 1) return types.kInvalidArgument;
+        const state = Controller.controllerState(controller);
+        if (!state.importer.begin(entry_point, paths)) return types.kResultFalse;
+        const name = safeImportName(paths[0]);
+        @memcpy(state.pending_import_name[0..name.len], name);
+        state.pending_import_name_len = @intCast(name.len);
+        return types.kResultOk;
     }
 
     pub fn loadFileImport(
@@ -118,6 +128,9 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
             if (generation != 0 and Controller.sendDecodedAudioGeneration(controller, sample_import_id, generation, &state.importer) == types.kResultOk) {
                 state.transfer_generation = generation;
                 state.published_import_generation = snapshot.import.generation;
+                const name = state.pending_import_name[0..state.pending_import_name_len];
+                const text = core.editor_state.Text.init(name) catch return snapshot;
+                Controller.editorState(controller).set(last_import_state_id, .{ .text = text }) catch return snapshot;
             }
         }
         return snapshot;
@@ -258,8 +271,18 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .success_focus_importer_id = sample_import_id,
                 .ready_importer_id = sample_import_id,
             }},
+            .editable_labels = &.{.{
+                .field_id = last_import_state_id,
+                .label = "Last Import",
+                .accessible_label = "Last imported sample",
+                .placeholder = "No previous sample",
+                .error_text = "Import name unavailable",
+                .maximum_bytes = maximum_import_name_bytes,
+                .read_only = true,
+                .maximum_refresh_hz = 10,
+            }},
             .pianos = &.{.{ .title = "Sample Keyboard", .first_note = 48, .note_count = 25, .computer_base_pitch = 60 }},
-            .skin = .{ .theme = .default, .layout = .parameter_workspace },
+            .skin = .{ .theme = .default, .layout = .instrument_workspace },
             .composition = .{
                 .title = "Sample Player",
                 .style = .{ .background = 0x111922ff, .foreground = 0xeaf3f6ff, .accent = 0x52d5b0ff },
@@ -279,6 +302,8 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
         const generation = state.transfer_generation +% 1;
         if (generation == 0 or Controller.clearDecodedAudio(controller, sample_import_id, generation) != types.kResultOk) return false;
         if (!state.importer.reset()) return false;
+        Controller.editorState(controller).reset(last_import_state_id) catch return false;
+        state.pending_import_name_len = 0;
         state.transfer_generation = generation;
         state.published_import_generation = 0;
         return true;
@@ -417,6 +442,15 @@ fn defaultNormalized(id: u32) f64 {
     return sample_parameter_set.defaultNormalizedById(id) orelse 0.0;
 }
 
+fn safeImportName(path: []const u8) []const u8 {
+    const separator = std.mem.lastIndexOfAny(u8, path, "/\\");
+    const name = if (separator) |index| path[index + 1 ..] else path;
+    if (!std.unicode.utf8ValidateSlice(name)) return "";
+    var end = @min(name.len, maximum_import_name_bytes);
+    while (end > 0 and !std.unicode.utf8ValidateSlice(name[0..end])) end -= 1;
+    return name[0..end];
+}
+
 fn playbackAt(context: anytype, sample_offset: usize) core.gui_sample_player.Playback {
     const voices = (VoiceCountParam{ .id = voices_param_id, .name = "Voices", .default = .eight }).denormalize(normalizedAt(context, voices_param_id, sample_offset));
     const mode = (PlaybackModeParam{ .id = playback_param_id, .name = "Playback", .default = .gate }).denormalize(normalizedAt(context, playback_param_id, sample_offset));
@@ -469,6 +503,39 @@ test "sample player creates its public API editor" {
     try std.testing.expectEqual(@as(i32, 16), controller.vtable.getParameterCount(controller));
     const view = controller.vtable.createView(controller, vst.ivsteditcontroller.ViewType.kEditor) orelse return error.MissingEditorView;
     defer _ = view.vtable.release(view);
+}
+
+test "sample player stores only a bounded import name" {
+    try std.testing.expectEqualStrings("snare.aiff", safeImportName("/Users/test/Samples/snare.aiff"));
+    try std.testing.expectEqualStrings("kick.wav", safeImportName("C:\\Samples\\kick.wav"));
+    const long_name = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-long.wav";
+    try std.testing.expectEqual(maximum_import_name_bytes, safeImportName(long_name).len);
+    const unicode_name = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678é.wav";
+    const bounded_unicode = safeImportName(unicode_name);
+    try std.testing.expect(bounded_unicode.len <= maximum_import_name_bytes);
+    try std.testing.expect(std.unicode.utf8ValidateSlice(bounded_unicode));
+    try std.testing.expectEqualStrings("", safeImportName("bad-\xff.wav"));
+}
+
+test "sample player restores version one editor state with empty media metadata" {
+    const VersionOne = core.editor_state.Store(1, &.{
+        .{ .id = zoom_state_id, .default = .{ .scalar = 1.0 } },
+        .{ .id = x_offset_state_id, .default = .{ .scalar = 0.0 } },
+    });
+    var previous = VersionOne.init();
+    try previous.set(zoom_state_id, .{ .scalar = 4.0 });
+    try previous.set(x_offset_state_id, .{ .scalar = 0.25 });
+    var bytes: [VersionOne.maximumEncodedSize()]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try previous.write(&writer);
+
+    var reader = std.Io.Reader.fixed(writer.buffered());
+    var restored = SamplePlayerEditorState.init();
+    const report = try restored.read(&reader, &.{});
+    try std.testing.expectEqual(@as(u16, 1), report.source_schema_version);
+    try std.testing.expectEqual(@as(f64, 4.0), restored.get(zoom_state_id).?.scalar);
+    try std.testing.expectEqual(@as(f64, 0.25), restored.get(x_offset_state_id).?.scalar);
+    try std.testing.expectEqualStrings("", restored.get(last_import_state_id).?.text.slice());
 }
 
 test "sample player processor renders imported media from MIDI" {

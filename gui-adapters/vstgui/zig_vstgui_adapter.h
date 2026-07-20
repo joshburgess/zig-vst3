@@ -538,7 +538,8 @@ typedef enum ZigVstguiThemeKind {
 typedef enum ZigVstguiLayoutKind {
     ZIG_VSTGUI_LAYOUT_ADAPTIVE = 0,
     ZIG_VSTGUI_LAYOUT_COMPACT_STRIP = 1,
-    ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE = 2
+    ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE = 2,
+    ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE = 3
 } ZigVstguiLayoutKind;
 
 typedef enum ZigVstguiStyleMask {

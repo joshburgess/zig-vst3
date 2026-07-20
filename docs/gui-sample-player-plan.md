@@ -36,7 +36,7 @@ Exit criteria:
 ## Milestone 2: Production Waveform Editor
 
 - [x] Declare the complete editor through `vst3.vstgui.createEditor` without adapter-internal imports.
-- [ ] Add File, Waveform, Playback, and Envelope groups with one clear primary import action.
+- [x] Add File, Waveform, Playback, and Envelope groups with one clear primary import action.
 - [x] Add drag-and-drop and picker entry, progress, cancel, retry, clear confirmation, and concise recovery text.
 - [x] Add a controller waveform, horizontal viewport, start and end selection, loop range, live playhead, scales, and explicit empty and loading states.
 - [x] Add direct bipolar pan, gain, coarse and fine tuning, playback and loop modes, reverse, ADSR, piano audition, and exact entry.
@@ -50,10 +50,10 @@ Exit criteria:
 
 ## Milestone 3: Responsive Layout and State
 
-- [ ] Define deterministic compact, standard, and expanded layouts with reversible manual resize behavior.
-- [ ] Prevent clipped labels, cramped controls, ambiguous selection, excess blank space, poor contrast, and unreachable actions.
-- [ ] Persist parameters, layout mode, viewport, start, end, loop range, loop mode, and safe import metadata.
-- [ ] Restore missing media as empty without file access and document portability limits.
+- [x] Define deterministic compact, standard, and expanded layouts with reversible manual resize behavior.
+- [x] Prevent clipped labels, cramped controls, ambiguous selection, excess blank space, poor contrast, and unreachable actions in deterministic references.
+- [x] Persist parameters, the declared responsive layout, viewport, start, end, loop range, loop mode, and safe import metadata.
+- [x] Restore missing media as empty without file access and document portability limits.
 - [ ] Verify repeated editor open and close, processor restart, replacement import, cancellation during teardown, and two-instance isolation.
 
 Exit criteria:
@@ -136,4 +136,17 @@ Record committed milestones here with test counts, validator results, performanc
 - Direct parameter-backed ranges and `secondary_range_selection` remain experimental. The visual gallery and sample player exercise the same public contract, but a second production consumer is still required for promotion.
 - `zig build test raw-api-abi validate-sample-player --summary all`: 180/180 build steps and 3,758/3,758 tests passed. The Steinberg validator reported 47 tests passed and 0 failed for both processing precisions.
 - The native adapter, macOS accessibility bridge, visual references, and warm-render benchmarks passed. The complete scene measured 84.9 us, graph viewport 47.1 us, and dual range selection 158.1 us.
+- Linux aarch64 and Windows x86_64 sample-player cross-target bundles each passed 4/4 build steps. These builds are not native host validation.
+
+### Milestone 3: Instrument Workspace and Safe Restoration
+
+- Added the public experimental `.instrument_workspace` layout. It requires one importer and one progress indicator, accepts one optional piano, and places import, waveform editing, parameter panels, audition, metadata, destructive actions, and resize in a stable reading order.
+- Compact, standard, and expanded sample-player references exercise the complete public editor declaration. Compact sizes use bounded vertical scrolling. Manual and preset resize tests verify clamped scroll positions, reversible breakpoints, and restoration to the top rather than a blank retained offset.
+- Focus and accessibility traversal begin with Import and the waveform before parameter controls. The generic parameter keyboard hint is hidden because it does not describe the primary import workflow.
+- Editor-state schema version 2 preserves viewport zoom and offset plus a UTF-8-safe, 64-byte maximum source basename. It never stores an absolute path or decoded audio. Version 1 state restores its viewport and defaults the new metadata field to empty.
+- Reopening or restoring an instance performs no file access and restores no waveform. The persisted basename is informational only, so unavailable or moved media always produces the explicit empty state and requires a new import. This is deterministic but not portable media embedding.
+- The host owns the accepted editor rectangle. The plugin declares one responsive layout rather than serializing a second layout mode. Reopening derives the same compact, standard, or expanded arrangement from the host-provided logical size.
+- `zig build test --summary all`: 66/66 build steps and 3,760/3,760 tests passed, including native layout, macOS accessibility, visual regression, schema restoration, and Unicode-safe metadata coverage.
+- The final warm-render pass measured 81.0 us for the full scene, 45.1 us for viewport rendering, and 154.7 us for dual-range rendering. All remained inside their existing budgets.
+- `zig build raw-api-abi validate-sample-player --summary all`: 117/117 build steps passed. The Steinberg validator reported 47 tests passed and 0 failed for both processing precisions.
 - Linux aarch64 and Windows x86_64 sample-player cross-target bundles each passed 4/4 build steps. These builds are not native host validation.
