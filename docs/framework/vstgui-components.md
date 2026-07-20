@@ -4,6 +4,22 @@ The reference component API is available as `@import("zig-vst3").vstgui`. A cont
 
 The component gallery is the `zig_vst3_editor_smoke` example. The channel-strip example is the production-style editor used to verify that the same API works with a different composition and theme.
 
+## Choose the Public Surface
+
+Use `@import("zig-vst3").vstgui` for plugin editor declarations. `EditorDescription` and `createEditor` are the main composition path. The four `create*View` helpers remain supported conveniences for small parameter editors. `FileImporter` is the current file-input name. `FileDrop` and `EditorDescription.file_drops` remain compatibility aliases for existing source.
+
+Use `@import("zig-vst3-plugin").gui` only when implementing a GUI adapter or testing toolkit-neutral host lifecycle behavior. It defines renderer, size, scale, and attachment contracts. It is not a second component library, and ordinary plugin composition does not need it.
+
+Focused declarations live in:
+
+- [composition](../../examples/gui/composition.zig)
+- [graphs](../../examples/gui/graphs.zig)
+- [importer](../../examples/gui/importer.zig)
+- [accessibility](../../examples/gui/accessibility.zig)
+- [toolkit-neutral lifecycle](../../examples/gui/lifecycle.zig)
+
+Descriptions and their referenced slices must remain alive until `createEditor` returns. Editor creation copies bounded declaration data into instance-owned storage. The returned view owns its native widget tree and retained telemetry sources until the host releases the view. File parsing, decoding, and other unbounded work belong on a controller-owned worker. Processor callbacks may publish bounded lock-free telemetry and adopt complete decoded generations, but must not allocate, lock, read files, log, call the host, or perform GUI work.
+
 ## Build a Parameter Editor
 
 Add a `createView` function to a reflected edit controller. This example uses the compact alternate presentation from Voice Mix:

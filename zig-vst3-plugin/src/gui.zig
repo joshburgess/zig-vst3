@@ -1,3 +1,8 @@
+//! Toolkit-neutral renderer and host-lifecycle contracts.
+//!
+//! This module is for adapter implementations and custom renderers. Plugin UI
+//! composition should normally use `@import("zig-vst3").vstgui`.
+
 const std = @import("std");
 
 pub const ParameterId = u32;

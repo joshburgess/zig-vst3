@@ -45,10 +45,10 @@ Exit criteria:
 
 ## Milestone 4: Public API and Installed Consumer
 
-- [ ] Audit the public GUI API for duplicate concepts, adapter leakage, ambiguous ownership, and unsupported single-consumer surfaces.
-- [ ] Split broad examples into focused composition, importer, graph, accessibility, and lifecycle examples where that improves discoverability.
+- [x] Audit the public GUI API for duplicate concepts, adapter leakage, ambiguous ownership, and unsupported single-consumer surfaces.
+- [x] Split broad examples into focused composition, importer, graph, accessibility, and lifecycle examples where that improves discoverability.
 - [x] Test a consumer against the installed package layout rather than the repository source tree.
-- [ ] Update public component documentation with ownership, threading, lifecycle, and API-status decisions.
+- [x] Update public component documentation with ownership, threading, lifecycle, and API-status decisions.
 
 Exit criteria:
 
@@ -116,6 +116,14 @@ Remaining before the milestone exit is declared complete: add full compact, stan
 - The consumer imports only `zig-vst3` and `zig-vst3-plugin`. It compiles a parameter-workspace effect editor with a transfer graph and an instrument-workspace editor with a controller waveform, bounded WAV and AIFF importer, bipolar pan, and piano audition declaration.
 - The first complete run passed 4/4 build steps and its effect and instrument declaration test. The check now runs as part of `zig build test`.
 - The complete gate passed 74/74 steps and 3,816/3,816 tests after adding the staged-package consumer.
+
+### Milestone 4: Public API and Focused Examples
+
+- `@import("zig-vst3").vstgui` is the documented component-authoring surface. `EditorDescription` with `createEditor` is the main composition path. The four `create*View` functions remain supported conveniences for small editors.
+- `FileImporter` and `EditorDescription.file_importers` are the current file-input names. `FileDrop` and `file_drops` remain compatibility aliases. Unsupported single-consumer extensions remain listed as experimental instead of being promoted by proximity to a production editor.
+- `@import("zig-vst3-plugin").gui` is documented as the toolkit-neutral adapter and renderer contract. Ordinary plugin composition does not import it. The focused lifecycle example uses it specifically to demonstrate adapter-facing size and scale rules.
+- Focused composition, graph, importer, accessibility, and lifecycle examples now compile together under `zig build test`. The documentation links each example and states declaration lifetime, editor ownership, worker-thread responsibility, and audio-thread restrictions.
+- The complete deterministic gate passed 77/77 steps and 3,822/3,822 tests. This included the installed-package consumer, public-boundary scan, native adapter and macOS accessibility tests, all visual references, runner regressions, and the focused examples.
 
 ### Milestone 5: Crash Evidence
 

@@ -1,3 +1,8 @@
+//! Declarative plugin editor authoring on the public VSTGUI adapter.
+//!
+//! Start with `EditorDescription` and `createEditor`. The smaller `create*View`
+//! functions remain compatibility conveniences for simple parameter-only editors.
+
 const implementation = @import("vstgui_single_parameter_controller.zig");
 const plugin_core = @import("zig-vst3-plugin-core");
 
@@ -37,6 +42,7 @@ pub const ProgressState = implementation.ProgressState;
 pub const validateProgressIndicators = implementation.validateProgressIndicators;
 pub const Piano = implementation.Piano;
 pub const StepSequencer = implementation.StepSequencer;
+/// Compatibility name for `FileImporter`. New editors should use `FileImporter`.
 pub const FileDrop = implementation.FileDrop;
 pub const FileImporter = implementation.FileImporter;
 pub const FileImporterError = implementation.FileImporterError;
