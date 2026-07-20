@@ -38,6 +38,7 @@ constexpr uint8_t channel_tolerance = 80;
 constexpr uint64_t mismatch_per_thousand = 20;
 constexpr double warm_draw_budget_us = 300.0;
 constexpr double signal_views_budget_us = 450.0;
+constexpr double sample_lifecycle_budget_us = 50'000.0;
 
 constexpr uint8_t png[] = {
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -91,22 +92,6 @@ int32_t acceptImport(
     uint32_t
 ) { return 0; }
 int32_t acceptImportCommand(void*, uint32_t, ZigVstguiFileImportCommand) { return 0; }
-int32_t loadReadyImport(void*, uint32_t, ZigVstguiFileImportSnapshot* snapshot) {
-    if (!snapshot) return -1;
-    *snapshot = {
-        ZIG_VSTGUI_FILE_IMPORT_READY,
-        ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE,
-        ZIG_VSTGUI_FILE_IMPORT_PICKER,
-        1.0,
-        1,
-        48'000,
-        2,
-        48'000,
-        256,
-    };
-    return 0;
-}
-
 int32_t formatEqValue(void*, uint32_t parameter_id, double normalized, char* output, uint32_t capacity) {
     if (!output || capacity == 0) return -1;
     const bool type_parameter = parameter_id == 4 || parameter_id == 9 || parameter_id == 14;
@@ -152,6 +137,7 @@ struct TextProgressVisualState {
     std::string text {"Studio Plate"};
     bool reject {false};
     ZigVstguiProgressSnapshot progress {};
+    ZigVstguiFileImportSnapshot import {};
 };
 
 int32_t storeVisualText(void* userdata, uint32_t, const char* text) {
@@ -172,6 +158,12 @@ int32_t loadVisualText(void* userdata, uint32_t, char* output, uint32_t capacity
 int32_t loadVisualProgress(void* userdata, uint32_t, ZigVstguiProgressSnapshot* output) {
     if (!userdata || !output) return -1;
     *output = static_cast<TextProgressVisualState*>(userdata)->progress;
+    return 0;
+}
+
+int32_t loadVisualImport(void* userdata, uint32_t, ZigVstguiFileImportSnapshot* output) {
+    if (!userdata || !output) return -1;
+    *output = static_cast<TextProgressVisualState*>(userdata)->import;
     return 0;
 }
 
@@ -1540,7 +1532,18 @@ Snapshot resonantFilterWorkspace(const char* name, uint32_t width, uint32_t heig
     };
 }
 
-std::shared_ptr<ZigVstguiEditor> buildSamplePlayerWorkspace(uint32_t width, uint32_t height) {
+enum class SampleVisualMode { empty, importing, ready, error };
+
+struct SampleWorkspace {
+    std::shared_ptr<TextProgressVisualState> state;
+    std::shared_ptr<ZigVstguiEditor> editor;
+};
+
+SampleWorkspace buildSamplePlayerWorkspace(
+    uint32_t width,
+    uint32_t height,
+    SampleVisualMode mode = SampleVisualMode::ready
+) {
     const char* titles[] = {
         "Start", "End", "Loop Start", "Loop End", "Gain", "Pan", "Coarse", "Fine",
         "Loop", "Reverse", "Playback", "Voices", "Attack", "Decay", "Sustain", "Release",
@@ -1594,6 +1597,12 @@ std::shared_ptr<ZigVstguiEditor> buildSamplePlayerWorkspace(uint32_t width, uint
     graph.secondary_range_selection = {1, 0.24, 0.68, 0.001, 0.001, 0, 0, 1, 6, 7, 0, 0};
     graph.layers = &playhead_layer;
     graph.layer_count = 1;
+    if (mode != SampleVisualMode::ready) {
+        graph.points = nullptr;
+        graph.point_count = 0;
+        graph.layers = nullptr;
+        graph.layer_count = 0;
+    }
     const ZigVstguiGroupDescription groups[] = {
         {"Waveform", 0, 2, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x79baf2ff}, 0, 1, 0, 0},
         {"Loop Range", 2, 2, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x79baf2ff}, 1, 0, 0, 0},
@@ -1619,6 +1628,12 @@ std::shared_ptr<ZigVstguiEditor> buildSamplePlayerWorkspace(uint32_t width, uint
         1, 1, nullptr, "Clear sample", "Remove the imported sample", "Confirm Clear Sample",
         "Clear failed. Try again", ZIG_VSTGUI_ACTION_DESTRUCTIVE, ZIG_VSTGUI_ACTION_ICON_CLEAR, 1, 1, 1,
     };
+    const ZigVstguiMenuItemDescription view_items[] = {
+        {1, "Show Entire Sample", ZIG_VSTGUI_MENU_ACTION, 1, 0, 0, 0},
+        {2, "Zoom to Playback Range", ZIG_VSTGUI_MENU_ACTION, 1, 0, 0, 0},
+        {3, "Zoom to Loop Range", ZIG_VSTGUI_MENU_ACTION, 1, 0, 0, 0},
+    };
+    const ZigVstguiActionMenuDescription view_menu {1, "View", view_items, 3};
     const ZigVstguiPianoDescription piano {"Sample Keyboard", 48, 25, 0, 0.8, 60};
     const ZigVstguiProgressIndicatorDescription progress {
         1, "Import", "Sample import progress", "Choose a sample to begin", "Importing sample",
@@ -1628,42 +1643,84 @@ std::shared_ptr<ZigVstguiEditor> buildSamplePlayerWorkspace(uint32_t width, uint
         3, "Last Import", "Last imported sample", "No previous sample", "Import name unavailable",
         "Studio Piano.aiff", 64, 1, 1, 10,
     };
-    static TextProgressVisualState visual_state;
-    visual_state.text = "Studio Piano.aiff";
-    visual_state.progress = {
-        ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_COMPLETE, 1.0, 1,
-    };
+    auto visual_state = std::make_shared<TextProgressVisualState>();
+    visual_state->text = mode == SampleVisualMode::ready ? "Studio Piano.aiff" : "";
+    switch (mode) {
+        case SampleVisualMode::empty:
+            visual_state->import = {
+                ZIG_VSTGUI_FILE_IMPORT_IDLE, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE,
+                ZIG_VSTGUI_FILE_IMPORT_PICKER, 0.0, 0, 0, 0, 0, 0,
+            };
+            visual_state->progress = {
+                ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_IDLE, 0.0, 0,
+            };
+            break;
+        case SampleVisualMode::importing:
+            visual_state->import = {
+                ZIG_VSTGUI_FILE_IMPORT_IMPORTING, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE,
+                ZIG_VSTGUI_FILE_IMPORT_DROP, 0.45, 2, 48'000, 2, 48'000, 0,
+            };
+            visual_state->progress = {
+                ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_RUNNING, 0.45, 2,
+            };
+            break;
+        case SampleVisualMode::ready:
+            visual_state->import = {
+                ZIG_VSTGUI_FILE_IMPORT_READY, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE,
+                ZIG_VSTGUI_FILE_IMPORT_PICKER, 1.0, 1, 48'000, 2, 48'000, 256,
+            };
+            visual_state->progress = {
+                ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_COMPLETE, 1.0, 1,
+            };
+            break;
+        case SampleVisualMode::error:
+            visual_state->import = {
+                ZIG_VSTGUI_FILE_IMPORT_FAILED, ZIG_VSTGUI_FILE_IMPORT_FAILURE_MALFORMED,
+                ZIG_VSTGUI_FILE_IMPORT_PICKER, 0.0, 3, 0, 0, 0, 0,
+            };
+            visual_state->progress = {
+                ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_FAILED, 0.0, 3,
+            };
+            break;
+    }
     ZigVstguiCallbacks callbacks {};
-    callbacks.userdata = &visual_state;
+    callbacks.userdata = visual_state.get();
     callbacks.begin_edit = acceptBegin;
     callbacks.perform_edit = acceptEdit;
     callbacks.end_edit = acceptEnd;
     callbacks.format_value = formatSampleValue;
     callbacks.invoke_action = acceptAction;
+    callbacks.invoke_menu_action = acceptMenuAction;
     callbacks.send_note = acceptNote;
     callbacks.import_files = acceptImport;
-    callbacks.load_file_import = loadReadyImport;
+    callbacks.load_file_import = loadVisualImport;
     callbacks.command_file_import = acceptImportCommand;
     callbacks.load_editor_text = loadVisualText;
     callbacks.load_progress = loadVisualProgress;
     auto editor = std::make_shared<ZigVstguiEditor>(
         parameters.data(), static_cast<uint32_t>(parameters.size()), callbacks,
         nullptr, 0, ZigVstguiMeterCallbacks {}, skin, &graph, 1, ZigVstguiGraphCallbacks {},
-        nullptr, 0, nullptr, 0, nullptr, 0, &piano, 1, nullptr, 0, &importer, 1,
+        nullptr, 0, nullptr, 0, &view_menu, 1, &piano, 1, nullptr, 0, &importer, 1,
         &clear, 1, &last_import, 1, &progress, 1
     );
     if (!editor->valid() || !editor->resize(width, height) || !editor->frameView()) return {};
-    return editor;
+    return {visual_state, editor};
 }
 
-Snapshot samplePlayerWorkspace(const char* name, uint32_t width, uint32_t height) {
-    auto editor = buildSamplePlayerWorkspace(width, height);
+Snapshot samplePlayerWorkspace(
+    const char* name,
+    uint32_t width,
+    uint32_t height,
+    SampleVisualMode mode = SampleVisualMode::ready
+) {
+    auto workspace = buildSamplePlayerWorkspace(width, height, mode);
     return {
         name,
         width,
         height,
         1.0,
-        [editor, width, height](VSTGUI::CDrawContext& context) {
+        [workspace, width, height](VSTGUI::CDrawContext& context) {
+            const auto& editor = workspace.editor;
             if (!editor || !editor->frameView()) return;
             auto frame = VSTGUI::owned(new VSTGUI::CFrame(VSTGUI::CRect(0, 0, width, height), nullptr));
             auto* view = editor->frameView();
@@ -1672,6 +1729,25 @@ Snapshot samplePlayerWorkspace(const char* name, uint32_t width, uint32_t height
             view->removed(frame);
         },
     };
+}
+
+double benchmarkSamplePlayerLifecycle() {
+    constexpr uint32_t repetitions = 50;
+    double best = 1e9;
+    for (uint32_t sample = 0; sample < 3; ++sample) {
+        const auto started = std::clock();
+        for (uint32_t index = 0; index < repetitions; ++index) {
+            auto workspace = buildSamplePlayerWorkspace(720, 660);
+            if (!workspace.editor || !workspace.editor->valid()) return 1e9;
+        }
+        const auto elapsed = std::clock() - started;
+        best = std::min(
+            best,
+            static_cast<double>(elapsed) * 1'000'000.0 /
+                static_cast<double>(CLOCKS_PER_SEC) / repetitions
+        );
+    }
+    return best;
 }
 
 int runSnapshot(
@@ -2077,7 +2153,7 @@ int main(int argc, char** argv) {
     const bool update = argc == 4 && std::string(argv[3]) == "--update";
     if (update) std::filesystem::create_directories(references);
     std::filesystem::create_directories(output);
-    VSTGUI::init(nullptr);
+    ZigVstgui::RuntimeGuard runtime;
     int result = 0;
     {
         const Snapshot snapshots[] = {
@@ -2122,6 +2198,7 @@ int main(int argc, char** argv) {
         const double resonant_filter_average = benchmarkResonantFilterResponseDraw();
         const double viewport_average = benchmarkViewportDraw();
         const double range_selection_average = benchmarkRangeSelectionDraw();
+        const double sample_lifecycle_average = benchmarkSamplePlayerLifecycle();
         std::fprintf(stderr, "visual regression warm render average: %.1f us\n", average);
         std::fprintf(stderr, "piano warm render average: %.1f us\n", piano_average);
         std::fprintf(stderr, "step sequencer warm render average: %.1f us\n", step_sequencer_average);
@@ -2134,6 +2211,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "resonant filter warm render average: %.1f us\n", resonant_filter_average);
         std::fprintf(stderr, "viewport warm render average: %.1f us\n", viewport_average);
         std::fprintf(stderr, "range selection warm render average: %.1f us\n", range_selection_average);
+        std::fprintf(stderr, "sample player editor create/destroy average: %.1f us\n", sample_lifecycle_average);
         if (average > warm_draw_budget_us || piano_average > warm_draw_budget_us ||
             step_sequencer_average > warm_draw_budget_us || file_drop_average > warm_draw_budget_us ||
             action_button_average > warm_draw_budget_us || rotary_average > warm_draw_budget_us ||
@@ -2141,9 +2219,9 @@ int main(int argc, char** argv) {
             signal_views_average > signal_views_budget_us || linked_eq_average > warm_draw_budget_us ||
             resonant_filter_average > warm_draw_budget_us ||
             viewport_average > warm_draw_budget_us ||
-            range_selection_average > warm_draw_budget_us) result = std::max(result, 6);
+            range_selection_average > warm_draw_budget_us ||
+            sample_lifecycle_average > sample_lifecycle_budget_us) result = std::max(result, 6);
     }
-    VSTGUI::exit();
     {
         const Snapshot workspace_snapshots[] = {
             parameterWorkspace("eq-workspace-compact.png", 400, 360),
@@ -2155,6 +2233,9 @@ int main(int argc, char** argv) {
             samplePlayerWorkspace("sample-player-compact.png", 480, 480),
             samplePlayerWorkspace("sample-player-standard.png", 720, 660),
             samplePlayerWorkspace("sample-player-expanded.png", 960, 700),
+            samplePlayerWorkspace("sample-player-empty.png", 720, 660, SampleVisualMode::empty),
+            samplePlayerWorkspace("sample-player-importing.png", 720, 660, SampleVisualMode::importing),
+            samplePlayerWorkspace("sample-player-error.png", 720, 660, SampleVisualMode::error),
         };
         for (const auto& snapshot : workspace_snapshots) {
             result = std::max(result, runSnapshot(snapshot, references, output, update));

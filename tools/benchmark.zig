@@ -77,6 +77,7 @@ pub fn main() !void {
     (try benchWaveformCapture()).print();
     (try benchSpectrumAnalyzer()).print();
     try benchAudioFileImport();
+    try benchSamplePlayerPipeline();
     try benchIrConvolution();
 }
 
@@ -276,6 +277,135 @@ fn benchAudioFileImport() !void {
     const mebibytes_per_second = @as(f64, @floatFromInt(data_bytes)) * @as(f64, std.time.ns_per_s) /
         (@as(f64, @floatFromInt(elapsed_ns)) * 1024.0 * 1024.0);
     std.debug.print("bounded PCM WAV worker: {d:.1} MiB/s ({d} bytes)\n", .{ mebibytes_per_second, data_bytes });
+}
+
+fn benchSamplePlayerPipeline() !void {
+    const maximum_frames = 262_144;
+    const voice_count = 8;
+    const path = ".zig-cache/sample-player-benchmark.wav";
+    const io = std.Io.Threaded.global_single_threaded.io();
+    defer std.Io.Dir.cwd().deleteFile(io, path) catch {};
+    var header: [44]u8 = undefined;
+    var header_writer = std.Io.Writer.fixed(&header);
+    try header_writer.writeAll("RIFF");
+    try header_writer.writeInt(u32, 36 + maximum_frames * 2, .little);
+    try header_writer.writeAll("WAVEfmt ");
+    try header_writer.writeInt(u32, 16, .little);
+    try header_writer.writeInt(u16, 1, .little);
+    try header_writer.writeInt(u16, 1, .little);
+    try header_writer.writeInt(u32, 48_000, .little);
+    try header_writer.writeInt(u32, 96_000, .little);
+    try header_writer.writeInt(u16, 2, .little);
+    try header_writer.writeInt(u16, 16, .little);
+    try header_writer.writeAll("data");
+    try header_writer.writeInt(u32, maximum_frames * 2, .little);
+    {
+        var file = try std.Io.Dir.cwd().createFile(io, path, .{});
+        defer file.close(io);
+        try file.writeStreamingAll(io, header_writer.buffered());
+        var samples: [1024]i16 = undefined;
+        for (&samples, 0..) |*sample, index| {
+            sample.* = @intFromFloat(std.math.sin(std.math.tau * @as(f64, @floatFromInt(index)) / 64.0) * 16_000.0);
+        }
+        var written: usize = 0;
+        while (written < maximum_frames) : (written += samples.len) {
+            try file.writeStreamingAll(io, std.mem.sliceAsBytes(&samples));
+        }
+    }
+
+    const Importer = plug.gui_audio_file_importer.DecodedImporter(maximum_frames);
+    const allocator = std.heap.page_allocator;
+    const importer = try allocator.create(Importer);
+    defer allocator.destroy(importer);
+    importer.* = Importer.init();
+    defer importer.deinit();
+    var decode_timer = try Timer.start();
+    if (!importer.begin(.picker, &.{path})) return error.BenchmarkSampleImportStartFailed;
+    while (true) {
+        const snapshot = importer.snapshot();
+        if (snapshot.import.status == .ready) break;
+        if (snapshot.import.status != .validating and snapshot.import.status != .importing) {
+            return error.BenchmarkSampleImportFailed;
+        }
+        std.Thread.yield() catch {};
+    }
+    const decode_ns = try decode_timer.read();
+    var preview: [256]plug.gui_audio_file_importer.PreviewPoint = undefined;
+    var preview_timer = try Timer.start();
+    var preview_checksum: usize = 0;
+    for (0..iterations) |_| preview_checksum +%= importer.copyPreview(&preview);
+    const preview_ns = try preview_timer.read();
+    std.mem.doNotOptimizeAway(preview_checksum);
+    const preview_count = importer.copyPreview(&preview);
+    if (preview_count == 0) return error.BenchmarkSamplePreviewMissing;
+
+    const Player = plug.gui_sample_player.Player(maximum_frames, voice_count);
+    const player = try allocator.create(Player);
+    defer allocator.destroy(player);
+    player.* = .{};
+    player.prepare(48_000.0);
+    var chunk: [1024]f32 = undefined;
+    for (&chunk, 0..) |*sample, index| {
+        sample.* = @floatCast(std.math.sin(std.math.tau * @as(f64, @floatFromInt(index)) / 64.0) * 0.5);
+    }
+    var publication_timer = try Timer.start();
+    try player.store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = maximum_frames });
+    var offset: usize = 0;
+    while (offset < maximum_frames) : (offset += chunk.len) try player.store.write(1, offset, &chunk);
+    try player.store.commit(1);
+    const publication_ns = try publication_timer.read();
+    var adoption_timer = try Timer.start();
+    if (!player.adoptPending()) return error.BenchmarkSampleAdoptionFailed;
+    const adoption_ns = try adoption_timer.read();
+
+    const playback = plug.gui_sample_player.Playback{
+        .loop_enabled = true,
+        .envelope = .{ .attack_seconds = 0.0, .decay_seconds = 0.0, .sustain = 1.0 },
+    };
+    player.noteOn(60, 1.0, playback);
+    const processed_frames = iterations * frame_count;
+    var processing_timer = try Timer.start();
+    var checksum: f32 = 0.0;
+    for (0..processed_frames) |_| {
+        const output = player.processFrame(playback);
+        checksum += output[0] + output[1];
+    }
+    const processing_ns = try processing_timer.read();
+    std.mem.doNotOptimizeAway(checksum);
+
+    var playhead = plug.gui_graph.SnapshotSeries(2).init();
+    playhead.editorOpened();
+    defer playhead.editorClosed();
+    var points: [2]plug.gui_graph.Point = undefined;
+    var playhead_timer = try Timer.start();
+    var read_count: usize = 0;
+    for (0..iterations) |index| {
+        const position = @as(f64, @floatFromInt(index % 1000)) / 1000.0;
+        if (!playhead.publish(&.{ .{ .x = position, .y = -1.0 }, .{ .x = position, .y = 1.0 } })) {
+            return error.BenchmarkPlayheadPublishFailed;
+        }
+        read_count += playhead.read(&points) orelse return error.BenchmarkPlayheadReadFailed;
+    }
+    const playhead_ns = try playhead_timer.read();
+    std.mem.doNotOptimizeAway(read_count);
+
+    const decode_ms = @as(f64, @floatFromInt(decode_ns)) / std.time.ns_per_ms;
+    const publication_ms = @as(f64, @floatFromInt(publication_ns)) / std.time.ns_per_ms;
+    const ns_per_frame = @as(f64, @floatFromInt(processing_ns)) / @as(f64, @floatFromInt(processed_frames));
+    const playhead_ns_per_update = @as(f64, @floatFromInt(playhead_ns)) / iterations;
+    std.debug.print("sample decode and waveform construction: {d:.2} ms ({d} frames, {d} preview points)\n", .{
+        decode_ms, maximum_frames, preview_count,
+    });
+    std.debug.print("sample preview snapshot: {d:.1} ns/read; bounded publication: {d:.2} ms; adoption: {d} ns\n", .{
+        @as(f64, @floatFromInt(preview_ns)) / iterations, publication_ms, adoption_ns,
+    });
+    std.debug.print("sample playback: {d:.1} ns/frame ({d} voices available); playhead publish/read: {d:.1} ns/update\n", .{
+        ns_per_frame, voice_count, playhead_ns_per_update,
+    });
+    std.debug.print("sample fixed storage: {d:.2} MiB importer + {d:.2} MiB player\n", .{
+        @as(f64, @floatFromInt(@sizeOf(Importer))) / (1024.0 * 1024.0),
+        @as(f64, @floatFromInt(@sizeOf(Player))) / (1024.0 * 1024.0),
+    });
 }
 
 fn benchIrConvolution() !void {

@@ -54,7 +54,7 @@ Exit criteria:
 - [x] Prevent clipped labels, cramped controls, ambiguous selection, excess blank space, poor contrast, and unreachable actions in deterministic references.
 - [x] Persist parameters, the declared responsive layout, viewport, start, end, loop range, loop mode, and safe import metadata.
 - [x] Restore missing media as empty without file access and document portability limits.
-- [ ] Verify repeated editor open and close, processor restart, replacement import, cancellation during teardown, and two-instance isolation.
+- [x] Verify repeated editor open and close, processor restart, replacement import, cancellation during teardown, and two-instance isolation.
 
 Exit criteria:
 
@@ -64,11 +64,11 @@ Exit criteria:
 
 ## Milestone 4: Accessibility, Visual, and Performance Coverage
 
-- [ ] Add toolkit-neutral names, roles, values, ranges, grouping, focus order, progress announcements, errors, waveform semantics, and piano state.
-- [ ] Add unit, interaction, lifecycle, accessibility, malformed-input, restoration, visual-regression, and performance coverage.
-- [ ] Add compact, standard, expanded, empty, importing, ready, looping, selected-handle, disabled, error, and high-contrast references.
-- [ ] Measure decoding, waveform construction, transfer, atomic adoption, voice processing, playhead updates, graph rendering, and repeated editor lifecycle.
-- [ ] Add a deterministic REAPER smoke project or script with generated audio and MIDI.
+- [x] Add toolkit-neutral names, roles, values, ranges, grouping, focus order, progress announcements, errors, waveform semantics, and piano state.
+- [x] Add unit, interaction, lifecycle, accessibility, malformed-input, restoration, visual-regression, and performance coverage.
+- [x] Add compact, standard, expanded, empty, importing, ready, looping, selected-handle, disabled, error, and high-contrast references.
+- [x] Measure decoding, waveform construction, transfer, atomic adoption, voice processing, playhead updates, graph rendering, and repeated editor lifecycle.
+- [x] Add a deterministic REAPER smoke project or script with generated audio and MIDI.
 
 Exit criteria:
 
@@ -110,6 +110,8 @@ Record committed milestones here with test counts, validator results, performanc
 - Branch: `feature/plugin-gui`
 - Starting commits: graph telemetry lifecycle `8204ceb`; macOS pluginval launch `2becbe8`
 - Existing local cache directory remains untracked.
+- Parametric EQ validation was complete before this milestone: raw ABI and Steinberg validation passed, the macOS arm64 REAPER 7.36 walkthrough covered rendering, every control, linked editing, resize cycles, two instances, restoration, and repeated reopen, and the accepted installed bundle hash was `582da11205eba6535ad536261a2bce9b92f11496f718974de16f1ee255c3978a`.
+- Resonant Filter validation was complete before this milestone: both serialized pluginval matrices passed all 13 examples in 56/56 steps, and the macOS arm64 REAPER 7.36 walkthrough covered every control, graph synchronization, active and bypassed spectrum behavior, sample-identical bypass, presets, resize cycles, two instances, and reopen restoration. The accepted candidate hash was `1ce54a6620aa0a578fd85cfb34870ff7d9c2f5c7e3870902c6429db935c91fb4`.
 - The first sandboxed baseline run built the native adapter and passed 1,206 tests before Zig was denied access to its home cache. The repository-local cache rerun passed 62/62 steps and 3,747/3,747 tests.
 - Baseline warm renders measured 91.5 us for the full visual scene, 263.1 us for signal views, 228.1 us for linked EQ, 139.8 us for Resonant Filter, 50.7 us for viewport rendering, and 103.8 us for range selection. Every scene remained inside its recorded budget.
 
@@ -150,3 +152,15 @@ Record committed milestones here with test counts, validator results, performanc
 - The final warm-render pass measured 81.0 us for the full scene, 45.1 us for viewport rendering, and 154.7 us for dual-range rendering. All remained inside their existing budgets.
 - `zig build raw-api-abi validate-sample-player --summary all`: 117/117 build steps passed. The Steinberg validator reported 47 tests passed and 0 failed for both processing precisions.
 - Linux aarch64 and Windows x86_64 sample-player cross-target bundles each passed 4/4 build steps. These builds are not native host validation.
+
+### Milestone 4: Lifecycle, Accessibility, Visual, and Performance Coverage
+
+- Integration tests create two public editor views and verify independent resize state. They also cover processor reset, replacement imports, controller and processor instance isolation, import cancellation during teardown, editor release while import work is pending, decoded-audio publication, MIDI rendering, Clear, and restoration without hidden media access.
+- The sample View menu uses the public action-menu contract to show the entire sample or frame the playback and loop ranges. Its controller test verifies each viewport result and rejects unknown items.
+- Production visual references now cover compact, standard, expanded, ready and looping waveform states, overlapping selected handles, empty media, active importing, and recoverable import failure. Shared component references continue to cover disabled and alternate-theme contrast states used by the same public controls.
+- A repeated-editor benchmark constructs and destroys 150 complete sample-player editors under one process-owned VSTGUI runtime. It exposed a test-harness lifecycle mismatch in which direct global initialization competed with each editor's runtime guard. The harness now uses one long-lived `RuntimeGuard`; the regression completes without a lifecycle fault and averages 42.1 ms per editor against a 50 ms budget.
+- `zig build test --summary all`: 66/66 build steps and 3,767/3,767 tests passed. This includes native adapter, macOS accessibility, interaction, malformed-input, restoration, lifecycle, visual-regression, and warm-render coverage.
+- The sample pipeline benchmark measured 0.59 ms to decode 262,144 mono frames and build a 256-point preview, 88.2 ns per preview snapshot read, 0.01 ms for bounded controller publication, atomic adoption below the timer's nanosecond resolution, 6.5 ns per playback frame with eight voices available, and 4.6 ns per playhead publish/read update. Fixed storage is 2.01 MiB for the importer and 6.00 MiB for the processor player.
+- Final warm rendering measured 83.2 us for the complete scene, 46.6 us for viewport rendering, and 160.0 us for dual-range rendering. All remained inside their recorded budgets.
+- `scripts/reaper_sample_player_smoke.lua` creates a new project tab, generates a bounded 0.5-second PCM WAV, inserts the Sample Player and a MIDI note, opens the editor, and saves a disposable project. The script passes numeric flags to `Main_SaveProjectEx` and requires no user-provided media.
+- Run the script from REAPER's Actions window. It reports the generated WAV and project paths, then leaves the editor open so the generated file can be selected through the same picker used by production imports.

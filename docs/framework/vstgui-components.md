@@ -407,6 +407,14 @@ The production limit is 131,072 mono or stereo frames with 512-sample convolutio
 
 Host state stores parameters and bounded editor metadata, but it does not store an absolute source path or perform hidden file I/O during restoration. Restoring an instance therefore produces an explicit empty-media state until the user imports an IR again. This avoids stale path access and makes missing media deterministic. Decoded transport, edit buffers, and partitioned convolution remain experimental because the IR loader is their only production consumer.
 
+### Sample player ownership reference
+
+The sample player is a second production consumer of `AudioFileImporter`, decoded-audio publication, controller-sourced waveform snapshots, and importer-aware action dependencies. It accepts one PCM WAV, AIFF, or uncompressed AIFC file with no more than 262,144 mono or stereo frames, 384 kHz sample rate, or the importer and player fixed capacities. Validation, decoding, and preview construction run on the controller-owned worker. Replacement generations and Clear publish complete bounded messages to a three-slot processor store.
+
+The processor adopts a complete generation only at an audio block boundary. Its eight fixed voices provide deterministic oldest-voice stealing, linear interpolation, gain, bipolar pan, tuning, bounded playback and loop ranges, forward or reverse traversal, and ADSR state without allocation, locks, file access, GUI calls, host calls, or logging in processing. Reset and media replacement clear every active voice.
+
+The public `.instrument_workspace` declaration keeps Import, progress, the waveform editor, playback and envelope panels, piano audition, safe metadata, destructive Clear, and resize controls in one reading order. A View action menu frames the entire sample or the parameter-backed playback and loop ranges. Host state stores only parameters, viewport values, and a bounded source basename. It never stores decoded audio or an absolute path, and restoration never opens a file.
+
 ## Editable Labels
 
 Declare bounded, persistent text through `EditorDescription.editable_labels`:
@@ -558,12 +566,12 @@ Supported authoring surface:
 
 Experimental extensions:
 
-- `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader is their only production consumer.
+- `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader and sample player exercise the same public contract; final promotion remains gated on the sample player's pluginval and host checks.
 - Direct parameter-backed graph ranges and `Graph.secondary_range_selection`. The visual gallery and sample player exercise them, but a second production consumer is still required.
 - The direct bipolar slider. The gallery and sample player exercise it, but a second production consumer is still required.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
-- `AudioFileImporter`, controller-owned import status and command callbacks, and controller-sourced graph snapshots. The channel strip and IR loader use the contract, but decoded audio transport still has one production consumer.
+- `AudioFileImporter`, controller-owned import status and command callbacks, decoded-audio transport, and controller-sourced graph snapshots. The IR loader and sample player exercise the same bounded public contract; final promotion remains gated on the sample player's pluginval and host checks.
 - Additional modulation component types and GPU-backed custom views. Neither has a public declaration or a production consumer. A GPU path also requires profiling evidence that the toolkit-managed renderer is the limiting factor.
 
 Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.
