@@ -1496,13 +1496,36 @@ int testParameterWorkspaceLayout() {
     callbacks.begin_edit = beginEdit;
     callbacks.perform_edit = performEdit;
     callbacks.end_edit = endEdit;
+    const char* titles[] = {
+        "Bypass", "Output", "Enable", "Type", "Freq", "Gain", "Q",
+        "Enable", "Type", "Freq", "Gain", "Q",
+        "Enable", "Type", "Freq", "Gain", "Q",
+    };
+    const char* units[] = {
+        "", "dB", "", "", "Hz", "dB", "",
+        "", "", "Hz", "dB", "",
+        "", "", "Hz", "dB", "",
+    };
+    const int32_t steps[] = {1, 0, 1, 2, 0, 0, 0, 1, 2, 0, 0, 0, 1, 2, 0, 0, 0};
+    const ZigVstguiControlKind kinds[] = {
+        ZIG_VSTGUI_CONTROL_TOGGLE, ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER,
+        ZIG_VSTGUI_CONTROL_TOGGLE, ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB, ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_TOGGLE, ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB, ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_TOGGLE, ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB, ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+    };
     std::array<ZigVstguiParameterDescription, 17> parameters {};
     for (uint32_t index = 0; index < parameters.size(); ++index) {
         parameters[index] = {
             index + 1,
             0.5,
-            {index % 5 == 4 ? "Freq" : "Control", index % 5 == 4 ? "Hz" : "", 0, 0.5},
-            index % 5 >= 2 ? ZIG_VSTGUI_CONTROL_ROTARY_KNOB : ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+            {titles[index], units[index], steps[index], 0.5},
+            kinds[index],
         };
     }
     const ZigVstguiGraphPoint response[] = {{20.0, 0.0}, {1'000.0, 3.0}, {20'000.0, 0.0}};
@@ -1565,13 +1588,24 @@ int testParameterWorkspaceLayout() {
             VSTGUI::CRect primary;
             VSTGUI::CRect value;
             if (!editor.parameterControlBounds(parameter + 1, label, primary, value)) return 7;
-            const VSTGUI::CRect parts[] = {label, primary, value};
-            for (const auto& part : parts) {
+            const VSTGUI::CRect required_parts[] = {label, primary};
+            for (const auto& part : required_parts) {
                 if (part.getWidth() <= 0.0 || part.getHeight() <= 0.0 ||
                     part.left < margin || part.right > right ||
                     part.top < 0.0 || part.bottom > editor.contentHeight()) return 8;
             }
-            if (label.right > primary.left || primary.right > value.left) return 9;
+            const bool has_inline_value = kinds[parameter] == ZIG_VSTGUI_CONTROL_TOGGLE ||
+                kinds[parameter] == ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN;
+            if (label.right > primary.left) return 9;
+            if (has_inline_value) {
+                if (value.getWidth() != 0.0 || value.getHeight() != 0.0) return 22;
+                if (size[0] == 720 && primary.getWidth() < 112.0) return 23;
+            } else {
+                if (value.getWidth() <= 0.0 || value.getHeight() <= 0.0 ||
+                    value.left < margin || value.right > right ||
+                    value.top < 0.0 || value.bottom > editor.contentHeight()) return 24;
+                if (primary.right > value.left) return 25;
+            }
         }
         const auto graph_bounds = editor.graphBounds(0);
         if (graph_bounds.getWidth() <= 0.0 || graph_bounds.getHeight() < 100.0 ||

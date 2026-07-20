@@ -85,7 +85,7 @@ Exit criteria:
 - [x] Use labeled band panels and a separate output section so the screen never presents more than five ungrouped decisions.
 - [x] Keep Bypass visually distinct from band enable controls and away from reset actions.
 - [x] Preserve selected band, focus order, scroll position, analyzer state, and accepted host size per instance.
-- [ ] Verify repeated open and close, two simultaneous instances, manual resize, compact toggling, and state restoration.
+- [x] Verify repeated open and close, two simultaneous instances, manual resize, compact toggling, and state restoration.
 - [x] Cover macOS accessibility directly and retain toolkit-neutral Windows semantics.
 
 Exit criteria:
@@ -96,10 +96,10 @@ Exit criteria:
 
 ## Milestone 6: API Decisions and Release Gates
 
-- [ ] Promote rotary only if the gallery and EQ use one public contract and every local exit criterion passes.
-- [ ] Promote decibel controls after the final EQ host checks. The gallery, channel strip, IR loader, and EQ now share one public contract.
+- [x] Promote rotary after the gallery and EQ pass the same public-contract tests and the current EQ passes its REAPER walkthrough.
+- [x] Promote decibel controls after the gallery, channel strip, IR loader, and EQ pass the shared contract and the current EQ passes its REAPER walkthrough.
 - [x] Keep the direct bipolar slider experimental until a production editor uses that presentation. Bipolar dB rotary behavior does not prove the slider contract.
-- [ ] Promote assets, fonts, and custom drawing only if the EQ and IR loader use the same contract successfully.
+- [x] Promote assets, fonts, and custom drawing after the gallery, IR loader, and EQ pass the shared contract and macOS host checks.
 - [x] Keep analyzer transport experimental until a second production analyzer consumer establishes its required shape.
 - [x] Document precise blockers for every retained experimental API.
 - [x] Update component reference examples and status tables.
@@ -111,7 +111,7 @@ Release gates:
 - [x] `zig build bundle-examples-linux -Dtarget=aarch64-linux-gnu --summary all`
 - [x] `zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu --summary all`
 - [ ] Serialized pluginval strictness 5 and strictness 10, stopping at the first unexpected exit
-- [ ] Manual REAPER checks for rendering, graph and knob synchronization, resize cycles, multiple instances, and editor reopen
+- [x] Manual REAPER checks for rendering, graph and knob synchronization, resize cycles, multiple instances, and editor reopen
 
 External checks remain pending when the required environment is unavailable:
 
@@ -237,22 +237,35 @@ Record each committed milestone here with test counts, performance measurements,
 - The gallery and parametric EQ now exercise the same `GraphHandle`, parameter-driven controller source, selection, third-dimension adjustment, and linked-group highlight contracts. The existing native graph-handle suite covers grouped pointer edits, keyboard adjustment, host automation, rejection rollback, selection traversal, accessibility values, and teardown.
 - `zig build test raw-api-abi validate-examples --summary all` passed. The matrix includes 3,716 passing tests, every raw ABI check, all twelve Steinberg example validators, native adapter tests, macOS accessibility tests, and visual regression. Final warm-render measurements were 93.7 us for the full visual suite, 31.4 us for rotary controls, 259.1 us for signal views, and 228.1 us for linked EQ.
 - Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` cross-target bundle matrices each passed 38/38 steps.
-- `GraphHandle` remains experimental because the gallery is a regression fixture and the parametric EQ is still its only production consumer. Manual validation of the current EQ bundle remains part of the release gate.
+- `GraphHandle` remains experimental because the gallery is a regression fixture and the parametric EQ is still its only production consumer. The completed REAPER walkthrough validates the implementation, but it does not add a second production consumer.
+
+### Final macOS host acceptance and layout polish
+
+- Installed and verified the native Parametric EQ bundle with binary SHA-256 `582da11205eba6535ad536261a2bce9b92f11496f718974de16f1ee255c3978a` in REAPER 7.36 on macOS arm64.
+- Pointer graph editing updated Mid frequency and gain together with the matching rotary controls. Mid gain rotary edits moved the graph handle and curve. Fn+Up adjusted Q and narrowed the response.
+- Bypass toggled and flattened the response. Exact entry, Command-click reset, Type menus, band Enable controls, and every remaining control worked correctly.
+- Compact, Expanded, manual grow, and manual shrink returned to deterministic layouts without blank regions or unreachable controls. Two simultaneous instances retained independent state. Reopening the FX window restored both instances and their values. Three additional close and reopen cycles remained stable and responsive.
+- The host review found clipped shelf names at the default size. Toggle and dropdown rows now reuse the value-field track they do not instantiate, preserving at least 112 logical units for the primary control. Visual fixtures render `low_shelf`, `bell`, and `high_shelf`, and geometry tests cover the real EQ labels and control kinds.
+- The Compact and Expand control now retains a themed medium vertical gutter from the High-band controls while preserving the standard editor height and bottom margin. The final host review accepted the text padding and footer spacing.
+- `zig build test --summary all` passed 58/58 steps and 3,716/3,716 tests. Native adapter, macOS accessibility, and visual-regression suites passed. The final linked EQ warm render measured 239.9 us during validator execution and 240.6 us during the full test run, both within the 300 us budget.
+- Every raw ABI check and all twelve Steinberg example validators passed. The Parametric EQ validator passed 47/47 tests for both processing precisions. Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` bundle matrices each passed 38/38 steps.
+- Rotary controls, decibel controls, and the shared asset, font, and custom-drawing contracts move to supported status. Direct bipolar sliders, `GraphHandle`, graph layers, and analyzer transport remain experimental for the consumer-count reasons below.
+- Pluginval remains unavailable under the stop-on-first-exit policy. The preserved unexpected exit occurred during application startup before a plugin image appeared in the stack. Native Windows, X11, Wayland, Narrator, AT-SPI, screen-reader, and multi-monitor scale checks remain external.
 
 ## Current Completion Audit
 
 | Requirement | Evidence | Status |
 | --- | --- | --- |
-| Three-band EQ and output | Public 17-parameter plugin, DSP tests, raw ABI checks, and 47/47 Steinberg tests | Complete locally |
-| Rotary, bipolar dB, modulation, exact entry, reset, fine adjustment, tooltip, and keyboard paths | EQ and gallery declarations plus native interaction, accessibility, and visual tests | Complete locally; promotion awaits current-bundle REAPER checks |
+| Three-band EQ and output | Public 17-parameter plugin, DSP tests, raw ABI checks, 47/47 Steinberg tests, and REAPER acceptance | Complete on macOS arm64 |
+| Rotary, bipolar dB, modulation, exact entry, reset, fine adjustment, tooltip, and keyboard paths | EQ and gallery declarations plus native interaction, accessibility, visual, and REAPER tests | Complete; rotary and decibel controls are supported |
 | Linked graph editing and automation | EQ and gallery use the same public `GraphHandle` contract; native tests cover grouped edits, host updates, rejection, selection, and accessibility | Complete locally; `GraphHandle` remains experimental with one production consumer |
 | Spectrum transport | Fixed-capacity `SpectrumAnalyzer(128)`, activity tests, instance isolation, and performance coverage | Complete locally; transport remains experimental with one production analyzer consumer |
 | Responsive layout and scaling | Compact, standard, expanded, resize-cycle, 1x, 1.5x, and 2x geometry tests and references | Complete locally; multi-monitor movement remains external |
-| Shared skin | Gallery, IR Loader, and EQ use the same asset, font, and drawing contracts; lifecycle and visual tests pass | Complete locally; promotion awaits current-bundle REAPER checks |
+| Shared skin | Gallery, IR Loader, and EQ use the same asset, font, and drawing contracts; lifecycle, visual, and REAPER tests pass | Complete; assets, fonts, and custom drawing are supported |
 | Accessibility | Toolkit-neutral semantics and macOS bridge tests cover parameters, handles, group selection, bypass, and analyzer state | Complete locally; VoiceOver, Narrator, and AT-SPI workflows remain external |
 | Cross-target and validator coverage | Raw ABI, all twelve Steinberg validators, Linux 38/38, and Windows 38/38 pass | Complete locally; native Windows, X11, and Wayland hosts remain external |
 | Pluginval | Earlier serialized runs passed. The latest preserved unexpected exit occurred during application startup before a plugin image appeared in the stack | Current-build coverage unavailable under the stop-on-first-exit policy |
-| REAPER | Earlier GUI passes found and verified shared fixes. The validated EQ binary differs from the installed binary while REAPER remains open | Pending safe bundle replacement and controlled current-build walkthrough |
+| REAPER | Current binary hash matched the installed bundle. Rendering, all controls, linked editing, resize cycles, two instances, restoration, and repeated reopen passed in REAPER 7.36 | Complete on macOS arm64 |
 
 Retained experimental APIs:
 

@@ -858,10 +858,10 @@ bool ParameterControl::bounds(
     VSTGUI::CRect& primary_bounds,
     VSTGUI::CRect& value_bounds
 ) const {
-    if (!label || !primary_control || !value_edit) return false;
+    if (!label || !primary_control) return false;
     label_bounds = label->getViewSize();
     primary_bounds = primary_control->getViewSize();
-    value_bounds = value_edit->getViewSize();
+    value_bounds = value_edit ? value_edit->getViewSize() : VSTGUI::CRect();
     return true;
 }
 

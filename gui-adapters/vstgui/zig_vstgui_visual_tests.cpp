@@ -82,6 +82,19 @@ int32_t rejectDrop(void*, uint32_t, const char* const*, uint32_t) { return -1; }
 int32_t acceptAction(void*, uint32_t, uint32_t) { return 0; }
 int32_t rejectAction(void*, uint32_t, uint32_t) { return -1; }
 
+int32_t formatEqValue(void*, uint32_t parameter_id, double normalized, char* output, uint32_t capacity) {
+    if (!output || capacity == 0) return -1;
+    const bool type_parameter = parameter_id == 4 || parameter_id == 9 || parameter_id == 14;
+    if (type_parameter) {
+        const char* value = normalized < 0.25 ? "low_shelf" :
+            normalized < 0.75 ? "bell" : "high_shelf";
+        const int written = std::snprintf(output, capacity, "%s", value);
+        return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+    }
+    const int written = std::snprintf(output, capacity, "%.3f", normalized);
+    return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+}
+
 struct TextProgressVisualState {
     std::string text {"Studio Plate"};
     bool reject {false};
@@ -1246,6 +1259,7 @@ std::shared_ptr<ZigVstguiEditor> buildParameterWorkspace(uint32_t width, uint32_
     callbacks.begin_edit = acceptBegin;
     callbacks.perform_edit = acceptEdit;
     callbacks.end_edit = acceptEnd;
+    callbacks.format_value = formatEqValue;
     auto editor = std::make_shared<ZigVstguiEditor>(
         parameters.data(),
         static_cast<uint32_t>(parameters.size()),

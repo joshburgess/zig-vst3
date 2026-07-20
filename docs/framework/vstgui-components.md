@@ -514,11 +514,11 @@ The project remains pre-1.0, so even the supported surface does not yet carry a 
 
 Supported authoring surface:
 
-- `Parameter`, the linear, toggle, dropdown, and segmented control kinds, `Theme`, `Layout`, and the four `create*View` functions.
+- `Parameter`, the linear, rotary, toggle, dropdown, segmented, and decibel control kinds, `Theme`, `Layout`, and the four `create*View` functions.
 - `EditorDescription`, `Composition`, `Group`, `StyleOverride`, and `createEditor`.
 - `Meter`, meter source wiring, `MeterBank`, and GUI telemetry presentation.
 - `Graph`, graph axes and style roles, and grouped graph composition.
-- `WaveformCapture`, `SpectrumAnalyzer`, activity-gated dynamic graph sources, and production waveform and spectrum rendering.
+- `WaveformCapture`, activity-gated dynamic graph sources, and production waveform rendering.
 - `EnvelopePoint`, bounded editable envelopes, stable selection, snapping, and parameter-backed point gestures.
 - `editor_state.Store`, typed editor values, bounded serialization, migrations, and persistent envelope bindings.
 - `XYPad`, ordered two-parameter gestures, per-axis semantics, and grouped XY-pad composition.
@@ -534,13 +534,14 @@ Supported authoring surface:
 - `FileImporter`, bounded extension filtering and path copying, an accessible operating-system picker fallback, keyboard interaction, progress presentation, cancellation, retry, and recoverable rejection feedback.
 - Standard parameter binding, host updates, formatting, parsing, focus, resizing, and per-instance lifecycle.
 - Theme and layout selection through `Skin`.
+- `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and bounded `Canvas` drawing functions.
 
 Experimental extensions:
 
-- `Asset`, `Fonts`, `DrawingCallbacks`, `DrawRequest`, and `Canvas` drawing functions. The gallery, IR loader, and parametric EQ now use the same public contract; final promotion still depends on the EQ release gates and manual host checks.
 - `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader is their only production consumer.
-- Rotary controls are shared by the gallery and parametric EQ, but remain experimental until the EQ release gates and manual host checks pass. Decibel sliders are shared by the gallery, channel strip, IR loader, and parametric EQ under one public contract, with final promotion pending the same host checks. The direct bipolar slider remains a gallery-only contract and needs a production consumer before promotion.
-- `GraphHandle`, `GraphLayer`, parameter-driven controller curves, and mixed-source graph layers. The gallery and parametric EQ use the same linked-handle, selection, group-highlight, adjustment, curve-source, and layer contracts. Linked handles still have one production consumer and remain pending the EQ release gates.
+- The direct bipolar slider. It remains a gallery-only presentation and needs a production consumer before promotion.
+- `GraphHandle`, `GraphLayer`, parameter-driven controller curves, and mixed-source graph layers. The gallery and parametric EQ use the same linked-handle, selection, group-highlight, adjustment, curve-source, and layer contracts, but linked handles still have one production consumer.
+- `SpectrumAnalyzer` and analyzer transport. The parametric EQ remains the only production analyzer consumer, so a second production use must establish the supported contract.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
 - `AudioFileImporter`, controller-owned import status and command callbacks, and controller-sourced graph snapshots. The channel strip and IR loader use the contract, but decoded audio transport still has one production consumer.

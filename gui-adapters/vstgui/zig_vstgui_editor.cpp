@@ -1793,7 +1793,13 @@ void ZigVstguiEditor::layoutParameterWorkspace(
             3,
             cells
         );
-        parameter_controls[parameter_index]->setBounds(cells[0], cells[1], cells[2]);
+        const auto kind = parameter_control_kinds[parameter_index];
+        const bool has_inline_value = kind == ZIG_VSTGUI_CONTROL_TOGGLE ||
+            kind == ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN;
+        const VSTGUI::CRect primary_bounds = has_inline_value
+            ? VSTGUI::CRect(cells[1].left, cells[1].top, cells[2].right, cells[1].bottom)
+            : cells[1];
+        parameter_controls[parameter_index]->setBounds(cells[0], primary_bounds, cells[2]);
     };
 
     if (compact) {
@@ -1869,11 +1875,12 @@ void ZigVstguiEditor::layoutParameterWorkspace(
             );
         }
     }
+    const double resize_gutter = theme.spacing.small;
     resize_control.setBounds(VSTGUI::CRect(
         right - theme.control_metrics.button_width,
-        footer_control_top,
+        footer_control_top + resize_gutter,
         right,
-        footer_bottom
+        footer_bottom + resize_gutter
     ));
     (void)content_bottom;
 }
