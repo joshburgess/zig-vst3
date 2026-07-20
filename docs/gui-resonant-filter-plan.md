@@ -84,11 +84,11 @@ Exit criteria:
 
 Release gates:
 
-- [ ] `zig build test raw-api-abi validate-examples --summary all`
-- [ ] Native adapter, macOS accessibility, visual-regression, and warm-render tests
-- [ ] `zig build bundle-examples-linux -Dtarget=aarch64-linux-gnu --summary all`
-- [ ] `zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu --summary all`
-- [ ] Serialized pluginval strictness 5 and strictness 10, stopping at the first unexpected exit and preserving its artifacts
+- [x] `zig build test raw-api-abi validate-examples --summary all`
+- [x] Native adapter, macOS accessibility, visual-regression, and warm-render tests
+- [x] `zig build bundle-examples-linux -Dtarget=aarch64-linux-gnu --summary all`
+- [x] `zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu --summary all`
+- [x] Serialized pluginval strictness 5 and strictness 10, stopping at the first unexpected exit and preserving its artifacts
 - [ ] Focused REAPER walkthrough for rendering, every control, graph synchronization, spectrum activity, presets, resize cycles, two instances, and editor reopen
 
 External checks remain pending when their environments are unavailable:
@@ -132,3 +132,12 @@ Record each committed milestone here with test counts, validator results, perfor
 - Native adapter, macOS accessibility, and visual-regression suites passed. `zig build test --summary all` passed 62/62 steps and 3,730/3,730 tests.
 - The dedicated resonant-filter warm-render scene measured 131.8 microseconds against a 300 microsecond budget. The same run measured 241.5 microseconds for shared signal views and 210.1 microseconds for the linked EQ scene.
 - Manual REAPER checks remain required before the responsive-editor and host interaction exit criteria are accepted.
+
+### Milestone 5 Release Gates
+
+- `zig build test raw-api-abi validate-examples --summary all` passed 223/223 steps and 3,730/3,730 tests. This includes the native adapter, macOS accessibility bridge, visual regression, entry-symbol isolation, every raw ABI harness, and all 13 Steinberg example validators. Resonant Filter passed all 47 Steinberg tests.
+- The Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` example bundle matrices each passed 41/41 steps, including Resonant Filter.
+- The serialized pluginval strictness 5 matrix passed all 13 examples in 56/56 steps without an unexpected exit or crash dialog.
+- The serialized pluginval strictness 10 matrix passed all 13 examples in 56/56 steps. It covered non-releasing processing, state restoration, background-thread state, parameter thread safety, and fuzzed parameters.
+- Resonant Filter pluginval artifacts are preserved at `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-pluginval/zig_vst3_resonant_filter-strictness-5-20260719-220401-86329` and `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-pluginval/zig_vst3_resonant_filter-strictness-10-20260719-220744-92378`.
+- The installed REAPER candidate has SHA-256 `3ac5472a94cbae894e16d045b20dd2865681f9e157cb1c8fede35268feba0f8d`. Focused REAPER acceptance remains pending.
