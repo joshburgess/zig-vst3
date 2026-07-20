@@ -1284,7 +1284,11 @@ Snapshot editableLabelsAndProgress() {
     };
 }
 
-std::shared_ptr<ZigVstguiEditor> buildParameterWorkspace(uint32_t width, uint32_t height) {
+std::shared_ptr<ZigVstguiEditor> buildParameterWorkspace(
+    uint32_t width,
+    uint32_t height,
+    ZigVstguiThemeKind theme = ZIG_VSTGUI_THEME_DEFAULT
+) {
     const char* titles[] = {
         "Bypass", "Output", "Enable", "Type", "Freq", "Gain", "Q",
         "Enable", "Type", "Freq", "Gain", "Q",
@@ -1352,11 +1356,18 @@ std::shared_ptr<ZigVstguiEditor> buildParameterWorkspace(uint32_t width, uint32_
         {"High", 12, 5, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0xf0ad65ff}, 1, 0, 0, 0},
     };
     ZigVstguiSkinDescription skin {};
+    skin.theme = theme;
     skin.layout = ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE;
     skin.editor_title = "Parametric EQ";
     skin.groups = groups;
     skin.group_count = 4;
-    skin.editor_style = {
+    skin.editor_style = theme == ZIG_VSTGUI_THEME_ALTERNATE ? ZigVstguiStyleOverride {
+        ZIG_VSTGUI_STYLE_BACKGROUND | ZIG_VSTGUI_STYLE_FOREGROUND,
+        0xf9f7f1ff,
+        0x2d2822ff,
+        0,
+        0,
+    } : ZigVstguiStyleOverride {
         ZIG_VSTGUI_STYLE_BACKGROUND | ZIG_VSTGUI_STYLE_FOREGROUND,
         0x101720ff,
         0xe9f1f5ff,
@@ -1383,13 +1394,19 @@ std::shared_ptr<ZigVstguiEditor> buildParameterWorkspace(uint32_t width, uint32_
     return editor;
 }
 
-Snapshot parameterWorkspace(const char* name, uint32_t width, uint32_t height) {
-    auto editor = buildParameterWorkspace(width, height);
+Snapshot parameterWorkspace(
+    const char* name,
+    uint32_t width,
+    uint32_t height,
+    double scale = 1.0,
+    ZigVstguiThemeKind theme = ZIG_VSTGUI_THEME_DEFAULT
+) {
+    auto editor = buildParameterWorkspace(width, height, theme);
     return {
         name,
         width,
         height,
-        1.0,
+        scale,
         [editor](VSTGUI::CDrawContext& context) {
             if (!editor || !editor->frameView()) return;
             editor->frameView()->drawRect(&context, editor->frameView()->getViewSize());
@@ -1397,7 +1414,11 @@ Snapshot parameterWorkspace(const char* name, uint32_t width, uint32_t height) {
     };
 }
 
-std::shared_ptr<ZigVstguiEditor> buildResonantFilterWorkspace(uint32_t width, uint32_t height) {
+std::shared_ptr<ZigVstguiEditor> buildResonantFilterWorkspace(
+    uint32_t width,
+    uint32_t height,
+    ZigVstguiThemeKind theme = ZIG_VSTGUI_THEME_DEFAULT
+) {
     const uint32_t ids[] = {0, 6, 1, 2, 3, 4, 5};
     const char* titles[] = {"Bypass", "Output", "Mode", "Cutoff", "Resonance", "Drive", "Mix"};
     const char* units[] = {"", "dB", "", "Hz", "", "dB", "%"};
@@ -1468,11 +1489,18 @@ std::shared_ptr<ZigVstguiEditor> buildResonantFilterWorkspace(uint32_t width, ui
         {"Color", 5, 2, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0xf0ad65ff}, 1, 0, 0, 0},
     };
     ZigVstguiSkinDescription skin {};
+    skin.theme = theme;
     skin.layout = ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE;
     skin.editor_title = "Resonant Filter";
     skin.groups = groups;
     skin.group_count = 3;
-    skin.editor_style = {
+    skin.editor_style = theme == ZIG_VSTGUI_THEME_ALTERNATE ? ZigVstguiStyleOverride {
+        ZIG_VSTGUI_STYLE_BACKGROUND | ZIG_VSTGUI_STYLE_FOREGROUND,
+        0xf9f7f1ff,
+        0x2d2822ff,
+        0,
+        0,
+    } : ZigVstguiStyleOverride {
         ZIG_VSTGUI_STYLE_BACKGROUND | ZIG_VSTGUI_STYLE_FOREGROUND,
         0x111922ff,
         0xeaf3f6ff,
@@ -1513,13 +1541,19 @@ std::shared_ptr<ZigVstguiEditor> buildResonantFilterWorkspace(uint32_t width, ui
     return editor;
 }
 
-Snapshot resonantFilterWorkspace(const char* name, uint32_t width, uint32_t height) {
-    auto editor = buildResonantFilterWorkspace(width, height);
+Snapshot resonantFilterWorkspace(
+    const char* name,
+    uint32_t width,
+    uint32_t height,
+    double scale = 1.0,
+    ZigVstguiThemeKind theme = ZIG_VSTGUI_THEME_DEFAULT
+) {
+    auto editor = buildResonantFilterWorkspace(width, height, theme);
     return {
         name,
         width,
         height,
-        1.0,
+        scale,
         [editor, width, height](VSTGUI::CDrawContext& context) {
             if (!editor || !editor->frameView()) return;
             auto frame = VSTGUI::owned(new VSTGUI::CFrame(
@@ -1542,7 +1576,8 @@ struct SampleWorkspace {
 SampleWorkspace buildSamplePlayerWorkspace(
     uint32_t width,
     uint32_t height,
-    SampleVisualMode mode = SampleVisualMode::ready
+    SampleVisualMode mode = SampleVisualMode::ready,
+    ZigVstguiThemeKind theme = ZIG_VSTGUI_THEME_DEFAULT
 ) {
     const char* titles[] = {
         "Start", "End", "Loop Start", "Loop End", "Gain", "Pan", "Coarse", "Fine",
@@ -1611,11 +1646,15 @@ SampleWorkspace buildSamplePlayerWorkspace(
         {"Envelope", 12, 4, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0xc58be8ff}, 1, 0, 0, 0},
     };
     ZigVstguiSkinDescription skin {};
+    skin.theme = theme;
     skin.layout = ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE;
     skin.editor_title = "Sample Player";
     skin.groups = groups;
     skin.group_count = 5;
-    skin.editor_style = {
+    skin.editor_style = theme == ZIG_VSTGUI_THEME_ALTERNATE ? ZigVstguiStyleOverride {
+        ZIG_VSTGUI_STYLE_BACKGROUND | ZIG_VSTGUI_STYLE_FOREGROUND | ZIG_VSTGUI_STYLE_ACCENT,
+        0xf9f7f1ff, 0x2d2822ff, 0x236a77ff, 0,
+    } : ZigVstguiStyleOverride {
         ZIG_VSTGUI_STYLE_BACKGROUND | ZIG_VSTGUI_STYLE_FOREGROUND | ZIG_VSTGUI_STYLE_ACCENT,
         0x111922ff, 0xeaf3f6ff, 0x52d5b0ff, 0,
     };
@@ -1711,14 +1750,16 @@ Snapshot samplePlayerWorkspace(
     const char* name,
     uint32_t width,
     uint32_t height,
-    SampleVisualMode mode = SampleVisualMode::ready
+    SampleVisualMode mode = SampleVisualMode::ready,
+    double scale = 1.0,
+    ZigVstguiThemeKind theme = ZIG_VSTGUI_THEME_DEFAULT
 ) {
-    auto workspace = buildSamplePlayerWorkspace(width, height, mode);
+    auto workspace = buildSamplePlayerWorkspace(width, height, mode, theme);
     return {
         name,
         width,
         height,
-        1.0,
+        scale,
         [workspace, width, height](VSTGUI::CDrawContext& context) {
             const auto& editor = workspace.editor;
             if (!editor || !editor->frameView()) return;
@@ -2227,12 +2268,23 @@ int main(int argc, char** argv) {
             parameterWorkspace("eq-workspace-compact.png", 400, 360),
             parameterWorkspace("eq-workspace-standard.png", 720, 660),
             parameterWorkspace("eq-workspace-expanded.png", 960, 700),
+            parameterWorkspace("eq-workspace-standard-2x.png", 720, 660, 2.0),
+            parameterWorkspace(
+                "eq-workspace-high-contrast.png", 720, 660, 1.0, ZIG_VSTGUI_THEME_ALTERNATE),
             resonantFilterWorkspace("resonant-filter-compact.png", 480, 480),
             resonantFilterWorkspace("resonant-filter-standard.png", 720, 660),
             resonantFilterWorkspace("resonant-filter-expanded.png", 960, 700),
+            resonantFilterWorkspace("resonant-filter-standard-2x.png", 720, 660, 2.0),
+            resonantFilterWorkspace(
+                "resonant-filter-high-contrast.png", 720, 660, 1.0, ZIG_VSTGUI_THEME_ALTERNATE),
             samplePlayerWorkspace("sample-player-compact.png", 480, 480),
             samplePlayerWorkspace("sample-player-standard.png", 720, 660),
             samplePlayerWorkspace("sample-player-expanded.png", 960, 700),
+            samplePlayerWorkspace(
+                "sample-player-standard-2x.png", 720, 660, SampleVisualMode::ready, 2.0),
+            samplePlayerWorkspace(
+                "sample-player-high-contrast.png", 720, 660, SampleVisualMode::ready, 1.0,
+                ZIG_VSTGUI_THEME_ALTERNATE),
             samplePlayerWorkspace("sample-player-empty.png", 720, 660, SampleVisualMode::empty),
             samplePlayerWorkspace("sample-player-importing.png", 720, 660, SampleVisualMode::importing),
             samplePlayerWorkspace("sample-player-error.png", 720, 660, SampleVisualMode::error),

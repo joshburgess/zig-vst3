@@ -207,6 +207,14 @@ pub fn build(b: *std.Build) void {
     zig_vst3_plugin_tests.root_module.addImport("zig-vst3", zig_vst3);
     zig_vst3_plugin_tests.root_module.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
 
+    const realtime_source_audit = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/realtime_source_audit.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
     const benchmark = b.addExecutable(.{
         .name = "zig-vst3-benchmark",
         .root_module = b.createModule(.{
@@ -238,6 +246,7 @@ pub fn build(b: *std.Build) void {
         vst3_tests,
         zig_vst3_plugin_core_tests,
         zig_vst3_plugin_tests,
+        realtime_source_audit,
     });
     addExamplePluginTestDependencies(b, test_step, &example_plugins);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_pluginval_runner.sh"}).step);

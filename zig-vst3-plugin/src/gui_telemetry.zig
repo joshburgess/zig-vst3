@@ -1,4 +1,5 @@
 const std = @import("std");
+const realtime_audit = @import("realtime_audit.zig");
 
 /// A lock-free scalar value for meters and other latest-value displays.
 pub fn ScalarSnapshot(comptime Float: type) type {
@@ -16,6 +17,7 @@ pub fn ScalarSnapshot(comptime Float: type) type {
         }
 
         pub fn store(self: *@This(), value: Float) void {
+            _ = realtime_audit.observe(.telemetry_publication);
             self.bits.store(@bitCast(value), .release);
         }
 
@@ -23,6 +25,15 @@ pub fn ScalarSnapshot(comptime Float: type) type {
             return @bitCast(self.bits.load(.acquire));
         }
     };
+}
+
+test "telemetry publication is allowed in realtime scope" {
+    var snapshot = ScalarSnapshot(f64).init(0.0);
+    const scope = realtime_audit.Scope.enter();
+    snapshot.store(0.5);
+    const report = scope.leave();
+    try std.testing.expect(report.clean());
+    try std.testing.expectEqual(@as(u32, 1), report.count(.telemetry_publication));
 }
 
 /// A bounded queue with one producer and one consumer. Full queues drop new data.
@@ -36,6 +47,7 @@ pub fn SpscQueue(comptime T: type, comptime capacity: usize) type {
         dropped_count: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
 
         pub fn push(self: *@This(), item: T) bool {
+            _ = realtime_audit.observe(.telemetry_publication);
             const write = self.write_index.load(.monotonic);
             const read = self.read_index.load(.acquire);
             if (write -% read == capacity) {
@@ -122,6 +134,7 @@ pub fn MeterBank(comptime Float: type, comptime source_count: usize) type {
         }
 
         pub fn publish(self: *@This(), source: usize, value: Float) bool {
+            _ = realtime_audit.observe(.telemetry_publication);
             if (source >= source_count or !self.activity.active()) return false;
             self.snapshots[source].store(value);
             return true;

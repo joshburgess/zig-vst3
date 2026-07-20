@@ -1,4 +1,5 @@
 const std = @import("std");
+const realtime_audit = @import("realtime_audit.zig");
 const gui_telemetry = @import("gui_telemetry.zig");
 
 pub const Point = extern struct {
@@ -324,6 +325,7 @@ pub fn SnapshotSeries(comptime capacity: usize) type {
         }
 
         pub fn publish(self: *@This(), source: []const Point) bool {
+            _ = realtime_audit.observe(.telemetry_publication);
             if (!self.activity.active() or source.len > capacity) return self.drop();
             for (source) |point| if (!point.finite()) return self.drop();
 

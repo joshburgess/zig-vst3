@@ -32,10 +32,10 @@ Exit criteria:
 
 ## Milestone 3: Visual and Real-Time Gates
 
-- [ ] Cover compact, standard, expanded, 1x, 2x, and high-contrast output with deterministic references.
-- [ ] Assert minimum text padding, action spacing, clipping bounds, focus visibility, and disabled-state contrast where geometry can be checked directly.
-- [ ] Instrument processing, telemetry publication, and decoded-audio adoption for allocation, lock, file-access, logging, host-call, and GUI-call violations.
-- [ ] Record lifecycle, warm render, import, waveform construction, telemetry, and maximum-polyphony baselines with explicit budgets.
+- [x] Cover compact, standard, expanded, 1x, 2x, and high-contrast output with deterministic references.
+- [x] Assert minimum text padding, action spacing, clipping bounds, focus visibility, and disabled-state contrast where geometry can be checked directly.
+- [x] Instrument processing, telemetry publication, and decoded-audio adoption for allocation, lock, file-access, logging, host-call, and GUI-call violations.
+- [x] Record lifecycle, warm render, import, waveform construction, telemetry, and maximum-polyphony baselines with explicit budgets.
 
 Exit criteria:
 
@@ -97,3 +97,15 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The all-editor host harness now probes null and unknown editor names, invalid parameter indices, malformed process data, and inverted size constraints before each lifecycle completes.
 - Generated import transitions exposed a terminal-state defect: acknowledged cancellation retained `cancellation_pending=true`. Completion, failure, and acknowledged cancellation now clear the request atomically, with a direct regression beside the generated test.
 - `zig build test --summary all` passed 71/71 steps and 3,810/3,810 tests after the fix. Native adapter, macOS accessibility, visual regression, warm rendering, fixture generation, public-boundary checks, and runner parsing all passed in the same invocation.
+
+### Milestone 3: Visual and Real-Time Gates
+
+- Parametric EQ, Resonant Filter, and Sample Player now have standard 2x references at 1440 by 1320 pixels and alternate high-contrast references in addition to their compact, standard, and expanded 1x workspaces. Existing component references continue to cover both themes, focus, disabled, pressed, selected, error, and import states.
+- Native geometry tests enforce label and value insets, control-to-value spacing, non-overlapping layout cells, footer clearance, focus propagation, and selected-text contrast. The production workspace references add pixel-level coverage for clipping and responsive composition.
+- The framework process dispatcher opens a thread-local real-time audit scope around every production processor call in test and debug builds. Telemetry publication and decoded-audio adoption are allowed and counted. Instrumented file access, worker allocation, locks, GUI creation, logging, and host calls cause processing to return failure. Release builds compile the instrumentation out.
+- The decoded importer directly proves that file access, allocation, and locking are rejected in a real-time scope. Telemetry and decoded-audio handoff prove their lock-free paths remain allowed. A separate fixed source audit rejects direct forbidden operations in the Channel Strip, Parametric EQ, Resonant Filter, IR Loader, and Sample Player process bodies.
+- `zig build test-gui-lifecycle --summary all` passed 37/37 steps and 1,957/1,957 tests with the process audit active. The visual gate passed all new and existing references. Warm measurements were 98.2 us for the aggregate scene, 279.9 us for maximum signal views, 242.9 us for linked EQ, 187.9 us for Resonant Filter, 58.3 us for viewport rendering, 184.8 us for range selection, and 54.5 ms per complete Sample Player editor lifecycle.
+- `zig build benchmark --summary all` now fails explicit regression ceilings instead of printing informational numbers only. The first budgeted run measured 795.8 MiB/s import throughput, 10.03 ms for maximum sample decode and waveform construction, 109.8 ns per preview read, 9.1 ns per playback frame with eight voices available, 5.5 ns per playhead update, and 673.8 ns per IR sample.
+- `zig build test --summary all` passed 73/73 steps and 3,816/3,816 tests with the new visual, runtime, and source gates enabled.
+
+Remaining before the milestone exit is declared complete: add full compact, standard, expanded, 2x, and high-contrast workspace references for Channel Strip and IR Loader. Their shared components and state sequences are covered now, but their complete production compositions are not yet represented at every size.

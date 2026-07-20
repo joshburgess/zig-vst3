@@ -1,5 +1,6 @@
 const std = @import("std");
 const gui_file_importer = @import("gui_file_importer.zig");
+const realtime_audit = @import("realtime_audit.zig");
 
 pub const preview_capacity = 256;
 pub const maximum_input_bytes = 32 * 1024 * 1024;
@@ -78,6 +79,9 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         pub fn begin(self: *Self, entry_point: gui_file_importer.EntryPoint, paths: []const []const u8) bool {
+            const file_allowed = realtime_audit.observe(.file_access);
+            const allocation_allowed = realtime_audit.observe(.allocation);
+            if (!file_allowed or !allocation_allowed) return false;
             if (self.worker_running.load(.acquire)) return false;
             self.reapWorker();
 
@@ -322,6 +326,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         fn lock(self: *Self) void {
+            _ = realtime_audit.observe(.lock);
             self.mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
         }
 
@@ -686,6 +691,19 @@ test "decoded importer keeps bounded interleaved PCM for non-audio-thread handof
     waitForWorker(&too_small);
     try std.testing.expectEqual(Failure.too_large, too_small.snapshot().failure);
     try std.testing.expectEqual(@as(usize, 0), too_small.snapshot().decoded_frames);
+}
+
+test "decoded importer reports file, allocation, and lock use in realtime scope" {
+    var importer = Importer.init();
+    defer importer.deinit();
+    const scope = realtime_audit.Scope.enter();
+    _ = importer.snapshot();
+    try std.testing.expect(!importer.begin(.picker, &.{"fixture.wav"}));
+    const report = scope.leave();
+    try std.testing.expectEqual(realtime_audit.Operation.lock, report.first_violation.?);
+    try std.testing.expectEqual(@as(u32, 1), report.count(.lock));
+    try std.testing.expectEqual(@as(u32, 1), report.count(.file_access));
+    try std.testing.expectEqual(@as(u32, 1), report.count(.allocation));
 }
 
 test "decoded importer normalizes PCM AIFF into the shared interleaved format" {

@@ -7,6 +7,7 @@ const vst_plug_view = @import("vst_plug_view.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const gui_telemetry_source = @import("gui_telemetry_source.zig");
 const gui_graph = @import("zig-vst3-plugin-core").gui_graph;
+const realtime_audit = @import("zig-vst3-plugin-core").realtime_audit;
 const vstgui_adapter_enabled = @import("zig-vst3-gui-options").vstgui_adapter_enabled;
 
 const Editor = opaque {};
@@ -1024,6 +1025,9 @@ pub fn create(
     telemetry_provider: ?TelemetrySourceProvider,
     controller_graph: ControllerGraphCallbacks,
 ) ?*iplugview.IPlugView {
+    const gui_allowed = realtime_audit.observe(.gui_call);
+    const allocation_allowed = realtime_audit.observe(.allocation);
+    if (!gui_allowed or !allocation_allowed) return null;
     if (builtin.os.tag != .macos and builtin.os.tag != .windows and builtin.os.tag != .linux) {
         return null;
     }

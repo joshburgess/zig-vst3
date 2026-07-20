@@ -1,4 +1,5 @@
 const std = @import("std");
+const realtime_audit = @import("realtime_audit.zig");
 
 pub const maximum_channels = 2;
 
@@ -90,6 +91,7 @@ pub fn Store(comptime maximum_frames: usize) type {
         }
 
         pub fn adoptPending(self: *Self) bool {
+            _ = realtime_audit.observe(.decoded_audio_adoption);
             const next = self.pending_slot.swap(no_slot, .acq_rel);
             if (next == no_slot) return false;
             const slot = &self.slots[next];
@@ -153,6 +155,18 @@ test "sample store publishes complete generations atomically" {
     try std.testing.expectEqual(@as(usize, 2), store.activeMetadata().?.frames);
     try std.testing.expectApproxEqAbs(@as(f32, 0.25), store.sample(0, 0.5), 0.000001);
     try std.testing.expectApproxEqAbs(@as(f32, 0.5), store.sample(1, 0.5), 0.000001);
+}
+
+test "sample store adoption is allowed in realtime scope" {
+    var store: Store(4) = .{};
+    try store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 1 });
+    try store.write(1, 0, &.{0.5});
+    try store.commit(1);
+    const scope = realtime_audit.Scope.enter();
+    try std.testing.expect(store.adoptPending());
+    const report = scope.leave();
+    try std.testing.expect(report.clean());
+    try std.testing.expectEqual(@as(u32, 1), report.count(.decoded_audio_adoption));
 }
 
 test "sample store rejects stale incomplete and oversized transfers" {

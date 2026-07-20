@@ -2857,7 +2857,10 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
                 return types.kInvalidArgument;
             };
             var output_events = plug_process.EventWriter.init(&output_event_storage, zig_vst3_plugin_bridge.frameCountOrZero(data));
+            const realtime_scope = plug_core.realtime_audit.Scope.enter();
             const result = zig_vst3_plugin_bridge.processMainAudioConfiguredWithSampleRate(data, parameter_changes, events, &output_events, Processor{ .component = self, .parameter_changes = parameter_changes }, bus_config, self.sample_rate);
+            const audit_report = realtime_scope.leave();
+            if (!audit_report.clean()) return types.kResultFalse;
             if (result != types.kResultOk) return result;
             return zig_vst3_plugin_bridge.writeOutputEvents(data, output_events.events());
         }

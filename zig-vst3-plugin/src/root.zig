@@ -20,6 +20,7 @@ pub const gui_progress = core.gui_progress;
 pub const gui_range_selection = core.gui_range_selection;
 pub const gui_viewport = core.gui_viewport;
 pub const parameters = core.parameters;
+pub const realtime_audit = core.realtime_audit;
 pub const dsp = core.dsp;
 pub const plugin = core.plugin;
 pub const process = core.process;
@@ -37,6 +38,7 @@ test "zig-vst3-plugin sees zig-vst3" {
 
 test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(parameters, "FloatParam"));
+    try std.testing.expect(@hasDecl(realtime_audit, "Scope"));
     try std.testing.expect(@hasDecl(parameters, "LogFloatParam"));
     try std.testing.expect(@hasDecl(dsp, "SmoothedBiquad"));
     try std.testing.expect(@hasDecl(parameters, "normalizedFromBipolar"));

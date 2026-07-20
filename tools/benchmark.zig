@@ -5,6 +5,28 @@ const plug = @import("zig-vst3-plugin");
 const frame_count = 512;
 const iterations = 20_000;
 
+const Budget = struct {
+    raw_stream_ns: f64 = 10_000.0,
+    framework_block_ns: f64 = 50_000.0,
+    parameter_store_ns: f64 = 1_000.0,
+    state_round_trip_ns: f64 = 100_000.0,
+    scalar_snapshot_ns: f64 = 1_000.0,
+    waveform_snapshot_ns: f64 = 50_000.0,
+    spectrum_snapshot_ns: f64 = 100_000.0,
+    import_mib_per_second: f64 = 50.0,
+    sample_decode_ms: f64 = 500.0,
+    sample_preview_ns: f64 = 50_000.0,
+    sample_publication_ms: f64 = 100.0,
+    sample_adoption_ns: f64 = 1_000_000.0,
+    sample_playback_ns_per_frame: f64 = 1_000.0,
+    playhead_update_ns: f64 = 10_000.0,
+    ir_preparation_ms: f64 = 500.0,
+    ir_adoption_ns: f64 = 1_000_000.0,
+    ir_processing_ns_per_sample: f64 = 20_000.0,
+};
+
+const budget = Budget{};
+
 const BenchPlugin = struct {
     pub const name = "Benchmark Plugin";
     pub const vendor = "zig-vst3";
@@ -51,6 +73,17 @@ const Benchmark = struct {
         const ns_per_op = @as(f64, @floatFromInt(self.elapsed_ns)) / @as(f64, @floatFromInt(self.iterations));
         std.debug.print("{s}: {d:.1} ns/op ({d} iterations)\n", .{ self.name, ns_per_op, self.iterations });
     }
+
+    fn requireAtMost(self: Benchmark, maximum_ns_per_op: f64) !void {
+        self.print();
+        const actual = @as(f64, @floatFromInt(self.elapsed_ns)) / @as(f64, @floatFromInt(self.iterations));
+        if (actual > maximum_ns_per_op) {
+            std.debug.print("benchmark budget exceeded: {s} measured {d:.1} ns/op, budget {d:.1} ns/op\n", .{
+                self.name, actual, maximum_ns_per_op,
+            });
+            return error.BenchmarkBudgetExceeded;
+        }
+    }
 };
 
 const Timer = struct {
@@ -69,13 +102,13 @@ pub fn main() !void {
     std.debug.print("zig-vst3 local microbenchmarks\n", .{});
     std.debug.print("iterations: {d}, frames: {d}\n\n", .{ iterations, frame_count });
 
-    (try benchRawStream()).print();
-    (try benchFrameworkProcess()).print();
-    (try benchParameterUpdates()).print();
-    (try benchStateSaveLoad()).print();
-    (try benchGuiScalarSnapshot()).print();
-    (try benchWaveformCapture()).print();
-    (try benchSpectrumAnalyzer()).print();
+    try (try benchRawStream()).requireAtMost(budget.raw_stream_ns);
+    try (try benchFrameworkProcess()).requireAtMost(budget.framework_block_ns);
+    try (try benchParameterUpdates()).requireAtMost(budget.parameter_store_ns);
+    try (try benchStateSaveLoad()).requireAtMost(budget.state_round_trip_ns);
+    try (try benchGuiScalarSnapshot()).requireAtMost(budget.scalar_snapshot_ns);
+    try (try benchWaveformCapture()).requireAtMost(budget.waveform_snapshot_ns);
+    try (try benchSpectrumAnalyzer()).requireAtMost(budget.spectrum_snapshot_ns);
     try benchAudioFileImport();
     try benchSamplePlayerPipeline();
     try benchIrConvolution();
@@ -277,6 +310,7 @@ fn benchAudioFileImport() !void {
     const mebibytes_per_second = @as(f64, @floatFromInt(data_bytes)) * @as(f64, std.time.ns_per_s) /
         (@as(f64, @floatFromInt(elapsed_ns)) * 1024.0 * 1024.0);
     std.debug.print("bounded PCM WAV worker: {d:.1} MiB/s ({d} bytes)\n", .{ mebibytes_per_second, data_bytes });
+    if (mebibytes_per_second < budget.import_mib_per_second) return error.BenchmarkBudgetExceeded;
 }
 
 fn benchSamplePlayerPipeline() !void {
@@ -406,6 +440,15 @@ fn benchSamplePlayerPipeline() !void {
         @as(f64, @floatFromInt(@sizeOf(Importer))) / (1024.0 * 1024.0),
         @as(f64, @floatFromInt(@sizeOf(Player))) / (1024.0 * 1024.0),
     });
+    if (decode_ms > budget.sample_decode_ms or
+        @as(f64, @floatFromInt(preview_ns)) / iterations > budget.sample_preview_ns or
+        publication_ms > budget.sample_publication_ms or
+        @as(f64, @floatFromInt(adoption_ns)) > budget.sample_adoption_ns or
+        ns_per_frame > budget.sample_playback_ns_per_frame or
+        playhead_ns_per_update > budget.playhead_update_ns)
+    {
+        return error.BenchmarkBudgetExceeded;
+    }
 }
 
 fn benchIrConvolution() !void {
@@ -474,6 +517,12 @@ fn benchIrConvolution() !void {
     std.debug.print("IR convolution: {d:.1} ns/sample, {d:.1}% of one 48 kHz core\n", .{
         ns_per_sample, realtime_cpu,
     });
+    if (preparation_ms > budget.ir_preparation_ms or
+        @as(f64, @floatFromInt(adoption_ns)) > budget.ir_adoption_ns or
+        ns_per_sample > budget.ir_processing_ns_per_sample)
+    {
+        return error.BenchmarkBudgetExceeded;
+    }
 }
 
 fn fillInput(buffer: []f32, scale: f32) void {

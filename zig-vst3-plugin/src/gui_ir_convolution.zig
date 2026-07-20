@@ -1,4 +1,5 @@
 const std = @import("std");
+const realtime_audit = @import("realtime_audit.zig");
 
 pub const maximum_channels = 2;
 
@@ -178,6 +179,7 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         }
 
         pub fn adoptPending(self: *Self) bool {
+            _ = realtime_audit.observe(.decoded_audio_adoption);
             const next = self.pending_slot.swap(no_slot, .acq_rel);
             if (next == no_slot) return false;
             const next_slot = &self.slots[next];
