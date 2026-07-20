@@ -1,6 +1,9 @@
 #!/usr/bin/env sh
 set -eu
 
+script_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+. "$script_dir/pluginval_runner_lib.sh"
+
 if [ "$#" -ne 1 ]; then
     printf 'usage: %s path/to/Plugin.vst3\n' "$0" >&2
     exit 2
@@ -14,6 +17,11 @@ esac
 pluginval="${PLUGINVAL:-}"
 strictness="${PLUGINVAL_STRICTNESS:-5}"
 output_root="${PLUGINVAL_OUTPUT_DIR:-${TMPDIR:-/tmp}/zig-vst3-pluginval}"
+timeout_seconds="${PLUGINVAL_TIMEOUT_SECONDS:-180}"
+if ! timeout_attempts="$(pluginval_timeout_attempts "$timeout_seconds")"; then
+    printf 'PLUGINVAL_TIMEOUT_SECONDS must be an integer from 1 to 3600.\n' >&2
+    exit 2
+fi
 
 if [ -z "$pluginval" ]; then
     for candidate in \
@@ -42,6 +50,17 @@ plugin_name="$(basename "$plugin_path" .vst3)"
 output_dir="$output_root/$plugin_name-strictness-$strictness-$timestamp-$$"
 mkdir -p "$output_dir"
 printf 'pluginval artifacts: %s\n' "$output_dir" >&2
+
+write_runner_status() {
+    classification="$1"
+    status="$2"
+    {
+        printf 'classification=%s\n' "$classification"
+        printf 'status=%s\n' "$status"
+        printf 'strictness=%s\n' "$strictness"
+        printf 'timeout_seconds=%s\n' "$timeout_seconds"
+    } > "$output_dir/runner-status.txt"
+}
 
 pluginval_app=""
 case "$(uname -s):$pluginval" in
@@ -80,28 +99,43 @@ if [ -n "$pluginval_app" ]; then
     cleanup_launch_job() {
         /bin/launchctl bootout "gui/$user_id/$label" >/dev/null 2>&1 || true
     }
-    trap cleanup_launch_job EXIT HUP INT TERM
+    interrupt_launch_job() {
+        signal_name="$1"
+        interrupted_status="$2"
+        cleanup_launch_job
+        write_runner_status "interrupted:$signal_name" "$interrupted_status"
+        trap - EXIT HUP INT TERM
+        exit "$interrupted_status"
+    }
+    trap cleanup_launch_job EXIT
+    trap 'interrupt_launch_job HUP 129' HUP
+    trap 'interrupt_launch_job INT 130' INT
+    trap 'interrupt_launch_job TERM 143' TERM
     set +e
     /bin/launchctl bootstrap "gui/$user_id" "$plist_path"
     status=$?
+    classification=bootstrap_failed
     if [ "$status" -eq 0 ]; then
         attempts=0
         status=124
-        while [ "$attempts" -lt 1800 ]; do
+        classification=timed_out
+        while [ "$attempts" -lt "$timeout_attempts" ]; do
             service="$(/bin/launchctl print "gui/$user_id/$label" 2>/dev/null)"
-            active_count="$(printf '%s\n' "$service" | sed -n 's/^[[:space:]]*active count = \([0-9][0-9]*\)$/\1/p' | tail -n 1)"
-            exit_code="$(printf '%s\n' "$service" | sed -n 's/^[[:space:]]*last exit code = \([0-9][0-9]*\)$/\1/p' | tail -n 1)"
-            terminating_signal="$(printf '%s\n' "$service" | sed -n 's/^[[:space:]]*last terminating signal = .*: \([0-9][0-9]*\)$/\1/p' | tail -n 1)"
-            if [ "$active_count" = "0" ]; then
-                if [ -n "$terminating_signal" ]; then
-                    status=$((128 + terminating_signal))
+            printf '%s\n' "$service" > "$output_dir/launchctl-state.txt"
+            result="$(pluginval_service_result "$service")"
+            case "$result" in
+                signal:*)
+                    signal_number="${result#signal:}"
+                    status=$((128 + signal_number))
+                    classification=signaled
                     break
-                fi
-                if [ -n "$exit_code" ]; then
-                    status="$exit_code"
+                    ;;
+                exit:*)
+                    status="${result#exit:}"
+                    if [ "$status" -eq 0 ]; then classification=succeeded; else classification=failed; fi
                     break
-                fi
-            fi
+                    ;;
+            esac
             attempts=$((attempts + 1))
             sleep 0.1
         done
@@ -110,6 +144,7 @@ if [ -n "$pluginval_app" ]; then
     trap - EXIT HUP INT TERM
     if [ -f "$stdout_path" ]; then cat "$stdout_path"; fi
     if [ -f "$stderr_path" ]; then cat "$stderr_path" >&2; fi
+    write_runner_status "$classification" "$status"
     set -e
     exit "$status"
 fi
@@ -124,4 +159,12 @@ else
 fi
 status=$?
 set -e
+if [ "$status" -eq 0 ]; then
+    classification=succeeded
+elif [ "$status" -ge 128 ]; then
+    classification=signaled
+else
+    classification=failed
+fi
+write_runner_status "$classification" "$status"
 exit "$status"

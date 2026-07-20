@@ -2,6 +2,8 @@
 
 This phase extends the production GUI foundation with native assistive actions, multi-parameter interaction, editable graphs, persistent editor state, and higher-level components. Work stays behind the public `@import("zig-vst3").vstgui` authoring API. Adapter internals may implement toolkit behavior, but plugin authors must not depend on them.
 
+Current validation status supersedes the checkpoint-specific pluginval notes below. On July 20, 2026, all 14 examples passed the serialized strictness 5 and strictness 10 matrices after isolated Sample Player defects were diagnosed from preserved artifacts and fixed. Statements that pluginval was pending or covered ten examples describe the historical state at that milestone, not the current repository state.
+
 ## Invariants
 
 - Parameter edits use host begin, perform, and end gestures. Rejected edits restore the accepted value.
@@ -216,6 +218,7 @@ Pluginval recovery evidence:
 
 - On July 18, 2026, the serialized aggregate suite passed all ten example plugins at strictness 5 and strictness 10. Both GUI examples passed editor creation, editor-while-processing, and editor automation. Strictness 10 also passed non-releasing processing, state restoration, background-thread state, parameter thread safety, and parameter fuzzing.
 - Each invocation wrote to a separate artifact directory. The aggregate target completed 44 of 44 build steps at both strictness levels, and no unexpected exit occurred. The earlier isolated failure was not reproduced, so no plugin root cause is claimed.
+- On July 20, 2026, the expanded matrices passed all 14 examples after fixing crossed range automation, worker-thread GUI notification delivery, and a null `createView` boundary probe. The current runner records normal exits, signals, timeouts, bootstrap failures, and interruptions separately in each artifact directory.
 
 ## Validation After Each Milestone
 

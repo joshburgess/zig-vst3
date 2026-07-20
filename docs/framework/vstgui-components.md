@@ -409,7 +409,7 @@ Host state stores parameters and bounded editor metadata, but it does not store 
 
 ### Sample player ownership reference
 
-The sample player is a second production consumer of `AudioFileImporter`, decoded-audio publication, controller-sourced waveform snapshots, and importer-aware action dependencies. It accepts one PCM WAV, AIFF, or uncompressed AIFC file with no more than 262,144 mono or stereo frames, 384 kHz sample rate, or the importer and player fixed capacities. Validation, decoding, and preview construction run on the controller-owned worker. Replacement generations and Clear publish complete bounded messages to a three-slot processor store.
+The sample player is a second production consumer of `AudioFileImporter`, decoded-audio publication, controller-sourced waveform snapshots, and importer-aware action dependencies. Its full editor declaration lives in `examples/sample_player_editor.zig` and imports only `@import("zig-vst3")`. It accepts one PCM WAV, AIFF, or uncompressed AIFC file with no more than 262,144 mono or stereo frames, 384 kHz sample rate, or the importer and player fixed capacities. Validation, decoding, and preview construction run on the controller-owned worker. Replacement generations and Clear publish complete bounded messages to a three-slot processor store.
 
 The processor adopts a complete generation only at an audio block boundary. Its eight fixed voices provide deterministic oldest-voice stealing, linear interpolation, gain, bipolar pan, tuning, bounded playback and loop ranges, forward or reverse traversal, and ADSR state without allocation, locks, file access, GUI calls, host calls, or logging in processing. Reset and media replacement clear every active voice.
 
@@ -573,7 +573,7 @@ Experimental extensions:
 - The direct bipolar slider. The gallery and sample player exercise it, but a second production consumer is still required.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
-- `AudioFileImporter`, controller-owned import status and command callbacks, decoded-audio transport, and controller-sourced graph snapshots. The IR loader and sample player exercise the same bounded public contract, but the gallery does not decode audio and the sample-player host walkthrough remains pending.
+- `AudioFileImporter`, controller-owned import status and command callbacks, decoded-audio transport, controller-sourced graph snapshots, and importer-aware action dependencies. The gallery now decodes a bounded fixture and exercises idle, progress, ready, failure, retry, reset, waveform, and action-dependency behavior through the same contract used by the IR loader and sample player. The sample-player host walkthrough remains the promotion blocker.
 - Additional modulation component types and GPU-backed custom views. Neither has a public declaration or a production consumer. A GPU path also requires profiling evidence that the toolkit-managed renderer is the limiting factor.
 
 Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.

@@ -48,7 +48,7 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
         output_sample_rate: f64 = 48_000.0,
 
         pub fn prepare(self: *Self, sample_rate: f64) void {
-            self.output_sample_rate = std.math.clamp(sample_rate, 8_000.0, 384_000.0);
+            self.output_sample_rate = std.math.clamp(finiteOr(sample_rate, 48_000.0), 8_000.0, 384_000.0);
         }
 
         pub fn reset(self: *Self) void {
@@ -67,7 +67,7 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
 
         pub fn noteOn(self: *Self, note: i16, velocity: f64, playback: Playback) void {
             const metadata = self.store.activeMetadata() orelse return;
-            if (metadata.frames == 0 or velocity <= 0.0) {
+            if (metadata.frames == 0 or !std.math.isFinite(velocity) or velocity <= 0.0) {
                 self.noteOff(note, playback);
                 return;
             }
@@ -103,10 +103,10 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
             if (metadata.frames == 0) return .{ 0.0, 0.0 };
             const bounds = frameBounds(metadata.frames, playback.start, playback.end);
             const loop = loopBounds(bounds, playback.loop_start, playback.loop_end);
-            const pan = std.math.clamp(playback.pan, -1.0, 1.0);
+            const pan = std.math.clamp(finiteOr(playback.pan, 0.0), -1.0, 1.0);
             const left_pan = if (pan > 0.0) 1.0 - pan else 1.0;
             const right_pan = if (pan < 0.0) 1.0 + pan else 1.0;
-            const gain = std.math.clamp(playback.gain, 0.0, 16.0);
+            const gain = std.math.clamp(finiteOr(playback.gain, 1.0), 0.0, 16.0);
             const active_limit = std.math.clamp(playback.voice_limit, 1, voice_count);
             var output: [2]f64 = .{ 0.0, 0.0 };
 
@@ -125,8 +125,8 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
                 output[1] += right * amplitude * right_pan;
 
                 const semitones = @as(f64, @floatFromInt(voice.note - playback.root_note)) +
-                    std.math.clamp(playback.coarse_semitones, -48.0, 48.0) +
-                    std.math.clamp(playback.fine_cents, -100.0, 100.0) / 100.0;
+                    std.math.clamp(finiteOr(playback.coarse_semitones, 0.0), -48.0, 48.0) +
+                    std.math.clamp(finiteOr(playback.fine_cents, 0.0), -100.0, 100.0) / 100.0;
                 const rate = @as(f64, @floatFromInt(metadata.sample_rate)) / self.output_sample_rate *
                     std.math.pow(f64, 2.0, semitones / 12.0);
                 voice.position += if (playback.reverse) -rate else rate;
@@ -209,15 +209,15 @@ const Bounds = struct { start: f64, end: f64 };
 
 fn frameBounds(frame_count: usize, start: f64, end: f64) Bounds {
     const last = @as(f64, @floatFromInt(frame_count - 1));
-    const bounded_start = std.math.clamp(start, 0.0, 1.0) * last;
-    const bounded_end = std.math.clamp(end, 0.0, 1.0) * last;
+    const bounded_start = std.math.clamp(finiteOr(start, 0.0), 0.0, 1.0) * last;
+    const bounded_end = std.math.clamp(finiteOr(end, 1.0), 0.0, 1.0) * last;
     return .{ .start = @min(bounded_start, bounded_end), .end = @max(bounded_start, bounded_end) };
 }
 
 fn loopBounds(playback: Bounds, loop_start: f64, loop_end: f64) Bounds {
     const span = playback.end - playback.start;
-    const start = playback.start + std.math.clamp(loop_start, 0.0, 1.0) * span;
-    const end = playback.start + std.math.clamp(loop_end, 0.0, 1.0) * span;
+    const start = playback.start + std.math.clamp(finiteOr(loop_start, 0.0), 0.0, 1.0) * span;
+    const end = playback.start + std.math.clamp(finiteOr(loop_end, 1.0), 0.0, 1.0) * span;
     const ordered_start = @min(start, end);
     return .{ .start = ordered_start, .end = @max(ordered_start + 0.000001, @max(start, end)) };
 }
@@ -225,6 +225,10 @@ fn loopBounds(playback: Bounds, loop_start: f64, loop_end: f64) Bounds {
 fn envelopeStep(seconds: f64, sample_rate: f64) f64 {
     if (!std.math.isFinite(seconds) or seconds <= 0.0) return 1.0;
     return 1.0 / @max(1.0, seconds * sample_rate);
+}
+
+fn finiteOr(value: f64, fallback: f64) f64 {
+    return if (std.math.isFinite(value)) value else fallback;
 }
 
 test "sample player adopts complete media and renders interpolated notes" {
@@ -254,6 +258,13 @@ test "sample player steals the oldest voice deterministically" {
     player.noteOn(62, 1.0, playback);
     try std.testing.expectEqual(@as(i16, 62), player.voices[0].note);
     try std.testing.expectEqual(@as(i16, 61), player.voices[1].note);
+    const mixed = player.processFrame(playback);
+    try std.testing.expectEqual(@as([2]f32, .{ 2.0, 2.0 }), mixed);
+
+    const mono_limit = Playback{ .loop_enabled = true, .voice_limit = 1, .envelope = .{ .attack_seconds = 0.0, .sustain = 1.0 } };
+    const limited = player.processFrame(mono_limit);
+    try std.testing.expectEqual(@as([2]f32, .{ 1.0, 1.0 }), limited);
+    try std.testing.expect(player.voices[1].stage == .idle);
 }
 
 test "sample player releases notes and bounds reverse loops" {
@@ -369,4 +380,80 @@ test "sample player is silent without media and all notes off releases voices" {
     player.allNotesOff();
     _ = player.processFrame(playback);
     try std.testing.expectEqual(@as(?f64, null), player.playhead());
+}
+
+test "sample player renders exact forward reverse and loop sequences offline" {
+    const expected_forward = [_]f32{ 0.25, 0.5, 0.75, 1.0, 0.0 };
+    const expected_reverse = [_]f32{ 1.0, 0.75, 0.5, 0.25, 0.0 };
+    const expected_loop = [_]f32{ 0.25, 0.5, 0.75, 0.5, 0.75, 0.5 };
+    const sustained = Envelope{ .attack_seconds = 0.0, .decay_seconds = 0.0, .sustain = 1.0 };
+
+    var forward = Player(4, 1){};
+    try forward.store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 4 });
+    try forward.store.write(1, 0, &.{ 0.25, 0.5, 0.75, 1.0 });
+    try forward.store.commit(1);
+    _ = forward.adoptPending();
+    forward.noteOn(60, 1.0, .{ .envelope = sustained });
+    for (expected_forward) |expected| {
+        try std.testing.expectApproxEqAbs(expected, forward.processFrame(.{ .envelope = sustained })[0], 0.000001);
+    }
+
+    var reverse = Player(4, 1){};
+    try reverse.store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 4 });
+    try reverse.store.write(1, 0, &.{ 0.25, 0.5, 0.75, 1.0 });
+    try reverse.store.commit(1);
+    _ = reverse.adoptPending();
+    reverse.noteOn(60, 1.0, .{ .reverse = true, .envelope = sustained });
+    for (expected_reverse) |expected| {
+        try std.testing.expectApproxEqAbs(expected, reverse.processFrame(.{ .reverse = true, .envelope = sustained })[0], 0.000001);
+    }
+
+    var looped = Player(5, 1){};
+    try looped.store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 5 });
+    try looped.store.write(1, 0, &.{ 0.0, 0.25, 0.5, 0.75, 1.0 });
+    try looped.store.commit(1);
+    _ = looped.adoptPending();
+    const loop_playback = Playback{
+        .start = 0.25,
+        .end = 0.75,
+        .loop_start = 0.5,
+        .loop_end = 1.0,
+        .loop_enabled = true,
+        .envelope = sustained,
+    };
+    looped.noteOn(60, 1.0, loop_playback);
+    for (expected_loop) |expected| {
+        try std.testing.expectApproxEqAbs(expected, looped.processFrame(loop_playback)[0], 0.000001);
+    }
+}
+
+test "sample player contains non-finite public playback inputs" {
+    var player = Player(2, 1){};
+    player.prepare(std.math.nan(f64));
+    try player.store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 2 });
+    try player.store.write(1, 0, &.{ 0.5, 1.0 });
+    try player.store.commit(1);
+    _ = player.adoptPending();
+
+    const invalid = Playback{
+        .gain = std.math.nan(f64),
+        .pan = std.math.inf(f64),
+        .coarse_semitones = -std.math.inf(f64),
+        .fine_cents = std.math.nan(f64),
+        .start = std.math.nan(f64),
+        .end = std.math.inf(f64),
+        .loop_start = std.math.nan(f64),
+        .loop_end = -std.math.inf(f64),
+        .loop_enabled = true,
+        .envelope = .{ .attack_seconds = 0.0, .decay_seconds = 0.0, .sustain = 1.0 },
+    };
+    player.noteOn(60, std.math.nan(f64), invalid);
+    try std.testing.expectEqual(@as(?f64, null), player.playhead());
+    player.noteOn(60, 1.0, invalid);
+    for (0..8) |_| {
+        const frame = player.processFrame(invalid);
+        try std.testing.expect(std.math.isFinite(frame[0]));
+        try std.testing.expect(std.math.isFinite(frame[1]));
+        try std.testing.expect(player.playhead() != null);
+    }
 }

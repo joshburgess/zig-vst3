@@ -190,6 +190,7 @@ Completion evidence:
 - Native unit, interaction, AppKit accessibility, visual-regression, and warm-render tests pass. The final warm-render average remained below 40 microseconds against a 300 microsecond budget.
 - Zig tests, raw ABI checks, every Steinberg example validator, and Linux and Windows example bundle cross-builds pass.
 - The serialized pluginval aggregate passed all ten examples at strictness 5 and strictness 10 on July 18, 2026. Earlier crash reports abort in AppKit application startup before plugin loading and correlate with concurrent aggregate invocations. A separate isolated failure was not reproduced, so its root cause remains unassigned.
+- This historical checkpoint is superseded by the July 20 Sample Player investigation. The serialized matrices now cover 14 examples, and isolated plugin defects are treated as plugin regressions until their preserved artifacts establish a different cause.
 - Prior manual REAPER checks cover parameter editing, resize, focus, keyboard adjustment, exact entry, reset gestures, instance isolation, automation, and state restoration on macOS. Manual graph rendering and VoiceOver remain pending. Native Narrator, X11, Wayland, and AT-SPI host checks remain pending because those environments are unavailable locally.
 - The final milestone commit leaves no uncommitted implementation or documentation work.
 

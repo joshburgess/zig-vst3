@@ -209,6 +209,17 @@ pub fn build(b: *std.Build) void {
     const benchmark_step = b.step("benchmark", "Run local zig-vst3 microbenchmarks");
     benchmark_step.dependOn(&b.addRunArtifact(benchmark).step);
 
+    const fixture_generator = b.addExecutable(.{
+        .name = "sample-player-fixtures",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/sample_player_fixtures.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    const generate_fixtures_step = b.step("generate-sample-player-fixtures", "Generate bounded WAV and AIFF sample-player fixtures");
+    generate_fixtures_step.dependOn(&b.addRunArtifact(fixture_generator).step);
+
     const test_step = b.step("test", "Run unit tests");
     addRunArtifactDependencies(b, test_step, &.{
         vst3_tests,
@@ -216,6 +227,9 @@ pub fn build(b: *std.Build) void {
         zig_vst3_plugin_tests,
     });
     addExamplePluginTestDependencies(b, test_step, &example_plugins);
+    test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_pluginval_runner.sh"}).step);
+    test_step.dependOn(&b.addSystemCommand(&.{"scripts/check_public_gui_examples.sh"}).step);
+    test_step.dependOn(generate_fixtures_step);
 
     const plugin_path_option = b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate");
 

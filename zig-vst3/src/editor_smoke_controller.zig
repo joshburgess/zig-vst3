@@ -43,6 +43,11 @@ const gallery_spectrum_overlay_source_id: u32 = 1;
 const gallery_spectrum_overlay_points: usize = 64;
 const gallery_linked_response_source_id: u32 = 2;
 const gallery_linked_response_points: usize = 64;
+const gallery_import_id: u32 = 1;
+const gallery_import_waveform_source_id: u32 = 3;
+const gallery_import_action_group_id: u32 = 3;
+const gallery_import_action_id: u32 = 1;
+const gallery_decoded_frame_capacity: usize = 4_096;
 
 const gallery_envelope = plug_core.editor_state.Envelope.init(&.{
     .{ .id = 1, .x = 0.0, .y = 0.0 },
@@ -56,6 +61,20 @@ const cleared_gallery_envelope = plug_core.editor_state.Envelope.init(&.{
 const empty_preset_search = plug_core.editor_state.Text.init("") catch unreachable;
 const gallery_label = plug_core.editor_state.Text.init("Studio Plate") catch unreachable;
 const gallery_live_label = plug_core.editor_state.Text.init("48 kHz, stereo") catch unreachable;
+
+const GalleryAudioImporter = parameter_editor.DecodedAudioFileImporter(gallery_decoded_frame_capacity);
+
+const GalleryControllerState = struct {
+    importer: GalleryAudioImporter,
+
+    pub fn init() GalleryControllerState {
+        return .{ .importer = .init() };
+    }
+
+    pub fn deinit(self: *GalleryControllerState) void {
+        self.importer.deinit();
+    }
+};
 
 const gallery_parameters = [_]parameter_editor.Parameter{
     .{ .id = gain_param_id, .title = "Bipolar", .units = "±", .step_count = 0, .default_normalized = 0.5, .control_kind = .bipolar_slider, .tooltip = "Drag around the center line; the outlined marker shows modulation.", .modulation_normalized = 0.75 },
@@ -174,6 +193,7 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     pub const Params = editor_smoke_spec.Spec.Params;
     pub const parameter_set = &editor_smoke_spec.parameter_set;
     pub const EditorState = GalleryEditorState;
+    pub const ControllerState = GalleryControllerState;
 
     pub fn loadGuiGraph(
         controller: *ivsteditcontroller.IEditController,
@@ -210,6 +230,15 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                     };
                 }
                 return gallery_linked_response_points;
+            },
+            gallery_import_waveform_source_id => {
+                var preview: [parameter_editor.audio_file_preview_capacity]parameter_editor.AudioFilePreviewPoint = undefined;
+                const count = Controller.controllerState(controller).importer.copyPreview(&preview);
+                const copied = @min(count, output.len);
+                for (preview[0..copied], output[0..copied]) |point, *destination| {
+                    destination.* = .{ .x = point.x, .y = point.y };
+                }
+                return copied;
             },
             else => return 0,
         }
@@ -258,6 +287,19 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
         if (group_id == 2 and action_id == 4) {
             return performMenuAction(controller, 1, action_id, false);
         }
+        if (group_id == gallery_import_action_group_id and action_id == gallery_import_action_id) {
+            const snapshot = Controller.controllerState(controller).importer.snapshot();
+            if (snapshot.import.status != .ready) return types.kResultFalse;
+            var buffer: [48]u8 = undefined;
+            const text = std.fmt.bufPrint(
+                &buffer,
+                "{d} Hz, {d} ch, {d} frames",
+                .{ snapshot.sample_rate, snapshot.channels, snapshot.sample_frames },
+            ) catch return types.kResultFalse;
+            const value = plug_core.editor_state.Text.init(text) catch return types.kResultFalse;
+            Controller.editorState(controller).set(gallery_live_label_state_id, .{ .text = value }) catch return types.kResultFalse;
+            return types.kResultOk;
+        }
         return types.kInvalidArgument;
     }
 
@@ -271,23 +313,61 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
     }
 
     pub fn loadGuiProgress(
-        _: *ivsteditcontroller.IEditController,
+        controller: *ivsteditcontroller.IEditController,
         source_id: u32,
     ) ?plug_core.gui_progress.Snapshot {
-        if (source_id != 1) return null;
-        return .{ .state = .running, .value = 0.42, .generation = 1 };
+        if (source_id != gallery_import_id) return null;
+        const snapshot = Controller.controllerState(controller).importer.snapshot().import;
+        return switch (snapshot.status) {
+            .idle => .{ .generation = snapshot.generation },
+            .validating => .{ .mode = .indeterminate, .state = .running, .generation = snapshot.generation },
+            .importing => .{ .state = .running, .value = snapshot.progress(), .generation = snapshot.generation },
+            .ready => .{ .state = .complete, .value = 1.0, .generation = snapshot.generation },
+            else => .{ .state = .failed, .value = snapshot.progress(), .generation = snapshot.generation },
+        };
     }
 
-    pub fn handleFileDrop(
+    pub fn handleFileImport(
         controller: *ivsteditcontroller.IEditController,
-        drop_id: u32,
+        import_id: u32,
+        entry_point: parameter_editor.FileImportEntryPoint,
         paths: []const []const u8,
     ) types.tresult {
-        if (drop_id != 1 or paths.len == 0 or paths.len > 2) return types.kInvalidArgument;
-        Controller.editorState(controller).set(
-            imported_file_count_state_id,
-            .{ .index = @intCast(paths.len) },
-        ) catch return types.kResultFalse;
+        if (import_id != gallery_import_id or paths.len != 1) return types.kInvalidArgument;
+        if (!Controller.controllerState(controller).importer.begin(entry_point, paths)) return types.kResultFalse;
+        Controller.editorState(controller).set(imported_file_count_state_id, .{ .index = 0 }) catch return types.kResultFalse;
+        return types.kResultOk;
+    }
+
+    pub fn loadFileImport(
+        controller: *ivsteditcontroller.IEditController,
+        import_id: u32,
+    ) ?parameter_editor.AudioFileImportSnapshot {
+        if (import_id != gallery_import_id) return null;
+        const snapshot = Controller.controllerState(controller).importer.snapshot();
+        if (snapshot.import.status == .ready) {
+            Controller.editorState(controller).set(imported_file_count_state_id, .{ .index = 1 }) catch {};
+        }
+        return snapshot;
+    }
+
+    pub fn performFileImportCommand(
+        controller: *ivsteditcontroller.IEditController,
+        import_id: u32,
+        command: parameter_editor.FileImportCommand,
+    ) types.tresult {
+        if (import_id != gallery_import_id) return types.kInvalidArgument;
+        const importer = &Controller.controllerState(controller).importer;
+        const handled = switch (command) {
+            .cancel => importer.requestCancel(),
+            .retry => importer.retry(),
+            .reset => importer.reset(),
+        };
+        if (!handled) return types.kResultFalse;
+        if (command == .reset) {
+            Controller.editorState(controller).set(imported_file_count_state_id, .{ .index = 0 }) catch return types.kResultFalse;
+            Controller.editorState(controller).set(gallery_live_label_state_id, .{ .text = gallery_live_label }) catch return types.kResultFalse;
+        }
         return types.kResultOk;
     }
 
@@ -305,7 +385,8 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .kind = .waveform,
                     .x_axis = .{ .minimum = 0.0, .maximum = 1.0, .label = "Frame" },
                     .y_axis = .{ .minimum = -1.0, .maximum = 1.0, .label = "Level" },
-                    .source_id = 0,
+                    .source_id = gallery_import_waveform_source_id,
+                    .source = .controller,
                     .dynamic = true,
                     .maximum_refresh_hz = 30,
                     .viewport = .{
@@ -436,6 +517,16 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .failure_label = "Clear failed. Try again",
                     .role = .destructive,
                 },
+                .{
+                    .group_id = gallery_import_action_group_id,
+                    .id = gallery_import_action_id,
+                    .label = "Show Import Details",
+                    .accessible_label = "Show imported audio details",
+                    .tooltip = "Show the decoded sample rate, channel count, and frame count.",
+                    .role = .secondary,
+                    .ready_importer_id = gallery_import_id,
+                    .success_focus_importer_id = gallery_import_id,
+                },
             },
             .editable_labels = &.{
                 .{
@@ -454,10 +545,13 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 },
             },
             .progress_indicators = &.{.{
-                .source_id = 1,
-                .label = "Progress",
-                .accessible_label = "Example render progress",
-                .running_text = "Rendering preview",
+                .source_id = gallery_import_id,
+                .label = "Audio Import",
+                .accessible_label = "Gallery audio import progress",
+                .idle_text = "Choose audio to inspect",
+                .running_text = "Decoding audio",
+                .complete_text = "Audio ready",
+                .failure_text = "Import failed. Retry or choose another file",
             }},
             .pianos = &.{.{
                 .title = "Piano Keyboard",
@@ -472,11 +566,11 @@ const Controller = zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .playhead_source_id = 4,
             }},
             .file_importers = &.{.{
-                .id = 1,
+                .id = gallery_import_id,
                 .title = "Audio Import",
                 .prompt = "Drop WAV or AIFF files here",
                 .extensions = &.{ ".wav", ".aiff", ".aif" },
-                .maximum_files = 2,
+                .maximum_files = 1,
             }},
             .skin = .{
                 .assets = &.{
@@ -747,4 +841,111 @@ test "editor smoke controller persists UI state without changing parameters" {
     try std.testing.expectEqual(types.kResultFalse, restored.vtable.setState(restored, stream.asStream()));
     try std.testing.expectEqual(@as(f64, 0.25), Controller.getNormalized(restored, gain_param_id));
     try std.testing.expectEqual(@as(u32, 1), editorState(restored).get(selected_tab_state_id).?.index);
+}
+
+fn writeGalleryFixture(directory: *std.Io.Dir, sub_path: []const u8) !void {
+    var bytes: [52]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try writer.writeAll("RIFF");
+    try writer.writeInt(u32, 44, .little);
+    try writer.writeAll("WAVEfmt ");
+    try writer.writeInt(u32, 16, .little);
+    try writer.writeInt(u16, 1, .little);
+    try writer.writeInt(u16, 1, .little);
+    try writer.writeInt(u32, 48_000, .little);
+    try writer.writeInt(u32, 96_000, .little);
+    try writer.writeInt(u16, 2, .little);
+    try writer.writeInt(u16, 16, .little);
+    try writer.writeAll("data");
+    try writer.writeInt(u32, 8, .little);
+    try writer.writeInt(i16, -16_384, .little);
+    try writer.writeInt(i16, 0, .little);
+    try writer.writeInt(i16, 16_384, .little);
+    try writer.writeInt(i16, 32_767, .little);
+    try directory.writeFile(std.testing.io, .{ .sub_path = sub_path, .data = writer.buffered() });
+}
+
+fn waitForGalleryImport(
+    controller: *ivsteditcontroller.IEditController,
+) !parameter_editor.AudioFileImportSnapshot {
+    for (0..1_000_000) |_| {
+        const snapshot = Controller.loadFileImport(controller, gallery_import_id) orelse return error.MissingImportState;
+        switch (snapshot.import.status) {
+            .validating, .importing => std.Thread.yield() catch {},
+            else => return snapshot,
+        }
+    }
+    return error.ImportTimedOut;
+}
+
+fn waitForGalleryWorker(controller: *ivsteditcontroller.IEditController) !void {
+    for (0..1_000_000) |_| {
+        if (Controller.controllerState(controller).importer.canReset()) return;
+        std.Thread.yield() catch {};
+    }
+    return error.ImportTimedOut;
+}
+
+test "component gallery exercises decoded import progress waveform dependency and recovery" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    try writeGalleryFixture(&temporary.dir, "gallery.wav");
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "broken.wav", .data = "not audio" });
+    var valid_path: [1024]u8 = undefined;
+    const valid_length = try temporary.dir.realPathFile(std.testing.io, "gallery.wav", &valid_path);
+    var broken_path: [1024]u8 = undefined;
+    const broken_length = try temporary.dir.realPathFile(std.testing.io, "broken.wav", &broken_path);
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &out));
+    const controller: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(out orelse return error.MissingController));
+    defer _ = controller.vtable.release(controller);
+
+    try std.testing.expectEqual(
+        types.kResultFalse,
+        Controller.performAction(controller, gallery_import_action_group_id, gallery_import_action_id),
+    );
+    try std.testing.expectEqual(types.kResultOk, Controller.handleFileImport(
+        controller,
+        gallery_import_id,
+        .picker,
+        &.{valid_path[0..valid_length]},
+    ));
+    const ready = try waitForGalleryImport(controller);
+    try std.testing.expectEqual(parameter_editor.FileImportStatus.ready, ready.import.status);
+    try std.testing.expectEqual(@as(usize, 4), ready.decoded_frames);
+    try std.testing.expectEqual(plug_core.gui_progress.State.complete, Controller.loadGuiProgress(controller, gallery_import_id).?.state);
+    var waveform: [parameter_editor.audio_file_preview_capacity]parameter_editor.GraphPoint = undefined;
+    try std.testing.expectEqual(@as(usize, 4), Controller.loadGuiGraph(controller, gallery_import_waveform_source_id, &waveform));
+    try std.testing.expect(waveform[0].y < 0.0);
+    try std.testing.expect(waveform[3].y > 0.9);
+    try std.testing.expectEqual(types.kResultOk, Controller.performAction(
+        controller,
+        gallery_import_action_group_id,
+        gallery_import_action_id,
+    ));
+    try std.testing.expectEqualStrings(
+        "48000 Hz, 1 ch, 4 frames",
+        Controller.editorState(controller).get(gallery_live_label_state_id).?.text.slice(),
+    );
+
+    try waitForGalleryWorker(controller);
+    try std.testing.expectEqual(types.kResultOk, Controller.performFileImportCommand(controller, gallery_import_id, .reset));
+    try std.testing.expectEqual(@as(usize, 0), Controller.loadGuiGraph(controller, gallery_import_waveform_source_id, &waveform));
+    try std.testing.expectEqual(plug_core.gui_progress.State.idle, Controller.loadGuiProgress(controller, gallery_import_id).?.state);
+
+    try std.testing.expectEqual(types.kResultOk, Controller.handleFileImport(
+        controller,
+        gallery_import_id,
+        .drop,
+        &.{broken_path[0..broken_length]},
+    ));
+    const failed = try waitForGalleryImport(controller);
+    try std.testing.expectEqual(parameter_editor.FileImportStatus.failed, failed.import.status);
+    try std.testing.expectEqual(plug_core.gui_progress.State.failed, Controller.loadGuiProgress(controller, gallery_import_id).?.state);
+    try waitForGalleryWorker(controller);
+    try std.testing.expectEqual(types.kResultOk, Controller.performFileImportCommand(controller, gallery_import_id, .retry));
+    const retried = try waitForGalleryImport(controller);
+    try std.testing.expect(retried.import.generation > failed.import.generation);
+    try std.testing.expectEqual(parameter_editor.FileImportStatus.failed, retried.import.status);
 }

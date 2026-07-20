@@ -1,44 +1,45 @@
 const core = @import("zig-vst3-plugin-core");
 const std = @import("std");
 const vst3 = @import("zig-vst3");
+const sample_player_editor = @import("sample_player_editor.zig");
 
 const base = vst3.pluginterfaces.base;
 const gui = vst3.pluginterfaces.gui;
 const vst = vst3.pluginterfaces.vst;
 const types = base.types;
 
-pub const gain_param_id: u32 = 0;
-pub const pan_param_id: u32 = 1;
-pub const coarse_param_id: u32 = 2;
-pub const fine_param_id: u32 = 3;
-pub const start_param_id: u32 = 4;
-pub const end_param_id: u32 = 5;
-pub const loop_start_param_id: u32 = 6;
-pub const loop_end_param_id: u32 = 7;
-pub const loop_param_id: u32 = 8;
-pub const reverse_param_id: u32 = 9;
-pub const attack_param_id: u32 = 10;
-pub const decay_param_id: u32 = 11;
-pub const sustain_param_id: u32 = 12;
-pub const release_param_id: u32 = 13;
-pub const voices_param_id: u32 = 14;
-pub const playback_param_id: u32 = 15;
-pub const sample_import_id: u32 = 1;
-pub const waveform_source_id: u32 = 100;
-pub const playhead_source_id: u32 = 101;
-pub const clear_action_group_id: u32 = 1;
-pub const clear_action_id: u32 = 1;
-pub const view_menu_id: u32 = 1;
-pub const show_entire_sample_item_id: u32 = 1;
-pub const zoom_playback_item_id: u32 = 2;
-pub const zoom_loop_item_id: u32 = 3;
-pub const maximum_sample_frames: usize = 262_144;
-pub const maximum_voices: usize = 8;
+pub const gain_param_id = sample_player_editor.gain_param_id;
+pub const pan_param_id = sample_player_editor.pan_param_id;
+pub const coarse_param_id = sample_player_editor.coarse_param_id;
+pub const fine_param_id = sample_player_editor.fine_param_id;
+pub const start_param_id = sample_player_editor.start_param_id;
+pub const end_param_id = sample_player_editor.end_param_id;
+pub const loop_start_param_id = sample_player_editor.loop_start_param_id;
+pub const loop_end_param_id = sample_player_editor.loop_end_param_id;
+pub const loop_param_id = sample_player_editor.loop_param_id;
+pub const reverse_param_id = sample_player_editor.reverse_param_id;
+pub const attack_param_id = sample_player_editor.attack_param_id;
+pub const decay_param_id = sample_player_editor.decay_param_id;
+pub const sustain_param_id = sample_player_editor.sustain_param_id;
+pub const release_param_id = sample_player_editor.release_param_id;
+pub const voices_param_id = sample_player_editor.voices_param_id;
+pub const playback_param_id = sample_player_editor.playback_param_id;
+pub const sample_import_id = sample_player_editor.sample_import_id;
+pub const waveform_source_id = sample_player_editor.waveform_source_id;
+pub const playhead_source_id = sample_player_editor.playhead_source_id;
+pub const clear_action_group_id = sample_player_editor.clear_action_group_id;
+pub const clear_action_id = sample_player_editor.clear_action_id;
+pub const view_menu_id = sample_player_editor.view_menu_id;
+pub const show_entire_sample_item_id = sample_player_editor.show_entire_sample_item_id;
+pub const zoom_playback_item_id = sample_player_editor.zoom_playback_item_id;
+pub const zoom_loop_item_id = sample_player_editor.zoom_loop_item_id;
+pub const maximum_sample_frames = sample_player_editor.maximum_sample_frames;
+pub const maximum_voices = sample_player_editor.maximum_voices;
 
-const zoom_state_id: u32 = 1;
-const x_offset_state_id: u32 = 2;
-const last_import_state_id: u32 = 3;
-const maximum_import_name_bytes: usize = 64;
+const zoom_state_id = sample_player_editor.zoom_state_id;
+const x_offset_state_id = sample_player_editor.x_offset_state_id;
+const last_import_state_id = sample_player_editor.last_import_state_id;
+const maximum_import_name_bytes = sample_player_editor.maximum_import_name_bytes;
 
 pub const VoiceCount = enum { mono, two, four, eight };
 pub const PlaybackMode = enum { gate, one_shot };
@@ -219,124 +220,14 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
         controller: *vst.ivsteditcontroller.IEditController,
         name: types.FIDString,
     ) ?*gui.iplugview.IPlugView {
-        return vst3.vstgui.createEditor(Controller, controller, name, .{
-            .parameters = &.{
-                control(start_param_id, "Start", "%", 0, defaultNormalized(start_param_id), .linear_slider),
-                control(end_param_id, "End", "%", 0, defaultNormalized(end_param_id), .linear_slider),
-                control(loop_start_param_id, "Loop Start", "%", 0, defaultNormalized(loop_start_param_id), .linear_slider),
-                control(loop_end_param_id, "Loop End", "%", 0, defaultNormalized(loop_end_param_id), .linear_slider),
-                control(gain_param_id, "Gain", "dB", 0, defaultNormalized(gain_param_id), .decibel_slider),
-                control(pan_param_id, "Pan", "%", 0, defaultNormalized(pan_param_id), .bipolar_slider),
-                control(coarse_param_id, "Coarse", "st", 0, defaultNormalized(coarse_param_id), .rotary_knob),
-                control(fine_param_id, "Fine", "cent", 0, defaultNormalized(fine_param_id), .rotary_knob),
-                control(loop_param_id, "Loop", "", 1, defaultNormalized(loop_param_id), .toggle),
-                control(reverse_param_id, "Reverse", "", 1, defaultNormalized(reverse_param_id), .toggle),
-                control(playback_param_id, "Playback", "", 1, defaultNormalized(playback_param_id), .segmented_enum),
-                control(voices_param_id, "Voices", "", 3, defaultNormalized(voices_param_id), .segmented_enum),
-                control(attack_param_id, "Attack", "ms", 0, defaultNormalized(attack_param_id), .rotary_knob),
-                control(decay_param_id, "Decay", "ms", 0, defaultNormalized(decay_param_id), .rotary_knob),
-                control(sustain_param_id, "Sustain", "%", 0, defaultNormalized(sustain_param_id), .rotary_knob),
-                control(release_param_id, "Release", "ms", 0, defaultNormalized(release_param_id), .rotary_knob),
-            },
-            .graphs = &.{.{
-                .title = "Sample Waveform",
-                .kind = .waveform,
-                .style = .modulation,
-                .x_axis = .{ .minimum = 0.0, .maximum = 1.0, .label = "Time" },
-                .y_axis = .{ .minimum = -1.0, .maximum = 1.0, .label = "Level" },
-                .source_id = waveform_source_id,
-                .source = .controller,
-                .dynamic = true,
-                .maximum_refresh_hz = 30,
-                .viewport = .{ .maximum_zoom = 128.0, .zoom_state_id = zoom_state_id, .x_offset_state_id = x_offset_state_id },
-                .range_selection = .{
-                    .minimum_span = 1.0 / @as(f64, maximum_sample_frames),
-                    .step = 1.0 / 1024.0,
-                    .start_parameter_id = start_param_id,
-                    .end_parameter_id = end_param_id,
-                },
-                .secondary_range_selection = .{
-                    .minimum_span = 1.0 / @as(f64, maximum_sample_frames),
-                    .step = 1.0 / 1024.0,
-                    .start_parameter_id = loop_start_param_id,
-                    .end_parameter_id = loop_end_param_id,
-                },
-                .layers = &.{.{
-                    .style = .warning,
-                    .kind = .waveform,
-                    .source_id = playhead_source_id,
-                    .dynamic = true,
-                }},
-            }},
-            .file_importers = &.{.{
-                .id = sample_import_id,
-                .title = "Sample",
-                .prompt = "Drop a PCM WAV or AIFF sample here",
-                .picker_label = "Choose Sample",
-                .picker_title = "Choose a Sample",
-                .extensions = &.{ ".wav", ".aif", ".aiff" },
-                .maximum_files = 1,
-            }},
-            .progress_indicators = &.{.{
-                .source_id = sample_import_id,
-                .label = "Import",
-                .accessible_label = "Sample import progress",
-                .idle_text = "Choose a sample to begin",
-                .running_text = "Importing sample",
-                .complete_text = "Sample ready",
-                .failure_text = "Import failed. Retry or choose another file",
-            }},
-            .action_buttons = &.{.{
-                .group_id = clear_action_group_id,
-                .id = clear_action_id,
-                .icon = .clear,
-                .accessible_label = "Clear sample",
-                .tooltip = "Remove the imported sample.",
-                .confirmation_label = "Confirm Clear Sample",
-                .failure_label = "Clear failed. Try again",
-                .role = .destructive,
-                .success_focus_importer_id = sample_import_id,
-                .ready_importer_id = sample_import_id,
-            }},
-            .action_menus = &.{.{
-                .id = view_menu_id,
-                .title = "View",
-                .items = &.{
-                    .{ .id = show_entire_sample_item_id, .label = "Show Entire Sample" },
-                    .{ .id = zoom_playback_item_id, .label = "Zoom to Playback Range" },
-                    .{ .id = zoom_loop_item_id, .label = "Zoom to Loop Range" },
-                },
-            }},
-            .editable_labels = &.{.{
-                .field_id = last_import_state_id,
-                .label = "Last Import",
-                .accessible_label = "Last imported sample",
-                .placeholder = "No previous sample",
-                .error_text = "Import name unavailable",
-                .maximum_bytes = maximum_import_name_bytes,
-                .read_only = true,
-                .maximum_refresh_hz = 10,
-            }},
-            .pianos = &.{.{ .title = "Sample Keyboard", .first_note = 48, .note_count = 25, .computer_base_pitch = 60 }},
-            .skin = .{ .theme = .default, .layout = .instrument_workspace },
-            .composition = .{
-                .title = "Sample Player",
-                .style = .{ .background = 0x111922ff, .foreground = 0xeaf3f6ff, .accent = 0x52d5b0ff },
-                .groups = &.{
-                    .{ .title = "Waveform", .parameter_count = 2, .graph_count = 1, .style = .{ .accent = 0x79baf2ff } },
-                    .{ .title = "Loop Range", .first_parameter = 2, .parameter_count = 2, .first_graph = 1, .style = .{ .accent = 0x79baf2ff } },
-                    .{ .title = "Playback", .first_parameter = 4, .parameter_count = 4, .first_graph = 1, .style = .{ .accent = 0x52d5b0ff } },
-                    .{ .title = "Mode and Voices", .first_parameter = 8, .parameter_count = 4, .first_graph = 1, .style = .{ .accent = 0xf0ad65ff } },
-                    .{ .title = "Envelope", .first_parameter = 12, .parameter_count = 4, .first_graph = 1, .style = .{ .accent = 0xc58be8ff } },
-                },
-            },
-        });
+        return sample_player_editor.createEditor(Controller, controller, name, defaultNormalized);
     }
 
     fn clearSample(controller: *vst.ivsteditcontroller.IEditController, state: *SamplePlayerControllerState) bool {
         if (!state.importer.canReset()) return false;
         const generation = state.transfer_generation +% 1;
-        if (generation == 0 or Controller.clearDecodedAudio(controller, sample_import_id, generation) != types.kResultOk) return false;
+        if (generation == 0) return false;
+        if (state.transfer_generation != 0 and Controller.clearDecodedAudio(controller, sample_import_id, generation) != types.kResultOk) return false;
         if (!state.importer.reset()) return false;
         Controller.editorState(controller).reset(last_import_state_id) catch return false;
         state.pending_import_name_len = 0;
@@ -455,39 +346,6 @@ comptime {
     vst3.entry.exportPlugin(Factory);
 }
 
-fn control(
-    id: u32,
-    title: [*:0]const u8,
-    units: [*:0]const u8,
-    step_count: i32,
-    default_normalized: f64,
-    kind: @TypeOf(@as(vst3.vstgui.Parameter, undefined).control_kind),
-) vst3.vstgui.Parameter {
-    return .{ .id = id, .title = title, .units = units, .step_count = step_count, .default_normalized = default_normalized, .control_kind = kind, .tooltip = tooltip(id) };
-}
-
-fn tooltip(id: u32) [*:0]const u8 {
-    return switch (id) {
-        gain_param_id => "Adjust sample output level.",
-        pan_param_id => "Place the sample between the left and right channels.",
-        coarse_param_id => "Transpose playback in semitones.",
-        fine_param_id => "Fine tune playback in cents.",
-        start_param_id => "Set the first playable sample position.",
-        end_param_id => "Set the last playable sample position.",
-        loop_start_param_id => "Set the loop start inside the playable range.",
-        loop_end_param_id => "Set the loop end inside the playable range.",
-        loop_param_id => "Repeat playback between the loop markers.",
-        reverse_param_id => "Play from the end toward the start.",
-        attack_param_id => "Set the amplitude fade-in time.",
-        decay_param_id => "Set the time to reach the sustain level.",
-        sustain_param_id => "Set the held amplitude level.",
-        release_param_id => "Set the fade-out time after note release.",
-        voices_param_id => "Set the maximum simultaneous voices.",
-        playback_param_id => "Gate follows note release; One Shot plays to the end.",
-        else => "Adjust this sample-player parameter.",
-    };
-}
-
 fn defaultNormalized(id: u32) f64 {
     return sample_parameter_set.defaultNormalizedById(id) orelse 0.0;
 }
@@ -577,6 +435,34 @@ fn waitForSampleImport(controller: *vst.ivsteditcontroller.IEditController) !vst
         std.Thread.yield() catch {};
     }
     return error.ImportTimedOut;
+}
+
+fn waitForSampleImportTerminal(controller: *vst.ivsteditcontroller.IEditController) !vst3.vstgui.AudioFileImportSnapshot {
+    var attempts: usize = 0;
+    while (attempts < 1_000_000) : (attempts += 1) {
+        const snapshot = Controller.loadFileImport(controller, sample_import_id) orelse return error.MissingImportState;
+        if (snapshot.import.status != .validating and snapshot.import.status != .importing) return snapshot;
+        std.Thread.yield() catch {};
+    }
+    return error.ImportTimedOut;
+}
+
+fn waitForSampleImportReset(controller: *vst.ivsteditcontroller.IEditController) !void {
+    var attempts: usize = 0;
+    while (attempts < 1_000_000) : (attempts += 1) {
+        if (Controller.performFileImportCommand(controller, sample_import_id, .reset) == types.kResultOk) return;
+        std.Thread.yield() catch {};
+    }
+    return error.ImportResetTimedOut;
+}
+
+fn waitForSampleImportRetry(controller: *vst.ivsteditcontroller.IEditController) !void {
+    var attempts: usize = 0;
+    while (attempts < 1_000_000) : (attempts += 1) {
+        if (Controller.performFileImportCommand(controller, sample_import_id, .retry) == types.kResultOk) return;
+        std.Thread.yield() catch {};
+    }
+    return error.ImportRetryTimedOut;
 }
 
 test "sample player exports component and controller classes" {
@@ -742,6 +628,50 @@ test "sample player controller imports remain instance isolated" {
     try std.testing.expectEqual(@as(usize, 0), Controller.loadGuiGraph(second, waveform_source_id, &graph));
 }
 
+test "sample player controller rejects malformed WAV and AIFF with bounded retry" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "broken.wav", .data = "RIFF\x08\x00\x00\x00WAVE" });
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "broken.aiff", .data = "FORM\x00\x00\x00\x04AIFF" });
+    var wav_path: [1024]u8 = undefined;
+    const wav_length = try temporary.dir.realPathFile(std.testing.io, "broken.wav", &wav_path);
+    var aiff_path: [1024]u8 = undefined;
+    const aiff_length = try temporary.dir.realPathFile(std.testing.io, "broken.aiff", &aiff_path);
+
+    var out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &out));
+    const controller: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(out orelse return error.MissingController));
+    defer _ = controller.vtable.release(controller);
+
+    try std.testing.expectEqual(types.kResultOk, Controller.handleFileImport(
+        controller,
+        sample_import_id,
+        .picker,
+        &.{wav_path[0..wav_length]},
+    ));
+    const wav_failure = try waitForSampleImportTerminal(controller);
+    try std.testing.expectEqual(core.gui_file_importer.Status.failed, wav_failure.import.status);
+    try std.testing.expectEqual(@as(usize, 0), wav_failure.decoded_frames);
+    try waitForSampleImportRetry(controller);
+    const wav_retry = try waitForSampleImportTerminal(controller);
+    try std.testing.expectEqual(core.gui_file_importer.Status.failed, wav_retry.import.status);
+    try std.testing.expect(wav_retry.import.generation > wav_failure.import.generation);
+
+    try waitForSampleImportReset(controller);
+    try std.testing.expectEqual(types.kResultOk, Controller.handleFileImport(
+        controller,
+        sample_import_id,
+        .drop,
+        &.{aiff_path[0..aiff_length]},
+    ));
+    const aiff_failure = try waitForSampleImportTerminal(controller);
+    try std.testing.expectEqual(core.gui_file_importer.Status.failed, aiff_failure.import.status);
+    try std.testing.expectEqual(@as(usize, 0), aiff_failure.decoded_frames);
+    try std.testing.expectEqualStrings("", Controller.editorState(controller).get(last_import_state_id).?.text.slice());
+    var graph: [vst3.vstgui.audio_file_preview_capacity]vst3.vstgui.GraphPoint = undefined;
+    try std.testing.expectEqual(@as(usize, 0), Controller.loadGuiGraph(controller, waveform_source_id, &graph));
+}
+
 test "sample player controller joins pending import during teardown" {
     var temporary = std.testing.tmpDir(.{});
     defer temporary.cleanup();
@@ -880,4 +810,43 @@ test "sample player processor renders imported media from MIDI" {
     processor.process({}, f32, &context);
     try std.testing.expect(left[1] > 0.0);
     try std.testing.expectEqualSlices(f32, &left, &right);
+}
+
+test "sample player processor renders sample-accurate note lifecycle offline" {
+    var processor: SamplePlayerProcessor = undefined;
+    processor.initInPlace();
+    processor.prepare(.{ .sample_rate = 48_000, .max_block_size = 8 });
+    const receiver = processor.audioImportReceiver();
+    try receiver.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 2 });
+    try receiver.write(1, 0, &.{ 1.0, 1.0 });
+    try receiver.commit(1);
+
+    var left: [8]f32 = @splat(9.0);
+    var right: [8]f32 = @splat(9.0);
+    const outputs = [_][]f32{ &left, &right };
+    const events = [_]core.process.Event{
+        core.process.Event.noteOn(2, 0, 60, 1.0),
+        core.process.Event.noteOff(5, 0, 60, 0.0),
+    };
+    const changes = [_]core.process.ParameterChange{
+        sample_parameter_set.parameterChange("attack", 0, 0.1),
+        sample_parameter_set.parameterChange("decay", 0, 0.1),
+        sample_parameter_set.parameterChange("sustain", 0, 100.0),
+        sample_parameter_set.parameterChange("release", 0, 0.1),
+        sample_parameter_set.parameterChange("loop", 0, true),
+    };
+    var context = try core.process.ProcessContext(f32).initWith(
+        48_000,
+        &.{},
+        &outputs,
+        .{ .parameter_changes = &changes, .events = &events },
+    );
+    processor.process({}, f32, &context);
+
+    const expected = [_]f32{ 0.0, 0.0, 1.0 / 4.8, 2.0 / 4.8, 3.0 / 4.8, 2.0 / 4.8, 1.0 / 4.8, 0.0 };
+    for (expected, left, right) |wanted, actual_left, actual_right| {
+        try std.testing.expectApproxEqAbs(wanted, actual_left, 0.000001);
+        try std.testing.expectApproxEqAbs(wanted, actual_right, 0.000001);
+    }
+    try std.testing.expectEqual(@as(?f64, null), processor.player.playhead());
 }
