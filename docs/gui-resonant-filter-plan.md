@@ -63,10 +63,10 @@ Exit criteria:
 
 ## Milestone 4: Deterministic Coverage
 
-- [ ] Add DSP, parameter, gesture, rejection, automation, state, instance, lifecycle, and teardown tests.
-- [ ] Add compact, standard, expanded, analyzer-state, selection, modulation, bypass, and disabled visual references.
-- [ ] Add warm-render budgets for the linked response and active-spectrum scenes.
-- [ ] Test malformed graph sources, point limits, non-finite values, invalid bindings, and stale callbacks.
+- [x] Add DSP, parameter, gesture, rejection, automation, state, instance, lifecycle, and teardown tests.
+- [x] Add compact, standard, expanded, analyzer-state, selection, modulation, bypass, and disabled visual references.
+- [x] Add warm-render budgets for the linked response and active-spectrum scenes.
+- [x] Test malformed graph sources, point limits, non-finite values, invalid bindings, and stale callbacks.
 
 Exit criteria:
 
@@ -123,3 +123,12 @@ Record each committed milestone here with test counts, validator results, perfor
 - `zig build test --summary all`: 62/62 steps and 3,730/3,730 tests passed. Raw ABI checks and the Resonant Filter's 47/47 Steinberg tests passed.
 - Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` bundles each passed 4/4 build steps.
 - Manual REAPER checks and dedicated filter visual references remain required before the responsive-editor exit criteria are accepted.
+
+### Milestone 4
+
+- Added dedicated compact, standard, expanded, and linked response references for Resonant Filter. The response reference includes the selected Cutoff and Resonance handle over an active 64-bin spectrum. Shared analyzer-state, modulation, bypass, disabled, malformed-source, point-limit, non-finite-value, invalid-binding, rejection, and stale-callback coverage exercises the same public graph and parameter contracts.
+- Corrected segmented enums to use their own selected segment as the value presentation. They no longer reserve an unrelated exact-value field. Enum captions now convert identifiers such as `low_pass` to `Low Pass`, retain an inner text margin, and receive additional workspace width where needed.
+- Added native assertions for the four readable segment captions, persistent selected state, the absence of a redundant value focus target, and the smaller valid compact constraint.
+- Native adapter, macOS accessibility, and visual-regression suites passed. `zig build test --summary all` passed 62/62 steps and 3,730/3,730 tests.
+- The dedicated resonant-filter warm-render scene measured 131.8 microseconds against a 300 microsecond budget. The same run measured 241.5 microseconds for shared signal views and 210.1 microseconds for the linked EQ scene.
+- Manual REAPER checks remain required before the responsive-editor and host interaction exit criteria are accepted.

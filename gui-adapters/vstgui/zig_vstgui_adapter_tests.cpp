@@ -21,6 +21,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -249,6 +250,14 @@ int32_t performEdit(void* userdata, uint32_t parameter_id, double value) {
     state->last_value = value;
     recordOperation(state, 'p', parameter_id);
     return state->reject || state->reject_parameter_id == parameter_id ? -1 : 0;
+}
+
+int32_t formatSegmentedValue(void*, uint32_t, double normalized, char* output, uint32_t capacity) {
+    if (!output || capacity == 0) return -1;
+    const char* value = normalized < 1.0 / 6.0 ? "low_pass" :
+        normalized < 0.5 ? "high_pass" : normalized < 5.0 / 6.0 ? "band_pass" : "notch";
+    const int written = std::snprintf(output, capacity, "%s", value);
+    return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
 }
 
 void endEdit(void* userdata, uint32_t parameter_id) {
@@ -596,6 +605,7 @@ int testParameterPointerControls() {
     callbacks.begin_edit = beginEdit;
     callbacks.perform_edit = performEdit;
     callbacks.end_edit = endEdit;
+    callbacks.format_value = formatSegmentedValue;
     VSTGUI::init(nullptr);
     {
         ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
@@ -644,6 +654,19 @@ int testParameterPointerControls() {
         );
         auto* segmented = dynamic_cast<VSTGUI::CSegmentButton*>(segmented_control.focusView());
         if (!segmented || !segmented->getGradient() || !segmented->getGradientHighlighted()) {
+            segmented_control.clear();
+            VSTGUI::exit();
+            return 4;
+        }
+        if (segmented_control.valueFocusView() || segmented_control.valueAccessibility()) {
+            segmented_control.clear();
+            VSTGUI::exit();
+            return 4;
+        }
+        const auto& segments = segmented->getSegments();
+        if (segments.size() != 4 || segments[0].name != "Low Pass" ||
+            segments[1].name != "High Pass" || segments[2].name != "Band Pass" ||
+            segments[3].name != "Notch") {
             segmented_control.clear();
             VSTGUI::exit();
             return 4;

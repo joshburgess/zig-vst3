@@ -15,6 +15,7 @@
 
 #include "pluginterfaces/base/keycodes.h"
 #include "vstgui/lib/cbitmap.h"
+#include "vstgui/lib/cframe.h"
 #include "vstgui/lib/coffscreencontext.h"
 #include "vstgui/lib/cviewcontainer.h"
 #include "vstgui/lib/platform/platformfactory.h"
@@ -81,6 +82,7 @@ int32_t acceptIndex(void*, uint32_t, uint32_t) { return 0; }
 int32_t rejectDrop(void*, uint32_t, const char* const*, uint32_t) { return -1; }
 int32_t acceptAction(void*, uint32_t, uint32_t) { return 0; }
 int32_t rejectAction(void*, uint32_t, uint32_t) { return -1; }
+int32_t acceptPreset(void*, uint32_t) { return 0; }
 
 int32_t formatEqValue(void*, uint32_t parameter_id, double normalized, char* output, uint32_t capacity) {
     if (!output || capacity == 0) return -1;
@@ -88,6 +90,18 @@ int32_t formatEqValue(void*, uint32_t parameter_id, double normalized, char* out
     if (type_parameter) {
         const char* value = normalized < 0.25 ? "low_shelf" :
             normalized < 0.75 ? "bell" : "high_shelf";
+        const int written = std::snprintf(output, capacity, "%s", value);
+        return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+    }
+    const int written = std::snprintf(output, capacity, "%.3f", normalized);
+    return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+}
+
+int32_t formatFilterValue(void*, uint32_t parameter_id, double normalized, char* output, uint32_t capacity) {
+    if (!output || capacity == 0) return -1;
+    if (parameter_id == 1) {
+        const char* value = normalized < 1.0 / 6.0 ? "low_pass" :
+            normalized < 0.5 ? "high_pass" : normalized < 5.0 / 6.0 ? "band_pass" : "notch";
         const int written = std::snprintf(output, capacity, "%s", value);
         return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
     }
@@ -546,6 +560,66 @@ Snapshot linkedEqResponse() {
             ZigVstgui::AccessibilityNode accessibility;
             ZigVstgui::GraphView graph(VSTGUI::CRect(12, 12, 628, 208), description, styles, &accessibility);
             graph.selectPoint(2);
+            graph.draw(&context);
+        },
+    };
+}
+
+Snapshot resonantFilterResponse() {
+    return {
+        "resonant-filter-response.png",
+        640,
+        220,
+        1.0,
+        [](VSTGUI::CDrawContext& context) {
+            ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+            context.setFillColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+            context.drawRect(VSTGUI::CRect(0, 0, 640, 220), VSTGUI::kDrawFilled);
+            std::array<ZigVstguiGraphPoint, 97> response {};
+            std::array<ZigVstguiGraphPoint, 64> spectrum {};
+            for (std::size_t index = 0; index < response.size(); ++index) {
+                const double normalized = static_cast<double>(index) / static_cast<double>(response.size() - 1);
+                const double frequency = 20.0 * std::pow(1000.0, normalized);
+                const double ratio = frequency / 1'000.0;
+                const double rolloff = -10.0 * std::log10(1.0 + std::pow(ratio, 4.0));
+                response[index] = {frequency, rolloff};
+            }
+            for (std::size_t index = 0; index < spectrum.size(); ++index) {
+                const double normalized = static_cast<double>(index) / static_cast<double>(spectrum.size() - 1);
+                spectrum[index] = {
+                    20.0 * std::pow(1000.0, normalized),
+                    -88.0 + 58.0 * std::exp(-std::pow((normalized - 0.46) / 0.26, 2.0)),
+                };
+            }
+            const ZigVstguiGraphHandleDescription handle {
+                1, "Cutoff and resonance", 2, 3, 0.566, 0.377, 0, 0,
+                0, 0, "", 0.0, 0.01, 0, 0, 1, 1,
+            };
+            ZigVstguiGraphDescription description {
+                "Filter Response", ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION, ZIG_VSTGUI_GRAPH_PRIMARY,
+                {20.0, 20'000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"},
+                {-20.0, 25.105450102, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+                response.data(), static_cast<uint32_t>(response.size()), 1, 0, 30,
+            };
+            description.handles = &handle;
+            description.handle_count = 1;
+            const ZigVstguiGraphLayerDescription layer {
+                ZIG_VSTGUI_GRAPH_SECONDARY,
+                spectrum.data(),
+                static_cast<uint32_t>(spectrum.size()),
+                0,
+                ZIG_VSTGUI_GRAPH_SPECTRUM,
+                0,
+                0,
+                1,
+                {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+                0,
+            };
+            description.layers = &layer;
+            description.layer_count = 1;
+            ZigVstgui::AccessibilityNode accessibility;
+            ZigVstgui::GraphView graph(VSTGUI::CRect(12, 12, 628, 208), description, styles, &accessibility);
+            graph.selectPoint(1);
             graph.draw(&context);
         },
     };
@@ -1289,6 +1363,141 @@ Snapshot parameterWorkspace(const char* name, uint32_t width, uint32_t height) {
     };
 }
 
+std::shared_ptr<ZigVstguiEditor> buildResonantFilterWorkspace(uint32_t width, uint32_t height) {
+    const uint32_t ids[] = {0, 6, 1, 2, 3, 4, 5};
+    const char* titles[] = {"Bypass", "Output", "Mode", "Cutoff", "Resonance", "Drive", "Mix"};
+    const char* units[] = {"", "dB", "", "Hz", "", "dB", "%"};
+    const int32_t steps[] = {1, 0, 3, 0, 0, 0, 0};
+    const double values[] = {0.0, 0.5, 0.0, 0.566, 0.377, 0.0, 1.0};
+    const ZigVstguiControlKind kinds[] = {
+        ZIG_VSTGUI_CONTROL_TOGGLE,
+        ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER,
+        ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_ROTARY_KNOB,
+        ZIG_VSTGUI_CONTROL_LINEAR_SLIDER,
+    };
+    std::array<ZigVstguiParameterDescription, 7> parameters {};
+    for (uint32_t index = 0; index < parameters.size(); ++index) {
+        parameters[index] = {
+            ids[index],
+            values[index],
+            {titles[index], units[index], steps[index], values[index]},
+            kinds[index],
+        };
+    }
+    std::array<ZigVstguiGraphPoint, 97> response {};
+    std::array<ZigVstguiGraphPoint, 64> spectrum {};
+    for (std::size_t index = 0; index < response.size(); ++index) {
+        const double normalized = static_cast<double>(index) / static_cast<double>(response.size() - 1);
+        const double frequency = 20.0 * std::pow(1000.0, normalized);
+        response[index] = {frequency, -10.0 * std::log10(1.0 + std::pow(frequency / 1'000.0, 4.0))};
+    }
+    for (std::size_t index = 0; index < spectrum.size(); ++index) {
+        const double normalized = static_cast<double>(index) / static_cast<double>(spectrum.size() - 1);
+        spectrum[index] = {
+            20.0 * std::pow(1000.0, normalized),
+            -86.0 + 54.0 * std::exp(-std::pow((normalized - 0.48) / 0.26, 2.0)),
+        };
+    }
+    const ZigVstguiGraphHandleDescription handle {
+        1, "Cutoff and resonance", 2, 3, 0.566, 0.377, 0, 0,
+        0, 0, "", 0.0, 0.01, 0, 0, 1, 1,
+    };
+    ZigVstguiGraphDescription graph {
+        "Filter Response", ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION, ZIG_VSTGUI_GRAPH_PRIMARY,
+        {20.0, 20'000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"},
+        {-20.0, 25.105450102, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+        response.data(), static_cast<uint32_t>(response.size()), 1, 0, 30,
+    };
+    graph.handles = &handle;
+    graph.handle_count = 1;
+    graph.initial_selected_point_id = 1;
+    const ZigVstguiGraphLayerDescription layer {
+        ZIG_VSTGUI_GRAPH_SECONDARY,
+        spectrum.data(),
+        static_cast<uint32_t>(spectrum.size()),
+        0,
+        ZIG_VSTGUI_GRAPH_SPECTRUM,
+        0,
+        0,
+        1,
+        {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+        0,
+    };
+    graph.layers = &layer;
+    graph.layer_count = 1;
+    const ZigVstguiGroupDescription groups[] = {
+        {"Response", 0, 2, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x79baf2ff}, 0, 1, 0, 0},
+        {"Filter", 2, 3, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0x52d5b0ff}, 1, 0, 0, 0},
+        {"Color", 5, 2, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT, 0, 0, 0, 0xf0ad65ff}, 1, 0, 0, 0},
+    };
+    ZigVstguiSkinDescription skin {};
+    skin.layout = ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE;
+    skin.editor_title = "Resonant Filter";
+    skin.groups = groups;
+    skin.group_count = 3;
+    skin.editor_style = {
+        ZIG_VSTGUI_STYLE_BACKGROUND | ZIG_VSTGUI_STYLE_FOREGROUND,
+        0x111922ff,
+        0xeaf3f6ff,
+        0,
+        0,
+    };
+    const ZigVstguiPreset presets[] = {
+        {1, "Smooth Low Pass"}, {2, "Resonant High Pass"},
+        {3, "Band Focus"}, {4, "Notch Cleanup"},
+    };
+    const ZigVstguiPresetBrowserDescription browser {
+        "Filter Presets", presets, 4, 1, 2, "", 1,
+    };
+    ZigVstguiCallbacks callbacks {};
+    callbacks.begin_edit = acceptBegin;
+    callbacks.perform_edit = acceptEdit;
+    callbacks.end_edit = acceptEnd;
+    callbacks.format_value = formatFilterValue;
+    callbacks.load_preset = acceptPreset;
+    auto editor = std::make_shared<ZigVstguiEditor>(
+        parameters.data(),
+        static_cast<uint32_t>(parameters.size()),
+        callbacks,
+        nullptr,
+        0,
+        ZigVstguiMeterCallbacks {},
+        skin,
+        &graph,
+        1,
+        ZigVstguiGraphCallbacks {},
+        nullptr,
+        0,
+        &browser,
+        1
+    );
+    if (!editor->valid() || !editor->resize(width, height) || !editor->frameView()) return {};
+    editor->setModulation(2, 0.62);
+    return editor;
+}
+
+Snapshot resonantFilterWorkspace(const char* name, uint32_t width, uint32_t height) {
+    auto editor = buildResonantFilterWorkspace(width, height);
+    return {
+        name,
+        width,
+        height,
+        1.0,
+        [editor, width, height](VSTGUI::CDrawContext& context) {
+            if (!editor || !editor->frameView()) return;
+            auto frame = VSTGUI::owned(new VSTGUI::CFrame(
+                VSTGUI::CRect(0, 0, width, height), nullptr));
+            auto* view = editor->frameView();
+            view->attached(frame);
+            view->drawRect(&context, view->getViewSize());
+            view->removed(frame);
+        },
+    };
+}
+
 int runSnapshot(
     const Snapshot& snapshot,
     const std::filesystem::path& references,
@@ -1599,6 +1808,58 @@ double benchmarkLinkedEqResponseDraw() {
     return benchmarkDraw(container, offscreen);
 }
 
+double benchmarkResonantFilterResponseDraw() {
+    ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
+    auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 640, 220)));
+    container->setBackgroundColor(styles.resolve(ZigVstgui::ComponentKind::editor).background);
+    std::array<ZigVstguiGraphPoint, 97> response {};
+    std::array<ZigVstguiGraphPoint, 64> spectrum {};
+    for (std::size_t index = 0; index < response.size(); ++index) {
+        const double normalized = static_cast<double>(index) / static_cast<double>(response.size() - 1);
+        const double frequency = 20.0 * std::pow(1000.0, normalized);
+        response[index] = {frequency, -10.0 * std::log10(1.0 + std::pow(frequency / 1'000.0, 4.0))};
+    }
+    for (std::size_t index = 0; index < spectrum.size(); ++index) {
+        const double normalized = static_cast<double>(index) / static_cast<double>(spectrum.size() - 1);
+        spectrum[index] = {
+            20.0 * std::pow(1000.0, normalized),
+            -86.0 + 54.0 * std::exp(-std::pow((normalized - 0.48) / 0.26, 2.0)),
+        };
+    }
+    const ZigVstguiGraphHandleDescription handle {
+        1, "Cutoff and resonance", 2, 3, 0.566, 0.377, 0, 0,
+        0, 0, "", 0.0, 0.01, 0, 0, 1, 1,
+    };
+    ZigVstguiGraphDescription description {
+        "Filter Response", ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION, ZIG_VSTGUI_GRAPH_PRIMARY,
+        {20.0, 20'000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"},
+        {-20.0, 25.105450102, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+        response.data(), static_cast<uint32_t>(response.size()), 1, 0, 30,
+    };
+    description.handles = &handle;
+    description.handle_count = 1;
+    const ZigVstguiGraphLayerDescription layer {
+        ZIG_VSTGUI_GRAPH_SECONDARY,
+        spectrum.data(),
+        static_cast<uint32_t>(spectrum.size()),
+        0,
+        ZIG_VSTGUI_GRAPH_SPECTRUM,
+        0,
+        0,
+        1,
+        {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"},
+        0,
+    };
+    description.layers = &layer;
+    description.layer_count = 1;
+    ZigVstgui::AccessibilityNode accessibility;
+    container->addView(new ZigVstgui::GraphView(
+        VSTGUI::CRect(12, 12, 628, 208), description, styles, &accessibility
+    ));
+    const auto offscreen = VSTGUI::COffscreenContext::create(VSTGUI::CPoint(640, 220), 1.0);
+    return benchmarkDraw(container, offscreen);
+}
+
 double benchmarkGraphOverlayDraw(bool with_selection) {
     ZigVstgui::ThemeResolver styles(ZigVstgui::defaultTheme());
     auto container = VSTGUI::owned(new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 320, 180)));
@@ -1650,6 +1911,7 @@ int main(int argc, char** argv) {
             graphViewports(),
             signalViews(),
             linkedEqResponse(),
+            resonantFilterResponse(),
             eqAnalyzerStates(),
             xyPad(),
             editableEnvelope(),
@@ -1678,6 +1940,7 @@ int main(int argc, char** argv) {
         const double progress_average = benchmarkProgressDraw();
         const double signal_views_average = benchmarkSignalViewsDraw();
         const double linked_eq_average = benchmarkLinkedEqResponseDraw();
+        const double resonant_filter_average = benchmarkResonantFilterResponseDraw();
         const double viewport_average = benchmarkViewportDraw();
         const double range_selection_average = benchmarkRangeSelectionDraw();
         std::fprintf(stderr, "visual regression warm render average: %.1f us\n", average);
@@ -1689,6 +1952,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "progress warm render average: %.1f us\n", progress_average);
         std::fprintf(stderr, "signal views warm render average: %.1f us\n", signal_views_average);
         std::fprintf(stderr, "linked EQ warm render average: %.1f us\n", linked_eq_average);
+        std::fprintf(stderr, "resonant filter warm render average: %.1f us\n", resonant_filter_average);
         std::fprintf(stderr, "viewport warm render average: %.1f us\n", viewport_average);
         std::fprintf(stderr, "range selection warm render average: %.1f us\n", range_selection_average);
         if (average > warm_draw_budget_us || piano_average > warm_draw_budget_us ||
@@ -1696,6 +1960,7 @@ int main(int argc, char** argv) {
             action_button_average > warm_draw_budget_us || rotary_average > warm_draw_budget_us ||
             progress_average > warm_draw_budget_us ||
             signal_views_average > signal_views_budget_us || linked_eq_average > warm_draw_budget_us ||
+            resonant_filter_average > warm_draw_budget_us ||
             viewport_average > warm_draw_budget_us ||
             range_selection_average > warm_draw_budget_us) result = std::max(result, 6);
     }
@@ -1705,6 +1970,9 @@ int main(int argc, char** argv) {
             parameterWorkspace("eq-workspace-compact.png", 400, 360),
             parameterWorkspace("eq-workspace-standard.png", 720, 660),
             parameterWorkspace("eq-workspace-expanded.png", 960, 700),
+            resonantFilterWorkspace("resonant-filter-compact.png", 480, 480),
+            resonantFilterWorkspace("resonant-filter-standard.png", 720, 660),
+            resonantFilterWorkspace("resonant-filter-expanded.png", 960, 700),
         };
         for (const auto& snapshot : workspace_snapshots) {
             result = std::max(result, runSnapshot(snapshot, references, output, update));

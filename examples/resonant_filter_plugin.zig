@@ -380,8 +380,8 @@ test "resonant filter editor is available through the public authoring API" {
     try std.testing.expectEqual(@as(types.int32, 660), size.bottom);
     var constrained = gui.iplugview.ViewRect{ .left = 0, .top = 0, .right = 120, .bottom = 100 };
     try std.testing.expectEqual(types.kResultOk, view.vtable.checkSizeConstraint(view, &constrained));
-    try std.testing.expectEqual(@as(types.int32, 480), constrained.right);
-    try std.testing.expectEqual(@as(types.int32, 480), constrained.bottom);
+    try std.testing.expectEqual(@as(types.int32, 400), constrained.right);
+    try std.testing.expectEqual(@as(types.int32, 360), constrained.bottom);
 }
 
 const TestParameters = struct {

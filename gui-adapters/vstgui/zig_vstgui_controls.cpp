@@ -25,6 +25,22 @@ constexpr uint32_t actionMask(AccessibilityAction action) {
     return static_cast<uint32_t>(action);
 }
 
+std::string humanizeEnumLabel(std::string label) {
+    bool capitalize = true;
+    for (char& character : label) {
+        if (character == '_' || character == '-') {
+            character = ' ';
+            capitalize = true;
+        } else if (capitalize && character >= 'a' && character <= 'z') {
+            character = static_cast<char>(character - ('a' - 'A'));
+            capitalize = false;
+        } else if (character != ' ') {
+            capitalize = false;
+        }
+    }
+    return label;
+}
+
 }
 
 double clampNormalized(double value) {
@@ -470,7 +486,8 @@ void ParameterControl::build(
     buildPrimaryControl(parent, parameter_info, control_kind, styles, assets, drawing);
 
     if (control_kind == ZIG_VSTGUI_CONTROL_TOGGLE ||
-        control_kind == ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN) {
+        control_kind == ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN ||
+        control_kind == ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM) {
         syncViews();
         return;
     }
@@ -611,6 +628,7 @@ void ParameterControl::buildPrimaryControl(
             const auto pressed = styles.resolve(component_kind, VisualState::pressed);
             segmented = new VSTGUI::CSegmentButton(VSTGUI::CRect(), this, kParameterTag);
             segmented->setFont(styles.font(TypographyRole::body));
+            segmented->setTextMargin(styles.theme().spacing.small * 0.25);
             segmented->setTextColor(style.foreground);
             segmented->setTextColorHighlighted(contrastingTextColor(
                 pressed.accent,
@@ -708,7 +726,13 @@ std::string ParameterControl::formattedValue(double normalized) const {
             clampNormalized(normalized),
             text,
             sizeof(text)
-        ) >= 0) return text;
+        ) >= 0) {
+        if (control_kind == ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN ||
+            control_kind == ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM) {
+            return humanizeEnumLabel(text);
+        }
+        return text;
+    }
     std::snprintf(text, sizeof(text), "%.3f", clampNormalized(normalized));
     return text;
 }

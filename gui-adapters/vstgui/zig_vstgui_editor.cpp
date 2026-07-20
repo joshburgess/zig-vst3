@@ -1765,8 +1765,11 @@ void ZigVstguiEditor::layoutParameterWorkspace(
     const double gap = theme.spacing.small;
 
     const auto layout_parameter_row = [&](uint32_t parameter_index, const VSTGUI::CRect& bounds) {
+        const auto kind = parameter_control_kinds[parameter_index];
         const double available = std::max(1.0, bounds.getWidth() - gap * 2.0);
-        const double label_width = std::clamp(available * 0.32, 88.0, 96.0);
+        const double label_width = kind == ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM
+            ? std::clamp(available * 0.26, 72.0, 80.0)
+            : std::clamp(available * 0.32, 88.0, 96.0);
         const double value_width = std::clamp(available * 0.28, 60.0, 84.0);
         const ZigVstgui::GridTrack columns[] = {
             {label_width, 0.0},
@@ -1793,9 +1796,9 @@ void ZigVstguiEditor::layoutParameterWorkspace(
             3,
             cells
         );
-        const auto kind = parameter_control_kinds[parameter_index];
         const bool has_inline_value = kind == ZIG_VSTGUI_CONTROL_TOGGLE ||
-            kind == ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN;
+            kind == ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN ||
+            kind == ZIG_VSTGUI_CONTROL_SEGMENTED_ENUM;
         const VSTGUI::CRect primary_bounds = has_inline_value
             ? VSTGUI::CRect(cells[1].left, cells[1].top, cells[2].right, cells[1].bottom)
             : cells[1];
