@@ -47,7 +47,7 @@ Exit criteria:
 
 - [ ] Audit the public GUI API for duplicate concepts, adapter leakage, ambiguous ownership, and unsupported single-consumer surfaces.
 - [ ] Split broad examples into focused composition, importer, graph, accessibility, and lifecycle examples where that improves discoverability.
-- [ ] Test a consumer against the installed package layout rather than the repository source tree.
+- [x] Test a consumer against the installed package layout rather than the repository source tree.
 - [ ] Update public component documentation with ownership, threading, lifecycle, and API-status decisions.
 
 Exit criteria:
@@ -109,3 +109,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - `zig build test --summary all` passed 73/73 steps and 3,816/3,816 tests with the new visual, runtime, and source gates enabled.
 
 Remaining before the milestone exit is declared complete: add full compact, standard, expanded, 2x, and high-contrast workspace references for Channel Strip and IR Loader. Their shared components and state sequences are covered now, but their complete production compositions are not yet represented at every size.
+
+### Milestone 4: Installed Consumer
+
+- `scripts/test_installed_package.sh` stages only the files declared by the package manifest, copies a separate consumer beside that package, and gives the consumer its own build graph and caches. A failure preserves the staged tree for diagnosis.
+- The consumer imports only `zig-vst3` and `zig-vst3-plugin`. It compiles a parameter-workspace effect editor with a transfer graph and an instrument-workspace editor with a controller waveform, bounded WAV and AIFF importer, bipolar pan, and piano audition declaration.
+- The first complete run passed 4/4 build steps and its effect and instrument declaration test. The check now runs as part of `zig build test`.
+- The complete gate passed 74/74 steps and 3,816/3,816 tests after adding the staged-package consumer.
