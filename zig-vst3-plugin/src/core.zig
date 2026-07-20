@@ -12,6 +12,8 @@ pub const gui_step_sequencer = @import("gui_step_sequencer.zig");
 pub const gui_file_drop = @import("gui_file_drop.zig");
 pub const gui_file_importer = @import("gui_file_importer.zig");
 pub const gui_audio_file_importer = @import("gui_audio_file_importer.zig");
+pub const gui_audio_sample_store = @import("gui_audio_sample_store.zig");
+pub const gui_sample_player = @import("gui_sample_player.zig");
 pub const gui_ir_convolution = @import("gui_ir_convolution.zig");
 pub const gui_ir_editor = @import("gui_ir_editor.zig");
 pub const gui_progress = @import("gui_progress.zig");
@@ -35,6 +37,8 @@ test {
     std.testing.refAllDecls(gui_file_drop);
     std.testing.refAllDecls(gui_file_importer);
     std.testing.refAllDecls(gui_audio_file_importer);
+    std.testing.refAllDecls(gui_audio_sample_store);
+    std.testing.refAllDecls(gui_sample_player);
     std.testing.refAllDecls(gui_ir_convolution);
     std.testing.refAllDecls(gui_ir_editor);
     std.testing.refAllDecls(gui_progress);

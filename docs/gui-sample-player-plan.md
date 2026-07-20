@@ -19,11 +19,11 @@ This milestone is the second production consumer for decoded-audio transport, im
 
 ## Milestone 1: Import and Playback Foundation
 
-- [ ] Extend the bounded decoder to PCM AIFF without weakening WAV validation or limits.
-- [ ] Add generated WAV and AIFF fixtures for valid, malformed, truncated, unsupported, oversized, cancelled, and replacement imports.
-- [ ] Add a fixed-capacity sample store with staged transfer, atomic adoption, cancellation, clear, and generation rejection.
-- [ ] Implement fixed-polyphony playback, deterministic voice stealing, interpolation, gain, pan, tuning, start and end bounds, looping, reverse, and ADSR.
-- [ ] Register the sample-player bundle in native, Linux, Windows, validator, and serialized pluginval matrices.
+- [x] Extend the bounded decoder to PCM AIFF without weakening WAV validation or limits.
+- [x] Add generated WAV and AIFF fixtures for valid, malformed, truncated, unsupported, oversized, cancelled, and replacement imports.
+- [x] Add a fixed-capacity sample store with staged transfer, atomic adoption, cancellation, clear, and generation rejection.
+- [x] Implement fixed-polyphony playback, deterministic voice stealing, interpolation, gain, pan, tuning, start and end bounds, looping, reverse, and ADSR.
+- [x] Register the sample-player bundle in native, Linux, Windows, validator, and serialized pluginval matrices.
 
 Exit criteria:
 
@@ -112,3 +112,16 @@ Record committed milestones here with test counts, validator results, performanc
 - Existing local cache directory remains untracked.
 - The first sandboxed baseline run built the native adapter and passed 1,206 tests before Zig was denied access to its home cache. The repository-local cache rerun passed 62/62 steps and 3,747/3,747 tests.
 - Baseline warm renders measured 91.5 us for the full visual scene, 263.1 us for signal views, 228.1 us for linked EQ, 139.8 us for Resonant Filter, 50.7 us for viewport rendering, and 103.8 us for range selection. Every scene remained inside its recorded budget.
+
+### Milestone 1: Import and Playback Foundation
+
+- The shared bounded decoder now accepts PCM WAV, AIFF, and uncompressed AIFC data at 16, 24, or 32 bits, up to two channels and 384 kHz. It rejects malformed chunks, truncation, unsupported encodings, inconsistent frame counts, excess input bytes, and decoded data beyond the caller's fixed capacity.
+- Generated WAV and AIFF fixtures cover successful decode, bounded interleaved handoff, malformed and truncated data, unsupported formats, capacity failures, cancellation, replacement, retry, and instance isolation without user-provided media.
+- A three-slot fixed-capacity sample store stages controller writes and publishes only complete generations. The audio thread adopts one ready generation at block boundaries and never observes partial or stale media.
+- The reusable player provides eight fixed voices, oldest-voice stealing, linear interpolation, stereo and mono playback, gain, bipolar pan, coarse and fine tuning, bounded playback and loop ranges, forward and reverse playback, gate and one-shot behavior, and ADSR envelopes.
+- The sample-player example is registered in native, Linux, Windows, validator, raw entry-symbol, test, and serialized pluginval matrices. Its editor declaration imports only the public `@import("zig-vst3").vstgui` API.
+- `zig build test --summary all`: 66/66 build steps and 3,757/3,757 tests passed.
+- `zig build raw-api-abi validate-sample-player --summary all`: 117/117 build steps passed. The Steinberg validator reported 47 tests passed and 0 failed for both 32-bit and 64-bit processing.
+- `zig build bundle-sample-player-linux -Dtarget=aarch64-linux-gnu --summary all`: 4/4 steps passed.
+- `zig build bundle-sample-player-windows -Dtarget=x86_64-windows-gnu --summary all`: 4/4 steps passed.
+- Warm visual measurements during the final test run were 97.0 us for the full scene, 276.1 us for signal views, 240.3 us for linked EQ, 149.2 us for Resonant Filter, 54.1 us for viewport rendering, and 111.0 us for range selection. All remained inside their existing budgets.

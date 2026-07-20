@@ -32,7 +32,9 @@ pub const Snapshot = struct {
     decoded_frames: usize,
 };
 
-const WavInfo = struct {
+const ByteOrder = enum { little, big };
+
+const AudioInfo = struct {
     data_offset: u64,
     data_bytes: usize,
     sample_rate: u32,
@@ -40,6 +42,7 @@ const WavInfo = struct {
     bits_per_sample: u8,
     block_align: u8,
     sample_frames: usize,
+    byte_order: ByteOrder,
 };
 
 pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
@@ -47,7 +50,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         @compileError("DecodedImporter capacity exceeds the WAV frame limit");
     }
     return struct {
-        const Model = gui_file_importer.Model(1, 1);
+        const Model = gui_file_importer.Model(1, 3);
         const Self = @This();
 
         mutex: std.Io.Mutex = .init,
@@ -64,7 +67,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         worker_running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
         pub fn init() Self {
-            return .{ .model = Model.init(&.{".wav"}) catch unreachable };
+            return .{ .model = Model.init(&.{ ".wav", ".aif", ".aiff" }) catch unreachable };
         }
 
         pub fn deinit(self: *Self) void {
@@ -202,7 +205,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
                 self.finishFailure(.too_large);
                 return;
             }
-            const info = parseWav(io, file, file_size) catch |err| {
+            const info = parseAudio(io, file, file_size) catch |err| {
                 self.finishFailure(switch (err) {
                     error.Truncated => .truncated,
                     error.UnsupportedFormat => .unsupported_format,
@@ -255,7 +258,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
                     const sample_bytes = info.bits_per_sample / 8;
                     for (0..info.channels) |channel| {
                         const start = offset + channel * sample_bytes;
-                        const sample = decodePcm(buffer[start .. start + sample_bytes], info.bits_per_sample);
+                        const sample = decodePcm(buffer[start .. start + sample_bytes], info.bits_per_sample, info.byte_order);
                         mixed += sample;
                         if (decoded_frame_capacity != 0) {
                             self.decoded[frame_index * info.channels + channel] = @floatCast(sample);
@@ -330,13 +333,23 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
 
 pub const Importer = DecodedImporter(0);
 
-fn parseWav(io: std.Io, file: std.Io.File, file_size: u64) !WavInfo {
+fn parseAudio(io: std.Io, file: std.Io.File, file_size: u64) !AudioInfo {
     if (file_size < 12) return error.Truncated;
     var header: [12]u8 = undefined;
     if (try file.readPositionalAll(io, &header, 0) != header.len) return error.Truncated;
-    if (!std.mem.eql(u8, header[0..4], "RIFF") or !std.mem.eql(u8, header[8..12], "WAVE")) {
-        return error.Malformed;
+    if (std.mem.eql(u8, header[0..4], "RIFF") and std.mem.eql(u8, header[8..12], "WAVE")) {
+        return parseWav(io, file, file_size, header);
     }
+    if (std.mem.eql(u8, header[0..4], "FORM") and
+        (std.mem.eql(u8, header[8..12], "AIFF") or std.mem.eql(u8, header[8..12], "AIFC")))
+    {
+        return parseAiff(io, file, file_size, header);
+    }
+    return error.Malformed;
+}
+
+fn parseWav(io: std.Io, file: std.Io.File, file_size: u64, header: [12]u8) !AudioInfo {
+    if (file_size < 12) return error.Truncated;
     const riff_bytes = readU32(header[4..8]);
     if (@as(u64, riff_bytes) + 8 > file_size) return error.Truncated;
 
@@ -398,18 +411,116 @@ fn parseWav(io: std.Io, file: std.Io.File, file_size: u64) !WavInfo {
         .bits_per_sample = @intCast(wav_format.bits_per_sample),
         .block_align = @intCast(wav_format.block_align),
         .sample_frames = sample_frames,
+        .byte_order = .little,
     };
 }
 
-fn decodePcm(bytes: []const u8, bits_per_sample: u8) f64 {
+fn parseAiff(io: std.Io, file: std.Io.File, file_size: u64, header: [12]u8) !AudioInfo {
+    const form_bytes = readU32Be(header[4..8]);
+    if (@as(u64, form_bytes) + 8 > file_size) return error.Truncated;
+    const is_aifc = std.mem.eql(u8, header[8..12], "AIFC");
+
+    var format: ?struct {
+        sample_rate: u32,
+        channels: u16,
+        bits_per_sample: u16,
+        sample_frames: u32,
+    } = null;
+    var data_offset: ?u64 = null;
+    var data_bytes: usize = 0;
+    var offset: u64 = 12;
+    while (offset + 8 <= file_size) {
+        var chunk_header: [8]u8 = undefined;
+        if (try file.readPositionalAll(io, &chunk_header, offset) != chunk_header.len) return error.Truncated;
+        const chunk_size = readU32Be(chunk_header[4..8]);
+        const payload_offset = offset + 8;
+        const payload_end = std.math.add(u64, payload_offset, chunk_size) catch return error.Malformed;
+        if (payload_end > file_size) return error.Truncated;
+        if (std.mem.eql(u8, chunk_header[0..4], "COMM")) {
+            if (chunk_size < 18 or (is_aifc and chunk_size < 22)) return error.Malformed;
+            var bytes: [22]u8 = @splat(0);
+            const required: usize = if (is_aifc) 22 else 18;
+            if (try file.readPositionalAll(io, bytes[0..required], payload_offset) != required) return error.Truncated;
+            if (is_aifc and !std.mem.eql(u8, bytes[18..22], "NONE")) return error.UnsupportedFormat;
+            const channels = readU16Be(bytes[0..2]);
+            const sample_frames = readU32Be(bytes[2..6]);
+            const bits_per_sample = readU16Be(bytes[6..8]);
+            const sample_rate = try decodeExtendedSampleRate(bytes[8..18]);
+            if (channels == 0 or channels > maximum_channels or
+                (bits_per_sample != 16 and bits_per_sample != 24 and bits_per_sample != 32) or
+                sample_frames == 0)
+            {
+                return error.UnsupportedFormat;
+            }
+            format = .{
+                .sample_rate = sample_rate,
+                .channels = channels,
+                .bits_per_sample = bits_per_sample,
+                .sample_frames = sample_frames,
+            };
+        } else if (std.mem.eql(u8, chunk_header[0..4], "SSND")) {
+            if (chunk_size < 8) return error.Malformed;
+            var sound_header: [8]u8 = undefined;
+            if (try file.readPositionalAll(io, &sound_header, payload_offset) != sound_header.len) return error.Truncated;
+            const sound_offset = readU32Be(sound_header[0..4]);
+            if (@as(u64, sound_offset) > chunk_size - 8) return error.Malformed;
+            data_offset = payload_offset + 8 + sound_offset;
+            data_bytes = chunk_size - 8 - sound_offset;
+        }
+        offset = payload_end + (chunk_size & 1);
+    }
+
+    const aiff_format = format orelse return error.Malformed;
+    const aiff_data_offset = data_offset orelse return error.Malformed;
+    const block_align = aiff_format.channels * (aiff_format.bits_per_sample / 8);
+    if (data_bytes == 0 or data_bytes % block_align != 0) return error.Truncated;
+    const sample_frames = data_bytes / block_align;
+    if (sample_frames != aiff_format.sample_frames) return error.Truncated;
+    if (sample_frames > maximum_sample_frames) return error.TooLarge;
+    return .{
+        .data_offset = aiff_data_offset,
+        .data_bytes = data_bytes,
+        .sample_rate = aiff_format.sample_rate,
+        .channels = @intCast(aiff_format.channels),
+        .bits_per_sample = @intCast(aiff_format.bits_per_sample),
+        .block_align = @intCast(block_align),
+        .sample_frames = sample_frames,
+        .byte_order = .big,
+    };
+}
+
+fn decodeExtendedSampleRate(bytes: []const u8) !u32 {
+    const exponent_bits = readU16Be(bytes[0..2]);
+    if (exponent_bits & 0x8000 != 0) return error.UnsupportedFormat;
+    const exponent = exponent_bits & 0x7fff;
+    const mantissa = readU64Be(bytes[2..10]);
+    if (exponent == 0 or exponent == 0x7fff or mantissa & (@as(u64, 1) << 63) == 0) return error.UnsupportedFormat;
+    const shift: i32 = @as(i32, exponent) - 16383 - 63;
+    const value = std.math.ldexp(@as(f64, @floatFromInt(mantissa)), shift);
+    if (!std.math.isFinite(value) or value < 8_000.0 or value > 384_000.0) return error.UnsupportedFormat;
+    const rounded = @round(value);
+    if (@abs(value - rounded) > 0.001) return error.UnsupportedFormat;
+    return @intFromFloat(rounded);
+}
+
+fn decodePcm(bytes: []const u8, bits_per_sample: u8, byte_order: ByteOrder) f64 {
     return switch (bits_per_sample) {
-        16 => @as(f64, @floatFromInt(@as(i16, @bitCast(readU16(bytes[0..2]))))) / 32768.0,
+        16 => @as(f64, @floatFromInt(@as(i16, @bitCast(switch (byte_order) {
+            .little => readU16(bytes[0..2]),
+            .big => readU16Be(bytes[0..2]),
+        })))) / 32768.0,
         24 => blk: {
-            var value = @as(u32, bytes[0]) | (@as(u32, bytes[1]) << 8) | (@as(u32, bytes[2]) << 16);
+            var value = switch (byte_order) {
+                .little => @as(u32, bytes[0]) | (@as(u32, bytes[1]) << 8) | (@as(u32, bytes[2]) << 16),
+                .big => (@as(u32, bytes[0]) << 16) | (@as(u32, bytes[1]) << 8) | bytes[2],
+            };
             if (value & 0x0080_0000 != 0) value |= 0xff00_0000;
             break :blk @as(f64, @floatFromInt(@as(i32, @bitCast(value)))) / 8_388_608.0;
         },
-        32 => @as(f64, @floatFromInt(@as(i32, @bitCast(readU32(bytes[0..4]))))) / 2_147_483_648.0,
+        32 => @as(f64, @floatFromInt(@as(i32, @bitCast(switch (byte_order) {
+            .little => readU32(bytes[0..4]),
+            .big => readU32Be(bytes[0..4]),
+        })))) / 2_147_483_648.0,
         else => 0.0,
     };
 }
@@ -425,6 +536,23 @@ fn readU32(bytes: []const u8) u32 {
         (@as(u32, bytes[3]) << 24);
 }
 
+fn readU16Be(bytes: []const u8) u16 {
+    return (@as(u16, bytes[0]) << 8) | bytes[1];
+}
+
+fn readU32Be(bytes: []const u8) u32 {
+    return (@as(u32, bytes[0]) << 24) |
+        (@as(u32, bytes[1]) << 16) |
+        (@as(u32, bytes[2]) << 8) |
+        bytes[3];
+}
+
+fn readU64Be(bytes: []const u8) u64 {
+    var value: u64 = 0;
+    for (bytes[0..8]) |byte| value = (value << 8) | byte;
+    return value;
+}
+
 fn writeU16(bytes: []u8, value: u16) void {
     bytes[0] = @truncate(value);
     bytes[1] = @truncate(value >> 8);
@@ -435,6 +563,18 @@ fn writeU32(bytes: []u8, value: u32) void {
     bytes[1] = @truncate(value >> 8);
     bytes[2] = @truncate(value >> 16);
     bytes[3] = @truncate(value >> 24);
+}
+
+fn writeU16Be(bytes: []u8, value: u16) void {
+    bytes[0] = @truncate(value >> 8);
+    bytes[1] = @truncate(value);
+}
+
+fn writeU32Be(bytes: []u8, value: u32) void {
+    bytes[0] = @truncate(value >> 24);
+    bytes[1] = @truncate(value >> 16);
+    bytes[2] = @truncate(value >> 8);
+    bytes[3] = @truncate(value);
 }
 
 fn pcm16Fixture(comptime frame_count: usize) [44 + frame_count * 4]u8 {
@@ -459,6 +599,32 @@ fn pcm16Fixture(comptime frame_count: usize) [44 + frame_count * 4]u8 {
         const offset = 44 + frame * 4;
         writeU16(bytes[offset .. offset + 2], bits);
         writeU16(bytes[offset + 2 .. offset + 4], bits);
+    }
+    return bytes;
+}
+
+fn pcm16AiffFixture(comptime frame_count: usize) [54 + frame_count * 4]u8 {
+    var bytes: [54 + frame_count * 4]u8 = @splat(0);
+    @memcpy(bytes[0..4], "FORM");
+    writeU32Be(bytes[4..8], bytes.len - 8);
+    @memcpy(bytes[8..12], "AIFF");
+    @memcpy(bytes[12..16], "COMM");
+    writeU32Be(bytes[16..20], 18);
+    writeU16Be(bytes[20..22], 2);
+    writeU32Be(bytes[22..26], frame_count);
+    writeU16Be(bytes[26..28], 16);
+    writeU16Be(bytes[28..30], 0x400e);
+    bytes[30] = 0xbb;
+    bytes[31] = 0x80;
+    @memcpy(bytes[38..42], "SSND");
+    writeU32Be(bytes[42..46], 8 + frame_count * 4);
+    for (0..frame_count) |frame| {
+        const phase = @as(i32, @intCast(frame % 64)) - 32;
+        const sample: i16 = @intCast(phase * 900);
+        const bits: u16 = @bitCast(sample);
+        const offset = 54 + frame * 4;
+        writeU16Be(bytes[offset .. offset + 2], bits);
+        writeU16Be(bytes[offset + 2 .. offset + 4], bits);
     }
     return bytes;
 }
@@ -522,6 +688,70 @@ test "decoded importer keeps bounded interleaved PCM for non-audio-thread handof
     try std.testing.expectEqual(@as(usize, 0), too_small.snapshot().decoded_frames);
 }
 
+test "decoded importer normalizes PCM AIFF into the shared interleaved format" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const fixture = pcm16AiffFixture(16);
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "decoded.aiff", .data = &fixture });
+    var path: [1024]u8 = undefined;
+    const path_length = try temporary.dir.realPathFile(std.testing.io, "decoded.aiff", &path);
+
+    var importer = DecodedImporter(16).init();
+    defer importer.deinit();
+    try std.testing.expect(importer.begin(.picker, &.{path[0..path_length]}));
+    waitForWorker(&importer);
+    const snapshot = importer.snapshot();
+    try std.testing.expectEqual(gui_file_importer.Status.ready, snapshot.import.status);
+    try std.testing.expectEqual(@as(u32, 48_000), snapshot.sample_rate);
+    try std.testing.expectEqual(@as(u8, 2), snapshot.channels);
+    try std.testing.expectEqual(@as(usize, 16), snapshot.decoded_frames);
+    var samples: [32]f32 = undefined;
+    try std.testing.expectEqual(samples.len, importer.copyDecoded(0, &samples));
+    try std.testing.expectEqual(samples[0], samples[1]);
+    try std.testing.expect(samples[0] < 0.0);
+    try std.testing.expect(samples[30] < 0.0);
+}
+
+test "audio importer bounds malformed truncated and unsupported AIFF input" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const fixture = pcm16AiffFixture(16);
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "truncated.aiff", .data = fixture[0 .. fixture.len - 3] });
+    var unsupported = fixture;
+    writeU16Be(unsupported[26..28], 8);
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "unsupported.aiff", .data = &unsupported });
+    var malformed = fixture;
+    @memcpy(malformed[12..16], "JUNK");
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "malformed.aiff", .data = &malformed });
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "oversized.aiff", .data = &fixture });
+
+    var importer = DecodedImporter(16).init();
+    defer importer.deinit();
+    var path: [1024]u8 = undefined;
+
+    var path_length = try temporary.dir.realPathFile(std.testing.io, "truncated.aiff", &path);
+    try std.testing.expect(importer.begin(.drop, &.{path[0..path_length]}));
+    waitForWorker(&importer);
+    try std.testing.expectEqual(Failure.truncated, importer.snapshot().failure);
+
+    path_length = try temporary.dir.realPathFile(std.testing.io, "unsupported.aiff", &path);
+    try std.testing.expect(importer.begin(.picker, &.{path[0..path_length]}));
+    waitForWorker(&importer);
+    try std.testing.expectEqual(Failure.unsupported_format, importer.snapshot().failure);
+
+    path_length = try temporary.dir.realPathFile(std.testing.io, "malformed.aiff", &path);
+    try std.testing.expect(importer.begin(.drop, &.{path[0..path_length]}));
+    waitForWorker(&importer);
+    try std.testing.expectEqual(Failure.malformed, importer.snapshot().failure);
+
+    var bounded = DecodedImporter(8).init();
+    defer bounded.deinit();
+    path_length = try temporary.dir.realPathFile(std.testing.io, "oversized.aiff", &path);
+    try std.testing.expect(bounded.begin(.picker, &.{path[0..path_length]}));
+    waitForWorker(&bounded);
+    try std.testing.expectEqual(Failure.too_large, bounded.snapshot().failure);
+}
+
 test "audio importer reports malformed truncated and unsupported files" {
     var temporary = std.testing.tmpDir(.{});
     defer temporary.cleanup();
@@ -554,7 +784,7 @@ test "audio importer reports malformed truncated and unsupported files" {
     try std.testing.expect(importer.begin(.drop, &.{path[0..path_length]}));
     waitForWorker(&importer);
     try std.testing.expectEqual(Failure.malformed, importer.snapshot().failure);
-    try std.testing.expect(!importer.begin(.drop, &.{"unsupported.aiff"}));
+    try std.testing.expect(!importer.begin(.drop, &.{"unsupported.flac"}));
     try std.testing.expectEqual(gui_file_importer.Status.unsupported_file, importer.snapshot().import.status);
 }
 

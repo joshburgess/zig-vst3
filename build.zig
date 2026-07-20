@@ -144,6 +144,14 @@ pub fn build(b: *std.Build) void {
             .core_example_source_file = "examples/ir_loader_core.zig",
             .bundle_id = "dev.zig-vst3.ir-loader",
         },
+        .{
+            .short_name = "sample-player",
+            .display_name = "sample player",
+            .artifact_name = "zig_vst3_sample_player",
+            .root_source_file = "examples/sample_player_plugin.zig",
+            .core_example_source_file = "examples/sample_player_core.zig",
+            .bundle_id = "dev.zig-vst3.sample-player",
+        },
     };
 
     var example_plugins: [example_plugin_options.len]ExamplePluginSteps = undefined;
@@ -690,7 +698,8 @@ fn addExamplePlugin(
         std.mem.eql(u8, options.short_name, "channel-strip") or
         std.mem.eql(u8, options.short_name, "parametric-eq") or
         std.mem.eql(u8, options.short_name, "resonant-filter") or
-        std.mem.eql(u8, options.short_name, "ir-loader");
+        std.mem.eql(u8, options.short_name, "ir-loader") or
+        std.mem.eql(u8, options.short_name, "sample-player");
     const library = addVst3PluginLibrary(b, target, optimize, zig_vst3_plugin_core, .{
         .artifact_name = options.artifact_name,
         .root_source_file = options.root_source_file,
