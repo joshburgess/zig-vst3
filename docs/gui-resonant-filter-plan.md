@@ -33,11 +33,11 @@ Exit criteria:
 
 ## Milestone 2: Linked Response and Spectrum
 
-- [ ] Add a calculated magnitude-response curve over the live output spectrum.
-- [ ] Bind one graph handle to cutoff and resonance through standard grouped gestures.
-- [ ] Keep graph motion synchronized with controls, host automation, exact entry, presets, and rejected edits.
-- [ ] Provide explicit analyzer-off, waiting-for-signal, active, and bypass states.
-- [ ] Keep all sources within the existing graph point and analyzer transport limits.
+- [x] Add a calculated magnitude-response curve over the live output spectrum.
+- [x] Bind one graph handle to cutoff and resonance through standard grouped gestures.
+- [x] Keep graph motion synchronized with controls, host automation, exact entry, presets, and rejected edits.
+- [x] Provide explicit analyzer-off, waiting-for-signal, active, and bypass states.
+- [x] Keep all sources within the existing graph point and analyzer transport limits.
 
 Exit criteria:
 
@@ -48,12 +48,12 @@ Exit criteria:
 
 ## Milestone 3: Production Editor
 
-- [ ] Group Filter controls separately from Drive, Mix, Output, and Bypass.
-- [ ] Add a compact layout with deterministic compact, expanded, manual shrink, and manual grow round trips.
-- [ ] Add useful presets for each filter mode and preserve accepted state through editor reopen.
-- [ ] Support pointer editing, fine adjustment, arrow keys, laptop-safe limits, Command-click reset, exact entry, context menus, tooltips, and visible focus.
-- [ ] Expose toolkit-neutral names, roles, values, ranges, selection, adjustment, enablement, and bypass semantics.
-- [ ] Exercise modulation overlays without changing the accepted base value.
+- [x] Group Filter controls separately from Drive, Mix, Output, and Bypass.
+- [x] Add a compact layout with deterministic compact, expanded, manual shrink, and manual grow round trips.
+- [x] Add useful presets for each filter mode and preserve accepted state through editor reopen.
+- [x] Support pointer editing, fine adjustment, arrow keys, laptop-safe limits, Command-click reset, exact entry, context menus, tooltips, and visible focus.
+- [x] Expose toolkit-neutral names, roles, values, ranges, selection, adjustment, enablement, and bypass semantics.
+- [x] Exercise modulation overlays without changing the accepted base value.
 
 Exit criteria:
 
@@ -112,3 +112,14 @@ Record each committed milestone here with test counts, validator results, perfor
 - Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` bundles each passed 4/4 build steps.
 - Latest shared warm-render measurements: visual suite 89.6 us, rotary 31.5 us, signal views 261.9 us, and linked EQ 230.6 us. Dedicated filter graph performance evidence begins in Milestone 4.
 - Pluginval was not run in this milestone. It remains a serialized release gate after the production editor and graph are complete.
+
+### Milestones 2 and 3
+
+- Added a 97-point calculated response that uses the biquad's complex response for correct wet and dry summation. Bypass produces a flat 0 dB response and Output shifts the accepted curve.
+- Added one linked handle for Cutoff and Resonance plus a 64-bin live output spectrum. Spectrum publication remains fixed-capacity and stops when the last editor closes.
+- Added a parameter workspace with Response, Filter, and Color groups. Mode uses a four-choice segmented control so selection remains visible without consulting a value field.
+- Added Smooth Low Pass, Resonant High Pass, Band Focus, and Notch Cleanup presets. Each preset edits all seven parameters in one host group with rollback through the shared public contract.
+- Added deterministic response, preset gesture, analyzer activity, editor-size, editor-state isolation, processor isolation, bypass, and dry-mix tests. Existing native graph tests cover grouped pointer and keyboard edits, automation updates, rejection rollback, accessibility adjustment, selection, and teardown for the same handle contract.
+- `zig build test --summary all`: 62/62 steps and 3,730/3,730 tests passed. Raw ABI checks and the Resonant Filter's 47/47 Steinberg tests passed.
+- Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` bundles each passed 4/4 build steps.
+- Manual REAPER checks and dedicated filter visual references remain required before the responsive-editor exit criteria are accepted.

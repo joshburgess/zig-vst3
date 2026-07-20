@@ -259,7 +259,7 @@ Record each committed milestone here with test counts, performance measurements,
 | Three-band EQ and output | Public 17-parameter plugin, DSP tests, raw ABI checks, 47/47 Steinberg tests, and REAPER acceptance | Complete on macOS arm64 |
 | Rotary, bipolar dB, modulation, exact entry, reset, fine adjustment, tooltip, and keyboard paths | EQ and gallery declarations plus native interaction, accessibility, visual, and REAPER tests | Complete; rotary and decibel controls are supported |
 | Linked graph editing and automation | EQ and gallery use the same public `GraphHandle` contract; native tests cover grouped edits, host updates, rejection, selection, and accessibility | Complete locally; `GraphHandle` remains experimental with one production consumer |
-| Spectrum transport | Fixed-capacity `SpectrumAnalyzer(128)`, activity tests, instance isolation, and performance coverage | Complete locally; transport remains experimental with one production analyzer consumer |
+| Spectrum transport | Fixed-capacity `SpectrumAnalyzer(128)`, activity tests, instance isolation, and performance coverage | Complete for the EQ; later Channel Strip and Resonant Filter consumers supersede the original consumer-count blocker |
 | Responsive layout and scaling | Compact, standard, expanded, resize-cycle, 1x, 1.5x, and 2x geometry tests and references | Complete locally; multi-monitor movement remains external |
 | Shared skin | Gallery, IR Loader, and EQ use the same asset, font, and drawing contracts; lifecycle, visual, and REAPER tests pass | Complete; assets, fonts, and custom drawing are supported |
 | Accessibility | Toolkit-neutral semantics and macOS bridge tests cover parameters, handles, group selection, bypass, and analyzer state | Complete locally; VoiceOver, Narrator, and AT-SPI workflows remain external |
@@ -270,6 +270,6 @@ Record each committed milestone here with test counts, performance measurements,
 Retained experimental APIs:
 
 - Direct bipolar slider: only the Component Gallery uses the slider presentation. Bipolar EQ rotary controls do not validate it.
-- `GraphHandle` and mixed graph layers: the gallery validates the public contract, but the EQ remains the only production consumer.
-- Analyzer transport: the EQ remains the only production analyzer consumer.
+- `GraphHandle` and mixed graph layers: this plan retained them because the EQ was the only production consumer at completion. The later Resonant Filter milestone owns the promotion decision.
+- Analyzer transport: this plan retained it under an incorrect one-consumer assessment. Channel Strip already used the transport, and Resonant Filter now adds another production use. The Resonant Filter milestone owns the corrected promotion decision.
 - Native assistive-technology bridges: automated macOS integration passes, but screen-reader workflows and native Windows and Linux bridges need their target environments.

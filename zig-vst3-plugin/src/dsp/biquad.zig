@@ -128,9 +128,9 @@ pub const Coefficients = struct {
         return .{};
     }
 
-    pub fn magnitude(self: Coefficients, sample_rate: f64, frequency_hz: f64) f64 {
+    pub fn response(self: Coefficients, sample_rate: f64, frequency_hz: f64) ComplexResponse {
         if (!self.finite() or !std.math.isFinite(sample_rate) or sample_rate <= 0.0 or
-            !std.math.isFinite(frequency_hz)) return 0.0;
+            !std.math.isFinite(frequency_hz)) return .{};
         const frequency = std.math.clamp(frequency_hz, 0.0, sample_rate * 0.5);
         const omega = std.math.tau * frequency / sample_rate;
         const cosine = @cos(omega);
@@ -143,8 +143,15 @@ pub const Coefficients = struct {
         const denominator_imaginary = -self.a1 * sine - self.a2 * sine2;
         const numerator = numerator_real * numerator_real + numerator_imaginary * numerator_imaginary;
         const denominator = denominator_real * denominator_real + denominator_imaginary * denominator_imaginary;
-        if (denominator <= std.math.floatEps(f64)) return 0.0;
-        return @sqrt(numerator / denominator);
+        if (denominator <= std.math.floatEps(f64) or !std.math.isFinite(numerator)) return .{};
+        return .{
+            .real = (numerator_real * denominator_real + numerator_imaginary * denominator_imaginary) / denominator,
+            .imaginary = (numerator_imaginary * denominator_real - numerator_real * denominator_imaginary) / denominator,
+        };
+    }
+
+    pub fn magnitude(self: Coefficients, sample_rate: f64, frequency_hz: f64) f64 {
+        return self.response(sample_rate, frequency_hz).magnitude();
     }
 
     pub fn magnitudeDb(self: Coefficients, sample_rate: f64, frequency_hz: f64) f64 {
@@ -175,6 +182,15 @@ pub const Coefficients = struct {
             .a1 = (target.a1 - current.a1) / divisor,
             .a2 = (target.a2 - current.a2) / divisor,
         };
+    }
+};
+
+pub const ComplexResponse = struct {
+    real: f64 = 0.0,
+    imaginary: f64 = 0.0,
+
+    pub fn magnitude(self: ComplexResponse) f64 {
+        return @sqrt(self.real * self.real + self.imaginary * self.imaginary);
     }
 };
 
@@ -277,6 +293,13 @@ test "band pass peaks and notch rejects at center frequency" {
     try std.testing.expectApproxEqAbs(@as(f64, 0.0), band.magnitudeDb(48_000.0, 2_000.0), 0.0001);
     try std.testing.expect(notch.magnitudeDb(48_000.0, 2_000.0) < -120.0);
     try std.testing.expect(notch.magnitudeDb(48_000.0, 200.0) > -0.1);
+}
+
+test "complex response magnitude matches direct evaluation" {
+    const coefficients = try (Config{ .kind = .notch, .sample_rate = 48_000.0, .frequency_hz = 2_000.0, .gain_db = 0.0, .q = 4.0 }).coefficients();
+    inline for (.{ 100.0, 1_000.0, 2_000.0, 8_000.0 }) |frequency| {
+        try std.testing.expectApproxEqAbs(coefficients.magnitude(48_000.0, frequency), coefficients.response(48_000.0, frequency).magnitude(), 0.0000001);
+    }
 }
 
 test "unity filters preserve f32 and f64 samples" {

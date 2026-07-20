@@ -2,6 +2,7 @@ pub const biquad = @import("dsp/biquad.zig");
 
 pub const BiquadConfig = biquad.Config;
 pub const BiquadCoefficients = biquad.Coefficients;
+pub const BiquadComplexResponse = biquad.ComplexResponse;
 pub const BiquadKind = biquad.Kind;
 pub const SmoothedBiquad = biquad.SmoothedBiquad;
 

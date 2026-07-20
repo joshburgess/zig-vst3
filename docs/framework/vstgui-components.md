@@ -540,8 +540,8 @@ Experimental extensions:
 
 - `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader is their only production consumer.
 - The direct bipolar slider. It remains a gallery-only presentation and needs a production consumer before promotion.
-- `GraphHandle`, `GraphLayer`, parameter-driven controller curves, and mixed-source graph layers. The gallery and parametric EQ use the same linked-handle, selection, group-highlight, adjustment, curve-source, and layer contracts, but linked handles still have one production consumer.
-- `SpectrumAnalyzer` and analyzer transport. The parametric EQ remains the only production analyzer consumer, so a second production use must establish the supported contract.
+- `GraphHandle`, `GraphLayer`, parameter-driven controller curves, and mixed-source graph layers. Parametric EQ and Resonant Filter now use the shared production contract. Supported status remains gated on the Resonant Filter's dedicated visual, performance, and host checks.
+- `SpectrumAnalyzer` and analyzer transport. Channel Strip, Parametric EQ, and Resonant Filter use the fixed-capacity transport. Supported status remains gated on the Resonant Filter's current lifecycle, visual, performance, and host checks.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
 - `AudioFileImporter`, controller-owned import status and command callbacks, and controller-sourced graph snapshots. The channel strip and IR loader use the contract, but decoded audio transport still has one production consumer.
