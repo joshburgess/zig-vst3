@@ -76,6 +76,41 @@ double loadMeter(void* userdata, uint32_t source_id) {
     return source_id < 5 ? values->values[source_id] : 0.0;
 }
 
+uint32_t loadChannelGraph(void*, uint32_t source_id, ZigVstguiGraphPoint* output, uint32_t capacity) {
+    if (!output || capacity == 0) return 0;
+    const uint32_t count = std::min<uint32_t>(capacity, 64);
+    for (uint32_t index = 0; index < count; ++index) {
+        const double normalized = count > 1
+            ? static_cast<double>(index) / static_cast<double>(count - 1)
+            : 0.0;
+        if (source_id == 1) {
+            output[index] = {
+                20.0 * std::pow(1200.0, normalized),
+                -88.0 + 64.0 * std::exp(-3.0 * normalized) * std::abs(std::sin(18.0 * normalized)),
+            };
+        } else {
+            const double decay = source_id == 2 ? std::exp(-4.0 * normalized) : 1.0;
+            output[index] = {normalized, std::sin(25.1327412287 * normalized) * 0.72 * decay};
+        }
+    }
+    return count;
+}
+
+uint32_t loadIrGraph(void*, uint32_t, ZigVstguiGraphPoint* output, uint32_t capacity) {
+    if (!output || capacity == 0) return 0;
+    const uint32_t count = std::min<uint32_t>(capacity, 96);
+    for (uint32_t index = 0; index < count; ++index) {
+        const double normalized = count > 1
+            ? static_cast<double>(index) / static_cast<double>(count - 1)
+            : 0.0;
+        output[index] = {
+            normalized,
+            std::sin(62.8318530718 * normalized) * std::exp(-5.0 * normalized),
+        };
+    }
+    return count;
+}
+
 void acceptBegin(void*, uint32_t) {}
 int32_t acceptEdit(void*, uint32_t, double) { return 0; }
 void acceptEnd(void*, uint32_t) {}
@@ -114,6 +149,33 @@ int32_t formatFilterValue(void*, uint32_t parameter_id, double normalized, char*
         return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
     }
     const int written = std::snprintf(output, capacity, "%.3f", normalized);
+    return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+}
+
+int32_t formatChannelValue(void*, uint32_t parameter_id, double normalized, char* output, uint32_t capacity) {
+    if (!output || capacity == 0) return -1;
+    if (parameter_id == 1) {
+        const int written = std::snprintf(output, capacity, "%s", normalized < 0.5 ? "Off" : "On");
+        return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+    }
+    if (parameter_id == 2) {
+        const char* value = normalized < 0.25 ? "clean" : normalized < 0.75 ? "boost" : "mute";
+        const int written = std::snprintf(output, capacity, "%s", value);
+        return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+    }
+    const int written = std::snprintf(output, capacity, "%.3f", normalized);
+    return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+}
+
+int32_t formatIrValue(void*, uint32_t parameter_id, double normalized, char* output, uint32_t capacity) {
+    if (!output || capacity == 0) return -1;
+    if (parameter_id == 2) {
+        const int written = std::snprintf(output, capacity, "%s", normalized < 0.5 ? "Off" : "On");
+        return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
+    }
+    const int written = parameter_id == 0
+        ? std::snprintf(output, capacity, "%.1f", normalized * 100.0)
+        : std::snprintf(output, capacity, "%.3f", (normalized - 2.0 / 3.0) * 36.0);
     return written >= 0 && static_cast<uint32_t>(written) < capacity ? written : -1;
 }
 
@@ -1566,6 +1628,224 @@ Snapshot resonantFilterWorkspace(
     };
 }
 
+struct ChannelWorkspace {
+    std::shared_ptr<MeterValues> meters;
+    std::shared_ptr<ZigVstguiEditor> editor;
+};
+
+ChannelWorkspace buildChannelWorkspace(
+    uint32_t width,
+    uint32_t height,
+    ZigVstguiThemeKind theme = ZIG_VSTGUI_THEME_ALTERNATE
+) {
+    const ZigVstguiParameterDescription parameters[] = {
+        {0, 0.5, {"Gain", "dB", 0, 0.5}, ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER},
+        {3, 0.5, {"Drive", "dB", 0, 0.5}, ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER},
+        {1, 0.0, {"Bypass", "", 1, 0.0}, ZIG_VSTGUI_CONTROL_TOGGLE},
+        {2, 0.0, {"Mode", "", 2, 0.0}, ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN},
+    };
+    const ZigVstguiXYPadDescription pad {"Gain and Drive", 0, 3, "Gain", "Drive"};
+    const ZigVstguiMeterDescription meters[] = {
+        {"Stereo", ZIG_VSTGUI_METER_STEREO, 0, 1},
+        {"Reduction", ZIG_VSTGUI_METER_GAIN_REDUCTION, 2, 0},
+    };
+    const ZigVstguiGraphPoint transfer[] = {
+        {-2.0, -0.96}, {-1.0, -0.76}, {0.0, 0.0}, {1.0, 0.76}, {2.0, 0.96},
+    };
+    const ZigVstguiEnvelopePoint envelope[] = {
+        {1, 0.0, 0.0}, {2, 0.5, 0.72}, {3, 1.0, 0.0},
+    };
+    const ZigVstguiGraphDescription graphs[] = {
+        {"Console Transfer", ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION, ZIG_VSTGUI_GRAPH_PRIMARY,
+            {-2.0, 2.0, ZIG_VSTGUI_GRAPH_LINEAR, "Input"},
+            {-1.2, 1.2, ZIG_VSTGUI_GRAPH_LINEAR, "Output"}, transfer, 5, 0, 0, 0},
+        {"Dynamics Envelope", ZIG_VSTGUI_GRAPH_ENVELOPE, ZIG_VSTGUI_GRAPH_PRIMARY,
+            {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Time"},
+            {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"}, nullptr, 0, 0, 0, 0,
+            envelope, 3, 8, 2, 0.05, 0.05, 1, 2, 2},
+        {"Output Waveform", ZIG_VSTGUI_GRAPH_WAVEFORM, ZIG_VSTGUI_GRAPH_MODULATION,
+            {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Frame"},
+            {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"}, nullptr, 0, 0, 1, 30},
+        {"Output Spectrum", ZIG_VSTGUI_GRAPH_SPECTRUM, ZIG_VSTGUI_GRAPH_PRIMARY,
+            {20.0, 24'000.0, ZIG_VSTGUI_GRAPH_LOGARITHMIC, "Hz"},
+            {-96.0, 0.0, ZIG_VSTGUI_GRAPH_DECIBELS, "dB"}, nullptr, 0, 1, 1, 30},
+        {"Imported Waveform", ZIG_VSTGUI_GRAPH_WAVEFORM, ZIG_VSTGUI_GRAPH_SECONDARY,
+            {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "File"},
+            {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"}, nullptr, 0, 2, 1, 20},
+    };
+    const ZigVstguiGroupDescription groups[] = {
+        {"Input", 0, 2, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT | ZIG_VSTGUI_STYLE_BORDER, 0, 0, 0x7994aaff, 0x3578baff}, 0, 0, 0, 1},
+        {"Character", 2, 2, 0, 0, {ZIG_VSTGUI_STYLE_ACCENT | ZIG_VSTGUI_STYLE_BORDER, 0, 0, 0xac8b73ff, 0xb96b32ff}, 0, 0, 1, 0},
+        {"Output", 4, 0, 0, 2, {ZIG_VSTGUI_STYLE_ACCENT | ZIG_VSTGUI_STYLE_BORDER, 0, 0, 0x719789ff, 0x35866aff}, 0, 5, 1, 0},
+    };
+    ZigVstguiSkinDescription skin {};
+    skin.theme = theme;
+    skin.layout = ZIG_VSTGUI_LAYOUT_COMPACT_STRIP;
+    skin.editor_title = "Channel Strip";
+    skin.groups = groups;
+    skin.group_count = 3;
+    if (theme == ZIG_VSTGUI_THEME_ALTERNATE) {
+        skin.editor_style = {ZIG_VSTGUI_STYLE_BACKGROUND | ZIG_VSTGUI_STYLE_FOREGROUND,
+            0xeeeae0ff, 0x25231fff, 0, 0};
+    }
+    const char* extensions[] = {".wav"};
+    const ZigVstguiFileDropDescription importer {
+        1, "Audio Reference", "Drop a PCM WAV file here", extensions, 1, 1, 1,
+        "Choose Audio File", "Choose a PCM WAV File",
+    };
+    const ZigVstguiPreset presets[] = {
+        {1, "Clean Start"}, {2, "Console Push"}, {3, "Peak Limit"},
+    };
+    const ZigVstguiPresetBrowserDescription browser {
+        "Channel Presets", presets, 3, 1, 2, "", 1,
+    };
+    const ZigVstguiMenuItemDescription menu_items[] = {
+        {1, "Reset Channel", ZIG_VSTGUI_MENU_ACTION, 1, 0, 0, 0},
+        {2, "Show Analyzer", ZIG_VSTGUI_MENU_TOGGLE, 1, 0, 3, 1},
+        {3, "Export Preset", ZIG_VSTGUI_MENU_ACTION, 0, 0, 0, 0},
+        {0, "", ZIG_VSTGUI_MENU_SEPARATOR, 0, 0, 0, 0},
+        {4, "Reset UI", ZIG_VSTGUI_MENU_ACTION, 1, 1, 0, 0},
+    };
+    const ZigVstguiActionMenuDescription menu {1, "Options", menu_items, 5};
+    ZigVstguiCallbacks callbacks {};
+    callbacks.begin_edit = acceptBegin;
+    callbacks.perform_edit = acceptEdit;
+    callbacks.end_edit = acceptEnd;
+    callbacks.format_value = formatChannelValue;
+    callbacks.load_preset = acceptPreset;
+    callbacks.invoke_menu_action = acceptMenuAction;
+    callbacks.import_files = acceptImport;
+    auto meter_state = std::make_shared<MeterValues>();
+    ZigVstguiMeterCallbacks meter_callbacks {meter_state.get(), loadMeter};
+    auto editor = std::make_shared<ZigVstguiEditor>(
+        parameters, 4, callbacks, meters, 2, meter_callbacks, skin, graphs, 5,
+        ZigVstguiGraphCallbacks {nullptr, loadChannelGraph}, &pad, 1, &browser, 1, &menu, 1,
+        nullptr, 0, nullptr, 0, &importer, 1
+    );
+    if (!editor->valid() || !editor->resize(width, height) || !editor->frameView()) return {};
+    return {meter_state, editor};
+}
+
+Snapshot channelWorkspace(
+    const char* name,
+    uint32_t width,
+    uint32_t height,
+    double scale = 1.0,
+    ZigVstguiThemeKind theme = ZIG_VSTGUI_THEME_ALTERNATE
+) {
+    auto workspace = buildChannelWorkspace(width, height, theme);
+    return {name, width, height, scale, [workspace, width, height](VSTGUI::CDrawContext& context) {
+        if (!workspace.editor || !workspace.editor->frameView()) return;
+        auto frame = VSTGUI::owned(new VSTGUI::CFrame(VSTGUI::CRect(0, 0, width, height), nullptr));
+        auto* view = workspace.editor->frameView();
+        view->attached(frame);
+        view->drawRect(&context, view->getViewSize());
+        view->removed(frame);
+    }};
+}
+
+struct IrWorkspace {
+    std::shared_ptr<TextProgressVisualState> state;
+    std::shared_ptr<ZigVstguiEditor> editor;
+};
+
+IrWorkspace buildIrWorkspace(
+    uint32_t width,
+    uint32_t height,
+    ZigVstguiThemeKind theme = ZIG_VSTGUI_THEME_ALTERNATE
+) {
+    const ZigVstguiParameterDescription parameters[] = {
+        {0, 1.0, {"Wet", "%", 0, 1.0}, ZIG_VSTGUI_CONTROL_LINEAR_SLIDER},
+        {1, 2.0 / 3.0, {"Output", "dB", 0, 2.0 / 3.0}, ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER},
+        {2, 0.0, {"Bypass", "", 1, 0.0}, ZIG_VSTGUI_CONTROL_TOGGLE},
+    };
+    ZigVstguiGraphDescription graph {
+        "Impulse Response", ZIG_VSTGUI_GRAPH_WAVEFORM, ZIG_VSTGUI_GRAPH_MODULATION,
+        {0.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Time"},
+        {-1.0, 1.0, ZIG_VSTGUI_GRAPH_LINEAR, "Level"}, nullptr, 0, 1, 1, 20,
+    };
+    graph.viewport = {1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 128.0, 1.0, 0.0, 0.0, 1.25, 0.1, 1, 2, 0};
+    graph.range_selection = {1, 0.1, 0.9, 1.0 / 131'072.0, 1.0 / 1024.0, 3, 4};
+    const ZigVstguiGroupDescription groups[] = {
+        {"Impulse Response", 0, 0, 0, 0, {}, 0, 1, 0, 0},
+        {"Mix", 0, 3, 0, 0, {}, 1, 0, 0, 0},
+    };
+    ZigVstguiSkinDescription skin {};
+    skin.theme = theme;
+    skin.layout = ZIG_VSTGUI_LAYOUT_ADAPTIVE;
+    skin.editor_title = "IR Loader";
+    skin.groups = groups;
+    skin.group_count = 2;
+    const char* extensions[] = {".wav"};
+    const ZigVstguiFileDropDescription importer {
+        1, "Impulse Response", "Drop a PCM WAV impulse response here", extensions, 1, 1, 1,
+        "Choose IR", "Choose an Impulse Response",
+    };
+    const ZigVstguiActionButtonDescription actions[] = {
+        {1, 1, "Trim", "Trim to selection", "Load an IR to enable trimming", nullptr, "Trim failed", ZIG_VSTGUI_ACTION_PRIMARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1, 0, 1},
+        {1, 2, "Normalize", "Normalize selection", "Load an IR to enable normalization", nullptr, "Normalize failed", ZIG_VSTGUI_ACTION_SECONDARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1, 0, 1},
+        {1, 3, "Reverse", "Reverse selection", "Load an IR to enable reversing", nullptr, "Reverse failed", ZIG_VSTGUI_ACTION_SECONDARY, ZIG_VSTGUI_ACTION_ICON_REVERSE, 1, 0, 1},
+        {1, 4, "Fade In", "Fade in selection", "Load an IR to enable fades", nullptr, "Fade in failed", ZIG_VSTGUI_ACTION_SECONDARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1, 0, 1},
+        {1, 5, "Fade Out", "Fade out selection", "Load an IR to enable fades", nullptr, "Fade out failed", ZIG_VSTGUI_ACTION_SECONDARY, ZIG_VSTGUI_ACTION_ICON_NONE, 1, 0, 1},
+        {1, 6, "Reset", "Reset all impulse response edits", "Load an IR to enable reset", nullptr, "Nothing to reset", ZIG_VSTGUI_ACTION_SECONDARY, ZIG_VSTGUI_ACTION_ICON_RESET, 1, 0, 1},
+        {2, 7, nullptr, "Clear impulse response", "Remove the imported impulse response", "Confirm Clear IR", "Clear failed", ZIG_VSTGUI_ACTION_DESTRUCTIVE, ZIG_VSTGUI_ACTION_ICON_CLEAR, 1, 1, 1},
+    };
+    const ZigVstguiEditableLabelDescription labels[] = {
+        {1, "IR Name", "Impulse response name", "Name this impulse response", "Enter an IR name", "Studio Plate", 64, 1, 0, 10},
+        {2, "Format", "Impulse response format", "", "Value unavailable", "48 kHz, stereo", 48, 1, 1, 10},
+        {3, "Original", "Original duration", "", "Value unavailable", "1.250 s", 48, 1, 1, 10},
+        {4, "Edited", "Edited duration", "", "Value unavailable", "1.000 s", 48, 1, 1, 10},
+        {5, "Peak", "Original and edited peak", "", "Value unavailable", "0.875", 48, 1, 1, 10},
+        {6, "State", "Impulse response publication state", "", "Value unavailable", "Ready", 48, 1, 1, 10},
+    };
+    const ZigVstguiProgressIndicatorDescription progress {
+        1, "Import", "Impulse response import progress", "Choose an IR to begin",
+        "Importing IR", "IR ready", "Import failed", 20,
+    };
+    auto state = std::make_shared<TextProgressVisualState>();
+    state->text = "Studio Plate";
+    state->progress = {ZIG_VSTGUI_PROGRESS_DETERMINATE, ZIG_VSTGUI_PROGRESS_COMPLETE, 1.0, 1};
+    state->import = {ZIG_VSTGUI_FILE_IMPORT_READY, ZIG_VSTGUI_FILE_IMPORT_FAILURE_NONE,
+        ZIG_VSTGUI_FILE_IMPORT_PICKER, 1.0, 1, 48'000, 2, 60'000, 0};
+    ZigVstguiCallbacks callbacks {};
+    callbacks.userdata = state.get();
+    callbacks.begin_edit = acceptBegin;
+    callbacks.perform_edit = acceptEdit;
+    callbacks.end_edit = acceptEnd;
+    callbacks.format_value = formatIrValue;
+    callbacks.import_files = acceptImport;
+    callbacks.load_file_import = loadVisualImport;
+    callbacks.invoke_action = acceptAction;
+    callbacks.store_editor_text = storeVisualText;
+    callbacks.load_editor_text = loadVisualText;
+    callbacks.load_progress = loadVisualProgress;
+    auto editor = std::make_shared<ZigVstguiEditor>(
+        parameters, 3, callbacks, nullptr, 0, ZigVstguiMeterCallbacks {}, skin,
+        &graph, 1, ZigVstguiGraphCallbacks {nullptr, loadIrGraph}, nullptr, 0, nullptr, 0, nullptr, 0,
+        nullptr, 0, nullptr, 0, &importer, 1, actions, 7, labels, 6, &progress, 1
+    );
+    if (!editor->valid() || !editor->resize(width, height) || !editor->frameView()) return {};
+    return {state, editor};
+}
+
+Snapshot irWorkspace(
+    const char* name,
+    uint32_t width,
+    uint32_t height,
+    double scale = 1.0,
+    ZigVstguiThemeKind theme = ZIG_VSTGUI_THEME_ALTERNATE
+) {
+    auto workspace = buildIrWorkspace(width, height, theme);
+    return {name, width, height, scale, [workspace, width, height](VSTGUI::CDrawContext& context) {
+        if (!workspace.editor || !workspace.editor->frameView()) return;
+        auto frame = VSTGUI::owned(new VSTGUI::CFrame(VSTGUI::CRect(0, 0, width, height), nullptr));
+        auto* view = workspace.editor->frameView();
+        view->attached(frame);
+        view->drawRect(&context, view->getViewSize());
+        view->removed(frame);
+    }};
+}
+
 enum class SampleVisualMode { empty, importing, ready, error };
 
 struct SampleWorkspace {
@@ -2288,6 +2568,16 @@ int main(int argc, char** argv) {
             samplePlayerWorkspace("sample-player-empty.png", 720, 660, SampleVisualMode::empty),
             samplePlayerWorkspace("sample-player-importing.png", 720, 660, SampleVisualMode::importing),
             samplePlayerWorkspace("sample-player-error.png", 720, 660, SampleVisualMode::error),
+            channelWorkspace("channel-strip-compact.png", 480, 480),
+            channelWorkspace("channel-strip-standard.png", 720, 660),
+            channelWorkspace("channel-strip-expanded.png", 960, 700),
+            channelWorkspace("channel-strip-standard-2x.png", 720, 660, 2.0),
+            channelWorkspace("channel-strip-high-contrast.png", 720, 660, 1.0, ZIG_VSTGUI_THEME_DEFAULT),
+            irWorkspace("ir-loader-compact.png", 480, 480),
+            irWorkspace("ir-loader-standard.png", 720, 660),
+            irWorkspace("ir-loader-expanded.png", 960, 700),
+            irWorkspace("ir-loader-standard-2x.png", 720, 660, 2.0),
+            irWorkspace("ir-loader-high-contrast.png", 720, 660, 1.0, ZIG_VSTGUI_THEME_DEFAULT),
         };
         for (const auto& snapshot : workspace_snapshots) {
             result = std::max(result, runSnapshot(snapshot, references, output, update));

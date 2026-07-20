@@ -108,7 +108,8 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - `zig build benchmark --summary all` now fails explicit regression ceilings instead of printing informational numbers only. The first budgeted run measured 795.8 MiB/s import throughput, 10.03 ms for maximum sample decode and waveform construction, 109.8 ns per preview read, 9.1 ns per playback frame with eight voices available, 5.5 ns per playhead update, and 673.8 ns per IR sample.
 - `zig build test --summary all` passed 73/73 steps and 3,816/3,816 tests with the new visual, runtime, and source gates enabled.
 
-Remaining before the milestone exit is declared complete: add full compact, standard, expanded, 2x, and high-contrast workspace references for Channel Strip and IR Loader. Their shared components and state sequences are covered now, but their complete production compositions are not yet represented at every size.
+- Channel Strip and IR Loader now each have complete compact, standard, expanded, 2x, and alternate-contrast workspace references. The snapshots use their production parameter, group, graph, meter, importer, preset, action, label, progress, and layout declarations rather than isolated component scenes.
+- The complete visual matrix passes with the same bounded warm-render budgets. The full deterministic gate passed 77/77 steps and 3,822/3,822 tests after the ten production workspace references were added.
 
 ### Milestone 4: Installed Consumer
 
