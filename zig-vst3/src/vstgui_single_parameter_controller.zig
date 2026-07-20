@@ -13,6 +13,7 @@ const gui_file_drop = @import("zig-vst3-plugin-core").gui_file_drop;
 const gui_progress = @import("zig-vst3-plugin-core").gui_progress;
 const gui_range_selection = @import("zig-vst3-plugin-core").gui_range_selection;
 const gui_viewport = @import("zig-vst3-plugin-core").gui_viewport;
+const gui_telemetry_source = @import("gui_telemetry_source.zig");
 const editor_state = @import("zig-vst3-plugin-core").editor_state;
 
 const ProtocolView = vst_plug_view.PlugView(4, struct {});
@@ -1212,8 +1213,8 @@ fn createConfiguredView(
                 .maximum_refresh_hz = progress.maximum_refresh_hz,
             };
         }
-        const telemetry_source = if (comptime @hasDecl(Controller, "retainGuiTelemetry"))
-            Controller.retainGuiTelemetry(controller)
+        const telemetry_provider: ?vstgui_editor_view.TelemetrySourceProvider = if (comptime @hasDecl(Controller, "retainGuiTelemetry"))
+            .{ .userdata = controller, .retain = Bridge.retainGuiTelemetry }
         else
             null;
         return vstgui_editor_view.create(controller, bindings[0..parameters.len], meter_descriptions[0..meters.len], graph_descriptions[0..graphs.len], xy_pad_descriptions[0..xy_pads.len], browser_descriptions[0..preset_browsers.len], menu_descriptions[0..action_menus.len], piano_descriptions[0..pianos.len], step_sequencer_descriptions[0..step_sequencers.len], file_drop_descriptions[0..file_importers.len], action_button_descriptions[0..action_buttons.len], editable_label_descriptions[0..editable_labels.len], progress_descriptions[0..progress_indicators.len], skin, composition, .{
@@ -1243,7 +1244,7 @@ fn createConfiguredView(
             .userdata = controller,
             .subscribe = Bridge.subscribe,
             .unsubscribe = Bridge.unsubscribe,
-        }, wayland_host, telemetry_source, .{
+        }, wayland_host, telemetry_provider, .{
             .userdata = controller,
             .load = Bridge.loadGuiGraph,
         });
@@ -1265,6 +1266,10 @@ fn NativeBridge(comptime Controller: type) type {
     return struct {
         fn controller(userdata: ?*anyopaque) ?*ivsteditcontroller.IEditController {
             return @ptrCast(@alignCast(userdata orelse return null));
+        }
+
+        fn retainGuiTelemetry(userdata: *anyopaque) ?gui_telemetry_source.RetainedSource {
+            return Controller.retainGuiTelemetry(@ptrCast(@alignCast(userdata)));
         }
 
         fn beginEdit(userdata: ?*anyopaque, parameter_id: vsttypes.ParamID) callconv(.c) void {

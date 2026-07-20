@@ -76,11 +76,11 @@ Exit criteria:
 
 ## Milestone 5: API Decisions and Release Gates
 
-- [ ] Promote `GraphHandle` and graph layers only after Parametric EQ and Resonant Filter pass the same public contract and host checks.
-- [ ] Audit analyzer documentation against its actual Channel Strip, Parametric EQ, and Resonant Filter consumers.
-- [ ] Promote analyzer transport only if the shared contract, lifecycle tests, and current host checks justify supported status.
-- [ ] Keep any single-consumer or incomplete surface experimental and name its precise blocker.
-- [ ] Update the component reference, production plans, example lists, and status tables.
+- [x] Promote `GraphHandle` and graph layers only after Parametric EQ and Resonant Filter pass the same public contract and host checks.
+- [x] Audit analyzer documentation against its actual Channel Strip, Parametric EQ, and Resonant Filter consumers.
+- [x] Promote analyzer transport only if the shared contract, lifecycle tests, and current host checks justify supported status.
+- [x] Keep any single-consumer or incomplete surface experimental and name its precise blocker.
+- [x] Update the component reference, production plans, example lists, and status tables.
 
 Release gates:
 
@@ -89,7 +89,19 @@ Release gates:
 - [x] `zig build bundle-examples-linux -Dtarget=aarch64-linux-gnu --summary all`
 - [x] `zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu --summary all`
 - [x] Serialized pluginval strictness 5 and strictness 10, stopping at the first unexpected exit and preserving its artifacts
-- [ ] Focused REAPER walkthrough for rendering, every control, graph synchronization, spectrum activity, presets, resize cycles, two instances, and editor reopen
+- [x] Focused REAPER walkthrough for rendering, every control, graph synchronization, spectrum activity, presets, resize cycles, two instances, and editor reopen
+
+Focused REAPER walkthrough:
+
+- [x] Confirm the default editor renders without clipped labels, overlap, excess space, or ambiguous selection.
+- [x] Confirm Cutoff and Resonance stay synchronized between rotary controls, exact entry, and the graph handle.
+- [x] Confirm graph dragging changes both parameters and the calculated response follows the accepted values.
+- [x] Confirm Low Pass, High Pass, Band Pass, and Notch have visible selected states and distinct responses.
+- [x] Confirm Drive, Mix, Output, Bypass, reset, fine adjustment, and keyboard editing.
+- [x] Confirm the spectrum enters waiting, active, and bypass states while audio runs.
+- [x] Confirm all four presets load visibly and restore one accepted parameter state.
+- [x] Confirm compact, expanded, manual shrink, and manual grow round trips preserve usable layouts.
+- [x] Confirm two instances remain independent and editor close and reopen restores accepted state.
 
 External checks remain pending when their environments are unavailable:
 
@@ -140,4 +152,25 @@ Record each committed milestone here with test counts, validator results, perfor
 - The serialized pluginval strictness 5 matrix passed all 13 examples in 56/56 steps without an unexpected exit or crash dialog.
 - The serialized pluginval strictness 10 matrix passed all 13 examples in 56/56 steps. It covered non-releasing processing, state restoration, background-thread state, parameter thread safety, and fuzzed parameters.
 - Resonant Filter pluginval artifacts are preserved at `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-pluginval/zig_vst3_resonant_filter-strictness-5-20260719-220401-86329` and `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-pluginval/zig_vst3_resonant_filter-strictness-10-20260719-220744-92378`.
-- The installed REAPER candidate has SHA-256 `3ac5472a94cbae894e16d045b20dd2865681f9e157cb1c8fede35268feba0f8d`. Focused REAPER acceptance remains pending.
+- The accepted REAPER candidate has SHA-256 `1ce54a6620aa0a578fd85cfb34870ff7d9c2f5c7e3870902c6429db935c91fb4`.
+- The analyzer documentation identifies Channel Strip, Parametric EQ, and Resonant Filter as independent production consumers of the same fixed-capacity, activity-gated transport.
+- Parametric EQ and Resonant Filter declare handles and layers through the same public `Graph`, `GraphHandle`, and `GraphLayer` fields. Both use controller-driven parameter curves, a dynamic spectrum layer, selection state, and standard parameter gestures. Channel Strip, Parametric EQ, and Resonant Filter all use `SpectrumAnalyzer(128)` through the same editor-open, editor-close, audio-push, and snapshot-read lifecycle.
+- Single-consumer and incomplete APIs remain experimental with explicit blockers in the component reference. Future modulation component types and GPU-backed custom views are not public APIs and have no production consumer. A GPU path also requires profiling evidence.
+- The initial REAPER analyzer check exposed two transport lifecycle defects. Editors now retry telemetry discovery after late component connection, and graph-only processors expose the telemetry interface without requiring a scalar meter callback. Regression tests cover both cases.
+- The focused REAPER walkthrough passed on macOS arm64 in REAPER 7.36. It covered default rendering, every control, direct graph editing, four filter modes, exact entry, keyboard and reset paths, live and bypassed spectrum states, sample-identical bypass, all presets, compact and expanded layouts, manual resize cycles, two independent instances, and editor close and reopen restoration.
+- `GraphHandle`, `GraphLayer`, parameter-driven curves, mixed-source layers, `SpectrumAnalyzer`, and analyzer transport move to supported status. Their production consumers share the public declaration, bounded transport, lifecycle, interaction, accessibility, visual, performance, and host contracts.
+- Final local validation passed 223/223 build steps and 3,747/3,747 tests, including all raw ABI checks, native adapter tests, macOS accessibility tests, visual regression, and all 13 Steinberg validators. Resonant Filter passed 47/47 validator tests. The final warm render measured 142.8 microseconds against its 300 microsecond budget.
+- The final Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` bundle matrices each passed 41/41 steps.
+- The final serialized pluginval strictness 5 run stopped on Gain with exit 134, as required by the stop-on-first-exit policy. The macOS crash report shows pluginval aborting in AppKit application startup before any plugin image loaded. Strictness 10 was not launched. The empty run artifact is preserved at `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-pluginval/zig_vst3_gain-strictness-5-20260720-073810-66215`, and the crash report is preserved at `~/Library/Logs/DiagnosticReports/pluginval-2026-07-20-073817.ips`. Earlier serialized strictness 5 and 10 matrices passed all 13 examples, but current-build pluginval coverage remains unavailable because the application cannot start reliably in this environment.
+
+## Current Completion Audit
+
+| Requirement | Evidence | Status |
+| --- | --- | --- |
+| Filter DSP and parameters | Four modes, seven parameters, `f32` and `f64` tests, smoothing, sample-identical bypass, raw ABI, and 47/47 Steinberg tests | Complete locally |
+| Linked editing | Parametric EQ and Resonant Filter use the public handle and layer contract; deterministic interaction, accessibility, visual, and REAPER checks pass | Supported |
+| Analyzer transport | Three production consumers, fixed-capacity transport, lifecycle and isolation tests, bounded warm rendering, and active REAPER signal | Supported |
+| Responsive editor | Compact, standard, expanded, manual shrink, manual grow, scrolling, and state restoration pass in tests and REAPER | Complete on macOS arm64 |
+| Cross-target bundles | Linux and Windows matrices each pass 41/41 steps | Complete locally; native host checks remain external |
+| Pluginval | Earlier strictness 5 and 10 matrices passed; final rerun aborted in AppKit before loading a plugin | Current-build coverage unavailable |
+| External accessibility and hosts | Toolkit-neutral semantics and automated macOS bridge pass | VoiceOver, Narrator, AT-SPI, native Windows, X11, and Wayland remain pending |

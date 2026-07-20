@@ -810,20 +810,43 @@ fn logicalDimension(physical: types.int32, scale: f32) ?types.int32 {
 
 const TelemetryState = struct {
     source: ?gui_telemetry_source.RetainedSource,
+    provider: ?TelemetrySourceProvider,
     controller_graph: ControllerGraphCallbacks,
+    is_open: bool = false,
+
+    fn acquire(self: *TelemetryState) void {
+        if (self.source != null) return;
+        const provider = self.provider orelse return;
+        self.source = provider.retain(provider.userdata);
+        if (self.is_open) {
+            if (self.source) |source| source.editorOpened();
+        }
+    }
 
     fn opened(self: *TelemetryState) void {
+        if (self.is_open) return;
+        self.is_open = true;
+        const had_source = self.source != null;
+        self.acquire();
+        if (!had_source) return;
         if (self.source) |source| source.editorOpened();
     }
 
     fn closed(self: *TelemetryState) void {
+        if (!self.is_open) return;
         if (self.source) |source| source.editorClosed();
+        self.is_open = false;
     }
 
     fn release(self: *TelemetryState) void {
         if (self.source) |source| source.release();
         self.source = null;
     }
+};
+
+pub const TelemetrySourceProvider = struct {
+    userdata: *anyopaque,
+    retain: *const fn (*anyopaque) ?gui_telemetry_source.RetainedSource,
 };
 
 fn binding(self: anytype) ?*Binding {
@@ -991,11 +1014,10 @@ pub fn create(
     callbacks: Callbacks,
     observer_callbacks: ObserverCallbacks,
     wayland_host: ?*anyopaque,
-    telemetry_source: ?gui_telemetry_source.RetainedSource,
+    telemetry_provider: ?TelemetrySourceProvider,
     controller_graph: ControllerGraphCallbacks,
 ) ?*iplugview.IPlugView {
     if (builtin.os.tag != .macos and builtin.os.tag != .windows and builtin.os.tag != .linux) {
-        if (telemetry_source) |source| source.release();
         return null;
     }
     if (parameters.len == 0 or parameters.len > max_parameters or
@@ -1006,7 +1028,6 @@ pub fn create(
         editable_labels.len > max_editable_labels or progress_indicators.len > max_progress_indicators or
         skin.assets.len > max_assets or composition.groups.len > max_groups)
     {
-        if (telemetry_source) |source| source.release();
         return null;
     }
     var descriptions: [max_parameters]ParameterDescription = undefined;
@@ -1021,7 +1042,6 @@ pub fn create(
     var assets: [max_assets]AssetDescription = undefined;
     for (skin.assets, 0..) |asset, index| {
         if (asset.data.len == 0 or asset.data.len > std.math.maxInt(types.uint32)) {
-            if (telemetry_source) |source| source.release();
             return null;
         }
         assets[index] = .{
@@ -1048,10 +1068,9 @@ pub fn create(
         };
     }
     const telemetry = std.heap.page_allocator.create(TelemetryState) catch {
-        if (telemetry_source) |source| source.release();
         return null;
     };
-    telemetry.* = .{ .source = telemetry_source, .controller_graph = controller_graph };
+    telemetry.* = .{ .source = null, .provider = telemetry_provider, .controller_graph = controller_graph };
     const editor = zig_vstgui_editor_create_components(
         &descriptions,
         @intCast(parameters.len),
@@ -1176,6 +1195,7 @@ fn nativeStyle(style: StyleOverride) NativeStyleOverride {
 
 fn loadMeter(userdata: ?*anyopaque, source_id: types.uint32) callconv(.c) f64 {
     const state: *TelemetryState = @ptrCast(@alignCast(userdata orelse return 0.0));
+    state.acquire();
     const source = state.source orelse return 0.0;
     return source.load(source_id);
 }
@@ -1195,6 +1215,7 @@ fn loadGraph(
             capacity,
         );
     }
+    state.acquire();
     const source = state.source orelse return 0;
     return @intCast(source.loadGraph(source_id, output[0..capacity]));
 }
@@ -1289,4 +1310,86 @@ pub fn drawAsset(
         return zig_vstgui_canvas_draw_asset(canvas, asset_id, left, top, right, bottom, alpha) == 0;
     }
     return false;
+}
+
+test "telemetry source can connect after the editor opens" {
+    const MockSource = struct {
+        iface: gui_telemetry_source.Interface,
+        available: bool = false,
+        references: u32 = 1,
+        opened_count: u32 = 0,
+        closed_count: u32 = 0,
+
+        const vtable = gui_telemetry_source.VTable{
+            .queryInterface = queryInterface,
+            .addRef = addRef,
+            .release = release,
+            .load = load,
+            .editorOpened = editorOpened,
+            .editorClosed = editorClosed,
+            .loadGraph = @This().loadGraph,
+        };
+
+        fn owner(ptr: *anyopaque) *@This() {
+            return @ptrCast(@alignCast(ptr));
+        }
+
+        fn queryInterface(_: *anyopaque, _: *const @import("tuid.zig").TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn addRef(ptr: *anyopaque) callconv(.c) types.uint32 {
+            const self = owner(ptr);
+            self.references += 1;
+            return self.references;
+        }
+
+        fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
+            const self = owner(ptr);
+            self.references -= 1;
+            return self.references;
+        }
+
+        fn load(_: *anyopaque, _: types.uint32) callconv(.c) f64 {
+            return 0.0;
+        }
+
+        fn editorOpened(ptr: *anyopaque) callconv(.c) void {
+            owner(ptr).opened_count += 1;
+        }
+
+        fn editorClosed(ptr: *anyopaque) callconv(.c) void {
+            owner(ptr).closed_count += 1;
+        }
+
+        fn loadGraph(_: *anyopaque, _: types.uint32, _: [*]gui_graph.Point, _: types.uint32) callconv(.c) types.uint32 {
+            return 0;
+        }
+
+        fn retain(ptr: *anyopaque) ?gui_telemetry_source.RetainedSource {
+            const self = owner(ptr);
+            if (!self.available) return null;
+            _ = addRef(&self.iface);
+            return .{ .iface = &self.iface };
+        }
+    };
+
+    var mock = MockSource{ .iface = .{ .vtable = &MockSource.vtable } };
+    var state = TelemetryState{
+        .source = null,
+        .provider = .{ .userdata = &mock, .retain = MockSource.retain },
+        .controller_graph = undefined,
+    };
+
+    state.opened();
+    try std.testing.expectEqual(@as(u32, 0), mock.opened_count);
+    mock.available = true;
+    state.acquire();
+    try std.testing.expectEqual(@as(u32, 1), mock.opened_count);
+    try std.testing.expectEqual(@as(u32, 2), mock.references);
+    state.closed();
+    try std.testing.expectEqual(@as(u32, 1), mock.closed_count);
+    state.release();
+    try std.testing.expectEqual(@as(u32, 1), mock.references);
 }

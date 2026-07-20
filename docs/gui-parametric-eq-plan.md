@@ -237,7 +237,7 @@ Record each committed milestone here with test counts, performance measurements,
 - The gallery and parametric EQ now exercise the same `GraphHandle`, parameter-driven controller source, selection, third-dimension adjustment, and linked-group highlight contracts. The existing native graph-handle suite covers grouped pointer edits, keyboard adjustment, host automation, rejection rollback, selection traversal, accessibility values, and teardown.
 - `zig build test raw-api-abi validate-examples --summary all` passed. The matrix includes 3,716 passing tests, every raw ABI check, all twelve Steinberg example validators, native adapter tests, macOS accessibility tests, and visual regression. Final warm-render measurements were 93.7 us for the full visual suite, 31.4 us for rotary controls, 259.1 us for signal views, and 228.1 us for linked EQ.
 - Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` cross-target bundle matrices each passed 38/38 steps.
-- `GraphHandle` remains experimental because the gallery is a regression fixture and the parametric EQ is still its only production consumer. The completed REAPER walkthrough validates the implementation, but it does not add a second production consumer.
+- At this milestone, `GraphHandle` remained experimental because the gallery was a regression fixture and the parametric EQ was its only production consumer. The completed REAPER walkthrough validated the implementation, but it did not add a second production consumer.
 
 ### Final macOS host acceptance and layout polish
 
@@ -249,7 +249,7 @@ Record each committed milestone here with test counts, performance measurements,
 - The Compact and Expand control now retains a themed medium vertical gutter from the High-band controls while preserving the standard editor height and bottom margin. The final host review accepted the text padding and footer spacing.
 - `zig build test --summary all` passed 58/58 steps and 3,716/3,716 tests. Native adapter, macOS accessibility, and visual-regression suites passed. The final linked EQ warm render measured 239.9 us during validator execution and 240.6 us during the full test run, both within the 300 us budget.
 - Every raw ABI check and all twelve Steinberg example validators passed. The Parametric EQ validator passed 47/47 tests for both processing precisions. Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` bundle matrices each passed 38/38 steps.
-- Rotary controls, decibel controls, and the shared asset, font, and custom-drawing contracts move to supported status. Direct bipolar sliders, `GraphHandle`, graph layers, and analyzer transport remain experimental for the consumer-count reasons below.
+- At this milestone, rotary controls, decibel controls, and the shared asset, font, and custom-drawing contracts moved to supported status. Direct bipolar sliders, `GraphHandle`, graph layers, and analyzer transport remained experimental for the consumer-count reasons below.
 - Pluginval remains unavailable under the stop-on-first-exit policy. The preserved unexpected exit occurred during application startup before a plugin image appeared in the stack. Native Windows, X11, Wayland, Narrator, AT-SPI, screen-reader, and multi-monitor scale checks remain external.
 
 ## Current Completion Audit
@@ -258,7 +258,7 @@ Record each committed milestone here with test counts, performance measurements,
 | --- | --- | --- |
 | Three-band EQ and output | Public 17-parameter plugin, DSP tests, raw ABI checks, 47/47 Steinberg tests, and REAPER acceptance | Complete on macOS arm64 |
 | Rotary, bipolar dB, modulation, exact entry, reset, fine adjustment, tooltip, and keyboard paths | EQ and gallery declarations plus native interaction, accessibility, visual, and REAPER tests | Complete; rotary and decibel controls are supported |
-| Linked graph editing and automation | EQ and gallery use the same public `GraphHandle` contract; native tests cover grouped edits, host updates, rejection, selection, and accessibility | Complete locally; `GraphHandle` remains experimental with one production consumer |
+| Linked graph editing and automation | EQ and gallery use the same public `GraphHandle` contract; native tests cover grouped edits, host updates, rejection, selection, and accessibility | Complete locally; the later Resonant Filter milestone promoted `GraphHandle` to supported status |
 | Spectrum transport | Fixed-capacity `SpectrumAnalyzer(128)`, activity tests, instance isolation, and performance coverage | Complete for the EQ; later Channel Strip and Resonant Filter consumers supersede the original consumer-count blocker |
 | Responsive layout and scaling | Compact, standard, expanded, resize-cycle, 1x, 1.5x, and 2x geometry tests and references | Complete locally; multi-monitor movement remains external |
 | Shared skin | Gallery, IR Loader, and EQ use the same asset, font, and drawing contracts; lifecycle, visual, and REAPER tests pass | Complete; assets, fonts, and custom drawing are supported |
@@ -270,6 +270,6 @@ Record each committed milestone here with test counts, performance measurements,
 Retained experimental APIs:
 
 - Direct bipolar slider: only the Component Gallery uses the slider presentation. Bipolar EQ rotary controls do not validate it.
-- `GraphHandle` and mixed graph layers: this plan retained them because the EQ was the only production consumer at completion. The later Resonant Filter milestone owns the promotion decision.
-- Analyzer transport: this plan retained it under an incorrect one-consumer assessment. Channel Strip already used the transport, and Resonant Filter now adds another production use. The Resonant Filter milestone owns the corrected promotion decision.
+- `GraphHandle` and mixed graph layers were experimental when this plan completed. Parametric EQ and Resonant Filter later passed the same production contract and macOS host checks, so the Resonant Filter milestone promoted them to supported status.
+- Analyzer transport was retained here under an incorrect one-consumer assessment. Channel Strip, Parametric EQ, and Resonant Filter later passed the shared bounded lifecycle and macOS host checks, so the Resonant Filter milestone promoted it to supported status.
 - Native assistive-technology bridges: automated macOS integration passes, but screen-reader workflows and native Windows and Linux bridges need their target environments.

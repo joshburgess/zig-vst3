@@ -231,7 +231,7 @@ Use the gallery as a regression fixture and API example. It is intentionally den
 
 ## Telemetry
 
-Meters consume scalar snapshots from `zig-vst3-plugin.gui_telemetry`. A `SimpleStereoEffect` processor opts in by implementing `guiTelemetryLoad`, `guiTelemetryEditorOpened`, and `guiTelemetryEditorClosed`. Its reflected controller discovers that source through the normal component connection point, and `createEditor` retains it automatically. Plugin editor composition does not need adapter-specific wiring.
+Meters consume scalar snapshots from `zig-vst3-plugin.gui_telemetry`. A `SimpleStereoEffect` processor exposes the shared telemetry source when it implements `guiTelemetryLoad`, `guiGraphLoad`, or both. `guiTelemetryEditorOpened` and `guiTelemetryEditorClosed` gate processor work while editors are closed. The reflected controller discovers that source through the normal component connection point, and `createEditor` retains it automatically. Source discovery is retried after editor attachment so valid late component connections begin producing without recreating the editor. Plugin editor composition does not need adapter-specific wiring.
 
 The audio thread publishes bounded atomic values. The editor's 33 millisecond timer applies ballistics, formats accessibility text, and invalidates only when the displayed result changes. Peak and stereo meters show dB reference ticks and a clipping indicator. Gain-reduction meters show a 0 to 24 dB scale. Clicking a meter or focusing it and pressing Return or Space resets its held peak without changing a parameter.
 
@@ -518,7 +518,9 @@ Supported authoring surface:
 - `EditorDescription`, `Composition`, `Group`, `StyleOverride`, and `createEditor`.
 - `Meter`, meter source wiring, `MeterBank`, and GUI telemetry presentation.
 - `Graph`, graph axes and style roles, and grouped graph composition.
+- `GraphHandle`, `GraphLayer`, parameter-driven controller curves, mixed-source graph layers, grouped gestures, selection, and linked panel highlighting.
 - `WaveformCapture`, activity-gated dynamic graph sources, and production waveform rendering.
+- `SpectrumAnalyzer`, fixed-capacity analyzer transport, activity-gated production, bounded snapshot reads, and production spectrum rendering.
 - `EnvelopePoint`, bounded editable envelopes, stable selection, snapping, and parameter-backed point gestures.
 - `editor_state.Store`, typed editor values, bounded serialization, migrations, and persistent envelope bindings.
 - `XYPad`, ordered two-parameter gestures, per-axis semantics, and grouped XY-pad composition.
@@ -540,12 +542,10 @@ Experimental extensions:
 
 - `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader is their only production consumer.
 - The direct bipolar slider. It remains a gallery-only presentation and needs a production consumer before promotion.
-- `GraphHandle`, `GraphLayer`, parameter-driven controller curves, and mixed-source graph layers. Parametric EQ and Resonant Filter now use the shared production contract. Supported status remains gated on the Resonant Filter's dedicated visual, performance, and host checks.
-- `SpectrumAnalyzer` and analyzer transport. Channel Strip, Parametric EQ, and Resonant Filter use the fixed-capacity transport. Supported status remains gated on the Resonant Filter's current lifecycle, visual, performance, and host checks.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
 - `AudioFileImporter`, controller-owned import status and command callbacks, and controller-sourced graph snapshots. The channel strip and IR loader use the contract, but decoded audio transport still has one production consumer.
-- New modulation and GPU components.
+- Additional modulation component types and GPU-backed custom views. Neither has a public declaration or a production consumer. A GPU path also requires profiling evidence that the toolkit-managed renderer is the limiting factor.
 
 Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.
 

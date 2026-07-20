@@ -1748,6 +1748,52 @@ test "simple stereo effect clears unsupported query outputs" {
     try std.testing.expect(processor.vtable.release(processor) >= 1);
 }
 
+test "simple stereo effect exposes graph-only telemetry" {
+    const TestEffect = SimpleStereoEffect(struct {
+        pub const component_name = "GraphTelemetryComponent";
+        pub const controller_cid = tuid.inlineUid(0x5A14B7C2, 0x98E4430D, 0xB9512E6F, 0x7C83A109);
+        pub const Processor = struct {
+            pub fn process(_: @This(), comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+                for (0..context.outputChannelCount()) |channel| {
+                    const output = context.outputChannel(channel) orelse continue;
+                    @memset(output, 0);
+                }
+            }
+
+            pub fn guiGraphLoad(_: *@This(), source_id: u32, output: []plug_core.gui_graph.Point) usize {
+                if (source_id != 7 or output.len == 0) return 0;
+                output[0] = .{ .x = 42.0, .y = -6.0 };
+                return 1;
+            }
+        };
+
+        pub fn applyParameterChanges(_: plug_process.ParameterChanges) void {}
+
+        pub fn readState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultFalse;
+        }
+
+        pub fn writeState(_: ?*ibstream.IBStream) types.tresult {
+            return types.kResultFalse;
+        }
+    });
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestEffect.create(@ptrCast(&ivstcomponent.icomponent_iid), &component_out));
+    const component: *ivstcomponent.IComponent = @ptrCast(@alignCast(component_out orelse return error.TestUnexpectedResult));
+    defer _ = component.vtable.release(component);
+
+    var telemetry_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, component.vtable.queryInterface(component, &gui_telemetry_source.iid, &telemetry_out));
+    const telemetry: *gui_telemetry_source.Interface = @ptrCast(@alignCast(telemetry_out orelse return error.TestUnexpectedResult));
+    defer _ = telemetry.vtable.release(telemetry);
+
+    var points: [1]plug_core.gui_graph.Point = undefined;
+    try std.testing.expectEqual(@as(types.uint32, 1), telemetry.vtable.loadGraph(telemetry, 7, &points, points.len));
+    try std.testing.expectEqual(@as(f32, 42.0), points[0].x);
+    try std.testing.expectEqual(@as(f32, -6.0), points[0].y);
+}
+
 test "simple stereo effect processes with setup sample rate when process context is absent" {
     const Config = struct {
         pub const component_name = "SampleRateFallback";
@@ -2399,7 +2445,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
                 interface_map.fieldEntry("prefetchable_support", self, &ivstprefetchablesupport.iprefetchable_support_iid),
                 interface_map.fieldEntry("data_exchange_receiver", self, &ivstdataexchange.idata_exchange_receiver_iid),
             };
-            if (comptime @hasDecl(Config.Processor, "guiTelemetryLoad")) {
+            if (comptime @hasDecl(Config.Processor, "guiTelemetryLoad") or @hasDecl(Config.Processor, "guiGraphLoad")) {
                 const entries = base_entries ++ [_]interface_map.Entry{
                     interface_map.fieldEntry("telemetry_source", self, &gui_telemetry_source.iid),
                 };
