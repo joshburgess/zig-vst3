@@ -371,6 +371,7 @@ pub const GraphDescription = extern struct {
     parameter_driven: types.int32 = 0,
     layers: ?[*]const GraphLayerDescription = null,
     layer_count: types.uint32 = 0,
+    secondary_range_selection: RangeSelectionDescription = .{},
 };
 
 pub const GraphLayerDescription = extern struct {
@@ -446,6 +447,11 @@ pub const RangeSelectionDescription = extern struct {
     step: f64 = 0.0,
     start_state_id: types.uint32 = 0,
     end_state_id: types.uint32 = 0,
+    parameter_bound: types.int32 = 0,
+    start_parameter_id: types.uint32 = 0,
+    end_parameter_id: types.uint32 = 0,
+    start_step_count: types.int32 = 0,
+    end_step_count: types.int32 = 0,
 };
 
 const GraphCallbacks = extern struct {

@@ -506,7 +506,22 @@ Drag either visible handle to adjust one boundary. Drag elsewhere to create a re
 
 The selected interval uses a translucent fill plus explicit boundary lines and handle shapes. Focus changes the active handle's weight, so the state does not depend on color. Accessibility exposes the selected interval, active handle, x-axis range, exact set-value, increment, decrement, and handle-selection actions.
 
-`RangeSelection` and `RangeSelectionHandle` are supported. The component gallery and production IR loader share their public declaration, bounded model, atomic state callback, interactions, rendering, and accessibility semantics.
+A selection may bind directly to two declared parameters instead of editor-state fields:
+
+```zig
+.range_selection = .{
+    .minimum_span = 0.001,
+    .step = 0.001,
+    .start_parameter_id = start_parameter_id,
+    .end_parameter_id = end_parameter_id,
+},
+```
+
+Parameter binding uses one ordered two-parameter gesture. Host updates move the matching handle without emitting another edit, and a rejected edit restores both boundaries. Parameter-backed selections cannot also declare editor-state fields.
+
+Set `secondary_range_selection` to display a second independent range on the same graph. The primary range uses circular markers at the top edge. The secondary range uses square markers at the bottom edge, so overlapping handles remain distinguishable without color. Return cycles through all four handles. Accessibility names the active range as playback or loop selection and exposes its exact value.
+
+`RangeSelection` and `RangeSelectionHandle` with editor-state persistence are supported. The component gallery and production IR loader share their public declaration, bounded model, atomic state callback, interactions, rendering, and accessibility semantics. Direct parameter binding and `secondary_range_selection` remain experimental until another production editor shares those extensions with the sample player.
 
 ## API Status
 
@@ -541,7 +556,8 @@ Supported authoring surface:
 Experimental extensions:
 
 - `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader is their only production consumer.
-- The direct bipolar slider. It remains a gallery-only presentation and needs a production consumer before promotion.
+- Direct parameter-backed graph ranges and `Graph.secondary_range_selection`. The visual gallery and sample player exercise them, but a second production consumer is still required.
+- The direct bipolar slider. The gallery and sample player exercise it, but a second production consumer is still required.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
 - `AudioFileImporter`, controller-owned import status and command callbacks, and controller-sourced graph snapshots. The channel strip and IR loader use the contract, but decoded audio transport still has one production consumer.

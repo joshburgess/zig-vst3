@@ -701,12 +701,15 @@ Snapshot graphViewports() {
                 1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 16.0, 1.0, 0.0, 0.0, 1.25, 0.1, 0, 0, 0,
             };
             full.range_selection = {1, 0.15, 0.8, 0.01, 0.01, 0, 0};
+            full.secondary_range_selection = {1, 0.32, 0.62, 0.01, 0.01, 0, 0};
             auto detail = full;
             detail.title = "Zoomed IR";
             detail.viewport.initial_zoom = 4.0;
             detail.viewport.initial_x_offset = 0.2;
             detail.range_selection.initial_start = 0.28;
             detail.range_selection.initial_end = 0.42;
+            detail.secondary_range_selection.initial_start = 0.31;
+            detail.secondary_range_selection.initial_end = 0.38;
             ZigVstgui::AccessibilityNode nodes[2];
             container->addView(new ZigVstgui::GraphView(
                 VSTGUI::CRect(8, 8, 312, 172), full, styles, &nodes[0]
@@ -1877,7 +1880,10 @@ double benchmarkGraphOverlayDraw(bool with_selection) {
     description.viewport = {
         1, ZIG_VSTGUI_VIEWPORT_HORIZONTAL, 1.0, 128.0, 8.0, 0.4, 0.0, 1.25, 0.1, 0, 0, 0,
     };
-    if (with_selection) description.range_selection = {1, 0.45, 0.55, 0.001, 0.001, 0, 0};
+    if (with_selection) {
+        description.range_selection = {1, 0.35, 0.65, 0.001, 0.001, 0, 0};
+        description.secondary_range_selection = {1, 0.45, 0.55, 0.001, 0.001, 0, 0};
+    }
     ZigVstgui::AccessibilityNode accessibility;
     container->addView(new ZigVstgui::GraphView(
         VSTGUI::CRect(8, 8, 312, 172), description, styles, &accessibility

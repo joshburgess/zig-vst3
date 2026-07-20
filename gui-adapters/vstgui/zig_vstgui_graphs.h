@@ -12,6 +12,7 @@
 #include "vstgui/lib/iviewlistener.h"
 
 #include <cstdint>
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -61,6 +62,7 @@ public:
     bool rangeSelectionEnabled() const;
     double rangeSelectionStart() const;
     double rangeSelectionEnd() const;
+    double activeRangeSelectionStep() const;
     RangeSelectionHandle activeRangeSelectionHandle() const;
     bool selectRangeSelectionHandle(RangeSelectionHandle handle);
     bool cycleRangeSelectionHandle();
@@ -103,6 +105,10 @@ private:
         bool disabled {false};
         std::vector<PointState> points;
     };
+    struct RangeSelectionHit {
+        std::size_t index {0};
+        RangeSelectionHandle handle {RangeSelectionHandle::start};
+    };
 
     bool envelopeEditable() const;
     bool handleEditable() const;
@@ -116,7 +122,7 @@ private:
     ZigVstguiGraphPoint graphPoint(const VSTGUI::CPoint& point) const;
     std::optional<std::size_t> indexOf(uint32_t point_id) const;
     std::optional<std::size_t> hitTestPoint(const VSTGUI::CPoint& point) const;
-    std::optional<RangeSelectionHandle> hitTestRangeSelectionHandle(const VSTGUI::CPoint& point) const;
+    std::optional<RangeSelectionHit> hitTestRangeSelectionHandle(const VSTGUI::CPoint& point) const;
     VSTGUI::CRect affectedBounds(const std::vector<PointState>& values, std::size_t index) const;
     VSTGUI::CRect contentBounds(const std::vector<PointState>& values) const;
     void invalidateChange(const std::vector<PointState>& before, std::size_t before_index, std::size_t after_index);
@@ -124,9 +130,12 @@ private:
     void persistSelection();
     void persistEnvelope();
     bool persistViewport(const ViewportModel& previous);
-    bool persistRangeSelection(const RangeSelectionModel& previous);
+    bool persistRangeSelection(std::size_t index, const RangeSelectionModel& previous);
     void drawViewportOverlay(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds);
-    void drawRangeSelection(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds);
+    void drawRangeSelection(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds, std::size_t index);
+    bool hasRangeSelection() const;
+    RangeSelectionModel& activeRangeSelection();
+    const RangeSelectionModel& activeRangeSelection() const;
     uint32_t allocatePointId();
 
     ZigVstguiGraphDescription description;
@@ -148,8 +157,10 @@ private:
     double range_anchor {0.0};
     bool valid_description {false};
     ViewportModel viewport;
-    RangeSelectionModel range_selection;
-    RangeSelectionModel range_transaction;
+    std::array<RangeSelectionModel, 2> range_selections;
+    std::array<RangeSelectionModel, 2> range_transactions;
+    std::array<std::shared_ptr<MultiParameterControlModel>, 2> range_parameter_models;
+    std::size_t active_range_selection {0};
     void* selection_userdata {nullptr};
     void (*selection_changed)(void* userdata, uint32_t group_index) {nullptr};
 };

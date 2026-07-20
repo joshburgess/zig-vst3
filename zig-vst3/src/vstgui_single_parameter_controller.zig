@@ -127,6 +127,8 @@ pub const RangeSelection = struct {
     step: f64 = 0.01,
     start_state_id: u32 = 0,
     end_state_id: u32 = 0,
+    start_parameter_id: ?vsttypes.ParamID = null,
+    end_parameter_id: ?vsttypes.ParamID = null,
 
     pub fn config(self: RangeSelection, axis: GraphAxis) gui_range_selection.Config {
         return .{
@@ -144,6 +146,15 @@ pub const RangeSelection = struct {
         if ((self.start_state_id == 0) != (self.end_state_id == 0)) return error.IncompleteRangeSelectionState;
         if (self.start_state_id != 0 and self.start_state_id == self.end_state_id) {
             return error.DuplicateRangeSelectionStateField;
+        }
+        if ((self.start_parameter_id == null) != (self.end_parameter_id == null)) {
+            return error.IncompleteRangeSelectionParameters;
+        }
+        if (self.start_parameter_id != null and self.start_parameter_id == self.end_parameter_id) {
+            return error.DuplicateRangeSelectionParameter;
+        }
+        if (self.start_state_id != 0 and self.start_parameter_id != null) {
+            return error.ConflictingRangeSelectionPersistence;
         }
     }
 };
@@ -175,6 +186,7 @@ pub const Graph = struct {
     envelope_state_id: u32 = 0,
     viewport: ?Viewport = null,
     range_selection: ?RangeSelection = null,
+    secondary_range_selection: ?RangeSelection = null,
     handles: []const GraphHandle = &.{},
     parameter_driven: bool = false,
     layers: []const GraphLayer = &.{},
@@ -546,6 +558,76 @@ pub fn createEditor(
     );
 }
 
+fn makeRangeSelectionDescription(
+    comptime Controller: type,
+    controller: *ivsteditcontroller.IEditController,
+    selection: ?RangeSelection,
+    axis: GraphAxis,
+    parameters: []const Parameter,
+) !vstgui_editor_view.RangeSelectionDescription {
+    const value = selection orelse return .{};
+    try value.validate(axis);
+    var config = value.config(axis);
+    if (comptime Controller.hasEditorState) {
+        const state = Controller.editorState(controller);
+        if (value.start_state_id != 0) {
+            const restored_start = switch (state.get(value.start_state_id) orelse return error.InvalidRangeSelectionState) {
+                .scalar => |stored| stored,
+                else => return error.InvalidRangeSelectionState,
+            };
+            const restored_end = switch (state.get(value.end_state_id) orelse return error.InvalidRangeSelectionState) {
+                .scalar => |stored| stored,
+                else => return error.InvalidRangeSelectionState,
+            };
+            config.initial_start = std.math.clamp(restored_start, config.minimum, config.maximum - config.minimum_span);
+            config.initial_end = std.math.clamp(restored_end, config.initial_start + config.minimum_span, config.maximum);
+        }
+    } else if (value.start_state_id != 0) return error.MissingEditorState;
+
+    var parameter_bound = false;
+    var start_parameter_id: vsttypes.ParamID = 0;
+    var end_parameter_id: vsttypes.ParamID = 0;
+    var start_step_count: types.int32 = 0;
+    var end_step_count: types.int32 = 0;
+    if (value.start_parameter_id) |start_id| {
+        const end_id = value.end_parameter_id.?;
+        var found_start = false;
+        var found_end = false;
+        for (parameters) |parameter| {
+            if (parameter.id == start_id) {
+                found_start = true;
+                start_step_count = parameter.step_count;
+            }
+            if (parameter.id == end_id) {
+                found_end = true;
+                end_step_count = parameter.step_count;
+            }
+        }
+        if (!found_start or !found_end) return error.UnknownRangeSelectionParameter;
+        const axis_span = axis.maximum - axis.minimum;
+        config.initial_start = axis.minimum + Controller.getNormalized(controller, start_id) * axis_span;
+        config.initial_end = axis.minimum + Controller.getNormalized(controller, end_id) * axis_span;
+        parameter_bound = true;
+        start_parameter_id = start_id;
+        end_parameter_id = end_id;
+    }
+    try config.validate();
+    return .{
+        .enabled = 1,
+        .initial_start = config.initial_start,
+        .initial_end = config.initial_end,
+        .minimum_span = config.minimum_span,
+        .step = config.step,
+        .start_state_id = value.start_state_id,
+        .end_state_id = value.end_state_id,
+        .parameter_bound = @intFromBool(parameter_bound),
+        .start_parameter_id = start_parameter_id,
+        .end_parameter_id = end_parameter_id,
+        .start_step_count = start_step_count,
+        .end_step_count = end_step_count,
+    };
+}
+
 fn createConfiguredView(
     comptime Controller: type,
     controller: *ivsteditcontroller.IEditController,
@@ -643,15 +725,26 @@ fn createConfiguredView(
             var editable_points = graph.editable_points;
             var initial_selected_point_id: u32 = 0;
             var viewport_description = vstgui_editor_view.ViewportDescription{};
-            var range_selection_description = vstgui_editor_view.RangeSelectionDescription{};
+            const range_selection_description = makeRangeSelectionDescription(
+                Controller,
+                controller,
+                graph.range_selection,
+                graph.x_axis,
+                parameters,
+            ) catch return null;
+            const secondary_range_selection_description = makeRangeSelectionDescription(
+                Controller,
+                controller,
+                graph.secondary_range_selection,
+                graph.x_axis,
+                parameters,
+            ) catch return null;
             const has_persistent_viewport = if (graph.viewport) |viewport|
                 viewport.zoom_state_id != 0 or viewport.x_offset_state_id != 0 or viewport.y_offset_state_id != 0
             else
                 false;
-            const has_persistent_range_selection = if (graph.range_selection) |selection|
-                selection.start_state_id != 0 or selection.end_state_id != 0
-            else
-                false;
+            const has_persistent_range_selection = range_selection_description.start_state_id != 0 or
+                secondary_range_selection_description.start_state_id != 0;
             if (comptime Controller.hasEditorState) {
                 const state = Controller.editorState(controller);
                 if (graph.envelope_state_id != 0) {
@@ -727,54 +820,36 @@ fn createConfiguredView(
                     .y_offset_state_id = viewport.y_offset_state_id,
                 };
             }
-            if (graph.range_selection) |selection| {
-                selection.validate(graph.x_axis) catch return null;
-                var config = selection.config(graph.x_axis);
-                if (comptime Controller.hasEditorState) {
-                    const state = Controller.editorState(controller);
-                    if (selection.start_state_id != 0) {
-                        const restored_start = switch (state.get(selection.start_state_id) orelse return null) {
-                            .scalar => |value| value,
-                            else => return null,
-                        };
-                        const restored_end = switch (state.get(selection.end_state_id) orelse return null) {
-                            .scalar => |value| value,
-                            else => return null,
-                        };
-                        config.initial_start = std.math.clamp(
-                            restored_start,
-                            config.minimum,
-                            config.maximum - config.minimum_span,
-                        );
-                        config.initial_end = std.math.clamp(
-                            restored_end,
-                            config.initial_start + config.minimum_span,
-                            config.maximum,
-                        );
-                    }
-                }
-                config.validate() catch return null;
-                range_selection_description = .{
-                    .enabled = 1,
-                    .initial_start = config.initial_start,
-                    .initial_end = config.initial_end,
-                    .minimum_span = config.minimum_span,
-                    .step = config.step,
-                    .start_state_id = selection.start_state_id,
-                    .end_state_id = selection.end_state_id,
-                };
-            }
             const persistent_scalar_ids = [_]u32{
                 viewport_description.zoom_state_id,
                 viewport_description.x_offset_state_id,
                 viewport_description.y_offset_state_id,
                 range_selection_description.start_state_id,
                 range_selection_description.end_state_id,
+                secondary_range_selection_description.start_state_id,
+                secondary_range_selection_description.end_state_id,
             };
             for (persistent_scalar_ids, 0..) |field_id, field_index| {
                 if (field_id == 0) continue;
                 for (persistent_scalar_ids[0..field_index]) |previous| {
                     if (previous == field_id) return null;
+                }
+            }
+            if (range_selection_description.parameter_bound != 0 and
+                secondary_range_selection_description.parameter_bound != 0)
+            {
+                const primary_parameter_ids = [_]vsttypes.ParamID{
+                    range_selection_description.start_parameter_id,
+                    range_selection_description.end_parameter_id,
+                };
+                const secondary_parameter_ids = [_]vsttypes.ParamID{
+                    secondary_range_selection_description.start_parameter_id,
+                    secondary_range_selection_description.end_parameter_id,
+                };
+                for (primary_parameter_ids) |primary_id| {
+                    for (secondary_parameter_ids) |secondary_id| {
+                        if (primary_id == secondary_id) return null;
+                    }
                 }
             }
             var has_dynamic_layer = false;
@@ -786,7 +861,8 @@ fn createConfiguredView(
                 (graph.parameter_driven and (graph.dynamic or graph.source != .controller)) or
                 (graph.source_id & vstgui_editor_view.controller_graph_source_flag != 0) or
                 !validGraphAxis(graph.x_axis) or !validGraphAxis(graph.y_axis) or
-                (graph.range_selection != null and (graph.point_capacity > 0 or graph.handles.len > 0)) or
+                ((graph.range_selection != null or graph.secondary_range_selection != null) and
+                    (graph.point_capacity > 0 or graph.handles.len > 0)) or
                 (graph.point_capacity > 0 and graph.handles.len > 0) or
                 ((graph.dynamic or has_dynamic_layer) and
                     (graph.maximum_refresh_hz == 0 or graph.maximum_refresh_hz > 60)) or
@@ -968,6 +1044,7 @@ fn createConfiguredView(
                 .parameter_driven = @intFromBool(graph.parameter_driven),
                 .layers = if (graph.layers.len == 0) null else &graph_layers[index],
                 .layer_count = @intCast(graph.layers.len),
+                .secondary_range_selection = secondary_range_selection_description,
             };
         }
         if (xy_pads.len > vstgui_editor_view.max_xy_pads) return null;
@@ -1687,6 +1764,23 @@ test "graph range selections validate bounds and paired state fields" {
     try std.testing.expectError(error.DuplicateRangeSelectionStateField, (RangeSelection{
         .start_state_id = 20,
         .end_state_id = 20,
+    }).validate(axis));
+    try (RangeSelection{
+        .start_parameter_id = 4,
+        .end_parameter_id = 5,
+    }).validate(axis);
+    try std.testing.expectError(error.IncompleteRangeSelectionParameters, (RangeSelection{
+        .start_parameter_id = 4,
+    }).validate(axis));
+    try std.testing.expectError(error.DuplicateRangeSelectionParameter, (RangeSelection{
+        .start_parameter_id = 4,
+        .end_parameter_id = 4,
+    }).validate(axis));
+    try std.testing.expectError(error.ConflictingRangeSelectionPersistence, (RangeSelection{
+        .start_state_id = 20,
+        .end_state_id = 21,
+        .start_parameter_id = 4,
+        .end_parameter_id = 5,
     }).validate(axis));
 }
 

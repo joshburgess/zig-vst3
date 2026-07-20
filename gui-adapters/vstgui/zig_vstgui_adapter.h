@@ -382,6 +382,11 @@ typedef struct ZigVstguiRangeSelectionDescription {
     double step;
     uint32_t start_state_id;
     uint32_t end_state_id;
+    int32_t parameter_bound;
+    uint32_t start_parameter_id;
+    uint32_t end_parameter_id;
+    int32_t start_step_count;
+    int32_t end_step_count;
 } ZigVstguiRangeSelectionDescription;
 
 typedef struct ZigVstguiGraphDescription {
@@ -411,6 +416,7 @@ typedef struct ZigVstguiGraphDescription {
     int32_t parameter_driven;
     const struct ZigVstguiGraphLayerDescription* layers;
     uint32_t layer_count;
+    ZigVstguiRangeSelectionDescription secondary_range_selection;
 } ZigVstguiGraphDescription;
 
 typedef struct ZigVstguiGraphLayerDescription {

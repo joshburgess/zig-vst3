@@ -33,8 +33,6 @@ pub const maximum_voices: usize = 8;
 
 const zoom_state_id: u32 = 1;
 const x_offset_state_id: u32 = 2;
-const selection_start_state_id: u32 = 3;
-const selection_end_state_id: u32 = 4;
 
 pub const VoiceCount = enum { mono, two, four, eight };
 pub const PlaybackMode = enum { gate, one_shot };
@@ -75,8 +73,6 @@ const PlayheadSeries = core.gui_graph.SnapshotSeries(2);
 const SamplePlayerEditorState = core.editor_state.Store(1, &.{
     .{ .id = zoom_state_id, .default = .{ .scalar = 1.0 } },
     .{ .id = x_offset_state_id, .default = .{ .scalar = 0.0 } },
-    .{ .id = selection_start_state_id, .default = .{ .scalar = 0.0 } },
-    .{ .id = selection_end_state_id, .default = .{ .scalar = 1.0 } },
 });
 
 const SamplePlayerControllerState = struct {
@@ -216,8 +212,14 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                 .range_selection = .{
                     .minimum_span = 1.0 / @as(f64, maximum_sample_frames),
                     .step = 1.0 / 1024.0,
-                    .start_state_id = selection_start_state_id,
-                    .end_state_id = selection_end_state_id,
+                    .start_parameter_id = start_param_id,
+                    .end_parameter_id = end_param_id,
+                },
+                .secondary_range_selection = .{
+                    .minimum_span = 1.0 / @as(f64, maximum_sample_frames),
+                    .step = 1.0 / 1024.0,
+                    .start_parameter_id = loop_start_param_id,
+                    .end_parameter_id = loop_end_param_id,
                 },
                 .layers = &.{.{
                     .style = .warning,

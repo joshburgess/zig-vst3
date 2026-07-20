@@ -461,7 +461,6 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
         const auto& graph = graphs[index];
         const bool editable = graph.point_capacity > 0;
         const auto& viewport = graph.viewport;
-        const auto& range_selection = graph.range_selection;
         if (graph.layer_count > ZIG_VSTGUI_MAX_GRAPH_LAYERS ||
             (graph.layer_count > 0 && !graph.layers) ||
             (graph.layer_count == 0 && graph.layers)) return nullptr;
@@ -558,10 +557,18 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
                 (!graph.editable_points && graph.editable_point_count > 0) ||
                 !std::isfinite(graph.snap_x) || !std::isfinite(graph.snap_y) ||
                 graph.snap_x < 0.0 || graph.snap_y < 0.0))) return nullptr;
-        if (range_selection.enabled != 0 && range_selection.enabled != 1) return nullptr;
-        if (range_selection.enabled == 0) {
-            if (range_selection.start_state_id != 0 || range_selection.end_state_id != 0) return nullptr;
-        } else {
+        const ZigVstguiRangeSelectionDescription* range_selections[] = {
+            &graph.range_selection,
+            &graph.secondary_range_selection,
+        };
+        for (const auto* range_pointer : range_selections) {
+            const auto& range_selection = *range_pointer;
+            if (range_selection.enabled != 0 && range_selection.enabled != 1) return nullptr;
+            if (range_selection.enabled == 0) {
+                if (range_selection.start_state_id != 0 || range_selection.end_state_id != 0 ||
+                    range_selection.parameter_bound != 0) return nullptr;
+                continue;
+            }
             const double axis_span = graph.x_axis.maximum - graph.x_axis.minimum;
             if (editable || !std::isfinite(range_selection.initial_start) ||
                 !std::isfinite(range_selection.initial_end) ||
@@ -574,19 +581,55 @@ extern "C" ZigVstguiEditor* zig_vstgui_editor_create_components(
                 range_selection.step <= 0.0 || range_selection.step > axis_span ||
                 ((range_selection.start_state_id == 0) != (range_selection.end_state_id == 0)) ||
                 (range_selection.start_state_id != 0 &&
-                    range_selection.start_state_id == range_selection.end_state_id)) return nullptr;
+                    range_selection.start_state_id == range_selection.end_state_id) ||
+                (range_selection.parameter_bound != 0 && range_selection.parameter_bound != 1) ||
+                (range_selection.parameter_bound == 0 &&
+                    (range_selection.start_parameter_id != 0 || range_selection.end_parameter_id != 0 ||
+                        range_selection.start_step_count != 0 || range_selection.end_step_count != 0)) ||
+                (range_selection.parameter_bound != 0 &&
+                    (range_selection.start_state_id != 0 ||
+                        range_selection.start_parameter_id == range_selection.end_parameter_id ||
+                        range_selection.start_step_count < 0 || range_selection.end_step_count < 0 ||
+                        !callbacks.begin_edit || !callbacks.perform_edit || !callbacks.end_edit))) return nullptr;
             if (range_selection.start_state_id != 0 && !callbacks.store_editor_scalars) return nullptr;
-            const uint32_t state_ids[] = {
-                viewport.zoom_state_id,
-                viewport.x_offset_state_id,
-                viewport.y_offset_state_id,
-                range_selection.start_state_id,
-                range_selection.end_state_id,
+            if (range_selection.parameter_bound != 0) {
+                bool found_start = false;
+                bool found_end = false;
+                for (uint32_t parameter = 0; parameter < parameter_count; ++parameter) {
+                    found_start = found_start || parameters[parameter].parameter_id == range_selection.start_parameter_id;
+                    found_end = found_end || parameters[parameter].parameter_id == range_selection.end_parameter_id;
+                }
+                if (!found_start || !found_end) return nullptr;
+            }
+        }
+        const uint32_t range_state_ids[] = {
+            viewport.zoom_state_id,
+            viewport.x_offset_state_id,
+            viewport.y_offset_state_id,
+            graph.range_selection.start_state_id,
+            graph.range_selection.end_state_id,
+            graph.secondary_range_selection.start_state_id,
+            graph.secondary_range_selection.end_state_id,
+        };
+        for (uint32_t field = 0; field < 7; ++field) {
+            if (range_state_ids[field] == 0) continue;
+            for (uint32_t previous = 0; previous < field; ++previous) {
+                if (range_state_ids[previous] == range_state_ids[field]) return nullptr;
+            }
+        }
+        if (graph.range_selection.parameter_bound != 0 &&
+            graph.secondary_range_selection.parameter_bound != 0) {
+            const uint32_t primary_parameter_ids[] = {
+                graph.range_selection.start_parameter_id,
+                graph.range_selection.end_parameter_id,
             };
-            for (uint32_t field = 0; field < 5; ++field) {
-                if (state_ids[field] == 0) continue;
-                for (uint32_t previous = 0; previous < field; ++previous) {
-                    if (state_ids[previous] == state_ids[field]) return nullptr;
+            const uint32_t secondary_parameter_ids[] = {
+                graph.secondary_range_selection.start_parameter_id,
+                graph.secondary_range_selection.end_parameter_id,
+            };
+            for (const auto primary_id : primary_parameter_ids) {
+                for (const auto secondary_id : secondary_parameter_ids) {
+                    if (primary_id == secondary_id) return nullptr;
                 }
             }
         }
@@ -766,5 +809,5 @@ extern "C" void zig_vstgui_editor_set_resize_callbacks(
 }
 
 extern "C" uint32_t zig_vstgui_adapter_version() {
-    return 24;
+    return 25;
 }

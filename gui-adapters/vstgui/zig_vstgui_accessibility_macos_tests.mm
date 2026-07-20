@@ -211,7 +211,7 @@ int main() {
         [exact setAccessibilityValue:@"0.42"];
         if (!editor.parameterValue(10, value) || std::abs(value - 0.42) > 1e-9) return 24;
         [graph accessibilityPerformIncrement];
-        if (![[graph accessibilityValueDescription] containsString:@"Selection 0.250 to 0.800"] ||
+        if (![[graph accessibilityValueDescription] containsString:@"Playback selection 0.250 to 0.800"] ||
             std::abs([[graph accessibilityValue] doubleValue] - 0.25) > 1e-9) return 30;
         [editable_name setAccessibilityValue:@"Bright Hall"];
         if (state.editor_text != "Bright Hall" || ![[editable_name accessibilityValue] isEqualToString:@"Bright Hall"]) return 28;

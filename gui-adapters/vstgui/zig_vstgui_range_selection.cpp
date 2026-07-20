@@ -27,7 +27,10 @@ bool RangeSelectionModel::configure(
         config.minimum_span > span || config.initial_end - config.initial_start < config.minimum_span ||
         config.step <= 0.0 || config.step > span ||
         ((config.start_state_id == 0) != (config.end_state_id == 0)) ||
-        (config.start_state_id != 0 && config.start_state_id == config.end_state_id)) return false;
+        (config.start_state_id != 0 && config.start_state_id == config.end_state_id) ||
+        (config.parameter_bound != 0 && config.parameter_bound != 1) ||
+        (config.parameter_bound != 0 && (config.start_parameter_id == config.end_parameter_id ||
+            config.start_step_count < 0 || config.end_step_count < 0 || config.start_state_id != 0))) return false;
     selection_start = config.initial_start;
     selection_end = config.initial_end;
     valid = true;

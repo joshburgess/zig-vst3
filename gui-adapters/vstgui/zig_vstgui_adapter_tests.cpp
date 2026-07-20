@@ -1189,7 +1189,7 @@ int testGalleryLayoutExtents() {
 }
 
 int testMeterAbi() {
-    if (zig_vstgui_adapter_version() != 24) return 1;
+    if (zig_vstgui_adapter_version() != 25) return 1;
     const ZigVstguiParameterDescription parameter {
         1,
         0.5,
@@ -1268,7 +1268,7 @@ int testMeterAbi() {
     );
     const auto* selection_semantics = selection_editor ? selection_editor->graphAccessibility(0) : nullptr;
     if (!selection_semantics || selection_semantics->state().read_only ||
-        selection_semantics->valueText().find("Selection -0.500 to 0.500") == std::string::npos ||
+        selection_semantics->valueText().find("Playback selection -0.500 to 0.500") == std::string::npos ||
         !selection_semantics->perform(ZigVstgui::AccessibilityAction::select_next) ||
         !selection_semantics->perform(ZigVstgui::AccessibilityAction::increment) ||
         viewport_state.stored_scalar_ids[0] != 20 || viewport_state.stored_scalar_ids[1] != 21) {
@@ -1830,6 +1830,77 @@ int testGraphs() {
         !closeEnough(selection_control.graphView()->rangeSelectionStart(), accepted_start)) return 50;
     state.reject_scalar_store = false;
     selection_control.clear();
+
+    auto parameter_selection_graph = dynamic_graph;
+    parameter_selection_graph.range_selection = {
+        1, -0.5, 0.5, 0.1, 0.05, 0, 0, 1, 4, 5, 0, 0,
+    };
+    parameter_selection_graph.secondary_range_selection = {
+        1, -0.25, 0.25, 0.1, 0.05, 0, 0, 1, 6, 7, 0, 0,
+    };
+    CallbackState parameter_selection_state;
+    ZigVstguiCallbacks parameter_selection_callbacks {};
+    parameter_selection_callbacks.userdata = &parameter_selection_state;
+    parameter_selection_callbacks.begin_edit = beginEdit;
+    parameter_selection_callbacks.perform_edit = performEdit;
+    parameter_selection_callbacks.end_edit = endEdit;
+    parameter_selection_callbacks.store_editor_scalars = storeEditorScalars;
+    ZigVstgui::GraphControl parameter_selection_control;
+    auto parameter_selection_container = VSTGUI::owned(
+        new VSTGUI::CViewContainer(VSTGUI::CRect(0, 0, 240, 140))
+    );
+    if (!parameter_selection_control.build(
+            parameter_selection_container,
+            parameter_selection_graph,
+            {&state, loadGraph},
+            parameter_selection_callbacks,
+            styles
+        ) || !parameter_selection_control.handleKey(0, Steinberg::KEY_RIGHT, 0) ||
+        parameter_selection_state.begin_count != 2 || parameter_selection_state.perform_count != 2 ||
+        parameter_selection_state.end_count != 2 || parameter_selection_state.stored_scalar_count != 0) return 64;
+    const auto parameter_edits = parameter_selection_state.perform_count;
+    if (!parameter_selection_control.setParameter(4, 0.1) ||
+        !closeEnough(parameter_selection_control.graphView()->rangeSelectionStart(), -0.8) ||
+        parameter_selection_state.perform_count != parameter_edits) return 65;
+    if (!parameter_selection_control.handleKey(0, Steinberg::KEY_RETURN, 0) ||
+        !parameter_selection_control.handleKey(0, Steinberg::KEY_RETURN, 0) ||
+        parameter_selection_control.accessibilityNode().valueText().find("Loop selection") == std::string::npos ||
+        !parameter_selection_control.handleKey(0, Steinberg::KEY_RIGHT, 0) ||
+        parameter_selection_state.begin_count != 4 || parameter_selection_state.perform_count != 4 ||
+        parameter_selection_state.end_count != 4) return 66;
+    const auto loop_parameter_edits = parameter_selection_state.perform_count;
+    if (!parameter_selection_control.setParameter(6, 0.2) ||
+        parameter_selection_control.accessibilityNode().valueText().find("Loop selection -0.600") == std::string::npos ||
+        parameter_selection_state.perform_count != loop_parameter_edits) return 67;
+    parameter_selection_control.clear();
+
+    ZigVstgui::AccessibilityNode parameter_range_accessibility;
+    ZigVstgui::GraphView parameter_range_graph(
+        VSTGUI::CRect(0, 0, 200, 100),
+        parameter_selection_graph,
+        styles,
+        &parameter_range_accessibility,
+        parameter_selection_callbacks
+    );
+    VSTGUI::MouseDownEvent parameter_range_down(
+        VSTGUI::CPoint(110, 94),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    parameter_range_graph.onMouseDownEvent(parameter_range_down);
+    VSTGUI::MouseMoveEvent parameter_range_move(
+        VSTGUI::CPoint(140, 94),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    parameter_range_graph.onMouseMoveEvent(parameter_range_move);
+    VSTGUI::MouseUpEvent parameter_range_up(
+        VSTGUI::CPoint(140, 94),
+        VSTGUI::MouseEventButtonState(VSTGUI::MouseButton::Left)
+    );
+    parameter_range_graph.onMouseUpEvent(parameter_range_up);
+    if (!parameter_range_down.consumed || !parameter_range_move.consumed || !parameter_range_up.consumed ||
+        parameter_selection_state.begin_count != 6 || parameter_selection_state.perform_count != 6 ||
+        parameter_selection_state.end_count != 6 ||
+        parameter_range_accessibility.valueText().find("Loop selection -0.100") == std::string::npos) return 68;
 
     ZigVstgui::AccessibilityNode range_accessibility;
     ZigVstgui::GraphView range_graph(

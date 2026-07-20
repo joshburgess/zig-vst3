@@ -35,11 +35,11 @@ Exit criteria:
 
 ## Milestone 2: Production Waveform Editor
 
-- [ ] Declare the complete editor through `vst3.vstgui.createEditor` without adapter-internal imports.
+- [x] Declare the complete editor through `vst3.vstgui.createEditor` without adapter-internal imports.
 - [ ] Add File, Waveform, Playback, and Envelope groups with one clear primary import action.
-- [ ] Add drag-and-drop and picker entry, progress, cancel, retry, clear confirmation, and concise recovery text.
-- [ ] Add a controller waveform, horizontal viewport, start and end selection, loop range, live playhead, scales, and explicit empty and loading states.
-- [ ] Add direct bipolar pan, gain, coarse and fine tuning, playback and loop modes, reverse, ADSR, piano audition, and exact entry.
+- [x] Add drag-and-drop and picker entry, progress, cancel, retry, clear confirmation, and concise recovery text.
+- [x] Add a controller waveform, horizontal viewport, start and end selection, loop range, live playhead, scales, and explicit empty and loading states.
+- [x] Add direct bipolar pan, gain, coarse and fine tuning, playback and loop modes, reverse, ADSR, piano audition, and exact entry.
 
 Exit criteria:
 
@@ -125,3 +125,15 @@ Record committed milestones here with test counts, validator results, performanc
 - `zig build bundle-sample-player-linux -Dtarget=aarch64-linux-gnu --summary all`: 4/4 steps passed.
 - `zig build bundle-sample-player-windows -Dtarget=x86_64-windows-gnu --summary all`: 4/4 steps passed.
 - Warm visual measurements during the final test run were 97.0 us for the full scene, 276.1 us for signal views, 240.3 us for linked EQ, 149.2 us for Resonant Filter, 54.1 us for viewport rendering, and 111.0 us for range selection. All remained inside their existing budgets.
+
+### Milestone 2: Waveform Range Contract
+
+- Waveform playback start and end now bind directly to their declared parameters through one ordered two-parameter gesture. Host automation moves the handles without emitting another edit, and rejection restores the accepted range.
+- A graph may declare an independent secondary range. The sample player uses it for loop start and end. Circular top markers identify playback boundaries, while square bottom markers identify loop boundaries when positions overlap.
+- Keyboard focus cycles across all four handles. Toolkit-neutral and native macOS accessibility values name the active playback or loop selection and expose its exact range.
+- The ABI contract advanced to adapter version 25. Native validation rejects incomplete bindings, missing parameters, state and parameter persistence conflicts, and parameter reuse across the two ranges.
+- Updated graph viewport references cover overlapping primary and secondary markers. The final warm render measurement for the two-range selection scene was 158.1 us, within the existing budget.
+- Direct parameter-backed ranges and `secondary_range_selection` remain experimental. The visual gallery and sample player exercise the same public contract, but a second production consumer is still required for promotion.
+- `zig build test raw-api-abi validate-sample-player --summary all`: 180/180 build steps and 3,758/3,758 tests passed. The Steinberg validator reported 47 tests passed and 0 failed for both processing precisions.
+- The native adapter, macOS accessibility bridge, visual references, and warm-render benchmarks passed. The complete scene measured 84.9 us, graph viewport 47.1 us, and dual range selection 158.1 us.
+- Linux aarch64 and Windows x86_64 sample-player cross-target bundles each passed 4/4 build steps. These builds are not native host validation.

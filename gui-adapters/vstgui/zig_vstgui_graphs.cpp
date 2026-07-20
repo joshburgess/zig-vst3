@@ -49,15 +49,32 @@ GraphView::GraphView(
         description.kind >= ZIG_VSTGUI_GRAPH_TRANSFER_FUNCTION && description.kind <= ZIG_VSTGUI_GRAPH_SPECTRUM &&
         description.style >= ZIG_VSTGUI_GRAPH_PRIMARY && description.style <= ZIG_VSTGUI_GRAPH_WARNING;
     if (valid_description && !viewport.configure(description.viewport)) valid_description = false;
-    if (valid_description && !range_selection.configure(
-            description.range_selection,
-            description.x_axis.minimum,
-            description.x_axis.maximum
-        )) valid_description = false;
+    const ZigVstguiRangeSelectionDescription* range_descriptions[] = {
+        &description.range_selection,
+        &description.secondary_range_selection,
+    };
+    for (std::size_t index = 0; valid_description && index < range_selections.size(); ++index) {
+        if (!range_selections[index].configure(
+                *range_descriptions[index],
+                description.x_axis.minimum,
+                description.x_axis.maximum
+            )) valid_description = false;
+        if (valid_description && range_descriptions[index]->parameter_bound != 0) {
+            range_parameter_models[index] = std::make_shared<MultiParameterControlModel>(
+                range_descriptions[index]->start_parameter_id,
+                normalize(range_descriptions[index]->initial_start, description.x_axis),
+                range_descriptions[index]->start_step_count,
+                range_descriptions[index]->end_parameter_id,
+                normalize(range_descriptions[index]->initial_end, description.x_axis),
+                range_descriptions[index]->end_step_count,
+                parameter_callbacks
+            );
+        }
+    }
     if (!valid_description) return;
 
     if (envelopeEditable()) {
-        if (range_selection.enabled() || description.kind != ZIG_VSTGUI_GRAPH_ENVELOPE ||
+        if (hasRangeSelection() || description.kind != ZIG_VSTGUI_GRAPH_ENVELOPE ||
             description.dynamic || description.point_count != 0 ||
             description.point_capacity == 0 || description.point_capacity > ZIG_VSTGUI_MAX_GRAPH_POINTS ||
             description.editable_point_count > description.point_capacity ||
@@ -129,7 +146,7 @@ GraphView::GraphView(
         }
     }
     if (description.handle_count > 0) {
-        if (envelopeEditable() || range_selection.enabled() ||
+        if (envelopeEditable() || hasRangeSelection() ||
             description.handle_count > ZIG_VSTGUI_MAX_GRAPH_HANDLES || !description.handles) {
             valid_description = false;
             return;
@@ -246,7 +263,7 @@ GraphView::GraphView(
         }
         layers.push_back(std::move(layer));
     }
-    if (editable() || viewport.enabled() || range_selection.enabled()) setWantsFocus(true);
+    if (editable() || viewport.enabled() || hasRangeSelection()) setWantsFocus(true);
     if (selected_id && handleEditable() && selection_changed) {
         const auto selected = indexOf(*selected_id);
         if (selected && handles[*selected].highlight_group_index != UINT32_MAX) {
@@ -352,7 +369,11 @@ void GraphView::finishTransaction() {
 
 void GraphView::cancelTransaction() {
     if (range_dragging) {
-        range_selection = range_transaction;
+        if (range_parameter_models[active_range_selection] &&
+            range_parameter_models[active_range_selection]->gestureActive()) {
+            range_parameter_models[active_range_selection]->cancelGesture();
+        }
+        range_selections[active_range_selection] = range_transactions[active_range_selection];
         range_dragging = false;
         range_creating = false;
         syncAccessibility();
@@ -463,9 +484,24 @@ bool GraphView::persistViewport(const ViewportModel& previous) {
     return true;
 }
 
-bool GraphView::persistRangeSelection(const RangeSelectionModel& previous) {
+bool GraphView::persistRangeSelection(std::size_t index, const RangeSelectionModel& previous) {
+    auto& range_selection = range_selections[index];
     const auto& range_description = range_selection.description();
-    if (range_description.start_state_id != 0) {
+    auto& parameter_model = range_parameter_models[index];
+    if (parameter_model) {
+        if (!parameter_model->beginGesture() ||
+            !parameter_model->performEdit(
+                normalize(range_selection.start(), description.x_axis),
+                normalize(range_selection.end(), description.x_axis)
+            )) {
+            parameter_model->cancelGesture();
+            range_selection = previous;
+            syncAccessibility();
+            invalid();
+            return false;
+        }
+        parameter_model->endGesture();
+    } else if (range_description.start_state_id != 0) {
         const uint32_t field_ids[] = {
             range_description.start_state_id,
             range_description.end_state_id,
@@ -619,10 +655,23 @@ bool GraphView::deleteSelected() {
 }
 
 bool GraphView::setParameter(uint32_t parameter_id, double normalized) {
-    if (!editable()) return false;
+    if (!editable() && !range_parameter_models[0] && !range_parameter_models[1]) return false;
     auto& values = interactivePoints();
     const auto before = values;
     bool found = false;
+    for (std::size_t index = 0; index < range_parameter_models.size(); ++index) {
+        auto& model = range_parameter_models[index];
+        if (!model || !model->hostChanged(parameter_id, normalized)) continue;
+        found = true;
+        auto& selection = range_selections[index];
+        const auto handle = parameter_id == selection.description().start_parameter_id
+            ? RangeSelectionHandle::start
+            : RangeSelectionHandle::end;
+        selection.set(
+            handle,
+            denormalize(model->acceptedValue(handle == RangeSelectionHandle::start ? 0 : 1), description.x_axis)
+        );
+    }
     for (auto& point : values) {
         if (point.parameter_model &&
             (point.x_parameter_id == parameter_id || point.y_parameter_id == parameter_id)) {
@@ -683,36 +732,60 @@ bool GraphView::resetViewport() {
     return viewport.reset() && persistViewport(previous);
 }
 
-bool GraphView::rangeSelectionEnabled() const { return range_selection.enabled(); }
-double GraphView::rangeSelectionStart() const { return range_selection.start(); }
-double GraphView::rangeSelectionEnd() const { return range_selection.end(); }
-RangeSelectionHandle GraphView::activeRangeSelectionHandle() const { return range_selection.activeHandle(); }
+bool GraphView::hasRangeSelection() const {
+    return range_selections[0].enabled() || range_selections[1].enabled();
+}
+
+RangeSelectionModel& GraphView::activeRangeSelection() {
+    return range_selections[active_range_selection];
+}
+
+const RangeSelectionModel& GraphView::activeRangeSelection() const {
+    return range_selections[active_range_selection];
+}
+
+bool GraphView::rangeSelectionEnabled() const { return hasRangeSelection(); }
+double GraphView::rangeSelectionStart() const { return range_selections[0].start(); }
+double GraphView::rangeSelectionEnd() const { return range_selections[0].end(); }
+double GraphView::activeRangeSelectionStep() const { return activeRangeSelection().description().step; }
+RangeSelectionHandle GraphView::activeRangeSelectionHandle() const { return activeRangeSelection().activeHandle(); }
 
 bool GraphView::selectRangeSelectionHandle(RangeSelectionHandle handle) {
-    if (!range_selection.enabled()) return false;
-    const bool changed = range_selection.activeHandle() != handle;
-    range_selection.selectHandle(handle);
+    auto& selection = activeRangeSelection();
+    if (!selection.enabled()) return false;
+    const bool changed = selection.activeHandle() != handle;
+    selection.selectHandle(handle);
     syncAccessibility();
     invalid();
     return changed;
 }
 
 bool GraphView::cycleRangeSelectionHandle() {
-    if (!range_selection.enabled()) return false;
-    range_selection.cycleHandle();
+    if (!hasRangeSelection()) return false;
+    auto& selection = activeRangeSelection();
+    if (selection.activeHandle() == RangeSelectionHandle::start) {
+        selection.selectHandle(RangeSelectionHandle::end);
+    } else if (range_selections[1 - active_range_selection].enabled()) {
+        active_range_selection = 1 - active_range_selection;
+        activeRangeSelection().selectHandle(RangeSelectionHandle::start);
+    } else {
+        selection.selectHandle(RangeSelectionHandle::start);
+    }
     syncAccessibility();
     invalid();
     return true;
 }
 
 bool GraphView::setRangeSelectionValue(double value) {
-    const auto previous = range_selection;
-    return range_selection.set(range_selection.activeHandle(), value) && persistRangeSelection(previous);
+    auto& selection = activeRangeSelection();
+    const auto previous = selection;
+    return selection.set(selection.activeHandle(), value) && persistRangeSelection(active_range_selection, previous);
 }
 
 bool GraphView::adjustRangeSelection(double delta) {
-    const auto previous = range_selection;
-    return range_selection.adjust(delta) && persistRangeSelection(previous);
+    auto& selection = activeRangeSelection();
+    const auto previous = selection;
+    return selection.adjust(delta) && persistRangeSelection(active_range_selection, previous);
 }
 
 bool GraphView::handleKey(uint16_t key, int16_t key_code, int16_t modifiers) {
@@ -819,15 +892,27 @@ std::optional<std::size_t> GraphView::hitTestPoint(const VSTGUI::CPoint& point) 
     return std::nullopt;
 }
 
-std::optional<RangeSelectionHandle> GraphView::hitTestRangeSelectionHandle(const VSTGUI::CPoint& point) const {
-    if (!range_selection.enabled()) return std::nullopt;
+std::optional<GraphView::RangeSelectionHit> GraphView::hitTestRangeSelectionHandle(const VSTGUI::CPoint& point) const {
     constexpr double hit_radius = 10.0;
-    const auto start = viewPoint({range_selection.start(), description.y_axis.minimum});
-    const auto end = viewPoint({range_selection.end(), description.y_axis.minimum});
-    const double start_distance = std::abs(point.x - start.x);
-    const double end_distance = std::abs(point.x - end.x);
-    if (start_distance > hit_radius && end_distance > hit_radius) return std::nullopt;
-    return start_distance <= end_distance ? RangeSelectionHandle::start : RangeSelectionHandle::end;
+    std::optional<RangeSelectionHit> hit;
+    double best_distance = hit_radius;
+    for (std::size_t index = 0; index < range_selections.size(); ++index) {
+        const auto& selection = range_selections[index];
+        if (!selection.enabled()) continue;
+        const auto start = viewPoint({selection.start(), description.y_axis.minimum});
+        const auto end = viewPoint({selection.end(), description.y_axis.minimum});
+        const double start_distance = std::abs(point.x - start.x);
+        const double end_distance = std::abs(point.x - end.x);
+        if (start_distance <= best_distance) {
+            best_distance = start_distance;
+            hit = RangeSelectionHit{index, RangeSelectionHandle::start};
+        }
+        if (end_distance <= best_distance) {
+            best_distance = end_distance;
+            hit = RangeSelectionHit{index, RangeSelectionHandle::end};
+        }
+    }
+    return hit;
 }
 
 VSTGUI::CRect GraphView::affectedBounds(const std::vector<PointState>& values, std::size_t index) const {
@@ -955,21 +1040,24 @@ void GraphView::syncAccessibility() {
         accessibility->clearRange();
         accessibility->setSelected(false);
     }
-    if (range_selection.enabled()) {
-        const auto active = range_selection.activeHandle();
+    if (hasRangeSelection()) {
+        const auto& selection = activeRangeSelection();
+        const auto active = selection.activeHandle();
         const std::size_t length = std::char_traits<char>::length(text);
         std::snprintf(
             text + length,
             sizeof(text) - length,
-            ". Selection %.3f to %.3f. %s handle active",
-            range_selection.start(),
-            range_selection.end(),
+            active_range_selection == 0
+                ? ". Playback selection %.3f to %.3f. %s handle active"
+                : ". Loop selection %.3f to %.3f. %s handle active",
+            selection.start(),
+            selection.end(),
             active == RangeSelectionHandle::start ? "Start" : "End"
         );
         accessibility->setRange(
             description.x_axis.minimum,
             description.x_axis.maximum,
-            range_selection.value(active)
+            selection.value(active)
         );
         accessibility->setSelected(true);
     }
@@ -986,7 +1074,7 @@ void GraphView::syncAccessibility() {
             std::snprintf(text + length, sizeof(text) - length, ". Zoom %.0f%%. Position %.0f%%",
                 viewport.zoom() * 100.0, position);
         }
-        if (!editable() && !range_selection.enabled()) {
+        if (!editable() && !hasRangeSelection()) {
             const auto& viewport_description = viewport.description();
             accessibility->setRange(
                 viewport_description.minimum_zoom,
@@ -1058,16 +1146,17 @@ void GraphView::drawViewportOverlay(VSTGUI::CDrawContext* context, const VSTGUI:
         VSTGUI::kRightText);
 }
 
-void GraphView::drawRangeSelection(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds) {
-    if (!range_selection.enabled()) return;
-    const double start_x = viewPoint({range_selection.start(), description.y_axis.minimum}).x;
-    const double end_x = viewPoint({range_selection.end(), description.y_axis.minimum}).x;
+void GraphView::drawRangeSelection(VSTGUI::CDrawContext* context, const VSTGUI::CRect& bounds, std::size_t index) {
+    const auto& selection = range_selections[index];
+    if (!selection.enabled()) return;
+    const double start_x = viewPoint({selection.start(), description.y_axis.minimum}).x;
+    const double end_x = viewPoint({selection.end(), description.y_axis.minimum}).x;
     if (end_x < bounds.left || start_x > bounds.right) return;
     const double visible_start = std::clamp(start_x, bounds.left, bounds.right);
     const double visible_end = std::clamp(end_x, bounds.left, bounds.right);
     const auto style = styles.resolve(ComponentKind::graph);
-    auto fill = style.accent;
-    fill.alpha = 42;
+    auto fill = index == 0 ? style.accent : style.foreground;
+    fill.alpha = index == 0 ? 42 : 24;
     context->setFillColor(fill);
     context->drawRect(
         VSTGUI::CRect(visible_start, bounds.top, visible_end, bounds.bottom),
@@ -1076,16 +1165,17 @@ void GraphView::drawRangeSelection(VSTGUI::CDrawContext* context, const VSTGUI::
     const bool focused = getFrame() && getFrame()->getFocusView() == this;
     const auto draw_handle = [&](double x, RangeSelectionHandle handle) {
         if (x < bounds.left || x > bounds.right) return;
-        const bool active = range_selection.activeHandle() == handle;
-        context->setFrameColor(active && focused ? style.accent : style.foreground);
-        context->setFillColor(active ? style.accent : style.background);
+        const bool active = active_range_selection == index && selection.activeHandle() == handle;
+        const auto marker = index == 0 ? style.accent : style.foreground;
+        context->setFrameColor(active && focused ? marker : style.foreground);
+        context->setFillColor(active ? marker : style.background);
         context->setLineWidth(active ? 2.5 : 1.5);
         context->drawLine(VSTGUI::CPoint(x, bounds.top), VSTGUI::CPoint(x, bounds.bottom));
         const double radius = active ? 6.0 : 4.5;
-        context->drawEllipse(
-            VSTGUI::CRect(x - radius, bounds.top + 3.0, x + radius, bounds.top + 3.0 + radius * 2.0),
-            VSTGUI::kDrawFilledAndStroked
-        );
+        const double center_y = index == 0 ? bounds.top + 3.0 + radius : bounds.bottom - 3.0 - radius;
+        const VSTGUI::CRect marker_bounds(x - radius, center_y - radius, x + radius, center_y + radius);
+        if (index == 0) context->drawEllipse(marker_bounds, VSTGUI::kDrawFilledAndStroked);
+        else context->drawRect(marker_bounds, VSTGUI::kDrawFilledAndStroked);
     };
     draw_handle(start_x, RangeSelectionHandle::start);
     draw_handle(end_x, RangeSelectionHandle::end);
@@ -1267,27 +1357,48 @@ void GraphView::draw(VSTGUI::CDrawContext* context) {
         );
         break;
     }
-    drawRangeSelection(context, bounds);
+    drawRangeSelection(context, bounds, 0);
+    drawRangeSelection(context, bounds, 1);
     drawViewportOverlay(context, bounds);
     setDirty(false);
 }
 
 void GraphView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
-    if (range_selection.enabled()) {
+    if (hasRangeSelection()) {
         if (!event.buttonState.isLeft() || range_dragging) return;
         if (getFrame()) getFrame()->setFocusView(this);
-        range_transaction = range_selection;
         const auto position = graphPoint(event.mousePosition);
         const auto hit = hitTestRangeSelectionHandle(event.mousePosition);
         if (hit) {
-            range_selection.selectHandle(*hit);
+            active_range_selection = hit->index;
+            range_transactions[active_range_selection] = activeRangeSelection();
+            activeRangeSelection().selectHandle(hit->handle);
             range_creating = false;
         } else {
+            active_range_selection = 0;
+            range_transactions[active_range_selection] = activeRangeSelection();
             range_anchor = position.x;
-            range_selection.replace(range_anchor, range_anchor);
+            activeRangeSelection().replace(range_anchor, range_anchor);
             range_creating = true;
         }
         range_dragging = true;
+        auto& parameter_model = range_parameter_models[active_range_selection];
+        if (parameter_model && !parameter_model->beginGesture()) {
+            activeRangeSelection() = range_transactions[active_range_selection];
+            range_dragging = false;
+            range_creating = false;
+            return;
+        }
+        if (parameter_model && range_creating && !parameter_model->performEdit(
+                normalize(activeRangeSelection().start(), description.x_axis),
+                normalize(activeRangeSelection().end(), description.x_axis)
+            )) {
+            parameter_model->cancelGesture();
+            activeRangeSelection() = range_transactions[active_range_selection];
+            range_dragging = false;
+            range_creating = false;
+            return;
+        }
         syncAccessibility();
         invalid();
         event.consumed = true;
@@ -1326,8 +1437,19 @@ void GraphView::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
 void GraphView::onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) {
     if (range_dragging) {
         const auto position = graphPoint(event.mousePosition);
-        if (range_creating) range_selection.replace(range_anchor, position.x);
-        else range_selection.set(range_selection.activeHandle(), position.x);
+        auto& selection = activeRangeSelection();
+        if (range_creating) selection.replace(range_anchor, position.x);
+        else selection.set(selection.activeHandle(), position.x);
+        auto& parameter_model = range_parameter_models[active_range_selection];
+        if (parameter_model && !parameter_model->performEdit(
+                normalize(selection.start(), description.x_axis),
+                normalize(selection.end(), description.x_axis)
+            )) {
+            parameter_model->cancelGesture();
+            selection = range_transactions[active_range_selection];
+            range_dragging = false;
+            range_creating = false;
+        }
         syncAccessibility();
         invalid();
         event.consumed = true;
@@ -1343,7 +1465,14 @@ void GraphView::onMouseUpEvent(VSTGUI::MouseUpEvent& event) {
     if (range_dragging) {
         range_dragging = false;
         range_creating = false;
-        persistRangeSelection(range_transaction);
+        auto& parameter_model = range_parameter_models[active_range_selection];
+        if (parameter_model && parameter_model->gestureActive()) {
+            parameter_model->endGesture();
+            syncAccessibility();
+            invalid();
+        } else {
+            persistRangeSelection(active_range_selection, range_transactions[active_range_selection]);
+        }
         event.consumed = true;
         return;
     }
@@ -1394,7 +1523,7 @@ void GraphView::onZoomGestureEvent(VSTGUI::ZoomGestureEvent& event) {
 
 void GraphView::onKeyboardEvent(VSTGUI::KeyboardEvent& event) {
     if (event.type != VSTGUI::EventType::KeyDown) return;
-    if (range_selection.enabled()) {
+    if (hasRangeSelection()) {
         if (event.character == '[' || event.character == ']') {
             selectRangeSelectionHandle(event.character == '['
                 ? RangeSelectionHandle::start
@@ -1419,7 +1548,7 @@ void GraphView::onKeyboardEvent(VSTGUI::KeyboardEvent& event) {
             } else {
                 const double direction = event.virt == VSTGUI::VirtualKey::Left ? -1.0 : 1.0;
                 const double scale = event.modifiers.has(VSTGUI::ModifierKey::Shift) ? 10.0 : 1.0;
-                changed = adjustRangeSelection(direction * description.range_selection.step * scale);
+                changed = adjustRangeSelection(direction * activeRangeSelection().description().step * scale);
             }
             if (changed) event.consumed = true;
             return;
@@ -1617,19 +1746,21 @@ bool GraphControl::build(
         semantic_description = "Linked parameter handles. Brackets or Return select bands. Arrows adjust frequency and gain. Page Up and Page Down adjust the secondary parameter.";
     }
     if (description.viewport.enabled != 0) {
-        semantic_description += description.point_capacity > 0 || description.range_selection.enabled != 0
+        semantic_description += description.point_capacity > 0 || description.range_selection.enabled != 0 ||
+                description.secondary_range_selection.enabled != 0
             ? " Plus and minus zoom. Command with arrows pans. Zero resets the view."
             : " Plus and minus zoom. Arrows pan. Zero resets the view.";
     }
-    if (description.range_selection.enabled != 0) {
-        semantic_description += " Brackets choose the start or end handle. Arrows adjust it. Shift moves farther. Return switches handles.";
+    if (description.range_selection.enabled != 0 || description.secondary_range_selection.enabled != 0) {
+        semantic_description += " Brackets choose the start or end handle. Arrows adjust it. Shift moves farther. Return cycles playback and loop handles.";
     }
     if (description.x_axis.label && description.x_axis.label[0]) semantic_description += ". X: " + std::string(description.x_axis.label);
     if (description.y_axis.label && description.y_axis.label[0]) semantic_description += ". Y: " + std::string(description.y_axis.label);
     graph_component.accessibility().setDescription(semantic_description);
     graph_component.accessibility().setReadOnly(
         description.point_capacity == 0 && description.viewport.enabled == 0 &&
-        description.range_selection.enabled == 0 && description.handle_count == 0
+        description.range_selection.enabled == 0 && description.secondary_range_selection.enabled == 0 &&
+        description.handle_count == 0
     );
     graph = new GraphView(
         VSTGUI::CRect(),
@@ -1852,10 +1983,10 @@ bool GraphControl::performAccessibilityAction(const AccessibilityActionRequest& 
             return true;
         }
         if (request.action == AccessibilityAction::increment) {
-            return graph->adjustRangeSelection(description.range_selection.step);
+            return graph->adjustRangeSelection(graph->activeRangeSelectionStep());
         }
         if (request.action == AccessibilityAction::decrement) {
-            return graph->adjustRangeSelection(-description.range_selection.step);
+            return graph->adjustRangeSelection(-graph->activeRangeSelectionStep());
         }
         if (request.action == AccessibilityAction::set_value) {
             return graph->setRangeSelectionValue(request.value);
