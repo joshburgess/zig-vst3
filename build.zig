@@ -250,6 +250,7 @@ pub fn build(b: *std.Build) void {
     });
     addExamplePluginTestDependencies(b, test_step, &example_plugins);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_pluginval_runner.sh"}).step);
+    test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_validator_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/check_public_gui_examples.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_installed_package.sh"}).step);
     test_step.dependOn(generate_fixtures_step);

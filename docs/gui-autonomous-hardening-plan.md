@@ -58,7 +58,7 @@ Exit criteria:
 
 ## Milestone 5: Validation and Evidence
 
-- [ ] Extend validator and soak runners with command, bundle hash, phase, iteration, status, signal, stdout, stderr, and crash-log metadata.
+- [x] Extend validator and soak runners with command, bundle hash, phase, iteration, status, signal, stdout, stderr, and crash-log metadata.
 - [ ] Run Zig tests, raw ABI checks, native adapter and accessibility tests, visual tests, benchmarks, Steinberg validators, and Linux and Windows bundle builds.
 - [ ] Run pluginval serially at strictness 5 and 10 only after deterministic lifecycle coverage is clean.
 - [ ] Record unavailable native host checks without treating cross-compilation as host validation.
@@ -116,3 +116,12 @@ Remaining before the milestone exit is declared complete: add full compact, stan
 - The consumer imports only `zig-vst3` and `zig-vst3-plugin`. It compiles a parameter-workspace effect editor with a transfer graph and an instrument-workspace editor with a controller waveform, bounded WAV and AIFF importer, bipolar pan, and piano audition declaration.
 - The first complete run passed 4/4 build steps and its effect and instrument declaration test. The check now runs as part of `zig build test`.
 - The complete gate passed 74/74 steps and 3,816/3,816 tests after adding the staged-package consumer.
+
+### Milestone 5: Crash Evidence
+
+- The pluginval runner now records exact indexed arguments, plugin path, bundle hash, strictness, phase, iteration, timeout, status, signal, stdout, stderr, commit, and system metadata on every platform. Direct invocations now capture output files consistently with the macOS launch service path.
+- Unexpected macOS validator or pluginval exits copy only crash reports created after the recorded run marker. Existing diagnostic reports are not mixed into the artifact directory.
+- The Steinberg validator runner now produces the same command, bundle, phase, iteration, status, signal, output, commit, and system evidence instead of replacing itself with an unrecorded process.
+- The lifecycle soak runner records exact command arguments, cache location, working directory, start and finish times, signal classification, and output paths for every plugin and repetition.
+- Fake success and signal exits exercise both validator runners without launching GUI tools. `scripts/test_validator_runner.sh` and the expanded `scripts/test_pluginval_runner.sh` pass and verify the preserved files and classifications.
+- The complete deterministic gate passed 75/75 steps and 3,816/3,816 tests with both runner artifact regressions enabled.
