@@ -281,3 +281,92 @@ test "sample player releases notes and bounds reverse loops" {
     for (0..8) |_| _ = player.processFrame(playback);
     try std.testing.expectEqual(@as(?f64, null), player.playhead());
 }
+
+test "sample player applies gain pan coarse and fine tuning" {
+    var player = Player(8, 1){};
+    player.prepare(48_000);
+    try player.store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 8 });
+    try player.store.write(1, 0, &.{ 0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875 });
+    try player.store.commit(1);
+    _ = player.adoptPending();
+
+    const playback = Playback{
+        .gain = 0.5,
+        .pan = -1.0,
+        .coarse_semitones = 11.0,
+        .fine_cents = 100.0,
+        .loop_enabled = true,
+        .envelope = .{ .attack_seconds = 0.0, .decay_seconds = 0.0, .sustain = 1.0 },
+    };
+    player.noteOn(60, 1.0, playback);
+    const first = player.processFrame(playback);
+    const second = player.processFrame(playback);
+    try std.testing.expectEqual(@as(f32, 0.0), first[0]);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.125), second[0], 0.000001);
+    try std.testing.expectEqual(@as(f32, 0.0), second[1]);
+}
+
+test "sample player honors playback bounds and one shot note release" {
+    var player = Player(5, 1){};
+    player.prepare(48_000);
+    try player.store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 5 });
+    try player.store.write(1, 0, &.{ 0.0, 0.25, 0.5, 0.75, 1.0 });
+    try player.store.commit(1);
+    _ = player.adoptPending();
+
+    const playback = Playback{
+        .start = 0.5,
+        .end = 0.75,
+        .release_on_note_off = false,
+        .envelope = .{ .attack_seconds = 0.0, .decay_seconds = 0.0, .sustain = 1.0 },
+    };
+    player.noteOn(60, 1.0, playback);
+    player.noteOff(60, playback);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), player.processFrame(playback)[0], 0.000001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.75), player.processFrame(playback)[0], 0.000001);
+    _ = player.processFrame(playback);
+    try std.testing.expectEqual(@as(?f64, null), player.playhead());
+}
+
+test "sample player advances attack decay sustain and release" {
+    var player = Player(2, 1){};
+    player.prepare(8_000);
+    try player.store.begin(.{ .generation = 1, .sample_rate = 8_000, .channels = 1, .frames = 2 });
+    try player.store.write(1, 0, &.{ 1.0, 1.0 });
+    try player.store.commit(1);
+    _ = player.adoptPending();
+
+    const playback = Playback{
+        .loop_enabled = true,
+        .envelope = .{ .attack_seconds = 0.001, .decay_seconds = 0.001, .sustain = 0.5, .release_seconds = 0.001 },
+    };
+    player.noteOn(60, 1.0, playback);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.125), player.processFrame(playback)[0], 0.000001);
+    for (0..15) |_| _ = player.processFrame(playback);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), player.processFrame(playback)[0], 0.000001);
+    player.noteOff(60, playback);
+    for (0..8) |_| _ = player.processFrame(playback);
+    try std.testing.expectEqual(@as(?f64, null), player.playhead());
+}
+
+test "sample player is silent without media and all notes off releases voices" {
+    var player = Player(2, 2){};
+    const silent = player.processFrame(.{});
+    try std.testing.expectEqual(@as([2]f32, .{ 0.0, 0.0 }), silent);
+    player.noteOn(60, 1.0, .{});
+    try std.testing.expectEqual(@as(?f64, null), player.playhead());
+
+    try player.store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 2 });
+    try player.store.write(1, 0, &.{ 1.0, 1.0 });
+    try player.store.commit(1);
+    _ = player.adoptPending();
+    const playback = Playback{
+        .loop_enabled = true,
+        .envelope = .{ .attack_seconds = 0.0, .decay_seconds = 0.0, .sustain = 1.0, .release_seconds = 0.0 },
+    };
+    player.noteOn(60, 1.0, playback);
+    player.noteOn(64, 1.0, playback);
+    player.allNotesOff();
+    _ = player.processFrame(playback);
+    try std.testing.expectEqual(@as(?f64, null), player.playhead());
+}

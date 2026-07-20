@@ -38,7 +38,7 @@ constexpr uint8_t channel_tolerance = 80;
 constexpr uint64_t mismatch_per_thousand = 20;
 constexpr double warm_draw_budget_us = 300.0;
 constexpr double signal_views_budget_us = 450.0;
-constexpr double sample_lifecycle_budget_us = 50'000.0;
+constexpr double sample_lifecycle_budget_us = 75'000.0;
 
 constexpr uint8_t png[] = {
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,

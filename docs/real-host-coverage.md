@@ -19,11 +19,10 @@ zig build pluginval-strict-examples
 Current state:
 
 - Raw GUI interfaces and helpers are ABI-tested and unit-tested.
-- `gain`, `bypass`, `mode-gain`, and `voice-mix` expose visible VSTGUI editors in native builds and protocol-only fallbacks in cross-target builds.
+- The production Gain, Channel Strip, IR Loader, Parametric EQ, Resonant Filter, and Sample Player examples expose visible VSTGUI editors in native builds and protocol-only fallbacks in cross-target builds.
 - `editor-smoke` remains toolkit-free and covers the editor protocol on all four platform identifiers.
 - The Steinberg validator and pluginval pass editor-open, open-while-processing, automation, and editor-automation tests on macOS.
-- Real DAW rows for the visible editor have not been recorded yet.
-- An isolated REAPER command-line attempt on macOS reached the host process but did not reach its ReaScript test before unattended startup was blocked by host UI. No host result was inferred from that attempt. Complete one interactive first-launch and scan pass before using the scripted procedure.
+- REAPER rows cover Gain, Parametric EQ, and Resonant Filter. The Sample Player bundle and deterministic generated-audio smoke script are installed, but its interactive walkthrough remains pending. No host result is inferred from plugin installation, validator output, or pluginval.
 
 Useful next slices:
 

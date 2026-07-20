@@ -7,6 +7,7 @@ Tier 3 host smoke tests are release gates. Record only tests that were run in a 
 | 2026-07-17 | REAPER | 7.36/macOS-arm64 | macOS 15.4.1 | arm64 | 041ec5f | `zig_vst3_gain.vst3` | Partial Pass | Visible slider feedback, pointer dragging, arrow keys, Fn+Left/Right limits, exact text entry, Command-click reset, focus movement, host and editor resize, two isolated instances, pointer and keyboard automation recording/playback, save/reload, and editor recreation while stopped and running passed. Display-scale migration remains untested because a second display was unavailable. |
 | 2026-07-19 | REAPER | 7.36/macOS-arm64 | macOS 15.4.1 | arm64 | SHA-256 `582da11205eb` | `zig_vst3_parametric_eq.vst3` | Pass | Rendering, graph and rotary synchronization, Q adjustment, bypass response, exact entry, reset, Type menus, band enablement, compact and expanded presets, manual resize recovery, two isolated instances, state restoration, and repeated editor reopen passed. Final shelf-name padding and resize-button spacing were accepted. Multi-monitor scale migration remains pending. |
 | 2026-07-20 | REAPER | 7.36/macOS-arm64 | macOS 15.4.1 | arm64 | SHA-256 `1ce54a6620aa` | `zig_vst3_resonant_filter.vst3` | Pass | Rendering, every parameter, linked graph editing, filter modes, exact entry, live and bypassed spectrum states, sample-identical bypass, presets, resize cycles, two instances, and editor restoration passed. Multi-monitor scale migration remains pending. |
+| Deferred | REAPER | 7.36/macOS-arm64 | macOS 15.4.1 | arm64 | SHA-256 `43bdfa1c5de7` | `zig_vst3_sample_player.vst3` | Deferred | The verified bundle and deterministic `zig-vst3-sample-player-smoke.lua` script are installed. Interactive import, MIDI playback, waveform editing, every control, resize cycles, two instances, teardown, and restoration remain pending. Installation and pluginval results are not recorded as a host pass. |
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_gain.vst3` | Pass | Scanned in REAPER, inserted on a track, Gain parameter behavior confirmed, saved, reloaded. |
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_bypass.vst3` | Pass | Scanned in REAPER, inserted on a track, Bypass behavior confirmed, saved, reloaded. |
 | 2026-05-08 | REAPER | 7.72.0_0c2021fu | macOS 15.4 | arm64 | 3409b83 | `zig_vst3_mode_gain.vst3` | Pass | Scanned in REAPER, inserted on a track, Mode parameter behavior confirmed, saved, reloaded. |
@@ -35,6 +36,7 @@ Run `zig build clean-bundles bundle-examples` before pointing a host at `zig-out
    - `zig_vst3_event_monitor.vst3`: route MIDI or other event input into the analyzer and confirm it scans and survives save/reload. Direct event-summary observation still needs a host harness.
    - `zig_vst3_sine_synth.vst3`: insert as a MIDI-driven instrument or output-only generator, send note input, move Level, and confirm generated audio follows note and level changes.
    - `zig_vst3_editor_smoke.vst3`: open and close the editor, resize the plugin window if the host allows it, save, and reload.
+   - `zig_vst3_sample_player.vst3`: import the generated WAV or AIFF, send MIDI notes, and verify playback, ranges, looping, reverse, tuning, gain, pan, ADSR, waveform editing, actions, resize cycles, and independent instances.
 6. Save and reload the session, then confirm parameter state and scan status are preserved.
 
 ## REAPER Notes
@@ -45,6 +47,7 @@ Run `zig build clean-bundles bundle-examples` before pointing a host at `zig-out
 - `zig_vst3_event_monitor.vst3`: this is an input-only event analyzer. It has no audio output, so a basic REAPER pass should focus on scan/load/save/reload until a host-side event inspection harness exists.
 - `zig_vst3_sine_synth.vst3`: create a track with MIDI input armed, insert the plugin, send notes, and confirm the Level parameter controls generated output.
 - `zig_vst3_editor_smoke.vst3`: open the FX UI and close it while transport is stopped and running. It intentionally exposes a protocol-only editor, so a blank or host-generic container is acceptable as long as the host does not crash and save/reload survives.
+- `zig_vst3_sample_player.vst3`: run `scripts/reaper_sample_player_smoke.lua` from the Actions window. The script creates bounded WAV and MIDI fixtures and leaves the editor open. Select the reported WAV through Choose Sample, then verify audible playback and the focused workflow before recording a pass.
 
 ## Visible GUI Platform Coverage
 

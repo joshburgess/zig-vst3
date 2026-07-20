@@ -20,12 +20,15 @@
 
 #include "vstgui/lib/cframe.h"
 #include "vstgui/lib/cscrollview.h"
+#include "vstgui/lib/cvstguitimer.h"
 #include "vstgui/lib/controls/ctextlabel.h"
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace ZigVstgui {
@@ -79,6 +82,7 @@ struct ZigVstguiEditor {
     bool setScale(double scale);
     bool valid() const;
     bool setParameter(uint32_t parameter_id, double normalized);
+    void flushParameterUpdates();
     bool setModulation(uint32_t parameter_id, double normalized);
     bool refreshParameters(const ZigVstguiParameterValue* parameters, uint32_t parameter_count);
     bool parameterValue(uint32_t parameter_id, double& value) const;
@@ -174,6 +178,8 @@ private:
     double workspaceTop() const;
     ZigVstgui::ParameterControl* findControl(uint32_t parameter_id);
     const ZigVstgui::ParameterControl* findControl(uint32_t parameter_id) const;
+    bool applyParameter(uint32_t parameter_id, double normalized);
+    uint32_t findParameterIndex(uint32_t parameter_id) const;
 
     ZigVstgui::RuntimeGuard runtime;
     VSTGUI::CFrame* frame {nullptr};
@@ -197,7 +203,11 @@ private:
     std::array<std::string, ZIG_VSTGUI_MAX_PARAMETERS> parameter_units;
     std::array<std::string, ZIG_VSTGUI_MAX_PARAMETERS> parameter_tooltips;
     std::array<ZigVstguiControlKind, ZIG_VSTGUI_MAX_PARAMETERS> parameter_control_kinds {};
+    std::array<std::atomic<double>, ZIG_VSTGUI_MAX_PARAMETERS> pending_parameter_values {};
+    std::array<std::atomic<bool>, ZIG_VSTGUI_MAX_PARAMETERS> pending_parameter_dirty {};
     uint32_t parameter_count {0};
+    std::thread::id parameter_thread;
+    VSTGUI::CVSTGUITimer* parameter_update_timer {nullptr};
     ZigVstguiCallbacks parameter_callbacks {};
     std::array<std::unique_ptr<ZigVstgui::MeterControl>, ZIG_VSTGUI_MAX_METERS> meter_controls;
     std::array<ZigVstguiMeterDescription, ZIG_VSTGUI_MAX_METERS> meter_descriptions {};

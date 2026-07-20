@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -1000,6 +1001,21 @@ int testMultiParameterRouting() {
     if (!first.parameterValue(20, value) || !closeEnough(value, 4.0 / 7.0)) return 4;
     if (!second.parameterValue(30, value) || !closeEnough(value, 0.0)) return 5;
     if (first.setParameter(99, 0.5)) return 6;
+
+    bool worker_result = false;
+    std::thread worker([&first, &worker_result]() {
+        worker_result = first.setParameter(10, 0.9);
+    });
+    worker.join();
+    if (!worker_result || !first.parameterValue(10, value) || closeEnough(value, 0.9)) return 46;
+    first.flushParameterUpdates();
+    if (!first.parameterValue(10, value) || !closeEnough(value, 0.9)) return 47;
+
+    std::thread stale_worker([&first]() { first.setParameter(10, 0.2); });
+    stale_worker.join();
+    if (!first.setParameter(10, 0.6)) return 48;
+    first.flushParameterUpdates();
+    if (!first.parameterValue(10, value) || !closeEnough(value, 0.6)) return 49;
 
     const ZigVstguiParameterValue restored[] = {
         {10, 0.75},

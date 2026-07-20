@@ -711,11 +711,12 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn createView(ptr: *anyopaque, name: types.FIDString) callconv(.c) ?*iplugview.IPlugView {
+        fn createView(ptr: *anyopaque, name: ?types.FIDString) callconv(.c) ?*iplugview.IPlugView {
+            const view_name = name orelse return null;
             if (@hasDecl(Config, "createView")) {
                 const parameter_count = @typeInfo(@TypeOf(Config.createView)).@"fn".params.len;
-                if (comptime parameter_count == 1) return Config.createView(name);
-                return Config.createView(&owner(ptr).iface, name);
+                if (comptime parameter_count == 1) return Config.createView(view_name);
+                return Config.createView(&owner(ptr).iface, view_name);
             }
             return null;
         }
@@ -1511,6 +1512,35 @@ test "reflected edit controller notifies and removes parameter observers" {
     TestController.removeParameterObserver(controller_iface, &tracker);
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setParamNormalized(controller_iface, 1, 0.5));
     try std.testing.expectEqual(@as(usize, 3), tracker.count);
+}
+
+test "reflected edit controller rejects a null view name" {
+    const Fixture = struct {
+        const Params = struct {};
+        const ParameterSet = plug_core.parameters.ParameterSet(Params);
+        const parameter_set = ParameterSet.init(.{});
+        var create_view_calls: usize = 0;
+    };
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "NullViewNameController";
+        pub const Params = Fixture.Params;
+        pub const parameter_set = &Fixture.parameter_set;
+
+        pub fn createView(_: types.FIDString) ?*iplugview.IPlugView {
+            Fixture.create_view_calls += 1;
+            return null;
+        }
+    });
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    const controller_iface: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out.?));
+    defer _ = controller_iface.vtable.release(controller_iface);
+
+    try std.testing.expect(controller_iface.vtable.createView(controller_iface, null) == null);
+    try std.testing.expectEqual(@as(usize, 0), Fixture.create_view_calls);
+    try std.testing.expect(controller_iface.vtable.createView(controller_iface, ivsteditcontroller.ViewType.kEditor) == null);
+    try std.testing.expectEqual(@as(usize, 1), Fixture.create_view_calls);
 }
 
 test "reflected edit controller delegates host instance creation" {

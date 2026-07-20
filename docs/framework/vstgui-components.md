@@ -405,7 +405,7 @@ Controller-to-processor transfer uses begin, 1,024-sample chunk, commit, cancel,
 
 The production limit is 131,072 mono or stereo frames with 512-sample convolution partitions. Fixed storage is 1.00 MiB for importer decoding, 3.00 MiB for original, edited, and rollback controller buffers, and 19.02 MiB for the three-slot convolver and its processing history. These capacities are allocated with their owning controller or processor instance, so multiple plugin instances do not share mutable media or work state.
 
-Host state stores parameters and bounded editor metadata, but it does not store an absolute source path or perform hidden file I/O during restoration. Restoring an instance therefore produces an explicit empty-media state until the user imports an IR again. This avoids stale path access and makes missing media deterministic. Decoded transport, edit buffers, and partitioned convolution remain experimental because the IR loader is their only production consumer.
+Host state stores parameters and bounded editor metadata, but it does not store an absolute source path or perform hidden file I/O during restoration. Restoring an instance therefore produces an explicit empty-media state until the user imports an IR again. This avoids stale path access and makes missing media deterministic. The IR Loader and Sample Player now share decoded transport. Editable import buffers and partitioned convolution remain experimental because the IR Loader is their only production consumer.
 
 ### Sample player ownership reference
 

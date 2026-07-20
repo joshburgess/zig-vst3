@@ -158,7 +158,7 @@ pub const IEditControllerVTable = extern struct {
     getParamNormalized: *const fn (*anyopaque, vsttypes.ParamID) callconv(.c) vsttypes.ParamValue,
     setParamNormalized: *const fn (*anyopaque, vsttypes.ParamID, vsttypes.ParamValue) callconv(.c) base_types.tresult,
     setComponentHandler: *const fn (*anyopaque, ?*anyopaque) callconv(.c) base_types.tresult,
-    createView: *const fn (*anyopaque, base_types.FIDString) callconv(.c) ?*iplugview.IPlugView,
+    createView: *const fn (*anyopaque, ?base_types.FIDString) callconv(.c) ?*iplugview.IPlugView,
 };
 
 pub const IEditController = extern struct {

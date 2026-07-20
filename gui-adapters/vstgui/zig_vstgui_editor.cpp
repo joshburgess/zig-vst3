@@ -110,7 +110,8 @@ ZigVstguiEditor::ZigVstguiEditor(
   drawing_callbacks(skin.drawing),
   theme_resolver(selectedTheme(skin.theme)),
   theme_kind(skin.theme),
-  layout_kind(skin.layout) {
+  layout_kind(skin.layout),
+  parameter_thread(std::this_thread::get_id()) {
     profile_enabled = std::getenv("ZIG_VSTGUI_PROFILE") != nullptr;
     if (layout_kind == ZIG_VSTGUI_LAYOUT_PARAMETER_WORKSPACE ||
         layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE) {
@@ -429,23 +430,34 @@ ZigVstguiEditor::ZigVstguiEditor(
         if (layout_kind == ZIG_VSTGUI_LAYOUT_INSTRUMENT_WORKSPACE &&
             (file_drop_count != 1 || progress_indicator_count != 1 || piano_count > 1)) return;
     }
+    parameter_update_timer = new (std::nothrow) VSTGUI::CVSTGUITimer(
+        [this](VSTGUI::CVSTGUITimer*) { flushParameterUpdates(); }, 16, false
+    );
+    if (!parameter_update_timer) return;
     buildFrame();
 }
 
 ZigVstguiEditor::~ZigVstguiEditor() {
     close();
+    if (parameter_update_timer) {
+        parameter_update_timer->stop();
+        parameter_update_timer->forget();
+        parameter_update_timer = nullptr;
+    }
     if (frame) frame->forget();
     reportMetrics();
     ZigVstgui::releasePlatformInterfaces(plug_frame, wayland_host);
 }
 
 bool ZigVstguiEditor::valid() const {
-    return parameter_count > 0 && frame;
+    return parameter_count > 0 && frame && parameter_update_timer;
 }
 
 bool ZigVstguiEditor::open(void* parent, ZigVstguiPlatform platform) {
     if (!frame) buildFrame();
     if (!ZigVstgui::openFrame(frame, parent, platform, plug_frame, wayland_host)) return false;
+    flushParameterUpdates();
+    parameter_update_timer->start();
     accessibility_bridge.open(frame, accessibilityEntries());
     metrics.open_count += 1;
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->start();
@@ -457,6 +469,7 @@ bool ZigVstguiEditor::open(void* parent, ZigVstguiPlatform platform) {
 }
 
 void ZigVstguiEditor::close() {
+    if (parameter_update_timer) parameter_update_timer->stop();
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->stop();
     for (uint32_t index = 0; index < graph_count; ++index) graph_controls[index]->stop();
     for (uint32_t index = 0; index < step_sequencer_count; ++index) step_sequencer_controls[index]->stop();
@@ -508,6 +521,29 @@ bool ZigVstguiEditor::setScale(double scale) {
 }
 
 bool ZigVstguiEditor::setParameter(uint32_t parameter_id, double normalized) {
+    const uint32_t parameter_index = findParameterIndex(parameter_id);
+    if (parameter_index == UINT32_MAX) return false;
+    if (std::this_thread::get_id() != parameter_thread) {
+        pending_parameter_values[parameter_index].store(normalized, std::memory_order_relaxed);
+        pending_parameter_dirty[parameter_index].store(true, std::memory_order_release);
+        return true;
+    }
+    pending_parameter_dirty[parameter_index].store(false, std::memory_order_release);
+    return applyParameter(parameter_id, normalized);
+}
+
+void ZigVstguiEditor::flushParameterUpdates() {
+    if (std::this_thread::get_id() != parameter_thread) return;
+    for (uint32_t index = 0; index < parameter_count; ++index) {
+        if (!pending_parameter_dirty[index].exchange(false, std::memory_order_acq_rel)) continue;
+        applyParameter(
+            parameter_controls[index]->model().parameterId(),
+            pending_parameter_values[index].load(std::memory_order_acquire)
+        );
+    }
+}
+
+bool ZigVstguiEditor::applyParameter(uint32_t parameter_id, double normalized) {
     auto* control = findControl(parameter_id);
     bool found = control != nullptr;
     if (control) control->setValue(normalized);
@@ -523,6 +559,13 @@ bool ZigVstguiEditor::setParameter(uint32_t parameter_id, double normalized) {
     if (!found) return false;
     metrics.parameter_update_count += 1;
     return true;
+}
+
+uint32_t ZigVstguiEditor::findParameterIndex(uint32_t parameter_id) const {
+    for (uint32_t index = 0; index < parameter_count; ++index) {
+        if (parameter_controls[index]->model().parameterId() == parameter_id) return index;
+    }
+    return UINT32_MAX;
 }
 
 bool ZigVstguiEditor::setModulation(uint32_t parameter_id, double normalized) {
