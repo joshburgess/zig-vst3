@@ -250,7 +250,7 @@ Record each committed milestone here with test counts, performance measurements,
 - `zig build test --summary all` passed 58/58 steps and 3,716/3,716 tests. Native adapter, macOS accessibility, and visual-regression suites passed. The final linked EQ warm render measured 239.9 us during validator execution and 240.6 us during the full test run, both within the 300 us budget.
 - Every raw ABI check and all twelve Steinberg example validators passed. The Parametric EQ validator passed 47/47 tests for both processing precisions. Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` bundle matrices each passed 38/38 steps.
 - At this milestone, rotary controls, decibel controls, and the shared asset, font, and custom-drawing contracts moved to supported status. Direct bipolar sliders, `GraphHandle`, graph layers, and analyzer transport remained experimental for the consumer-count reasons below.
-- Pluginval remains unavailable under the stop-on-first-exit policy. The preserved unexpected exit occurred during application startup before a plugin image appeared in the stack. Native Windows, X11, Wayland, Narrator, AT-SPI, screen-reader, and multi-monitor scale checks remain external.
+- At this milestone, pluginval remained unavailable under the stop-on-first-exit policy because the application aborted during startup before a plugin image appeared in the stack. The later Resonant Filter milestone corrected the macOS bootstrap launch path and completed both serialized matrices. Native Windows, X11, Wayland, Narrator, AT-SPI, screen-reader, and multi-monitor scale checks remain external.
 
 ## Current Completion Audit
 
@@ -264,7 +264,7 @@ Record each committed milestone here with test counts, performance measurements,
 | Shared skin | Gallery, IR Loader, and EQ use the same asset, font, and drawing contracts; lifecycle, visual, and REAPER tests pass | Complete; assets, fonts, and custom drawing are supported |
 | Accessibility | Toolkit-neutral semantics and macOS bridge tests cover parameters, handles, group selection, bypass, and analyzer state | Complete locally; VoiceOver, Narrator, and AT-SPI workflows remain external |
 | Cross-target and validator coverage | Raw ABI, all twelve Steinberg validators, Linux 38/38, and Windows 38/38 pass | Complete locally; native Windows, X11, and Wayland hosts remain external |
-| Pluginval | Earlier serialized runs passed. The latest preserved unexpected exit occurred during application startup before a plugin image appeared in the stack | Current-build coverage unavailable under the stop-on-first-exit policy |
+| Pluginval | The later Resonant Filter milestone fixed the macOS bootstrap launch path and passed current strictness 5 and 10 matrices for all 13 plugins | Complete locally |
 | REAPER | Current binary hash matched the installed bundle. Rendering, all controls, linked editing, resize cycles, two instances, restoration, and repeated reopen passed in REAPER 7.36 | Complete on macOS arm64 |
 
 Retained experimental APIs:

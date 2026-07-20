@@ -7,6 +7,10 @@ if [ "$#" -ne 1 ]; then
 fi
 
 plugin_path="$1"
+case "$plugin_path" in
+    /*) ;;
+    *) plugin_path="$(cd "$(dirname "$plugin_path")" && pwd)/$(basename "$plugin_path")" ;;
+esac
 pluginval="${PLUGINVAL:-}"
 strictness="${PLUGINVAL_STRICTNESS:-5}"
 output_root="${PLUGINVAL_OUTPUT_DIR:-${TMPDIR:-/tmp}/zig-vst3-pluginval}"
@@ -39,18 +43,36 @@ output_dir="$output_root/$plugin_name-strictness-$strictness-$timestamp-$$"
 mkdir -p "$output_dir"
 printf 'pluginval artifacts: %s\n' "$output_dir" >&2
 
-if [ -n "${PLUGINVAL_ARGS:-}" ]; then
-    # Intentionally split PLUGINVAL_ARGS so callers can pass pluginval CLI flags.
-    # shellcheck disable=SC2086
+pluginval_app=""
+case "$(uname -s):$pluginval" in
+    Darwin:*.app/Contents/MacOS/*)
+        pluginval_app="${pluginval%/Contents/MacOS/*}"
+        ;;
+esac
+
+if [ -n "$pluginval_app" ]; then
+    user_id="$(id -u)"
     set +e
-    "$pluginval" --strictness-level "$strictness" --output-dir "$output_dir" $PLUGINVAL_ARGS "$plugin_path"
+    if [ -n "${PLUGINVAL_ARGS:-}" ]; then
+        # Intentionally split PLUGINVAL_ARGS so callers can pass pluginval CLI flags.
+        # shellcheck disable=SC2086
+        /bin/launchctl asuser "$user_id" "$pluginval" --strictness-level "$strictness" --output-dir "$output_dir" $PLUGINVAL_ARGS "$plugin_path"
+    else
+        /bin/launchctl asuser "$user_id" "$pluginval" --strictness-level "$strictness" --output-dir "$output_dir" "$plugin_path"
+    fi
     status=$?
     set -e
     exit "$status"
 fi
 
 set +e
-"$pluginval" --strictness-level "$strictness" --output-dir "$output_dir" "$plugin_path"
+if [ -n "${PLUGINVAL_ARGS:-}" ]; then
+    # Intentionally split PLUGINVAL_ARGS so callers can pass pluginval CLI flags.
+    # shellcheck disable=SC2086
+    "$pluginval" --strictness-level "$strictness" --output-dir "$output_dir" $PLUGINVAL_ARGS "$plugin_path"
+else
+    "$pluginval" --strictness-level "$strictness" --output-dir "$output_dir" "$plugin_path"
+fi
 status=$?
 set -e
 exit "$status"
