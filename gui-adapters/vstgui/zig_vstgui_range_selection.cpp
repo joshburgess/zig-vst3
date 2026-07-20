@@ -57,9 +57,27 @@ bool RangeSelectionModel::set(RangeSelectionHandle handle, double target) {
     const double previous_end = selection_end;
     const auto previous_handle = active_handle;
     if (handle == RangeSelectionHandle::start) {
-        selection_start = std::clamp(target, range_minimum, selection_end - config.minimum_span);
+        selection_start = std::clamp(
+            target,
+            range_minimum,
+            range_maximum - config.minimum_span
+        );
+        selection_end = std::clamp(
+            std::max(selection_end, selection_start + config.minimum_span),
+            range_minimum + config.minimum_span,
+            range_maximum
+        );
     } else {
-        selection_end = std::clamp(target, selection_start + config.minimum_span, range_maximum);
+        selection_end = std::clamp(
+            target,
+            range_minimum + config.minimum_span,
+            range_maximum
+        );
+        selection_start = std::clamp(
+            std::min(selection_start, selection_end - config.minimum_span),
+            range_minimum,
+            range_maximum - config.minimum_span
+        );
     }
     active_handle = handle;
     return selection_start != previous_start || selection_end != previous_end || active_handle != previous_handle;

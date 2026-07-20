@@ -530,6 +530,8 @@ A selection may bind directly to two declared parameters instead of editor-state
 
 Parameter binding uses one ordered two-parameter gesture. Host updates move the matching handle without emitting another edit, and a rejected edit restores both boundaries. Parameter-backed selections cannot also declare editor-state fields.
 
+Hosts may automate the two endpoints independently and in any order. If an update would cross the other endpoint, the automated handle stays within the graph axis and the companion handle moves only far enough to preserve `minimum_span`. This keeps rendering and accessibility values valid even while the host passes through a contradictory intermediate pair. Host-driven repair never emits a gesture back to the host.
+
 Set `secondary_range_selection` to display a second independent range on the same graph. The primary range uses circular markers at the top edge. The secondary range uses square markers at the bottom edge, so overlapping handles remain distinguishable without color. Return cycles through all four handles. Accessibility names the active range as playback or loop selection and exposes its exact value.
 
 `RangeSelection` and `RangeSelectionHandle` with editor-state persistence are supported. The component gallery and production IR loader share their public declaration, bounded model, atomic state callback, interactions, rendering, and accessibility semantics. Direct parameter binding and `secondary_range_selection` remain experimental until another production editor shares those extensions with the sample player.
@@ -566,12 +568,12 @@ Supported authoring surface:
 
 Experimental extensions:
 
-- `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader and sample player exercise the same public contract; final promotion remains gated on the sample player's pluginval and host checks.
+- `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader and sample player exercise the same public contract, but the gallery does not yet exercise the dependency behavior and the sample-player host walkthrough remains pending.
 - Direct parameter-backed graph ranges and `Graph.secondary_range_selection`. The visual gallery and sample player exercise them, but a second production consumer is still required.
 - The direct bipolar slider. The gallery and sample player exercise it, but a second production consumer is still required.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
-- `AudioFileImporter`, controller-owned import status and command callbacks, decoded-audio transport, and controller-sourced graph snapshots. The IR loader and sample player exercise the same bounded public contract; final promotion remains gated on the sample player's pluginval and host checks.
+- `AudioFileImporter`, controller-owned import status and command callbacks, decoded-audio transport, and controller-sourced graph snapshots. The IR loader and sample player exercise the same bounded public contract, but the gallery does not decode audio and the sample-player host walkthrough remains pending.
 - Additional modulation component types and GPU-backed custom views. Neither has a public declaration or a production consumer. A GPU path also requires profiling evidence that the toolkit-managed renderer is the limiting factor.
 
 Experimental extensions may change when a second production editor establishes their required shape. They are kept out of the supported list even though the gallery validates their current implementation.

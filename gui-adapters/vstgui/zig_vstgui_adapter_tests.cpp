@@ -1919,6 +1919,14 @@ int testGraphs() {
     if (!parameter_selection_control.setParameter(6, 0.2) ||
         parameter_selection_control.accessibilityNode().valueText().find("Loop selection -0.600") == std::string::npos ||
         parameter_selection_state.perform_count != loop_parameter_edits) return 67;
+    if (!parameter_selection_control.setParameter(4, 1.0) ||
+        !closeEnough(parameter_selection_control.graphView()->rangeSelectionStart(), 0.9) ||
+        !closeEnough(parameter_selection_control.graphView()->rangeSelectionEnd(), 1.0) ||
+        parameter_selection_state.perform_count != loop_parameter_edits) return 69;
+    if (!parameter_selection_control.setParameter(5, 0.0) ||
+        !closeEnough(parameter_selection_control.graphView()->rangeSelectionStart(), -1.0) ||
+        !closeEnough(parameter_selection_control.graphView()->rangeSelectionEnd(), -0.9) ||
+        parameter_selection_state.perform_count != loop_parameter_edits) return 70;
     parameter_selection_control.clear();
 
     ZigVstgui::AccessibilityNode parameter_range_accessibility;

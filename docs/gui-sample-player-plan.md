@@ -81,16 +81,16 @@ Exit criteria:
 - [ ] Promote decoded-audio transport only if IR Loader and Sample Player pass the same bounded public contract.
 - [ ] Promote importer-aware action dependencies only if both production consumers pass interaction, lifecycle, and host checks.
 - [ ] Promote the direct bipolar slider only after the gallery and Sample Player pass the same declaration and interaction contract.
-- [ ] Keep single-consumer or incomplete surfaces experimental and name each blocker.
+- [x] Keep single-consumer or incomplete surfaces experimental and name each blocker.
 - [ ] Update the component reference, example lists, host matrix, and this plan with final evidence.
 
 Release gates:
 
-- [ ] `zig build test raw-api-abi validate-examples --summary all`
-- [ ] Native adapter, macOS accessibility, visual-regression, and warm-render tests
-- [ ] `zig build bundle-examples-linux -Dtarget=aarch64-linux-gnu --summary all`
-- [ ] `zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu --summary all`
-- [ ] Serialized pluginval strictness 5 and 10 with stop-on-first-exit diagnosis
+- [x] `zig build test raw-api-abi validate-examples --summary all`
+- [x] Native adapter, macOS accessibility, visual-regression, and warm-render tests
+- [x] `zig build bundle-examples-linux -Dtarget=aarch64-linux-gnu --summary all`
+- [x] `zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu --summary all`
+- [x] Serialized pluginval strictness 5 and 10 with stop-on-first-exit diagnosis
 - [ ] Focused REAPER walkthrough for import, playback, MIDI, every control, waveform editing, resize cycles, two instances, teardown, and restoration
 
 External checks remain pending when their environments are unavailable:
@@ -164,3 +164,13 @@ Record committed milestones here with test counts, validator results, performanc
 - Final warm rendering measured 83.2 us for the complete scene, 46.6 us for viewport rendering, and 160.0 us for dual-range rendering. All remained inside their recorded budgets.
 - `scripts/reaper_sample_player_smoke.lua` creates a new project tab, generates a bounded 0.5-second PCM WAV, inserts the Sample Player and a MIDI note, opens the editor, and saves a disposable project. The script passes numeric flags to `Main_SaveProjectEx` and requires no user-provided media.
 - Run the script from REAPER's Actions window. It reports the generated WAV and project paths, then leaves the editor open so the generated file can be selected through the same picker used by production imports.
+
+### Milestone 5: Pluginval Crash Diagnosis
+
+- The first strictness-10 matrix stopped on the Sample Player during Editor Automation. The failing artifact directory is `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-pluginval/zig_vst3_sample_player-strictness-10-20260720-143425-78826`.
+- Pluginval independently automated the parameter-backed Start and End values into crossed extremes. `RangeSelectionModel::set` could then call `std::clamp` with its lower bound greater than its upper bound, which is undefined behavior. The model now clamps the automated handle to the full valid range and moves its companion only as far as needed to preserve the declared minimum span.
+- Native regressions drive Start fully past End and End fully before Start. Both preserve a valid visible range without emitting host edits. The complete local suite passes 66/66 build steps and 3,767/3,767 tests after the fix.
+- The repaired strictness-10 serialized matrix passed all 14 bundles in 60/60 steps. The Sample Player artifact is `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-pluginval/zig_vst3_sample_player-strictness-10-20260720-144223-92940`.
+- The post-fix strictness-5 serialized matrix also passed all 14 bundles in 60/60 steps. The Sample Player artifact is `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-pluginval/zig_vst3_sample_player-strictness-5-20260720-144457-97366`.
+- The post-fix full raw ABI and 14-example Steinberg validator matrix passed. Full Linux aarch64 and Windows x86_64 example bundle matrices also passed. Cross-compilation is build coverage, not native host validation.
+- Direct parameter-backed ranges and `secondary_range_selection` remain experimental because only the gallery and Sample Player use them. Direct bipolar sliders remain experimental for the same reason. `AudioFileImporter`, decoded-audio transport, controller-sourced sample waveforms, and importer-aware action dependencies now have IR Loader and Sample Player production consumers, but the gallery does not exercise their full decoded or dependency behavior and the Sample Player host walkthrough is pending. They therefore remain experimental.
