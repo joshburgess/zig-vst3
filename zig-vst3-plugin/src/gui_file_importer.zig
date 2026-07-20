@@ -107,6 +107,7 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
             if (self.status != .importing or self.completed_units != self.total_units) {
                 return error.InvalidImportTransition;
             }
+            self.cancel_requested.store(false, .release);
             self.status = if (preview_point_count == 0) .empty else .ready;
         }
 
@@ -120,6 +121,7 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
                 .empty, .unsupported_file, .capacity_limit, .invalid_path, .cancelled, .failed => {},
                 else => return error.InvalidTerminalStatus,
             }
+            self.cancel_requested.store(false, .release);
             self.status = status;
         }
 
@@ -136,6 +138,7 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
             if (!self.cancellationRequested() or (self.status != .validating and self.status != .importing)) {
                 return error.InvalidImportTransition;
             }
+            self.cancel_requested.store(false, .release);
             self.status = .cancelled;
         }
 
@@ -219,6 +222,7 @@ test "import model cancellation and retry preserve the copied job" {
     try importer.requestCancel();
     try std.testing.expect(importer.cancellationRequested());
     try importer.acknowledgeCancel();
+    try std.testing.expect(!importer.snapshot().cancellation_pending);
     try std.testing.expect(importer.snapshot().canRetry());
     try importer.retry();
     try std.testing.expect(importer.snapshot().generation != first_generation);
@@ -249,4 +253,41 @@ test "import model rejects invalid transitions without losing progress" {
     importer.reset();
     try std.testing.expectEqual(Status.idle, importer.snapshot().status);
     try std.testing.expectEqual(@as(?[]const u8, null), importer.path(0));
+}
+
+test "import model generated transition sequences remain bounded" {
+    const seed = 0x1a90_77e2_2026_0720;
+    const Importer = Model(1, 2);
+    var random_state = std.Random.DefaultPrng.init(seed);
+    const random = random_state.random();
+
+    for (0..256) |case_index| {
+        var importer = try Importer.init(&.{ ".wav", ".aiff" });
+        for (0..128) |operation_index| {
+            switch (random.uintLessThan(u8, 10)) {
+                0 => _ = importer.begin(.drop, &.{"/tmp/generated.wav"}),
+                1 => _ = importer.begin(.picker, &.{"/tmp/generated.aiff"}),
+                2 => _ = importer.begin(.picker, &.{}),
+                3 => importer.startImport(1 + random.uintLessThan(usize, 64)) catch {},
+                4 => importer.advance(random.uintLessThan(usize, 96)) catch {},
+                5 => importer.complete(random.uintLessThan(usize, 8)) catch {},
+                6 => importer.requestCancel() catch {},
+                7 => importer.acknowledgeCancel() catch {},
+                8 => importer.retry() catch {},
+                else => importer.reset(),
+            }
+            const snapshot = importer.snapshot();
+            const valid = snapshot.path_count <= 1 and
+                snapshot.completed_units <= snapshot.total_units and
+                snapshot.progress() >= 0.0 and snapshot.progress() <= 1.0 and
+                (!snapshot.cancellation_pending or snapshot.canCancel()) and
+                (!snapshot.canRetry() or snapshot.path_count == 1);
+            if (!valid) {
+                std.debug.print("import model seed={x} case={} operation={} status={s}\n", .{
+                    seed, case_index, operation_index, @tagName(snapshot.status),
+                });
+                return error.GeneratedImportInvariantFailed;
+            }
+        }
+    }
 }

@@ -479,3 +479,78 @@ test "editor state migrates field IDs between schema versions" {
     try std.testing.expectEqual(@as(u32, 7), new.get(9).?.index);
     try std.testing.expectEqual(@as(u16, 1), report.source_schema_version);
 }
+
+test "editor state rejects every truncated prefix transactionally" {
+    const State = Store(1, &.{
+        .{ .id = 1, .default = .{ .boolean = false } },
+        .{ .id = 2, .default = .{ .scalar = 0.25 } },
+        .{ .id = 3, .default = .{ .text = comptime Text.init("empty") catch unreachable } },
+    });
+    var source = State.init();
+    try source.set(1, .{ .boolean = true });
+    try source.set(2, .{ .scalar = 0.75 });
+    try source.set(3, .{ .text = try Text.init("restored") });
+    var bytes: [State.maximumEncodedSize()]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try source.write(&writer);
+    const encoded = writer.buffered();
+
+    for (0..encoded.len) |prefix_length| {
+        var destination = State.init();
+        try destination.set(1, .{ .boolean = true });
+        try destination.set(2, .{ .scalar = 0.5 });
+        try destination.set(3, .{ .text = try Text.init("unchanged") });
+        var reader = std.Io.Reader.fixed(encoded[0..prefix_length]);
+        if (destination.read(&reader, &.{})) |_| {
+            std.debug.print("editor state truncation unexpectedly decoded prefix={} full={}\n", .{ prefix_length, encoded.len });
+            return error.TruncatedEditorStateAccepted;
+        } else |_| {}
+        try std.testing.expect(destination.get(1).?.boolean);
+        try std.testing.expectEqual(@as(f64, 0.5), destination.get(2).?.scalar);
+        try std.testing.expectEqualStrings("unchanged", destination.get(3).?.text.slice());
+    }
+}
+
+test "editor state generated mutations remain bounded and transactional" {
+    const seed = 0xe017_57a7_2026_0720;
+    const State = Store(1, &.{
+        .{ .id = 1, .default = .{ .boolean = false } },
+        .{ .id = 2, .default = .{ .integer = -4 } },
+        .{ .id = 3, .default = .{ .scalar = 0.25 } },
+        .{ .id = 4, .default = .{ .text = comptime Text.init("default") catch unreachable } },
+    });
+    var source = State.init();
+    try source.set(1, .{ .boolean = true });
+    try source.set(2, .{ .integer = 42 });
+    try source.set(3, .{ .scalar = 0.75 });
+    try source.set(4, .{ .text = try Text.init("generated") });
+    var encoded_storage: [State.maximumEncodedSize()]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&encoded_storage);
+    try source.write(&writer);
+    const encoded = writer.buffered();
+    var random_state = std.Random.DefaultPrng.init(seed);
+    const random = random_state.random();
+
+    for (0..512) |case_index| {
+        var mutated: [State.maximumEncodedSize()]u8 = undefined;
+        @memcpy(mutated[0..encoded.len], encoded);
+        const mutation_count = 1 + random.uintLessThan(usize, 4);
+        for (0..mutation_count) |_| {
+            const index = random.uintLessThan(usize, encoded.len);
+            mutated[index] ^= @as(u8, 1) << @as(u3, @intCast(random.uintLessThan(u8, 8)));
+        }
+        var destination = State.init();
+        try destination.set(2, .{ .integer = 99 });
+        var reader = std.Io.Reader.fixed(mutated[0..encoded.len]);
+        if (destination.read(&reader, &.{})) |_| {
+            const scalar = destination.get(3).?.scalar;
+            const text = destination.get(4).?.text;
+            if (!std.math.isFinite(scalar) or text.len > maximum_text_bytes) {
+                std.debug.print("editor state seed={x} case={} decoded an invalid value\n", .{ seed, case_index });
+                return error.InvalidGeneratedEditorState;
+            }
+        } else |_| {
+            try std.testing.expectEqual(@as(i64, 99), destination.get(2).?.integer);
+        }
+    }
+}

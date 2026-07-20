@@ -19,10 +19,10 @@ Exit criteria:
 
 ## Milestone 2: Property and Boundary Tests
 
-- [ ] Add deterministic generated cases for WAV and AIFF chunk structure, truncation, size limits, and decoded bounds.
-- [ ] Add serialized-state cases for truncation, unknown fields, version migration, non-finite values, and maximum-capacity text.
-- [ ] Add range and menu state-machine properties, including crossed handles, unavailable actions, cancellation, and stale callbacks.
-- [ ] Add malformed host callback probes for nullable pointers, invalid indices, invalid sizes, and out-of-order lifecycle calls.
+- [x] Add deterministic generated cases for WAV and AIFF chunk structure, truncation, size limits, and decoded bounds.
+- [x] Add serialized-state cases for truncation, unknown fields, version migration, non-finite values, and maximum-capacity text.
+- [x] Add range and menu state-machine properties, including crossed handles, unavailable actions, cancellation, and stale callbacks.
+- [x] Add malformed host callback probes for nullable pointers, invalid indices, invalid sizes, and out-of-order lifecycle calls.
 
 Exit criteria:
 
@@ -87,3 +87,13 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - All 11 editor-bearing plugins use the same test contract. `zig build test-gui-lifecycle --summary all` passed 37/37 steps and 1,957/1,957 plugin-root tests, including 132 editor lifecycles and at least 1,408 overlapped process blocks.
 - `scripts/gui_lifecycle_soak.sh` runs plugins serially, stops on the first failure, and records plugin, repetition, phase, exit classification, stdout, stderr, commit, Zig version, and system metadata. Its first complete pass recorded 11 successful per-plugin statuses and 132 editor lifecycles at `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-gui-lifecycle/20260720-185835-67397`.
 - `zig build test --summary failures` passed after adding all lifecycle regressions. No DAW or visible native window was opened.
+
+### Milestone 2: Property and Boundary Tests
+
+- The bounded audio parser now receives 512 fixed-seed arbitrary, RIFF, AIFF, and AIFC inputs. Every strict prefix of known-valid WAV and AIFF data is also rejected, while complete fixtures return metadata contained within the file and declared format limits.
+- Editor-state tests reject every truncated prefix without partial updates and run 512 fixed-seed bit mutations. Successful mutations must still decode finite, capacity-bounded values. Failed mutations preserve the destination exactly.
+- Range selection runs 32,768 generated set, adjust, replace, crossed, and non-finite operations. File import runs 32,768 generated lifecycle transitions. Decoded sample handoff runs 32,768 generated begin, write, commit, cancel, clear, adopt, stale-generation, and malformed-metadata operations.
+- Native action menus run 4,096 generated keyboard operations and never focus or activate disabled entries or separators. Failures print their fixed seed and case index.
+- The all-editor host harness now probes null and unknown editor names, invalid parameter indices, malformed process data, and inverted size constraints before each lifecycle completes.
+- Generated import transitions exposed a terminal-state defect: acknowledged cancellation retained `cancellation_pending=true`. Completion, failure, and acknowledged cancellation now clear the request atomically, with a direct regression beside the generated test.
+- `zig build test --summary all` passed 71/71 steps and 3,810/3,810 tests after the fix. Native adapter, macOS accessibility, visual regression, warm rendering, fixture generation, public-boundary checks, and runner parsing all passed in the same invocation.

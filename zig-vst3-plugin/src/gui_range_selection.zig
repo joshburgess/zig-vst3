@@ -147,3 +147,45 @@ test "range selection replacement preserves direction and minimum span" {
     try std.testing.expectApproxEqAbs(0.7, state.end, 1e-12);
     try std.testing.expectEqual(Handle.start, state.active);
 }
+
+test "range selection generated operation sequences preserve every invariant" {
+    const seed = 0x7261_6e67_2026_0720;
+    const config = Config{
+        .minimum = -2.0,
+        .maximum = 3.0,
+        .initial_start = -1.0,
+        .initial_end = 2.0,
+        .minimum_span = 0.125,
+        .step = 0.01,
+    };
+    var random_state = std.Random.DefaultPrng.init(seed);
+    const random = random_state.random();
+
+    for (0..256) |case_index| {
+        var state = try State.init(config);
+        for (0..128) |operation_index| {
+            const first = random.float(f64) * 20.0 - 10.0;
+            const second = random.float(f64) * 20.0 - 10.0;
+            switch (random.uintLessThan(u8, 6)) {
+                0 => _ = state.set(config, .start, first),
+                1 => _ = state.set(config, .end, first),
+                2 => _ = state.replace(config, first, second),
+                3 => {
+                    state.selectHandle(if (random.boolean()) .start else .end);
+                    _ = state.adjust(config, first);
+                },
+                4 => _ = state.set(config, .start, std.math.nan(f64)),
+                else => _ = state.replace(config, std.math.inf(f64), second),
+            }
+            const valid = std.math.isFinite(state.start) and std.math.isFinite(state.end) and
+                state.start >= config.minimum and state.end <= config.maximum and
+                state.start <= state.end and state.end - state.start + 1e-12 >= config.minimum_span;
+            if (!valid) {
+                std.debug.print("range selection seed={x} case={} operation={} start={} end={}\n", .{
+                    seed, case_index, operation_index, state.start, state.end,
+                });
+                return error.GeneratedRangeInvariantFailed;
+            }
+        }
+    }
+}

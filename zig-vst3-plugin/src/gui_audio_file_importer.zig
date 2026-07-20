@@ -862,3 +862,81 @@ test "audio importer acknowledges cancellation before teardown joins the worker"
     try std.testing.expectEqual(gui_file_importer.Status.cancelled, importer.snapshot().import.status);
     try std.testing.expectEqual(Failure.cancelled, importer.snapshot().failure);
 }
+
+fn generatedAudioResultIsBounded(info: AudioInfo, file_size: usize) bool {
+    const sample_bytes = info.bits_per_sample / 8;
+    return info.data_offset <= file_size and
+        info.data_bytes <= file_size - @as(usize, @intCast(info.data_offset)) and
+        info.sample_rate >= 8_000 and info.sample_rate <= 384_000 and
+        info.channels > 0 and info.channels <= maximum_channels and
+        (info.bits_per_sample == 16 or info.bits_per_sample == 24 or info.bits_per_sample == 32) and
+        info.block_align == info.channels * sample_bytes and
+        info.sample_frames > 0 and info.sample_frames <= maximum_sample_frames and
+        info.data_bytes == info.sample_frames * info.block_align;
+}
+
+fn parseGeneratedAudio(dir: *std.Io.Dir, bytes: []const u8) !?AudioInfo {
+    const io = std.testing.io;
+    try dir.writeFile(io, .{ .sub_path = "generated-audio.bin", .data = bytes });
+    const file = try dir.openFile(io, "generated-audio.bin", .{});
+    defer file.close(io);
+    return parseAudio(io, file, bytes.len) catch |err| switch (err) {
+        error.Truncated, error.Malformed, error.UnsupportedFormat, error.TooLarge => null,
+        else => return err,
+    };
+}
+
+test "audio parser bounds deterministic generated RIFF FORM and arbitrary inputs" {
+    const seed = 0xa110_f11e_2026_0720;
+    var random_state = std.Random.DefaultPrng.init(seed);
+    const random = random_state.random();
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var bytes: [512]u8 = undefined;
+
+    for (0..512) |case_index| {
+        const length = random.uintLessThan(usize, bytes.len + 1);
+        random.bytes(bytes[0..length]);
+        if (length >= 12) switch (case_index % 4) {
+            0 => {
+                @memcpy(bytes[0..4], "RIFF");
+                @memcpy(bytes[8..12], "WAVE");
+            },
+            1 => {
+                @memcpy(bytes[0..4], "FORM");
+                @memcpy(bytes[8..12], "AIFF");
+            },
+            2 => {
+                @memcpy(bytes[0..4], "FORM");
+                @memcpy(bytes[8..12], "AIFC");
+            },
+            else => {},
+        };
+        const info = parseGeneratedAudio(&temporary.dir, bytes[0..length]) catch |err| {
+            std.debug.print("generated audio seed={x} case={} error={s}\n", .{ seed, case_index, @errorName(err) });
+            return err;
+        };
+        if (info) |parsed| {
+            if (!generatedAudioResultIsBounded(parsed, length)) {
+                std.debug.print("generated audio seed={x} case={} returned unbounded metadata\n", .{ seed, case_index });
+                return error.UnboundedGeneratedAudioMetadata;
+            }
+        }
+    }
+}
+
+test "audio parser rejects every strict prefix of valid WAV and AIFF" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const wav = pcm16Fixture(32);
+    const aiff = pcm16AiffFixture(32);
+
+    for (1..wav.len) |length| {
+        try std.testing.expectEqual(@as(?AudioInfo, null), try parseGeneratedAudio(&temporary.dir, wav[0..length]));
+    }
+    for (1..aiff.len) |length| {
+        try std.testing.expectEqual(@as(?AudioInfo, null), try parseGeneratedAudio(&temporary.dir, aiff[0..length]));
+    }
+    try std.testing.expect(generatedAudioResultIsBounded((try parseGeneratedAudio(&temporary.dir, &wav)).?, wav.len));
+    try std.testing.expect(generatedAudioResultIsBounded((try parseGeneratedAudio(&temporary.dir, &aiff)).?, aiff.len));
+}

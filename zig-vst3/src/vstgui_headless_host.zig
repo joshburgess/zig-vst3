@@ -128,6 +128,14 @@ pub fn run(comptime Config: type, options: Options) !Report {
     if (Config.controller_create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out) != types.kResultOk) return error.ControllerCreationFailed;
     const controller: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out orelse return error.MissingController));
     defer _ = controller.vtable.release(controller);
+    if (controller.vtable.createView(controller, null)) |unexpected| {
+        _ = unexpected.vtable.release(unexpected);
+        return error.NullEditorNameAccepted;
+    }
+    if (controller.vtable.createView(controller, "not-an-editor")) |unexpected| {
+        _ = unexpected.vtable.release(unexpected);
+        return error.UnknownEditorNameAccepted;
+    }
 
     var component_connection_out: ?*anyopaque = null;
     if (component.vtable.queryInterface(component, &ivstmessage.iconnection_point_iid, &component_connection_out) != types.kResultOk) return error.MissingComponentConnection;
@@ -151,6 +159,8 @@ pub fn run(comptime Config: type, options: Options) !Report {
         .sampleRate = 48_000,
     };
     if (processor.vtable.setupProcessing(processor, &setup) != types.kResultOk) return error.SetupProcessingFailed;
+    var malformed_process = ivstaudioprocessor.ProcessData{ .numSamples = -1 };
+    if (processor.vtable.process(processor, &malformed_process) == types.kResultOk) return error.MalformedProcessAccepted;
     if (processor.vtable.setProcessing(processor, 1) != types.kResultOk) return error.StartProcessingFailed;
     defer _ = processor.vtable.setProcessing(processor, 0);
 
@@ -158,6 +168,12 @@ pub fn run(comptime Config: type, options: Options) !Report {
     const declared_parameter_count = controller.vtable.getParameterCount(controller);
     const parameter_count: usize = if (declared_parameter_count <= 0) 0 else @min(@as(usize, @intCast(declared_parameter_count)), maximum_parameters);
     if (parameter_count == 0) return error.MissingAutomationParameter;
+    var invalid_parameter = ivsteditcontroller.ParameterInfo{};
+    if (controller.vtable.getParameterInfo(controller, -1, &invalid_parameter) == types.kResultOk or
+        controller.vtable.getParameterInfo(controller, declared_parameter_count, &invalid_parameter) == types.kResultOk)
+    {
+        return error.InvalidParameterIndexAccepted;
+    }
     for (0..parameter_count) |index| {
         var info = ivsteditcontroller.ParameterInfo{};
         if (controller.vtable.getParameterInfo(controller, @intCast(index), &info) != types.kResultOk) return error.ParameterInfoFailed;
@@ -211,6 +227,12 @@ pub fn run(comptime Config: type, options: Options) !Report {
                 _ = view.vtable.onFocus(view, 0);
                 _ = view.vtable.onFocus(view, 1);
             }
+        }
+        var malformed_size = iplugview.ViewRect{ .left = 100, .top = 100, .right = -100, .bottom = -100 };
+        if (view.vtable.checkSizeConstraint(view, &malformed_size) == types.kResultOk and
+            (malformed_size.right <= malformed_size.left or malformed_size.bottom <= malformed_size.top))
+        {
+            return error.InvalidEditorConstraintResult;
         }
         _ = view.vtable.onFocus(view, 0);
     }

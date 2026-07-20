@@ -2573,6 +2573,40 @@ int testActionMenus() {
         VSTGUI::exit();
         return 10;
     }
+    ZigVstgui::AccessibilityNode generated_accessibility;
+    ZigVstgui::ActionMenuView generated_menu(
+        description, callbacks, styles, &generated_accessibility, nullptr
+    );
+    generated_menu.setLayout(VSTGUI::CRect(0, 0, 360, 240), VSTGUI::CRect(20, 200, 180, 228));
+    constexpr uint64_t generated_seed = 0xac710a5e20260720ULL;
+    uint64_t generated_state = generated_seed;
+    for (uint32_t case_index = 0; case_index < 4096; ++case_index) {
+        if (!generated_menu.isOpen()) generated_menu.open();
+        generated_state = generated_state * 6364136223846793005ULL + 1442695040888963407ULL;
+        switch (generated_state % 7) {
+            case 0: generated_menu.handleKey(0, Steinberg::KEY_DOWN, 0); break;
+            case 1: generated_menu.handleKey(0, Steinberg::KEY_UP, 0); break;
+            case 2: generated_menu.handleKey(0, Steinberg::KEY_HOME, 0); break;
+            case 3: generated_menu.handleKey(0, Steinberg::KEY_END, 0); break;
+            case 4: generated_menu.handleKey(0, Steinberg::KEY_RETURN, 0); break;
+            case 5: generated_menu.handleKey(0, Steinberg::KEY_ESCAPE, 0); break;
+            default: generated_menu.open(); break;
+        }
+        if (generated_menu.isOpen()) {
+            const auto selected_id = generated_menu.selectedItem();
+            if (selected_id != 1 && selected_id != 3 && selected_id != 4) {
+                std::fprintf(
+                    stderr,
+                    "action menu seed=%llx case=%u selected disabled item=%u\n",
+                    static_cast<unsigned long long>(generated_seed),
+                    case_index,
+                    selected_id
+                );
+                VSTGUI::exit();
+                return 22;
+            }
+        }
+    }
     VSTGUI::exit();
 
     const ZigVstguiParameterDescription parameter {

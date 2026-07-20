@@ -167,3 +167,61 @@ test "sample store rejects stale incomplete and oversized transfers" {
     try store.commit(2);
     try std.testing.expectError(error.InvalidGeneration, store.begin(.{ .generation = 2, .sample_rate = 48_000, .channels = 1, .frames = 1 }));
 }
+
+test "sample store generated stale callback sequences preserve atomic generations" {
+    const seed = 0x57a1_ea00_2026_0720;
+    var random_state = std.Random.DefaultPrng.init(seed);
+    const random = random_state.random();
+
+    for (0..128) |case_index| {
+        var store = Store(16){};
+        var last_active_generation: u64 = 0;
+        for (0..256) |operation_index| {
+            const generation = 1 + random.uintLessThan(u64, 48);
+            switch (random.uintLessThan(u8, 6)) {
+                0 => store.begin(.{
+                    .generation = generation,
+                    .sample_rate = if (random.boolean()) 48_000 else 7_999,
+                    .channels = if (random.boolean()) 1 else 2,
+                    .frames = random.uintLessThan(usize, 20),
+                }) catch {},
+                1 => {
+                    if (store.staging()) |slot| {
+                        const expected = slot.metadata.frames * slot.metadata.channels;
+                        if (slot.received_samples < expected) {
+                            const remaining = expected - slot.received_samples;
+                            const count = @min(remaining, 1 + random.uintLessThan(usize, 8));
+                            var samples: [8]f32 = undefined;
+                            for (samples[0..count]) |*sample| sample.* = random.float(f32) * 2.0 - 1.0;
+                            store.write(slot.metadata.generation, slot.received_samples, samples[0..count]) catch {};
+                        }
+                    } else {
+                        store.write(generation, 0, &.{0.0}) catch {};
+                    }
+                },
+                2 => store.commit(generation) catch {},
+                3 => _ = store.cancel(generation),
+                4 => store.clear(generation) catch {},
+                else => _ = store.adoptPending(),
+            }
+            if (store.activeMetadata()) |active| {
+                const valid = active.generation >= last_active_generation and
+                    active.generation <= store.latest_generation.load(.acquire) and
+                    active.channels > 0 and active.channels <= maximum_channels and
+                    active.frames <= Store(16).frame_capacity and
+                    std.math.isFinite(store.sample(0, 0.5));
+                if (!valid) {
+                    std.debug.print("sample store seed={x} case={} operation={} active={} latest={}\n", .{
+                        seed,
+                        case_index,
+                        operation_index,
+                        active.generation,
+                        store.latest_generation.load(.acquire),
+                    });
+                    return error.GeneratedSampleStoreInvariantFailed;
+                }
+                last_active_generation = active.generation;
+            }
+        }
+    }
+}
