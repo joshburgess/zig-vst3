@@ -1,6 +1,10 @@
 const std = @import("std");
 
 pub const Kind = enum {
+    low_pass,
+    high_pass,
+    band_pass,
+    notch,
     low_shelf,
     bell,
     high_shelf,
@@ -27,6 +31,38 @@ pub const Config = struct {
         const root_amplitude = @sqrt(amplitude);
 
         const raw = switch (self.kind) {
+            .low_pass => RawCoefficients{
+                .b0 = (1.0 - cosine) * 0.5,
+                .b1 = 1.0 - cosine,
+                .b2 = (1.0 - cosine) * 0.5,
+                .a0 = 1.0 + alpha,
+                .a1 = -2.0 * cosine,
+                .a2 = 1.0 - alpha,
+            },
+            .high_pass => RawCoefficients{
+                .b0 = (1.0 + cosine) * 0.5,
+                .b1 = -(1.0 + cosine),
+                .b2 = (1.0 + cosine) * 0.5,
+                .a0 = 1.0 + alpha,
+                .a1 = -2.0 * cosine,
+                .a2 = 1.0 - alpha,
+            },
+            .band_pass => RawCoefficients{
+                .b0 = alpha,
+                .b1 = 0.0,
+                .b2 = -alpha,
+                .a0 = 1.0 + alpha,
+                .a1 = -2.0 * cosine,
+                .a2 = 1.0 - alpha,
+            },
+            .notch => RawCoefficients{
+                .b0 = 1.0,
+                .b1 = -2.0 * cosine,
+                .b2 = 1.0,
+                .a0 = 1.0 + alpha,
+                .a1 = -2.0 * cosine,
+                .a2 = 1.0 - alpha,
+            },
             .bell => RawCoefficients{
                 .b0 = 1.0 + alpha * amplitude,
                 .b1 = -2.0 * cosine,
@@ -221,9 +257,31 @@ test "configuration clamps finite frequency and q" {
     try std.testing.expectError(error.InvalidConfig, (Config{ .kind = .bell, .sample_rate = 48_000.0, .frequency_hz = std.math.nan(f64), .gain_db = 0.0, .q = 1.0 }).coefficients());
 }
 
+test "pass filters meet their cutoff response" {
+    inline for (.{ Kind.low_pass, Kind.high_pass }) |kind| {
+        const coefficients = try (Config{ .kind = kind, .sample_rate = 48_000.0, .frequency_hz = 1_000.0, .gain_db = 0.0, .q = 1.0 / @sqrt(2.0) }).coefficients();
+        try std.testing.expectApproxEqAbs(@as(f64, -3.0103), coefficients.magnitudeDb(48_000.0, 1_000.0), 0.001);
+    }
+
+    const low = try (Config{ .kind = .low_pass, .sample_rate = 48_000.0, .frequency_hz = 1_000.0, .gain_db = 0.0, .q = 0.707 }).coefficients();
+    const high = try (Config{ .kind = .high_pass, .sample_rate = 48_000.0, .frequency_hz = 1_000.0, .gain_db = 0.0, .q = 0.707 }).coefficients();
+    try std.testing.expect(low.magnitudeDb(48_000.0, 100.0) > -0.01);
+    try std.testing.expect(low.magnitudeDb(48_000.0, 10_000.0) < -35.0);
+    try std.testing.expect(high.magnitudeDb(48_000.0, 100.0) < -35.0);
+    try std.testing.expect(high.magnitudeDb(48_000.0, 10_000.0) > -0.01);
+}
+
+test "band pass peaks and notch rejects at center frequency" {
+    const band = try (Config{ .kind = .band_pass, .sample_rate = 48_000.0, .frequency_hz = 2_000.0, .gain_db = 0.0, .q = 2.0 }).coefficients();
+    const notch = try (Config{ .kind = .notch, .sample_rate = 48_000.0, .frequency_hz = 2_000.0, .gain_db = 0.0, .q = 2.0 }).coefficients();
+    try std.testing.expectApproxEqAbs(@as(f64, 0.0), band.magnitudeDb(48_000.0, 2_000.0), 0.0001);
+    try std.testing.expect(notch.magnitudeDb(48_000.0, 2_000.0) < -120.0);
+    try std.testing.expect(notch.magnitudeDb(48_000.0, 200.0) > -0.1);
+}
+
 test "unity filters preserve f32 and f64 samples" {
     inline for (.{ f32, f64 }) |Sample| {
-        inline for (std.enums.values(Kind)) |kind| {
+        inline for (.{ Kind.low_shelf, Kind.bell, Kind.high_shelf }) |kind| {
             const coefficients = try (Config{ .kind = kind, .sample_rate = 48_000.0, .frequency_hz = 1_000.0, .gain_db = 0.0, .q = 1.0 }).coefficients();
             var filter = SmoothedBiquad(Sample){};
             filter.setImmediate(coefficients);
