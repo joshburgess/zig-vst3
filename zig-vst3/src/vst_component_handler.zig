@@ -2,12 +2,19 @@ const std = @import("std");
 const funknown = @import("funknown.zig");
 const interface_map = @import("interface_map.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
+const ivstcomponent = @import("pluginterfaces/vst/ivstcomponent.zig");
 const ivstcontextmenu = @import("pluginterfaces/vst/ivstcontextmenu.zig");
 const ivsteditcontroller = @import("pluginterfaces/vst/ivsteditcontroller.zig");
 const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+
+pub fn busActivationIsValid(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, state: types.TBool) bool {
+    const valid_media = media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) or media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent);
+    const valid_direction = direction == @intFromEnum(ivstcomponent.BusDirections.kInput) or direction == @intFromEnum(ivstcomponent.BusDirections.kOutput);
+    return valid_media and valid_direction and bus_index >= 0 and state <= 1;
+}
 
 fn recordBeginEditState(self: anytype, id: vsttypes.ParamID) void {
     self.begin_count +|= 1;
@@ -261,6 +268,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
         }
 
         fn setDirty(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
+            if (state > 1) return types.kInvalidArgument;
             const self = ownerFromHandler2(ptr);
             self.recordDirty(state);
             if (@hasDecl(Config, "setDirty")) return Config.setDirty(self, state);
@@ -633,6 +641,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         }
 
         fn requestBusActivation(ptr: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, state: types.TBool) callconv(.c) types.tresult {
+            if (!busActivationIsValid(media_type, direction, bus_index, state)) return types.kInvalidArgument;
             const self = ownerFromBus(ptr);
             self.recordBusActivation(media_type, direction, bus_index, state);
             if (@hasDecl(Config, "requestBusActivation")) return Config.requestBusActivation(self, media_type, direction, bus_index, state);
@@ -1176,6 +1185,8 @@ test "component handler 2 exposes extension and records callbacks" {
     const handler2: *ivsteditcontroller.IComponentHandler2 = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.handler2_add_ref_count);
 
+    try std.testing.expectEqual(types.kInvalidArgument, handler2.vtable.setDirty(handler2, 2));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.dirty_count);
     try std.testing.expectEqual(types.kResultOk, handler2.vtable.setDirty(handler2, 1));
     try std.testing.expectEqual(types.kResultOk, handler2.vtable.requestOpenEditor(handler2, "editor"));
     try std.testing.expectEqual(types.kResultOk, handler2.vtable.startGroupEdit(handler2));
@@ -1335,7 +1346,12 @@ test "component handler exposes bus activation and system time extensions" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.bus_add_ref_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.time_add_ref_count);
 
-    try std.testing.expectEqual(types.kResultOk, bus.vtable.requestBusActivation(bus, 1, 0, 2, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, bus.vtable.requestBusActivation(bus, 99, @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, bus.vtable.requestBusActivation(bus, @intFromEnum(ivstcomponent.MediaTypes.kAudio), 99, 0, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, bus.vtable.requestBusActivation(bus, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), -1, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, bus.vtable.requestBusActivation(bus, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 2));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.bus_activation_count);
+    try std.testing.expectEqual(types.kResultOk, bus.vtable.requestBusActivation(bus, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 2, 1));
     var value: types.int64 = 0;
     try std.testing.expectEqual(types.kResultOk, time.vtable.getSystemTime(time, &value));
     try std.testing.expectEqual(@as(types.int64, 12345), value);

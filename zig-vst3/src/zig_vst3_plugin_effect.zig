@@ -380,6 +380,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         pub fn setDirty(iface: *ivsteditcontroller.IEditController, state: types.TBool) types.tresult {
+            if (state > 1) return types.kInvalidArgument;
             const handler = instance(iface).component_handler2 orelse return types.kResultFalse;
             return handler.vtable.setDirty(handler, state);
         }
@@ -405,6 +406,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         pub fn requestBusActivation(iface: *ivsteditcontroller.IEditController, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, state: types.TBool) types.tresult {
+            if (!vst_component_handler.busActivationIsValid(media_type, direction, index, state)) return types.kInvalidArgument;
             const handler = instance(iface).component_handler_bus_activation orelse return types.kResultFalse;
             return handler.vtable.requestBusActivation(handler, media_type, direction, index, state);
         }
@@ -1182,6 +1184,29 @@ test "reflected edit controller owns isolated optional controller state" {
     try std.testing.expectEqual(@as(usize, 1), test_controller_state_deinit_count);
     _ = second.vtable.release(second);
     try std.testing.expectEqual(@as(usize, 2), test_controller_state_deinit_count);
+}
+
+test "reflected edit controller rejects malformed host requests" {
+    const EmptyParams = struct {};
+    const ParameterSet = plug_core.parameters.ParameterSet(EmptyParams);
+    const TestController = ReflectedEditController(struct {
+        pub const controller_name = "HostRequestValidationController";
+        pub const Params = EmptyParams;
+        pub const parameter_set = &ParameterSet.init(.{});
+    });
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestController.create(@ptrCast(&ivsteditcontroller.iedit_controller_iid), &controller_out));
+    const controller: *ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out orelse return error.MissingController));
+    defer _ = controller.vtable.release(controller);
+
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.setDirty(controller, 2));
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.requestBusActivation(controller, 99, @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.requestBusActivation(controller, @intFromEnum(ivstcomponent.MediaTypes.kAudio), 99, 0, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.requestBusActivation(controller, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), -1, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.requestBusActivation(controller, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 2));
+    try std.testing.expectEqual(types.kResultFalse, TestController.setDirty(controller, 1));
+    try std.testing.expectEqual(types.kResultFalse, TestController.requestBusActivation(controller, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1));
 }
 
 test "reflected edit controller releases replaced component handlers" {

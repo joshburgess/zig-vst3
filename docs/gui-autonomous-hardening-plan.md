@@ -309,3 +309,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Lifecycle regressions reject malformed calls, preserve the reset count, and then complete valid activate, process, stop, and deactivate transitions.
 - The complete deterministic gate passed 82/82 steps and 3,900/3,900 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 95.5 us for the aggregate scene and 55.12 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Controller Host Request Inputs
+
+- Component-handler and public controller boundaries now reject noncanonical dirty states and malformed bus activation media, direction, index, and state values before recording or delegation.
+- Regressions prove rejected calls do not increment callback counters. Valid calls still reach available extensions or report an absent extension without changing the validation result.
+- The complete deterministic gate passed 82/82 steps and 3,910/3,910 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 98.5 us for the aggregate scene and 54.23 ms for a complete Sample Player editor lifecycle.
