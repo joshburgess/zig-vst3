@@ -161,3 +161,12 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The deterministic and raw ABI gate passed 187/187 steps and 3,822/3,822 tests. The sanitizer gate passed 2/2 steps. Linux and Windows bundle matrices each passed 44/44 steps, and all 14 Steinberg validators passed in a 74/74-step run.
 - Benchmarks stayed within budget: 1.27 ms for maximum sample decode and waveform construction, 7.7 ns per sample-player frame, 5.1 ns per playhead update, and 636.7 ns per IR sample.
 - The serialized strictness-5 dependency chain through Channel Strip passed, ending with artifact `zig_vst3_channel_strip-strictness-5-20260720-210621-868`. The strictness-10 chain also passed, ending with `zig_vst3_channel_strip-strictness-10-20260720-211736-4048`. No unexpected exit or crash occurred.
+
+### Autonomous Follow-up: Sanitizer Soak
+
+- `zig build soak-vstgui-sanitizers --summary all` builds the instrumented native adapter once, then repeats interaction, macOS accessibility, and complete visual comparison processes. `VSTGUI_SANITIZER_SOAK_REPETITIONS` controls the bounded repetition count and defaults to eight.
+- Every process records exact arguments, sanitizer options, phase, repetition, timestamps, stdout, stderr, and status. The runner stops on the first failure or signal and leaves the failing visual output beside its status. Interrupted runs record the active phase and repetition.
+- The final full run passed 24/24 instrumented processes at `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-vstgui-sanitizer/20260720-230804-93268`. The artifact contains 24 successful phase records and a successful final status. No sanitizer diagnostic or unexpected exit occurred.
+- The existing one-shot `test-vstgui-sanitizers` gate still passed 2/2 steps after its build-only mode was added for the soak runner.
+- A portable fake-executable regression verifies successful repetition accounting, invalid repetition rejection, and first-failure classification without requiring an actual sanitizer defect.
+- The deterministic and raw ABI gate passed 188/188 steps and 3,822/3,822 tests, including the runner regression. Linux and Windows bundle matrices each passed 44/44 steps. Benchmarks remained within budget, including 0.61 ms maximum sample decode, 7.4 ns per sample-player frame, and 601.6 ns per IR sample.

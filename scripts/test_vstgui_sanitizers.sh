@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 source_dir="$root/gui-adapters/vstgui"
 build_dir="$root/.vst3-sdk/vstgui-adapter-sanitizer-build"
 
@@ -19,12 +19,22 @@ cmake -S "$source_dir" -B "$build_dir" \
   -DVSTGUI_ENABLE_OPENGL_SUPPORT=OFF \
   -DVSTGUI_ENABLE_XMLPARSER=OFF
 
-targets="zig_vstgui_adapter_tests zig_vstgui_visual_tests"
 if [ "$(uname -s)" = Darwin ]; then
-  targets="$targets zig_vstgui_accessibility_macos_tests"
+  cmake --build "$build_dir" --target \
+    zig_vstgui_adapter_tests \
+    zig_vstgui_visual_tests \
+    zig_vstgui_accessibility_macos_tests \
+    --parallel
+else
+  cmake --build "$build_dir" --target \
+    zig_vstgui_adapter_tests \
+    zig_vstgui_visual_tests \
+    --parallel
 fi
 
-cmake --build "$build_dir" --target $targets --parallel
+if [ "${ZIG_VSTGUI_SANITIZER_BUILD_ONLY:-0}" = 1 ]; then
+  exit 0
+fi
 
 if [ "$(uname -s)" = Darwin ]; then
   export ASAN_OPTIONS="halt_on_error=1:strict_string_checks=1"

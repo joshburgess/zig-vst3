@@ -262,6 +262,7 @@ pub fn build(b: *std.Build) void {
     addExamplePluginTestDependencies(b, test_step, &example_plugins);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_pluginval_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_validator_runner.sh"}).step);
+    test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_vstgui_sanitizer_soak_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/check_public_gui_examples.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_installed_package.sh"}).step);
     test_step.dependOn(generate_fixtures_step);
@@ -272,6 +273,12 @@ pub fn build(b: *std.Build) void {
         .script = "scripts/test_vstgui_sanitizers.sh",
     });
     _ = sanitizer_step;
+    const sanitizer_soak_step = addScriptCheckStep(b, .{
+        .step_name = "soak-vstgui-sanitizers",
+        .description = "Repeat native VSTGUI sanitizer tests with failure artifacts",
+        .script = "scripts/vstgui_sanitizer_soak.sh",
+    });
+    _ = sanitizer_soak_step;
 
     const plugin_path_option = b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate");
 
