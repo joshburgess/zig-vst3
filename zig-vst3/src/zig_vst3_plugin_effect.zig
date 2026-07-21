@@ -380,6 +380,12 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return handler.vtable.endEdit(handler, id);
         }
 
+        pub fn restartComponent(iface: *ivsteditcontroller.IEditController, flags: types.int32) types.tresult {
+            if (!vst_component_handler.restartFlagsAreValid(flags)) return types.kInvalidArgument;
+            const handler = instance(iface).component_handler orelse return types.kResultFalse;
+            return handler.vtable.restartComponent(handler, flags);
+        }
+
         pub fn setDirty(iface: *ivsteditcontroller.IEditController, state: types.TBool) types.tresult {
             if (state > 1) return types.kInvalidArgument;
             const handler = instance(iface).component_handler2 orelse return types.kResultFalse;
@@ -1222,10 +1228,13 @@ test "reflected edit controller rejects malformed host requests" {
     try std.testing.expectEqual(types.kInvalidArgument, TestController.performEdit(controller, 0, 1.1));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.performEdit(controller, 0, std.math.nan(vsttypes.ParamValue)));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.performEdit(controller, 0, std.math.inf(vsttypes.ParamValue)));
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.restartComponent(controller, -1));
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.restartComponent(controller, 1 << 12));
     try std.testing.expectEqual(types.kResultFalse, TestController.setDirty(controller, 1));
     try std.testing.expectEqual(types.kResultFalse, TestController.requestBusActivation(controller, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1));
     try std.testing.expectEqual(types.kResultFalse, TestController.startProgress(controller, @intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
     try std.testing.expectEqual(types.kResultFalse, TestController.updateProgress(controller, 1, 0.5));
+    try std.testing.expectEqual(types.kResultFalse, TestController.restartComponent(controller, ivsteditcontroller.RestartFlags.kParamValuesChanged));
 }
 
 test "reflected edit controller releases replaced component handlers" {

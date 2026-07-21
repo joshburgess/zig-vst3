@@ -29,6 +29,22 @@ pub fn automationValueIsValid(value: vsttypes.ParamValue) bool {
     return vst_value.isNormalized(value);
 }
 
+pub fn restartFlagsAreValid(flags: types.int32) bool {
+    const known_flags = ivsteditcontroller.RestartFlags.kReloadComponent |
+        ivsteditcontroller.RestartFlags.kIoChanged |
+        ivsteditcontroller.RestartFlags.kParamValuesChanged |
+        ivsteditcontroller.RestartFlags.kLatencyChanged |
+        ivsteditcontroller.RestartFlags.kParamTitlesChanged |
+        ivsteditcontroller.RestartFlags.kMidiCCAssignmentChanged |
+        ivsteditcontroller.RestartFlags.kNoteExpressionChanged |
+        ivsteditcontroller.RestartFlags.kIoTitlesChanged |
+        ivsteditcontroller.RestartFlags.kPrefetchableSupportChanged |
+        ivsteditcontroller.RestartFlags.kRoutingInfoChanged |
+        ivsteditcontroller.RestartFlags.kKeyswitchChanged |
+        ivsteditcontroller.RestartFlags.kParamIDMappingChanged;
+    return flags >= 0 and flags & ~known_flags == 0;
+}
+
 fn recordBeginEditState(self: anytype, id: vsttypes.ParamID) void {
     self.begin_count +|= 1;
     self.last_param_id = id;
@@ -132,6 +148,7 @@ pub fn ComponentHandler(comptime Config: type) type {
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
+            if (!restartFlagsAreValid(flags)) return types.kInvalidArgument;
             const self = owner(ptr);
             self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
@@ -276,6 +293,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
+            if (!restartFlagsAreValid(flags)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
@@ -449,6 +467,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
+            if (!restartFlagsAreValid(flags)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
@@ -651,6 +670,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
+            if (!restartFlagsAreValid(flags)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
@@ -848,6 +868,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
+            if (!restartFlagsAreValid(flags)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
@@ -1072,6 +1093,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         }
 
         fn restartComponent(ptr: *anyopaque, flags: types.int32) callconv(.c) types.tresult {
+            if (!restartFlagsAreValid(flags)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordRestart(flags);
             if (@hasDecl(Config, "restartComponent")) return Config.restartComponent(self, flags);
@@ -1135,12 +1157,17 @@ test "component handler records automation callbacks" {
     try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, std.math.nan(vsttypes.ParamValue)));
     try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, std.math.inf(vsttypes.ParamValue)));
     try std.testing.expectEqual(@as(types.uint32, 0), handler.perform_count);
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.restartComponent(handler.asHandler(), -1));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.restartComponent(handler.asHandler(), 1 << 12));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.restart_count);
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.beginEdit(handler.asHandler(), 9));
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, 0.5));
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.endEdit(handler.asHandler(), 9));
+    try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.restartComponent(handler.asHandler(), ivsteditcontroller.RestartFlags.kIoChanged | ivsteditcontroller.RestartFlags.kParamValuesChanged));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.begin_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.perform_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler.end_count);
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.restart_count);
     try std.testing.expectEqual(@as(vsttypes.ParamID, 9), handler.last_param_id);
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), handler.last_value);
 }
