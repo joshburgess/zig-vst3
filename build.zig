@@ -281,6 +281,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_validator_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_vstgui_sanitizer_soak_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_vstgui_thread_sanitizer_runner.sh"}).step);
+    test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_vstgui_build_modes.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/check_public_gui_examples.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_installed_package.sh"}).step);
     test_step.dependOn(generate_fixtures_step);

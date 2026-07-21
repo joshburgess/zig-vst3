@@ -204,3 +204,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - A portable deterministic regression verifies three successful repetitions, invalid repetition rejection, exact command artifacts, first-failure classification, and immediate stopping after the first failed process.
 - The refactored real runner passed four instrumented processes at `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-vstgui-thread-sanitizer/20260721-080934-83313`. No race, deadlock, signal, or unexpected exit was reported.
 - The complete deterministic gate passed 81/81 steps and 3,823/3,823 tests with the portable runner regression included. The native visual gate remained within budget at 89.2 us for the aggregate scene and 46.49 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Build Mode Regression and API Audit
+
+- A portable fake-tool regression now enforces the VSTGUI build boundary. Compile-only mode must configure CMake and build only `zig_vstgui_adapter`. Validation mode must additionally run interaction, accessibility, and visual targets and compile the Windows accessibility bridge.
+- The regression also verifies that compile-only mode never invokes Zig for the Windows bridge and that unknown modes fail with status 2. It runs under the complete deterministic test graph.
+- The current API audit keeps direct parameter-backed graph ranges and `Graph.secondary_range_selection` experimental. The IR Loader is a valid second production consumer for state-backed `RangeSelection`, but converting its destructive edit selection into automatable parameters or adding an unrelated secondary range would create a misleading contract merely to satisfy a consumer count.
+- The complete deterministic gate passed 82/82 steps and 3,823/3,823 tests. Native visual measurements remained within budget at 91.8 us for the aggregate scene and 47.31 ms for a complete Sample Player editor lifecycle.
