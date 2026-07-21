@@ -48,21 +48,24 @@ pub fn Editor(comptime frame_capacity: usize) type {
         has_rollback: bool = false,
 
         pub fn loadFrom(self: *Self, importer: anytype) !void {
+            if (self.has_rollback) return error.EditPending;
             const source = importer.snapshot();
-            if (source.import.status != .ready or source.sample_rate == 0 or source.channels == 0 or
-                source.channels > maximum_channels or source.decoded_frames == 0 or
-                source.sample_frames != source.decoded_frames or source.decoded_frames > frame_capacity)
-            {
-                return error.InvalidSource;
-            }
+            if (!validSource(source)) return error.InvalidSource;
             const sample_count = source.decoded_frames * source.channels;
             var offset: usize = 0;
             while (offset < sample_count) {
-                const count = importer.copyDecoded(offset, self.original[offset..sample_count]);
+                const requested = sample_count - offset;
+                const count = importer.copyDecoded(offset, self.rollback[offset..sample_count]);
                 if (count == 0) return error.TruncatedSource;
+                if (count > requested) return error.InvalidSource;
+                for (self.rollback[offset .. offset + count]) |sample| {
+                    if (!std.math.isFinite(sample)) return error.InvalidSource;
+                }
                 offset += count;
             }
-            @memcpy(self.edited[0..sample_count], self.original[0..sample_count]);
+            if (!sameSource(source, importer.snapshot())) return error.StaleSource;
+            @memcpy(self.original[0..sample_count], self.rollback[0..sample_count]);
+            @memcpy(self.edited[0..sample_count], self.rollback[0..sample_count]);
             self.sample_rate = source.sample_rate;
             self.channels = source.channels;
             self.original_frames = source.decoded_frames;
@@ -72,6 +75,20 @@ pub fn Editor(comptime frame_capacity: usize) type {
             self.dirty = false;
             self.has_rollback = false;
             self.advanceGeneration();
+        }
+
+        fn validSource(source: anytype) bool {
+            return source.import.status == .ready and source.import.generation != 0 and
+                source.sample_rate >= 8_000 and source.sample_rate <= 384_000 and
+                source.channels > 0 and source.channels <= maximum_channels and
+                source.decoded_frames > 0 and source.decoded_frames <= frame_capacity and
+                source.sample_frames == source.decoded_frames;
+        }
+
+        fn sameSource(first: anytype, second: anytype) bool {
+            return validSource(second) and first.import.generation == second.import.generation and
+                first.sample_rate == second.sample_rate and first.channels == second.channels and
+                first.sample_frames == second.sample_frames and first.decoded_frames == second.decoded_frames;
         }
 
         pub fn apply(self: *Self, command: Command, selection_start: f64, selection_end: f64) !bool {
@@ -317,6 +334,37 @@ const TestImporter = struct {
     }
 };
 
+const HostileImporter = struct {
+    samples: []const f32,
+    generation: u64 = 1,
+    reported_count_delta: usize = 0,
+    replace_after_copy: bool = false,
+
+    fn snapshot(self: *const HostileImporter) struct {
+        import: gui_file_importer.Snapshot,
+        sample_rate: u32,
+        channels: u8,
+        sample_frames: u64,
+        decoded_frames: usize,
+    } {
+        return .{
+            .import = .{ .status = .ready, .entry_point = .picker, .path_count = 1, .completed_units = 1, .total_units = 1, .generation = self.generation, .cancellation_pending = false },
+            .sample_rate = 48_000,
+            .channels = 1,
+            .sample_frames = self.samples.len,
+            .decoded_frames = self.samples.len,
+        };
+    }
+
+    fn copyDecoded(self: *HostileImporter, offset: usize, output: []f32) usize {
+        if (offset >= self.samples.len) return 0;
+        const count = @min(output.len, self.samples.len - offset);
+        @memcpy(output[0..count], self.samples[offset .. offset + count]);
+        if (self.replace_after_copy) self.generation += 1;
+        return count + self.reported_count_delta;
+    }
+};
+
 test "IR editor composes edits and resets to the immutable source" {
     const samples = [_]f32{ 0.25, 0.5, -0.25, -0.5, 0.125, -0.125 };
     const importer = TestImporter{ .samples = &samples };
@@ -370,5 +418,38 @@ test "IR editor rolls back a rejected publication" {
     _ = editor.copyDecoded(0, &restored);
     try std.testing.expectEqualSlices(f32, &samples, &restored);
     try std.testing.expectEqual(generation, editor.snapshot().import.generation);
+    try std.testing.expect(!editor.snapshot().edited);
+}
+
+test "IR editor replacement is transactional for hostile sources" {
+    const original = [_]f32{ 0.25, 0.5, -0.25, -0.5 };
+    const original_importer = TestImporter{ .samples = &original };
+    var editor = Editor(4){};
+    try editor.loadFrom(&original_importer);
+    const original_snapshot = editor.snapshot();
+
+    const malformed = [_]f32{ 1.0, std.math.nan(f32), 0.5, 0.25 };
+    var non_finite = HostileImporter{ .samples = &malformed };
+    try std.testing.expectError(error.InvalidSource, editor.loadFrom(&non_finite));
+    var oversized = HostileImporter{ .samples = &original, .reported_count_delta = 1 };
+    try std.testing.expectError(error.InvalidSource, editor.loadFrom(&oversized));
+    var replaced = HostileImporter{ .samples = &original, .replace_after_copy = true };
+    try std.testing.expectError(error.StaleSource, editor.loadFrom(&replaced));
+
+    try std.testing.expectEqual(original_snapshot.import.generation, editor.snapshot().import.generation);
+    var retained: [4]f32 = undefined;
+    try std.testing.expectEqual(retained.len, editor.copyDecoded(0, &retained));
+    try std.testing.expectEqualSlices(f32, &original, &retained);
+}
+
+test "IR editor refuses replacement while publication rollback is pending" {
+    const samples = [_]f32{ 0.25, 0.5, -0.25, -0.5 };
+    const importer = TestImporter{ .samples = &samples };
+    var editor = Editor(4){};
+    try editor.loadFrom(&importer);
+    try std.testing.expect(try editor.apply(.reverse, 0.0, 1.0));
+    try std.testing.expectError(error.EditPending, editor.loadFrom(&importer));
+    editor.commitLastEdit();
+    try editor.loadFrom(&importer);
     try std.testing.expect(!editor.snapshot().edited);
 }

@@ -236,3 +236,11 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Hostile importer regressions cover oversized callback results, NaN payloads, and generation replacement after the first of multiple chunks. Receiver state remains unpublished after every rejected transfer.
 - The complete deterministic gate passed 82/82 steps and 3,848/3,848 tests. The raw ABI matrix passed 113/113 steps, AddressSanitizer and UndefinedBehaviorSanitizer passed 2/2 steps, and Linux and Windows cross-target matrices each passed 44/44 steps.
 - The IR Loader and Sample Player each passed all 47 Steinberg validator tests. Benchmarks remained within budget: 0.61 ms for maximum sample decode and waveform construction, 7.4 ns per sample-player frame, 4.9 ns per playhead update, and 613.3 ns per IR sample.
+
+### Autonomous Follow-up: Transactional IR Editing
+
+- IR replacement now stages decoded samples in the editor's existing rollback buffer. Live original and edited media change only after every callback returns a valid length, every sample is finite, and the final source snapshot matches the initial generation and metadata.
+- Replacement is rejected while an edit publication remains unresolved, so staging cannot destroy the rollback needed after a failed processor transfer. This preserves the existing 3.00 MiB editor storage bound.
+- Hostile source regressions cover oversized callback counts, NaN samples, generation replacement during copy, and replacement during a pending edit. Every rejected load retains the previous samples, metadata, generation, and edited state.
+- The complete deterministic gate passed 82/82 steps and 3,850/3,850 tests. The raw ABI matrix passed 113/113 steps, AddressSanitizer and UndefinedBehaviorSanitizer passed 2/2 steps, and Linux and Windows cross-target matrices each passed 44/44 steps.
+- The IR Loader passed all 47 Steinberg validator tests. Benchmarks remained within budget: 0.93 ms for maximum sample decode and waveform construction, 7.3 ns per sample-player frame, 4.9 ns per playhead update, and 609.4 ns per IR sample.

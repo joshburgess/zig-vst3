@@ -37,6 +37,7 @@ Completion evidence:
 - `PartitionedConvolver(131_072, 512)` owns three immutable IR slots. Only the producer prepares spectra, and only the audio callback changes the active slot at a process boundary.
 - Convolver staging rejects NaN and infinity before copying or preparing FFT partitions. Rejected chunks do not advance the transfer and may be replaced safely within the same generation.
 - Controller transport rejects invalid callback lengths and cancels a transfer if the importer generation or media metadata changes while chunks are being copied.
+- The editor stages replacement audio in its existing rollback storage. It commits only finite, complete data from an unchanged source and refuses replacement while an edit publication remains unresolved.
 - Unit tests cover mono and stereo convolution, pending replacement, stale generations, malformed chunks, sample-rate republication, decoded storage, controller-to-component transport, component teardown, and independent framework instances.
 - A focused importer regression replaces completed media, verifies decoded storage clears before the worker starts, and proves the newer generation publishes without exposing samples from the previous file. The focused importer suite passes 13 of 13 tests.
 - The reference processor reports a fixed 512-sample VST latency through its raw `IAudioProcessor` interface and delays the dry path by the same amount. pluginval 1.0.3 prints latency as zero through its hosting wrapper despite the raw interface test, so this discrepancy remains tracked for manual host verification.
