@@ -444,7 +444,10 @@ ZigVstguiEditor::~ZigVstguiEditor() {
         parameter_update_timer->forget();
         parameter_update_timer = nullptr;
     }
-    if (frame) frame->forget();
+    if (frame) {
+        clearControls();
+        frame->forget();
+    }
     reportMetrics();
     ZigVstgui::releasePlatformInterfaces(plug_frame, wayland_host);
 }
@@ -477,6 +480,14 @@ void ZigVstguiEditor::close() {
     for (uint32_t index = 0; index < progress_indicator_count; ++index) progress_controls[index]->stop();
     accessibility_bridge.close();
     if (!frame || !frame->getPlatformFrame()) return;
+    clearControls();
+    metrics.close_count += 1;
+    ZigVstgui::prepareFrameForClose(frame);
+    frame->close();
+    clearFrameReferences();
+}
+
+void ZigVstguiEditor::clearControls() {
     for (uint32_t index = 0; index < parameter_count; ++index) parameter_controls[index]->clear();
     resize_control.clear();
     for (uint32_t index = 0; index < meter_count; ++index) meter_controls[index]->clear();
@@ -493,10 +504,6 @@ void ZigVstguiEditor::close() {
     title_component.clear();
     help_component.clear();
     for (uint32_t index = 0; index < group_count; ++index) group_components[index].clear();
-    metrics.close_count += 1;
-    ZigVstgui::prepareFrameForClose(frame);
-    frame->close();
-    clearFrameReferences();
 }
 
 bool ZigVstguiEditor::resize(uint32_t new_width, uint32_t new_height) {

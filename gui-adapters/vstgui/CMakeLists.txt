@@ -1,6 +1,16 @@
 cmake_minimum_required(VERSION 3.25)
 project(zig_vstgui_adapter LANGUAGES C CXX)
 
+option(ZIG_VSTGUI_ENABLE_SANITIZERS "Enable address and undefined-behavior sanitizers" OFF)
+
+if(ZIG_VSTGUI_ENABLE_SANITIZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR "ZIG_VSTGUI_ENABLE_SANITIZERS requires Clang or GCC")
+    endif()
+    add_compile_options(-fsanitize=address,undefined -fno-sanitize=enum -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 if(APPLE)
     enable_language(OBJCXX)
 endif()
@@ -82,6 +92,9 @@ target_include_directories(zig_vstgui_adapter PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../../.vst3-sdk/vst3sdk"
 )
 target_link_libraries(zig_vstgui_adapter PRIVATE vstgui)
+if(APPLE AND ZIG_VSTGUI_ENABLE_SANITIZERS)
+    target_link_libraries(zig_vstgui_adapter PUBLIC "-framework OpenGL")
+endif()
 if(WIN32)
     target_link_libraries(zig_vstgui_adapter PRIVATE comctl32 oleaut32 uiautomationcore)
 endif()

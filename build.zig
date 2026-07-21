@@ -266,6 +266,13 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_installed_package.sh"}).step);
     test_step.dependOn(generate_fixtures_step);
 
+    const sanitizer_step = addScriptCheckStep(b, .{
+        .step_name = "test-vstgui-sanitizers",
+        .description = "Run native VSTGUI tests with address and undefined-behavior sanitizers",
+        .script = "scripts/test_vstgui_sanitizers.sh",
+    });
+    _ = sanitizer_step;
+
     const plugin_path_option = b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate");
 
     const validate_step = b.step("validate", "Run the VST3 SDK validator for -Dplugin=path/to/Plugin.vst3");

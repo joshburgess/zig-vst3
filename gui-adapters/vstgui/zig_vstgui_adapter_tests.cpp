@@ -3381,34 +3381,43 @@ int testEditableLabelsAndProgress() {
 }
 
 int main() {
-    if (const int result = testComponentState(); result != 0) return 10 + result;
-    if (const int result = testAccessibilityNode(); result != 0) return 20 + result;
-    if (const int result = testGestureOwnership(); result != 0) return 30 + result;
-    if (const int result = testActiveGestureCleanup(); result != 0) return 50 + result;
-    if (const int result = testSteppedGestureQuantization(); result != 0) return 55 + result;
-    if (const int result = testParameterContextMenu(); result != 0) return 60 + result;
-    if (const int result = testRotaryKnob(); result != 0) return 62 + result;
-    if (const int result = testParameterPointerControls(); result != 0) return 65 + result;
-    if (const int result = testThemeResolution(); result != 0) return 70 + result;
-    if (const int result = testEditorRuntimeFontLifecycle(); result != 0) return 75 + result;
-    if (const int result = testMultiParameterAttachmentAndXYPad(); result != 0) return 80 + result;
-    if (const int result = testMultiParameterRouting(); result != 0) return 90 + result;
-    if (const int result = testLayoutSolvers(); result != 0) return 110 + result;
-    if (const int result = testGalleryLayoutExtents(); result != 0) return 130 + result;
-    if (const int result = testParameterWorkspaceLayout(); result != 0) return 140 + result;
-    if (const int result = testMeterBallistics(); result != 0) return 150 + result;
+#define RUN_TEST(name, base) \
+    if (const int result = name(); result != 0) { \
+        std::fprintf(stderr, "%s failed at assertion %d\n", #name, result); \
+        return base + result; \
+    }
+    RUN_TEST(testComponentState, 10)
+    RUN_TEST(testAccessibilityNode, 20)
+    RUN_TEST(testGestureOwnership, 30)
+    RUN_TEST(testActiveGestureCleanup, 50)
+    RUN_TEST(testSteppedGestureQuantization, 55)
+    RUN_TEST(testParameterContextMenu, 60)
+    RUN_TEST(testRotaryKnob, 62)
+    RUN_TEST(testParameterPointerControls, 65)
+    RUN_TEST(testThemeResolution, 70)
+    RUN_TEST(testEditorRuntimeFontLifecycle, 75)
+    RUN_TEST(testMultiParameterAttachmentAndXYPad, 80)
+    RUN_TEST(testMultiParameterRouting, 90)
+    RUN_TEST(testLayoutSolvers, 110)
+    RUN_TEST(testGalleryLayoutExtents, 130)
+    RUN_TEST(testParameterWorkspaceLayout, 140)
+    RUN_TEST(testMeterBallistics, 150)
     VSTGUI::init(nullptr);
     const int graph_result = testGraphs();
     VSTGUI::exit();
-    if (graph_result != 0) return 160 + graph_result;
-    if (const int result = testMeterAbi(); result != 0) return 170 + result;
-    if (const int result = testAssetsAndFonts(); result != 0) return 190 + result;
-    if (const int result = testPresetBrowser(); result != 0) return 210 + result;
-    if (const int result = testActionMenus(); result != 0) return 220 + result;
-    if (const int result = testActionButtons(); result != 0) return 230 + result;
-    if (const int result = testPianoKeyboard(); result != 0) return 240 + result;
-    if (const int result = testStepSequencer(); result != 0) return 250 + result;
-    if (const int result = testFileDrop(); result != 0) return 270 + result;
-    if (const int result = testEditableLabelsAndProgress(); result != 0) return 290 + result;
+    if (graph_result != 0) {
+        std::fprintf(stderr, "testGraphs failed at assertion %d\n", graph_result);
+        return 160 + graph_result;
+    }
+    RUN_TEST(testMeterAbi, 170)
+    RUN_TEST(testAssetsAndFonts, 190)
+    RUN_TEST(testPresetBrowser, 210)
+    RUN_TEST(testActionMenus, 220)
+    RUN_TEST(testActionButtons, 230)
+    RUN_TEST(testPianoKeyboard, 240)
+    RUN_TEST(testStepSequencer, 250)
+    RUN_TEST(testFileDrop, 270)
+    RUN_TEST(testEditableLabelsAndProgress, 290)
+#undef RUN_TEST
     return 0;
 }

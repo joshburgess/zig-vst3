@@ -2471,7 +2471,14 @@ int main(int argc, char** argv) {
     if (argc < 3) return 64;
     const std::filesystem::path references(argv[1]);
     const std::filesystem::path output(argv[2]);
-    const bool update = argc == 4 && std::string(argv[3]) == "--update";
+    bool update = false;
+    bool enforce_performance = true;
+    for (int index = 3; index < argc; ++index) {
+        const std::string option(argv[index]);
+        if (option == "--update") update = true;
+        else if (option == "--skip-performance") enforce_performance = false;
+        else return 64;
+    }
     if (update) std::filesystem::create_directories(references);
     std::filesystem::create_directories(output);
     ZigVstgui::RuntimeGuard runtime;
@@ -2506,7 +2513,7 @@ int main(int argc, char** argv) {
             result = std::max(result, runSnapshot(snapshot, references, output, update));
         }
     }
-    if (!update) {
+    if (!update && enforce_performance) {
         const double average = benchmarkWarmDraw();
         const double piano_average = benchmarkPianoDraw();
         const double step_sequencer_average = benchmarkStepSequencerDraw();

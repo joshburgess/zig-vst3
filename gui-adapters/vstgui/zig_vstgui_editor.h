@@ -136,6 +136,7 @@ struct ZigVstguiEditor {
 
 private:
     void buildFrame();
+    void clearControls();
     void clearFrameReferences();
     void layout();
     void layoutParameterWorkspace(
