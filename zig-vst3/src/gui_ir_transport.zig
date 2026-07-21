@@ -133,11 +133,14 @@ pub fn receive(convolver: anytype, expected_target_id: u32, message: ?*ivstmessa
             {
                 return types.kInvalidArgument;
             }
+            const bounded_sample_rate = std.math.cast(u32, sample_rate) orelse return types.kInvalidArgument;
+            const bounded_channels = std.math.cast(u8, channels) orelse return types.kInvalidArgument;
+            const bounded_frames = std.math.cast(usize, frames) orelse return types.kInvalidArgument;
             convolver.begin(.{
                 .generation = generation,
-                .sample_rate = @intCast(sample_rate),
-                .channels = @intCast(channels),
-                .frames = @intCast(frames),
+                .sample_rate = bounded_sample_rate,
+                .channels = bounded_channels,
+                .frames = bounded_frames,
             }) catch return types.kResultFalse;
         },
         .chunk => {
@@ -154,7 +157,8 @@ pub fn receive(convolver: anytype, expected_target_id: u32, message: ?*ivstmessa
             const bytes: [*]const u8 = @ptrCast(payload.?);
             const count = byte_count / @sizeOf(f32);
             decodeSamples(bytes[0..byte_count], samples[0..count]);
-            convolver.write(generation, @intCast(offset_value), samples[0..count]) catch return types.kResultFalse;
+            const offset = std.math.cast(usize, offset_value) orelse return types.kInvalidArgument;
+            convolver.write(generation, offset, samples[0..count]) catch return types.kResultFalse;
         },
         .commit => convolver.commit(generation) catch return types.kResultFalse,
         .cancel => {
@@ -327,4 +331,24 @@ test "IR transport cancels a source replaced during publication" {
     try std.testing.expectEqual(types.kResultFalse, sendDecodedGeneration(receiver.asInterface(), 12, 1, &importer));
     try std.testing.expectEqual(@as(usize, 2), importer.copies);
     try std.testing.expectEqual(@as(?core.gui_ir_convolution.Metadata, null), ReceiverConfig.convolver.activeMetadata());
+}
+
+test "IR transport rejects attributes outside receiver integer widths" {
+    const Convolver = core.gui_ir_convolution.PartitionedConvolver(16, 8);
+    var convolver = Convolver.init(48_000);
+    var message = TransportMessage{};
+    const iface = message.asInterface();
+    iface.vtable.setMessageID(iface, message_id);
+    const attributes = iface.vtable.getAttributes(iface) orelse return error.MissingAttributes;
+    try std.testing.expect(setCommon(attributes, .begin, 14, 1));
+    try std.testing.expectEqual(types.kResultOk, attributes.vtable.setInt(attributes, "sample-rate", 48_000));
+    try std.testing.expectEqual(types.kResultOk, attributes.vtable.setInt(attributes, "channels", 256));
+    try std.testing.expectEqual(types.kResultOk, attributes.vtable.setInt(attributes, "frames", 1));
+    try std.testing.expectEqual(types.kInvalidArgument, receive(&convolver, 14, iface));
+    try std.testing.expect(!convolver.cancel(1));
+
+    try std.testing.expectEqual(types.kResultOk, attributes.vtable.setInt(attributes, "sample-rate", std.math.maxInt(i64)));
+    try std.testing.expectEqual(types.kResultOk, attributes.vtable.setInt(attributes, "channels", 1));
+    try std.testing.expectEqual(types.kInvalidArgument, receive(&convolver, 14, iface));
+    try std.testing.expect(!convolver.cancel(1));
 }

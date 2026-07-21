@@ -244,3 +244,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Hostile source regressions cover oversized callback counts, NaN samples, generation replacement during copy, and replacement during a pending edit. Every rejected load retains the previous samples, metadata, generation, and edited state.
 - The complete deterministic gate passed 82/82 steps and 3,850/3,850 tests. The raw ABI matrix passed 113/113 steps, AddressSanitizer and UndefinedBehaviorSanitizer passed 2/2 steps, and Linux and Windows cross-target matrices each passed 44/44 steps.
 - The IR Loader passed all 47 Steinberg validator tests. Benchmarks remained within budget: 0.93 ms for maximum sample decode and waveform construction, 7.3 ns per sample-player frame, 4.9 ns per playhead update, and 609.4 ns per IR sample.
+
+### Autonomous Follow-up: Host Message Integer Boundaries
+
+- Decoded-audio receive paths now check host-supplied sample rate, channel count, frame count, and chunk offset values before narrowing them to framework storage types. Values outside those types return `kInvalidArgument` instead of trapping.
+- Direct regressions cover a channel count above `u8` and a sample rate above `u32`. Both malformed begin messages leave the receiver without staged media.
+- The complete deterministic gate passed 82/82 steps and 3,860/3,860 tests. The raw ABI matrix passed 113/113 steps, and AddressSanitizer and UndefinedBehaviorSanitizer passed 2/2 steps.
+- Linux and Windows cross-target matrices each passed 44/44 steps. The IR Loader and Sample Player each passed all 47 Steinberg validator tests for both processing precisions.
