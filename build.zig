@@ -31,12 +31,20 @@ pub fn build(b: *std.Build) void {
 
     const entry_symbols_step = b.step("entry-symbols", "Verify native VST3 module entry exports");
     const vstgui_adapter_step = b.step("vstgui-adapter", "Build the optional VSTGUI adapter");
+    const vstgui_native_test_step = b.step("test-vstgui-native", "Run native VSTGUI interaction, accessibility, and visual tests");
     if (native_vstgui) {
         const build_vstgui = if (target.result.os.tag == .windows)
             b.addSystemCommand(&.{ "powershell", "-NoProfile", "-File", "scripts/build_vstgui.ps1" })
         else
             b.addSystemCommand(&.{"scripts/build_vstgui.sh"});
         vstgui_adapter_step.dependOn(&build_vstgui.step);
+
+        const test_vstgui = if (target.result.os.tag == .windows)
+            b.addSystemCommand(&.{ "powershell", "-NoProfile", "-File", "scripts/build_vstgui.ps1", "-Mode", "test" })
+        else
+            b.addSystemCommand(&.{ "scripts/build_vstgui.sh", "test" });
+        test_vstgui.step.dependOn(vstgui_adapter_step);
+        vstgui_native_test_step.dependOn(&test_vstgui.step);
     }
 
     const example_plugin_options = [_]ExamplePluginOptions{
@@ -224,6 +232,15 @@ pub fn build(b: *std.Build) void {
     });
     gui_examples.root_module.addImport("zig-vst3", zig_vst3);
     gui_examples.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
+
+    if (native_vstgui) {
+        vst3_tests.step.dependOn(vstgui_native_test_step);
+        zig_vst3_plugin_core_tests.step.dependOn(vstgui_native_test_step);
+        zig_vst3_plugin_tests.step.dependOn(vstgui_native_test_step);
+        realtime_source_audit.step.dependOn(vstgui_native_test_step);
+        gui_examples.step.dependOn(vstgui_native_test_step);
+        for (example_plugins) |plugin| plugin.plugin_tests.step.dependOn(vstgui_native_test_step);
+    }
 
     const benchmark = b.addExecutable(.{
         .name = "zig-vst3-benchmark",

@@ -187,4 +187,12 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Non-finite sustain values now fall back before clamping, so they cannot propagate into audio. Pitch calculation widens the note and root note before subtraction, preventing overflow at the public `i16` boundaries.
 - The full deterministic test suite passed with the new lifecycle regression. AddressSanitizer and UndefinedBehaviorSanitizer passed 2/2 steps. Linux and Windows cross-target matrices each passed 44/44 steps.
 - Benchmarks remained within budget: 0.60 ms for maximum sample decode and waveform construction, 7.3 ns per sample-player frame, 4.9 ns per playhead update, and 535.2 ns per IR sample.
-- Every raw ABI harness passed. The combined `raw-api-abi` command remains to be repeated when the machine is idle because its embedded visual timing gate ran at about 2.4 times the normal standalone measurement under active system load. No ABI mismatch, sanitizer diagnostic, functional test failure, or standalone performance regression occurred.
+- Every raw ABI harness passed. After validation responsibilities were separated from adapter compilation, the combined `raw-api-abi` command passed 113/113 steps without inheriting an unrelated visual timing gate.
+
+### Autonomous Follow-up: Validation Graph Isolation
+
+- `zig build vstgui-adapter` now configures and compiles only the optional native adapter. Ordinary plugin compilation, entry-symbol checks, and raw ABI validation no longer run interaction, accessibility, visual-regression, performance, or cross-target bridge checks as hidden build side effects.
+- `zig build test-vstgui-native` owns the native interaction, macOS accessibility, complete visual matrix, warm-render budgets, and Windows accessibility bridge compile check. The complete `zig build test` graph requires this gate before compiling and running the broader deterministic matrix, preserving the previous validation strength without contaminating unrelated build steps.
+- The compile-only adapter gate passed 2/2 steps. The explicit native GUI gate passed 4/4 steps with a 92.8 us aggregate warm render and a 47.35 ms Sample Player editor lifecycle average.
+- The raw ABI matrix passed 113/113 steps after the split. The complete deterministic gate passed 80/80 steps and 3,823/3,823 tests, with native GUI validation ordered ahead of the broader workload.
+- The Unix script rejects unknown modes with status 2 and passes `sh -n` and ShellCheck. PowerShell execution remains pending on a native Windows host because PowerShell is unavailable locally.
