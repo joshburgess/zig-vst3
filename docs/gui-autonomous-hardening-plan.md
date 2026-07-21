@@ -316,3 +316,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Regressions prove rejected calls do not increment callback counters. Valid calls still reach available extensions or report an absent extension without changing the validation result.
 - The complete deterministic gate passed 82/82 steps and 3,910/3,910 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 98.5 us for the aggregate scene and 54.23 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Progress Callback Inputs
+
+- Progress callbacks now reject unknown task types and non-finite or out-of-range normalized values before recording or host delegation. Rejected starts clear their output ID.
+- Direct handler and public controller regressions cover unknown types, negative values, values above one, NaN, and infinity. Valid background-task callbacks retain their existing behavior.
+- The complete deterministic gate passed 82/82 steps and 3,910/3,910 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 91.4 us for the aggregate scene and 45.32 ms for a complete Sample Player editor lifecycle.

@@ -9,11 +9,20 @@ const ivstunits = @import("pluginterfaces/vst/ivstunits.zig");
 const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
+const vst_value = @import("vst_value.zig");
 
 pub fn busActivationIsValid(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, bus_index: types.int32, state: types.TBool) bool {
     const valid_media = media_type == @intFromEnum(ivstcomponent.MediaTypes.kAudio) or media_type == @intFromEnum(ivstcomponent.MediaTypes.kEvent);
     const valid_direction = direction == @intFromEnum(ivstcomponent.BusDirections.kInput) or direction == @intFromEnum(ivstcomponent.BusDirections.kOutput);
     return valid_media and valid_direction and bus_index >= 0 and state <= 1;
+}
+
+pub fn progressTypeIsValid(progress_type: types.uint32) bool {
+    return progress_type == @intFromEnum(ivsteditcontroller.ProgressType.AsyncStateRestoration) or progress_type == @intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask);
+}
+
+pub fn progressValueIsValid(value: vsttypes.ParamValue) bool {
+    return vst_value.isNormalized(value);
 }
 
 fn recordBeginEditState(self: anytype, id: vsttypes.ParamID) void {
@@ -842,6 +851,10 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn start(ptr: *anyopaque, progress_type: types.uint32, description: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) callconv(.c) types.tresult {
+            if (!progressTypeIsValid(progress_type)) {
+                out.* = 0;
+                return types.kInvalidArgument;
+            }
             const self = ownerFromProgress(ptr);
             const id = self.startProgress(progress_type, out);
             if (@hasDecl(Config, "start")) {
@@ -854,6 +867,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn update(ptr: *anyopaque, id: ivsteditcontroller.ProgressID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!progressValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromProgress(ptr);
             self.recordProgressUpdate(id, value);
             if (@hasDecl(Config, "update")) return Config.update(self, id, value);
@@ -1455,6 +1469,14 @@ test "component handler exposes progress callbacks" {
     try std.testing.expectEqual(@as(types.uint32, 1), handler.progress_add_ref_count);
 
     var progress_id: ivsteditcontroller.ProgressID = 0;
+    try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.start(progress, 99, null, &progress_id));
+    try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 0), progress_id);
+    try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.update(progress, 77, -0.1));
+    try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.update(progress, 77, 1.1));
+    try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.update(progress, 77, std.math.nan(vsttypes.ParamValue)));
+    try std.testing.expectEqual(types.kInvalidArgument, progress.vtable.update(progress, 77, std.math.inf(vsttypes.ParamValue)));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.start_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.update_count);
     try std.testing.expectEqual(types.kResultOk, progress.vtable.start(progress, @intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
     try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 77), progress_id);
     try std.testing.expectEqual(types.kResultOk, progress.vtable.update(progress, progress_id, 0.5));

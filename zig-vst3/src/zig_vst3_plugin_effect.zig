@@ -420,6 +420,10 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         pub fn startProgress(iface: *ivsteditcontroller.IEditController, progress_type: types.uint32, title: ?[*]const types.char16, out: *ivsteditcontroller.ProgressID) types.tresult {
+            if (!vst_component_handler.progressTypeIsValid(progress_type)) {
+                out.* = 0;
+                return types.kInvalidArgument;
+            }
             const progress = instance(iface).progress orelse {
                 out.* = 0;
                 return types.kResultFalse;
@@ -428,6 +432,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         pub fn updateProgress(iface: *ivsteditcontroller.IEditController, id: ivsteditcontroller.ProgressID, value: vsttypes.ParamValue) types.tresult {
+            if (!vst_component_handler.progressValueIsValid(value)) return types.kInvalidArgument;
             const progress = instance(iface).progress orelse return types.kResultFalse;
             return progress.vtable.update(progress, id, value);
         }
@@ -1205,8 +1210,17 @@ test "reflected edit controller rejects malformed host requests" {
     try std.testing.expectEqual(types.kInvalidArgument, TestController.requestBusActivation(controller, @intFromEnum(ivstcomponent.MediaTypes.kAudio), 99, 0, 1));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.requestBusActivation(controller, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), -1, 1));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.requestBusActivation(controller, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 2));
+    var progress_id: ivsteditcontroller.ProgressID = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.startProgress(controller, 99, null, &progress_id));
+    try std.testing.expectEqual(@as(ivsteditcontroller.ProgressID, 0), progress_id);
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.updateProgress(controller, 1, -0.1));
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.updateProgress(controller, 1, 1.1));
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.updateProgress(controller, 1, std.math.nan(vsttypes.ParamValue)));
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.updateProgress(controller, 1, std.math.inf(vsttypes.ParamValue)));
     try std.testing.expectEqual(types.kResultFalse, TestController.setDirty(controller, 1));
     try std.testing.expectEqual(types.kResultFalse, TestController.requestBusActivation(controller, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1));
+    try std.testing.expectEqual(types.kResultFalse, TestController.startProgress(controller, @intFromEnum(ivsteditcontroller.ProgressType.UIBackgroundTask), null, &progress_id));
+    try std.testing.expectEqual(types.kResultFalse, TestController.updateProgress(controller, 1, 0.5));
 }
 
 test "reflected edit controller releases replaced component handlers" {
