@@ -350,6 +350,9 @@ test "gain controller stores component handler 3 context menu callback" {
 
     var handler = HostHandler{};
     try std.testing.expectEqual(types.kResultOk, controller_iface.vtable.setComponentHandler(controller_iface, handler.asHandler()));
+    var invalid_param_id = vsttypes.kNoParamId;
+    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), createContextMenu(controller_iface, &invalid_param_id));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.context_menu_count);
     try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), createContextMenu(controller_iface, &gain_param_id));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.context_menu_count);
 

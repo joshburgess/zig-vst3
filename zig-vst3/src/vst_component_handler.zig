@@ -33,6 +33,10 @@ pub fn parameterIdIsValid(id: vsttypes.ParamID) bool {
     return id != vsttypes.kNoParamId;
 }
 
+pub fn contextMenuParameterIsValid(param_id: ?*const vsttypes.ParamID) bool {
+    return if (param_id) |id| parameterIdIsValid(id.*) else true;
+}
+
 pub fn restartFlagsAreValid(flags: types.int32) bool {
     const known_flags = ivsteditcontroller.RestartFlags.kReloadComponent |
         ivsteditcontroller.RestartFlags.kIoChanged |
@@ -488,6 +492,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
         }
 
         fn createContextMenu(ptr: *anyopaque, view: ?*iplugview.IPlugView, param_id: ?*const vsttypes.ParamID) callconv(.c) ?*ivstcontextmenu.IContextMenu {
+            if (!contextMenuParameterIsValid(param_id)) return null;
             const self = ownerFromHandler3(ptr);
             self.recordContextMenuRequest(param_id);
             if (@hasDecl(Config, "createContextMenu")) return Config.createContextMenu(self, view, param_id);
@@ -1381,6 +1386,9 @@ test "component handler 3 exposes context menu extension" {
     const handler3: *ivstcontextmenu.IComponentHandler3 = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.handler3_add_ref_count);
     try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), handler3.vtable.createContextMenu(handler3, null, null));
+    try std.testing.expectEqual(@as(types.uint32, 1), handler.context_menu_count);
+    var invalid_param_id = vsttypes.kNoParamId;
+    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), handler3.vtable.createContextMenu(handler3, null, &invalid_param_id));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.context_menu_count);
     try std.testing.expectEqual(@as(types.uint32, 1), handler3.vtable.release(handler3));
     try std.testing.expectEqual(@as(types.uint32, 1), handler.handler3_release_count);

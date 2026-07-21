@@ -344,3 +344,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Begin, perform, and end regressions prove invalid IDs preserve gesture counters. Valid parameter IDs retain their existing callback behavior.
 - The complete deterministic gate passed 82/82 steps and 3,910/3,910 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 92.3 us for the aggregate scene and 47.77 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Context Menu Parameter IDs
+
+- Generic context-menu requests remain valid with no parameter target. Requests with a non-null `kNoParamId` target are rejected before recording, configuration hooks, or host delegation.
+- Direct component-handler and public Gain controller regressions prove invalid targets preserve callback counters. A valid Gain target still reaches the host extension.
+- The complete deterministic gate passed 82/82 steps and 3,910/3,910 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 95.4 us for the aggregate scene and 47.20 ms for a complete Sample Player editor lifecycle.

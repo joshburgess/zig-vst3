@@ -411,6 +411,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         pub fn createContextMenu(iface: *ivsteditcontroller.IEditController, view: ?*iplugview.IPlugView, param_id: ?*const vsttypes.ParamID) ?*ivstcontextmenu.IContextMenu {
+            if (!vst_component_handler.contextMenuParameterIsValid(param_id)) return null;
             const handler = instance(iface).component_handler3 orelse return null;
             return handler.vtable.createContextMenu(handler, view, param_id);
         }
@@ -1234,6 +1235,8 @@ test "reflected edit controller rejects malformed host requests" {
     try std.testing.expectEqual(types.kInvalidArgument, TestController.beginEdit(controller, vsttypes.kNoParamId));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.performEdit(controller, vsttypes.kNoParamId, 0.5));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.endEdit(controller, vsttypes.kNoParamId));
+    var invalid_param_id = vsttypes.kNoParamId;
+    try std.testing.expectEqual(@as(?*ivstcontextmenu.IContextMenu, null), TestController.createContextMenu(controller, null, &invalid_param_id));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.restartComponent(controller, -1));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.restartComponent(controller, 1 << 12));
     try std.testing.expectEqual(types.kResultFalse, TestController.setDirty(controller, 1));
