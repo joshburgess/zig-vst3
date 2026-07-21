@@ -266,3 +266,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The note sender and receiver share one fixed-capacity message declaration, keeping its four-attribute bound explicit in both production code and malformed-message tests.
 - The complete deterministic gate passed 82/82 steps and 3,890/3,890 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 92.0 us for the aggregate scene and 46.12 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Data Exchange Callback Bounds
+
+- The reflected `IDataExchangeReceiver` boundary now drops empty deliveries and nonzero block counts with null storage before dispatching to plugin configuration code. Consumers no longer need to guard against dereferencing the first block of an incoherent callback.
+- A direct ABI-level regression sends both pointer/count mismatches and verifies that neither reaches the configured receiver. A later valid block still dispatches with its context, block ID, count, and thread flag intact.
+- The complete deterministic gate passed 82/82 steps and 3,890/3,890 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 85.6 us for the aggregate scene and 44.31 ms for a complete Sample Player editor lifecycle.

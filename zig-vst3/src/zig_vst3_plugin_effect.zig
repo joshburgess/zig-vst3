@@ -2052,6 +2052,9 @@ test "simple stereo effect delegates data exchange receiver callbacks" {
         .size = 64,
         .blockID = 22,
     }};
+    receiver.vtable.onDataExchangeBlocksReceived(receiver, 77, 0, &blocks, 1);
+    receiver.vtable.onDataExchangeBlocksReceived(receiver, 77, 1, null, 1);
+    try std.testing.expectEqual(@as(usize, 0), test_data_exchange_blocks_received_count);
     receiver.vtable.onDataExchangeBlocksReceived(receiver, 77, blocks.len, &blocks, 1);
     try std.testing.expectEqual(@as(usize, 1), test_data_exchange_blocks_received_count);
     try std.testing.expectEqual(@as(types.uint32, blocks.len), test_data_exchange_last_num_blocks);
@@ -2761,6 +2764,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn onDataExchangeBlocksReceived(_: *anyopaque, user_context_id: ivstdataexchange.DataExchangeUserContextID, num_blocks: types.uint32, blocks: ?[*]ivstdataexchange.DataExchangeBlock, on_background_thread: types.TBool) callconv(.c) void {
             if (@hasDecl(Config, "onDataExchangeBlocksReceived")) {
+                if (num_blocks == 0 or blocks == null) return;
                 Config.onDataExchangeBlocksReceived(user_context_id, num_blocks, blocks, on_background_thread);
             }
         }
