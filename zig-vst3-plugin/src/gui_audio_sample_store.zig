@@ -17,6 +17,7 @@ pub const StageError = error{
     InvalidChannelCount,
     TooManyFrames,
     InvalidChunk,
+    NonFiniteSample,
     Incomplete,
 };
 
@@ -60,6 +61,9 @@ pub fn Store(comptime maximum_frames: usize) type {
             const expected_samples = slot.metadata.frames * slot.metadata.channels;
             if (sample_offset != slot.received_samples or samples.len == 0 or sample_offset + samples.len > expected_samples) {
                 return error.InvalidChunk;
+            }
+            for (samples) |sample_value| {
+                if (!std.math.isFinite(sample_value)) return error.NonFiniteSample;
             }
             @memcpy(slot.samples[sample_offset .. sample_offset + samples.len], samples);
             slot.received_samples += samples.len;
@@ -182,6 +186,19 @@ test "sample store rejects stale incomplete and oversized transfers" {
     try std.testing.expectError(error.InvalidGeneration, store.begin(.{ .generation = 2, .sample_rate = 48_000, .channels = 1, .frames = 1 }));
 }
 
+test "sample store rejects non-finite chunks without advancing the transfer" {
+    var store = Store(4){};
+    try store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 2 });
+    try std.testing.expectError(error.NonFiniteSample, store.write(1, 0, &.{ 0.25, std.math.nan(f32) }));
+    try std.testing.expectError(error.Incomplete, store.commit(1));
+    try std.testing.expectError(error.NonFiniteSample, store.write(1, 0, &.{ std.math.inf(f32), 0.5 }));
+    try store.write(1, 0, &.{ 0.25, 0.5 });
+    try store.commit(1);
+    try std.testing.expect(store.adoptPending());
+    try std.testing.expectApproxEqAbs(@as(f32, 0.25), store.sample(0, 0.0), 0.000001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), store.sample(0, 1.0), 0.000001);
+}
+
 test "sample store generated stale callback sequences preserve atomic generations" {
     const seed = 0x57a1_ea00_2026_0720;
     var random_state = std.Random.DefaultPrng.init(seed);
@@ -207,6 +224,9 @@ test "sample store generated stale callback sequences preserve atomic generation
                             const count = @min(remaining, 1 + random.uintLessThan(usize, 8));
                             var samples: [8]f32 = undefined;
                             for (samples[0..count]) |*sample| sample.* = random.float(f32) * 2.0 - 1.0;
+                            if (random.uintLessThan(u8, 16) == 0) {
+                                samples[random.uintLessThan(usize, count)] = if (random.boolean()) std.math.nan(f32) else std.math.inf(f32);
+                            }
                             store.write(slot.metadata.generation, slot.received_samples, samples[0..count]) catch {};
                         }
                     } else {

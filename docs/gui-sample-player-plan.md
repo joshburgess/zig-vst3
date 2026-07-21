@@ -29,6 +29,7 @@ Exit criteria:
 
 - WAV and AIFF decode to the same bounded interleaved representation.
 - The processor never observes a partial import or reuses a stale generation.
+- Decoded-audio publication rejects any chunk containing NaN or infinity without advancing the staged transfer.
 - MIDI note-on and note-off behavior is sample-accurate, bounded, and free of stuck notes.
 - Empty media produces silence and every accepted parameter value produces finite output.
 - Focused tests, raw ABI checks, the Steinberg validator, and both cross-target bundles pass.
@@ -120,6 +121,7 @@ Record committed milestones here with test counts, validator results, performanc
 - The shared bounded decoder now accepts PCM WAV, AIFF, and uncompressed AIFC data at 16, 24, or 32 bits, up to two channels and 384 kHz. It rejects malformed chunks, truncation, unsupported encodings, inconsistent frame counts, excess input bytes, and decoded data beyond the caller's fixed capacity.
 - Generated WAV and AIFF fixtures cover successful decode, bounded interleaved handoff, malformed and truncated data, unsupported formats, capacity failures, cancellation, replacement, retry, and instance isolation without user-provided media.
 - A three-slot fixed-capacity sample store stages controller writes and publishes only complete generations. The audio thread adopts one ready generation at block boundaries and never observes partial or stale media.
+- Sample-store writes validate every value before copying or advancing the staged offset. A non-finite chunk can be replaced by a valid chunk in the same generation, while commit remains unavailable until every finite sample arrives.
 - The reusable player provides eight fixed voices, oldest-voice stealing, linear interpolation, stereo and mono playback, gain, bipolar pan, coarse and fine tuning, bounded playback and loop ranges, forward and reverse playback, gate and one-shot behavior, and ADSR envelopes.
 - The sample-player example is registered in native, Linux, Windows, validator, raw entry-symbol, test, and serialized pluginval matrices. Its editor declaration imports only the public `@import("zig-vst3").vstgui` API.
 - `zig build test --summary all`: 66/66 build steps and 3,757/3,757 tests passed.

@@ -219,3 +219,11 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The viewport model now runs 32,768 deterministic generated transitions across anchored zoom, zoom limits, pan, reset, out-of-range values, NaN, and infinity. Every operation must preserve finite zoom and offsets within the visible-span bounds, with a fixed seed and failure coordinates for reproduction.
 - The complete deterministic gate passed 82/82 steps and 3,825/3,825 tests. The raw ABI matrix passed 113/113 steps, AddressSanitizer and UndefinedBehaviorSanitizer passed 2/2 steps, and Linux and Windows cross-target matrices each passed 44/44 steps.
 - Benchmarks remained within budget: 0.59 ms for maximum sample decode and waveform construction, 6.9 ns per sample-player frame, 4.8 ns per playhead update, and 718.8 ns per IR sample. The native aggregate scene rendered in 81.0 us during the first complete run.
+
+### Autonomous Follow-up: Decoded Audio Boundaries
+
+- The reusable Sample Player store and IR convolver now reject any staged chunk containing NaN or infinity before copying samples or advancing the transfer offset. Malformed decoder output cannot reach interpolation, waveform playback, resampling, FFT preparation, or convolution state.
+- Direct recovery tests replace rejected chunks within the same generation, publish the completed media, and verify finite playback or convolution output. The generated sample-store lifecycle also injects non-finite chunks while preserving atomic-generation invariants.
+- The complete deterministic gate passed 82/82 steps and 3,827/3,827 tests. The raw ABI matrix passed 113/113 steps, and AddressSanitizer and UndefinedBehaviorSanitizer passed 2/2 steps.
+- Linux and Windows cross-target matrices each passed 44/44 steps. The IR Loader and Sample Player each passed all 47 Steinberg validator tests for both processing precisions.
+- Benchmarks remained within budget: 0.64 ms for maximum sample decode and waveform construction, 7.2 ns per sample-player frame, 5.0 ns per playhead update, and 609.4 ns per IR sample. The native aggregate scene rendered in 87.2 us, and a complete Sample Player editor lifecycle averaged 45.72 ms.

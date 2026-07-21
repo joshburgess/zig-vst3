@@ -17,6 +17,7 @@ pub const StageError = error{
     InvalidChannelCount,
     TooManyFrames,
     InvalidChunk,
+    NonFiniteSample,
     Incomplete,
 };
 
@@ -147,6 +148,9 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             const expected_samples = slot.metadata.frames * slot.metadata.channels;
             if (sample_offset != slot.received_samples or samples.len == 0 or sample_offset + samples.len > expected_samples) {
                 return error.InvalidChunk;
+            }
+            for (samples) |sample_value| {
+                if (!std.math.isFinite(sample_value)) return error.NonFiniteSample;
             }
             @memcpy(slot.raw[sample_offset .. sample_offset + samples.len], samples);
             slot.received_samples += samples.len;
@@ -441,7 +445,27 @@ test "partitioned convolver rejects malformed staging sequences" {
     try std.testing.expectError(error.InvalidChannelCount, convolver.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 3, .frames = 1 }));
     try convolver.begin(.{ .generation = 2, .sample_rate = 48_000, .channels = 1, .frames = 2 });
     try std.testing.expectError(error.InvalidChunk, convolver.write(2, 1, &.{1.0}));
+    try std.testing.expectError(error.NonFiniteSample, convolver.write(2, 0, &.{ std.math.nan(f32), 1.0 }));
+    try std.testing.expectError(error.NonFiniteSample, convolver.write(2, 0, &.{ std.math.inf(f32), 1.0 }));
     try convolver.write(2, 0, &.{1.0});
     try std.testing.expectError(error.Incomplete, convolver.commit(2));
     try std.testing.expect(convolver.cancel(2));
+}
+
+test "partitioned convolver recovers after a rejected non-finite chunk" {
+    const Convolver = PartitionedConvolver(16, 8);
+    var convolver = Convolver.init(48_000);
+    try convolver.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 2 });
+    try std.testing.expectError(error.NonFiniteSample, convolver.write(1, 0, &.{ 1.0, -std.math.inf(f32) }));
+    try convolver.write(1, 0, &.{ 1.0, 0.5 });
+    try convolver.commit(1);
+    try std.testing.expect(convolver.adoptPending());
+
+    var output: [18]f32 = undefined;
+    for (&output, 0..) |*sample, index| {
+        sample.* = convolver.processFrame(if (index == 0) 1.0 else 0.0, 0.0)[0];
+        try std.testing.expect(std.math.isFinite(sample.*));
+    }
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), output[8], 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), output[9], 0.0001);
 }
