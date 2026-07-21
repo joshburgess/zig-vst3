@@ -59,9 +59,9 @@ Exit criteria:
 ## Milestone 5: Validation and Evidence
 
 - [x] Extend validator and soak runners with command, bundle hash, phase, iteration, status, signal, stdout, stderr, and crash-log metadata.
-- [ ] Run Zig tests, raw ABI checks, native adapter and accessibility tests, visual tests, benchmarks, Steinberg validators, and Linux and Windows bundle builds.
-- [ ] Run pluginval serially at strictness 5 and 10 only after deterministic lifecycle coverage is clean.
-- [ ] Record unavailable native host checks without treating cross-compilation as host validation.
+- [x] Run Zig tests, raw ABI checks, native adapter and accessibility tests, visual tests, benchmarks, Steinberg validators, and Linux and Windows bundle builds.
+- [x] Run pluginval serially at strictness 5 and 10 only after deterministic lifecycle coverage is clean.
+- [x] Record unavailable native host checks without treating cross-compilation as host validation.
 
 Exit criteria:
 
@@ -134,3 +134,14 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The lifecycle soak runner records exact command arguments, cache location, working directory, start and finish times, signal classification, and output paths for every plugin and repetition.
 - Fake success and signal exits exercise both validator runners without launching GUI tools. `scripts/test_validator_runner.sh` and the expanded `scripts/test_pluginval_runner.sh` pass and verify the preserved files and classifications.
 - The complete deterministic gate passed 75/75 steps and 3,816/3,816 tests with both runner artifact regressions enabled.
+
+### Milestone 5: Release Validation
+
+- The final deterministic gate passed 77/77 steps and 3,822/3,822 tests. Native adapter tests, automated macOS accessibility tests, the complete visual matrix, installed-package consumers, runner regressions, and public-boundary checks passed in the same invocation.
+- `zig build raw-api-abi --summary all` passed 113/113 steps, including entry symbols for all 14 bundles, the pinned SDK declaration comparisons, and the C, C++, and SDK multi-interface harnesses.
+- `zig build benchmark --summary all` passed every explicit budget. The final run measured 1,489.8 MiB/s import throughput, 0.62 ms for maximum sample decode and waveform construction, 7.2 ns per sample-player frame with eight voices available, 4.8 ns per playhead update, and 591.8 ns per IR sample.
+- Linux and Windows cross-target matrices each passed 44/44 steps and produced all 14 bundles. These are build checks, not native host validation.
+- All 14 native macOS bundles passed the Steinberg validator in a 74/74-step run.
+- All 14 plugins passed pluginval serially at strictness 5. Artifacts run from `zig_vst3_gain-strictness-5-20260720-200218-17165` through `zig_vst3_sample_player-strictness-5-20260720-200437-37589` under the local `zig-vst3-pluginval` temporary directory.
+- All 14 plugins then passed pluginval serially at strictness 10, including non-releasing processing, state restoration, background-thread state, parameter thread safety, and parameter fuzzing. Artifacts run from `zig_vst3_gain-strictness-10-20260720-200513-40178` through `zig_vst3_sample_player-strictness-10-20260720-201654-51617`. No validator or pluginval crash occurred in either final suite.
+- Manual REAPER, VoiceOver, Narrator, native Windows, native X11, native Wayland, AT-SPI, and multi-monitor checks remain deferred. They require interactive observation or unavailable native infrastructure. Cross-compilation is not counted as completing them.
