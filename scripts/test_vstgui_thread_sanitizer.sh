@@ -3,7 +3,7 @@ set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 source_dir="$root/gui-adapters/vstgui"
-build_dir="$root/.vst3-sdk/vstgui-adapter-thread-sanitizer-build"
+build_dir="${VSTGUI_THREAD_SANITIZER_BUILD_DIR:-$root/.vst3-sdk/vstgui-adapter-thread-sanitizer-build}"
 repetitions="${VSTGUI_THREAD_SANITIZER_REPETITIONS:-4}"
 
 case "$repetitions" in
@@ -12,23 +12,6 @@ case "$repetitions" in
     exit 2
     ;;
 esac
-
-cmake -S "$source_dir" -B "$build_dir" \
-  -DCMAKE_BUILD_TYPE=Release \
-  "-DCMAKE_C_FLAGS_RELEASE=-O2 -g -DNDEBUG" \
-  "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -g -DNDEBUG" \
-  "-DCMAKE_OBJCXX_FLAGS_RELEASE=-O2 -g -DNDEBUG" \
-  -DZIG_VSTGUI_ENABLE_SANITIZERS=OFF \
-  -DZIG_VSTGUI_ENABLE_THREAD_SANITIZER=ON \
-  -DVSTGUI_STANDALONE=OFF \
-  -DVSTGUI_STANDALONE_EXAMPLES=OFF \
-  -DVSTGUI_TOOLS=OFF \
-  -DVSTGUI_DISABLE_UNITTESTS=ON \
-  -DVSTGUI_UISCRIPTING=OFF \
-  -DVSTGUI_ENABLE_OPENGL_SUPPORT=OFF \
-  -DVSTGUI_ENABLE_XMLPARSER=OFF
-
-cmake --build "$build_dir" --target zig_vstgui_adapter_tests --parallel
 
 output_root="${VSTGUI_THREAD_SANITIZER_OUTPUT_DIR:-${TMPDIR:-/tmp}/zig-vst3-vstgui-thread-sanitizer}"
 timestamp=$(date +%Y%m%d-%H%M%S)
@@ -47,11 +30,51 @@ export TSAN_OPTIONS="halt_on_error=1:history_size=7:second_deadlock_stack=1"
 } > "$output_dir/run-metadata.txt"
 printf 'VSTGUI thread sanitizer artifacts: %s\n' "$output_dir"
 
+if [ "${VSTGUI_THREAD_SANITIZER_SKIP_BUILD:-0}" != 1 ]; then
+  build_stdout="$output_dir/build.stdout"
+  build_stderr="$output_dir/build.stderr"
+  set +e
+  cmake -S "$source_dir" -B "$build_dir" \
+    -DCMAKE_BUILD_TYPE=Release \
+    "-DCMAKE_C_FLAGS_RELEASE=-O2 -g -DNDEBUG" \
+    "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -g -DNDEBUG" \
+    "-DCMAKE_OBJCXX_FLAGS_RELEASE=-O2 -g -DNDEBUG" \
+    -DZIG_VSTGUI_ENABLE_SANITIZERS=OFF \
+    -DZIG_VSTGUI_ENABLE_THREAD_SANITIZER=ON \
+    -DVSTGUI_STANDALONE=OFF \
+    -DVSTGUI_STANDALONE_EXAMPLES=OFF \
+    -DVSTGUI_TOOLS=OFF \
+    -DVSTGUI_DISABLE_UNITTESTS=ON \
+    -DVSTGUI_UISCRIPTING=OFF \
+    -DVSTGUI_ENABLE_OPENGL_SUPPORT=OFF \
+    -DVSTGUI_ENABLE_XMLPARSER=OFF > "$build_stdout" 2> "$build_stderr"
+  build_status=$?
+  if [ "$build_status" -eq 0 ]; then
+    cmake --build "$build_dir" --target zig_vstgui_adapter_tests --parallel >> "$build_stdout" 2>> "$build_stderr"
+    build_status=$?
+  fi
+  set -e
+  if [ "$build_status" -ne 0 ]; then
+    {
+      printf 'classification=failed\n'
+      printf 'status=%s\n' "$build_status"
+      printf 'phase=build\n'
+      printf 'stdout=%s\n' "$build_stdout"
+      printf 'stderr=%s\n' "$build_stderr"
+    } > "$output_dir/runner-status.txt"
+    cat "$build_stdout"
+    cat "$build_stderr" >&2
+    exit "$build_status"
+  fi
+fi
+
 iteration=1
 while [ "$iteration" -le "$repetitions" ]; do
   stdout_path="$output_dir/$iteration.stdout"
   stderr_path="$output_dir/$iteration.stderr"
+  command_path="$output_dir/$iteration.command-arguments.txt"
   started_epoch=$(date +%s)
+  printf '0=%s\n' "$build_dir/zig_vstgui_adapter_tests" > "$command_path"
   printf 'iteration=%s/%s phase=adapter-thread-safety\n' "$iteration" "$repetitions"
   set +e
   "$build_dir/zig_vstgui_adapter_tests" > "$stdout_path" 2> "$stderr_path"
@@ -67,6 +90,7 @@ while [ "$iteration" -le "$repetitions" ]; do
       printf 'phase=adapter-thread-safety\n'
       printf 'started_epoch=%s\n' "$started_epoch"
       printf 'finished_epoch=%s\n' "$(date +%s)"
+      printf 'command_arguments=%s\n' "$command_path"
       printf 'stdout=%s\n' "$stdout_path"
       printf 'stderr=%s\n' "$stderr_path"
     } > "$output_dir/runner-status.txt"
@@ -81,6 +105,7 @@ while [ "$iteration" -le "$repetitions" ]; do
     printf 'phase=adapter-thread-safety\n'
     printf 'started_epoch=%s\n' "$started_epoch"
     printf 'finished_epoch=%s\n' "$(date +%s)"
+    printf 'command_arguments=%s\n' "$command_path"
     printf 'stdout=%s\n' "$stdout_path"
     printf 'stderr=%s\n' "$stderr_path"
   } > "$output_dir/$iteration.status"

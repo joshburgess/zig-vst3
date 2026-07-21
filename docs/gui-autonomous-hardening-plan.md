@@ -196,3 +196,11 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The compile-only adapter gate passed 2/2 steps. The explicit native GUI gate passed 4/4 steps with a 92.8 us aggregate warm render and a 47.35 ms Sample Player editor lifecycle average.
 - The raw ABI matrix passed 113/113 steps after the split. The complete deterministic gate passed 80/80 steps and 3,823/3,823 tests, with native GUI validation ordered ahead of the broader workload.
 - The Unix script rejects unknown modes with status 2 and passes `sh -n` and ShellCheck. PowerShell execution remains pending on a native Windows host because PowerShell is unavailable locally.
+
+### Autonomous Follow-up: Thread Sanitizer Runner Regression
+
+- The ThreadSanitizer runner now creates its artifact directory before configuring or compiling, so build failures retain stdout, stderr, status, phase, system metadata, and the tested commit instead of exiting without evidence.
+- Every instrumented process records its exact executable argument. Bounded build-directory and skip-build overrides allow the runner logic to be tested without fabricating a sanitizer defect or rebuilding VSTGUI.
+- A portable deterministic regression verifies three successful repetitions, invalid repetition rejection, exact command artifacts, first-failure classification, and immediate stopping after the first failed process.
+- The refactored real runner passed four instrumented processes at `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-vstgui-thread-sanitizer/20260721-080934-83313`. No race, deadlock, signal, or unexpected exit was reported.
+- The complete deterministic gate passed 81/81 steps and 3,823/3,823 tests with the portable runner regression included. The native visual gate remained within budget at 89.2 us for the aggregate scene and 46.49 ms for a complete Sample Player editor lifecycle.
