@@ -266,6 +266,7 @@ pub fn ParameterState(comptime Params: type) type {
 
         pub fn setNormalizedById(self: *Self, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
             if (self.set.isReadOnlyById(id) orelse return types.kInvalidArgument) return types.kResultFalse;
+            if (!vst_value.isNormalized(value)) return types.kInvalidArgument;
             if (!self.values.storeById(self.set, id, value)) return types.kInvalidArgument;
             return types.kResultOk;
         }
@@ -2088,6 +2089,11 @@ test "zig-vst3-plugin bridge parameter controller exposes reflected edit operati
 
     try std.testing.expectEqual(types.kResultOk, controller.setNormalized(8, 1.0));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 1.0), controller.getNormalized(8));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(7, -0.1));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(7, 1.1));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(7, std.math.nan(vsttypes.ParamValue)));
+    try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(7, std.math.inf(vsttypes.ParamValue)));
+    try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), controller.getNormalized(7));
     try std.testing.expectEqual(types.kResultFalse, controller.setNormalized(9, 0.9));
     try std.testing.expectEqual(@as(vsttypes.ParamValue, 0.5), controller.getNormalized(9));
     try std.testing.expectEqual(types.kInvalidArgument, controller.setNormalized(99, 0.5));

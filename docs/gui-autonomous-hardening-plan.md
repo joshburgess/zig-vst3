@@ -323,3 +323,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Direct handler and public controller regressions cover unknown types, negative values, values above one, NaN, and infinity. Valid background-task callbacks retain their existing behavior.
 - The complete deterministic gate passed 82/82 steps and 3,910/3,910 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 91.4 us for the aggregate scene and 45.32 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Automation Value Inputs
+
+- Parameter state, public controller edits, and all reusable component handlers now reject non-finite or out-of-range normalized automation values before state mutation, recording, observer notification, or host delegation.
+- Regressions cover negative values, values above one, NaN, and infinity. They verify rejected edits preserve the previous parameter value and callback count.
+- The complete deterministic gate passed 82/82 steps and 3,910/3,910 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 91.6 us for the aggregate scene and 46.68 ms for a complete Sample Player editor lifecycle.

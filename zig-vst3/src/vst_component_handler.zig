@@ -25,6 +25,10 @@ pub fn progressValueIsValid(value: vsttypes.ParamValue) bool {
     return vst_value.isNormalized(value);
 }
 
+pub fn automationValueIsValid(value: vsttypes.ParamValue) bool {
+    return vst_value.isNormalized(value);
+}
+
 fn recordBeginEditState(self: anytype, id: vsttypes.ParamID) void {
     self.begin_count +|= 1;
     self.last_param_id = id;
@@ -113,6 +117,7 @@ pub fn ComponentHandler(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = owner(ptr);
             self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -256,6 +261,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -428,6 +434,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -629,6 +636,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -825,6 +833,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -1048,6 +1057,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
             if (@hasDecl(Config, "performEdit")) return Config.performEdit(self, id, value);
@@ -1120,6 +1130,11 @@ test "component handler records automation callbacks" {
     const Handler = ComponentHandler(struct {});
     var handler = Handler{};
 
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, -0.1));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, 1.1));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, std.math.nan(vsttypes.ParamValue)));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, std.math.inf(vsttypes.ParamValue)));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.perform_count);
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.beginEdit(handler.asHandler(), 9));
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, 0.5));
     try std.testing.expectEqual(types.kResultOk, handler.asHandler().vtable.endEdit(handler.asHandler(), 9));
