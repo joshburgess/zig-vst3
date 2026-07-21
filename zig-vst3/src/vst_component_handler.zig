@@ -29,6 +29,10 @@ pub fn automationValueIsValid(value: vsttypes.ParamValue) bool {
     return vst_value.isNormalized(value);
 }
 
+pub fn parameterIdIsValid(id: vsttypes.ParamID) bool {
+    return id != vsttypes.kNoParamId;
+}
+
 pub fn restartFlagsAreValid(flags: types.int32) bool {
     const known_flags = ivsteditcontroller.RestartFlags.kReloadComponent |
         ivsteditcontroller.RestartFlags.kIoChanged |
@@ -126,6 +130,7 @@ pub fn ComponentHandler(comptime Config: type) type {
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = owner(ptr);
             self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
@@ -133,6 +138,7 @@ pub fn ComponentHandler(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = owner(ptr);
             self.recordPerformEdit(id, value);
@@ -141,6 +147,7 @@ pub fn ComponentHandler(comptime Config: type) type {
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = owner(ptr);
             self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
@@ -271,6 +278,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
@@ -278,6 +286,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
@@ -286,6 +295,7 @@ pub fn ComponentHandler2(comptime Config: type) type {
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
@@ -445,6 +455,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
@@ -452,6 +463,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
@@ -460,6 +472,7 @@ pub fn ComponentHandler3(comptime Config: type) type {
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
@@ -648,6 +661,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
@@ -655,6 +669,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
@@ -663,6 +678,7 @@ pub fn ComponentHandlerBusAndTime(comptime Config: type) type {
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
@@ -846,6 +862,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
@@ -853,6 +870,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
@@ -861,6 +879,7 @@ pub fn ComponentHandlerProgress(comptime Config: type) type {
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
@@ -1071,6 +1090,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         }
 
         fn beginEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordBeginEdit(id);
             if (@hasDecl(Config, "beginEdit")) return Config.beginEdit(self, id);
@@ -1078,6 +1098,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         }
 
         fn performEdit(ptr: *anyopaque, id: vsttypes.ParamID, value: vsttypes.ParamValue) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             if (!automationValueIsValid(value)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordPerformEdit(id, value);
@@ -1086,6 +1107,7 @@ pub fn ComponentHandlerUnits(comptime Config: type) type {
         }
 
         fn endEdit(ptr: *anyopaque, id: vsttypes.ParamID) callconv(.c) types.tresult {
+            if (!parameterIdIsValid(id)) return types.kInvalidArgument;
             const self = ownerFromHandler(ptr);
             self.recordEndEdit(id);
             if (@hasDecl(Config, "endEdit")) return Config.endEdit(self, id);
@@ -1152,6 +1174,12 @@ test "component handler records automation callbacks" {
     const Handler = ComponentHandler(struct {});
     var handler = Handler{};
 
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.beginEdit(handler.asHandler(), vsttypes.kNoParamId));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), vsttypes.kNoParamId, 0.5));
+    try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.endEdit(handler.asHandler(), vsttypes.kNoParamId));
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.begin_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.perform_count);
+    try std.testing.expectEqual(@as(types.uint32, 0), handler.end_count);
     try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, -0.1));
     try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, 1.1));
     try std.testing.expectEqual(types.kInvalidArgument, handler.asHandler().vtable.performEdit(handler.asHandler(), 9, std.math.nan(vsttypes.ParamValue)));

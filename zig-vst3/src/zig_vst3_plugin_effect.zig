@@ -355,11 +355,13 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         pub fn beginEdit(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID) types.tresult {
+            if (!vst_component_handler.parameterIdIsValid(id)) return types.kInvalidArgument;
             const handler = instance(iface).component_handler orelse return types.kResultFalse;
             return handler.vtable.beginEdit(handler, id);
         }
 
         pub fn performEdit(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
+            if (!vst_component_handler.parameterIdIsValid(id)) return types.kInvalidArgument;
             if (!vst_component_handler.automationValueIsValid(value)) return types.kInvalidArgument;
             const self = instance(iface);
             const handler = self.component_handler orelse return types.kResultFalse;
@@ -376,6 +378,7 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         pub fn endEdit(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID) types.tresult {
+            if (!vst_component_handler.parameterIdIsValid(id)) return types.kInvalidArgument;
             const handler = instance(iface).component_handler orelse return types.kResultFalse;
             return handler.vtable.endEdit(handler, id);
         }
@@ -1228,6 +1231,9 @@ test "reflected edit controller rejects malformed host requests" {
     try std.testing.expectEqual(types.kInvalidArgument, TestController.performEdit(controller, 0, 1.1));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.performEdit(controller, 0, std.math.nan(vsttypes.ParamValue)));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.performEdit(controller, 0, std.math.inf(vsttypes.ParamValue)));
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.beginEdit(controller, vsttypes.kNoParamId));
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.performEdit(controller, vsttypes.kNoParamId, 0.5));
+    try std.testing.expectEqual(types.kInvalidArgument, TestController.endEdit(controller, vsttypes.kNoParamId));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.restartComponent(controller, -1));
     try std.testing.expectEqual(types.kInvalidArgument, TestController.restartComponent(controller, 1 << 12));
     try std.testing.expectEqual(types.kResultFalse, TestController.setDirty(controller, 1));

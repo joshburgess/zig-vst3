@@ -337,3 +337,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Regressions prove invalid restart requests preserve callback counters. Valid combined SDK flags retain their existing behavior, including the no-handler result at the public controller boundary.
 - The complete deterministic gate passed 82/82 steps and 3,910/3,910 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 96.0 us for the aggregate scene and 49.00 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Automation Parameter IDs
+
+- All reusable component handlers and public controller gesture helpers now reject the VST3 `kNoParamId` sentinel before recording or host delegation.
+- Begin, perform, and end regressions prove invalid IDs preserve gesture counters. Valid parameter IDs retain their existing callback behavior.
+- The complete deterministic gate passed 82/82 steps and 3,910/3,910 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 92.3 us for the aggregate scene and 47.77 ms for a complete Sample Player editor lifecycle.
