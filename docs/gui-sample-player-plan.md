@@ -124,6 +124,7 @@ Record committed milestones here with test counts, validator results, performanc
 - Sample-store writes validate every value before copying or advancing the staged offset. A non-finite chunk can be replaced by a valid chunk in the same generation, while commit remains unavailable until every finite sample arrives.
 - Controller transport validates snapshot bounds, callback lengths, finite payloads, and source identity. It cancels publication if the importer generation or media metadata changes before commit.
 - Receiver transport rejects host-supplied sample rate, channel count, frame count, and chunk offset values that do not fit the bounded framework types.
+- A direct receiver recovery test injects an extreme offset and a non-finite payload into an active transfer, then proves a valid replacement chunk can still commit and become active.
 - The reusable player provides eight fixed voices, oldest-voice stealing, linear interpolation, stereo and mono playback, gain, bipolar pan, coarse and fine tuning, bounded playback and loop ranges, forward and reverse playback, gate and one-shot behavior, and ADSR envelopes.
 - The sample-player example is registered in native, Linux, Windows, validator, raw entry-symbol, test, and serialized pluginval matrices. Its editor declaration imports only the public `@import("zig-vst3").vstgui` API.
 - `zig build test --summary all`: 66/66 build steps and 3,757/3,757 tests passed.

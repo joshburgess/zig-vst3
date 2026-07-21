@@ -251,3 +251,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Direct regressions cover a channel count above `u8` and a sample rate above `u32`. Both malformed begin messages leave the receiver without staged media.
 - The complete deterministic gate passed 82/82 steps and 3,860/3,860 tests. The raw ABI matrix passed 113/113 steps, and AddressSanitizer and UndefinedBehaviorSanitizer passed 2/2 steps.
 - Linux and Windows cross-target matrices each passed 44/44 steps. The IR Loader and Sample Player each passed all 47 Steinberg validator tests for both processing precisions.
+
+### Autonomous Follow-up: Receiver Recovery
+
+- A direct hostile-message regression now begins a valid decoded-audio transfer, injects an extreme chunk offset, injects a non-finite payload, and then replaces both with a valid chunk. Rejected chunks do not advance or cancel the staged generation, and the corrected payload commits normally.
+- The regression exercises the shared receiver against the Sample Player store. Sender-side hostile callback tests and IR convolver staging tests cover the same contract from the other production paths.
+- The complete deterministic gate passed 82/82 steps and 3,870/3,870 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps. Both validators passed all 47 tests for both processing precisions.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 93.6 us for the aggregate scene and 52.96 ms for a complete Sample Player editor lifecycle.

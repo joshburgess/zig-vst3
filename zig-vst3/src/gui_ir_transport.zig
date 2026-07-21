@@ -352,3 +352,47 @@ test "IR transport rejects attributes outside receiver integer widths" {
     try std.testing.expectEqual(types.kInvalidArgument, receive(&convolver, 14, iface));
     try std.testing.expect(!convolver.cancel(1));
 }
+
+test "IR transport recovers after hostile receiver chunks" {
+    const Store = core.gui_audio_sample_store.Store(16);
+    var store = Store{};
+    var begin_message = TransportMessage{};
+    const begin_iface = begin_message.asInterface();
+    begin_iface.vtable.setMessageID(begin_iface, message_id);
+    const begin_attributes = begin_iface.vtable.getAttributes(begin_iface) orelse return error.MissingAttributes;
+
+    try std.testing.expect(setCommon(begin_attributes, .begin, 15, 1));
+    try std.testing.expectEqual(types.kResultOk, begin_attributes.vtable.setInt(begin_attributes, "sample-rate", 48_000));
+    try std.testing.expectEqual(types.kResultOk, begin_attributes.vtable.setInt(begin_attributes, "channels", 1));
+    try std.testing.expectEqual(types.kResultOk, begin_attributes.vtable.setInt(begin_attributes, "frames", 2));
+    try std.testing.expectEqual(types.kResultOk, receive(&store, 15, begin_iface));
+
+    var bytes: [2 * @sizeOf(f32)]u8 = undefined;
+    encodeSamples(&.{ 1.0, 0.5 }, &bytes);
+    var chunk_message = TransportMessage{};
+    const chunk_iface = chunk_message.asInterface();
+    chunk_iface.vtable.setMessageID(chunk_iface, message_id);
+    const chunk_attributes = chunk_iface.vtable.getAttributes(chunk_iface) orelse return error.MissingAttributes;
+    try std.testing.expect(setCommon(chunk_attributes, .chunk, 15, 1));
+    try std.testing.expectEqual(types.kResultOk, chunk_attributes.vtable.setInt(chunk_attributes, "offset", std.math.maxInt(i64)));
+    try std.testing.expectEqual(types.kResultOk, chunk_attributes.vtable.setBinary(chunk_attributes, "samples", bytes[0..4].ptr, 4));
+    try std.testing.expectEqual(types.kResultFalse, receive(&store, 15, chunk_iface));
+
+    encodeSamples(&.{ std.math.nan(f32), 0.5 }, &bytes);
+    try std.testing.expectEqual(types.kResultOk, chunk_attributes.vtable.setInt(chunk_attributes, "offset", 0));
+    try std.testing.expectEqual(types.kResultOk, chunk_attributes.vtable.setBinary(chunk_attributes, "samples", &bytes, bytes.len));
+    try std.testing.expectEqual(types.kResultFalse, receive(&store, 15, chunk_iface));
+
+    encodeSamples(&.{ 1.0, 0.5 }, &bytes);
+    try std.testing.expectEqual(types.kResultOk, chunk_attributes.vtable.setBinary(chunk_attributes, "samples", &bytes, bytes.len));
+    try std.testing.expectEqual(types.kResultOk, receive(&store, 15, chunk_iface));
+
+    var commit_message = TransportMessage{};
+    const commit_iface = commit_message.asInterface();
+    commit_iface.vtable.setMessageID(commit_iface, message_id);
+    const commit_attributes = commit_iface.vtable.getAttributes(commit_iface) orelse return error.MissingAttributes;
+    try std.testing.expect(setCommon(commit_attributes, .commit, 15, 1));
+    try std.testing.expectEqual(types.kResultOk, receive(&store, 15, commit_iface));
+    try std.testing.expect(store.adoptPending());
+    try std.testing.expectEqual(@as(u64, 1), store.activeMetadata().?.generation);
+}

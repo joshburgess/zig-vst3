@@ -38,6 +38,7 @@ Completion evidence:
 - Convolver staging rejects NaN and infinity before copying or preparing FFT partitions. Rejected chunks do not advance the transfer and may be replaced safely within the same generation.
 - Controller transport rejects invalid callback lengths and cancels a transfer if the importer generation or media metadata changes while chunks are being copied.
 - Receiver transport checks host-supplied sample rate, channel count, frame count, and chunk offset values before converting them to bounded framework types.
+- Hostile receiver coverage verifies that extreme offsets and non-finite chunks cannot advance staged media, while a later valid replacement remains publishable.
 - The editor stages replacement audio in its existing rollback storage. It commits only finite, complete data from an unchanged source and refuses replacement while an edit publication remains unresolved.
 - Unit tests cover mono and stereo convolution, pending replacement, stale generations, malformed chunks, sample-rate republication, decoded storage, controller-to-component transport, component teardown, and independent framework instances.
 - A focused importer regression replaces completed media, verifies decoded storage clears before the worker starts, and proves the newer generation publishes without exposing samples from the previous file. The focused importer suite passes 13 of 13 tests.
