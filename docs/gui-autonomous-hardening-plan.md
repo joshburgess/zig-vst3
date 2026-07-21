@@ -179,3 +179,12 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The existing AddressSanitizer and UndefinedBehaviorSanitizer gate passed 2/2 steps after the separate ThreadSanitizer configuration was added.
 - The deterministic and raw ABI gate passed 188/188 steps and 3,822/3,822 tests. Linux and Windows cross-target bundle matrices each passed 44/44 steps and produced all 14 example bundles. These remain build checks rather than native host validation.
 - Benchmarks remained within budget: 0.58 ms for maximum sample decode and waveform construction, 7.2 ns per sample-player frame, 5.1 ns per playhead update, and 593.8 ns per IR sample.
+
+### Autonomous Follow-up: Generated Playback Lifecycles
+
+- The reusable sample player now runs 32,768 deterministic generated lifecycle operations across note-on, note-off, all-notes-off, reset, sample-rate changes, bounded media replacement, looping, reverse playback, voice limits, and hostile parameter values.
+- The generated invariant requires finite stereo output within the documented gain bound and a finite normalized playhead whenever a voice is active. Its fixed seed and failing operation coordinates make any regression reproducible.
+- Non-finite sustain values now fall back before clamping, so they cannot propagate into audio. Pitch calculation widens the note and root note before subtraction, preventing overflow at the public `i16` boundaries.
+- The full deterministic test suite passed with the new lifecycle regression. AddressSanitizer and UndefinedBehaviorSanitizer passed 2/2 steps. Linux and Windows cross-target matrices each passed 44/44 steps.
+- Benchmarks remained within budget: 0.60 ms for maximum sample decode and waveform construction, 7.3 ns per sample-player frame, 4.9 ns per playhead update, and 535.2 ns per IR sample.
+- Every raw ABI harness passed. The combined `raw-api-abi` command remains to be repeated when the machine is idle because its embedded visual timing gate ran at about 2.4 times the normal standalone measurement under active system load. No ABI mismatch, sanitizer diagnostic, functional test failure, or standalone performance regression occurred.

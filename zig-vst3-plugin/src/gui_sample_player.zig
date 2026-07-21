@@ -124,7 +124,8 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
                 output[0] += left * amplitude * left_pan;
                 output[1] += right * amplitude * right_pan;
 
-                const semitones = @as(f64, @floatFromInt(voice.note - playback.root_note)) +
+                const semitones = @as(f64, @floatFromInt(voice.note)) -
+                    @as(f64, @floatFromInt(playback.root_note)) +
                     std.math.clamp(finiteOr(playback.coarse_semitones, 0.0), -48.0, 48.0) +
                     std.math.clamp(finiteOr(playback.fine_cents, 0.0), -100.0, 100.0) / 100.0;
                 const rate = @as(f64, @floatFromInt(metadata.sample_rate)) / self.output_sample_rate *
@@ -160,7 +161,7 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
         }
 
         fn advanceEnvelope(self: *Self, voice: *Voice, envelope: Envelope) f64 {
-            const sustain = std.math.clamp(envelope.sustain, 0.0, 1.0);
+            const sustain = std.math.clamp(finiteOr(envelope.sustain, 0.8), 0.0, 1.0);
             switch (voice.stage) {
                 .idle => return 0.0,
                 .attack => {
@@ -445,7 +446,8 @@ test "sample player contains non-finite public playback inputs" {
         .loop_start = std.math.nan(f64),
         .loop_end = -std.math.inf(f64),
         .loop_enabled = true,
-        .envelope = .{ .attack_seconds = 0.0, .decay_seconds = 0.0, .sustain = 1.0 },
+        .root_note = std.math.minInt(i16),
+        .envelope = .{ .attack_seconds = 0.0, .decay_seconds = 0.0, .sustain = std.math.nan(f64) },
     };
     player.noteOn(60, std.math.nan(f64), invalid);
     try std.testing.expectEqual(@as(?f64, null), player.playhead());
@@ -455,5 +457,74 @@ test "sample player contains non-finite public playback inputs" {
         try std.testing.expect(std.math.isFinite(frame[0]));
         try std.testing.expect(std.math.isFinite(frame[1]));
         try std.testing.expect(player.playhead() != null);
+    }
+}
+
+test "sample player generated lifecycle sequences remain finite and bounded" {
+    const seed = 0x5a6d_91e2_2026_0721;
+    var random_state = std.Random.DefaultPrng.init(seed);
+    const random = random_state.random();
+
+    for (0..64) |case_index| {
+        var player = Player(32, 4){};
+        var generation: u64 = 1;
+        var samples: [64]f32 = undefined;
+        for (&samples) |*sample| sample.* = random.float(f32) * 2.0 - 1.0;
+        try player.store.begin(.{ .generation = generation, .sample_rate = 48_000, .channels = 2, .frames = 32 });
+        try player.store.write(generation, 0, &samples);
+        try player.store.commit(generation);
+        try std.testing.expect(player.adoptPending());
+
+        for (0..512) |operation_index| {
+            const inject_non_finite = operation_index % 47 == 0;
+            const playback = Playback{
+                .gain = if (inject_non_finite) std.math.nan(f64) else random.float(f64) * 24.0 - 4.0,
+                .pan = random.float(f64) * 4.0 - 2.0,
+                .coarse_semitones = random.float(f64) * 160.0 - 80.0,
+                .fine_cents = random.float(f64) * 400.0 - 200.0,
+                .start = random.float(f64) * 3.0 - 1.0,
+                .end = random.float(f64) * 3.0 - 1.0,
+                .loop_start = random.float(f64) * 3.0 - 1.0,
+                .loop_end = random.float(f64) * 3.0 - 1.0,
+                .loop_enabled = random.boolean(),
+                .reverse = random.boolean(),
+                .release_on_note_off = random.boolean(),
+                .voice_limit = random.uintLessThan(usize, 9),
+                .root_note = if (inject_non_finite) std.math.minInt(i16) else @intCast(random.uintLessThan(u8, 128)),
+                .envelope = .{
+                    .attack_seconds = random.float(f64) * 0.06 - 0.01,
+                    .decay_seconds = random.float(f64) * 0.06 - 0.01,
+                    .sustain = if (inject_non_finite) std.math.nan(f64) else random.float(f64) * 3.0 - 1.0,
+                    .release_seconds = random.float(f64) * 0.06 - 0.01,
+                },
+            };
+            const note: i16 = if (inject_non_finite) std.math.maxInt(i16) else @intCast(random.uintLessThan(u8, 128));
+
+            switch (random.uintLessThan(u8, 7)) {
+                0 => player.noteOn(note, random.float(f64) * 2.0 - 0.5, playback),
+                1 => player.noteOff(note, playback),
+                2 => player.allNotesOff(),
+                3 => player.reset(),
+                4 => player.prepare(if (inject_non_finite) std.math.nan(f64) else random.float(f64) * 450_000.0),
+                5 => {
+                    generation += 1;
+                    for (&samples) |*sample| sample.* = random.float(f32) * 2.0 - 1.0;
+                    try player.store.begin(.{ .generation = generation, .sample_rate = 48_000, .channels = 2, .frames = 32 });
+                    try player.store.write(generation, 0, &samples);
+                    try player.store.commit(generation);
+                    try std.testing.expect(player.adoptPending());
+                },
+                else => {},
+            }
+
+            const frame = player.processFrame(playback);
+            const valid = std.math.isFinite(frame[0]) and std.math.isFinite(frame[1]) and
+                @abs(frame[0]) <= 16.0 and @abs(frame[1]) <= 16.0 and
+                if (player.playhead()) |position| std.math.isFinite(position) and position >= 0.0 and position <= 1.0 else true;
+            if (!valid) {
+                std.debug.print("sample player seed={x} case={} operation={}\n", .{ seed, case_index, operation_index });
+                return error.GeneratedSamplePlayerInvariantFailed;
+            }
+        }
     }
 }
