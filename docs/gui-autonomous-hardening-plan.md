@@ -211,3 +211,11 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The regression also verifies that compile-only mode never invokes Zig for the Windows bridge and that unknown modes fail with status 2. It runs under the complete deterministic test graph.
 - The current API audit keeps direct parameter-backed graph ranges and `Graph.secondary_range_selection` experimental. The IR Loader is a valid second production consumer for state-backed `RangeSelection`, but converting its destructive edit selection into automatable parameters or adding an unrelated secondary range would create a misleading contract merely to satisfy a consumer count.
 - The complete deterministic gate passed 82/82 steps and 3,823/3,823 tests. Native visual measurements remained within budget at 91.8 us for the aggregate scene and 47.31 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Numerical Boundary Hardening
+
+- Toolkit-neutral parameter attachments now quantize both their initial controller value and every host automation update through the same bounded path. NaN maps to zero, positive infinity maps to one, and discrete values remain on declared steps instead of retaining non-finite state.
+- Viewport zoom rejects non-finite anchors on active axes before changing zoom or persisted offsets. Invalid input cannot poison later projection, panning, resize restoration, or graph rendering.
+- The viewport model now runs 32,768 deterministic generated transitions across anchored zoom, zoom limits, pan, reset, out-of-range values, NaN, and infinity. Every operation must preserve finite zoom and offsets within the visible-span bounds, with a fixed seed and failure coordinates for reproduction.
+- The complete deterministic gate passed 82/82 steps and 3,825/3,825 tests. The raw ABI matrix passed 113/113 steps, AddressSanitizer and UndefinedBehaviorSanitizer passed 2/2 steps, and Linux and Windows cross-target matrices each passed 44/44 steps.
+- Benchmarks remained within budget: 0.59 ms for maximum sample decode and waveform construction, 6.9 ns per sample-player frame, 4.8 ns per playhead update, and 718.8 ns per IR sample. The native aggregate scene rendered in 81.0 us during the first complete run.

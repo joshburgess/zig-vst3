@@ -160,10 +160,12 @@ pub const ParameterAttachment = struct {
     gesture: ?Gesture = null,
 
     pub fn init(context: Context, id: ParameterId) Error!ParameterAttachment {
+        const metadata = context.metadata(id) orelse return error.InvalidParameter;
+        const value = context.value(id) orelse return error.InvalidParameter;
         return .{
             .context = context,
-            .metadata = context.metadata(id) orelse return error.InvalidParameter,
-            .value = context.value(id) orelse return error.InvalidParameter,
+            .metadata = metadata,
+            .value = quantized(metadata, value),
         };
     }
 
@@ -397,7 +399,7 @@ pub fn ParameterPanel(comptime parameter_count: usize) type {
 }
 
 pub fn quantized(metadata: ParameterMetadata, value: NormalizedValue) NormalizedValue {
-    const clamped = std.math.clamp(value, 0.0, 1.0);
+    const clamped = if (std.math.isNan(value)) 0.0 else std.math.clamp(value, 0.0, 1.0);
     if (metadata.step_count <= 0) return clamped;
     const steps: f64 = @floatFromInt(metadata.step_count);
     return @round(clamped * steps) / steps;
@@ -926,6 +928,8 @@ test "parameter attachment quantizes boolean integer and enum values" {
     var enumeration = integer;
     enumeration.kind = .enumeration;
     try std.testing.expectApproxEqAbs(@as(f64, 1.0 / 3.0), quantized(enumeration, 0.4), 0.000001);
+    try std.testing.expectEqual(@as(f64, 0.0), quantized(enumeration, std.math.nan(f64)));
+    try std.testing.expectEqual(@as(f64, 1.0), quantized(enumeration, std.math.inf(f64)));
 }
 
 test "host automation updates attachments without emitting gestures" {
@@ -934,6 +938,15 @@ test "host automation updates attachments without emitting gestures" {
     attachment.hostChanged(0.25);
     try std.testing.expectEqual(@as(NormalizedValue, 0.25), attachment.value);
     try std.testing.expectEqual(@as(usize, 0), fake.call_count);
+
+    attachment.hostChanged(std.math.nan(f64));
+    try std.testing.expectEqual(@as(NormalizedValue, 0.0), attachment.value);
+    attachment.hostChanged(std.math.inf(f64));
+    try std.testing.expectEqual(@as(NormalizedValue, 1.0), attachment.value);
+
+    var invalid_initial = Fake{ .value = std.math.nan(f64) };
+    const sanitized = try ParameterAttachment.init(invalid_initial.context(), 7);
+    try std.testing.expectEqual(@as(NormalizedValue, 0.0), sanitized.value);
 }
 
 test "parameter panel builds controls from reflected IDs" {

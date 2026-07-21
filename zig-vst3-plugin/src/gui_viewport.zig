@@ -79,6 +79,8 @@ pub const State = struct {
     pub fn setZoom(self: *State, config: Config, requested: f64, anchor_x: f64, anchor_y: f64) bool {
         const next = std.math.clamp(requested, config.minimum_zoom, config.maximum_zoom);
         if (!std.math.isFinite(next) or next == self.zoom) return false;
+        if (config.axes.includesHorizontal() and !std.math.isFinite(anchor_x)) return false;
+        if (config.axes.includesVertical() and !std.math.isFinite(anchor_y)) return false;
         const old_span = 1.0 / self.zoom;
         const new_span = 1.0 / next;
         if (config.axes.includesHorizontal()) {
@@ -160,4 +162,47 @@ test "viewport declarations reject ambiguous bounds" {
     try std.testing.expectError(error.InvalidZoomStep, (Config{ .zoom_step = 1.0 }).validate());
     try std.testing.expectError(error.InvalidScrollStep, (Config{ .scroll_step = 0.0 }).validate());
     try std.testing.expectError(error.InvalidInitialOffset, (Config{ .axes = .horizontal, .initial_y_offset = 0.1 }).validate());
+}
+
+test "viewport rejects non-finite active anchors without changing state" {
+    const config = Config{ .axes = .both, .initial_zoom = 2.0, .initial_x_offset = 0.25, .initial_y_offset = 0.25 };
+    var state = try State.init(config);
+    const initial = state;
+    try std.testing.expect(!state.setZoom(config, 4.0, std.math.nan(f64), 0.5));
+    try std.testing.expectEqual(initial, state);
+    try std.testing.expect(!state.setZoom(config, 4.0, 0.5, std.math.inf(f64)));
+    try std.testing.expectEqual(initial, state);
+}
+
+test "viewport generated transitions preserve finite bounded state" {
+    const seed = 0x71e4_90a2_2026_0721;
+    var random_state = std.Random.DefaultPrng.init(seed);
+    const random = random_state.random();
+    const config = Config{ .axes = .both, .minimum_zoom = 1.0, .maximum_zoom = 128.0 };
+
+    for (0..128) |case_index| {
+        var state = try State.init(config);
+        for (0..256) |operation_index| {
+            const inject_non_finite = operation_index % 43 == 0;
+            const anchor_x = if (inject_non_finite) std.math.nan(f64) else random.float(f64) * 3.0 - 1.0;
+            const anchor_y = if (inject_non_finite) std.math.inf(f64) else random.float(f64) * 3.0 - 1.0;
+            switch (random.uintLessThan(u8, 6)) {
+                0 => _ = state.setZoom(config, random.float(f64) * 192.0 - 32.0, anchor_x, anchor_y),
+                1 => _ = state.zoomIn(config, anchor_x, anchor_y),
+                2 => _ = state.zoomOut(config, anchor_x, anchor_y),
+                3 => _ = state.pan(config, random.float(f64) * 20.0 - 10.0, random.float(f64) * 20.0 - 10.0),
+                4 => _ = state.pan(config, std.math.nan(f64), std.math.inf(f64)),
+                else => _ = state.reset(config),
+            }
+            const span = 1.0 / state.zoom;
+            const valid = std.math.isFinite(state.zoom) and
+                state.zoom >= config.minimum_zoom and state.zoom <= config.maximum_zoom and
+                std.math.isFinite(state.x_offset) and state.x_offset >= 0.0 and state.x_offset <= 1.0 - span and
+                std.math.isFinite(state.y_offset) and state.y_offset >= 0.0 and state.y_offset <= 1.0 - span;
+            if (!valid) {
+                std.debug.print("viewport seed={x} case={} operation={}\n", .{ seed, case_index, operation_index });
+                return error.GeneratedViewportInvariantFailed;
+            }
+        }
+    }
 }
