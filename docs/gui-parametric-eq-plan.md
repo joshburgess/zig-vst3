@@ -110,7 +110,7 @@ Release gates:
 - [x] Native adapter, macOS accessibility, visual-regression, and warm-render tests
 - [x] `zig build bundle-examples-linux -Dtarget=aarch64-linux-gnu --summary all`
 - [x] `zig build bundle-examples-windows -Dtarget=x86_64-windows-gnu --summary all`
-- [ ] Serialized pluginval strictness 5 and strictness 10, stopping at the first unexpected exit
+- [x] Serialized pluginval strictness 5 and strictness 10, stopping at the first unexpected exit
 - [x] Manual REAPER checks for rendering, graph and knob synchronization, resize cycles, multiple instances, and editor reopen
 
 External checks remain pending when the required environment is unavailable:
@@ -119,6 +119,8 @@ External checks remain pending when the required environment is unavailable:
 - X11 and Wayland host interaction
 - AT-SPI names, roles, values, focus, and actions
 - Multi-monitor display-scale changes where the host exposes them
+
+The final serialized release matrix passed all 14 plugins at strictness 5 and strictness 10 on July 20, 2026. The artifact range and complete release evidence are recorded in `docs/gui-autonomous-hardening-plan.md`.
 
 ## Follow-up: Display Scale and Platform Verification
 

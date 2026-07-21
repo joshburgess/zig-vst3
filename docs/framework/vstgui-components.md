@@ -584,7 +584,7 @@ Supported authoring surface:
 
 Experimental extensions:
 
-- `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The IR loader and sample player exercise the same public contract, but the gallery does not yet exercise the dependency behavior and the sample-player host walkthrough remains pending.
+- `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The gallery, IR loader, and sample player exercise the same dependency behavior. The sample-player host walkthrough remains the promotion blocker.
 - Direct parameter-backed graph ranges and `Graph.secondary_range_selection`. The visual gallery and sample player exercise them, but a second production consumer is still required.
 - The direct bipolar slider. The gallery and sample player exercise it, but a second production consumer is still required.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
