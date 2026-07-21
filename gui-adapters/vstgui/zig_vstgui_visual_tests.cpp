@@ -1640,7 +1640,7 @@ ChannelWorkspace buildChannelWorkspace(
 ) {
     const ZigVstguiParameterDescription parameters[] = {
         {0, 0.5, {"Gain", "dB", 0, 0.5}, ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER},
-        {3, 0.5, {"Drive", "dB", 0, 0.5}, ZIG_VSTGUI_CONTROL_DECIBEL_SLIDER},
+        {3, 0.5, {"Drive", "dB", 0, 0.5}, ZIG_VSTGUI_CONTROL_BIPOLAR_SLIDER},
         {1, 0.0, {"Bypass", "", 1, 0.0}, ZIG_VSTGUI_CONTROL_TOGGLE},
         {2, 0.0, {"Mode", "", 2, 0.0}, ZIG_VSTGUI_CONTROL_ENUM_DROPDOWN},
     };

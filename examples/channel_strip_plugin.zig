@@ -261,8 +261,8 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
                     .units = "dB",
                     .step_count = 0,
                     .default_normalized = 0.5,
-                    .control_kind = .decibel_slider,
-                    .tooltip = "Drive into the selected character stage.",
+                    .control_kind = .bipolar_slider,
+                    .tooltip = "Drive into or pull back from the selected character stage. Command-click resets to zero.",
                 },
                 .{
                     .id = bypass_param_id,

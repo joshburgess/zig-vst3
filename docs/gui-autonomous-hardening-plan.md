@@ -153,3 +153,11 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The runner uses VSTGUI's exact Release configuration with debug symbols. VSTGUI publishes layout-affecting definitions only for its Debug and Release configurations, so using another CMake configuration would produce an invalid test ABI.
 - Enum-value instrumentation is disabled because the C-facing adapter tests deliberately inject unknown numeric enum values and verify rejection. Address, vptr, bounds, arithmetic, and the remaining undefined-behavior checks stay enabled.
 - The final sanitizer run passed 2/2 build steps. The normal test and raw ABI matrix then passed 187/187 steps and 3,822/3,822 tests. The visual performance gate remained within budget, and the benchmark measured 0.60 ms maximum sample decode, 7.2 ns per sample-player frame, and 597.7 ns per IR sample.
+
+### Autonomous Follow-up: Bipolar Slider Promotion
+
+- Channel Strip Drive now uses the public `bipolar_slider` presentation. Its signed -12 dB to +12 dB range has the same meaningful zero center, exact entry, reset gesture, automation attachment, and accessibility behavior as Sample Player pan.
+- The direct bipolar slider is supported after independent production use in the Channel Strip and Sample Player. Direct parameter-backed graph ranges and `Graph.secondary_range_selection` remain experimental because the Sample Player is still their only production consumer.
+- The deterministic and raw ABI gate passed 187/187 steps and 3,822/3,822 tests. The sanitizer gate passed 2/2 steps. Linux and Windows bundle matrices each passed 44/44 steps, and all 14 Steinberg validators passed in a 74/74-step run.
+- Benchmarks stayed within budget: 1.27 ms for maximum sample decode and waveform construction, 7.7 ns per sample-player frame, 5.1 ns per playhead update, and 636.7 ns per IR sample.
+- The serialized strictness-5 dependency chain through Channel Strip passed, ending with artifact `zig_vst3_channel_strip-strictness-5-20260720-210621-868`. The strictness-10 chain also passed, ending with `zig_vst3_channel_strip-strictness-10-20260720-211736-4048`. No unexpected exit or crash occurred.

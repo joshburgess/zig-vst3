@@ -98,7 +98,7 @@ Exit criteria:
 
 - [x] Promote rotary after the gallery and EQ pass the same public-contract tests and the current EQ passes its REAPER walkthrough.
 - [x] Promote decibel controls after the gallery, channel strip, IR loader, and EQ pass the shared contract and the current EQ passes its REAPER walkthrough.
-- [x] Keep the direct bipolar slider experimental until a production editor uses that presentation. Bipolar dB rotary behavior does not prove the slider contract.
+- [x] Keep the direct bipolar slider experimental until production editors share that presentation. Sample Player pan and Channel Strip drive now satisfy that requirement.
 - [x] Promote assets, fonts, and custom drawing after the gallery, IR loader, and EQ pass the shared contract and macOS host checks.
 - [x] Keep analyzer transport experimental until a second production analyzer consumer establishes its required shape.
 - [x] Document precise blockers for every retained experimental API.
@@ -226,7 +226,7 @@ Record each committed milestone here with test counts, performance measurements,
 - Added deterministic coverage for the public declaration, preset values, grouped gesture counts, controller-state round trips, legacy state restoration at 0 dB, and rendered audio gain.
 - Corrected the concurrent audio-import replacement test to accept either valid linearization point: cleared media while decoding or the completed replacement. It still rejects exposure of the prior media and passed five additional aggregate runs with fresh seeds.
 - Decibel sliders now have one gallery consumer and three production consumers: Channel Strip, IR Loader, and Parametric EQ. Final supported status remains gated on the current EQ bundle's manual REAPER checks.
-- The direct bipolar slider remains experimental because only the gallery uses that presentation. The EQ's bipolar dB range uses rotary controls and does not validate the slider-specific contract.
+- The EQ's bipolar dB range uses rotary controls and does not validate the slider-specific contract. The slider was promoted later after Sample Player pan and Channel Strip drive became independent production consumers.
 - `zig build test raw-api-abi validate-examples --summary all` passed 213/213 steps and 3,714/3,714 tests. Raw ABI checks and all twelve Steinberg example validators passed.
 - Linux `aarch64-linux-gnu` and Windows `x86_64-windows-gnu` cross-target bundle matrices each passed 38/38 steps.
 - Final warm-render measurements were 98.4 us for the full visual suite, 34.0 us for rotary, 281.0 us for signal views, and 245.0 us for linked EQ. Every scene remained within its recorded budget.

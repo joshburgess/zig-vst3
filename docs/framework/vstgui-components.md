@@ -558,7 +558,7 @@ The project remains pre-1.0, so even the supported surface does not yet carry a 
 
 Supported authoring surface:
 
-- `Parameter`, the linear, rotary, toggle, dropdown, segmented, and decibel control kinds, `Theme`, `Layout`, and the four `create*View` functions.
+- `Parameter`, the linear, bipolar, rotary, toggle, dropdown, segmented, and decibel control kinds, `Theme`, `Layout`, and the four `create*View` functions.
 - `EditorDescription`, `Composition`, `Group`, `StyleOverride`, and `createEditor`.
 - `Meter`, meter source wiring, `MeterBank`, and GUI telemetry presentation.
 - `Graph`, graph axes and style roles, and grouped graph composition.
@@ -586,7 +586,6 @@ Experimental extensions:
 
 - `ActionButton.success_focus_importer_id` and `ActionButton.ready_importer_id`. The gallery, IR loader, and sample player exercise the same dependency behavior. The sample-player host walkthrough remains the promotion blocker.
 - Direct parameter-backed graph ranges and `Graph.secondary_range_selection`. The visual gallery and sample player exercise them, but a second production consumer is still required.
-- The direct bipolar slider. The gallery and sample player exercise it, but a second production consumer is still required.
 - Fixed graph point storage and direct `SnapshotSeries` use. The production signal views use the higher-level bounded capture and analyzer types.
 - Native assistive-technology bridges. macOS is integration-tested, Windows is cross-compiled, and native screen-reader workflows remain unverified.
 - `AudioFileImporter`, controller-owned import status and command callbacks, decoded-audio transport, controller-sourced graph snapshots, and importer-aware action dependencies. The gallery now decodes a bounded fixture and exercises idle, progress, ready, failure, retry, reset, waveform, and action-dependency behavior through the same contract used by the IR loader and sample player. The sample-player host walkthrough remains the promotion blocker.
