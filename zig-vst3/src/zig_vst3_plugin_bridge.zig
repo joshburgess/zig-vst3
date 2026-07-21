@@ -126,6 +126,11 @@ pub const StereoAudioBuses = struct {
         return failBusInfo(out);
     }
 
+    pub fn activateBusConfigured(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, state: types.TBool, config: Config) types.tresult {
+        if (state > 1 or index != 0 or busCountConfigured(media_type, direction, config) == 0) return types.kInvalidArgument;
+        return types.kResultOk;
+    }
+
     fn hasConfiguredAudioBus(config: Config, direction: vsttypes.BusDirection) bool {
         if (config.audio_input and directionIs(direction, .kInput)) return true;
         if (config.audio_output and directionIs(direction, .kOutput)) return true;
@@ -2124,6 +2129,13 @@ test "zig-vst3-plugin bridge stereo buses expose audio and event input metadata"
 
     try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.busInfo(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 1, &info));
     try std.testing.expectEqual(ivstcomponent.BusInfo{}, info);
+
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.activateBusConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1, .{}));
+    try std.testing.expectEqual(types.kResultOk, StereoAudioBuses.activateBusConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 0, .{}));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.activateBusConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 2, .{}));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.activateBusConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 1, 1, .{}));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.activateBusConfigured(99, @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1, .{}));
+    try std.testing.expectEqual(types.kInvalidArgument, StereoAudioBuses.activateBusConfigured(@intFromEnum(ivstcomponent.MediaTypes.kEvent), @intFromEnum(ivstcomponent.BusDirections.kOutput), 0, 1, .{}));
 }
 
 test "zig-vst3-plugin bridge stereo audio buses validate arrangements" {

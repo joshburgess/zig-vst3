@@ -66,6 +66,7 @@ var test_effect_processor_init_count: usize = 0;
 var test_effect_processor_deinit_count: usize = 0;
 var test_effect_prepare_sample_rate: f64 = 0;
 var test_effect_prepare_block_size: u32 = 0;
+var test_effect_reset_count: usize = 0;
 
 fn failInfo(out: anytype) types.tresult {
     out.* = .{};
@@ -2225,6 +2226,10 @@ test "simple stereo effect exposes processor lifecycle and decoded audio transpo
             test_effect_prepare_block_size = config.max_block_size;
         }
 
+        pub fn reset(_: *@This()) void {
+            test_effect_reset_count += 1;
+        }
+
         pub fn latencySamples(_: *const @This()) u32 {
             return 8;
         }
@@ -2288,6 +2293,7 @@ test "simple stereo effect exposes processor lifecycle and decoded audio transpo
     test_effect_processor_deinit_count = 0;
     test_effect_prepare_sample_rate = 0;
     test_effect_prepare_block_size = 0;
+    test_effect_reset_count = 0;
 
     var component_out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, Effect.create(@ptrCast(&ivstcomponent.icomponent_iid), &component_out));
@@ -2307,6 +2313,21 @@ test "simple stereo effect exposes processor lifecycle and decoded audio transpo
     try std.testing.expectEqual(types.kResultOk, processor.vtable.setupProcessing(processor, &setup));
     try std.testing.expectEqual(@as(f64, 96_000), test_effect_prepare_sample_rate);
     try std.testing.expectEqual(@as(u32, 256), test_effect_prepare_block_size);
+    try std.testing.expectEqual(@as(usize, 1), test_effect_reset_count);
+
+    try std.testing.expectEqual(types.kInvalidArgument, component.vtable.activateBus(component, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 2));
+    try std.testing.expectEqual(types.kInvalidArgument, component.vtable.activateBus(component, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 1, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, component.vtable.setActive(component, 2));
+    try std.testing.expectEqual(types.kInvalidArgument, processor.vtable.setProcessing(processor, 2));
+    try std.testing.expectEqual(@as(usize, 1), test_effect_reset_count);
+
+    try std.testing.expectEqual(types.kResultOk, component.vtable.activateBus(component, @intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, 1));
+    try std.testing.expectEqual(types.kResultOk, component.vtable.setActive(component, 1));
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.setProcessing(processor, 1));
+    try std.testing.expectEqual(@as(usize, 1), test_effect_reset_count);
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.setProcessing(processor, 0));
+    try std.testing.expectEqual(types.kResultOk, component.vtable.setActive(component, 0));
+    try std.testing.expectEqual(@as(usize, 3), test_effect_reset_count);
 
     var component_connection_out: ?*anyopaque = null;
     try std.testing.expectEqual(types.kResultOk, component.vtable.queryInterface(component, &ivstmessage.iconnection_point_iid, &component_connection_out));
@@ -2638,8 +2659,8 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             return types.kNoInterface;
         }
 
-        fn activateBus(_: *anyopaque, _: vsttypes.MediaType, _: vsttypes.BusDirection, _: types.int32, _: types.TBool) callconv(.c) types.tresult {
-            return types.kResultOk;
+        fn activateBus(_: *anyopaque, media_type: vsttypes.MediaType, direction: vsttypes.BusDirection, index: types.int32, state: types.TBool) callconv(.c) types.tresult {
+            return zig_vst3_plugin_bridge.StereoAudioBuses.activateBusConfigured(media_type, direction, index, state, bus_config);
         }
 
         fn resetProcessState(self: *Component) void {
@@ -2650,6 +2671,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         fn setActive(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
+            if (state > 1) return types.kInvalidArgument;
             if (state == 0) resetProcessState(owner(ptr));
             return types.kResultOk;
         }
@@ -2840,6 +2862,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         fn setProcessing(ptr: *anyopaque, state: types.TBool) callconv(.c) types.tresult {
+            if (state > 1) return types.kInvalidArgument;
             if (state == 0) resetProcessState(ownerFromProcessor(ptr));
             return types.kResultOk;
         }

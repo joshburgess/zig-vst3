@@ -301,3 +301,11 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The direct receiver regression uses a plugin result of two and a host thread flag of two, then verifies a later canonical delivery remains intact.
 - The complete deterministic gate passed 82/82 steps and 3,900/3,900 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 96.9 us for the aggregate scene and 48.49 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Component Lifecycle Inputs
+
+- The generic effect now rejects noncanonical component and processing activation states. Invalid calls cannot reset processor state.
+- Stereo bus activation now shares a reusable validator for configured media, direction, index, and state. Unsupported and out-of-range buses return `kInvalidArgument`.
+- Lifecycle regressions reject malformed calls, preserve the reset count, and then complete valid activate, process, stop, and deactivate transitions.
+- The complete deterministic gate passed 82/82 steps and 3,900/3,900 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 95.5 us for the aggregate scene and 55.12 ms for a complete Sample Player editor lifecycle.
