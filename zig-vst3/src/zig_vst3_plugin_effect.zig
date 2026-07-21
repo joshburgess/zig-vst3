@@ -2040,7 +2040,11 @@ test "simple stereo effect delegates data exchange receiver callbacks" {
     const receiver: *ivstdataexchange.IDataExchangeReceiver = @ptrCast(@alignCast(receiver_out.?));
     defer _ = receiver.vtable.release(receiver);
 
-    var dispatch_on_background_thread: types.TBool = 0;
+    var dispatch_on_background_thread: types.TBool = 1;
+    receiver.vtable.queueOpened(receiver, 77, 0, &dispatch_on_background_thread);
+    try std.testing.expectEqual(@as(types.TBool, 0), dispatch_on_background_thread);
+    try std.testing.expectEqual(@as(usize, 0), test_data_exchange_queue_opened_count);
+
     receiver.vtable.queueOpened(receiver, 77, 512, &dispatch_on_background_thread);
     try std.testing.expectEqual(@as(types.TBool, 1), dispatch_on_background_thread);
     try std.testing.expectEqual(@as(usize, 1), test_data_exchange_queue_opened_count);
@@ -2758,10 +2762,10 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         };
 
         fn dataExchangeQueueOpened(_: *anyopaque, user_context_id: ivstdataexchange.DataExchangeUserContextID, block_size: types.uint32, out: *types.TBool) callconv(.c) void {
+            out.* = 0;
+            if (block_size == 0) return;
             if (@hasDecl(Config, "dataExchangeQueueOpened")) {
                 out.* = Config.dataExchangeQueueOpened(user_context_id, block_size);
-            } else {
-                out.* = 0;
             }
         }
 

@@ -280,3 +280,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The ABI-level receiver regression covers each malformed block independently, verifies that none reaches the consumer, and then delivers the restored valid block without changing its context or thread flag.
 - The complete deterministic gate passed 82/82 steps and 3,890/3,890 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 92.8 us for the aggregate scene and 47.51 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Data Exchange Queue Validation
+
+- The reflected `IDataExchangeReceiver` boundary now initializes the background-dispatch result to false and rejects zero-sized queues before invoking plugin configuration code.
+- The direct ABI regression verifies that an invalid queue does not reach the consumer, then opens a valid 512-byte queue and preserves its configured dispatch policy.
+- The complete deterministic gate passed 82/82 steps and 3,890/3,890 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 92.9 us for the aggregate scene and 47.34 ms for a complete Sample Player editor lifecycle.
