@@ -258,3 +258,11 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The regression exercises the shared receiver against the Sample Player store. Sender-side hostile callback tests and IR convolver staging tests cover the same contract from the other production paths.
 - The complete deterministic gate passed 82/82 steps and 3,870/3,870 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps. Both validators passed all 47 tests for both processing precisions.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 93.6 us for the aggregate scene and 52.96 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Transport Routing Isolation
+
+- Note transport now has direct rejection coverage for null messages, unrelated message IDs, missing attributes, non-finite velocity, and invalid pressed-state encodings. None of those inputs publishes a mailbox command, and a later valid note remains deliverable.
+- Decoded-audio transport now proves that an unrelated message ID, wrong target, and unknown operation cannot disturb an active staged transfer. A valid chunk and commit still complete the original generation afterward.
+- The note sender and receiver share one fixed-capacity message declaration, keeping its four-attribute bound explicit in both production code and malformed-message tests.
+- The complete deterministic gate passed 82/82 steps and 3,890/3,890 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 92.0 us for the aggregate scene and 46.12 ms for a complete Sample Player editor lifecycle.

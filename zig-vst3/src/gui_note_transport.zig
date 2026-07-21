@@ -4,6 +4,7 @@ const types = @import("pluginterfaces/base/types.zig");
 const vst_message = @import("vst_message.zig");
 
 pub const message_id = "zig-vst3.gui-note";
+const NoteMessage = vst_message.Message(32, 4, 1, 1);
 
 pub const Command = struct {
     channel: i16 = 0,
@@ -86,7 +87,6 @@ pub const Mailbox = struct {
 pub fn send(peer: ?*ivstmessage.IConnectionPoint, command: Command) types.tresult {
     command.validate() catch return types.kInvalidArgument;
     const target = peer orelse return types.kResultFalse;
-    const NoteMessage = vst_message.Message(32, 4, 1, 1);
     var message = NoteMessage{};
     const iface = message.asInterface();
     iface.vtable.setMessageID(iface, message_id);
@@ -175,4 +175,35 @@ test "connection message round trips into the mailbox" {
     try std.testing.expectEqual(@as(i16, 67), commands[0].pitch);
     try std.testing.expect(commands[0].pressed);
     try std.testing.expectApproxEqAbs(@as(f64, 0.75), commands[0].velocity, 0.00002);
+}
+
+test "note receiver rejects malformed routing without publishing" {
+    var mailbox = Mailbox{};
+    try std.testing.expectEqual(types.kInvalidArgument, receive(&mailbox, null));
+
+    var message = NoteMessage{};
+    const iface = message.asInterface();
+    iface.vtable.setMessageID(iface, "unrelated-message");
+    try std.testing.expectEqual(types.kResultFalse, receive(&mailbox, iface));
+
+    iface.vtable.setMessageID(iface, message_id);
+    const attributes = iface.vtable.getAttributes(iface) orelse return error.MissingAttributes;
+    try std.testing.expectEqual(types.kInvalidArgument, receive(&mailbox, iface));
+    try std.testing.expectEqual(types.kResultOk, attributes.vtable.setInt(attributes, "channel", 0));
+    try std.testing.expectEqual(types.kResultOk, attributes.vtable.setInt(attributes, "pitch", 60));
+    try std.testing.expectEqual(types.kResultOk, attributes.vtable.setFloat(attributes, "velocity", std.math.nan(f64)));
+    try std.testing.expectEqual(types.kResultOk, attributes.vtable.setInt(attributes, "pressed", 1));
+    try std.testing.expectEqual(types.kInvalidArgument, receive(&mailbox, iface));
+    try std.testing.expectEqual(types.kResultOk, attributes.vtable.setFloat(attributes, "velocity", 0.75));
+    try std.testing.expectEqual(types.kResultOk, attributes.vtable.setInt(attributes, "pressed", 2));
+    try std.testing.expectEqual(types.kInvalidArgument, receive(&mailbox, iface));
+
+    var seen: [128]u64 = @splat(0);
+    var commands: [1]Command = undefined;
+    try std.testing.expectEqual(@as(usize, 0), mailbox.collect(&seen, &commands));
+
+    try std.testing.expectEqual(types.kResultOk, attributes.vtable.setInt(attributes, "pressed", 1));
+    try std.testing.expectEqual(types.kResultOk, receive(&mailbox, iface));
+    try std.testing.expectEqual(@as(usize, 1), mailbox.collect(&seen, &commands));
+    try std.testing.expectEqual(@as(i16, 60), commands[0].pitch);
 }

@@ -396,3 +396,48 @@ test "IR transport recovers after hostile receiver chunks" {
     try std.testing.expect(store.adoptPending());
     try std.testing.expectEqual(@as(u64, 1), store.activeMetadata().?.generation);
 }
+
+test "IR transport rejects unrelated routing without disturbing staging" {
+    const Store = core.gui_audio_sample_store.Store(16);
+    var store = Store{};
+    var begin_message = TransportMessage{};
+    const begin_iface = begin_message.asInterface();
+    begin_iface.vtable.setMessageID(begin_iface, message_id);
+    const begin_attributes = begin_iface.vtable.getAttributes(begin_iface) orelse return error.MissingAttributes;
+    try std.testing.expect(setCommon(begin_attributes, .begin, 16, 1));
+    try std.testing.expectEqual(types.kResultOk, begin_attributes.vtable.setInt(begin_attributes, "sample-rate", 48_000));
+    try std.testing.expectEqual(types.kResultOk, begin_attributes.vtable.setInt(begin_attributes, "channels", 1));
+    try std.testing.expectEqual(types.kResultOk, begin_attributes.vtable.setInt(begin_attributes, "frames", 1));
+    try std.testing.expectEqual(types.kResultOk, receive(&store, 16, begin_iface));
+
+    var unrelated_message = TransportMessage{};
+    const unrelated_iface = unrelated_message.asInterface();
+    unrelated_iface.vtable.setMessageID(unrelated_iface, "unrelated-message");
+    try std.testing.expectEqual(types.kResultFalse, receive(&store, 16, unrelated_iface));
+
+    var routed_message = TransportMessage{};
+    const routed_iface = routed_message.asInterface();
+    routed_iface.vtable.setMessageID(routed_iface, message_id);
+    const routed_attributes = routed_iface.vtable.getAttributes(routed_iface) orelse return error.MissingAttributes;
+    try std.testing.expect(setCommon(routed_attributes, .commit, 17, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, receive(&store, 16, routed_iface));
+    try std.testing.expectEqual(types.kResultOk, routed_attributes.vtable.setInt(routed_attributes, "target", 16));
+    try std.testing.expectEqual(types.kResultOk, routed_attributes.vtable.setInt(routed_attributes, "operation", 99));
+    try std.testing.expectEqual(types.kInvalidArgument, receive(&store, 16, routed_iface));
+
+    var chunk_message = TransportMessage{};
+    const chunk_iface = chunk_message.asInterface();
+    chunk_iface.vtable.setMessageID(chunk_iface, message_id);
+    const chunk_attributes = chunk_iface.vtable.getAttributes(chunk_iface) orelse return error.MissingAttributes;
+    try std.testing.expect(setCommon(chunk_attributes, .chunk, 16, 1));
+    try std.testing.expectEqual(types.kResultOk, chunk_attributes.vtable.setInt(chunk_attributes, "offset", 0));
+    var bytes: [@sizeOf(f32)]u8 = undefined;
+    encodeSamples(&.{0.25}, &bytes);
+    try std.testing.expectEqual(types.kResultOk, chunk_attributes.vtable.setBinary(chunk_attributes, "samples", &bytes, bytes.len));
+    try std.testing.expectEqual(types.kResultOk, receive(&store, 16, chunk_iface));
+
+    try std.testing.expectEqual(types.kResultOk, routed_attributes.vtable.setInt(routed_attributes, "operation", @intFromEnum(Operation.commit)));
+    try std.testing.expectEqual(types.kResultOk, receive(&store, 16, routed_iface));
+    try std.testing.expect(store.adoptPending());
+    try std.testing.expectEqual(@as(u64, 1), store.activeMetadata().?.generation);
+}
