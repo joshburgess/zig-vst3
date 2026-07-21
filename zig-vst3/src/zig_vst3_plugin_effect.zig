@@ -2126,14 +2126,26 @@ test "simple stereo effect rejects invalid data exchange outputs" {
     try std.testing.expectEqual(types.kResultOk, component_iface.vtable.initialize(component_iface, host.asHostApplication()));
 
     var queue_id: ivstdataexchange.DataExchangeQueueID = 88;
+    try std.testing.expectEqual(types.kInvalidArgument, TestEffect.openDataExchangeQueue(component_iface, 0, 2, 8, 77, &queue_id));
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
+    try std.testing.expectEqual(types.kInvalidArgument, TestEffect.openDataExchangeQueue(component_iface, 128, 0, 8, 77, &queue_id));
+    try std.testing.expectEqual(@as(types.uint32, 0), host.open_count);
     try std.testing.expectEqual(types.kResultFalse, TestEffect.openDataExchangeQueue(component_iface, 128, 2, 8, 77, &queue_id));
     try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeQueueID, queue_id);
+    try std.testing.expectEqual(@as(types.uint32, 1), host.open_count);
+
+    try std.testing.expectEqual(types.kInvalidArgument, TestEffect.closeDataExchangeQueue(component_iface, ivstdataexchange.InvalidDataExchangeQueueID));
 
     var block = ivstdataexchange.DataExchangeBlock{
         .blockID = 1,
         .size = 64,
         .data = @ptrFromInt(0x2000),
     };
+    try std.testing.expectEqual(types.kInvalidArgument, TestEffect.lockDataExchangeBlock(component_iface, ivstdataexchange.InvalidDataExchangeQueueID, &block));
+    try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeBlockID, block.blockID);
+    try std.testing.expectEqual(types.kInvalidArgument, TestEffect.freeDataExchangeBlock(component_iface, ivstdataexchange.InvalidDataExchangeQueueID, 12, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, TestEffect.freeDataExchangeBlock(component_iface, 44, ivstdataexchange.InvalidDataExchangeBlockID, 1));
+    try std.testing.expectEqual(types.kInvalidArgument, TestEffect.freeDataExchangeBlock(component_iface, 44, 12, 2));
     try std.testing.expectEqual(types.kResultFalse, TestEffect.lockDataExchangeBlock(component_iface, 44, &block));
     try std.testing.expectEqual(ivstdataexchange.InvalidDataExchangeBlockID, block.blockID);
     try std.testing.expectEqual(@as(types.uint32, 0), block.size);
@@ -2420,6 +2432,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         pub fn openDataExchangeQueue(iface: *ivstcomponent.IComponent, block_size: types.uint32, num_blocks: types.uint32, alignment: types.uint32, user_context_id: ivstdataexchange.DataExchangeUserContextID, out: *ivstdataexchange.DataExchangeQueueID) types.tresult {
+            if (block_size == 0 or num_blocks == 0) return failOpenedDataExchangeQueue(out, types.kInvalidArgument);
             const self = owner(iface);
             const handler = self.data_exchange_handler orelse {
                 return failOpenedDataExchangeQueue(out, types.kResultFalse);
@@ -2431,11 +2444,13 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         pub fn closeDataExchangeQueue(iface: *ivstcomponent.IComponent, queue_id: ivstdataexchange.DataExchangeQueueID) types.tresult {
+            if (queue_id == ivstdataexchange.InvalidDataExchangeQueueID) return types.kInvalidArgument;
             const handler = owner(iface).data_exchange_handler orelse return types.kResultFalse;
             return handler.vtable.closeQueue(handler, queue_id);
         }
 
         pub fn lockDataExchangeBlock(iface: *ivstcomponent.IComponent, queue_id: ivstdataexchange.DataExchangeQueueID, block: *ivstdataexchange.DataExchangeBlock) types.tresult {
+            if (queue_id == ivstdataexchange.InvalidDataExchangeQueueID) return failLockedDataExchangeBlock(block, types.kInvalidArgument);
             const handler = owner(iface).data_exchange_handler orelse {
                 return failLockedDataExchangeBlock(block, types.kResultFalse);
             };
@@ -2446,6 +2461,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         }
 
         pub fn freeDataExchangeBlock(iface: *ivstcomponent.IComponent, queue_id: ivstdataexchange.DataExchangeQueueID, block_id: ivstdataexchange.DataExchangeBlockID, send_to_receiver: types.TBool) types.tresult {
+            if (queue_id == ivstdataexchange.InvalidDataExchangeQueueID or block_id == ivstdataexchange.InvalidDataExchangeBlockID or send_to_receiver > 1) return types.kInvalidArgument;
             const handler = owner(iface).data_exchange_handler orelse return types.kResultFalse;
             return handler.vtable.freeBlock(handler, queue_id, block_id, send_to_receiver);
         }

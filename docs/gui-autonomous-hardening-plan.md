@@ -287,3 +287,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The direct ABI regression verifies that an invalid queue does not reach the consumer, then opens a valid 512-byte queue and preserves its configured dispatch policy.
 - The complete deterministic gate passed 82/82 steps and 3,890/3,890 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 92.9 us for the aggregate scene and 47.34 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Data Exchange Lifecycle Inputs
+
+- The reusable host and plugin-facing helpers now reject null processors, zero block sizes, zero block counts, invalid queue IDs, invalid block IDs, and noncanonical send flags before delegation. Zero alignment remains supported by the SDK contract.
+- A permissive host regression proves invalid requests cannot be accepted by configuration code. The same test completes a valid open, lock, free, and close sequence afterward.
+- The complete deterministic gate passed 82/82 steps and 3,900/3,900 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 95.7 us for the aggregate scene and 47.08 ms for a complete Sample Player editor lifecycle.
