@@ -227,3 +227,12 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The complete deterministic gate passed 82/82 steps and 3,827/3,827 tests. The raw ABI matrix passed 113/113 steps, and AddressSanitizer and UndefinedBehaviorSanitizer passed 2/2 steps.
 - Linux and Windows cross-target matrices each passed 44/44 steps. The IR Loader and Sample Player each passed all 47 Steinberg validator tests for both processing precisions.
 - Benchmarks remained within budget: 0.64 ms for maximum sample decode and waveform construction, 7.2 ns per sample-player frame, 5.0 ns per playhead update, and 609.4 ns per IR sample. The native aggregate scene rendered in 87.2 us, and a complete Sample Player editor lifecycle averaged 45.72 ms.
+
+### Autonomous Follow-up: Transactional Media Transport
+
+- Decoded-audio transport now validates source metadata, checked sample counts, callback-reported lengths, and finite payloads before encoding each message. A callback cannot make the sender slice beyond its fixed chunk buffer.
+- The sender compares importer generation and media metadata again after the final copy. Replacement or mutation during publication sends cancel instead of committing a mixed generation to the processor.
+- Meter banks normalize a non-finite initial value to zero and reject non-finite publications without replacing the last finite reading. Waveform series already reject non-finite points, while spectrum input maps individual invalid samples to silence.
+- Hostile importer regressions cover oversized callback results, NaN payloads, and generation replacement after the first of multiple chunks. Receiver state remains unpublished after every rejected transfer.
+- The complete deterministic gate passed 82/82 steps and 3,848/3,848 tests. The raw ABI matrix passed 113/113 steps, AddressSanitizer and UndefinedBehaviorSanitizer passed 2/2 steps, and Linux and Windows cross-target matrices each passed 44/44 steps.
+- The IR Loader and Sample Player each passed all 47 Steinberg validator tests. Benchmarks remained within budget: 0.61 ms for maximum sample decode and waveform construction, 7.4 ns per sample-player frame, 4.9 ns per playhead update, and 613.3 ns per IR sample.

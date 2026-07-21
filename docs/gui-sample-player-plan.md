@@ -122,6 +122,7 @@ Record committed milestones here with test counts, validator results, performanc
 - Generated WAV and AIFF fixtures cover successful decode, bounded interleaved handoff, malformed and truncated data, unsupported formats, capacity failures, cancellation, replacement, retry, and instance isolation without user-provided media.
 - A three-slot fixed-capacity sample store stages controller writes and publishes only complete generations. The audio thread adopts one ready generation at block boundaries and never observes partial or stale media.
 - Sample-store writes validate every value before copying or advancing the staged offset. A non-finite chunk can be replaced by a valid chunk in the same generation, while commit remains unavailable until every finite sample arrives.
+- Controller transport validates snapshot bounds, callback lengths, finite payloads, and source identity. It cancels publication if the importer generation or media metadata changes before commit.
 - The reusable player provides eight fixed voices, oldest-voice stealing, linear interpolation, stereo and mono playback, gain, bipolar pan, coarse and fine tuning, bounded playback and loop ranges, forward and reverse playback, gate and one-shot behavior, and ADSR envelopes.
 - The sample-player example is registered in native, Linux, Windows, validator, raw entry-symbol, test, and serialized pluginval matrices. Its editor declaration imports only the public `@import("zig-vst3").vstgui` API.
 - `zig build test --summary all`: 66/66 build steps and 3,757/3,757 tests passed.

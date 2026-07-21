@@ -39,24 +39,22 @@ pub fn sendDecodedGeneration(
 ) types.tresult {
     const target = peer orelse return types.kResultFalse;
     const snapshot = importer.snapshot();
-    if (snapshot.import.status != .ready or snapshot.decoded_frames == 0 or
-        snapshot.sample_frames != snapshot.decoded_frames or transfer_generation == 0 or
-        transfer_generation > std.math.maxInt(i64))
-    {
+    if (!validSnapshot(snapshot) or transfer_generation == 0 or transfer_generation > std.math.maxInt(i64)) {
         return types.kInvalidArgument;
     }
+    const sample_count = std.math.mul(usize, snapshot.decoded_frames, snapshot.channels) catch return types.kInvalidArgument;
     const generation: i64 = @intCast(transfer_generation);
     if (sendHeader(target, .begin, target_id, generation, snapshot.sample_rate, snapshot.channels, snapshot.decoded_frames) != types.kResultOk) {
         return types.kResultFalse;
     }
 
-    const sample_count = snapshot.decoded_frames * snapshot.channels;
     var offset: usize = 0;
     var samples: [samples_per_chunk]f32 = undefined;
     var bytes: [samples_per_chunk * @sizeOf(f32)]u8 = undefined;
     while (offset < sample_count) {
-        const count = importer.copyDecoded(offset, samples[0..@min(samples.len, sample_count - offset)]);
-        if (count == 0) {
+        const requested = @min(samples.len, sample_count - offset);
+        const count = importer.copyDecoded(offset, samples[0..requested]);
+        if (count == 0 or count > requested or !finiteSamples(samples[0..@min(count, requested)])) {
             _ = sendScalar(target, .cancel, target_id, generation);
             return types.kResultFalse;
         }
@@ -67,7 +65,32 @@ pub fn sendDecodedGeneration(
         }
         offset += count;
     }
+    if (!sameMedia(snapshot, importer.snapshot())) {
+        _ = sendScalar(target, .cancel, target_id, generation);
+        return types.kResultFalse;
+    }
     return sendScalar(target, .commit, target_id, generation);
+}
+
+fn validSnapshot(snapshot: anytype) bool {
+    return snapshot.import.status == .ready and snapshot.import.generation != 0 and
+        snapshot.sample_rate >= 8_000 and snapshot.sample_rate <= 384_000 and
+        snapshot.channels > 0 and snapshot.channels <= core.gui_audio_file_importer.maximum_channels and
+        snapshot.decoded_frames > 0 and snapshot.decoded_frames <= core.gui_audio_file_importer.maximum_sample_frames and
+        snapshot.sample_frames == snapshot.decoded_frames;
+}
+
+fn sameMedia(first: anytype, second: anytype) bool {
+    return validSnapshot(second) and first.import.generation == second.import.generation and
+        first.sample_rate == second.sample_rate and first.channels == second.channels and
+        first.sample_frames == second.sample_frames and first.decoded_frames == second.decoded_frames;
+}
+
+fn finiteSamples(samples: []const f32) bool {
+    for (samples) |sample| {
+        if (!std.math.isFinite(sample)) return false;
+    }
+    return true;
 }
 
 pub fn sendClear(peer: ?*ivstmessage.IConnectionPoint, target_id: u32, generation: u64) types.tresult {
@@ -228,4 +251,80 @@ test "IR transport stages bounded chunks and commits one generation" {
     try std.testing.expectEqual(types.kResultOk, sendScalar(receiver.asInterface(), .commit, 9, 4));
     try std.testing.expect(ReceiverConfig.convolver.adoptPending());
     try std.testing.expectEqual(@as(u64, 4), ReceiverConfig.convolver.activeMetadata().?.generation);
+}
+
+const HostileImporter = struct {
+    samples: [samples_per_chunk + 1]f32 = @splat(0.25),
+    generation: u64 = 1,
+    copies: usize = 0,
+    reported_count_delta: usize = 0,
+    replace_after_first_copy: bool = false,
+
+    fn snapshot(self: *const HostileImporter) core.gui_audio_file_importer.Snapshot {
+        return .{
+            .import = .{
+                .status = .ready,
+                .entry_point = .picker,
+                .path_count = 1,
+                .completed_units = self.samples.len,
+                .total_units = self.samples.len,
+                .generation = self.generation,
+                .cancellation_pending = false,
+            },
+            .failure = .none,
+            .sample_rate = 48_000,
+            .channels = 1,
+            .sample_frames = self.samples.len,
+            .preview_points = 0,
+            .decoded_frames = self.samples.len,
+        };
+    }
+
+    fn copyDecoded(self: *HostileImporter, offset: usize, output: []f32) usize {
+        const count = @min(output.len, self.samples.len - offset);
+        @memcpy(output[0..count], self.samples[offset .. offset + count]);
+        self.copies += 1;
+        if (self.replace_after_first_copy and self.copies == 1) self.generation += 1;
+        return count + self.reported_count_delta;
+    }
+};
+
+test "IR transport rejects invalid callback lengths and non-finite samples" {
+    const Convolver = core.gui_ir_convolution.PartitionedConvolver(samples_per_chunk + 8, 8);
+    const ReceiverConfig = struct {
+        var convolver = Convolver.init(48_000);
+
+        pub fn notify(_: anytype, message: ?*ivstmessage.IMessage) types.tresult {
+            return receive(&convolver, 11, message);
+        }
+    };
+    const Receiver = vst_message.ConnectionPoint(ReceiverConfig);
+    var receiver = Receiver{};
+
+    var oversized = HostileImporter{ .reported_count_delta = 1 };
+    try std.testing.expectEqual(types.kResultFalse, sendDecodedGeneration(receiver.asInterface(), 11, 1, &oversized));
+    try std.testing.expectEqual(@as(?core.gui_ir_convolution.Metadata, null), ReceiverConfig.convolver.activeMetadata());
+
+    var non_finite = HostileImporter{};
+    non_finite.samples[17] = std.math.nan(f32);
+    try std.testing.expectEqual(types.kResultFalse, sendDecodedGeneration(receiver.asInterface(), 11, 2, &non_finite));
+    try std.testing.expectEqual(@as(?core.gui_ir_convolution.Metadata, null), ReceiverConfig.convolver.activeMetadata());
+}
+
+test "IR transport cancels a source replaced during publication" {
+    const Convolver = core.gui_ir_convolution.PartitionedConvolver(samples_per_chunk + 8, 8);
+    const ReceiverConfig = struct {
+        var convolver = Convolver.init(48_000);
+
+        pub fn notify(_: anytype, message: ?*ivstmessage.IMessage) types.tresult {
+            return receive(&convolver, 12, message);
+        }
+    };
+    const Receiver = vst_message.ConnectionPoint(ReceiverConfig);
+    var receiver = Receiver{};
+    var importer = HostileImporter{ .replace_after_first_copy = true };
+
+    try std.testing.expectEqual(types.kResultFalse, sendDecodedGeneration(receiver.asInterface(), 12, 1, &importer));
+    try std.testing.expectEqual(@as(usize, 2), importer.copies);
+    try std.testing.expectEqual(@as(?core.gui_ir_convolution.Metadata, null), ReceiverConfig.convolver.activeMetadata());
 }

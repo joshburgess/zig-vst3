@@ -120,7 +120,8 @@ pub fn MeterBank(comptime Float: type, comptime source_count: usize) type {
 
         pub fn init(initial: Float) @This() {
             var bank: @This() = undefined;
-            for (&bank.snapshots) |*snapshot| snapshot.* = Snapshot.init(initial);
+            const finite_initial = if (std.math.isFinite(initial)) initial else 0.0;
+            for (&bank.snapshots) |*snapshot| snapshot.* = Snapshot.init(finite_initial);
             bank.activity = .{};
             return bank;
         }
@@ -135,7 +136,7 @@ pub fn MeterBank(comptime Float: type, comptime source_count: usize) type {
 
         pub fn publish(self: *@This(), source: usize, value: Float) bool {
             _ = realtime_audit.observe(.telemetry_publication);
-            if (source >= source_count or !self.activity.active()) return false;
+            if (source >= source_count or !self.activity.active() or !std.math.isFinite(value)) return false;
             self.snapshots[source].store(value);
             return true;
         }
@@ -204,4 +205,15 @@ test "meter bank gates lock-free production by editor activity" {
     try std.testing.expect(!meters.producing());
     try std.testing.expect(!meters.publish(0, 1.0));
     try std.testing.expectEqual(@as(?f32, 0.5), meters.load(0));
+}
+
+test "meter bank never publishes non-finite values" {
+    var meters = MeterBank(f64, 1).init(std.math.nan(f64));
+    try std.testing.expectEqual(@as(?f64, 0.0), meters.load(0));
+    meters.editorOpened();
+    try std.testing.expect(meters.publish(0, 0.75));
+    try std.testing.expect(!meters.publish(0, std.math.nan(f64)));
+    try std.testing.expect(!meters.publish(0, std.math.inf(f64)));
+    try std.testing.expect(!meters.publish(0, -std.math.inf(f64)));
+    try std.testing.expectEqual(@as(?f64, 0.75), meters.load(0));
 }
