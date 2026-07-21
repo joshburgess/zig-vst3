@@ -294,3 +294,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - A permissive host regression proves invalid requests cannot be accepted by configuration code. The same test completes a valid open, lock, free, and close sequence afterward.
 - The complete deterministic gate passed 82/82 steps and 3,900/3,900 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 95.7 us for the aggregate scene and 47.08 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Data Exchange Boolean Boundaries
+
+- Queue-open dispatch results are now canonicalized to zero or one before returning through the ABI. Received block batches with a background-thread flag above one are rejected before consumer dispatch.
+- The direct receiver regression uses a plugin result of two and a host thread flag of two, then verifies a later canonical delivery remains intact.
+- The complete deterministic gate passed 82/82 steps and 3,900/3,900 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 96.9 us for the aggregate scene and 48.49 ms for a complete Sample Player editor lifecycle.

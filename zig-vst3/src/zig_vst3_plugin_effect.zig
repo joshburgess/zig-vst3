@@ -2002,7 +2002,7 @@ test "simple stereo effect delegates data exchange receiver callbacks" {
             test_data_exchange_queue_opened_count += 1;
             test_data_exchange_last_user_context_id = user_context_id;
             test_data_exchange_last_block_size = block_size;
-            return 1;
+            return 2;
         }
 
         pub fn dataExchangeQueueClosed(user_context_id: ivstdataexchange.DataExchangeUserContextID) void {
@@ -2056,6 +2056,7 @@ test "simple stereo effect delegates data exchange receiver callbacks" {
         .size = 64,
         .blockID = 22,
     }};
+    receiver.vtable.onDataExchangeBlocksReceived(receiver, 77, blocks.len, &blocks, 2);
     receiver.vtable.onDataExchangeBlocksReceived(receiver, 77, 0, &blocks, 1);
     receiver.vtable.onDataExchangeBlocksReceived(receiver, 77, 1, null, 1);
     blocks[0].data = null;
@@ -2781,7 +2782,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             out.* = 0;
             if (block_size == 0) return;
             if (@hasDecl(Config, "dataExchangeQueueOpened")) {
-                out.* = Config.dataExchangeQueueOpened(user_context_id, block_size);
+                out.* = @intFromBool(Config.dataExchangeQueueOpened(user_context_id, block_size) != 0);
             }
         }
 
@@ -2793,6 +2794,7 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
 
         fn onDataExchangeBlocksReceived(_: *anyopaque, user_context_id: ivstdataexchange.DataExchangeUserContextID, num_blocks: types.uint32, blocks: ?[*]ivstdataexchange.DataExchangeBlock, on_background_thread: types.TBool) callconv(.c) void {
             if (@hasDecl(Config, "onDataExchangeBlocksReceived")) {
+                if (on_background_thread > 1) return;
                 if (num_blocks == 0) return;
                 const received = blocks orelse return;
                 for (received[0..@intCast(num_blocks)]) |block| {
