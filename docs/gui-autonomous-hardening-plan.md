@@ -170,3 +170,12 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The existing one-shot `test-vstgui-sanitizers` gate still passed 2/2 steps after its build-only mode was added for the soak runner.
 - A portable fake-executable regression verifies successful repetition accounting, invalid repetition rejection, and first-failure classification without requiring an actual sanitizer defect.
 - The deterministic and raw ABI gate passed 188/188 steps and 3,822/3,822 tests, including the runner regression. Linux and Windows bundle matrices each passed 44/44 steps. Benchmarks remained within budget, including 0.61 ms maximum sample decode, 7.4 ns per sample-player frame, and 601.6 ns per IR sample.
+
+### Autonomous Follow-up: Thread Sanitizer
+
+- `zig build test-vstgui-thread-sanitizer --summary all` uses a separate exact-Release CMake tree with ThreadSanitizer instrumentation. CMake rejects attempts to combine it with the address and undefined-behavior sanitizer build.
+- The native adapter regression overlaps 4,096 worker-thread parameter publications with 4,096 editor-thread queue drains and value reads. It verifies finite values and accepted publications while ThreadSanitizer observes the atomic handoff and VSTGUI update boundary.
+- Four instrumented process runs passed at `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-vstgui-thread-sanitizer/20260721-004355-57719`. Each run preserves stdout, stderr, timestamps, status, sanitizer options, system metadata, and the tested commit. No race, deadlock, signal, or unexpected exit was reported.
+- The existing AddressSanitizer and UndefinedBehaviorSanitizer gate passed 2/2 steps after the separate ThreadSanitizer configuration was added.
+- The deterministic and raw ABI gate passed 188/188 steps and 3,822/3,822 tests. Linux and Windows cross-target bundle matrices each passed 44/44 steps and produced all 14 example bundles. These remain build checks rather than native host validation.
+- Benchmarks remained within budget: 0.58 ms for maximum sample decode and waveform construction, 7.2 ns per sample-player frame, 5.1 ns per playhead update, and 593.8 ns per IR sample.

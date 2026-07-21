@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 3.25)
 project(zig_vstgui_adapter LANGUAGES C CXX)
 
 option(ZIG_VSTGUI_ENABLE_SANITIZERS "Enable address and undefined-behavior sanitizers" OFF)
+option(ZIG_VSTGUI_ENABLE_THREAD_SANITIZER "Enable the thread sanitizer" OFF)
+
+if(ZIG_VSTGUI_ENABLE_SANITIZERS AND ZIG_VSTGUI_ENABLE_THREAD_SANITIZER)
+    message(FATAL_ERROR "Address and thread sanitizers require separate builds")
+endif()
 
 if(ZIG_VSTGUI_ENABLE_SANITIZERS)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -9,6 +14,14 @@ if(ZIG_VSTGUI_ENABLE_SANITIZERS)
     endif()
     add_compile_options(-fsanitize=address,undefined -fno-sanitize=enum -fno-omit-frame-pointer)
     add_link_options(-fsanitize=address,undefined)
+endif()
+
+if(ZIG_VSTGUI_ENABLE_THREAD_SANITIZER)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR "ZIG_VSTGUI_ENABLE_THREAD_SANITIZER requires Clang or GCC")
+    endif()
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=thread)
 endif()
 
 if(APPLE)
@@ -92,7 +105,7 @@ target_include_directories(zig_vstgui_adapter PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../../.vst3-sdk/vst3sdk"
 )
 target_link_libraries(zig_vstgui_adapter PRIVATE vstgui)
-if(APPLE AND ZIG_VSTGUI_ENABLE_SANITIZERS)
+if(APPLE AND (ZIG_VSTGUI_ENABLE_SANITIZERS OR ZIG_VSTGUI_ENABLE_THREAD_SANITIZER))
     target_link_libraries(zig_vstgui_adapter PUBLIC "-framework OpenGL")
 endif()
 if(WIN32)

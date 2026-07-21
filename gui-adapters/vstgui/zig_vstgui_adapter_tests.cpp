@@ -19,6 +19,7 @@
 #include "vstgui/lib/dragging.h"
 #include "vstgui/lib/vstguiinit.h"
 
+#include <atomic>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -1016,6 +1017,24 @@ int testMultiParameterRouting() {
     if (!first.setParameter(10, 0.6)) return 48;
     first.flushParameterUpdates();
     if (!first.parameterValue(10, value) || !closeEnough(value, 0.6)) return 49;
+
+    std::atomic<bool> concurrent_updates_valid {true};
+    std::thread concurrent_worker([&first, &concurrent_updates_valid]() {
+        for (uint32_t index = 0; index < 4096; ++index) {
+            const double next = index % 2 == 0 ? 0.1 : 0.9;
+            if (!first.setParameter(10, next)) concurrent_updates_valid.store(false, std::memory_order_relaxed);
+        }
+    });
+    bool concurrent_reads_valid = true;
+    for (uint32_t index = 0; index < 4096; ++index) {
+        first.flushParameterUpdates();
+        if (!first.parameterValue(10, value) || !std::isfinite(value)) concurrent_reads_valid = false;
+    }
+    concurrent_worker.join();
+    first.flushParameterUpdates();
+    if (!concurrent_reads_valid) return 50;
+    if (!concurrent_updates_valid.load(std::memory_order_relaxed) ||
+        !first.parameterValue(10, value) || !std::isfinite(value)) return 51;
 
     const ZigVstguiParameterValue restored[] = {
         {10, 0.75},

@@ -279,6 +279,12 @@ pub fn build(b: *std.Build) void {
         .script = "scripts/vstgui_sanitizer_soak.sh",
     });
     _ = sanitizer_soak_step;
+    const thread_sanitizer_step = addScriptCheckStep(b, .{
+        .step_name = "test-vstgui-thread-sanitizer",
+        .description = "Run native VSTGUI concurrency tests with the thread sanitizer",
+        .script = "scripts/test_vstgui_thread_sanitizer.sh",
+    });
+    _ = thread_sanitizer_step;
 
     const plugin_path_option = b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate");
 
