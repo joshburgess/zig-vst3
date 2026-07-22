@@ -383,3 +383,28 @@ test "mono WAV decoder accepts bounded PCM and IEEE float fixtures" {
     try std.testing.expectError(error.OutputTooSmall, decodeMonoWav(f32, &pcm, &short_output));
     try std.testing.expectError(error.Truncated, decodeMonoWav(f32, pcm[0 .. pcm.len - 1], &output));
 }
+
+test "mono WAV decoder handles truncated and malformed near-valid inputs" {
+    const fixture = ieeeWavFixture(f32, 0.25);
+    var output: [1]f32 = undefined;
+    for (0..fixture.len) |length| {
+        try std.testing.expectError(error.Truncated, decodeMonoWav(f32, fixture[0..length], &output));
+    }
+
+    for (0..fixture.len) |index| {
+        var mutated = fixture;
+        mutated[index] ^= 0xff;
+        _ = decodeMonoWav(f32, &mutated, &output) catch continue;
+    }
+
+    var stereo = fixture;
+    std.mem.writeInt(u16, stereo[22..24], 2, .little);
+    try std.testing.expectError(error.UnsupportedFormat, decodeMonoWav(f32, &stereo, &output));
+
+    var invalid_rate = fixture;
+    std.mem.writeInt(u32, invalid_rate[28..32], 1, .little);
+    try std.testing.expectError(error.InvalidFormat, decodeMonoWav(f32, &invalid_rate, &output));
+
+    const non_finite = ieeeWavFixture(f32, std.math.nan(f32));
+    try std.testing.expectError(error.NonFiniteSample, decodeMonoWav(f32, &non_finite, &output));
+}

@@ -265,6 +265,7 @@ Completion evidence:
 
 - `dsp.BlockProcessor(Sample)` provides a host-independent mono `reset` and `processBlock` contract. `fixture_runner` renders caller-owned buffers with fixed or deterministically randomized block boundaries and does not allocate during rendering.
 - The bounded in-memory WAV decoder accepts mono PCM16, IEEE f32, and IEEE f64 fixtures. Unit tests cover format validation, truncated input, output capacity, and identical stateful results across block patterns.
+- Truncated-prefix and near-valid mutation tests exercise every byte of a valid fixture. The installed-package consumer compiles and runs the public rendering and comparison API from a staged package.
 - `zig build test-dsp-fixtures` compiles a C++17 reference renderer, generates 8,192-frame 48 kHz fixtures, and compares Zig f32 and f64 output using maximum absolute, maximum relative, and RMS limits. Pointwise acceptance uses the documented absolute-or-relative rule, followed by an aggregate RMS limit.
 - Native arm64 macOS measured 1.6 to 2.4 ns per sample with exact reference output. The x86-64 binary under Rosetta measured 1.7 to 2.4 ns per sample. Its maximum errors were 2.98e-7 for f32 and 5.56e-16 for f64. Fixed and randomized renders remained bit-identical. The runner reports architecture, model, format, rate, backend, timings, and error metrics, and enforces a 100 ns per sample regression ceiling.
 - These x86-64 numbers are translated execution, not native x86-64 validation. Native Linux and Windows performance remain external checks.
@@ -328,7 +329,7 @@ Local validation on 2026-07-22:
 - `zig build validate-examples` passed all 47 Steinberg tests for every example in both sample formats.
 - `zig build benchmark` passed the recorded regression budgets.
 - Linux aarch64 and Windows x86-64 example bundle matrices passed with explicit cross targets.
-- The fixture runner module cross-compiled for Linux aarch64, Linux x86-64, and Windows x86-64. Cross-compilation does not count as native execution.
+- `zig build test-dsp-fixture-builds` cross-compiles the fixture runner for Linux aarch64, Linux x86-64, and Windows x86-64. Cross-compilation does not count as native execution.
 - Native macOS host lifecycle testing remains a manual check. Native Windows, Linux, X11, Wayland, and CLAP host coverage remains unavailable locally.
 
 ## First execution phase

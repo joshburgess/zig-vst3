@@ -4,7 +4,7 @@
 
 ## Headless fixture parity
 
-`BlockProcessor(Sample)` is a type-erased mono processing interface for deterministic tests outside a plugin host. A processor supplies `reset` and `processBlock` methods. The fixture runner can render the same input using fixed or deterministically randomized block boundaries.
+`BlockProcessor(Sample)` is a type-erased mono processing interface for deterministic tests outside a plugin host. A processor supplies public `reset` and `processBlock` methods. They must be public because the framework instantiates the generic from a different module. The fixture runner can render the same input using fixed or deterministically randomized block boundaries.
 
 ```zig
 var model = Model{};
@@ -30,6 +30,8 @@ ZIG_GLOBAL_CACHE_DIR=.zig-global-cache zig build test-dsp-fixtures
 ```
 
 The command records architecture, model, sample format, sample rate, backend, elapsed time per sample, and numerical metrics. It also enforces a 100 ns per sample regression ceiling. That ceiling detects major regressions while leaving room for translated and shared CI environments.
+
+Use `zig build test-dsp-fixture-builds` to compile the fixture API for Linux aarch64, Linux x86-64, and Windows x86-64 without attempting to run cross-target binaries.
 
 ## Denormal handling
 

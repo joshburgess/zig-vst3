@@ -15,6 +15,15 @@ pub fn build(b: *std.Build) void {
     consumer_tests.root_module.addImport("zig-vst3", dependency.module("zig-vst3"));
     consumer_tests.root_module.addImport("zig-vst3-plugin", dependency.module("zig-vst3-plugin"));
 
+    const dsp_fixture_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("dsp_fixture.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    dsp_fixture_tests.root_module.addImport("zig-vst3-plugin", dependency.module("zig-vst3-plugin"));
+
     const kernel_module = b.createModule(.{
         .root_source_file = b.path("kernel_plugin.zig"),
         .target = target,
@@ -41,6 +50,7 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Compile installed-package editor consumers");
     test_step.dependOn(&b.addRunArtifact(consumer_tests).step);
+    test_step.dependOn(&b.addRunArtifact(dsp_fixture_tests).step);
     test_step.dependOn(&kernel_plugin.step);
     test_step.dependOn(&b.addRunArtifact(kernel_tests).step);
 }

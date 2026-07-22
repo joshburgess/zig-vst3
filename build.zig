@@ -364,6 +364,23 @@ pub fn build(b: *std.Build) void {
     const dsp_fixture_parity_step = b.step("test-dsp-fixtures", "Compare fixed and randomized blocks with C++ reference WAV renders");
     dsp_fixture_parity_step.dependOn(&run_dsp_fixture_parity.step);
 
+    const dsp_fixture_builds_step = b.step("test-dsp-fixture-builds", "Compile DSP fixture tooling for supported cross targets");
+    const dsp_fixture_targets = [_]std.Build.ResolvedTarget{
+        b.resolveTargetQuery(.{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .gnu }),
+        b.resolveTargetQuery(.{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu }),
+        b.resolveTargetQuery(.{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .gnu }),
+    };
+    for (dsp_fixture_targets) |fixture_target| {
+        const fixture_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("zig-vst3-plugin/src/dsp/fixture_runner.zig"),
+                .target = fixture_target,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+        dsp_fixture_builds_step.dependOn(&fixture_tests.step);
+    }
+
     const test_step = b.step("test", "Run unit tests");
     addRunArtifactDependencies(b, test_step, &.{
         vst3_tests,
@@ -382,6 +399,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_installed_package.sh"}).step);
     test_step.dependOn(generate_fixtures_step);
     test_step.dependOn(dsp_fixture_parity_step);
+    test_step.dependOn(dsp_fixture_builds_step);
 
     const sanitizer_step = addScriptCheckStep(b, .{
         .step_name = "test-vstgui-sanitizers",
