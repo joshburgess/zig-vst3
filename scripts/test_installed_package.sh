@@ -16,7 +16,8 @@ trap cleanup EXIT HUP INT TERM
 mkdir -p "$package" "$consumer"
 cp build.zig build.zig.zon LICENSE README.md CHANGELOG.md "$package/"
 cp -R zig-vst3 zig-vst3-plugin "$package/"
-cp tests/installed-consumer/build.zig tests/installed-consumer/build.zig.zon tests/installed-consumer/editors.zig "$consumer/"
+cp tests/installed-consumer/build.zig tests/installed-consumer/build.zig.zon tests/installed-consumer/editors.zig tests/installed-consumer/kernel_plugin.zig "$consumer/"
+cp -R tests/installed-consumer/kernel "$consumer/"
 
 if ! (
     cd "$consumer"
@@ -27,4 +28,4 @@ if ! (
     exit 1
 fi
 
-printf 'installed-package effect and instrument consumers passed\n'
+printf 'installed-package effect, instrument, and C kernel consumers passed\n'

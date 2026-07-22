@@ -1,6 +1,7 @@
 const std = @import("std");
 const raw = @import("zig-vst3");
 const plug = @import("zig-vst3-plugin");
+const c_kernel = @import("c-kernel-core");
 
 const frame_count = 512;
 const iterations = 20_000;
@@ -26,6 +27,7 @@ const Budget = struct {
     ir_adoption_ns: f64 = 1_000_000.0,
     ir_processing_ns_per_sample: f64 = 20_000.0,
     fixed_rate_ns_per_sample: f64 = 2_000.0,
+    dense_kernel_ns: f64 = 500.0,
 };
 
 const budget = Budget{};
@@ -118,6 +120,38 @@ pub fn main() !void {
     try benchSamplePlayerPipeline();
     try benchIrConvolution();
     try benchFixedRatePipeline();
+    try benchDenseKernels();
+}
+
+fn benchDenseKernels() !void {
+    const weights = [16]f32{
+        0.25,   -0.5,  0.75,   1.0,
+        -1.5,   0.125, 0.5,    -0.25,
+        2.0,    -0.75, 0.0625, 0.5,
+        -0.125, 0.25,  -0.5,   1.25,
+    };
+    const bias = [4]f32{ 0.1, -0.2, 0.3, -0.4 };
+    const input = [4]f32{ 1, -1, 0.5, -0.25 };
+    const native = c_kernel.DenseKernel.initNative();
+    const backends = [_]c_kernel.Backend{ .zig, .portable_c, native.backend };
+    const benchmark_iterations = iterations * 20;
+    for (backends, 0..) |backend, index| {
+        if (index == 2 and (backend == .zig or backend == .portable_c)) continue;
+        const kernel = try c_kernel.DenseKernel.init(backend);
+        var timer = try Timer.start();
+        var checksum: f32 = 0;
+        for (0..benchmark_iterations) |_| {
+            checksum += kernel.run(&weights, &bias, &input)[0];
+        }
+        const elapsed_ns = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        const result = Benchmark{
+            .name = kernel.name(),
+            .iterations = benchmark_iterations,
+            .elapsed_ns = elapsed_ns,
+        };
+        try result.requireAtMost(budget.dense_kernel_ns);
+    }
 }
 
 fn benchResourceState() !Benchmark {

@@ -202,27 +202,44 @@ Completion evidence:
 - `resource.ResourceRecovery` starts restoration on its worker, verifies identity and schema compatibility before publication, publishes without an editor polling loop, and reports explicit missing, moved, changed, unsupported, and failed states. A restore retires the previous active resource and any older pending generation at the next process-block boundary.
 - The Model Shell loads a small versioned JSON linear model and processes mono audio. Its tests prove maximum-path state round trips, editor-independent restoration, safe silence while missing, changed-file rejection, matching-content relinking, and controller compatibility.
 - The preparation worker owns all file access, JSON parsing, hashing, allocation, and destruction. Processing only adopts a fixed-slot publication and reads immutable model data.
-- The aggregate deterministic suite, raw ABI checks, VSTGUI address and undefined-behavior sanitizers, resource thread sanitizer, and all 18 Steinberg validators pass. The Model Shell and Fixed Rate Processor each pass all 47 validator tests in both sample formats.
-- Linux aarch64 and Windows x86_64 cross-target matrices each build all 18 example bundles. These are build checks, not native host validation.
+- The aggregate deterministic suite, raw ABI checks, VSTGUI address and undefined-behavior sanitizers, resource thread sanitizer, and all 19 Steinberg validators pass. The Model Shell and Fixed Rate Processor each pass all 47 validator tests in both sample formats.
+- Linux aarch64 and Windows x86_64 cross-target matrices each build all 19 example bundles. These are build checks, not native host validation.
 - On the current macOS development machine, bounded reference state save and load measured 38.9 ns per round trip, and 4 KiB SHA-256 identity generation measured 2,503.8 MiB/s.
 
 ## P1 reusable infrastructure
 
 ### Public C kernel integration
 
-- [ ] Document how a downstream package adds portable C sources, include paths, compile flags, and target-specific objects to a plugin bundle.
-- [ ] Provide a small reference kernel with a Zig fallback and C differential tests.
-- [ ] Keep `-ffast-math` scoped to explicitly selected kernels. Do not apply it to the whole plugin or model parser.
-- [ ] Verify macOS universal, Linux, and Windows builds, including symbol visibility and allocator boundaries.
+- [x] Document how a downstream package adds portable C sources, include paths, compile flags, and target-specific objects to a plugin bundle.
+- [x] Provide a small reference kernel with a Zig fallback and C differential tests.
+- [x] Keep `-ffast-math` scoped to explicitly selected kernels. Do not apply it to the whole plugin or model parser.
+- [x] Verify macOS universal, Linux, and Windows builds, including symbol visibility and allocator boundaries.
 
 Zig makes direct C interoperability natural, but integration is only an advantage if downstream builds can use it without copying this repository's internal build functions.
 
+Completion evidence:
+
+- `docs/framework/c-kernels.md` contains the downstream `std.Build` recipe, target-specific source selection, runtime dispatch contract, and allocator ownership rules. `tests/installed-consumer` stages the installed package separately, builds a dynamic plugin with consumer-owned C code, and tests caller-owned buffers.
+- The C Kernel Probe provides the same fixed 4x4 dense operation in Zig, portable C, NEON, and AVX2. Identical fixtures compare the portable implementation at `1e-6` absolute error and accelerated implementations at `1e-5`.
+- Only `dense_neon.c` and `dense_avx2.c` receive `-ffast-math`. Portable C, Zig code, plugin glue, and resource parsing retain their normal floating-point settings.
+- `zig build test-c-kernel-builds` produces a universal macOS bundle with arm64 and x86_64 slices, Linux aarch64 and x86-64 bundles, and a Windows x86-64 bundle. Mach-O, ELF, and PE export-table checks reject public `zig_vst3_dense4_*` symbols while requiring the platform VST3 entry points.
+- Every C entry point consumes caller-owned fixed buffers, retains no pointer, and performs no allocation. The real-time audit verifies allocation-free mono block processing.
+- The aggregate deterministic suite, installed-package test, raw ABI gate, and all 47 C Kernel Probe Steinberg validator tests pass locally.
+
 ### CPU feature dispatch
 
-- [ ] Define a portable baseline kernel set.
-- [ ] Add runtime selection for supported accelerated variants where distribution targets require it.
-- [ ] Keep dispatch outside inner loops and make the chosen kernel observable in diagnostics.
-- [ ] Compare Zig, portable C, and accelerated C implementations with identical fixtures.
+- [x] Define a portable baseline kernel set.
+- [x] Add runtime selection for supported accelerated variants where distribution targets require it.
+- [x] Keep dispatch outside inner loops and make the chosen kernel observable in diagnostics.
+- [x] Compare Zig, portable C, and accelerated C implementations with identical fixtures.
+
+Completion evidence:
+
+- `dsp.kernel_dispatch` reports native NEON and AVX2 support and maps an explicit feature set to a backend without global mutable state.
+- Each C Kernel Probe processor selects and stores its backend and function pointer during instance initialization. The audio loop calls that pointer directly, and `kernelBackendName` exposes the choice for diagnostics.
+- The portable C implementation is always built. Architecture-specific objects are selected by the build target, then guarded by runtime detection before use.
+- On the current arm64 macOS machine, the release benchmark measured 1.3 ns per fixed 4x4 operation for Zig, 2.2 ns for portable C, and 1.4 ns for NEON C over 400,000 iterations. These figures are local regression measurements, not cross-machine guarantees.
+- An x86-64 macOS build runs under Rosetta and correctly keeps the portable backend selected when AVX2 is not reported. Native AVX2 execution remains pending on x86-64 hardware. The AVX2 object currently has compile, link, and export coverage; its identical-fixture test runs only when runtime detection reports AVX2.
 
 ### Denormal handling
 
@@ -298,6 +315,6 @@ The best next phase is framework work, not neural inference:
 - [x] Build the Resource Swap Probe and run it under sanitizers and repeated component teardown.
 - [x] Add bounded SRC and dynamic latency through the Fixed-Rate Processor.
 - [x] Add bounded resource references, component-state recovery, and the Model Shell probe.
-- [ ] Publish and test the downstream C kernel integration recipe.
+- [x] Publish and test the downstream C kernel integration recipe.
 
 Completing this phase would make a Zig NAM effort technically credible while also benefiting convolution reverbs, cabinet loaders, spectral processors, wavetable instruments, and any plugin that swaps large prepared DSP resources.

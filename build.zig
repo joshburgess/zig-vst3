@@ -89,6 +89,15 @@ pub fn build(b: *std.Build) void {
             .bundle_id = "dev.zig-vst3.model-shell",
         },
         .{
+            .short_name = "c-kernel",
+            .display_name = "C kernel probe",
+            .artifact_name = "zig_vst3_c_kernel",
+            .root_source_file = "examples/c_kernel_plugin.zig",
+            .core_example_source_file = "examples/c_kernel_core.zig",
+            .bundle_id = "dev.zig-vst3.c-kernel",
+            .c_kernel = true,
+        },
+        .{
             .short_name = "bypass",
             .display_name = "bypass",
             .artifact_name = "zig_vst3_bypass",
@@ -197,6 +206,11 @@ pub fn build(b: *std.Build) void {
     var example_plugins: [example_plugin_options.len]ExamplePluginSteps = undefined;
     for (example_plugin_options, 0..) |options, index| {
         example_plugins[index] = addExamplePlugin(b, target, optimize, zig_vst3, zig_vst3_plugin_core, zig_vst3_plugin, gui_options, native_vstgui, entry_symbols_step, vstgui_adapter_step, options);
+        if (options.c_kernel) {
+            const c_kernel_test_step = b.step("test-c-kernel", "Run C Kernel Probe plugin and differential tests");
+            c_kernel_test_step.dependOn(&b.addRunArtifact(example_plugins[index].plugin_tests).step);
+            c_kernel_test_step.dependOn(&b.addRunArtifact(example_plugins[index].core_example_tests).step);
+        }
     }
 
     const gui_lifecycle_step = b.step("test-gui-lifecycle", "Run headless lifecycle stress for every example editor");
@@ -286,6 +300,14 @@ pub fn build(b: *std.Build) void {
     benchmark.root_module.addImport("zig-vst3", zig_vst3);
     benchmark.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
     benchmark.root_module.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
+    const c_kernel_benchmark = b.createModule(.{
+        .root_source_file = b.path("examples/c_kernel_core.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    c_kernel_benchmark.addImport("zig-vst3-plugin", zig_vst3_plugin);
+    addCKernelSources(c_kernel_benchmark, target);
+    benchmark.root_module.addImport("c-kernel-core", c_kernel_benchmark);
     const benchmark_step = b.step("benchmark", "Run local zig-vst3 microbenchmarks");
     benchmark_step.dependOn(&b.addRunArtifact(benchmark).step);
 
@@ -415,6 +437,8 @@ pub fn build(b: *std.Build) void {
 
     const bundle_examples_windows_step = b.step("bundle-examples-windows", "Build Windows VST3 bundles for all example plugins");
     addVst3BundleDependencies(bundle_examples_windows_step, &example_bundle_steps, .windows);
+    const c_kernel_matrix_step = b.step("test-c-kernel-builds", "Build and inspect the C Kernel Probe platform matrix");
+    c_kernel_matrix_step.dependOn(&b.addSystemCommand(&.{"scripts/build_c_kernel_matrix.sh"}).step);
     const validator_step = b.step("validator", "Build Steinberg's VST3 SDK validator");
     const build_validator = b.addSystemCommand(&.{"scripts/build_validator.sh"});
     validator_step.dependOn(&build_validator.step);
@@ -687,6 +711,7 @@ const ExamplePluginOptions = struct {
     root_source_file: []const u8,
     core_example_source_file: []const u8,
     bundle_id: []const u8,
+    c_kernel: bool = false,
 };
 
 const ExamplePluginSteps = struct {
@@ -829,6 +854,7 @@ fn addExamplePlugin(
     if (usesFullPluginModule(options.short_name)) {
         library.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
     }
+    if (options.c_kernel) addCKernelSources(library.root_module, target);
     if (has_reference_editor) library.root_module.addOptions("zig-vst3-gui-options", gui_options);
     if (native_vstgui and has_reference_editor) {
         addVstguiAdapter(library.root_module, target);
@@ -841,11 +867,15 @@ fn addExamplePlugin(
     if (usesFullPluginModule(options.short_name)) {
         plugin_tests.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
     }
+    if (options.c_kernel) addCKernelSources(plugin_tests.root_module, target);
     if (has_reference_editor) plugin_tests.root_module.addOptions("zig-vst3-gui-options", gui_options);
     if (native_vstgui and has_reference_editor) {
         addVstguiAdapter(plugin_tests.root_module, target);
         plugin_tests.step.dependOn(vstgui_adapter_step);
     }
+
+    const core_example_tests = addZigVst3PluginTest(b, target, optimize, zig_vst3_plugin, options.core_example_source_file);
+    if (options.c_kernel) addCKernelSources(core_example_tests.root_module, target);
 
     return .{
         .library = library,
@@ -856,14 +886,42 @@ fn addExamplePlugin(
             .bundle_id = options.bundle_id,
         }),
         .plugin_tests = plugin_tests,
-        .core_example_tests = addZigVst3PluginTest(b, target, optimize, zig_vst3_plugin, options.core_example_source_file),
+        .core_example_tests = core_example_tests,
     };
 }
 
 fn usesFullPluginModule(short_name: []const u8) bool {
     return std.mem.eql(u8, short_name, "resource-swap") or
         std.mem.eql(u8, short_name, "fixed-rate") or
-        std.mem.eql(u8, short_name, "model-shell");
+        std.mem.eql(u8, short_name, "model-shell") or
+        std.mem.eql(u8, short_name, "c-kernel");
+}
+
+fn addCKernelSources(module: *std.Build.Module, target: std.Build.ResolvedTarget) void {
+    const b = module.owner;
+    module.link_libc = true;
+    module.addIncludePath(b.path("examples/c_kernel"));
+    module.addCSourceFile(.{
+        .file = b.path("examples/c_kernel/dense_portable.c"),
+        .flags = if (target.result.os.tag == .windows) &.{"-std=c11"} else &.{ "-std=c11", "-fvisibility=hidden" },
+    });
+    switch (target.result.cpu.arch) {
+        .aarch64 => module.addCSourceFile(.{
+            .file = b.path("examples/c_kernel/dense_neon.c"),
+            .flags = if (target.result.os.tag == .windows)
+                &.{ "-std=c11", "-ffast-math" }
+            else
+                &.{ "-std=c11", "-ffast-math", "-fvisibility=hidden" },
+        }),
+        .x86_64 => module.addCSourceFile(.{
+            .file = b.path("examples/c_kernel/dense_avx2.c"),
+            .flags = if (target.result.os.tag == .windows)
+                &.{ "-std=c11", "-msse3", "-mavx2", "-ffast-math" }
+            else
+                &.{ "-std=c11", "-msse3", "-mavx2", "-ffast-math", "-fvisibility=hidden" },
+        }),
+        else => {},
+    }
 }
 
 fn hasReferenceEditor(short_name: []const u8) bool {

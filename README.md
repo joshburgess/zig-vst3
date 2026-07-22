@@ -147,6 +147,7 @@ See [docs/pluginval.md](docs/pluginval.md) for `PLUGINVAL`, strictness, and head
 - [docs/framework/gui.md](docs/framework/gui.md): toolkit-neutral editor API, VSTGUI adapter, parameter bindings, and telemetry.
 - [docs/framework/resources.md](docs/framework/resources.md): bounded background jobs, immutable resource exchange, off-thread reclamation, persistent references, and missing-file recovery.
 - [docs/framework/dsp.md](docs/framework/dsp.md): bounded resampling, fixed-rate processing, and dynamic latency updates.
+- [docs/framework/c-kernels.md](docs/framework/c-kernels.md): downstream C DSP sources, runtime CPU dispatch, visibility, and ownership rules.
 - [docs/raw-api.md](docs/raw-api.md): raw VST3 API guide.
 - [docs/raw-api-coverage.md](docs/raw-api-coverage.md): raw API coverage map.
 - [docs/pluginval.md](docs/pluginval.md): Tracktion pluginval harness.
