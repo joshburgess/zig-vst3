@@ -66,7 +66,7 @@ A resource whose complete runtime depends on host configuration may declare a co
 
 Call `updatePreparationContext` from a non-real-time lifecycle callback when the host sample rate, maximum block size, or another preparation input changes. Recovery replaces any queued work and prepares the latest linked or in-flight source again. The existing active runtime remains valid until the audio thread adopts the replacement at a block boundary. Callers should avoid submitting an unchanged context because an update intentionally starts a new generation.
 
-The context must own its bounded data by value. Do not put slices or pointers to temporary host callback storage in it. Model parsing, scratch allocation, sample-rate converter construction, and prewarming belong in `prepare`; the published runtime must need only bounded mutation during processing.
+The context must own its bounded data by value. Do not put slices or pointers to temporary host callback storage in it. A pointer to a stable processor-owned mailbox is valid only when `deinit` joins the worker before that mailbox is destroyed. Model parsing, scratch allocation, sample-rate converter construction, and prewarming belong in `prepare`; the published runtime must need only bounded mutation during processing.
 
 ```zig
 pub const PreparationContext = struct {
@@ -98,7 +98,9 @@ A runtime that changes host-visible processing properties may also declare `Conf
 
 `adoptPendingThroughAtBlockBoundary(generation)` leaves newer pending work untouched. A processor can therefore dispatch a host restart outside processing, publish the approved generation through an atomic value, and let the audio thread adopt only through that generation. If dispatch fails, the complete runtime remains pending and the previous active runtime remains owned by the audio thread.
 
-The Model Shell uses publication metadata for host rate, maximum block size, and latency. It approves a prepared model plus SRC runtime only after a required latency notification succeeds. This is the ordering required for dynamically loaded fixed-rate processors.
+An optional `Config.publicationReady(preparation_context, generation, metadata)` hook runs on the preparation worker after publication succeeds and before the job completes. It receives copied values, not the runtime pointer. This lets a stable processor-owned mailbox publish latency and generation atomically without waiting for an editor polling loop. The callback must remain bounded, must not access the transferred runtime, and must tolerate host-request failure without approving the generation.
+
+The Model Shell uses publication metadata for host rate, maximum block size, and latency. Its completion callback approves a prepared model plus SRC runtime only after a required latency notification succeeds. Restoration and loading therefore work without an open editor. This is the ordering required for dynamically loaded fixed-rate processors.
 
 Automatic directory scanning for moved files is intentionally excluded because it is unbounded and ambiguous. A caller supplies a candidate path through `relink`; matching content is recorded with the new path and a `moved` resolution.
 

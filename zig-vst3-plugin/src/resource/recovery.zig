@@ -28,6 +28,7 @@ pub fn Recovery(comptime Config: type) type {
     const PreparationContext = if (has_preparation_context) Config.PreparationContext else void;
     const has_publication_metadata = @hasDecl(Config, "PublicationMetadata");
     const PublicationMetadata = if (has_publication_metadata) Config.PublicationMetadata else void;
+    const has_publication_ready = @hasDecl(Config, "publicationReady");
     const Path = @import("path.zig").BoundedPath(path_capacity);
     const Reference = reference_mod.Reference(path_capacity, metadata_capacity);
     const ReferenceState = reference_mod.State(path_capacity, metadata_capacity);
@@ -42,6 +43,9 @@ pub fn Recovery(comptime Config: type) type {
     }
     if (has_publication_metadata and !@hasDecl(Config, "publicationMetadata")) {
         @compileError("resource recovery publication metadata requires Config.publicationMetadata");
+    }
+    if (has_publication_ready and (!has_preparation_context or !has_publication_metadata)) {
+        @compileError("resource recovery publicationReady requires preparation context and publication metadata");
     }
 
     const Exchange = exchange_mod.Exchange(struct {
@@ -113,6 +117,7 @@ pub fn Recovery(comptime Config: type) type {
             request_path: Path,
             expected: ?Reference,
             prepared: PreparedResource,
+            publication_metadata: PublicationMetadata,
             exchange: *Exchange,
         ) Publication {
             self.lock();
@@ -151,9 +156,7 @@ pub fn Recovery(comptime Config: type) type {
             self.status = .ready;
             self.resolution = resolution;
             self.failure = null;
-            self.publication_metadata = if (has_publication_metadata)
-                Config.publicationMetadata(prepared.resource)
-            else {};
+            self.publication_metadata = publication_metadata;
             return .published;
         }
 
@@ -235,14 +238,26 @@ pub fn Recovery(comptime Config: type) type {
                 request.completion.finishFailure(request.publication_generation, null);
                 return .{ .success = .{ .value = request.publication_generation, .result_units = result_units } };
             }
+            const publication_metadata: PublicationMetadata = if (has_publication_metadata)
+                Config.publicationMetadata(prepared.resource)
+            else {};
             const publication = request.completion.publish(
                 request.publication_generation,
                 request.path,
                 request.expected_reference,
                 prepared,
+                publication_metadata,
                 request.exchange,
             );
-            if (publication != .published) Config.destroy(prepared.resource);
+            if (publication != .published) {
+                Config.destroy(prepared.resource);
+            } else if (has_publication_ready) {
+                Config.publicationReady(
+                    request.preparation_context,
+                    request.publication_generation,
+                    publication_metadata,
+                );
+            }
             return .{ .success = .{ .value = request.publication_generation, .result_units = result_units } };
         }
 
@@ -544,6 +559,10 @@ test "resource recovery republishes linked content for a new preparation context
     const TestResource = struct { value: u32 };
     const TestPrepared = Prepared(TestResource, metadata_limit);
     const TestFailure = enum { missing, malformed };
+    const callbacks = struct {
+        var generation = std.atomic.Value(u64).init(0);
+        var value = std.atomic.Value(u32).init(0);
+    };
     const ContextRecovery = Recovery(struct {
         pub const Resource = TestResource;
         pub const Failure = TestFailure;
@@ -593,6 +612,11 @@ test "resource recovery republishes linked content for a new preparation context
             return resource.value;
         }
 
+        pub fn publicationReady(_: PreparationContext, generation: u64, metadata: PublicationMetadata) void {
+            callbacks.value.store(metadata, .release);
+            callbacks.generation.store(generation, .release);
+        }
+
         pub fn failureStatus(failure: Failure) reference_mod.RecoveryStatus {
             return switch (failure) {
                 .missing => .missing,
@@ -607,11 +631,15 @@ test "resource recovery republishes linked content for a new preparation context
     var path_bytes: [1024]u8 = undefined;
     const path_length = try temporary.dir.realPathFile(std.testing.io, "value.fixture", &path_bytes);
 
+    callbacks.generation.store(0, .release);
+    callbacks.value.store(0, .release);
     var recovery = ContextRecovery.init();
     defer recovery.deinit();
     try std.testing.expect(recovery.importPath(path_bytes[0..path_length]));
     recovery.waitAndPoll();
     const first_generation = recovery.snapshot().generation;
+    try std.testing.expectEqual(first_generation, callbacks.generation.load(.acquire));
+    try std.testing.expectEqual(@as(u32, 7), callbacks.value.load(.acquire));
     try std.testing.expectEqual(@as(?u32, 7), recovery.snapshot().publication_metadata);
     try std.testing.expect(!recovery.adoptPendingThroughAtBlockBoundary(first_generation - 1));
     try std.testing.expect(recovery.active() == null);
@@ -621,6 +649,8 @@ test "resource recovery republishes linked content for a new preparation context
     try std.testing.expect(recovery.updatePreparationContext(.{ .multiplier = 3 }));
     recovery.waitAndPoll();
     const second_generation = recovery.snapshot().generation;
+    try std.testing.expectEqual(second_generation, callbacks.generation.load(.acquire));
+    try std.testing.expectEqual(@as(u32, 21), callbacks.value.load(.acquire));
     try std.testing.expectEqual(@as(?u32, 21), recovery.snapshot().publication_metadata);
     try std.testing.expectEqual(@as(u32, 7), recovery.active().?.value);
     try std.testing.expect(!recovery.adoptPendingThroughAtBlockBoundary(second_generation - 1));

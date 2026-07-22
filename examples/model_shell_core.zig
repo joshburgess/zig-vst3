@@ -27,9 +27,50 @@ pub const LinearModel = struct {
     }
 };
 
+const ApprovalState = struct {
+    host_rate_bits: std.atomic.Value(u64) = std.atomic.Value(u64).init(@bitCast(@as(f64, 48_000))),
+    max_block_size: std.atomic.Value(u32) = std.atomic.Value(u32).init(maximum_host_frames),
+    approved_generation: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    latency_samples: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
+    host_request_address: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
+
+    fn bindHostRequests(self: *ApprovalState, requests: *plug.HostRequestSink) void {
+        self.host_request_address.store(@intFromPtr(requests), .release);
+    }
+
+    fn configure(self: *ApprovalState, host_rate: f64, max_block_size: u32) void {
+        self.host_rate_bits.store(@bitCast(host_rate), .release);
+        self.max_block_size.store(max_block_size, .release);
+        self.approved_generation.store(0, .release);
+        self.latency_samples.store(0, .release);
+    }
+
+    fn approve(self: *ApprovalState, generation: u64, metadata: RuntimePublication) void {
+        if (self.host_rate_bits.load(.acquire) != @as(u64, @bitCast(metadata.host_rate)) or
+            self.max_block_size.load(.acquire) != metadata.max_block_size)
+        {
+            return;
+        }
+        const previous_latency = self.latency_samples.swap(metadata.latency_samples, .acq_rel);
+        if (previous_latency != metadata.latency_samples) {
+            const address = self.host_request_address.load(.acquire);
+            if (address != 0) {
+                const requests: *plug.HostRequestSink = @ptrFromInt(address);
+                requests.markLatencyChanged();
+                if (!requests.dispatchPending()) {
+                    self.latency_samples.store(previous_latency, .release);
+                    return;
+                }
+            }
+        }
+        self.approved_generation.store(generation, .release);
+    }
+};
+
 const HostPreparation = struct {
     host_rate: f64,
     max_block_size: u32,
+    approval: ?*ApprovalState,
 };
 
 const RuntimePublication = struct {
@@ -115,6 +156,7 @@ const ModelRecovery = plug.resource.ResourceRecovery(struct {
     pub const initial_preparation_context: PreparationContext = .{
         .host_rate = 48_000,
         .max_block_size = maximum_host_frames,
+        .approval = null,
     };
     pub const PublicationMetadata = RuntimePublication;
 
@@ -222,6 +264,10 @@ const ModelRecovery = plug.resource.ResourceRecovery(struct {
         };
     }
 
+    pub fn publicationReady(preparation: PreparationContext, generation: u64, metadata: PublicationMetadata) void {
+        if (preparation.approval) |approval| approval.approve(generation, metadata);
+    }
+
     pub fn failureStatus(failure: Failure) plug.resource.RecoveryStatus {
         return switch (failure) {
             .missing => .missing,
@@ -235,19 +281,17 @@ pub const Processor = struct {
     pub const component_state_maximum_encoded_size = ModelRecovery.component_state_maximum_encoded_size;
 
     models: ModelRecovery,
+    approval: ApprovalState,
     preparation: HostPreparation,
-    approved_generation: std.atomic.Value(u64),
-    latency_samples: std.atomic.Value(u32),
-    host_requests: ?*plug.HostRequestSink,
 
     pub fn initInPlace(self: *Processor) void {
         self.* = .{
             .models = ModelRecovery.init(),
-            .preparation = .{ .host_rate = 48_000, .max_block_size = maximum_host_frames },
-            .approved_generation = std.atomic.Value(u64).init(0),
-            .latency_samples = std.atomic.Value(u32).init(0),
-            .host_requests = null,
+            .approval = .{},
+            .preparation = .{ .host_rate = 48_000, .max_block_size = maximum_host_frames, .approval = null },
         };
+        self.preparation.approval = &self.approval;
+        _ = self.models.updatePreparationContext(self.preparation);
     }
 
     pub fn deinit(self: *Processor) void {
@@ -264,31 +308,29 @@ pub const Processor = struct {
 
     pub fn waitForModel(self: *Processor) void {
         self.models.waitAndPoll();
-        _ = self.approvePreparedPublication();
     }
 
     pub fn maintain(self: *Processor) usize {
         self.models.poll();
-        _ = self.approvePreparedPublication();
         return self.models.reclaim();
     }
 
     pub fn bindHostRequests(self: *Processor, requests: *plug.HostRequestSink) void {
-        self.host_requests = requests;
+        self.approval.bindHostRequests(requests);
     }
 
     pub fn prepare(self: *Processor, config: plug.plugin.PrepareConfig) void {
         self.preparation = .{
             .host_rate = config.sample_rate,
             .max_block_size = config.max_block_size,
+            .approval = &self.approval,
         };
-        self.approved_generation.store(0, .release);
-        self.latency_samples.store(0, .release);
+        self.approval.configure(config.sample_rate, config.max_block_size);
         _ = self.models.updatePreparationContext(self.preparation);
     }
 
     pub fn latencySamples(self: *const Processor) u32 {
-        return self.latency_samples.load(.acquire);
+        return self.approval.latency_samples.load(.acquire);
     }
 
     pub fn resourceSnapshot(self: *const Processor) ModelRecovery.Snapshot {
@@ -308,7 +350,7 @@ pub const Processor = struct {
     }
 
     pub fn process(self: *Processor, _: anytype, comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
-        _ = self.models.adoptPendingThroughAtBlockBoundary(self.approved_generation.load(.acquire));
+        _ = self.models.adoptPendingThroughAtBlockBoundary(self.approval.approved_generation.load(.acquire));
         const runtime = self.models.activeMutable();
         for (0..context.outputChannelCount()) |channel| {
             const output = context.outputChannel(channel) orelse continue;
@@ -329,28 +371,6 @@ pub const Processor = struct {
 
     pub fn reset(self: *Processor) void {
         if (self.models.activeMutable()) |runtime| runtime.reset();
-    }
-
-    fn approvePreparedPublication(self: *Processor) bool {
-        const snapshot = self.models.snapshot();
-        if (snapshot.status != .ready) return false;
-        const metadata = snapshot.publication_metadata orelse return false;
-        if (metadata.host_rate != self.preparation.host_rate or metadata.max_block_size != self.preparation.max_block_size) {
-            return false;
-        }
-        if (snapshot.generation == self.approved_generation.load(.acquire)) return true;
-        const previous_latency = self.latency_samples.swap(metadata.latency_samples, .acq_rel);
-        if (previous_latency != metadata.latency_samples) {
-            if (self.host_requests) |requests| {
-                requests.markLatencyChanged();
-                if (!requests.dispatchPending()) {
-                    self.latency_samples.store(previous_latency, .release);
-                    return false;
-                }
-            }
-        }
-        self.approved_generation.store(snapshot.generation, .release);
-        return true;
     }
 };
 
@@ -389,7 +409,7 @@ test "model shell restores asynchronously and stays silent when a resource is mi
     try restored.readComponentState(&state_reader);
     restored.waitForModel();
     try std.testing.expectEqual(plug.resource.RecoveryStatus.ready, restored.resourceSnapshot().status);
-    try std.testing.expectEqual(restored.resourceSnapshot().generation, restored.approved_generation.load(.acquire));
+    try std.testing.expectEqual(restored.resourceSnapshot().generation, restored.approval.approved_generation.load(.acquire));
     try std.testing.expectEqual(@as(?u32, 0), if (restored.resourceSnapshot().publication_metadata) |metadata| metadata.latency_samples else null);
 
     const input = [_]f32{ 0.25, -0.5 };
@@ -568,7 +588,7 @@ test "model shell survives repeated preparation replacement and randomized block
         processor.waitForModel();
         const snapshot = processor.resourceSnapshot();
         try std.testing.expectEqual(plug.resource.RecoveryStatus.ready, snapshot.status);
-        try std.testing.expectEqual(snapshot.generation, processor.approved_generation.load(.acquire));
+        try std.testing.expectEqual(snapshot.generation, processor.approval.approved_generation.load(.acquire));
 
         const frame_count = random.random().intRangeAtMost(usize, 1, max_block_size);
         if (iteration % 2 == 0) {
