@@ -65,6 +65,7 @@ These facilities now cover the reusable plugin-framework side of a NAM editor an
 | Resource persistence | Bounded reference state, stable identity, asynchronous recovery, and relinking implemented | `zig-vst3-plugin` | Complete |
 | Consumer C kernel integration | Public downstream recipe, installed-package test, and portable plus architecture-specific probe implemented | Package build API and DSP library | Complete |
 | CPU dispatch | Per-instance runtime NEON and AVX2 selection with a portable baseline implemented | DSP library | Complete |
+| Activation quality isolation | Automatable per-instance selection is stored on the exclusively owned runtime | Plugin parameters and prepared runtime | Complete |
 | Denormal policy | Scoped process-thread FTZ/DAZ or FZ with exact restoration implemented | `zig-vst3-plugin` or DSP library | Complete |
 | Headless golden rendering | Reusable fixed and randomized block runner with generated C++ WAV references implemented | Framework test tooling and future `zig-nam` tooling | Complete |
 | CLAP export | Out of scope for a VST3 backend | Separate backend or toolkit-neutral plugin shell | Later decision |
@@ -294,6 +295,20 @@ Completion evidence:
 - The scope reads the processor thread's existing MXCSR or FPCR value, changes only the required flush bits, and restores the exact saved value on `leave`. Nested scopes preserve the outer scope, and an already-enabled host policy remains unchanged.
 - Native arm64 tests and x86-64 tests under Rosetta verify scope entry, subnormal result flushing, nesting, and exact restoration. The same module compiles for Linux aarch64/x86-64 and Windows x86-64.
 - Strict C benchmark workloads prevent ReleaseFast constant folding. On the current arm64 macOS machine, a 32-step recurrent silence tail measured 0.3 ns per state update and a 16-tap convolution silence tail measured 2.1 ns per output sample with the scope active. Both remain below their regression budgets.
+
+### Per-instance activation quality
+
+- [x] Replace the reference plugin's process-global quality switch with an automatable per-instance contract.
+- [x] Apply quality changes at a process-block boundary without allocation, locking, or resource rebuilding.
+- [x] Prove that changing one plugin instance cannot affect another instance.
+
+Completion evidence:
+
+- The Model Shell exposes a reflected `Fast Activation` boolean parameter. The VST3 shell applies host parameter changes before calling the processor.
+- Each adopted `PreparedRuntime` owns its `ActivationQuality`. The audio thread updates that field only after exclusive block-boundary adoption, so no global mutable quality state exists.
+- A deterministic two-instance test loads the same model into both processors, selects different quality modes, and verifies independent runtime state before and after changing one instance.
+- The Model Shell passes all 47 Steinberg validator tests with automated parameter changes in both sample formats.
+- The aggregate suite passes 4,096 tests. Raw ABI checks and Linux aarch64 and Windows x86-64 example bundle matrices also pass.
 
 ### Headless DSP fixture runner
 

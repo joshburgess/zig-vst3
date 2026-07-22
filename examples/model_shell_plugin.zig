@@ -8,7 +8,7 @@ const vst = vst3.pluginterfaces.vst;
 const types = base.types;
 
 pub const Spec = core.plugin.PluginSpec(support.ModelShell);
-const model_parameter_set = Spec.ParameterSet.init(.{});
+const model_parameter_set = support.parameter_set;
 
 pub const component_cid = vst3.tuid.inlineUid(0xCA8B884C, 0xBE224DA2, 0x9113CA6D, 0x993D0E41);
 pub const model_shell_controller_cid = vst3.tuid.inlineUid(0x6EAC0BC1, 0x0B7747EC, 0x9588BFDD, 0x4CE008AD);
