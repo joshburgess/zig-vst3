@@ -11,7 +11,7 @@ The audit used `nam-rs` commit `26cd9412567d397d8af395977732659100d9b26b` on its
 A Zig NAM implementation should have three layers:
 
 1. `zig-vst3` owns VST3 ABI behavior, host negotiation, bus layouts, latency reporting, restart requests, and platform integration.
-2. `zig-vst3-plugin` owns safe plugin-authoring patterns: parameters, state, background resource jobs, immutable resource publication, real-time-safe reclamation, resampling, and reusable model-loader UI.
+2. `zig-vst3-plugin` owns safe plugin-authoring patterns: parameters, state, background resource jobs, prepared resource publication, exclusive mutable runtime adoption, real-time-safe reclamation, resampling, and reusable model-loader UI.
 3. A separate `zig-nam` library owns the `.nam` format, model validation, tensors, inference graphs, neural layers, optimized kernels, reference fixtures, and headless processing API.
 
 The third layer must not import VST3 or GUI code. It should be usable by a command-line renderer, tests, benchmarks, and other plugin formats.
@@ -56,6 +56,7 @@ These facilities now cover the reusable plugin-framework side of a NAM editor an
 | --- | --- | --- | --- |
 | Configurable audio layouts | Mono, stereo, absent, and mixed main-bus layouts are public and validated | `zig-vst3` and `zig-vst3-plugin` | Complete |
 | Immutable model publication | Fixed-capacity immutable resource exchange implemented and validated | `zig-vst3-plugin` | Complete |
+| Mutable inference runtime | Opt-in exclusive audio-thread mutation after block-boundary adoption implemented and validated | `zig-vst3-plugin` | Complete |
 | Deferred destruction | Replaced resources retire on audio and are reclaimed off-thread | `zig-vst3-plugin` | Complete |
 | Generic background resource jobs | Bounded replaceable jobs implemented and used by the audio importer | `zig-vst3-plugin` | Complete |
 | Streaming sample-rate conversion | Bounded streaming SRC and fixed-rate round-trip pipeline implemented and validated | Reusable DSP package, surfaced through `zig-vst3-plugin` | Complete |
@@ -112,10 +113,11 @@ Completion evidence:
 - The existing WAV and AIFF importer now uses the shared job lifecycle while retaining its detailed format and recovery states.
 - The Resource Swap processor starts a job during component initialization and does not depend on an open editor.
 
-### 3. Immutable resource exchange and reclamation
+### 3. Resource exchange and reclamation
 
 - [x] Design a single-writer publication primitive for heap-owned immutable resources.
 - [x] Let the audio thread adopt a complete model at a block boundary without a mutex.
+- [x] Support exclusive mutation of adopted recurrent or convolution runtime state without exposing it to control threads.
 - [x] Return replaced resources to a non-real-time reclaimer without reference-count destruction on the audio thread.
 - [x] Define behavior when publication slots are full, a model is replaced repeatedly, or processing stops during a swap.
 - [x] Make ownership, memory ordering, and maximum outstanding resources explicit in the API.
@@ -129,10 +131,11 @@ Exit criteria:
 Completion evidence:
 
 - `resource.exchange.Exchange` uses fixed publication slots, strictly increasing generations, single-writer publication, block-boundary adoption, and explicit off-thread reclamation.
-- Tests cover publication, adoption, pending replacement, stale generations, full capacity, processing stop, destruction, real-time auditing, and 1,000 concurrent replacements.
+- Immutable access remains the default. `Config.mutable_active = true` enables exclusive audio-thread mutation after adoption. Successful publication transfers ownership, and the pointer expires when the audio thread replaces or retires that generation at a block boundary.
+- Tests cover publication, immutable and mutable adoption, pending replacement, stale generations, full capacity, processing stop, destruction, real-time auditing, and 1,000 concurrent replacements.
 - `docs/framework/resources.md` specifies pointer ownership, release and acquire ordering, slot limits, failure ownership, and shutdown order.
-- The mono Resource Swap probe adopts an immutable prepared graph during processing and passes all 47 Steinberg validator tests in both sample formats.
-- The aggregate deterministic suite passed 3,976/3,976 tests. Raw ABI checks, native adapter sanitizers, all 16 Steinberg validators, and the 13-test resource thread-sanitizer target passed.
+- The mono Resource Swap probe adopts an immutable prepared graph. The Model Shell publishes a prewarmed stateful runtime, preserves its recurrence across blocks, resets it without allocation or locking, and reclaims replaced runtimes off-thread.
+- The deterministic suite, raw ABI checks, installed-package consumer, and 24-test resource thread-sanitizer target pass. The stateful Model Shell passes all 47 Steinberg validator tests in both sample formats and cross-builds for Linux aarch64 and Windows x86-64.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 50/50 build steps, including the Resource Swap bundle. Native Windows and Linux host execution remains unavailable.
 
 ### 4. Bounded streaming sample-rate conversion

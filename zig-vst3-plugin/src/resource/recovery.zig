@@ -23,6 +23,7 @@ pub fn Recovery(comptime Config: type) type {
     const path_capacity: usize = Config.path_capacity;
     const metadata_capacity: usize = Config.metadata_capacity;
     const FailureType = Config.Failure;
+    const allow_mutable_active: bool = if (@hasDecl(Config, "mutable_active")) Config.mutable_active else false;
     const Path = @import("path.zig").BoundedPath(path_capacity);
     const Reference = reference_mod.Reference(path_capacity, metadata_capacity);
     const ReferenceState = reference_mod.State(path_capacity, metadata_capacity);
@@ -36,6 +37,7 @@ pub fn Recovery(comptime Config: type) type {
     const Exchange = exchange_mod.Exchange(struct {
         pub const Resource = ResourceType;
         pub const slot_capacity = Config.slot_capacity;
+        pub const mutable_active = allow_mutable_active;
 
         pub fn destroy(resource: *ResourceType) void {
             Config.destroy(resource);
@@ -323,6 +325,12 @@ pub fn Recovery(comptime Config: type) type {
 
         pub fn active(self: *const Self) ?*const ResourceType {
             const active_resource = self.exchange.active() orelse return null;
+            return active_resource.resource;
+        }
+
+        pub fn activeMutable(self: *Self) ?*ResourceType {
+            if (!allow_mutable_active) @compileError("mutable recovery resources require Config.mutable_active = true");
+            const active_resource = self.exchange.activeMutable() orelse return null;
             return active_resource.resource;
         }
 

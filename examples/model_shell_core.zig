@@ -8,6 +8,21 @@ const maximum_metadata_bytes = 96;
 pub const LinearModel = struct {
     gain: f32,
     sample_rate: u32,
+    state: f64,
+
+    fn processSample(self: *LinearModel, comptime Sample: type, sample: Sample) Sample {
+        self.state = 0.5 * self.state + 0.5 * @as(f64, @floatCast(sample));
+        return @floatCast(@as(f64, self.gain) * self.state);
+    }
+
+    fn reset(self: *LinearModel) void {
+        self.state = 0.0;
+    }
+
+    fn prewarm(self: *LinearModel) void {
+        for (0..64) |index| _ = self.processSample(f64, if (index == 0) 1.0 else 0.0);
+        self.reset();
+    }
 };
 
 pub const LoadFailure = enum {
@@ -30,6 +45,7 @@ const ModelRecovery = plug.resource.ResourceRecovery(struct {
     pub const maximum_work_units = maximum_model_bytes;
     pub const maximum_result_units = 1;
     pub const maximum_runtime_nanoseconds = 5 * std.time.ns_per_s;
+    pub const mutable_active = true;
 
     pub fn prepare(path: ModelPath, context: *plug.resource.job.WorkerContext) plug.resource.job.Outcome(PreparedModel, Failure) {
         const file = std.Io.Dir.cwd().openFile(context.io, path.slice(), .{}) catch return .{ .failure = .missing };
@@ -59,7 +75,9 @@ const ModelRecovery = plug.resource.ResourceRecovery(struct {
         model.* = .{
             .gain = parsed.value.gain,
             .sample_rate = parsed.value.sample_rate,
+            .state = 0.0,
         };
+        model.prewarm();
         var metadata_bytes: [maximum_metadata_bytes]u8 = undefined;
         const metadata = std.fmt.bufPrint(&metadata_bytes, "Linear, {} Hz, gain {d:.3}", .{
             parsed.value.sample_rate,
@@ -143,7 +161,7 @@ pub const Processor = struct {
 
     pub fn process(self: *Processor, _: anytype, comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
         _ = self.models.adoptPendingAtBlockBoundary();
-        const model = self.models.active();
+        const model = self.models.activeMutable();
         for (0..context.outputChannelCount()) |channel| {
             const output = context.outputChannel(channel) orelse continue;
             if (model == null) {
@@ -154,9 +172,12 @@ pub const Processor = struct {
                 @memset(output, 0);
                 continue;
             };
-            const gain: Sample = @floatCast(model.?.gain);
-            for (input, output) |sample, *destination| destination.* = sample * gain;
+            for (input, output) |sample, *destination| destination.* = model.?.processSample(Sample, sample);
         }
+    }
+
+    pub fn reset(self: *Processor) void {
+        if (self.models.activeMutable()) |model| model.reset();
     }
 };
 
@@ -201,8 +222,18 @@ test "model shell restores asynchronously and stays silent when a resource is mi
     const inputs = [_][]const f32{&input};
     const outputs = [_][]f32{&output};
     var context = try plug.process.ProcessContext(f32).init(48_000, &inputs, &outputs);
+    const realtime_scope = plug.realtime_audit.Scope.enter();
     restored.process(undefined, f32, &context);
-    try std.testing.expectEqualSlices(f32, &.{ 0.5, -1.0 }, &output);
+    const first_output = output;
+    restored.process(undefined, f32, &context);
+    const continued_output = output;
+    restored.reset();
+    restored.process(undefined, f32, &context);
+    const reset_output = output;
+    try std.testing.expect(realtime_scope.leave().clean());
+    try std.testing.expectEqualSlices(f32, &.{ 0.25, -0.375 }, &first_output);
+    try std.testing.expectEqualSlices(f32, &.{ 0.0625, -0.46875 }, &continued_output);
+    try std.testing.expectEqualSlices(f32, &.{ 0.25, -0.375 }, &reset_output);
 
     try temporary.dir.deleteFile(std.testing.io, "linear.json");
     var missing: Processor = undefined;

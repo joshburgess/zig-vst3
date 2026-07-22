@@ -10,6 +10,7 @@ pub const PublishError = error{
 pub fn Exchange(comptime Config: type) type {
     const Resource = Config.Resource;
     const slot_capacity: usize = Config.slot_capacity;
+    const mutable_active: bool = if (@hasDecl(Config, "mutable_active")) Config.mutable_active else false;
     if (slot_capacity == 0 or slot_capacity > std.math.maxInt(u8)) {
         @compileError("resource exchange slot capacity must fit in a nonzero u8");
     }
@@ -35,6 +36,11 @@ pub fn Exchange(comptime Config: type) type {
         pub const View = struct {
             generation: u64,
             resource: *const Resource,
+        };
+
+        pub const MutableView = struct {
+            generation: u64,
+            resource: *Resource,
         };
 
         slots: [slot_capacity]Slot = [_]Slot{.{}} ** slot_capacity,
@@ -87,6 +93,17 @@ pub fn Exchange(comptime Config: type) type {
             const slot = &self.slots[self.active_slot];
             if (slot.state.load(.acquire) != @intFromEnum(SlotState.active)) return null;
             return view(slot);
+        }
+
+        pub fn activeMutable(self: *Self) ?MutableView {
+            if (!mutable_active) @compileError("mutable active resources require Config.mutable_active = true");
+            if (self.active_slot == no_slot) return null;
+            const slot = &self.slots[self.active_slot];
+            if (slot.state.load(.acquire) != @intFromEnum(SlotState.active)) return null;
+            return .{
+                .generation = slot.generation,
+                .resource = slot.resource orelse return null,
+            };
         }
 
         pub fn retireActiveAtBlockBoundary(self: *Self) bool {
@@ -286,6 +303,41 @@ test "resource exchange audio operations are lock free and allocation free" {
     try std.testing.expect(report.clean());
     try std.testing.expectEqual(@as(u32, 2), report.count(.resource_adoption));
     try std.testing.expectEqual(@as(usize, 1), exchange.reclaim());
+}
+
+test "resource exchange transfers exclusive mutable runtime state" {
+    const Runtime = struct { state: f32 };
+    const RuntimeExchange = Exchange(struct {
+        pub const Resource = Runtime;
+        pub const slot_capacity = 2;
+        pub const mutable_active = true;
+
+        pub fn destroy(resource: *Runtime) void {
+            std.heap.page_allocator.destroy(resource);
+        }
+    });
+
+    var exchange: RuntimeExchange = .{};
+    defer exchange.deinit();
+    const runtime = try std.heap.page_allocator.create(Runtime);
+    runtime.* = .{ .state = 0.0 };
+    try exchange.publish(1, runtime);
+
+    const first_scope = realtime_audit.Scope.enter();
+    _ = exchange.adoptPending();
+    exchange.activeMutable().?.resource.state = 0.75;
+    try std.testing.expectEqual(@as(f32, 0.75), exchange.activeMutable().?.resource.state);
+    try std.testing.expect(first_scope.leave().clean());
+
+    const replacement = try std.heap.page_allocator.create(Runtime);
+    replacement.* = .{ .state = 0.25 };
+    try exchange.publish(2, replacement);
+    const replacement_scope = realtime_audit.Scope.enter();
+    try std.testing.expectEqual(@as(u64, 2), exchange.adoptPending().?.generation);
+    try std.testing.expectEqual(@as(f32, 0.25), exchange.activeMutable().?.resource.state);
+    try std.testing.expect(exchange.retireActiveAtBlockBoundary());
+    try std.testing.expect(replacement_scope.leave().clean());
+    try std.testing.expectEqual(@as(usize, 2), exchange.reclaim());
 }
 
 test "resource exchange remains bounded during concurrent replacement" {

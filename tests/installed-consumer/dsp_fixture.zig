@@ -11,6 +11,17 @@ const GainModel = struct {
     }
 };
 
+const Runtime = struct { state: f32 };
+const RuntimeExchange = plugin.resource.exchange.Exchange(struct {
+    pub const Resource = Runtime;
+    pub const slot_capacity = 2;
+    pub const mutable_active = true;
+
+    pub fn destroy(runtime: *Runtime) void {
+        std.testing.allocator.destroy(runtime);
+    }
+});
+
 test "installed package exposes DSP fixture rendering and comparison" {
     const input = [_]f32{ -1.0, -0.5, 0.0, 0.5, 1.0 };
     const expected = [_]f32{ -0.25, -0.125, 0.0, 0.125, 0.25 };
@@ -25,4 +36,16 @@ test "installed package exposes DSP fixture rendering and comparison" {
         .maximum_rms = 0.0,
     });
     try std.testing.expect(comparison.passed);
+}
+
+test "installed package exposes exclusive mutable runtime adoption" {
+    var exchange: RuntimeExchange = .{};
+    defer exchange.deinit();
+    const runtime = try std.testing.allocator.create(Runtime);
+    runtime.* = .{ .state = 0.0 };
+    try exchange.publish(1, runtime);
+    _ = exchange.adoptPending();
+    exchange.activeMutable().?.resource.state = 0.5;
+    try std.testing.expectEqual(@as(f32, 0.5), exchange.activeMutable().?.resource.state);
+    try std.testing.expect(exchange.retireActiveAtBlockBoundary());
 }

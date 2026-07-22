@@ -1,6 +1,6 @@
 # Background Resources
 
-`zig-vst3-plugin.resource` provides bounded preparation, persistent references, recovery, and lock-free publication for immutable DSP resources. It is intended for model graphs, impulse responses, wavetables, and similar data that must be prepared away from the audio thread.
+`zig-vst3-plugin.resource` provides bounded preparation, persistent references, recovery, and lock-free publication for DSP resources. Immutable data is the default. An opt-in ownership path supports mutable per-instance runtimes such as recurrent models.
 
 The Resource Swap example exercises direct preparation and publication. The Model Shell exercises persistent references, asynchronous restoration, changed-file rejection, missing-file recovery, and relinking without an editor.
 
@@ -47,7 +47,7 @@ Jobs may start during component initialization. An editor is not required. Call 
 
 ## Recovery
 
-`resource.ResourceRecovery(Config)` combines a resource job, persistent reference, immutable exchange, and synchronized status snapshot. `Config` supplies the resource type, bounds, preparation function, destructor, and failure classification.
+`resource.ResourceRecovery(Config)` combines a resource job, persistent reference, resource exchange, and synchronized status snapshot. `Config` supplies the resource type, bounds, preparation function, destructor, and failure classification.
 
 The main entry points are:
 
@@ -78,7 +78,7 @@ pub fn readComponentState(self: *Processor, reader: anytype) !void {
 
 The VST3 shell wraps parameter and processor state in a bounded versioned envelope. Controllers read the parameter section and ignore processor-private bytes. Older parameter-only component state remains supported.
 
-## Immutable exchange
+## Resource exchange
 
 `resource.exchange.Exchange(Config)` transfers heap-owned immutable resources from one control-side writer to the audio thread. `Config` declares `Resource`, `slot_capacity`, and `destroy`.
 
@@ -96,6 +96,32 @@ The writer stores a completed pointer before publishing the slot with release or
 
 `adoptPending`, `active`, and `retireActiveAtBlockBoundary` do not allocate, lock, destroy resources, access files, or call the host. `publish`, `reclaim`, and `deinit` are non-real-time operations.
 
+### Mutable runtimes
+
+Set `Config.mutable_active = true` when processing must update per-instance state inside a prepared runtime. `activeMutable` then returns the exclusively adopted pointer:
+
+```zig
+const RuntimeExchange = plug.resource.exchange.Exchange(struct {
+    pub const Resource = ModelRuntime;
+    pub const slot_capacity = 4;
+    pub const mutable_active = true;
+
+    pub fn destroy(runtime: *ModelRuntime) void {
+        allocator.destroy(runtime);
+    }
+});
+```
+
+The ownership rules are stricter than ordinary shared immutable data:
+
+- A successful `publish` transfers ownership. The publishing thread must not retain or access the runtime.
+- Only the audio thread may call `adoptPending`, `activeMutable`, or `retireActiveAtBlockBoundary` while processing is live.
+- The mutable pointer is valid until that audio thread replaces or retires it at a later block boundary. Do not cache it past that boundary.
+- Construction, allocation, model prewarming, and destruction stay off the audio thread. A runtime reset method may run on the audio thread only when it is bounded, allocation-free, and lock-free.
+- UI and control threads read synchronized status or immutable metadata. They must not inspect mutable inference state while processing.
+
+`ResourceRecovery` exposes the same opt-in path through `Config.mutable_active = true` and `activeMutable`. Its persistence format still stores only the bounded resource reference.
+
 ## Shutdown order
 
 Use this order when a processor owns both a job and an exchange:
@@ -112,7 +138,7 @@ Do not call `retireAllAfterProcessingStops` while the audio thread can still rea
 
 `examples/resource_swap_core.zig` prepares a bounded dummy graph in the background, publishes it through a four-slot exchange, adopts it at a mono process block boundary, and reclaims the replaced graph off-thread. Its processor starts preparation during initialization and has no editor dependency.
 
-`examples/model_shell_core.zig` loads a bounded versioned JSON linear model. It persists only the path, identity, schema version, and metadata summary. Tests cover state restoration without an editor, safe silence for a missing resource, changed-content rejection, and matching-content relinking.
+`examples/model_shell_core.zig` loads and prewarms a bounded versioned JSON linear runtime. It persists only the path, identity, schema version, and metadata summary. Its stateful recurrence proves mutable block-to-block state and real-time reset after exclusive adoption. Tests also cover restoration without an editor, safe silence for a missing resource, changed-content rejection, and matching-content relinking.
 
 Validation commands:
 
