@@ -372,3 +372,11 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The malformed-item recovery regression covers both incomplete markers, both valid SDK group constants, and an ordinary item after the rejected inputs.
 - The complete deterministic gate passed 82/82 steps and 3,912/3,912 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 92.1 us for the aggregate scene and 46.01 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Plug View Resize Rectangles
+
+- The reusable `IPlugView` boundary now rejects zero-sized, inverted, and coordinate-overflowing rectangles before editor callbacks or host resize requests. Delegated size and constraint hooks that return malformed geometry are rejected without changing the caller rectangle or accepted view size.
+- The VSTGUI constraint adapter uses checked coordinate reconstruction after clamping, so valid dimensions combined with extreme origins cannot overflow signed rectangle coordinates.
+- Direct regressions prove malformed host input never reaches plugin configuration or the plug frame, accepted geometry remains unchanged, and malformed delegated output is restored transactionally.
+- The complete deterministic gate passed 82/82 steps and 3,926/3,926 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 98.3 us for the aggregate scene and 54.97 ms for a complete Sample Player editor lifecycle.

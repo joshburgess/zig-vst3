@@ -952,8 +952,10 @@ const View = vst_plug_view.PlugView(1, struct {
         const minimum_height = scaledDimension(state.minimum_height, state.content_scale) orelse return types.kResultFalse;
         const maximum_width = scaledDimension(state.maximum_width, state.content_scale) orelse return types.kResultFalse;
         const maximum_height = scaledDimension(state.maximum_height, state.content_scale) orelse return types.kResultFalse;
-        rect.right = rect.left + std.math.clamp(rect.right - rect.left, minimum_width, maximum_width);
-        rect.bottom = rect.top + std.math.clamp(rect.bottom - rect.top, minimum_height, maximum_height);
+        const width = std.math.clamp(rect.right - rect.left, minimum_width, maximum_width);
+        const height = std.math.clamp(rect.bottom - rect.top, minimum_height, maximum_height);
+        rect.right = std.math.cast(types.int32, @as(i64, rect.left) + width) orelse return types.kInvalidArgument;
+        rect.bottom = std.math.cast(types.int32, @as(i64, rect.top) + height) orelse return types.kInvalidArgument;
         return types.kResultOk;
     }
 

@@ -7,6 +7,13 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_index = @import("vst_index.zig");
 
+fn validViewRect(rect: iplugview.ViewRect) bool {
+    const width = @as(i64, rect.right) - @as(i64, rect.left);
+    const height = @as(i64, rect.bottom) - @as(i64, rect.top);
+    return width > 0 and width <= std.math.maxInt(types.int32) and
+        height > 0 and height <= std.math.maxInt(types.int32);
+}
+
 pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
     if (max_platforms == 0) @compileError("PlugView requires at least one platform slot");
     vst_index.requireUint32Capacity(max_platforms, "PlugView platform capacity");
@@ -230,9 +237,18 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         }
 
         fn onSize(ptr: *anyopaque, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
+            const requested = rect.*;
+            if (!validViewRect(requested)) return types.kInvalidArgument;
             if (@hasDecl(Config, "onSize")) {
                 const result = Config.onSize(owner(ptr), rect);
-                if (result != types.kResultOk) return result;
+                if (result != types.kResultOk) {
+                    rect.* = requested;
+                    return result;
+                }
+            }
+            if (!validViewRect(rect.*)) {
+                rect.* = requested;
+                return types.kInvalidArgument;
             }
             owner(ptr).acceptSize(rect);
             return types.kResultOk;
@@ -264,7 +280,19 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
         }
 
         fn checkSizeConstraint(ptr: *anyopaque, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
-            if (@hasDecl(Config, "checkSizeConstraint")) return Config.checkSizeConstraint(owner(ptr), rect);
+            const requested = rect.*;
+            if (!validViewRect(requested)) return types.kInvalidArgument;
+            if (@hasDecl(Config, "checkSizeConstraint")) {
+                const result = Config.checkSizeConstraint(owner(ptr), rect);
+                if (result != types.kResultOk) {
+                    rect.* = requested;
+                    return result;
+                }
+            }
+            if (!validViewRect(rect.*)) {
+                rect.* = requested;
+                return types.kInvalidArgument;
+            }
             return types.kResultOk;
         }
 
@@ -496,6 +524,77 @@ test "plug view delegates size constraints and query interface" {
     try std.testing.expectEqual(@as(types.uint32, 2), view.ref_count.load(.seq_cst));
     const queried_unknown: *iplugview.IPlugView = @ptrCast(@alignCast(queried.?));
     try std.testing.expectEqual(@as(types.uint32, 1), queried_unknown.vtable.release(queried_unknown));
+}
+
+test "plug view rejects malformed resize rectangles before delegation" {
+    const Frame = @import("vst_plug_frame.zig").PlugFrame(struct {});
+    const Config = struct {
+        var size_calls: usize = 0;
+        var constraint_calls: usize = 0;
+
+        pub fn onSize(_: anytype, _: *iplugview.ViewRect) types.tresult {
+            size_calls += 1;
+            return types.kResultOk;
+        }
+
+        pub fn checkSizeConstraint(_: anytype, _: *iplugview.ViewRect) types.tresult {
+            constraint_calls += 1;
+            return types.kResultOk;
+        }
+    };
+    const View = PlugView(1, Config);
+    var frame = Frame{};
+    var view = View{};
+    const iface = view.asInterface();
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.setFrame(iface, frame.asInterface()));
+    const accepted = view.rect;
+    const malformed = [_]iplugview.ViewRect{
+        .{ .left = 10, .top = 0, .right = 10, .bottom = 100 },
+        .{ .left = 20, .top = 0, .right = 10, .bottom = 100 },
+        .{ .left = std.math.minInt(types.int32), .top = 0, .right = std.math.maxInt(types.int32), .bottom = 100 },
+    };
+
+    for (malformed) |input| {
+        var rect = input;
+        try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.onSize(iface, &rect));
+        try std.testing.expectEqual(input, rect);
+        try std.testing.expectEqual(accepted, view.rect);
+
+        try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.checkSizeConstraint(iface, &rect));
+        try std.testing.expectEqual(input, rect);
+        try std.testing.expectEqual(types.kInvalidArgument, view.requestResize(input));
+    }
+    try std.testing.expectEqual(@as(usize, 0), Config.size_calls);
+    try std.testing.expectEqual(@as(usize, 0), Config.constraint_calls);
+    try std.testing.expectEqual(@as(types.uint32, 0), frame.resize_count);
+}
+
+test "plug view rejects malformed rectangles produced by delegated hooks" {
+    const Config = struct {
+        pub fn onSize(_: anytype, rect: *iplugview.ViewRect) types.tresult {
+            rect.right = rect.left;
+            return types.kResultOk;
+        }
+
+        pub fn checkSizeConstraint(_: anytype, rect: *iplugview.ViewRect) types.tresult {
+            rect.bottom = rect.top - 1;
+            return types.kResultOk;
+        }
+    };
+    const View = PlugView(1, Config);
+    var view = View{};
+    const iface = view.asInterface();
+    const accepted = view.rect;
+    const requested = iplugview.ViewRect{ .left = 10, .top = 20, .right = 650, .bottom = 500 };
+
+    var size = requested;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.onSize(iface, &size));
+    try std.testing.expectEqual(requested, size);
+    try std.testing.expectEqual(accepted, view.rect);
+
+    var constrained = requested;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.checkSizeConstraint(iface, &constrained));
+    try std.testing.expectEqual(requested, constrained);
 }
 
 test "plug view clears unsupported query output" {
