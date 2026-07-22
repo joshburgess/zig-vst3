@@ -358,3 +358,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - A direct lifecycle regression covers two targets, item removal, storage reuse, final release, balanced target counts, and empty post-release storage.
 - The complete deterministic gate passed 82/82 steps and 3,911/3,911 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 86.6 us for the aggregate scene and 45.99 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Context Menu Item Validation
+
+- Context-menu storage now rejects unknown flag bits and fixed UTF-16 names without a terminator before retaining a target or mutating item storage. Removal rejects the same malformed payloads.
+- A recovery regression verifies rejected additions preserve item and reference counts, rejected removal preserves a valid stored item, and a later valid removal balances the target reference.
+- The complete deterministic gate passed 82/82 steps and 3,912/3,912 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 95.6 us for the aggregate scene and 46.87 ms for a complete Sample Player editor lifecycle.

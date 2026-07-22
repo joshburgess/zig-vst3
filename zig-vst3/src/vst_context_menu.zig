@@ -8,6 +8,17 @@ const types = @import("pluginterfaces/base/types.zig");
 const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const vst_index = @import("vst_index.zig");
 
+fn menuItemIsValid(item: *const ivstcontextmenu.IContextMenuItem) bool {
+    const known_flags = ivstcontextmenu.IContextMenuItem.Flags.kIsSeparator |
+        ivstcontextmenu.IContextMenuItem.Flags.kIsDisabled |
+        ivstcontextmenu.IContextMenuItem.Flags.kIsChecked |
+        ivstcontextmenu.IContextMenuItem.Flags.kIsGroupStart |
+        ivstcontextmenu.IContextMenuItem.Flags.kIsGroupEnd;
+    return item.flags >= 0 and
+        item.flags & ~known_flags == 0 and
+        std.mem.indexOfScalar(vsttypes.TChar, &item.name, 0) != null;
+}
+
 pub fn ContextMenuTarget(comptime Config: type) type {
     return extern struct {
         const Self = @This();
@@ -182,6 +193,7 @@ pub fn ContextMenu(comptime max_items: usize) type {
         }
 
         fn addItem(ptr: *anyopaque, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
+            if (!menuItemIsValid(item)) return types.kInvalidArgument;
             _ = owner(ptr).appendItem(item, target) orelse return types.kResultFalse;
             return types.kResultOk;
         }
@@ -200,6 +212,7 @@ pub fn ContextMenu(comptime max_items: usize) type {
         }
 
         fn removeItem(ptr: *anyopaque, item: *const ivstcontextmenu.IContextMenuItem, target: ?*ivstcontextmenu.IContextMenuTarget) callconv(.c) types.tresult {
+            if (!menuItemIsValid(item)) return types.kInvalidArgument;
             const entry = owner(ptr).matchingItem(item, target) orelse return types.kResultFalse;
             entry.clear();
             return types.kResultOk;
@@ -313,6 +326,30 @@ test "context menu final release relinquishes stored targets" {
     try std.testing.expectEqual(@as(types.uint32, 1), first_target.ref_count.load(.monotonic));
     try std.testing.expectEqual(@as(types.uint32, 1), second_target.ref_count.load(.monotonic));
     try std.testing.expectEqual(@as(usize, 0), menu.occupiedCount());
+}
+
+test "context menu rejects malformed item payloads without retaining targets" {
+    const Menu = ContextMenu(2);
+    const Target = ContextMenuTarget(struct {});
+    var menu = Menu{};
+    var target = Target{};
+    const iface = menu.asInterface();
+    var unknown_flags = ivstcontextmenu.IContextMenuItem{ .tag = 10, .flags = 1 << 5 };
+    var unterminated_name = ivstcontextmenu.IContextMenuItem{ .tag = 20 };
+    unterminated_name.name = [_]vsttypes.TChar{'x'} ** unterminated_name.name.len;
+
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.addItem(iface, &unknown_flags, target.asInterface()));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.addItem(iface, &unterminated_name, target.asInterface()));
+    try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getItemCount(iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), target.ref_count.load(.monotonic));
+
+    var valid = ivstcontextmenu.IContextMenuItem{ .tag = 30 };
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &valid, target.asInterface()));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.removeItem(iface, &unknown_flags, target.asInterface()));
+    try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getItemCount(iface));
+    try std.testing.expectEqual(@as(types.uint32, 2), target.ref_count.load(.monotonic));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.removeItem(iface, &valid, target.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 1), target.ref_count.load(.monotonic));
 }
 
 test "context menu clears failed item lookups and rejects full storage" {
