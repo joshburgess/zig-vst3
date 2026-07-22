@@ -13,7 +13,7 @@ Near-term work should stay focused on finishing release confidence before adding
 - Keep host smoke results in `docs/host-matrix.md`.
 - Keep public API docs synchronized with framework changes.
 
-The [Zig NAM readiness plan](nam-zig-readiness-plan.md) uses a neural amp modeler as a production workload for the next framework phase. Configurable bus layouts, background resource jobs, immutable exchange, deferred reclamation, fixed-rate conversion, latency notification, resource persistence, and missing-file recovery are implemented. C kernel integration, CPU dispatch, denormal policy, and headless model parity tooling remain. The NAM format and inference engine belong in a separate library.
+The [Zig NAM readiness plan](nam-zig-readiness-plan.md) uses a neural amp modeler as a production workload for the next framework phase. Configurable bus layouts, background resource jobs, immutable exchange, deferred reclamation, fixed-rate conversion, latency notification, resource persistence, C kernel integration, CPU dispatch, and scoped denormal control are implemented. Headless model parity tooling remains. The NAM format and inference engine belong in a separate library.
 
 ## Validation Tiers
 

@@ -43,6 +43,7 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(realtime_audit, "Scope"));
     try std.testing.expect(@hasDecl(parameters, "LogFloatParam"));
     try std.testing.expect(@hasDecl(dsp, "SmoothedBiquad"));
+    try std.testing.expect(@hasDecl(dsp, "DenormalScope"));
     try std.testing.expect(@hasDecl(dsp, "StreamingResampler"));
     try std.testing.expect(@hasDecl(dsp, "FixedRatePipeline"));
     try std.testing.expect(@hasDecl(resource.job, "Job"));

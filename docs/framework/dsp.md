@@ -1,6 +1,25 @@
 # DSP Utilities
 
-`zig-vst3-plugin.dsp` provides bounded processing utilities that can run inside a plugin audio callback. The current public surface includes smoothed biquads, streaming sample-rate conversion, and a two-stage fixed-rate processing pipeline.
+`zig-vst3-plugin.dsp` provides bounded processing utilities that can run inside a plugin audio callback. The current public surface includes scoped denormal control, smoothed biquads, streaming sample-rate conversion, and a two-stage fixed-rate processing pipeline.
+
+## Denormal handling
+
+`DenormalScope` enables flush-to-zero behavior for the current thread on aarch64 and x86-64, then restores the exact floating-point control state it observed. On x86-64 it enables both FTZ and DAZ in MXCSR. On aarch64 it enables FZ in FPCR.
+
+```zig
+const plug = @import("zig-vst3-plugin");
+
+pub fn process(self: *Processor, context: *plug.process.ProcessContext(f32)) void {
+    var denormals = plug.dsp.DenormalScope.enter();
+    defer denormals.leave();
+
+    self.model.process(context);
+}
+```
+
+Create the scope at the outer edge of the audio callback, not inside a sample or layer loop. Leave it on the same thread and do not copy an active scope. Nested scopes are safe. If the host already enabled the policy, leaving the scope does not alter it. Unsupported architectures use a no-op scope and should avoid subnormal state algorithmically until they gain an explicit implementation.
+
+This policy is preferable to injecting noise into a neural or convolution signal path because it preserves deterministic silence and numerical parity above the subnormal range. It does not replace stable recurrence design, bounded state, or explicit resets.
 
 ## Streaming sample-rate conversion
 

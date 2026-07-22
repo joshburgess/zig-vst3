@@ -300,6 +300,13 @@ pub fn build(b: *std.Build) void {
     benchmark.root_module.addImport("zig-vst3", zig_vst3);
     benchmark.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
     benchmark.root_module.addImport("zig-vst3-plugin-core", zig_vst3_plugin_core);
+    benchmark.root_module.addCSourceFile(.{
+        .file = b.path("tools/denormal_workloads.c"),
+        .flags = if (target.result.os.tag == .windows)
+            &.{ "-std=c11", "-fno-fast-math" }
+        else
+            &.{ "-std=c11", "-fno-fast-math", "-fvisibility=hidden" },
+    });
     const c_kernel_benchmark = b.createModule(.{
         .root_source_file = b.path("examples/c_kernel_core.zig"),
         .target = target,

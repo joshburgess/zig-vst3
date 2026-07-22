@@ -6,6 +6,9 @@ const c_kernel = @import("c-kernel-core");
 const frame_count = 512;
 const iterations = 20_000;
 
+extern fn zig_vst3_bench_recurrent_tail(f32, f32, u32, usize) callconv(.c) f32;
+extern fn zig_vst3_bench_convolution_tail([*]const f32, [*]const f32, usize, usize) callconv(.c) f32;
+
 const Budget = struct {
     raw_stream_ns: f64 = 10_000.0,
     framework_block_ns: f64 = 50_000.0,
@@ -28,6 +31,8 @@ const Budget = struct {
     ir_processing_ns_per_sample: f64 = 20_000.0,
     fixed_rate_ns_per_sample: f64 = 2_000.0,
     dense_kernel_ns: f64 = 500.0,
+    recurrent_tail_ns: f64 = 50.0,
+    convolution_tail_ns: f64 = 500.0,
 };
 
 const budget = Budget{};
@@ -121,6 +126,59 @@ pub fn main() !void {
     try benchIrConvolution();
     try benchFixedRatePipeline();
     try benchDenseKernels();
+    try benchDenormalSilenceTails();
+}
+
+fn benchDenormalSilenceTails() !void {
+    if (!plug.dsp.denormals.supported) return;
+    const benchmark_iterations = iterations * 10;
+    const minimum_normal = std.math.floatMin(f32);
+    const decay: f32 = 0.5;
+    const input: [16]f32 = @splat(std.math.floatMin(f32));
+    const impulse_tail: [16]f32 = @splat(0.5);
+
+    var recurrent_timer = try Timer.start();
+    const unscoped_recurrent = zig_vst3_bench_recurrent_tail(minimum_normal, decay, 32, benchmark_iterations);
+    const recurrent_unscoped_elapsed = try recurrent_timer.read();
+    std.mem.doNotOptimizeAway(unscoped_recurrent);
+    (Benchmark{
+        .name = "host-policy recurrent silence tail",
+        .iterations = benchmark_iterations * 32,
+        .elapsed_ns = recurrent_unscoped_elapsed,
+    }).print();
+
+    var convolution_timer = try Timer.start();
+    const unscoped_convolution = zig_vst3_bench_convolution_tail(&input, &impulse_tail, input.len, benchmark_iterations);
+    const convolution_unscoped_elapsed = try convolution_timer.read();
+    std.mem.doNotOptimizeAway(unscoped_convolution);
+    (Benchmark{
+        .name = "host-policy convolution silence tail",
+        .iterations = benchmark_iterations,
+        .elapsed_ns = convolution_unscoped_elapsed,
+    }).print();
+
+    var scope = plug.dsp.DenormalScope.enter();
+    defer scope.leave();
+
+    recurrent_timer = try Timer.start();
+    const recurrent_checksum = zig_vst3_bench_recurrent_tail(minimum_normal, decay, 32, benchmark_iterations);
+    const recurrent_elapsed = try recurrent_timer.read();
+    std.mem.doNotOptimizeAway(recurrent_checksum);
+    try (Benchmark{
+        .name = "flush-to-zero recurrent silence tail",
+        .iterations = benchmark_iterations * 32,
+        .elapsed_ns = recurrent_elapsed,
+    }).requireAtMost(budget.recurrent_tail_ns);
+
+    convolution_timer = try Timer.start();
+    const convolution_checksum = zig_vst3_bench_convolution_tail(&input, &impulse_tail, input.len, benchmark_iterations);
+    const convolution_elapsed = try convolution_timer.read();
+    std.mem.doNotOptimizeAway(convolution_checksum);
+    try (Benchmark{
+        .name = "flush-to-zero convolution silence tail",
+        .iterations = benchmark_iterations,
+        .elapsed_ns = convolution_elapsed,
+    }).requireAtMost(budget.convolution_tail_ns);
 }
 
 fn benchDenseKernels() !void {
