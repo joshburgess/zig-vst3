@@ -365,3 +365,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - A recovery regression verifies rejected additions preserve item and reference counts, rejected removal preserves a valid stored item, and a later valid removal balances the target reference.
 - The complete deterministic gate passed 82/82 steps and 3,912/3,912 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 95.6 us for the aggregate scene and 46.87 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Context Menu Group Flags
+
+- Group-start markers now require the SDK disabled bit, and group-end markers require the SDK separator bit. Incomplete encodings are rejected before storage or target retention.
+- The malformed-item recovery regression covers both incomplete markers, both valid SDK group constants, and an ordinary item after the rejected inputs.
+- The complete deterministic gate passed 82/82 steps and 3,912/3,912 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 92.1 us for the aggregate scene and 46.01 ms for a complete Sample Player editor lifecycle.

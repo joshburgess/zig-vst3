@@ -14,8 +14,14 @@ fn menuItemIsValid(item: *const ivstcontextmenu.IContextMenuItem) bool {
         ivstcontextmenu.IContextMenuItem.Flags.kIsChecked |
         ivstcontextmenu.IContextMenuItem.Flags.kIsGroupStart |
         ivstcontextmenu.IContextMenuItem.Flags.kIsGroupEnd;
+    const group_start_marker = ivstcontextmenu.IContextMenuItem.Flags.kIsGroupStart &
+        ~ivstcontextmenu.IContextMenuItem.Flags.kIsDisabled;
+    const group_end_marker = ivstcontextmenu.IContextMenuItem.Flags.kIsGroupEnd &
+        ~ivstcontextmenu.IContextMenuItem.Flags.kIsSeparator;
     return item.flags >= 0 and
         item.flags & ~known_flags == 0 and
+        (item.flags & group_start_marker == 0 or item.flags & ivstcontextmenu.IContextMenuItem.Flags.kIsDisabled != 0) and
+        (item.flags & group_end_marker == 0 or item.flags & ivstcontextmenu.IContextMenuItem.Flags.kIsSeparator != 0) and
         std.mem.indexOfScalar(vsttypes.TChar, &item.name, 0) != null;
 }
 
@@ -336,14 +342,25 @@ test "context menu rejects malformed item payloads without retaining targets" {
     const iface = menu.asInterface();
     var unknown_flags = ivstcontextmenu.IContextMenuItem{ .tag = 10, .flags = 1 << 5 };
     var unterminated_name = ivstcontextmenu.IContextMenuItem{ .tag = 20 };
+    var incomplete_group_start = ivstcontextmenu.IContextMenuItem{ .tag = 30, .flags = 1 << 3 };
+    var incomplete_group_end = ivstcontextmenu.IContextMenuItem{ .tag = 40, .flags = 1 << 4 };
     unterminated_name.name = [_]vsttypes.TChar{'x'} ** unterminated_name.name.len;
 
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.addItem(iface, &unknown_flags, target.asInterface()));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.addItem(iface, &unterminated_name, target.asInterface()));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.addItem(iface, &incomplete_group_start, target.asInterface()));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.addItem(iface, &incomplete_group_end, target.asInterface()));
     try std.testing.expectEqual(@as(types.int32, 0), iface.vtable.getItemCount(iface));
     try std.testing.expectEqual(@as(types.uint32, 1), target.ref_count.load(.monotonic));
 
-    var valid = ivstcontextmenu.IContextMenuItem{ .tag = 30 };
+    var group_start = ivstcontextmenu.IContextMenuItem{ .tag = 50, .flags = ivstcontextmenu.IContextMenuItem.Flags.kIsGroupStart };
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &group_start, target.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.removeItem(iface, &group_start, target.asInterface()));
+    var group_end = ivstcontextmenu.IContextMenuItem{ .tag = 60, .flags = ivstcontextmenu.IContextMenuItem.Flags.kIsGroupEnd };
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &group_end, target.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.removeItem(iface, &group_end, target.asInterface()));
+
+    var valid = ivstcontextmenu.IContextMenuItem{ .tag = 70 };
     try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &valid, target.asInterface()));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.removeItem(iface, &unknown_flags, target.asInterface()));
     try std.testing.expectEqual(@as(types.int32, 1), iface.vtable.getItemCount(iface));
