@@ -61,11 +61,19 @@ pub fn Exchange(comptime Config: type) type {
         }
 
         pub fn adoptPending(self: *Self) ?View {
+            return self.adoptPendingAtOrAfter(0);
+        }
+
+        pub fn adoptPendingAtOrAfter(self: *Self, minimum_generation: u64) ?View {
             _ = realtime_audit.observe(.resource_adoption);
             const next = self.pending_slot.swap(no_slot, .acq_rel);
             if (next == no_slot) return null;
             const slot = &self.slots[next];
             if (slot.state.load(.acquire) != @intFromEnum(SlotState.published)) return null;
+            if (slot.generation < minimum_generation) {
+                slot.state.store(@intFromEnum(SlotState.retired), .release);
+                return null;
+            }
             if (self.active_slot != no_slot) {
                 self.slots[self.active_slot].state.store(@intFromEnum(SlotState.retired), .release);
             }
@@ -226,6 +234,32 @@ test "resource exchange reports bounded capacity and stale generations" {
     std.heap.page_allocator.destroy(stale);
     try std.testing.expect(exchange.retireActiveAtBlockBoundary());
     try std.testing.expectEqual(@as(usize, 1), exchange.reclaim());
+}
+
+test "resource exchange rejects pending generations older than a restore boundary" {
+    const Model = struct { value: u8 };
+    const ModelExchange = Exchange(struct {
+        pub const Resource = Model;
+        pub const slot_capacity = 2;
+
+        pub fn destroy(resource: *Model) void {
+            std.heap.page_allocator.destroy(resource);
+        }
+    });
+
+    var exchange: ModelExchange = .{};
+    defer exchange.deinit();
+    const stale = try std.heap.page_allocator.create(Model);
+    stale.* = .{ .value = 1 };
+    try exchange.publish(1, stale);
+    try std.testing.expect(exchange.adoptPendingAtOrAfter(2) == null);
+    try std.testing.expect(exchange.active() == null);
+    try std.testing.expectEqual(@as(usize, 1), exchange.reclaim());
+
+    const restored = try std.heap.page_allocator.create(Model);
+    restored.* = .{ .value = 2 };
+    try exchange.publish(2, restored);
+    try std.testing.expectEqual(@as(u64, 2), exchange.adoptPendingAtOrAfter(2).?.generation);
 }
 
 test "resource exchange audio operations are lock free and allocation free" {

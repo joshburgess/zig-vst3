@@ -59,8 +59,8 @@ These facilities cover most of a basic NAM editor. They do not yet cover safe ow
 | Deferred destruction | Replaced resources retire on audio and are reclaimed off-thread | `zig-vst3-plugin` | Complete |
 | Generic background resource jobs | Bounded replaceable jobs implemented and used by the audio importer | `zig-vst3-plugin` | Complete |
 | Streaming sample-rate conversion | Bounded streaming SRC and fixed-rate round-trip pipeline implemented and validated | Reusable DSP package, surfaced through `zig-vst3-plugin` | Complete |
-| Dynamic latency notification | Public coalesced component-to-controller restart path implemented; restored resource integration remains in milestone 6 | `zig-vst3` and `zig-vst3-plugin` | In progress |
-| Resource persistence | Parameter state and small editor text exist, but no generic path identity and missing-file recovery contract | `zig-vst3-plugin` | P0 |
+| Dynamic latency notification | Public coalesced component-to-controller restart path implemented and compatible with restored processor resource state | `zig-vst3` and `zig-vst3-plugin` | Complete |
+| Resource persistence | Bounded reference state, stable identity, asynchronous recovery, and relinking implemented | `zig-vst3-plugin` | Complete |
 | Consumer C kernel integration | Internal build code compiles C, but package consumers lack a documented helper and reference layout | Package build API and DSP library | P1 |
 | CPU dispatch | No portable baseline plus optimized runtime kernel selection contract | DSP library | P1 |
 | Denormal policy | No explicit reusable process-thread FTZ/DAZ or equivalent policy | `zig-vst3-plugin` or DSP library | P1 |
@@ -179,21 +179,32 @@ Completion evidence:
 - The component sends a bounded message to its connected controller. The controller calls `restartComponent` with `kLatencyChanged`.
 - The Fixed Rate Processor publishes the new latency, dispatches the restart outside processing, and makes the prepared mode eligible for adoption only after successful dispatch. The audio thread adopts and resets at its next block boundary.
 - Unit tests verify one restart for repeated marks, host-visible latency before audio adoption, mode toggles, and repeated preparation at different host rates.
-- Restored resource activation will add the remaining state-restore evidence in milestone 6.
+- The Fixed Rate Processor persists its prepared-mode choice through the component-state envelope. Restoration before preparation selects the matching processing path and exact latency, while the controller reads the parameter section independently.
 
 ### 6. Resource state and recovery
 
-- [ ] Add bounded non-parameter component state for a resource path, stable identity, metadata summary, and schema version.
-- [ ] Do not serialize model weights into ordinary plugin state by default.
-- [ ] Define missing, moved, changed, and unsupported resource behavior.
-- [ ] Reload restored resources asynchronously and keep the plugin safe and silent until publication completes.
-- [ ] Provide a relink action and accessible status without requiring the editor to remain open.
+- [x] Add bounded non-parameter component state for a resource path, stable identity, metadata summary, and schema version.
+- [x] Do not serialize model weights into ordinary plugin state by default.
+- [x] Define missing, moved, changed, and unsupported resource behavior.
+- [x] Reload restored resources asynchronously and keep the plugin safe and silent until publication completes.
+- [x] Provide a relink action and accessible status without requiring the editor to remain open.
 
 Exit criteria:
 
 - State round trips without truncating a valid maximum-length path.
 - Missing files restore to a recoverable state instead of failing component initialization.
 - A changed file cannot silently reuse metadata from an older model generation.
+
+Completion evidence:
+
+- `resource.Reference` stores a bounded path, SHA-256 identity, byte length, schema version, and bounded metadata summary. `ReferenceState` represents empty and linked resources in a versioned binary format.
+- The VST3 component-state envelope preserves legacy parameter-only state, exposes processor-owned bounded state through public hooks, and lets controllers restore the parameter section without parsing processor-private data.
+- `resource.ResourceRecovery` starts restoration on its worker, verifies identity and schema compatibility before publication, publishes without an editor polling loop, and reports explicit missing, moved, changed, unsupported, and failed states. A restore retires the previous active resource and any older pending generation at the next process-block boundary.
+- The Model Shell loads a small versioned JSON linear model and processes mono audio. Its tests prove maximum-path state round trips, editor-independent restoration, safe silence while missing, changed-file rejection, matching-content relinking, and controller compatibility.
+- The preparation worker owns all file access, JSON parsing, hashing, allocation, and destruction. Processing only adopts a fixed-slot publication and reads immutable model data.
+- The aggregate deterministic suite, raw ABI checks, VSTGUI address and undefined-behavior sanitizers, resource thread sanitizer, and all 18 Steinberg validators pass. The Model Shell and Fixed Rate Processor each pass all 47 validator tests in both sample formats.
+- Linux aarch64 and Windows x86_64 cross-target matrices each build all 18 example bundles. These are build checks, not native host validation.
+- On the current macOS development machine, bounded reference state save and load measured 38.9 ns per round trip, and 4 KiB SHA-256 identity generation measured 2,503.8 MiB/s.
 
 ## P1 reusable infrastructure
 
@@ -260,7 +271,7 @@ Only after all five probes pass should a `zig-nam` repository or package begin i
 - No mutex, allocation, capacity growth, file access, logging, GUI callback, host callback, or final resource destruction on the audio thread.
 - Quality or fast-activation selection is per plugin instance or per published model. It is not a process-global switch.
 - Large immutable models may use off-thread heap allocation. Fixed capacity applies to handoff slots, queues, scratch plans, and resource count, not necessarily to every model byte.
-- A failed model load keeps the last valid model active unless the user explicitly clears it.
+- A failed manual import or relink keeps the last valid model active. Restoring different component state retires the previous model at a block boundary and remains silent until the restored resource is ready.
 - Model replacement becomes visible atomically at a documented block boundary.
 - Sample-rate conversion latency is explicit and host-visible.
 - Cross-compilation is build coverage, not native host verification.
@@ -268,15 +279,15 @@ Only after all five probes pass should a `zig-nam` repository or package begin i
 
 ## Validation matrix for each prerequisite
 
-- [ ] Deterministic unit and generated lifecycle tests.
-- [ ] Real-time audit and allocation checks.
-- [ ] Address, undefined-behavior, and thread sanitizers where supported.
-- [ ] Raw VST3 ABI checks for any backend change.
-- [ ] Steinberg validator in both sample formats.
-- [ ] Linux aarch64 and Windows x86_64 cross-target bundles.
+- [x] Deterministic unit and generated lifecycle tests.
+- [x] Real-time audit and allocation checks.
+- [x] Address, undefined-behavior, and thread sanitizers where supported.
+- [x] Raw VST3 ABI checks for any backend change.
+- [x] Steinberg validator in both sample formats.
+- [x] Linux aarch64 and Windows x86_64 cross-target bundles.
 - [ ] Native macOS host lifecycle checks when practical.
-- [ ] Performance measurements with fixed fixtures and recorded machine context.
-- [ ] Documentation of unavailable native Windows, X11, Wayland, and CLAP coverage.
+- [x] Performance measurements with fixed fixtures and recorded machine context.
+- [x] Documentation of unavailable native Windows, X11, Wayland, and CLAP coverage.
 
 ## First execution phase
 
@@ -286,6 +297,7 @@ The best next phase is framework work, not neural inference:
 - [x] Land the generic resource job and immutable resource exchange together, because either one without the other encourages unsafe model sharing.
 - [x] Build the Resource Swap Probe and run it under sanitizers and repeated component teardown.
 - [x] Add bounded SRC and dynamic latency through the Fixed-Rate Processor.
+- [x] Add bounded resource references, component-state recovery, and the Model Shell probe.
 - [ ] Publish and test the downstream C kernel integration recipe.
 
 Completing this phase would make a Zig NAM effort technically credible while also benefiting convolution reverbs, cabinet loaders, spectral processors, wavetable instruments, and any plugin that swaps large prepared DSP resources.

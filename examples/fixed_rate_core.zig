@@ -6,12 +6,15 @@ const maximum_host_frames = 8_192;
 const maximum_model_frames = maximum_host_frames * 8 + 2;
 
 pub const Processor = struct {
+    pub const component_state_maximum_encoded_size = 7;
+
     pipeline32: plug.dsp.FixedRatePipeline(f32),
     pipeline64: plug.dsp.FixedRatePipeline(f64),
     model32: [maximum_model_frames]f32,
     model64: [maximum_model_frames]f64,
     latency_samples: std.atomic.Value(u32),
     requested_fixed_rate: std.atomic.Value(bool),
+    desired_fixed_rate: std.atomic.Value(bool),
     active_fixed_rate: bool,
     fixed_rate_latency: u32,
     host_requests: ?*plug.HostRequestSink,
@@ -25,6 +28,7 @@ pub const Processor = struct {
             .model64 = undefined,
             .latency_samples = std.atomic.Value(u32).init(0),
             .requested_fixed_rate = std.atomic.Value(bool).init(true),
+            .desired_fixed_rate = std.atomic.Value(bool).init(true),
             .active_fixed_rate = true,
             .fixed_rate_latency = 0,
             .host_requests = null,
@@ -44,9 +48,10 @@ pub const Processor = struct {
         self.pipeline32.configure(.{ .host_rate = config.sample_rate, .model_rate = model_rate }) catch return;
         self.pipeline64.configure(.{ .host_rate = config.sample_rate, .model_rate = model_rate }) catch return;
         self.fixed_rate_latency = self.pipeline32.latencySamples();
-        self.requested_fixed_rate.store(true, .release);
-        self.active_fixed_rate = true;
-        self.latency_samples.store(self.fixed_rate_latency, .release);
+        const desired = self.desired_fixed_rate.load(.acquire);
+        self.requested_fixed_rate.store(desired, .release);
+        self.active_fixed_rate = desired;
+        self.latency_samples.store(if (desired) self.fixed_rate_latency else 0, .release);
         self.supported = true;
     }
 
@@ -61,6 +66,43 @@ pub const Processor = struct {
     }
 
     pub fn requestFixedRate(self: *Processor, enabled: bool) bool {
+        if (enabled and !self.supported) return false;
+        const previous_desired = self.desired_fixed_rate.swap(enabled, .acq_rel);
+        if (self.commitDesiredMode()) return true;
+        self.desired_fixed_rate.store(previous_desired, .release);
+        return false;
+    }
+
+    pub fn afterComponentStateRestore(self: *Processor) void {
+        _ = self.commitDesiredMode();
+    }
+
+    pub fn componentConnectionReady(self: *Processor) void {
+        _ = self.commitDesiredMode();
+    }
+
+    pub fn writeComponentState(self: *const Processor, writer: anytype) !void {
+        try writer.writeAll("FXRT");
+        try writer.writeInt(u16, 1, .little);
+        try writer.writeByte(@intFromBool(self.desired_fixed_rate.load(.acquire)));
+    }
+
+    pub fn readComponentState(self: *Processor, reader: anytype) !void {
+        var magic: [4]u8 = undefined;
+        try reader.readSliceAll(&magic);
+        if (!std.mem.eql(u8, &magic, "FXRT")) return error.InvalidFixedRateState;
+        if (try reader.takeInt(u16, .little) != 1) return error.UnsupportedFixedRateState;
+        const enabled = switch (try reader.takeByte()) {
+            0 => false,
+            1 => true,
+            else => return error.InvalidFixedRateState,
+        };
+        if (reader.seek != reader.end) return error.InvalidFixedRateState;
+        self.desired_fixed_rate.store(enabled, .release);
+    }
+
+    fn commitDesiredMode(self: *Processor) bool {
+        const enabled = self.desired_fixed_rate.load(.acquire);
         if (enabled and !self.supported) return false;
         const previous = self.requested_fixed_rate.load(.acquire);
         if (previous == enabled) return true;
@@ -193,9 +235,27 @@ test "fixed-rate processor replaces stale latency during repeated preparation" {
     try std.testing.expectEqual(@as(u32, 0), processor.latencySamples());
 
     processor.prepare(.{ .sample_rate = 44_100, .max_block_size = 128 });
-    try std.testing.expectEqual(@as(u32, 31), processor.latencySamples());
+    try std.testing.expectEqual(@as(u32, 0), processor.latencySamples());
     try std.testing.expect(processor.requestFixedRate(false));
     try std.testing.expectEqual(@as(u32, 0), processor.latencySamples());
     try std.testing.expect(processor.requestFixedRate(true));
     try std.testing.expectEqual(@as(u32, 31), processor.latencySamples());
+}
+
+test "fixed-rate processor restores mode before preparation without stale latency" {
+    var source: Processor = undefined;
+    source.initInPlace();
+    try std.testing.expect(source.requestFixedRate(false));
+    var bytes: [Processor.component_state_maximum_encoded_size]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try source.writeComponentState(&writer);
+
+    var restored: Processor = undefined;
+    restored.initInPlace();
+    var reader = std.Io.Reader.fixed(bytes[0..writer.end]);
+    try restored.readComponentState(&reader);
+    restored.prepare(.{ .sample_rate = 96_000, .max_block_size = 64 });
+    try std.testing.expectEqual(@as(u32, 0), restored.latencySamples());
+    try std.testing.expect(!restored.requested_fixed_rate.load(.acquire));
+    try std.testing.expect(!restored.active_fixed_rate);
 }

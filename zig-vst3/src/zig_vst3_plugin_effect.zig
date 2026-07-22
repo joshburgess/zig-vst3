@@ -728,7 +728,12 @@ pub fn ReflectedEditController(comptime Config: type) type {
         }
 
         fn readStateAndNotify(self: *Controller, state: ?*ibstream.IBStream) types.tresult {
-            const result = self.parameters.readState(state);
+            const result = zig_vst3_plugin_bridge.readComponentParameterState(
+                Params,
+                state,
+                Config.parameter_set,
+                &self.parameter_state.values,
+            );
             if (result != types.kResultOk) return result;
             notifyAllParameterObservers(self);
             return result;
@@ -2872,11 +2877,37 @@ pub fn SimpleEffect(comptime Config: type) type {
         }
 
         fn setState(ptr: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
-            return owner(ptr).parameter_state.readFromStream(state);
+            const self = owner(ptr);
+            if (comptime @hasDecl(Config.Processor, "component_state_maximum_encoded_size")) {
+                const result = zig_vst3_plugin_bridge.readProcessorComponentState(
+                    Params,
+                    Config.Processor,
+                    state,
+                    parameter_set,
+                    &self.parameter_state.values,
+                    &self.processor_impl,
+                );
+                if (result == types.kResultOk and @hasDecl(Config.Processor, "afterComponentStateRestore")) {
+                    self.processor_impl.afterComponentStateRestore();
+                }
+                return result;
+            }
+            return self.parameter_state.readFromStream(state);
         }
 
         fn getState(ptr: *anyopaque, state: ?*ibstream.IBStream) callconv(.c) types.tresult {
-            return owner(ptr).parameter_state.writeToStream(state);
+            const self = owner(ptr);
+            if (comptime @hasDecl(Config.Processor, "component_state_maximum_encoded_size")) {
+                return zig_vst3_plugin_bridge.writeProcessorComponentState(
+                    Params,
+                    Config.Processor,
+                    state,
+                    parameter_set,
+                    &self.parameter_state.values,
+                    &self.processor_impl,
+                );
+            }
+            return self.parameter_state.writeToStream(state);
         }
 
         const processor_vtable = ivstaudioprocessor.IAudioProcessorVTable{
@@ -2905,8 +2936,12 @@ pub fn SimpleEffect(comptime Config: type) type {
         fn componentConnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
             lockComponentPeer(self);
-            defer unlockComponentPeer(self);
-            return replaceConnectionPeer(&self.connected_peer, peer);
+            const result = replaceConnectionPeer(&self.connected_peer, peer);
+            unlockComponentPeer(self);
+            if (result == types.kResultOk and @hasDecl(Config.Processor, "componentConnectionReady")) {
+                self.processor_impl.componentConnectionReady();
+            }
+            return result;
         }
 
         fn componentDisconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {

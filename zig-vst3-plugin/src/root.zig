@@ -47,6 +47,8 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(dsp, "FixedRatePipeline"));
     try std.testing.expect(@hasDecl(resource.job, "Job"));
     try std.testing.expect(@hasDecl(resource.exchange, "Exchange"));
+    try std.testing.expect(@hasDecl(resource, "Reference"));
+    try std.testing.expect(@hasDecl(resource, "ResourceRecovery"));
     try std.testing.expect(@hasDecl(parameters, "normalizedFromBipolar"));
     try std.testing.expect(@hasDecl(plugin, "PluginSpec"));
     try std.testing.expect(@hasDecl(process, "ProcessContext"));

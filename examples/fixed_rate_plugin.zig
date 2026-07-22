@@ -94,3 +94,35 @@ test "fixed-rate component coalesces latency changes into a host restart" {
     try std.testing.expectEqual(types.kResultOk, Effect.dispatchHostRequests(component));
     try std.testing.expectEqual(@as(u32, 2), handler.restart_count);
 }
+
+test "fixed-rate component restores its prepared mode and latency" {
+    const Stream = vst3.vst_stream.FixedBufferStream(128);
+    var stream = Stream{};
+
+    var source_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, Effect.create(@ptrCast(&vst.ivstcomponent.icomponent_iid), &source_out));
+    const source: *vst.ivstcomponent.IComponent = @ptrCast(@alignCast(source_out orelse return error.MissingComponent));
+    defer _ = source.vtable.release(source);
+    const source_processor = Effect.processorInstance(source);
+    var mode_bytes = [_]u8{ 'F', 'X', 'R', 'T', 1, 0, 0 };
+    var mode_reader = std.Io.Reader.fixed(&mode_bytes);
+    try source_processor.readComponentState(&mode_reader);
+    try std.testing.expectEqual(types.kResultOk, source.vtable.getState(source, stream.asStream()));
+
+    var restored_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, Effect.create(@ptrCast(&vst.ivstcomponent.icomponent_iid), &restored_out));
+    const restored: *vst.ivstcomponent.IComponent = @ptrCast(@alignCast(restored_out orelse return error.MissingComponent));
+    defer _ = restored.vtable.release(restored);
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(base.ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, restored.vtable.setState(restored, stream.asStream()));
+    const restored_processor = Effect.processorInstance(restored);
+    restored_processor.prepare(.{ .sample_rate = 96_000, .max_block_size = 64 });
+    try std.testing.expectEqual(@as(u32, 0), restored_processor.latencySamples());
+
+    var controller_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, Controller.create(@ptrCast(&vst.ivsteditcontroller.iedit_controller_iid), &controller_out));
+    const controller: *vst.ivsteditcontroller.IEditController = @ptrCast(@alignCast(controller_out orelse return error.MissingController));
+    defer _ = controller.vtable.release(controller);
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(base.ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, controller.vtable.setComponentState(controller, stream.asStream()));
+}

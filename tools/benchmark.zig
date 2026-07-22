@@ -10,6 +10,8 @@ const Budget = struct {
     framework_block_ns: f64 = 50_000.0,
     parameter_store_ns: f64 = 1_000.0,
     state_round_trip_ns: f64 = 100_000.0,
+    resource_state_round_trip_ns: f64 = 100_000.0,
+    resource_identity_mib_per_second: f64 = 20.0,
     scalar_snapshot_ns: f64 = 1_000.0,
     waveform_snapshot_ns: f64 = 50_000.0,
     spectrum_snapshot_ns: f64 = 100_000.0,
@@ -107,6 +109,8 @@ pub fn main() !void {
     try (try benchFrameworkProcess()).requireAtMost(budget.framework_block_ns);
     try (try benchParameterUpdates()).requireAtMost(budget.parameter_store_ns);
     try (try benchStateSaveLoad()).requireAtMost(budget.state_round_trip_ns);
+    try (try benchResourceState()).requireAtMost(budget.resource_state_round_trip_ns);
+    try benchResourceIdentity();
     try (try benchGuiScalarSnapshot()).requireAtMost(budget.scalar_snapshot_ns);
     try (try benchWaveformCapture()).requireAtMost(budget.waveform_snapshot_ns);
     try (try benchSpectrumAnalyzer()).requireAtMost(budget.spectrum_snapshot_ns);
@@ -114,6 +118,49 @@ pub fn main() !void {
     try benchSamplePlayerPipeline();
     try benchIrConvolution();
     try benchFixedRatePipeline();
+}
+
+fn benchResourceState() !Benchmark {
+    const Reference = plug.resource.Reference(1024, 96);
+    const State = plug.resource.ReferenceState(1024, 96);
+    const reference = try Reference.init(
+        "/models/production/amplifier-model.json",
+        plug.resource.Identity.fromBytes("bounded model fixture"),
+        1,
+        "Linear, 48000 Hz, gain 1.000",
+    );
+    const state: State = .{ .linked = reference };
+    var bytes: [State.maximum_encoded_size]u8 = undefined;
+    var timer = try Timer.start();
+    var checksum: u64 = 0;
+    for (0..iterations) |_| {
+        var writer = std.Io.Writer.fixed(&bytes);
+        try state.write(&writer);
+        var reader = std.Io.Reader.fixed(writer.buffered());
+        const restored = try State.read(&reader);
+        checksum +%= restored.linked.identity.byte_length;
+    }
+    std.mem.doNotOptimizeAway(checksum);
+    return .{ .name = "resource reference state save/load", .iterations = iterations, .elapsed_ns = try timer.read() };
+}
+
+fn benchResourceIdentity() !void {
+    var bytes: [4096]u8 = undefined;
+    for (&bytes, 0..) |*byte, index| byte.* = @truncate(index *% 131);
+    var timer = try Timer.start();
+    var checksum: u64 = 0;
+    for (0..iterations) |_| {
+        const identity = plug.resource.Identity.fromBytes(&bytes);
+        checksum +%= identity.sha256[0];
+    }
+    const elapsed_ns = try timer.read();
+    std.mem.doNotOptimizeAway(checksum);
+    const total_bytes = iterations * bytes.len;
+    const mib_per_second = @as(f64, @floatFromInt(total_bytes)) /
+        (@as(f64, @floatFromInt(elapsed_ns)) / std.time.ns_per_s) /
+        (1024.0 * 1024.0);
+    std.debug.print("resource SHA-256 identity: {d:.1} MiB/s ({d} bytes)\n", .{ mib_per_second, total_bytes });
+    if (mib_per_second < budget.resource_identity_mib_per_second) return error.BenchmarkBudgetExceeded;
 }
 
 fn benchFixedRatePipeline() !void {

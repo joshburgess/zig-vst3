@@ -759,6 +759,129 @@ pub fn writeParameterState(
     return types.kResultOk;
 }
 
+const component_state_magic = "ZCMPSTAT";
+const component_state_version: u16 = 1;
+
+fn streamHasMagic(stream: *ibstream.IBStream, comptime wanted_magic: []const u8) bool {
+    var start: types.int64 = 0;
+    if (stream.vtable.seek(stream, 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekCur), &start) != types.kResultOk) return false;
+    var probe: [wanted_magic.len]u8 = undefined;
+    var probe_count: types.int32 = 0;
+    const probe_result = stream.vtable.read(stream, &probe, @intCast(probe.len), &probe_count);
+    if (stream.vtable.seek(stream, start, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null) != types.kResultOk) return false;
+    return probe_result == types.kResultOk and
+        probe_count == @as(types.int32, @intCast(probe.len)) and
+        std.mem.eql(u8, &probe, wanted_magic);
+}
+
+pub fn readComponentParameterState(
+    comptime Params: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *plug.parameters.ParameterValues(Params),
+) types.tresult {
+    const input = stream orelse return types.kInvalidArgument;
+    if (!streamHasMagic(input, component_state_magic)) return readParameterState(Params, input, set, values);
+
+    var input_reader: IBStreamReader = undefined;
+    input_reader.init(input);
+    const reader = input_reader.reader();
+    var stored_magic: [component_state_magic.len]u8 = undefined;
+    reader.readSliceAll(&stored_magic) catch return types.kResultFalse;
+    const version = reader.takeInt(u16, .little) catch return types.kResultFalse;
+    if (version != component_state_version) return types.kResultFalse;
+    const parameter_size = reader.takeInt(u32, .little) catch return types.kResultFalse;
+    _ = reader.takeInt(u32, .little) catch return types.kResultFalse;
+    if (parameter_size != plug.state.encodedSize(Params)) return types.kResultFalse;
+    var parameter_bytes: [plug.state.encodedSize(Params)]u8 = undefined;
+    reader.readSliceAll(&parameter_bytes) catch return types.kResultFalse;
+    var parameter_reader = std.Io.Reader.fixed(&parameter_bytes);
+    var restored = plug.parameters.ParameterValues(Params).init(set);
+    plug.state.readParameterState(Params, set, &restored, &parameter_reader) catch return types.kResultFalse;
+    values.copyFrom(&restored);
+    return types.kResultOk;
+}
+
+pub fn readProcessorComponentState(
+    comptime Params: type,
+    comptime Processor: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *plug.parameters.ParameterValues(Params),
+    processor: *Processor,
+) types.tresult {
+    const input = stream orelse return types.kInvalidArgument;
+    if (!streamHasMagic(input, component_state_magic)) return readParameterState(Params, input, set, values);
+
+    comptime validateProcessorComponentStateHooks(Processor);
+    var input_reader: IBStreamReader = undefined;
+    input_reader.init(input);
+    const reader = input_reader.reader();
+    var stored_magic: [component_state_magic.len]u8 = undefined;
+    reader.readSliceAll(&stored_magic) catch return types.kResultFalse;
+    const version = reader.takeInt(u16, .little) catch return types.kResultFalse;
+    if (version != component_state_version) return types.kResultFalse;
+    const parameter_size = reader.takeInt(u32, .little) catch return types.kResultFalse;
+    const processor_size = reader.takeInt(u32, .little) catch return types.kResultFalse;
+    if (parameter_size != plug.state.encodedSize(Params) or processor_size > Processor.component_state_maximum_encoded_size) {
+        return types.kResultFalse;
+    }
+
+    var parameter_bytes: [plug.state.encodedSize(Params)]u8 = undefined;
+    var processor_bytes: [Processor.component_state_maximum_encoded_size]u8 = undefined;
+    reader.readSliceAll(&parameter_bytes) catch return types.kResultFalse;
+    reader.readSliceAll(processor_bytes[0..processor_size]) catch return types.kResultFalse;
+    var parameter_reader = std.Io.Reader.fixed(&parameter_bytes);
+    var processor_reader = std.Io.Reader.fixed(processor_bytes[0..processor_size]);
+    var restored = plug.parameters.ParameterValues(Params).init(set);
+    plug.state.readParameterState(Params, set, &restored, &parameter_reader) catch return types.kResultFalse;
+    processor.readComponentState(&processor_reader) catch return types.kResultFalse;
+    values.copyFrom(&restored);
+    return types.kResultOk;
+}
+
+pub fn writeProcessorComponentState(
+    comptime Params: type,
+    comptime Processor: type,
+    stream: ?*ibstream.IBStream,
+    set: *const plug.parameters.ParameterSet(Params),
+    values: *const plug.parameters.ParameterValues(Params),
+    processor: *const Processor,
+) types.tresult {
+    comptime validateProcessorComponentStateHooks(Processor);
+    const output = stream orelse return types.kInvalidArgument;
+    var processor_bytes: [Processor.component_state_maximum_encoded_size]u8 = undefined;
+    var processor_writer = std.Io.Writer.fixed(&processor_bytes);
+    processor.writeComponentState(&processor_writer) catch return types.kResultFalse;
+    const processor_size = processor_writer.end;
+    const encoded_processor_size = std.math.cast(u32, processor_size) orelse return types.kResultFalse;
+    var output_writer: IBStreamWriter = undefined;
+    output_writer.init(output);
+    const writer = output_writer.writer();
+    writer.writeAll(component_state_magic) catch return types.kResultFalse;
+    writer.writeInt(u16, component_state_version, .little) catch return types.kResultFalse;
+    writer.writeInt(u32, @intCast(plug.state.encodedSize(Params)), .little) catch return types.kResultFalse;
+    writer.writeInt(u32, encoded_processor_size, .little) catch return types.kResultFalse;
+    plug.state.writeParameterState(Params, set, values, writer) catch return types.kResultFalse;
+    writer.writeAll(processor_bytes[0..processor_size]) catch return types.kResultFalse;
+    return types.kResultOk;
+}
+
+fn validateProcessorComponentStateHooks(comptime Processor: type) void {
+    if (!@hasDecl(Processor, "component_state_maximum_encoded_size") or
+        !@hasDecl(Processor, "readComponentState") or
+        !@hasDecl(Processor, "writeComponentState"))
+    {
+        @compileError("processor component state requires maximum size, read, and write declarations");
+    }
+    if (Processor.component_state_maximum_encoded_size == 0) {
+        @compileError("processor component state maximum size must be positive");
+    }
+    if (Processor.component_state_maximum_encoded_size > 64 * 1024) {
+        @compileError("processor component state maximum size exceeds 64 KiB");
+    }
+}
+
 pub fn readEditorState(
     comptime State: type,
     stream: ?*ibstream.IBStream,
@@ -1215,6 +1338,91 @@ test "zig-vst3-plugin bridge round-trips parameter state through IBStream" {
     try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
     try std.testing.expectEqual(types.kResultOk, readParameterState(Params, stream.asStream(), &set, &restored));
     try std.testing.expectEqual(@as(f64, 0.25), restored.loadField(&set, "gain"));
+}
+
+test "component state envelope round trips processor state and remains controller-readable" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+    };
+    const Processor = struct {
+        pub const component_state_maximum_encoded_size = 4;
+        value: u32,
+
+        pub fn componentStateEncodedSize(_: *const @This()) usize {
+            return 4;
+        }
+
+        pub fn writeComponentState(self: *const @This(), writer: anytype) !void {
+            try writer.writeInt(u32, self.value, .little);
+        }
+
+        pub fn readComponentState(self: *@This(), reader: anytype) !void {
+            self.value = try reader.takeInt(u32, .little);
+        }
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const Values = plug.parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var values = Values.init(&set);
+    var restored_values = Values.init(&set);
+    var controller_values = Values.init(&set);
+    var source = Processor{ .value = 0x1234abcd };
+    var restored = Processor{ .value = 0 };
+    const envelope_header_size = component_state_magic.len + 2 + 4 + 4;
+    const Stream = vst_stream.FixedBufferStream(envelope_header_size + plug.state.encodedSize(Params) + Processor.component_state_maximum_encoded_size);
+    var stream = Stream{};
+
+    try std.testing.expect(values.storeField(&set, "gain", 0.375));
+    try std.testing.expectEqual(types.kResultOk, writeProcessorComponentState(Params, Processor, stream.asStream(), &set, &values, &source));
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, readProcessorComponentState(Params, Processor, stream.asStream(), &set, &restored_values, &restored));
+    try std.testing.expectEqual(@as(f64, 0.375), restored_values.loadField(&set, "gain"));
+    try std.testing.expectEqual(@as(u32, 0x1234abcd), restored.value);
+
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultOk, readComponentParameterState(Params, stream.asStream(), &set, &controller_values));
+    try std.testing.expectEqual(@as(f64, 0.375), controller_values.loadField(&set, "gain"));
+}
+
+test "component state envelope rejects oversized processor state without mutation" {
+    const Params = struct {
+        gain: plug.parameters.FloatParam = plug.parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 1.0),
+    };
+    const Processor = struct {
+        pub const component_state_maximum_encoded_size = 4;
+        value: u32,
+
+        pub fn componentStateEncodedSize(_: *const @This()) usize {
+            return 4;
+        }
+
+        pub fn writeComponentState(self: *const @This(), writer: anytype) !void {
+            try writer.writeInt(u32, self.value, .little);
+        }
+
+        pub fn readComponentState(self: *@This(), reader: anytype) !void {
+            self.value = try reader.takeInt(u32, .little);
+        }
+    };
+    const Set = plug.parameters.ParameterSet(Params);
+    const Values = plug.parameters.ParameterValues(Params);
+    const set = Set.init(.{});
+    var source_values = Values.init(&set);
+    var restored_values = Values.init(&set);
+    var source = Processor{ .value = 9 };
+    var restored = Processor{ .value = 7 };
+    const envelope_header_size = component_state_magic.len + 2 + 4 + 4;
+    const Stream = vst_stream.FixedBufferStream(envelope_header_size + plug.state.encodedSize(Params) + Processor.component_state_maximum_encoded_size);
+    var stream = Stream{};
+    try std.testing.expect(source_values.storeField(&set, "gain", 0.75));
+    try std.testing.expect(restored_values.storeField(&set, "gain", 0.25));
+    try std.testing.expectEqual(types.kResultOk, writeProcessorComponentState(Params, Processor, stream.asStream(), &set, &source_values, &source));
+    const processor_size_offset = component_state_magic.len + 2 + 4;
+    std.mem.writeInt(u32, stream.bytes[processor_size_offset..][0..4], 5, .little);
+    try std.testing.expectEqual(types.kResultOk, stream.asStream().vtable.seek(stream.asStream(), 0, @intFromEnum(ibstream.IStreamSeekMode.kIBSeekSet), null));
+    try std.testing.expectEqual(types.kResultFalse, readProcessorComponentState(Params, Processor, stream.asStream(), &set, &restored_values, &restored));
+    try std.testing.expectEqual(@as(f64, 0.25), restored_values.loadField(&set, "gain"));
+    try std.testing.expectEqual(@as(u32, 7), restored.value);
 }
 
 test "zig-vst3-plugin bridge reads older parameter state without requiring current encoded size" {

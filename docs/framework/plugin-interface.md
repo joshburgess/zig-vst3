@@ -109,6 +109,16 @@ Use `processWithParameterView` for most plugins. Use the plain `process` hook wh
 
 A processor with runtime latency changes may also declare `bindHostRequests`. The framework supplies a component-owned `HostRequestSink`. Mark changes and dispatch them outside the audio thread, then adopt the prepared processing mode at a block boundary. See [DSP Utilities](dsp.md#dynamic-latency) for the ordering contract and Fixed Rate Processor example.
 
+A processor that owns state beyond parameters may declare a bounded component-state payload:
+
+```zig
+pub const component_state_maximum_encoded_size = 4096;
+pub fn writeComponentState(self: *const Plugin, writer: anytype) !void
+pub fn readComponentState(self: *Plugin, reader: anytype) !void
+```
+
+The VST3 shell stores the payload beside parameter state in a versioned envelope. Decoders must reject malformed or trailing data without partially changing the processor. The optional `afterComponentStateRestore` hook runs after a successful restore. The optional `componentConnectionReady` hook runs after the component and controller connection is available, which lets a restored processor dispatch deferred host notifications. Keep payloads bounded and do not serialize unbounded audio or model data. See [Resource Lifecycles](resources.md#persistent-references) for external-file persistence and recovery.
+
 `PrepareConfig` rejects non-finite or non-positive sample rates and zero maximum block sizes before `prepare` runs. The VST3 shell applies the same checks when hosts set up processing.
 
 During VST3 processing, the shell uses the host process context sample rate when it is valid. If the host omits the process context, it uses the validated sample rate from `setupProcessing`.

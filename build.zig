@@ -81,6 +81,14 @@ pub fn build(b: *std.Build) void {
             .bundle_id = "dev.zig-vst3.fixed-rate",
         },
         .{
+            .short_name = "model-shell",
+            .display_name = "model shell",
+            .artifact_name = "zig_vst3_model_shell",
+            .root_source_file = "examples/model_shell_plugin.zig",
+            .core_example_source_file = "examples/model_shell_core.zig",
+            .bundle_id = "dev.zig-vst3.model-shell",
+        },
+        .{
             .short_name = "bypass",
             .display_name = "bypass",
             .artifact_name = "zig_vst3_bypass",
@@ -818,7 +826,7 @@ fn addExamplePlugin(
         .root_source_file = options.root_source_file,
     });
     library.root_module.addImport("zig-vst3", zig_vst3);
-    if (std.mem.eql(u8, options.short_name, "resource-swap") or std.mem.eql(u8, options.short_name, "fixed-rate")) {
+    if (usesFullPluginModule(options.short_name)) {
         library.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
     }
     if (has_reference_editor) library.root_module.addOptions("zig-vst3-gui-options", gui_options);
@@ -830,7 +838,7 @@ fn addExamplePlugin(
 
     const plugin_tests = addZigVst3PluginCoreTest(b, target, optimize, zig_vst3_plugin_core, options.root_source_file);
     plugin_tests.root_module.addImport("zig-vst3", zig_vst3);
-    if (std.mem.eql(u8, options.short_name, "resource-swap") or std.mem.eql(u8, options.short_name, "fixed-rate")) {
+    if (usesFullPluginModule(options.short_name)) {
         plugin_tests.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
     }
     if (has_reference_editor) plugin_tests.root_module.addOptions("zig-vst3-gui-options", gui_options);
@@ -850,6 +858,12 @@ fn addExamplePlugin(
         .plugin_tests = plugin_tests,
         .core_example_tests = addZigVst3PluginTest(b, target, optimize, zig_vst3_plugin, options.core_example_source_file),
     };
+}
+
+fn usesFullPluginModule(short_name: []const u8) bool {
+    return std.mem.eql(u8, short_name, "resource-swap") or
+        std.mem.eql(u8, short_name, "fixed-rate") or
+        std.mem.eql(u8, short_name, "model-shell");
 }
 
 fn hasReferenceEditor(short_name: []const u8) bool {
