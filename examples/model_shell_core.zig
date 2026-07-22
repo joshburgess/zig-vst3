@@ -535,3 +535,102 @@ test "model shell prepares model-rate conversion before latency-approved adoptio
     try std.testing.expectEqual(@as(f64, 96_000), active.host_rate);
     try std.testing.expectEqual(@as(u32, 257), active.max_block_size);
 }
+
+test "model shell survives repeated preparation replacement and randomized blocks" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var path_bytes: [maximum_path_bytes]u8 = undefined;
+    try temporary.dir.writeFile(std.testing.io, .{
+        .sub_path = "replaced.json",
+        .data = "{\"version\":1,\"gain\":1.0,\"sample_rate\":48000}",
+    });
+    const path_length = try temporary.dir.realPathFile(std.testing.io, "replaced.json", &path_bytes);
+
+    var processor: Processor = undefined;
+    processor.initInPlace();
+    defer processor.deinit();
+    var random = std.Random.DefaultPrng.init(0x4d4f_4445_4c53_484c);
+    const host_rates = [_]f64{ 44_100, 48_000, 88_200, 96_000 };
+    const model_rates = [_]u32{ 48_000, 44_100, 48_000, 96_000 };
+
+    for (0..32) |iteration| {
+        const host_rate = host_rates[iteration % host_rates.len];
+        const model_rate = model_rates[iteration % model_rates.len];
+        const max_block_size = random.random().intRangeAtMost(u32, 1, 257);
+        var fixture_bytes: [128]u8 = undefined;
+        const fixture = try std.fmt.bufPrint(&fixture_bytes, "{{\"version\":1,\"gain\":{d:.3},\"sample_rate\":{}}}", .{
+            0.5 + @as(f64, @floatFromInt(iteration % 7)) * 0.125,
+            model_rate,
+        });
+        try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "replaced.json", .data = fixture });
+        processor.prepare(.{ .sample_rate = host_rate, .max_block_size = max_block_size });
+        try std.testing.expect(processor.importModel(path_bytes[0..path_length]));
+        processor.waitForModel();
+        const snapshot = processor.resourceSnapshot();
+        try std.testing.expectEqual(plug.resource.RecoveryStatus.ready, snapshot.status);
+        try std.testing.expectEqual(snapshot.generation, processor.approved_generation.load(.acquire));
+
+        const frame_count = random.random().intRangeAtMost(usize, 1, max_block_size);
+        if (iteration % 2 == 0) {
+            var input: [257]f32 = undefined;
+            var first: [257]f32 = undefined;
+            var reset: [257]f32 = undefined;
+            for (input[0..frame_count]) |*sample| sample.* = random.random().float(f32) * 2.0 - 1.0;
+            const inputs = [_][]const f32{input[0..frame_count]};
+            const first_outputs = [_][]f32{first[0..frame_count]};
+            var first_context = try plug.process.ProcessContext(f32).init(host_rate, &inputs, &first_outputs);
+            const scope = plug.realtime_audit.Scope.enter();
+            processor.process(undefined, f32, &first_context);
+            processor.reset();
+            const reset_outputs = [_][]f32{reset[0..frame_count]};
+            var reset_context = try plug.process.ProcessContext(f32).init(host_rate, &inputs, &reset_outputs);
+            processor.process(undefined, f32, &reset_context);
+            try std.testing.expect(scope.leave().clean());
+            try std.testing.expectEqualSlices(f32, first[0..frame_count], reset[0..frame_count]);
+            for (first[0..frame_count]) |sample| try std.testing.expect(std.math.isFinite(sample));
+        } else {
+            var input: [257]f64 = undefined;
+            var first: [257]f64 = undefined;
+            var reset: [257]f64 = undefined;
+            for (input[0..frame_count]) |*sample| sample.* = random.random().float(f64) * 2.0 - 1.0;
+            const inputs = [_][]const f64{input[0..frame_count]};
+            const first_outputs = [_][]f64{first[0..frame_count]};
+            var first_context = try plug.process.ProcessContext(f64).init(host_rate, &inputs, &first_outputs);
+            const scope = plug.realtime_audit.Scope.enter();
+            processor.process(undefined, f64, &first_context);
+            processor.reset();
+            const reset_outputs = [_][]f64{reset[0..frame_count]};
+            var reset_context = try plug.process.ProcessContext(f64).init(host_rate, &inputs, &reset_outputs);
+            processor.process(undefined, f64, &reset_context);
+            try std.testing.expect(scope.leave().clean());
+            try std.testing.expectEqualSlices(f64, first[0..frame_count], reset[0..frame_count]);
+            for (first[0..frame_count]) |sample| try std.testing.expect(std.math.isFinite(sample));
+        }
+
+        const active = processor.models.activeMutable().?;
+        try std.testing.expect(active.matches(processor.preparation));
+        _ = processor.maintain();
+    }
+}
+
+test "model shell joins pending preparation during repeated teardown" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    try temporary.dir.writeFile(std.testing.io, .{
+        .sub_path = "teardown.json",
+        .data = "{\"version\":1,\"gain\":1.0,\"sample_rate\":48000}",
+    });
+    var path_bytes: [maximum_path_bytes]u8 = undefined;
+    const path_length = try temporary.dir.realPathFile(std.testing.io, "teardown.json", &path_bytes);
+
+    for (0..32) |iteration| {
+        var processor: Processor = undefined;
+        processor.initInPlace();
+        processor.prepare(.{
+            .sample_rate = if (iteration % 2 == 0) 44_100 else 96_000,
+            .max_block_size = 257,
+        });
+        try std.testing.expect(processor.importModel(path_bytes[0..path_length]));
+        processor.deinit();
+    }
+}

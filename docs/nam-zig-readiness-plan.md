@@ -227,6 +227,9 @@ Completion evidence:
 - Optional bounded publication metadata lets control-side code inspect host-visible properties without touching a mutable runtime. Generation-limited adoption leaves newer work pending until its host contract is approved.
 - The Model Shell now composes file-declared model rate, per-instance host rate and maximum block size, stateful inference, both sample formats, fixed scratch, exact SRC latency, and host restart ordering. A mismatched old runtime stays silent, and a replacement cannot be adopted before successful latency dispatch.
 - The Model Shell passes all 47 Steinberg validator tests. The full deterministic suite, raw ABI checks, and resource ThreadSanitizer pass. Linux aarch64 and Windows x86-64 example matrices cross-build successfully.
+- Generated lifecycle coverage performs 32 file and preparation-context replacements across 44.1, 48, 88.2, and 96 kHz. It alternates sample formats, randomizes blocks from 1 to 257 frames, checks finite output and exact reset reproduction, and reclaims retired runtimes off-thread.
+- Another 32 iterations destroy the processor immediately after submitting preparation. Each teardown cancels or joins its worker before runtime storage is destroyed.
+- The existing release benchmark covers the shared SRC hot path. This run measured 33.3 to 48.7 ns per host sample across the four host rates, within the 2,000 ns per sample regression budget. Model-specific inference benchmarks remain work for `zig-nam`.
 
 ### Public C kernel integration
 
