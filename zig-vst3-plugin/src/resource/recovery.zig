@@ -24,6 +24,8 @@ pub fn Recovery(comptime Config: type) type {
     const metadata_capacity: usize = Config.metadata_capacity;
     const FailureType = Config.Failure;
     const allow_mutable_active: bool = if (@hasDecl(Config, "mutable_active")) Config.mutable_active else false;
+    const has_preparation_context = @hasDecl(Config, "PreparationContext");
+    const PreparationContext = if (has_preparation_context) Config.PreparationContext else void;
     const Path = @import("path.zig").BoundedPath(path_capacity);
     const Reference = reference_mod.Reference(path_capacity, metadata_capacity);
     const ReferenceState = reference_mod.State(path_capacity, metadata_capacity);
@@ -33,6 +35,9 @@ pub fn Recovery(comptime Config: type) type {
     if (!@hasDecl(Config, "destroy")) @compileError("resource recovery requires Config.destroy");
     if (!@hasDecl(Config, "failureStatus")) @compileError("resource recovery requires Config.failureStatus");
     if (Config.slot_capacity < 2) @compileError("resource recovery requires at least two exchange slots");
+    if (has_preparation_context and !@hasDecl(Config, "initial_preparation_context")) {
+        @compileError("resource recovery preparation contexts require Config.initial_preparation_context");
+    }
 
     const Exchange = exchange_mod.Exchange(struct {
         pub const Resource = ResourceType;
@@ -168,6 +173,14 @@ pub fn Recovery(comptime Config: type) type {
         publication_generation: u64,
         exchange: *Exchange,
         completion: *Completion,
+        preparation_context: PreparationContext,
+    };
+
+    const SourceRequest = struct {
+        path: Path,
+        expected_reference: ?Reference,
+        kind: RequestKind,
+        desired: ?ReferenceState,
     };
 
     const PreparationJob = job_mod.Job(struct {
@@ -182,7 +195,10 @@ pub fn Recovery(comptime Config: type) type {
             0;
 
         pub fn run(request: Request, context: *job_mod.WorkerContext) job_mod.Outcome(Result, Failure) {
-            const outcome = Config.prepare(request.path, context);
+            const outcome = if (has_preparation_context)
+                Config.prepare(request.path, request.preparation_context, context)
+            else
+                Config.prepare(request.path, context);
             return switch (outcome) {
                 .success => |success| complete(request, context, success.value, success.result_units),
                 .failure => |failure| failureOutcome(request, failure),
@@ -240,6 +256,10 @@ pub fn Recovery(comptime Config: type) type {
         clear_before_generation: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
         next_publication_generation: u64 = 0,
         observed_job_generation: u64 = 0,
+        latest_source_request: ?SourceRequest = null,
+        preparation_context: PreparationContext = if (has_preparation_context)
+            Config.initial_preparation_context
+        else {},
 
         pub fn init() Self {
             return .{};
@@ -260,6 +280,7 @@ pub fn Recovery(comptime Config: type) type {
             switch (state) {
                 .empty => {
                     _ = self.preparation.requestCancel();
+                    self.latest_source_request = null;
                     const generation = self.nextGeneration();
                     self.completion.empty(generation);
                     self.clear_before_generation.store(generation, .release);
@@ -294,6 +315,15 @@ pub fn Recovery(comptime Config: type) type {
             if (self.preparation.retry()) return true;
             self.completion.finishFailure(generation, null);
             return false;
+        }
+
+        pub fn updatePreparationContext(self: *Self, context: PreparationContext) bool {
+            if (!has_preparation_context) {
+                @compileError("updatePreparationContext requires Config.PreparationContext");
+            }
+            self.preparation_context = context;
+            const source = self.latest_source_request orelse return true;
+            return self.submit(source.path, source.expected_reference, source.kind, source.desired);
         }
 
         pub fn poll(self: *Self) void {
@@ -364,6 +394,12 @@ pub fn Recovery(comptime Config: type) type {
         }
 
         fn submitGeneration(self: *Self, generation: u64, path: Path, expected_reference: ?Reference, kind: RequestKind, desired: ?ReferenceState) bool {
+            self.latest_source_request = .{
+                .path = path,
+                .expected_reference = expected_reference,
+                .kind = kind,
+                .desired = desired,
+            };
             self.completion.begin(generation, desired);
             if (!self.preparation.submit(.{
                 .path = path,
@@ -372,6 +408,7 @@ pub fn Recovery(comptime Config: type) type {
                 .publication_generation = generation,
                 .exchange = &self.exchange,
                 .completion = &self.completion,
+                .preparation_context = self.preparation_context,
             })) {
                 self.completion.finishFailure(generation, null);
                 return false;
@@ -477,6 +514,84 @@ test "resource recovery restores, detects changes, and relinks moved content" {
     try std.testing.expect(recovery.adoptPendingAtBlockBoundary());
     try std.testing.expect(recovery.active() == null);
     try std.testing.expectEqual(@as(usize, 2), recovery.reclaim());
+}
+
+test "resource recovery republishes linked content for a new preparation context" {
+    const metadata_limit = 16;
+    const TestResource = struct { value: u32 };
+    const TestPrepared = Prepared(TestResource, metadata_limit);
+    const TestFailure = enum { missing, malformed };
+    const ContextRecovery = Recovery(struct {
+        pub const Resource = TestResource;
+        pub const Failure = TestFailure;
+        pub const PreparationContext = struct { multiplier: u32 };
+        pub const initial_preparation_context: PreparationContext = .{ .multiplier = 1 };
+        pub const path_capacity = 1024;
+        pub const metadata_capacity = metadata_limit;
+        pub const slot_capacity = 4;
+        pub const maximum_work_units = 32;
+        pub const maximum_result_units = 1;
+
+        pub fn prepare(
+            path: @import("path.zig").BoundedPath(path_capacity),
+            preparation_context: PreparationContext,
+            context: *job_mod.WorkerContext,
+        ) job_mod.Outcome(TestPrepared, Failure) {
+            const file = std.Io.Dir.cwd().openFile(context.io, path.slice(), .{}) catch return .{ .failure = .missing };
+            defer file.close(context.io);
+            var bytes: [32]u8 = undefined;
+            const count = file.readPositionalAll(context.io, &bytes, 0) catch return .{ .failure = .malformed };
+            if (count == bytes.len) return .{ .failure = .malformed };
+            const value = std.fmt.parseInt(u32, std.mem.trim(u8, bytes[0..count], " \r\n\t"), 10) catch {
+                return .{ .failure = .malformed };
+            };
+            const resource = std.heap.page_allocator.create(Resource) catch return .{ .failure = .malformed };
+            resource.* = .{ .value = value * preparation_context.multiplier };
+            return .{ .success = .{
+                .value = .{
+                    .resource = resource,
+                    .identity = reference_mod.Identity.fromBytes(bytes[0..count]),
+                    .resource_schema_version = 1,
+                    .metadata = reference_mod.BoundedMetadata(metadata_capacity).init("context fixture") catch {
+                        std.heap.page_allocator.destroy(resource);
+                        return .{ .failure = .malformed };
+                    },
+                },
+                .result_units = 1,
+            } };
+        }
+
+        pub fn destroy(resource: *Resource) void {
+            std.heap.page_allocator.destroy(resource);
+        }
+
+        pub fn failureStatus(failure: Failure) reference_mod.RecoveryStatus {
+            return switch (failure) {
+                .missing => .missing,
+                .malformed => .failed,
+            };
+        }
+    });
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "value.fixture", .data = "7\n" });
+    var path_bytes: [1024]u8 = undefined;
+    const path_length = try temporary.dir.realPathFile(std.testing.io, "value.fixture", &path_bytes);
+
+    var recovery = ContextRecovery.init();
+    defer recovery.deinit();
+    try std.testing.expect(recovery.importPath(path_bytes[0..path_length]));
+    recovery.waitAndPoll();
+    try std.testing.expect(recovery.adoptPendingAtBlockBoundary());
+    try std.testing.expectEqual(@as(u32, 7), recovery.active().?.value);
+
+    try std.testing.expect(recovery.updatePreparationContext(.{ .multiplier = 3 }));
+    recovery.waitAndPoll();
+    try std.testing.expectEqual(@as(u32, 7), recovery.active().?.value);
+    try std.testing.expect(recovery.adoptPendingAtBlockBoundary());
+    try std.testing.expectEqual(@as(u32, 21), recovery.active().?.value);
+    try std.testing.expectEqual(@as(usize, 1), recovery.reclaim());
 }
 
 test "missing resource state remains recoverable without an editor" {

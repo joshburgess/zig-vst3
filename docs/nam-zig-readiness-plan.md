@@ -59,6 +59,7 @@ These facilities now cover the reusable plugin-framework side of a NAM editor an
 | Mutable inference runtime | Opt-in exclusive audio-thread mutation after block-boundary adoption implemented and validated | `zig-vst3-plugin` | Complete |
 | Deferred destruction | Replaced resources retire on audio and are reclaimed off-thread | `zig-vst3-plugin` | Complete |
 | Generic background resource jobs | Bounded replaceable jobs implemented and used by the audio importer | `zig-vst3-plugin` | Complete |
+| Context-dependent runtime preparation | Copyable host preparation context is captured per recovery generation and linked resources can be rebuilt off-thread | `zig-vst3-plugin` | Complete |
 | Streaming sample-rate conversion | Bounded streaming SRC and fixed-rate round-trip pipeline implemented and validated | Reusable DSP package, surfaced through `zig-vst3-plugin` | Complete |
 | Dynamic latency notification | Public coalesced component-to-controller restart path implemented and compatible with restored processor resource state | `zig-vst3` and `zig-vst3-plugin` | Complete |
 | Resource persistence | Bounded reference state, stable identity, asynchronous recovery, and relinking implemented | `zig-vst3-plugin` | Complete |
@@ -210,6 +211,20 @@ Completion evidence:
 - On the current macOS development machine, bounded reference state save and load measured 38.9 ns per round trip, and 4 KiB SHA-256 identity generation measured 2,503.8 MiB/s.
 
 ## P1 reusable infrastructure
+
+### Context-dependent runtime preparation
+
+- [x] Let a recovery configuration declare bounded per-instance preparation inputs such as host rate and maximum block size.
+- [x] Capture the context by value in each worker request.
+- [x] Replace queued work and rebuild the latest linked or in-flight source when the context changes.
+- [x] Keep the active runtime valid until block-boundary adoption of the replacement.
+
+Completion evidence:
+
+- `resource.ResourceRecovery` accepts an optional `PreparationContext` with an explicit initial value. Existing configurations retain their two-argument preparation function and behavior.
+- `updatePreparationContext` starts a new generation for the latest source. The worker sees an owned snapshot, stale work is cancelled, and publication still passes through identity and schema validation.
+- Deterministic tests prove that the previous runtime remains active while context-specific preparation runs, then retires only after block-boundary adoption. Reclamation remains off the audio thread.
+- This closes the lifecycle gap between a model's file-declared sample rate and the host rate. The next Model Shell milestone composes it with bounded SRC, scratch, and host-visible latency.
 
 ### Public C kernel integration
 

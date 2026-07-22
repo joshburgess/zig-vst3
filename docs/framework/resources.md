@@ -60,6 +60,38 @@ The main entry points are:
 
 The worker validates identity and schema compatibility before publication and updates recovery status without an editor polling loop. Restoring component state retires the previous active resource and any older pending publication at the next process-block boundary. Processing therefore remains safe and silent until the restored generation is ready. A missing, unsupported, or changed file remains recoverable. Changed content and incompatible schemas are not published, and the expected reference remains intact. An ordinary import or relink failure leaves the last valid active resource intact.
 
+### Preparation context
+
+A resource whose complete runtime depends on host configuration may declare a copyable `Config.PreparationContext` and `Config.initial_preparation_context`. Its `prepare` function then receives that value between the path and worker context arguments. Each request captures its own context value, so later changes cannot alter work already running.
+
+Call `updatePreparationContext` from a non-real-time lifecycle callback when the host sample rate, maximum block size, or another preparation input changes. Recovery replaces any queued work and prepares the latest linked or in-flight source again. The existing active runtime remains valid until the audio thread adopts the replacement at a block boundary. Callers should avoid submitting an unchanged context because an update intentionally starts a new generation.
+
+The context must own its bounded data by value. Do not put slices or pointers to temporary host callback storage in it. Model parsing, scratch allocation, sample-rate converter construction, and prewarming belong in `prepare`; the published runtime must need only bounded mutation during processing.
+
+```zig
+pub const PreparationContext = struct {
+    host_rate: f64,
+    max_block_size: u32,
+};
+
+pub const initial_preparation_context: PreparationContext = .{
+    .host_rate = 48_000,
+    .max_block_size = 4096,
+};
+
+pub fn prepare(
+    path: ModelPath,
+    preparation: PreparationContext,
+    worker: *plug.resource.job.WorkerContext,
+) plug.resource.job.Outcome(PreparedModel, Failure) {
+    _ = path;
+    _ = preparation;
+    _ = worker;
+    // Construct the complete runtime here.
+    return .cancelled;
+}
+```
+
 Automatic directory scanning for moved files is intentionally excluded because it is unbounded and ambiguous. A caller supplies a candidate path through `relink`; matching content is recorded with the new path and a `moved` resolution.
 
 The recovery object can be used as processor component state through these public processor declarations:
