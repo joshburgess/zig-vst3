@@ -380,3 +380,11 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Direct regressions prove malformed host input never reaches plugin configuration or the plug frame, accepted geometry remains unchanged, and malformed delegated output is restored transactionally.
 - The complete deterministic gate passed 82/82 steps and 3,926/3,926 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 98.3 us for the aggregate scene and 54.97 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Plug Frame Resize Rectangles
+
+- The shared rectangle validator now protects both sides of host resize negotiation. `IPlugFrame::resizeView` rejects empty, inverted, and coordinate-overflowing requests before configuration code runs.
+- Delegated failures and malformed successful outputs restore the caller's original rectangle. Rejected geometry cannot replace the last accepted host resize state.
+- Direct regressions cover invalid input, suppressed delegation, transactional restoration, recovery, and the shared dimension contract.
+- The complete deterministic gate passed 82/82 steps and 3,950/3,950 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 92.8 us for the aggregate scene and 47.13 ms for a complete Sample Player editor lifecycle.

@@ -14,6 +14,13 @@ pub const ViewRect = extern struct {
     bottom: base_types.int32 = 0,
 };
 
+pub fn hasValidDimensions(rect: ViewRect) bool {
+    const width = @as(i64, rect.right) - @as(i64, rect.left);
+    const height = @as(i64, rect.bottom) - @as(i64, rect.top);
+    return width > 0 and width <= @import("std").math.maxInt(base_types.int32) and
+        height > 0 and height <= @import("std").math.maxInt(base_types.int32);
+}
+
 pub const PlatformType = struct {
     pub const kPlatformTypeHWND: base_types.FIDString = "HWND";
     pub const kPlatformTypeHIView: base_types.FIDString = "HIView";
@@ -125,4 +132,18 @@ test "plug view struct sizes match SDK layout" {
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(Linux.IEventHandlerVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 4), @typeInfo(Linux.ITimerHandlerVTable).@"struct".fields.len);
     try @import("std").testing.expectEqual(@as(usize, 7), @typeInfo(Linux.IRunLoopVTable).@"struct".fields.len);
+}
+
+test "view rectangle dimensions reject empty inverted and overflowing spans" {
+    const std = @import("std");
+    try std.testing.expect(hasValidDimensions(.{ .left = -10, .top = 20, .right = 630, .bottom = 500 }));
+    try std.testing.expect(!hasValidDimensions(.{ .left = 10, .top = 20, .right = 10, .bottom = 500 }));
+    try std.testing.expect(!hasValidDimensions(.{ .left = 10, .top = 20, .right = 630, .bottom = 20 }));
+    try std.testing.expect(!hasValidDimensions(.{ .left = 20, .top = 20, .right = 10, .bottom = 500 }));
+    try std.testing.expect(!hasValidDimensions(.{
+        .left = std.math.minInt(base_types.int32),
+        .top = 20,
+        .right = std.math.maxInt(base_types.int32),
+        .bottom = 500,
+    }));
 }

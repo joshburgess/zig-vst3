@@ -7,13 +7,6 @@ const tuid = @import("tuid.zig");
 const types = @import("pluginterfaces/base/types.zig");
 const vst_index = @import("vst_index.zig");
 
-fn validViewRect(rect: iplugview.ViewRect) bool {
-    const width = @as(i64, rect.right) - @as(i64, rect.left);
-    const height = @as(i64, rect.bottom) - @as(i64, rect.top);
-    return width > 0 and width <= std.math.maxInt(types.int32) and
-        height > 0 and height <= std.math.maxInt(types.int32);
-}
-
 pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
     if (max_platforms == 0) @compileError("PlugView requires at least one platform slot");
     vst_index.requireUint32Capacity(max_platforms, "PlugView platform capacity");
@@ -238,7 +231,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
 
         fn onSize(ptr: *anyopaque, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
             const requested = rect.*;
-            if (!validViewRect(requested)) return types.kInvalidArgument;
+            if (!iplugview.hasValidDimensions(requested)) return types.kInvalidArgument;
             if (@hasDecl(Config, "onSize")) {
                 const result = Config.onSize(owner(ptr), rect);
                 if (result != types.kResultOk) {
@@ -246,7 +239,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
                     return result;
                 }
             }
-            if (!validViewRect(rect.*)) {
+            if (!iplugview.hasValidDimensions(rect.*)) {
                 rect.* = requested;
                 return types.kInvalidArgument;
             }
@@ -281,7 +274,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
 
         fn checkSizeConstraint(ptr: *anyopaque, rect: *iplugview.ViewRect) callconv(.c) types.tresult {
             const requested = rect.*;
-            if (!validViewRect(requested)) return types.kInvalidArgument;
+            if (!iplugview.hasValidDimensions(requested)) return types.kInvalidArgument;
             if (@hasDecl(Config, "checkSizeConstraint")) {
                 const result = Config.checkSizeConstraint(owner(ptr), rect);
                 if (result != types.kResultOk) {
@@ -289,7 +282,7 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
                     return result;
                 }
             }
-            if (!validViewRect(rect.*)) {
+            if (!iplugview.hasValidDimensions(rect.*)) {
                 rect.* = requested;
                 return types.kInvalidArgument;
             }
