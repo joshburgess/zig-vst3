@@ -20,6 +20,7 @@ pub const bipolar_event_value_max = events_mod.bipolar_event_value_max;
 pub const max_data_event_bytes = events_mod.max_data_event_bytes;
 
 pub const ParameterChange = changes_mod.ParameterChange;
+pub const BlockParameterLatch = changes_mod.BlockParameterLatch;
 pub const ParameterSegment = changes_mod.ParameterSegment;
 pub const BlockSegment = changes_mod.BlockSegment;
 pub const BlockSegmentIterator = changes_mod.BlockSegmentIterator;

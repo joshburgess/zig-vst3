@@ -9,6 +9,7 @@ pub const max_audio_channels = 64;
 pub const BlockSegment = changes_mod.BlockSegment;
 pub const BlockSegmentIterator = changes_mod.BlockSegmentIterator;
 pub const ParameterChange = changes_mod.ParameterChange;
+pub const BlockParameterLatch = changes_mod.BlockParameterLatch;
 pub const ParameterChangeIdIterator = changes_mod.ParameterChangeIdIterator;
 pub const ParameterChangeIdOffsetIterator = changes_mod.ParameterChangeIdOffsetIterator;
 pub const ParameterChangeOffsetIterator = changes_mod.ParameterChangeOffsetIterator;

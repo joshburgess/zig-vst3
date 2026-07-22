@@ -125,3 +125,16 @@ test "installed package exposes bounded resource commands" {
         vst3.resource_path_transport.sendCancel(null, 1),
     );
 }
+
+test "installed package exposes block boundary parameter latching" {
+    var latch = plugin.process.BlockParameterLatch.init(12, 0.0);
+    const changes = [_]plugin.process.ParameterChange{
+        .{ .id = 12, .sample_offset = 0, .normalized = 0.25 },
+        .{ .id = 12, .sample_offset = 3, .normalized = 0.75 },
+    };
+    const view = try plugin.process.ParameterChanges.init(&changes, 4);
+
+    try std.testing.expectEqual(@as(f64, 0.25), latch.beginBlock(view, 0.75));
+    try std.testing.expectEqual(@as(f64, 0.75), latch.nextBlockValue());
+    try std.testing.expectEqual(@as(f64, 0.75), latch.beginBlock(.{}, 0.75));
+}

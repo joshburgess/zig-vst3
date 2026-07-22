@@ -162,6 +162,15 @@ pub fn process(_: *Gain, context: *plug.process.ProcessContext(f32)) void {
 }
 ```
 
+Structural parameters such as quality modes, oversampling factors, and processing topologies often cannot change within a block. `process.BlockParameterLatch` gives them a deterministic boundary contract:
+
+```zig
+const persisted = params.loadNormalized("quality");
+const quality = quality_latch.beginBlock(context.parameterChanges(), persisted);
+```
+
+Initialize the latch with the parameter ID and its initial normalized value. At each process call, `beginBlock` returns the most recent change at sample offset zero when one exists. A later change in the block is saved for the next block instead of taking effect early. When the host supplies no change for that parameter, the latch synchronizes from the persisted value so state restoration and controller updates remain visible. The latch is fixed-size and performs no allocation or locking.
+
 Useful context helpers include:
 
 - `sampleRate`, `sampleDurationSeconds`, `blockDurationSeconds`, and `sampleOffsetSeconds`.

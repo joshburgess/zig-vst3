@@ -301,12 +301,14 @@ pub const Processor = struct {
     models: ModelRecovery,
     approval: ApprovalState,
     preparation: HostPreparation,
+    activation_quality_latch: plug.process.BlockParameterLatch,
 
     pub fn initInPlace(self: *Processor) void {
         self.* = .{
             .models = ModelRecovery.init(),
             .approval = .{},
             .preparation = .{ .host_rate = 48_000, .max_block_size = maximum_host_frames, .approval = null },
+            .activation_quality_latch = .init(0, 0.0),
         };
         self.preparation.approval = &self.approval;
         _ = self.models.updatePreparationContext(self.preparation);
@@ -398,8 +400,10 @@ pub const Processor = struct {
     pub fn process(self: *Processor, parameters: anytype, comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
         _ = self.models.adoptPendingThroughAtBlockBoundary(self.approval.approved_generation.load(.acquire));
         const runtime = self.models.activeMutable();
+        const persisted_quality = fastActivationNormalized(parameters, self.activation_quality_latch.nextBlockValue());
+        const block_quality = self.activation_quality_latch.beginBlock(context.parameterChanges(), persisted_quality);
         if (runtime) |active| {
-            active.setActivationQuality(if (fastActivationEnabled(parameters)) .fast else .accurate);
+            active.setActivationQuality(if (block_quality >= 0.5) .fast else .accurate);
         }
         for (0..context.outputChannelCount()) |channel| {
             const output = context.outputChannel(channel) orelse continue;
@@ -422,9 +426,9 @@ pub const Processor = struct {
         if (self.models.activeMutable()) |runtime| runtime.reset();
     }
 
-    fn fastActivationEnabled(parameters: anytype) bool {
-        if (comptime @TypeOf(parameters) == @TypeOf(undefined)) return false;
-        return parameters.values.view(parameters.set).load("fast_activation");
+    fn fastActivationNormalized(parameters: anytype, fallback: f64) f64 {
+        if (comptime @TypeOf(parameters) == @TypeOf(undefined)) return fallback;
+        return parameters.values.view(parameters.set).loadNormalized("fast_activation");
     }
 };
 
@@ -496,6 +500,60 @@ test "model shell activation quality is isolated per instance" {
     fast.process(&fast_parameters, f32, &fast_context);
     try std.testing.expectEqual(ActivationQuality.fast, accurate.models.activeMutable().?.activation_quality);
     try std.testing.expectEqual(ActivationQuality.accurate, fast.models.activeMutable().?.activation_quality);
+}
+
+test "model shell activation quality respects process block boundaries" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const fixture = "{\"version\":1,\"gain\":1.0,\"sample_rate\":48000}";
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "linear.json", .data = fixture });
+    var path_bytes: [maximum_path_bytes]u8 = undefined;
+    const path_length = try temporary.dir.realPathFile(std.testing.io, "linear.json", &path_bytes);
+
+    var processor: Processor = undefined;
+    processor.initInPlace();
+    defer processor.deinit();
+    try std.testing.expect(processor.importModel(path_bytes[0..path_length]));
+    processor.waitForModel();
+
+    const Values = plug.parameters.ParameterValues(ModelShell.Params);
+    const Parameters = struct {
+        set: *const @TypeOf(parameter_set),
+        values: Values,
+    };
+    var parameters = Parameters{ .set = &parameter_set, .values = Values.init(&parameter_set) };
+
+    const input = [_]f32{ 0.25, 0.25, 0.25, 0.25 };
+    var output = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
+    const inputs = [_][]const f32{&input};
+    const outputs = [_][]f32{&output};
+
+    var initial_context = try plug.process.ProcessContext(f32).init(48_000, &inputs, &outputs);
+    processor.process(&parameters, f32, &initial_context);
+    try std.testing.expectEqual(ActivationQuality.accurate, processor.models.activeMutable().?.activation_quality);
+
+    try std.testing.expect(parameters.values.storeField(&parameter_set, "fast_activation", true));
+    const deferred_changes = [_]plug.process.ParameterChange{
+        .{ .id = 0, .sample_offset = 2, .normalized = 1.0 },
+    };
+    var deferred_context = try plug.process.ProcessContext(f32).initWith(48_000, &inputs, &outputs, .{
+        .parameter_changes = &deferred_changes,
+    });
+    processor.process(&parameters, f32, &deferred_context);
+    try std.testing.expectEqual(ActivationQuality.accurate, processor.models.activeMutable().?.activation_quality);
+
+    processor.process(&parameters, f32, &initial_context);
+    try std.testing.expectEqual(ActivationQuality.fast, processor.models.activeMutable().?.activation_quality);
+
+    try std.testing.expect(parameters.values.storeField(&parameter_set, "fast_activation", false));
+    const boundary_changes = [_]plug.process.ParameterChange{
+        .{ .id = 0, .sample_offset = 0, .normalized = 0.0 },
+    };
+    var boundary_context = try plug.process.ProcessContext(f32).initWith(48_000, &inputs, &outputs, .{
+        .parameter_changes = &boundary_changes,
+    });
+    processor.process(&parameters, f32, &boundary_context);
+    try std.testing.expectEqual(ActivationQuality.accurate, processor.models.activeMutable().?.activation_quality);
 }
 
 test "model shell restores asynchronously and stays silent when a resource is missing" {

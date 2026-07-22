@@ -25,6 +25,36 @@ pub const ParameterChange = struct {
     }
 };
 
+pub const BlockParameterLatch = struct {
+    parameter_id: u32,
+    next_normalized: f64,
+
+    pub fn init(parameter_id: u32, initial_normalized: f64) BlockParameterLatch {
+        return .{
+            .parameter_id = parameter_id,
+            .next_normalized = common.clampNormalized(initial_normalized),
+        };
+    }
+
+    pub fn beginBlock(self: *BlockParameterLatch, changes: ParameterChanges, persisted_normalized: f64) f64 {
+        const baseline = if (changes.has(self.parameter_id))
+            self.next_normalized
+        else
+            common.clampNormalized(persisted_normalized);
+        const current = changes.latestNormalizedForIdAtOffset(self.parameter_id, 0) orelse baseline;
+        self.next_normalized = changes.latestNormalized(self.parameter_id) orelse current;
+        return current;
+    }
+
+    pub fn nextBlockValue(self: *const BlockParameterLatch) f64 {
+        return self.next_normalized;
+    }
+
+    pub fn reset(self: *BlockParameterLatch, normalized: f64) void {
+        self.next_normalized = common.clampNormalized(normalized);
+    }
+};
+
 fn changeBefore(candidate: ParameterChange, current: ParameterChange) bool {
     return ordered.before(candidate, current);
 }
@@ -641,6 +671,31 @@ test "parameter changes validate block offsets and normalized values" {
     try std.testing.expectEqual(@as(?f64, null), (ParameterChanges{}).latestNormalizedAtOffset(0));
     try std.testing.expectEqual(@as(?f64, null), (ParameterChanges{}).firstNormalizedForIdAtOffset(7, 0));
     try std.testing.expectEqual(@as(?f64, null), (ParameterChanges{}).latestNormalizedForIdAtOffset(7, 0));
+}
+
+test "block parameter latch applies boundary changes and defers later changes" {
+    var latch = BlockParameterLatch.init(7, 0.0);
+    const first_changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 0, .normalized = 0.25 },
+        .{ .id = 7, .sample_offset = 3, .normalized = 0.75 },
+        .{ .id = 9, .sample_offset = 1, .normalized = 1.0 },
+    };
+    const first = try ParameterChanges.init(&first_changes, 4);
+
+    try std.testing.expectEqual(@as(f64, 0.25), latch.beginBlock(first, 0.75));
+    try std.testing.expectEqual(@as(f64, 0.75), latch.nextBlockValue());
+    try std.testing.expectEqual(@as(f64, 0.75), latch.beginBlock(.{}, 0.75));
+
+    const deferred_changes = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 2, .normalized = 1.0 },
+    };
+    const deferred = try ParameterChanges.init(&deferred_changes, 4);
+    try std.testing.expectEqual(@as(f64, 0.75), latch.beginBlock(deferred, 1.0));
+    try std.testing.expectEqual(@as(f64, 1.0), latch.nextBlockValue());
+    try std.testing.expectEqual(@as(f64, 1.0), latch.beginBlock(.{}, 1.0));
+
+    latch.reset(std.math.nan(f64));
+    try std.testing.expectEqual(@as(f64, 0.0), latch.nextBlockValue());
 }
 
 test "parameter changes validate generated boundary cases" {

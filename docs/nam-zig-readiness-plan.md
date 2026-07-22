@@ -300,15 +300,18 @@ Completion evidence:
 
 - [x] Replace the reference plugin's process-global quality switch with an automatable per-instance contract.
 - [x] Apply quality changes at a process-block boundary without allocation, locking, or resource rebuilding.
+- [x] Apply offset-zero changes to the current block and defer later changes to the next block.
 - [x] Prove that changing one plugin instance cannot affect another instance.
 
 Completion evidence:
 
 - The Model Shell exposes a reflected `Fast Activation` boolean parameter. The VST3 shell applies host parameter changes before calling the processor.
 - Each adopted `PreparedRuntime` owns its `ActivationQuality`. The audio thread updates that field only after exclusive block-boundary adoption, so no global mutable quality state exists.
+- Public `process.BlockParameterLatch` prevents the shell's persisted final queue value from making a structural change take effect before its sample offset. The latest offset-zero value applies to the current block, while later values become eligible at the next block.
 - A deterministic two-instance test loads the same model into both processors, selects different quality modes, and verifies independent runtime state before and after changing one instance.
+- A deterministic timing test verifies deferred and offset-zero quality changes, and the installed-package consumer compiles and runs the public latch contract.
 - The Model Shell passes all 47 Steinberg validator tests with automated parameter changes in both sample formats.
-- The aggregate suite passes 4,096 tests. Raw ABI checks and Linux aarch64 and Windows x86-64 example bundle matrices also pass.
+- The aggregate suite passes 4,099 tests, and the installed-package suite passes 7 tests. Raw ABI checks and Linux aarch64 and Windows x86-64 example bundle matrices also pass.
 
 ### Headless DSP fixture runner
 
