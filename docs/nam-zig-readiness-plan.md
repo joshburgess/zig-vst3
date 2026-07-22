@@ -311,7 +311,7 @@ Completion evidence:
 - A deterministic two-instance test loads the same model into both processors, selects different quality modes, and verifies independent runtime state before and after changing one instance.
 - A deterministic timing test verifies deferred and offset-zero quality changes, and the installed-package consumer compiles and runs the public latch contract.
 - The Model Shell passes all 47 Steinberg validator tests with automated parameter changes in both sample formats.
-- The aggregate suite passes 4,112 tests, and the installed-package suite passes 7 tests. Raw ABI checks and Linux aarch64 and Windows x86-64 example bundle matrices also pass.
+- The aggregate suite passes 4,122 tests, and the installed-package suite passes 7 tests. Raw ABI checks and Linux aarch64 and Windows x86-64 example bundle matrices also pass.
 
 ### Headless DSP fixture runner
 

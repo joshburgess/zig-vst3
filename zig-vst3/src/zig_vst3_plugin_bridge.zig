@@ -514,7 +514,7 @@ fn processSampleRate(data: *const ivstaudioprocessor.ProcessData, fallback: f64)
 pub fn collectInputParameterChanges(data: *ivstaudioprocessor.ProcessData, storage: []plug.process.ParameterChange) plug.process.ParameterChanges {
     var collector = ParameterChangeCollector{
         .storage = storage,
-        .frame_count = frameCountOrZero(data),
+        .frame_count = @max(frameCountOrZero(data), 1),
     };
     audio_processor_algo.forEachParameterChangesUntil(data.inputParameterChanges, &collector, collectParameterQueue);
     return plug.process.ParameterChanges.init(collector.items(), collector.frame_count) catch .{};
@@ -1636,6 +1636,26 @@ test "zig-vst3-plugin bridge collects VST3 parameter changes" {
     try std.testing.expectEqual(@as(usize, 3), collected.items[1].sample_offset);
     try std.testing.expectEqual(@as(u32, 8), collected.items[2].id);
     try std.testing.expectEqual(@as(usize, 2), collected.items[2].sample_offset);
+}
+
+test "zig-vst3-plugin bridge collects offset zero parameter flushes" {
+    const Changes = vst_parameter_changes.ParameterChanges(1, 2);
+    var changes = Changes{};
+    const queue = changes.addQueue(7).?;
+    try std.testing.expectEqual(types.kResultOk, queue.appendPoint(0, 0.25));
+    try std.testing.expectEqual(types.kResultOk, queue.appendPoint(1, 0.75));
+    var storage: [2]plug.process.ParameterChange = undefined;
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 0,
+        .inputParameterChanges = changes.asInterface(),
+    };
+
+    const collected = collectInputParameterChanges(&data, &storage);
+
+    try std.testing.expectEqual(@as(usize, 1), collected.changeCount());
+    try std.testing.expectEqual(@as(u32, 7), collected.items[0].id);
+    try std.testing.expectEqual(@as(usize, 0), collected.items[0].sample_offset);
+    try std.testing.expectEqual(@as(f64, 0.25), collected.items[0].normalized);
 }
 
 test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter changes" {

@@ -2121,6 +2121,26 @@ test "simple stereo effect exposes offset zero state and persists the final queu
     data.inputParameterChanges = boundary_changes.asInterface();
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqualSlices(f32, &.{ 0.5, 0.5 }, &output_samples);
+
+    var flush_changes = Changes{};
+    const flush_queue = flush_changes.addQueue(7) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(types.kResultOk, flush_queue.appendPoint(0, 0.9));
+    data.numInputs = 0;
+    data.numOutputs = 0;
+    data.inputs = null;
+    data.outputs = null;
+    data.numSamples = 0;
+    data.inputParameterChanges = flush_changes.asInterface();
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+
+    data.numInputs = 1;
+    data.numOutputs = 1;
+    data.inputs = &inputs;
+    data.outputs = &outputs;
+    data.numSamples = input_samples.len;
+    data.inputParameterChanges = null;
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqualSlices(f32, &.{ 0.9, 0.9 }, &output_samples);
 }
 
 var malformed_process_apply_count: usize = 0;
@@ -3260,6 +3280,12 @@ pub fn SimpleEffect(comptime Config: type) type {
             var event_storage: [process_event_capacity]plug_process.Event = undefined;
             var output_event_storage: [process_output_event_capacity]plug_process.Event = undefined;
             const parameter_changes = zig_vst3_plugin_bridge.collectInputParameterChanges(data, &parameter_change_storage);
+            if (data.numSamples == 0) {
+                const sample_size_result = zig_vst3_plugin_bridge.RealtimeProcessorDefaults.canProcessSampleSize(data.symbolicSampleSize);
+                if (sample_size_result != types.kResultOk) return sample_size_result;
+                self.parameter_state.applyChanges(parameter_changes);
+                return types.kResultOk;
+            }
             const host_events = zig_vst3_plugin_bridge.collectInputEvents(data, &event_storage);
             var event_count = host_events.items.len;
             const frame_count = zig_vst3_plugin_bridge.frameCountOrZero(data);

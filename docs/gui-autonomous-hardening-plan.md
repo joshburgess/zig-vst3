@@ -402,3 +402,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The complete parameter queue still updates persistent state for the next block and remains available through `ProcessContext` for sample-accurate processing. Raw process hooks do not pay the snapshot cost.
 - Direct f32 and f64 regressions cover parameter views, parameter-value hooks, offset-zero changes, later points, and quiet-block persistence without allocation or locking.
 - The complete deterministic gate passed 111/111 steps and 4,112/4,112 tests. The installed-package suite passed 7/7 tests.
+
+### Autonomous Follow-up: Zero-Sample Parameter Flushes
+
+- The VST3 bridge now preserves valid offset-zero parameter points when the host sends the SDK zero-sample flush form with no audio buffers.
+- The reflected processor updates persistent component state without invoking DSP. A following audio block observes the flushed value, while points outside the virtual flush boundary remain rejected.
+- Direct collector and processor regressions cover bounded collection, no-buffer dispatch, and next-block visibility. The complete deterministic gate passed 111/111 steps and 4,122/4,122 tests.
+- Raw ABI checks passed, the Bypass plugin passed all 47 Steinberg validator tests including both flush forms and bypass persistence, and Linux aarch64 and Windows x86-64 example bundle matrices passed.
