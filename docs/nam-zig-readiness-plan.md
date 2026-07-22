@@ -232,6 +232,20 @@ Completion evidence:
 - Another 32 iterations destroy the processor immediately after submitting preparation. Each teardown cancels or joins its worker before runtime storage is destroyed.
 - The existing release benchmark covers the shared SRC hot path. This run measured 33.3 to 48.7 ns per host sample across the four host rates, within the 2,000 ns per sample regression budget. Model-specific inference benchmarks remain work for `zig-nam`.
 
+### Controller-to-processor resource commands
+
+- [x] Add a fixed-capacity VST3 message contract for import and relink paths.
+- [x] Route cancel and retry without exposing adapter internals to editor code.
+- [x] Reject malformed, oversized, embedded-NUL, unknown-target, and unsupported commands deterministically.
+- [x] Exercise the public contract through a connected Model Shell controller and component.
+
+Completion evidence:
+
+- `resource_path_transport` owns at most 4,096 path bytes per stack message and uses explicit target IDs. A recovery receiver applies its narrower model-specific path capacity before submitting work.
+- `ReflectedEditController` exposes import, relink, cancel, and retry helpers. `SimpleEffect` routes them through an optional `resource_path_target_id` and processor `resourcePathReceiver` without adapter-internal imports in plugin code.
+- Model Shell tests import a valid model, relink matching content, retry a malformed model, and verify idle cancellation rejection through actual VST3 connection points. File access, parsing, allocation, and runtime preparation remain on the recovery worker.
+- The full deterministic suite passes 4,083 tests, including the connected controller/component integration. The Model Shell continues to pass all 47 Steinberg validator tests.
+
 ### Public C kernel integration
 
 - [x] Document how a downstream package adds portable C sources, include paths, compile flags, and target-specific objects to a plugin bundle.

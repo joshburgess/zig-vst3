@@ -104,6 +104,24 @@ The Model Shell uses publication metadata for host rate, maximum block size, and
 
 Automatic directory scanning for moved files is intentionally excluded because it is unbounded and ambiguous. A caller supplies a candidate path through `relink`; matching content is recorded with the new path and a `moved` resolution.
 
+### Controller resource commands
+
+`zig-vst3.resource_path_transport` carries import, relink, cancel, and retry commands from an edit controller to its component. Import and relink messages contain at most 4,096 path bytes. Empty paths, embedded NUL bytes, oversized payloads, unknown commands, and wrong target IDs are rejected before a recovery object sees them. The receiver must still apply its own resource-specific path bound.
+
+Declare one routed target on a `SimpleEffect` and return a compatible recovery receiver from the processor:
+
+```zig
+pub const resource_path_target_id = 1;
+
+pub fn resourcePathReceiver(self: *Processor) *ModelRecovery {
+    return &self.models;
+}
+```
+
+An editor built with `ReflectedEditController` can call `importResourcePath`, `relinkResourcePath`, `cancelResourceImport`, and `retryResourceImport`. The VST3 message is delivered synchronously on the caller's non-real-time thread. Recovery copies a valid path into its own bounded request before notification returns, then performs file access and preparation on its worker. Do not call these helpers from processing, and do not retain the message payload in a custom receiver.
+
+The Model Shell integration tests connect a real controller and component, import a valid model, relink identical content at a new path, retry malformed content, and reject cancellation when no job is active. This exercises the same public route that a future file picker or drop target will use.
+
 The recovery object can be used as processor component state through these public processor declarations:
 
 ```zig

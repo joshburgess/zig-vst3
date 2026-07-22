@@ -306,6 +306,10 @@ pub const Processor = struct {
         return self.models.relink(path);
     }
 
+    pub fn resourcePathReceiver(self: *Processor) *ModelRecovery {
+        return &self.models;
+    }
+
     pub fn waitForModel(self: *Processor) void {
         self.models.waitAndPoll();
     }

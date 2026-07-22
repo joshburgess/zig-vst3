@@ -26,6 +26,7 @@ pub const gui_telemetry_source = @import("gui_telemetry_source.zig");
 pub const gui_note_transport = @import("gui_note_transport.zig");
 pub const latency_transport = @import("latency_transport.zig");
 pub const gui_ir_transport = @import("gui_ir_transport.zig");
+pub const resource_path_transport = @import("resource_path_transport.zig");
 pub const interface_map = @import("interface_map.zig");
 pub const mode_gain_component = @import("mode_gain_component.zig");
 pub const mode_gain_controller = @import("mode_gain_controller.zig");
@@ -121,6 +122,7 @@ test {
     std.testing.refAllDecls(gui_telemetry_source);
     std.testing.refAllDecls(gui_note_transport);
     std.testing.refAllDecls(gui_ir_transport);
+    std.testing.refAllDecls(resource_path_transport);
     std.testing.refAllDecls(interface_map);
     std.testing.refAllDecls(mode_gain_component);
     std.testing.refAllDecls(mode_gain_controller);

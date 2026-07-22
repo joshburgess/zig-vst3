@@ -1,6 +1,7 @@
 const std = @import("std");
 const funknown = @import("funknown.zig");
 const gui_ir_transport = @import("gui_ir_transport.zig");
+const resource_path_transport = @import("resource_path_transport.zig");
 const gui_note_transport = @import("gui_note_transport.zig");
 const gui_telemetry_source = @import("gui_telemetry_source.zig");
 const latency_transport = @import("latency_transport.zig");
@@ -365,6 +366,30 @@ pub fn ReflectedEditController(comptime Config: type) type {
             generation: u64,
         ) types.tresult {
             return gui_ir_transport.sendClear(instance(iface).connected_peer, target_id, generation);
+        }
+
+        pub fn importResourcePath(
+            iface: *ivsteditcontroller.IEditController,
+            target_id: u32,
+            path: []const u8,
+        ) types.tresult {
+            return resource_path_transport.sendImport(instance(iface).connected_peer, target_id, path);
+        }
+
+        pub fn relinkResourcePath(
+            iface: *ivsteditcontroller.IEditController,
+            target_id: u32,
+            path: []const u8,
+        ) types.tresult {
+            return resource_path_transport.sendRelink(instance(iface).connected_peer, target_id, path);
+        }
+
+        pub fn cancelResourceImport(iface: *ivsteditcontroller.IEditController, target_id: u32) types.tresult {
+            return resource_path_transport.sendCancel(instance(iface).connected_peer, target_id);
+        }
+
+        pub fn retryResourceImport(iface: *ivsteditcontroller.IEditController, target_id: u32) types.tresult {
+            return resource_path_transport.sendRetry(instance(iface).connected_peer, target_id);
         }
 
         pub fn setNormalized(iface: *ivsteditcontroller.IEditController, id: vsttypes.ParamID, value: vsttypes.ParamValue) types.tresult {
@@ -2953,6 +2978,14 @@ pub fn SimpleEffect(comptime Config: type) type {
 
         fn componentNotify(ptr: *anyopaque, message: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
+            if (comptime @hasDecl(Config, "resource_path_target_id") and @hasDecl(Config.Processor, "resourcePathReceiver")) {
+                const result = resource_path_transport.receive(
+                    self.processor_impl.resourcePathReceiver(),
+                    Config.resource_path_target_id,
+                    message,
+                );
+                if (result != types.kResultFalse) return result;
+            }
             if (comptime @hasDecl(Config, "audio_import_target_id") and @hasDecl(Config.Processor, "audioImportReceiver")) {
                 const result = gui_ir_transport.receive(
                     self.processor_impl.audioImportReceiver(),
