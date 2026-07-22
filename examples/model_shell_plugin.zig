@@ -118,6 +118,9 @@ test "model shell controller routes bounded resource recovery commands" {
     defer _ = controller_connection.vtable.release(controller_connection);
     try std.testing.expectEqual(types.kResultOk, controller_connection.vtable.connect(controller_connection, component_connection));
 
+    const telemetry = Controller.retainGuiTelemetry(controller) orelse return error.MissingTelemetry;
+    defer telemetry.release();
+
     const processor = Effect.processorInstance(component);
     try std.testing.expectEqual(types.kResultOk, Controller.importResourcePath(
         controller,
@@ -126,6 +129,18 @@ test "model shell controller routes bounded resource recovery commands" {
     ));
     processor.waitForModel();
     try std.testing.expectEqual(core.resource.RecoveryStatus.ready, processor.resourceSnapshot().status);
+    try std.testing.expectEqual(
+        @as(f64, @floatFromInt(@intFromEnum(core.resource.RecoveryStatus.ready))),
+        telemetry.load(support.resource_status_source_id),
+    );
+    var text: [128]u8 = undefined;
+    var text_length = telemetry.loadText(support.resource_status_source_id, &text);
+    try std.testing.expectEqualStrings("ready", text[0..text_length]);
+    text_length = telemetry.loadText(support.resource_metadata_source_id, &text);
+    try std.testing.expectEqualStrings("Linear, 48000 Hz, gain 1.250", text[0..text_length]);
+    var short_text: [6]u8 = undefined;
+    const short_length = telemetry.loadText(support.resource_metadata_source_id, &short_text);
+    try std.testing.expectEqualStrings("Linear", short_text[0..short_length]);
 
     try std.testing.expectEqual(types.kResultOk, Controller.relinkResourcePath(
         controller,
@@ -144,6 +159,10 @@ test "model shell controller routes bounded resource recovery commands" {
     ));
     processor.waitForModel();
     try std.testing.expectEqual(core.resource.RecoveryStatus.failed, processor.resourceSnapshot().status);
+    text_length = telemetry.loadText(support.resource_status_source_id, &text);
+    try std.testing.expectEqualStrings("failed", text[0..text_length]);
+    text_length = telemetry.loadText(support.resource_metadata_source_id, &text);
+    try std.testing.expectEqualStrings("Linear, 48000 Hz, gain 1.250", text[0..text_length]);
     try std.testing.expectEqual(types.kResultOk, Controller.retryResourceImport(controller, model_resource_target_id));
     processor.waitForModel();
     try std.testing.expectEqual(core.resource.RecoveryStatus.failed, processor.resourceSnapshot().status);

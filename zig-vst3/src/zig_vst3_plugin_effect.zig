@@ -2754,7 +2754,10 @@ pub fn SimpleEffect(comptime Config: type) type {
                 interface_map.fieldEntry("prefetchable_support", self, &ivstprefetchablesupport.iprefetchable_support_iid),
                 interface_map.fieldEntry("data_exchange_receiver", self, &ivstdataexchange.idata_exchange_receiver_iid),
             };
-            if (comptime @hasDecl(Config.Processor, "guiTelemetryLoad") or @hasDecl(Config.Processor, "guiGraphLoad")) {
+            if (comptime @hasDecl(Config.Processor, "guiTelemetryLoad") or
+                @hasDecl(Config.Processor, "guiGraphLoad") or
+                @hasDecl(Config.Processor, "guiTelemetryLoadText"))
+            {
                 const entries = base_entries ++ [_]interface_map.Entry{
                     interface_map.fieldEntry("telemetry_source", self, &gui_telemetry_source.iid),
                 };
@@ -2800,6 +2803,7 @@ pub fn SimpleEffect(comptime Config: type) type {
             .editorOpened = telemetryEditorOpened,
             .editorClosed = telemetryEditorClosed,
             .loadGraph = telemetryLoadGraph,
+            .loadText = telemetryLoadText,
         };
 
         fn telemetryLoad(ptr: *anyopaque, source_id: types.uint32) callconv(.c) f64 {
@@ -2830,6 +2834,19 @@ pub fn SimpleEffect(comptime Config: type) type {
         ) callconv(.c) types.uint32 {
             if (comptime @hasDecl(Config.Processor, "guiGraphLoad")) {
                 const count = ownerFromTelemetrySource(ptr).processor_impl.guiGraphLoad(source_id, output[0..capacity]);
+                return @intCast(@min(count, capacity));
+            }
+            return 0;
+        }
+
+        fn telemetryLoadText(
+            ptr: *anyopaque,
+            source_id: types.uint32,
+            output: [*]u8,
+            capacity: types.uint32,
+        ) callconv(.c) types.uint32 {
+            if (comptime @hasDecl(Config.Processor, "guiTelemetryLoadText")) {
+                const count = ownerFromTelemetrySource(ptr).processor_impl.guiTelemetryLoadText(source_id, output[0..capacity]);
                 return @intCast(@min(count, capacity));
             }
             return 0;

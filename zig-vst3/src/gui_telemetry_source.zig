@@ -13,6 +13,7 @@ pub const VTable = extern struct {
     editorOpened: *const fn (*anyopaque) callconv(.c) void,
     editorClosed: *const fn (*anyopaque) callconv(.c) void,
     loadGraph: *const fn (*anyopaque, types.uint32, [*]gui_graph.Point, types.uint32) callconv(.c) types.uint32,
+    loadText: *const fn (*anyopaque, types.uint32, [*]u8, types.uint32) callconv(.c) types.uint32,
 };
 
 pub const Interface = extern struct {
@@ -45,7 +46,12 @@ pub const RetainedSource = struct {
 
     pub fn loadGraph(self: RetainedSource, source_id: types.uint32, output: []gui_graph.Point) usize {
         if (output.len > std.math.maxInt(types.uint32)) return 0;
-        return self.iface.vtable.loadGraph(self.iface, source_id, output.ptr, @intCast(output.len));
+        return @min(self.iface.vtable.loadGraph(self.iface, source_id, output.ptr, @intCast(output.len)), output.len);
+    }
+
+    pub fn loadText(self: RetainedSource, source_id: types.uint32, output: []u8) usize {
+        if (output.len > std.math.maxInt(types.uint32)) return 0;
+        return @min(self.iface.vtable.loadText(self.iface, source_id, output.ptr, @intCast(output.len)), output.len);
     }
 };
 
@@ -56,6 +62,6 @@ pub fn query(peer: anytype) ?RetainedSource {
 }
 
 test "telemetry interface has an FUnknown prefix" {
-    try std.testing.expectEqual(@as(usize, 7), @typeInfo(VTable).@"struct".fields.len);
+    try std.testing.expectEqual(@as(usize, 8), @typeInfo(VTable).@"struct".fields.len);
     try std.testing.expectEqual(@sizeOf(usize), @sizeOf(Interface));
 }

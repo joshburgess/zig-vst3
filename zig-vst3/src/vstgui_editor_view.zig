@@ -1341,6 +1341,7 @@ test "telemetry source can connect after the editor opens" {
             .editorOpened = editorOpened,
             .editorClosed = editorClosed,
             .loadGraph = @This().loadGraph,
+            .loadText = @This().loadText,
         };
 
         fn owner(ptr: *anyopaque) *@This() {
@@ -1377,6 +1378,10 @@ test "telemetry source can connect after the editor opens" {
         }
 
         fn loadGraph(_: *anyopaque, _: types.uint32, _: [*]gui_graph.Point, _: types.uint32) callconv(.c) types.uint32 {
+            return 0;
+        }
+
+        fn loadText(_: *anyopaque, _: types.uint32, _: [*]u8, _: types.uint32) callconv(.c) types.uint32 {
             return 0;
         }
 

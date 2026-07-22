@@ -7,6 +7,9 @@ const maximum_metadata_bytes = 96;
 const maximum_host_frames = 4096;
 const maximum_model_frames = maximum_host_frames * 8 + 2;
 
+pub const resource_status_source_id = 0;
+pub const resource_metadata_source_id = 1;
+
 pub const LinearModel = struct {
     gain: f32,
     sample_rate: u32,
@@ -339,6 +342,26 @@ pub const Processor = struct {
 
     pub fn resourceSnapshot(self: *const Processor) ModelRecovery.Snapshot {
         return self.models.snapshot();
+    }
+
+    pub fn guiTelemetryLoad(self: *const Processor, source_id: u32) f64 {
+        if (source_id != resource_status_source_id) return 0.0;
+        return @floatFromInt(@intFromEnum(self.models.snapshot().status));
+    }
+
+    pub fn guiTelemetryLoadText(self: *const Processor, source_id: u32, output: []u8) usize {
+        const snapshot = self.models.snapshot();
+        const text = switch (source_id) {
+            resource_status_source_id => @tagName(snapshot.status),
+            resource_metadata_source_id => switch (snapshot.reference) {
+                .empty => "",
+                .linked => |linked| linked.metadata.slice(),
+            },
+            else => "",
+        };
+        const count = @min(text.len, output.len);
+        @memcpy(output[0..count], text[0..count]);
+        return count;
     }
 
     pub fn componentStateEncodedSize(self: *const Processor) usize {
