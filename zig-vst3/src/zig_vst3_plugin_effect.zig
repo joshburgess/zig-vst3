@@ -2419,6 +2419,10 @@ test "simple stereo effect exposes processor lifecycle and decoded audio transpo
 }
 
 pub fn SimpleStereoEffect(comptime Config: type) type {
+    return SimpleEffect(Config);
+}
+
+pub fn SimpleEffect(comptime Config: type) type {
     return struct {
         const Params = if (@hasDecl(Config, "Params")) Config.Params else struct {};
         const DefaultParameterSet = plug_core.parameters.ParameterSet(Params);
@@ -2428,11 +2432,25 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
         const event_output = @hasDecl(Config, "event_output") and Config.event_output;
         const event_input = !@hasDecl(Config, "event_input") or Config.event_input;
         const gui_note_input = @hasDecl(Config, "gui_note_input") and Config.gui_note_input;
-        const audio_input = !@hasDecl(Config, "audio_input") or Config.audio_input;
-        const audio_output = !@hasDecl(Config, "audio_output") or Config.audio_output;
+        const audio_input_layout: plug_core.plugin.AudioBusLayout = if (@hasDecl(Config, "audio_input_layout"))
+            Config.audio_input_layout
+        else if (!@hasDecl(Config, "audio_input") or Config.audio_input)
+            .stereo
+        else
+            .none;
+        const audio_output_layout: plug_core.plugin.AudioBusLayout = if (@hasDecl(Config, "audio_output_layout"))
+            Config.audio_output_layout
+        else if (!@hasDecl(Config, "audio_output") or Config.audio_output)
+            .stereo
+        else
+            .none;
+        const audio_input = audio_input_layout.hasBus();
+        const audio_output = audio_output_layout.hasBus();
         const bus_config = zig_vst3_plugin_bridge.StereoAudioBuses.Config{
             .audio_input = audio_input,
             .audio_output = audio_output,
+            .audio_input_layout = audio_input_layout,
+            .audio_output_layout = audio_output_layout,
             .event_input = event_input,
             .event_output = event_output,
         };
@@ -2442,6 +2460,12 @@ pub fn SimpleStereoEffect(comptime Config: type) type {
             0;
 
         comptime {
+            if (@hasDecl(Config, "audio_input") and Config.audio_input != audio_input_layout.hasBus()) {
+                @compileError("audio_input_layout conflicts with audio_input");
+            }
+            if (@hasDecl(Config, "audio_output") and Config.audio_output != audio_output_layout.hasBus()) {
+                @compileError("audio_output_layout conflicts with audio_output");
+            }
             if (gui_note_input and !event_input) {
                 @compileError("gui_note_input requires an event input bus");
             }

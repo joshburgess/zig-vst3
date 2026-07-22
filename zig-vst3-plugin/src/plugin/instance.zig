@@ -50,8 +50,24 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return Spec.audio_input;
         }
 
+        pub fn audioInputLayout(_: *const Self) process_api.AudioBusLayout {
+            return Spec.audio_input_layout;
+        }
+
+        pub fn audioInputChannelCount(_: *const Self) u8 {
+            return Spec.audio_input_layout.channelCount();
+        }
+
         pub fn hasAudioOutput(_: *const Self) bool {
             return Spec.audio_output;
+        }
+
+        pub fn audioOutputLayout(_: *const Self) process_api.AudioBusLayout {
+            return Spec.audio_output_layout;
+        }
+
+        pub fn audioOutputChannelCount(_: *const Self) u8 {
+            return Spec.audio_output_layout.channelCount();
         }
 
         pub fn hasEventInput(_: *const Self) bool {

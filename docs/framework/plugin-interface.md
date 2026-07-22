@@ -58,10 +58,18 @@ Optional declarations include:
 - `url` and `email`: factory contact metadata.
 - `component_class_name` and `controller_class_name`: VST3 class names.
 - `component_category` and `controller_category`: VST3 class categories.
-- `audio_input`, `audio_output`, `event_input`, and `event_output`: bus topology flags.
+- `audio_input_layout` and `audio_output_layout`: main audio bus layouts. Valid values are `.none`, `.mono`, and `.stereo`.
+- `audio_input`, `audio_output`, `event_input`, and `event_output`: legacy audio-presence flags and event bus topology flags.
 - `units`: unit and program-list metadata.
 
-Default topology is a stereo effect with audio input, audio output, event input, and no event output. Set `audio_output = false` for an input-only analyzer, set `audio_input = false` for a generator, and set `event_output = true` for processors that emit events.
+Default topology is a stereo effect with audio input, audio output, event input, and no event output. Declare `.mono` on both audio layouts for a mono effect, `.mono` input with `.stereo` output for a mono-to-stereo effect, `.none` input for a generator, or `.none` output for an analyzer. The older `audio_input = false` and `audio_output = false` declarations remain supported. Do not declare a legacy flag that conflicts with an explicit layout. Set `event_output = true` for processors that emit events.
+
+```zig
+pub const audio_input_layout: plug.plugin.AudioBusLayout = .mono;
+pub const audio_output_layout: plug.plugin.AudioBusLayout = .mono;
+```
+
+`PluginInstance` exposes the declared layouts and channel counts through `audioInputLayout`, `audioInputChannelCount`, `audioOutputLayout`, and `audioOutputChannelCount`. Processing contexts are bounded to the negotiated layout. A host may temporarily provide fewer active channels for a stereo bus, but it cannot expose more channels than the declared layout permits.
 
 ## Lifecycle Hooks
 

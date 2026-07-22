@@ -259,6 +259,20 @@ test "plugin spec exposes optional bus topology metadata" {
         pub const event_input = false;
         pub const Params = struct {};
     };
+    const MonoEffect = struct {
+        pub const name = "Mono Effect";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin.AudioBusLayout = .mono;
+        pub const audio_output_layout: plugin.AudioBusLayout = .mono;
+        pub const Params = struct {};
+    };
+    const MonoToStereo = struct {
+        pub const name = "Mono to Stereo";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: plugin.AudioBusLayout = .mono;
+        pub const audio_output_layout: plugin.AudioBusLayout = .stereo;
+        pub const Params = struct {};
+    };
 
     try std.testing.expect(PluginSpec(DefaultEffect).audio_input);
     try std.testing.expect(PluginSpec(DefaultEffect).audio_output);
@@ -272,6 +286,12 @@ test "plugin spec exposes optional bus topology metadata" {
     try std.testing.expect(!PluginSpec(ControlOnly).audio_input);
     try std.testing.expect(!PluginSpec(ControlOnly).audio_output);
     try std.testing.expect(!PluginSpec(ControlOnly).event_input);
+    try std.testing.expectEqual(plugin.AudioBusLayout.stereo, PluginSpec(DefaultEffect).audio_input_layout);
+    try std.testing.expectEqual(plugin.AudioBusLayout.none, PluginSpec(Analyzer).audio_output_layout);
+    try std.testing.expectEqual(plugin.AudioBusLayout.mono, PluginSpec(MonoEffect).audio_input_layout);
+    try std.testing.expectEqual(@as(u8, 1), PluginSpec(MonoEffect).audio_output_layout.channelCount());
+    try std.testing.expectEqual(@as(u8, 1), PluginSpec(MonoToStereo).audio_input_layout.channelCount());
+    try std.testing.expectEqual(@as(u8, 2), PluginSpec(MonoToStereo).audio_output_layout.channelCount());
 }
 
 test "plugin spec exposes default root unit metadata" {
@@ -1015,6 +1035,10 @@ test "plugin instance exposes bus and lifecycle predicates" {
 
     try std.testing.expect(instance.hasAudioInput());
     try std.testing.expect(!instance.hasAudioOutput());
+    try std.testing.expectEqual(plugin.AudioBusLayout.stereo, instance.audioInputLayout());
+    try std.testing.expectEqual(plugin.AudioBusLayout.none, instance.audioOutputLayout());
+    try std.testing.expectEqual(@as(u8, 2), instance.audioInputChannelCount());
+    try std.testing.expectEqual(@as(u8, 0), instance.audioOutputChannelCount());
     try std.testing.expect(instance.hasEventInput());
     try std.testing.expect(instance.hasEventOutput());
     try std.testing.expect(instance.hasInitHook());

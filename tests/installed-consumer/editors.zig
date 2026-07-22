@@ -38,6 +38,14 @@ const InstrumentParameters = struct {
     },
 };
 
+const MonoEffect = struct {
+    pub const name = "Installed Mono Effect";
+    pub const vendor = "Example Audio";
+    pub const audio_input_layout: plugin.plugin.AudioBusLayout = .mono;
+    pub const audio_output_layout: plugin.plugin.AudioBusLayout = .mono;
+    pub const Params = EffectParameters;
+};
+
 const effect_editor: ui.EditorDescription = .{
     .parameters = &.{
         .{ .id = 0, .title = "Gain", .units = "dB", .step_count = 0, .default_normalized = 2.0 / 3.0, .control_kind = .decibel_slider },
@@ -100,4 +108,8 @@ test "installed package builds effect and instrument editor declarations" {
     try std.testing.expectEqual(@as(usize, 2), instrument_editor.parameters.len);
     try std.testing.expectEqual(@as(usize, 1), instrument_editor.file_importers.len);
     try std.testing.expectEqual(@as(usize, 1), instrument_editor.pianos.len);
+
+    const mono_spec = plugin.plugin.PluginSpec(MonoEffect);
+    try std.testing.expectEqual(plugin.plugin.AudioBusLayout.mono, mono_spec.audio_input_layout);
+    try std.testing.expectEqual(@as(u8, 1), mono_spec.audio_output_layout.channelCount());
 }

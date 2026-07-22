@@ -54,7 +54,7 @@ These facilities cover most of a basic NAM editor. They do not yet cover safe ow
 
 | Capability | Current state | Required home | Priority |
 | --- | --- | --- | --- |
-| Configurable audio layouts | Public plugin declarations only enable or disable one stereo main bus | `zig-vst3` and `zig-vst3-plugin` | P0 |
+| Configurable audio layouts | Mono, stereo, absent, and mixed main-bus layouts are public and validated | `zig-vst3` and `zig-vst3-plugin` | Complete |
 | Immutable model publication | Specialized fixed-slot sample and IR stores exist, but no generic large-resource swap | `zig-vst3-plugin` | P0 |
 | Deferred destruction | No reusable way to retire a model without freeing it on the audio thread | `zig-vst3-plugin` | P0 |
 | Generic background resource jobs | Audio decoding is specialized to WAV and AIFF | `zig-vst3-plugin` | P0 |
@@ -71,17 +71,25 @@ These facilities cover most of a basic NAM editor. They do not yet cover safe ow
 
 ### 1. Configurable main bus layouts
 
-- [ ] Replace stereo-only booleans with a bounded declarative bus-layout API.
-- [ ] Support at least mono, stereo, mono-to-stereo, generator, and analyzer layouts without weakening existing defaults.
-- [ ] Expose negotiated channel counts to preparation and processing code.
-- [ ] Reject unsupported arrangements transactionally and report the preferred arrangement.
-- [ ] Add processor, ABI, validator, and cross-target coverage for a mono effect.
+- [x] Replace stereo-only booleans with a bounded declarative bus-layout API.
+- [x] Support at least mono, stereo, mono-to-stereo, generator, and analyzer layouts without weakening existing defaults.
+- [x] Expose negotiated channel counts to preparation and processing code.
+- [x] Reject unsupported arrangements transactionally and report the preferred arrangement.
+- [x] Add processor, ABI, validator, and cross-target coverage for a mono effect.
 
 Exit criteria:
 
 - A public-API-only mono effect passes Steinberg validation in both sample formats.
 - Existing stereo, generator, and analyzer plugins retain their behavior.
 - Process views never expose more channels than the negotiated layout.
+
+Completion evidence:
+
+- `AudioBusLayout` declares `.none`, `.mono`, and `.stereo`. `PluginSpec` retains stereo defaults and maps the older audio-presence flags without allowing conflicting declarations.
+- The public `Mono Gain` probe uses `@import("zig-vst3-plugin")` for its core declaration and the public `SimpleEffect` VST3 shell. It rejects stereo arrangements and bounds process views to one channel.
+- The Steinberg validator passed all 47 tests, including single-precision and double-precision mono processing, variable blocks, arrangement fallback, and state transitions.
+- The full deterministic suite passed 3,962/3,962 tests. Raw ABI, entry-symbol, installed-package, native adapter, macOS accessibility, visual regression, and sanitizer gates passed.
+- All 15 examples passed native Steinberg validation. Linux aarch64 and Windows x86_64 cross-target matrices each passed 47/47 build steps. Cross-compilation remains build coverage rather than native host verification.
 
 ### 2. Generic bounded resource jobs
 
@@ -240,7 +248,7 @@ Only after all five probes pass should a `zig-nam` repository or package begin i
 
 The best next phase is framework work, not neural inference:
 
-- [ ] Land configurable mono and stereo bus layouts.
+- [x] Land configurable mono and stereo bus layouts.
 - [ ] Land the generic resource job and immutable resource exchange together, because either one without the other encourages unsafe model sharing.
 - [ ] Build the Resource Swap Probe and run it under sanitizers and repeated editor/component teardown.
 - [ ] Add bounded SRC and dynamic latency through the Fixed-Rate Processor.

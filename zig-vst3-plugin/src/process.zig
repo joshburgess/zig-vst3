@@ -1,4 +1,5 @@
 const std = @import("std");
+pub const AudioBusLayout = @import("plugin/audio_layout.zig").AudioBusLayout;
 const changes_mod = @import("process/changes.zig");
 const events_mod = @import("process/events.zig");
 const context_mod = @import("process/context.zig");

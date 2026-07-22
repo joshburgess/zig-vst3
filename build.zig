@@ -57,6 +57,14 @@ pub fn build(b: *std.Build) void {
             .bundle_id = "dev.zig-vst3.gain",
         },
         .{
+            .short_name = "mono-gain",
+            .display_name = "mono gain",
+            .artifact_name = "zig_vst3_mono_gain",
+            .root_source_file = "examples/mono_gain_plugin.zig",
+            .core_example_source_file = "examples/mono_gain_core.zig",
+            .bundle_id = "dev.zig-vst3.mono-gain",
+        },
+        .{
             .short_name = "bypass",
             .display_name = "bypass",
             .artifact_name = "zig_vst3_bypass",

@@ -2,6 +2,7 @@ const parameters = @import("../parameters.zig");
 const state = @import("../state.zig");
 const units_api = @import("../units.zig");
 const common = @import("common.zig");
+const AudioBusLayout = @import("audio_layout.zig").AudioBusLayout;
 
 const validateRequiredMetadataString = common.validateRequiredMetadataString;
 const validateOptionalMetadataString = common.validateOptionalMetadataString;
@@ -33,8 +34,10 @@ pub fn PluginSpec(comptime Plugin: type) type {
         pub const controller_class_name = if (@hasDecl(Plugin, "controller_class_name")) Plugin.controller_class_name else Plugin.name ++ " Controller";
         pub const component_category = if (@hasDecl(Plugin, "component_category")) Plugin.component_category else "Audio Module Class";
         pub const controller_category = if (@hasDecl(Plugin, "controller_category")) Plugin.controller_category else "Component Controller Class";
-        pub const audio_input = !@hasDecl(Plugin, "audio_input") or Plugin.audio_input;
-        pub const audio_output = !@hasDecl(Plugin, "audio_output") or Plugin.audio_output;
+        pub const audio_input_layout: AudioBusLayout = declaredAudioLayout(Plugin, "audio_input_layout", "audio_input");
+        pub const audio_output_layout: AudioBusLayout = declaredAudioLayout(Plugin, "audio_output_layout", "audio_output");
+        pub const audio_input = audio_input_layout.hasBus();
+        pub const audio_output = audio_output_layout.hasBus();
         pub const event_input = !@hasDecl(Plugin, "event_input") or Plugin.event_input;
         pub const event_output = @hasDecl(Plugin, "event_output") and Plugin.event_output;
         pub const unit_config = if (@hasDecl(Plugin, "units")) Plugin.units else units_api.Config{};
@@ -90,4 +93,16 @@ pub fn PluginSpec(comptime Plugin: type) type {
             try validateRequiredMetadataString(controller_category);
         }
     };
+}
+
+fn declaredAudioLayout(comptime Plugin: type, comptime layout_name: []const u8, comptime legacy_name: []const u8) AudioBusLayout {
+    if (@hasDecl(Plugin, layout_name)) {
+        const layout: AudioBusLayout = @field(Plugin, layout_name);
+        if (@hasDecl(Plugin, legacy_name) and @field(Plugin, legacy_name) != layout.hasBus()) {
+            @compileError(layout_name ++ " conflicts with " ++ legacy_name);
+        }
+        return layout;
+    }
+    if (@hasDecl(Plugin, legacy_name) and !@field(Plugin, legacy_name)) return .none;
+    return .stereo;
 }

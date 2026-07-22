@@ -26,6 +26,7 @@ const vst_stream = @import("vst_stream.zig");
 const max_audio_channels = plug.process.max_audio_channels;
 const max_data_event_bytes = plug.process.max_data_event_bytes;
 const empty_arrangement = vstspeaker.SpeakerArr.kEmpty;
+const mono_arrangement = vstspeaker.SpeakerArr.kMono;
 const stereo_arrangement = vstspeaker.SpeakerArr.kStereo;
 const test_sample_rate: f64 = 48_000.0;
 const formatted_parameter_value_bytes = 64;
@@ -60,12 +61,22 @@ const FixedBufferStream = struct {
     }
 };
 
-pub const StereoAudioBuses = struct {
+pub const AudioBuses = struct {
     pub const Config = struct {
         audio_input: bool = true,
         audio_output: bool = true,
+        audio_input_layout: plug.plugin.AudioBusLayout = .stereo,
+        audio_output_layout: plug.plugin.AudioBusLayout = .stereo,
         event_input: bool = true,
         event_output: bool = false,
+
+        pub fn inputLayout(self: Config) plug.plugin.AudioBusLayout {
+            return if (self.audio_input) self.audio_input_layout else .none;
+        }
+
+        pub fn outputLayout(self: Config) plug.plugin.AudioBusLayout {
+            return if (self.audio_output) self.audio_output_layout else .none;
+        }
     };
 
     pub fn busCount(media_type: vsttypes.MediaType, direction: vsttypes.BusDirection) types.int32 {
@@ -103,11 +114,11 @@ pub const StereoAudioBuses = struct {
             out.* = .{
                 .mediaType = media_type,
                 .direction = direction,
-                .channelCount = 2,
+                .channelCount = @intCast(audioLayout(config, direction).channelCount()),
                 .busType = @intFromEnum(ivstcomponent.BusTypes.kMain),
                 .flags = ivstcomponent.BusFlags.kDefaultActive,
             };
-            string128.copy(&out.name, if (directionIs(direction, .kInput)) "Stereo In" else "Stereo Out");
+            string128.copy(&out.name, audioBusName(config, direction));
             return types.kResultOk;
         }
 
@@ -132,9 +143,7 @@ pub const StereoAudioBuses = struct {
     }
 
     fn hasConfiguredAudioBus(config: Config, direction: vsttypes.BusDirection) bool {
-        if (config.audio_input and directionIs(direction, .kInput)) return true;
-        if (config.audio_output and directionIs(direction, .kOutput)) return true;
-        return false;
+        return audioLayout(config, direction).hasBus();
     }
 
     fn hasConfiguredEventBus(config: Config, direction: vsttypes.BusDirection) bool {
@@ -166,11 +175,11 @@ pub const StereoAudioBuses = struct {
         if (num_inputs != expected_inputs or num_outputs != expected_outputs) {
             return types.kResultFalse;
         }
-        if (config.audio_input) {
-            if (!arrangementIsStereo(inputs)) return types.kResultFalse;
+        if (config.inputLayout().hasBus()) {
+            if (!arrangementMatches(inputs, config.inputLayout())) return types.kResultFalse;
         }
-        if (config.audio_output) {
-            if (!arrangementIsStereo(outputs)) return types.kResultFalse;
+        if (config.outputLayout().hasBus()) {
+            if (!arrangementMatches(outputs, config.outputLayout())) return types.kResultFalse;
         }
         return types.kResultOk;
     }
@@ -184,27 +193,51 @@ pub const StereoAudioBuses = struct {
             out.* = empty_arrangement;
             return types.kInvalidArgument;
         }
-        out.* = stereo_arrangement;
+        out.* = speakerArrangement(audioLayout(config, direction));
         return types.kResultOk;
     }
 
     fn configuredAudioInputCount(config: Config) types.int32 {
-        return configuredBusCount(config.audio_input);
+        return configuredBusCount(config.inputLayout().hasBus());
     }
 
     fn configuredAudioOutputCount(config: Config) types.int32 {
-        return configuredBusCount(config.audio_output);
+        return configuredBusCount(config.outputLayout().hasBus());
     }
 
     fn configuredBusCount(enabled: bool) types.int32 {
         return if (enabled) 1 else 0;
     }
 
-    fn arrangementIsStereo(arrangements: ?[*]vsttypes.SpeakerArrangement) bool {
+    fn arrangementMatches(arrangements: ?[*]vsttypes.SpeakerArrangement, layout: plug.plugin.AudioBusLayout) bool {
         const values = arrangements orelse return false;
-        return values[0] == stereo_arrangement;
+        return values[0] == speakerArrangement(layout);
+    }
+
+    fn audioLayout(config: Config, direction: vsttypes.BusDirection) plug.plugin.AudioBusLayout {
+        if (directionIs(direction, .kInput)) return config.inputLayout();
+        if (directionIs(direction, .kOutput)) return config.outputLayout();
+        return .none;
+    }
+
+    fn speakerArrangement(layout: plug.plugin.AudioBusLayout) vsttypes.SpeakerArrangement {
+        return switch (layout) {
+            .none => empty_arrangement,
+            .mono => mono_arrangement,
+            .stereo => stereo_arrangement,
+        };
+    }
+
+    fn audioBusName(config: Config, direction: vsttypes.BusDirection) []const u8 {
+        return switch (audioLayout(config, direction)) {
+            .none => "",
+            .mono => if (directionIs(direction, .kInput)) "Mono In" else "Mono Out",
+            .stereo => if (directionIs(direction, .kInput)) "Stereo In" else "Stereo Out",
+        };
     }
 };
+
+pub const StereoAudioBuses = AudioBuses;
 
 pub const RealtimeProcessorDefaults = struct {
     pub fn canProcessSampleSize(symbolic_sample_size: types.int32) types.tresult {
@@ -600,22 +633,22 @@ pub fn makeMainAudioProcessContextConfiguredWithSampleRate(
     const frame_count = try validFrameCount(data);
     var input_channels: [max_audio_channels][]const Sample = undefined;
     var output_channels: [max_audio_channels][]Sample = undefined;
-    const input_count = if (bus_config.audio_input) input: {
+    const input_layout = bus_config.inputLayout();
+    const output_layout = bus_config.outputLayout();
+    const input_count = if (input_layout.hasBus()) input: {
         if (data.numInputs <= 0) return error.MissingMainAudioBus;
         const inputs = data.inputs orelse return error.MissingMainAudioBus;
         break :input try fillInputChannels(Sample, inputs[0], frame_count, &input_channels);
     } else 0;
-    const output_count = if (bus_config.audio_output) output: {
+    const output_count = if (output_layout.hasBus()) output: {
         if (data.numOutputs <= 0) return error.MissingMainAudioBus;
         const outputs = data.outputs orelse return error.MissingMainAudioBus;
         break :output try fillOutputChannels(Sample, outputs[0], frame_count, &output_channels);
     } else 0;
-    if (bus_config.audio_input and input_count == 0) {
-        return error.MissingMainAudioChannels;
-    }
-    if (bus_config.audio_output and output_count == 0) {
-        return error.MissingMainAudioChannels;
-    }
+    if (input_layout.hasBus() and input_count == 0) return error.MissingMainAudioChannels;
+    if (output_layout.hasBus() and output_count == 0) return error.MissingMainAudioChannels;
+    if (input_count > input_layout.channelCount()) return error.InvalidChannelCount;
+    if (output_count > output_layout.channelCount()) return error.InvalidChannelCount;
     return try plug.process.ProcessContext(Sample).initWith(
         processSampleRate(data, fallback_sample_rate),
         input_channels[0..input_count],
@@ -2166,6 +2199,34 @@ test "zig-vst3-plugin bridge stereo audio buses validate arrangements" {
     try std.testing.expectEqual(empty_arrangement, arrangement_out);
 }
 
+test "zig-vst3-plugin bridge mono and mixed layouts expose exact arrangements" {
+    const mono = AudioBuses.Config{
+        .audio_input_layout = .mono,
+        .audio_output_layout = .mono,
+    };
+    const mono_to_stereo = AudioBuses.Config{
+        .audio_input_layout = .mono,
+        .audio_output_layout = .stereo,
+    };
+    var mono_inputs = [_]vsttypes.SpeakerArrangement{mono_arrangement};
+    var mono_outputs = [_]vsttypes.SpeakerArrangement{mono_arrangement};
+    var stereo_outputs = [_]vsttypes.SpeakerArrangement{stereo_arrangement};
+    var info: ivstcomponent.BusInfo = .{};
+    var arrangement_out = empty_arrangement;
+
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.setArrangementsConfigured(&mono_inputs, 1, &mono_outputs, 1, mono));
+    try std.testing.expectEqual(types.kResultFalse, AudioBuses.setArrangementsConfigured(&mono_inputs, 1, &stereo_outputs, 1, mono));
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.setArrangementsConfigured(&mono_inputs, 1, &stereo_outputs, 1, mono_to_stereo));
+
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.busInfoConfigured(@intFromEnum(ivstcomponent.MediaTypes.kAudio), @intFromEnum(ivstcomponent.BusDirections.kInput), 0, &info, mono));
+    try std.testing.expectEqual(@as(types.int32, 1), info.channelCount);
+    try expectString128("Mono In", &info.name);
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out, mono));
+    try std.testing.expectEqual(mono_arrangement, arrangement_out);
+    try std.testing.expectEqual(types.kResultOk, AudioBuses.arrangementConfigured(@intFromEnum(ivstcomponent.BusDirections.kOutput), 0, &arrangement_out, mono_to_stereo));
+    try std.testing.expectEqual(stereo_arrangement, arrangement_out);
+}
+
 test "zig-vst3-plugin bridge stereo buses can be output only" {
     var info = ivstcomponent.BusInfo{};
     var outputs = [_]vsttypes.SpeakerArrangement{stereo_arrangement};
@@ -2563,6 +2624,27 @@ test "zig-vst3-plugin bridge generated main bus configurations follow declared a
         try std.testing.expectEqual(case.expected_outputs, context.outputChannelCount());
         try std.testing.expectEqual(if (case.expected_inputs == 0 and case.expected_outputs == 0) @as(usize, 0) else @as(usize, 2), context.frameCount());
     }
+
+    var mono_data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = 2,
+        .processContext = &process_context,
+    };
+    const mono_config = StereoAudioBuses.Config{
+        .audio_input_layout = .mono,
+        .audio_output_layout = .mono,
+    };
+    try std.testing.expectError(error.InvalidChannelCount, makeMainAudioProcessContextConfigured(f32, &mono_data, .{}, .{}, null, mono_config));
+    inputs[0].numChannels = 1;
+    outputs[0].numChannels = 1;
+    const mono_context = try makeMainAudioProcessContextConfigured(f32, &mono_data, .{}, .{}, null, mono_config);
+    try std.testing.expectEqual(@as(usize, 1), mono_context.inputChannelCount());
+    try std.testing.expectEqual(@as(usize, 1), mono_context.outputChannelCount());
+    inputs[0].numChannels = 2;
+    outputs[0].numChannels = 2;
 
     var empty_input = [_]ivstaudioprocessor.AudioBusBuffers{.{
         .numChannels = 0,
