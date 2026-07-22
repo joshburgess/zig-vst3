@@ -1,6 +1,7 @@
 const std = @import("std");
 const gui_file_importer = @import("gui_file_importer.zig");
 const realtime_audit = @import("realtime_audit.zig");
+const resource_job = @import("resource/job.zig");
 
 pub const preview_capacity = 256;
 pub const maximum_input_bytes = 32 * 1024 * 1024;
@@ -53,6 +54,19 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
     return struct {
         const Model = gui_file_importer.Model(1, 3);
         const Self = @This();
+        const WorkerFailure = enum { decode_failed };
+        const Worker = resource_job.Job(struct {
+            pub const Request = *Self;
+            pub const Result = u8;
+            pub const Failure = WorkerFailure;
+            pub const maximum_work_units = maximum_input_bytes;
+            pub const maximum_result_units = 1;
+            pub const maximum_runtime_nanoseconds = 60 * std.time.ns_per_s;
+
+            pub fn run(importer: *Self, context: *resource_job.WorkerContext) resource_job.Outcome(Result, WorkerFailure) {
+                return importer.runWorker(context);
+            }
+        });
 
         mutex: std.Io.Mutex = .init,
         model: Model,
@@ -64,25 +78,34 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         preview_points: usize = 0,
         decoded: [decoded_frame_capacity * maximum_channels]f32 = @splat(0.0),
         decoded_frames: usize = 0,
-        thread: ?std.Thread = null,
-        worker_running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+        worker: Worker,
 
         pub fn init() Self {
-            return .{ .model = Model.init(&.{ ".wav", ".aif", ".aiff" }) catch unreachable };
+            return .{
+                .model = Model.init(&.{ ".wav", ".aif", ".aiff" }) catch unreachable,
+                .worker = Worker.init(),
+            };
         }
 
         pub fn deinit(self: *Self) void {
             self.lock();
             if (self.model.snapshot().canCancel()) self.model.requestCancel() catch {};
             self.unlock();
-            self.joinWorker();
+            _ = self.worker.requestCancel();
+            self.worker.deinit();
+            self.lock();
+            if (self.model.cancellationRequested()) {
+                self.model.acknowledgeCancel() catch {};
+                self.failure = .cancelled;
+            }
+            self.unlock();
         }
 
         pub fn begin(self: *Self, entry_point: gui_file_importer.EntryPoint, paths: []const []const u8) bool {
             const file_allowed = realtime_audit.observe(.file_access);
             const allocation_allowed = realtime_audit.observe(.allocation);
             if (!file_allowed or !allocation_allowed) return false;
-            if (self.worker_running.load(.acquire)) return false;
+            if (self.workerRunning()) return false;
             self.reapWorker();
 
             self.lock();
@@ -99,7 +122,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         pub fn retry(self: *Self) bool {
-            if (self.worker_running.load(.acquire)) return false;
+            if (self.workerRunning()) return false;
             self.reapWorker();
             self.lock();
             self.model.retry() catch {
@@ -113,13 +136,21 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
 
         pub fn requestCancel(self: *Self) bool {
             self.lock();
-            defer self.unlock();
-            self.model.requestCancel() catch return false;
+            self.model.requestCancel() catch {
+                self.unlock();
+                return false;
+            };
+            self.unlock();
+            _ = self.worker.requestCancel();
             return true;
         }
 
         pub fn canReset(self: *const Self) bool {
-            return !self.worker_running.load(.acquire);
+            return !self.workerRunning();
+        }
+
+        pub fn workerRunning(self: *const Self) bool {
+            return self.worker.worker_running.load(.acquire);
         }
 
         pub fn reset(self: *Self) bool {
@@ -170,31 +201,34 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         fn spawnWorker(self: *Self) bool {
-            self.worker_running.store(true, .release);
-            self.thread = std.Thread.spawn(.{}, run, .{self}) catch {
-                self.worker_running.store(false, .release);
+            if (!self.worker.submit(self)) {
                 self.finishFailure(.worker_unavailable);
                 return false;
-            };
+            }
             return true;
         }
 
-        fn run(self: *Self) void {
-            defer self.worker_running.store(false, .release);
+        fn runWorker(self: *Self, context: *resource_job.WorkerContext) resource_job.Outcome(u8, WorkerFailure) {
             var path_storage: [1024]u8 = undefined;
             self.lock();
             const path = self.model.path(0) orelse {
                 self.unlock();
                 self.finishFailure(.malformed);
-                return;
+                return .{ .failure = .decode_failed };
             };
             @memcpy(path_storage[0..path.len], path);
             const path_length = path.len;
             self.unlock();
-            self.decode(path_storage[0..path_length]);
+            self.decode(path_storage[0..path_length], context);
+            const result = self.snapshot();
+            return switch (result.import.status) {
+                .ready => .{ .success = .{ .value = 0, .result_units = 1 } },
+                .cancelled => .cancelled,
+                else => .{ .failure = .decode_failed },
+            };
         }
 
-        fn decode(self: *Self, path: []const u8) void {
+        fn decode(self: *Self, path: []const u8, context: *resource_job.WorkerContext) void {
             const io = std.Io.Threaded.global_single_threaded.io();
             const file = std.Io.Dir.cwd().openFile(io, path, .{}) catch {
                 self.finishFailure(.open_failed);
@@ -222,6 +256,14 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
                 self.finishFailure(.too_large);
                 return;
             }
+            context.setPhase(.loading) catch {
+                self.finishFailure(.cancelled);
+                return;
+            };
+            context.setTotalUnits(info.data_bytes) catch {
+                self.finishFailure(.too_large);
+                return;
+            };
 
             self.lock();
             self.model.startImport(info.data_bytes) catch {
@@ -240,7 +282,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
             var bytes_done: usize = 0;
             var frame_index: usize = 0;
             while (bytes_done < info.data_bytes) {
-                if (self.model.cancellationRequested()) {
+                if (self.model.cancellationRequested() or context.cancellationRequested()) {
                     self.finishFailure(.cancelled);
                     return;
                 }
@@ -278,6 +320,10 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
                 self.lock();
                 self.model.advance(bytes_done) catch {};
                 self.unlock();
+                context.advance(bytes_done, info.data_bytes) catch {
+                    self.finishFailure(.cancelled);
+                    return;
+                };
             }
 
             var points: [preview_capacity]PreviewPoint = undefined;
@@ -314,15 +360,12 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         }
 
         fn reapWorker(self: *Self) void {
-            if (self.worker_running.load(.acquire)) return;
+            if (self.workerRunning()) return;
             self.joinWorker();
         }
 
         fn joinWorker(self: *Self) void {
-            if (self.thread) |thread| {
-                thread.join();
-                self.thread = null;
-            }
+            self.worker.wait();
         }
 
         fn lock(self: *Self) void {
@@ -635,7 +678,7 @@ fn pcm16AiffFixture(comptime frame_count: usize) [54 + frame_count * 4]u8 {
 }
 
 fn waitForWorker(importer: anytype) void {
-    while (importer.worker_running.load(.acquire)) std.Thread.yield() catch {};
+    while (importer.workerRunning()) std.Thread.yield() catch {};
     importer.reapWorker();
 }
 

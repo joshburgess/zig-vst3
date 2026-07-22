@@ -145,6 +145,7 @@ See [docs/pluginval.md](docs/pluginval.md) for `PLUGINVAL`, strictness, and head
 - [docs/framework/parameters.md](docs/framework/parameters.md): parameters, plain/normalized values, smoothing, metadata, and editors.
 - [docs/framework/state.md](docs/framework/state.md): binary state format, migration, restore reports, and debug JSON.
 - [docs/framework/gui.md](docs/framework/gui.md): toolkit-neutral editor API, VSTGUI adapter, parameter bindings, and telemetry.
+- [docs/framework/resources.md](docs/framework/resources.md): bounded background jobs, immutable resource exchange, and off-thread reclamation.
 - [docs/raw-api.md](docs/raw-api.md): raw VST3 API guide.
 - [docs/raw-api-coverage.md](docs/raw-api-coverage.md): raw API coverage map.
 - [docs/pluginval.md](docs/pluginval.md): Tracktion pluginval harness.

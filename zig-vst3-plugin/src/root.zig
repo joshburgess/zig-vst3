@@ -22,6 +22,7 @@ pub const gui_viewport = core.gui_viewport;
 pub const parameters = core.parameters;
 pub const realtime_audit = core.realtime_audit;
 pub const dsp = core.dsp;
+pub const resource = core.resource;
 pub const plugin = core.plugin;
 pub const process = core.process;
 pub const state = core.state;
@@ -41,6 +42,8 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(realtime_audit, "Scope"));
     try std.testing.expect(@hasDecl(parameters, "LogFloatParam"));
     try std.testing.expect(@hasDecl(dsp, "SmoothedBiquad"));
+    try std.testing.expect(@hasDecl(resource.job, "Job"));
+    try std.testing.expect(@hasDecl(resource.exchange, "Exchange"));
     try std.testing.expect(@hasDecl(parameters, "normalizedFromBipolar"));
     try std.testing.expect(@hasDecl(plugin, "PluginSpec"));
     try std.testing.expect(@hasDecl(process, "ProcessContext"));

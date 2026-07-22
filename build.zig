@@ -65,6 +65,14 @@ pub fn build(b: *std.Build) void {
             .bundle_id = "dev.zig-vst3.mono-gain",
         },
         .{
+            .short_name = "resource-swap",
+            .display_name = "resource swap",
+            .artifact_name = "zig_vst3_resource_swap",
+            .root_source_file = "examples/resource_swap_plugin.zig",
+            .core_example_source_file = "examples/resource_swap_core.zig",
+            .bundle_id = "dev.zig-vst3.resource-swap",
+        },
+        .{
             .short_name = "bypass",
             .display_name = "bypass",
             .artifact_name = "zig_vst3_bypass",
@@ -312,6 +320,17 @@ pub fn build(b: *std.Build) void {
         .script = "scripts/test_vstgui_thread_sanitizer.sh",
     });
     _ = thread_sanitizer_step;
+
+    const resource_thread_sanitizer_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig-vst3-plugin/src/resource.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+            .sanitize_thread = true,
+        }),
+    });
+    const resource_thread_sanitizer_step = b.step("test-resource-thread-sanitizer", "Run resource job and exchange tests with the thread sanitizer");
+    resource_thread_sanitizer_step.dependOn(&b.addRunArtifact(resource_thread_sanitizer_tests).step);
 
     const plugin_path_option = b.option([]const u8, "plugin", "Path to a .vst3 bundle to validate");
 
@@ -791,6 +810,9 @@ fn addExamplePlugin(
         .root_source_file = options.root_source_file,
     });
     library.root_module.addImport("zig-vst3", zig_vst3);
+    if (std.mem.eql(u8, options.short_name, "resource-swap")) {
+        library.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
+    }
     if (has_reference_editor) library.root_module.addOptions("zig-vst3-gui-options", gui_options);
     if (native_vstgui and has_reference_editor) {
         addVstguiAdapter(library.root_module, target);
@@ -800,6 +822,9 @@ fn addExamplePlugin(
 
     const plugin_tests = addZigVst3PluginCoreTest(b, target, optimize, zig_vst3_plugin_core, options.root_source_file);
     plugin_tests.root_module.addImport("zig-vst3", zig_vst3);
+    if (std.mem.eql(u8, options.short_name, "resource-swap")) {
+        plugin_tests.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
+    }
     if (has_reference_editor) plugin_tests.root_module.addOptions("zig-vst3-gui-options", gui_options);
     if (native_vstgui and has_reference_editor) {
         addVstguiAdapter(plugin_tests.root_module, target);

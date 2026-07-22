@@ -12,6 +12,7 @@ pub const Operation = enum {
     gui_call,
     telemetry_publication,
     decoded_audio_adoption,
+    resource_adoption,
 };
 
 pub const Report = struct {
@@ -74,7 +75,7 @@ pub fn observe(operation: Operation) bool {
 
 fn allowed(operation: Operation) bool {
     return switch (operation) {
-        .telemetry_publication, .decoded_audio_adoption => true,
+        .telemetry_publication, .decoded_audio_adoption, .resource_adoption => true,
         .allocation, .lock, .file_access, .logging, .host_call, .gui_call => false,
     };
 }
@@ -83,6 +84,7 @@ test "realtime audit records allowed and forbidden operations per thread" {
     const scope = Scope.enter();
     try std.testing.expect(observe(.telemetry_publication));
     try std.testing.expect(observe(.decoded_audio_adoption));
+    try std.testing.expect(observe(.resource_adoption));
     try std.testing.expect(!observe(.allocation));
     try std.testing.expect(!observe(.lock));
     try std.testing.expect(!observe(.file_access));

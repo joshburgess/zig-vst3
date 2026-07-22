@@ -738,8 +738,8 @@ test "IR loader rejects clear before mutating the processor while import work is
     try std.testing.expectEqual(types.kResultOk, controller_connection.vtable.connect(controller_connection, component_connection));
 
     const state = Controller.controllerState(controller);
-    state.importer.worker_running.store(true, .release);
-    defer state.importer.worker_running.store(false, .release);
+    state.importer.worker.worker_running.store(true, .release);
+    defer state.importer.worker.worker_running.store(false, .release);
     try std.testing.expectEqual(types.kResultFalse, Controller.performAction(
         controller,
         ir_destructive_action_group_id,

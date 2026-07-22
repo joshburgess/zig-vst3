@@ -55,9 +55,9 @@ These facilities cover most of a basic NAM editor. They do not yet cover safe ow
 | Capability | Current state | Required home | Priority |
 | --- | --- | --- | --- |
 | Configurable audio layouts | Mono, stereo, absent, and mixed main-bus layouts are public and validated | `zig-vst3` and `zig-vst3-plugin` | Complete |
-| Immutable model publication | Specialized fixed-slot sample and IR stores exist, but no generic large-resource swap | `zig-vst3-plugin` | P0 |
-| Deferred destruction | No reusable way to retire a model without freeing it on the audio thread | `zig-vst3-plugin` | P0 |
-| Generic background resource jobs | Audio decoding is specialized to WAV and AIFF | `zig-vst3-plugin` | P0 |
+| Immutable model publication | Fixed-capacity immutable resource exchange implemented and validated | `zig-vst3-plugin` | Complete |
+| Deferred destruction | Replaced resources retire on audio and are reclaimed off-thread | `zig-vst3-plugin` | Complete |
+| Generic background resource jobs | Bounded replaceable jobs implemented and used by the audio importer | `zig-vst3-plugin` | Complete |
 | Streaming sample-rate conversion | No bounded, allocation-free, stateful SRC abstraction | Reusable DSP package, surfaced through `zig-vst3-plugin` | P0 |
 | Dynamic latency notification | Processor latency queries exist, but model or SRC changes lack a complete public update path | `zig-vst3` and `zig-vst3-plugin` | P0 |
 | Resource persistence | Parameter state and small editor text exist, but no generic path identity and missing-file recovery contract | `zig-vst3-plugin` | P0 |
@@ -93,11 +93,11 @@ Completion evidence:
 
 ### 2. Generic bounded resource jobs
 
-- [ ] Extract the shared lifecycle from the audio importer: idle, validating, loading, ready, cancellation, failure, retry, and replacement.
-- [ ] Make decoding or parsing a caller-supplied worker operation with explicit byte, time, and result limits.
-- [ ] Support jobs that begin during component initialization without an open editor.
-- [ ] Separate status snapshots from the loaded resource so the GUI never locks the resource owner.
-- [ ] Preserve generation checks and reject stale completion callbacks after replacement or teardown.
+- [x] Extract the shared lifecycle from the audio importer: idle, validating, loading, ready, cancellation, failure, retry, and replacement.
+- [x] Make decoding or parsing a caller-supplied worker operation with explicit byte, time, and result limits.
+- [x] Support jobs that begin during component initialization without an open editor.
+- [x] Separate status snapshots from the loaded resource so the GUI never locks the resource owner.
+- [x] Preserve generation checks and reject stale completion callbacks after replacement or teardown.
 
 Exit criteria:
 
@@ -105,19 +105,35 @@ Exit criteria:
 - Cancellation and teardown join or reject all pending work without callbacks into destroyed instances.
 - The audio thread never performs file access, allocation, logging, or host calls.
 
+Completion evidence:
+
+- `resource.job.Job` provides bounded requests, caller-defined work, result and runtime limits, cooperative cancellation, replacement, retry, snapshots, result transfer, and disposal of stale or unclaimed results.
+- Deterministic fixture tests exercise drop, picker, and restored-state source paths, replacement, stale completion, cancellation, teardown, deadlines, and work and result limits.
+- The existing WAV and AIFF importer now uses the shared job lifecycle while retaining its detailed format and recovery states.
+- The Resource Swap processor starts a job during component initialization and does not depend on an open editor.
+
 ### 3. Immutable resource exchange and reclamation
 
-- [ ] Design a single-writer publication primitive for heap-owned immutable resources.
-- [ ] Let the audio thread adopt a complete model at a block boundary without a mutex.
-- [ ] Return replaced resources to a non-real-time reclaimer without reference-count destruction on the audio thread.
-- [ ] Define behavior when publication slots are full, a model is replaced repeatedly, or processing stops during a swap.
-- [ ] Make ownership, memory ordering, and maximum outstanding resources explicit in the API.
+- [x] Design a single-writer publication primitive for heap-owned immutable resources.
+- [x] Let the audio thread adopt a complete model at a block boundary without a mutex.
+- [x] Return replaced resources to a non-real-time reclaimer without reference-count destruction on the audio thread.
+- [x] Define behavior when publication slots are full, a model is replaced repeatedly, or processing stops during a swap.
+- [x] Make ownership, memory ordering, and maximum outstanding resources explicit in the API.
 
 Exit criteria:
 
 - Generated lifecycle tests cover publish, adopt, replace, cancel, reset, stop, and destroy sequences.
 - Thread and address sanitizers pass repeated concurrent publication tests.
 - A real-time audit proves process-time operations are bounded and allocation-free.
+
+Completion evidence:
+
+- `resource.exchange.Exchange` uses fixed publication slots, strictly increasing generations, single-writer publication, block-boundary adoption, and explicit off-thread reclamation.
+- Tests cover publication, adoption, pending replacement, stale generations, full capacity, processing stop, destruction, real-time auditing, and 1,000 concurrent replacements.
+- `docs/framework/resources.md` specifies pointer ownership, release and acquire ordering, slot limits, failure ownership, and shutdown order.
+- The mono Resource Swap probe adopts an immutable prepared graph during processing and passes all 47 Steinberg validator tests in both sample formats.
+- The aggregate deterministic suite passed 3,976/3,976 tests. Raw ABI checks, native adapter sanitizers, all 16 Steinberg validators, and the 13-test resource thread-sanitizer target passed.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 50/50 build steps, including the Resource Swap bundle. Native Windows and Linux host execution remains unavailable.
 
 ### 4. Bounded streaming sample-rate conversion
 
@@ -249,8 +265,8 @@ Only after all five probes pass should a `zig-nam` repository or package begin i
 The best next phase is framework work, not neural inference:
 
 - [x] Land configurable mono and stereo bus layouts.
-- [ ] Land the generic resource job and immutable resource exchange together, because either one without the other encourages unsafe model sharing.
-- [ ] Build the Resource Swap Probe and run it under sanitizers and repeated editor/component teardown.
+- [x] Land the generic resource job and immutable resource exchange together, because either one without the other encourages unsafe model sharing.
+- [x] Build the Resource Swap Probe and run it under sanitizers and repeated component teardown.
 - [ ] Add bounded SRC and dynamic latency through the Fixed-Rate Processor.
 - [ ] Publish and test the downstream C kernel integration recipe.
 
