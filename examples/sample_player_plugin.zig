@@ -76,6 +76,7 @@ pub const sample_parameter_set = Spec.ParameterSet.init(.{});
 const AudioImporter = vst3.vstgui.DecodedAudioFileImporter(maximum_sample_frames);
 const SamplePlayer = core.gui_sample_player.Player(maximum_sample_frames, maximum_voices);
 const PlayheadSeries = core.gui_graph.SnapshotSeries(2);
+const sample_parameter_count = @TypeOf(sample_parameter_set).count;
 
 const SamplePlayerEditorState = core.editor_state.Store(2, &.{
     .{ .id = zoom_state_id, .default = .{ .scalar = 1.0 } },
@@ -254,10 +255,15 @@ const Controller = vst3.zig_vst3_plugin_effect.ReflectedEditController(struct {
 const SamplePlayerProcessor = struct {
     player: SamplePlayer,
     playhead: PlayheadSeries,
+    parameter_latches: [sample_parameter_count]core.process.BlockParameterLatch,
 
     pub fn initInPlace(self: *SamplePlayerProcessor) void {
         self.player = .{};
         self.playhead = PlayheadSeries.init();
+        for (&self.parameter_latches, 0..) |*latch, index| {
+            const id: u32 = @intCast(index);
+            latch.* = .init(id, defaultNormalized(id));
+        }
     }
 
     pub fn prepare(self: *SamplePlayerProcessor, config: core.plugin.PrepareConfig) void {
@@ -274,15 +280,20 @@ const SamplePlayerProcessor = struct {
 
     pub fn process(
         self: *SamplePlayerProcessor,
-        _: anytype,
+        parameters: anytype,
         comptime Sample: type,
         context: *core.process.ProcessContext(Sample),
     ) void {
         context.clearOutputs();
         _ = self.player.adoptPending();
+        const changes = context.parameterChanges();
+        for (&self.parameter_latches, 0..) |*latch, index| {
+            const id: u32 = @intCast(index);
+            _ = latch.beginBlock(changes, persistedNormalized(parameters, id, latch.nextBlockValue()));
+        }
         var segments = context.processBlockSegments();
         while (segments.next()) |segment| {
-            const playback = playbackAt(context, segment.start_offset);
+            const playback = playbackAt(&self.parameter_latches, changes, segment.start_offset);
             var events = context.inputEventsAtOffset(segment.start_offset);
             while (events.next()) |event| {
                 if (event.asNoteAttack()) |note| {
@@ -359,21 +370,21 @@ fn safeImportName(path: []const u8) []const u8 {
     return name[0..end];
 }
 
-fn playbackAt(context: anytype, sample_offset: usize) core.gui_sample_player.Playback {
-    const voices = (VoiceCountParam{ .id = voices_param_id, .name = "Voices", .default = .eight }).denormalize(normalizedAt(context, voices_param_id, sample_offset));
-    const mode = (PlaybackModeParam{ .id = playback_param_id, .name = "Playback", .default = .gate }).denormalize(normalizedAt(context, playback_param_id, sample_offset));
-    const gain_db = plainAt(context, gain_param_id, sample_offset, 0.0);
+fn playbackAt(latches: *const [sample_parameter_count]core.process.BlockParameterLatch, changes: core.process.ParameterChanges, sample_offset: usize) core.gui_sample_player.Playback {
+    const voices = (VoiceCountParam{ .id = voices_param_id, .name = "Voices", .default = .eight }).denormalize(normalizedAt(latches, changes, voices_param_id, sample_offset));
+    const mode = (PlaybackModeParam{ .id = playback_param_id, .name = "Playback", .default = .gate }).denormalize(normalizedAt(latches, changes, playback_param_id, sample_offset));
+    const gain_db = plainAt(latches, changes, gain_param_id, sample_offset, 0.0);
     return .{
         .gain = std.math.pow(f64, 10.0, gain_db / 20.0),
-        .pan = plainAt(context, pan_param_id, sample_offset, 0.0) / 100.0,
-        .coarse_semitones = plainAt(context, coarse_param_id, sample_offset, 0.0),
-        .fine_cents = plainAt(context, fine_param_id, sample_offset, 0.0),
-        .start = plainAt(context, start_param_id, sample_offset, 0.0) / 100.0,
-        .end = plainAt(context, end_param_id, sample_offset, 100.0) / 100.0,
-        .loop_start = plainAt(context, loop_start_param_id, sample_offset, 0.0) / 100.0,
-        .loop_end = plainAt(context, loop_end_param_id, sample_offset, 100.0) / 100.0,
-        .loop_enabled = normalizedAt(context, loop_param_id, sample_offset) >= 0.5,
-        .reverse = normalizedAt(context, reverse_param_id, sample_offset) >= 0.5,
+        .pan = plainAt(latches, changes, pan_param_id, sample_offset, 0.0) / 100.0,
+        .coarse_semitones = plainAt(latches, changes, coarse_param_id, sample_offset, 0.0),
+        .fine_cents = plainAt(latches, changes, fine_param_id, sample_offset, 0.0),
+        .start = plainAt(latches, changes, start_param_id, sample_offset, 0.0) / 100.0,
+        .end = plainAt(latches, changes, end_param_id, sample_offset, 100.0) / 100.0,
+        .loop_start = plainAt(latches, changes, loop_start_param_id, sample_offset, 0.0) / 100.0,
+        .loop_end = plainAt(latches, changes, loop_end_param_id, sample_offset, 100.0) / 100.0,
+        .loop_enabled = normalizedAt(latches, changes, loop_param_id, sample_offset) >= 0.5,
+        .reverse = normalizedAt(latches, changes, reverse_param_id, sample_offset) >= 0.5,
         .release_on_note_off = mode == .gate,
         .voice_limit = switch (voices) {
             .mono => 1,
@@ -382,20 +393,27 @@ fn playbackAt(context: anytype, sample_offset: usize) core.gui_sample_player.Pla
             .eight => 8,
         },
         .envelope = .{
-            .attack_seconds = plainAt(context, attack_param_id, sample_offset, 5.0) / 1_000.0,
-            .decay_seconds = plainAt(context, decay_param_id, sample_offset, 80.0) / 1_000.0,
-            .sustain = plainAt(context, sustain_param_id, sample_offset, 80.0) / 100.0,
-            .release_seconds = plainAt(context, release_param_id, sample_offset, 150.0) / 1_000.0,
+            .attack_seconds = plainAt(latches, changes, attack_param_id, sample_offset, 5.0) / 1_000.0,
+            .decay_seconds = plainAt(latches, changes, decay_param_id, sample_offset, 80.0) / 1_000.0,
+            .sustain = plainAt(latches, changes, sustain_param_id, sample_offset, 80.0) / 100.0,
+            .release_seconds = plainAt(latches, changes, release_param_id, sample_offset, 150.0) / 1_000.0,
         },
     };
 }
 
-fn normalizedAt(context: anytype, id: u32, sample_offset: usize) f64 {
-    return context.parameterNormalizedAtOrBeforeOr(id, sample_offset, defaultNormalized(id));
+fn persistedNormalized(parameters: anytype, id: u32, fallback: f64) f64 {
+    if (comptime @TypeOf(parameters) == @TypeOf(undefined)) return fallback;
+    return parameters.values.view(parameters.set).loadById(id) orelse fallback;
 }
 
-fn plainAt(context: anytype, id: u32, sample_offset: usize, fallback: f64) f64 {
-    return sample_parameter_set.plainFromNormalizedById(id, normalizedAt(context, id, sample_offset)) orelse fallback;
+fn normalizedAt(latches: *const [sample_parameter_count]core.process.BlockParameterLatch, changes: core.process.ParameterChanges, id: u32, sample_offset: usize) f64 {
+    const index: usize = @intCast(id);
+    if (index >= latches.len) return defaultNormalized(id);
+    return latches[index].valueAt(changes, sample_offset);
+}
+
+fn plainAt(latches: *const [sample_parameter_count]core.process.BlockParameterLatch, changes: core.process.ParameterChanges, id: u32, sample_offset: usize, fallback: f64) f64 {
+    return sample_parameter_set.plainFromNormalizedById(id, normalizedAt(latches, changes, id, sample_offset)) orelse fallback;
 }
 
 fn writeTestWav(directory: *std.Io.Dir, sub_path: []const u8, frame_count: usize, sample: i16) !void {
@@ -766,7 +784,7 @@ test "sample player replaces imports across editor teardown and clears the proce
     const outputs = [_][]f32{ &left, &right };
     const note_on = [_]core.process.Event{core.process.Event.noteOn(0, 0, 60, 1.0)};
     var context = try core.process.ProcessContext(f32).initWith(48_000, &.{}, &outputs, .{ .events = &note_on });
-    processor.process({}, f32, &context);
+    processor.process(undefined, f32, &context);
     try std.testing.expect(left[1] < 0.0);
 
     try std.testing.expectEqual(types.kResultOk, Controller.performAction(controller, clear_action_group_id, clear_action_id));
@@ -774,7 +792,7 @@ test "sample player replaces imports across editor teardown and clears the proce
     left = @splat(1.0);
     right = @splat(1.0);
     var empty_context = try core.process.ProcessContext(f32).initWith(48_000, &.{}, &outputs, .{ .events = &note_on });
-    processor.process({}, f32, &empty_context);
+    processor.process(undefined, f32, &empty_context);
     try std.testing.expectEqualSlices(f32, &@as([8]f32, @splat(0.0)), &left);
     try std.testing.expectEqualSlices(f32, &left, &right);
 }
@@ -792,13 +810,13 @@ test "sample player processor reset prevents stuck notes" {
     const outputs = [_][]f32{ &left, &right };
     const note_on = [_]core.process.Event{core.process.Event.noteOn(0, 0, 60, 1.0)};
     var active = try core.process.ProcessContext(f32).initWith(48_000, &.{}, &outputs, .{ .events = &note_on });
-    processor.process({}, f32, &active);
+    processor.process(undefined, f32, &active);
     try std.testing.expect(left[1] > 0.0);
     processor.reset();
     left = @splat(1.0);
     right = @splat(1.0);
     var stopped = try core.process.ProcessContext(f32).initWith(48_000, &.{}, &outputs, .{});
-    processor.process({}, f32, &stopped);
+    processor.process(undefined, f32, &stopped);
     try std.testing.expectEqualSlices(f32, &@as([4]f32, @splat(0.0)), &left);
     try std.testing.expectEqualSlices(f32, &left, &right);
 }
@@ -816,7 +834,7 @@ test "sample player processor renders imported media from MIDI" {
     const outputs = [_][]f32{ &left, &right };
     const events = [_]core.process.Event{core.process.Event.noteOn(0, 0, 60, 1.0)};
     var context = try core.process.ProcessContext(f32).initWith(48_000, &.{}, &outputs, .{ .events = &events });
-    processor.process({}, f32, &context);
+    processor.process(undefined, f32, &context);
     try std.testing.expect(left[1] > 0.0);
     try std.testing.expectEqualSlices(f32, &left, &right);
 }
@@ -850,7 +868,7 @@ test "sample player processor renders sample-accurate note lifecycle offline" {
         &outputs,
         .{ .parameter_changes = &changes, .events = &events },
     );
-    processor.process({}, f32, &context);
+    processor.process(undefined, f32, &context);
 
     const expected = [_]f32{ 0.0, 0.0, 1.0 / 4.8, 2.0 / 4.8, 3.0 / 4.8, 2.0 / 4.8, 1.0 / 4.8, 0.0 };
     for (expected, left, right) |wanted, actual_left, actual_right| {
@@ -858,4 +876,54 @@ test "sample player processor renders sample-accurate note lifecycle offline" {
         try std.testing.expectApproxEqAbs(wanted, actual_right, 0.000001);
     }
     try std.testing.expectEqual(@as(?f64, null), processor.player.playhead());
+}
+
+test "sample player keeps persisted parameters without anticipating automation" {
+    var processor: SamplePlayerProcessor = undefined;
+    processor.initInPlace();
+    processor.prepare(.{ .sample_rate = 48_000, .max_block_size = 4 });
+    const receiver = processor.audioImportReceiver();
+    try receiver.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 2 });
+    try receiver.write(1, 0, &.{ 1.0, 1.0 });
+    try receiver.commit(1);
+
+    const Values = core.parameters.ParameterValues(Definition.Params);
+    const Parameters = struct {
+        set: *const @TypeOf(sample_parameter_set),
+        values: Values,
+    };
+    var parameters = Parameters{ .set = &sample_parameter_set, .values = Values.init(&sample_parameter_set) };
+    try std.testing.expect(parameters.values.storeField(&sample_parameter_set, "pan", 100.0));
+    try std.testing.expect(parameters.values.storeField(&sample_parameter_set, "loop", true));
+    try std.testing.expect(parameters.values.storeField(&sample_parameter_set, "attack", 0.1));
+    try std.testing.expect(parameters.values.storeField(&sample_parameter_set, "decay", 0.1));
+    try std.testing.expect(parameters.values.storeField(&sample_parameter_set, "sustain", 100.0));
+
+    var left: [4]f32 = @splat(0.0);
+    var right: [4]f32 = @splat(0.0);
+    const outputs = [_][]f32{ &left, &right };
+    const note_on = [_]core.process.Event{core.process.Event.noteOn(0, 0, 60, 1.0)};
+    var first = try core.process.ProcessContext(f32).initWith(48_000, &.{}, &outputs, .{ .events = &note_on });
+    processor.process(&parameters, f32, &first);
+    try std.testing.expectEqualSlices(f32, &@as([4]f32, @splat(0.0)), &left);
+    try std.testing.expect(right[0] > 0.0);
+
+    right = @splat(0.0);
+    var persisted = try core.process.ProcessContext(f32).init(48_000, &.{}, &outputs);
+    processor.process(&parameters, f32, &persisted);
+    try std.testing.expectEqualSlices(f32, &@as([4]f32, @splat(0.0)), &left);
+    try std.testing.expect(right[0] > 0.0);
+
+    try std.testing.expect(parameters.values.storeField(&sample_parameter_set, "pan", -100.0));
+    const pan_change = [_]core.process.ParameterChange{
+        sample_parameter_set.parameterChange("pan", 2, -100.0),
+    };
+    left = @splat(0.0);
+    right = @splat(0.0);
+    var automated = try core.process.ProcessContext(f32).initWith(48_000, &.{}, &outputs, .{ .parameter_changes = &pan_change });
+    processor.process(&parameters, f32, &automated);
+    try std.testing.expectEqual(@as(f32, 0.0), left[0]);
+    try std.testing.expect(right[0] > 0.0);
+    try std.testing.expect(left[2] > 0.0);
+    try std.testing.expectEqual(@as(f32, 0.0), right[2]);
 }

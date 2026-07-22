@@ -171,6 +171,8 @@ const quality = quality_latch.beginBlock(context.parameterChanges(), persisted);
 
 Initialize the latch with the parameter ID and its initial normalized value. At each process call, `beginBlock` returns the most recent change at sample offset zero when one exists. A later change in the block is saved for the next block instead of taking effect early. When the host supplies no change for that parameter, the latch synchronizes from the persisted value so state restoration and controller updates remain visible. The latch is fixed-size and performs no allocation or locking.
 
+For a parameter that remains sample-accurate inside the block, call `beginBlock` once and use `valueAt` at each process segment. `valueAt` combines the pre-block value with automation points at or before the requested sample offset. This avoids both reverting to a declaration default on quiet blocks and applying the final queue value before its offset.
+
 Useful context helpers include:
 
 - `sampleRate`, `sampleDurationSeconds`, `blockDurationSeconds`, and `sampleOffsetSeconds`.

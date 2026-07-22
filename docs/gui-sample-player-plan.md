@@ -203,3 +203,14 @@ The final automated suite passed 71/71 build steps and 3,787/3,787 tests. Raw AB
 The final benchmark measured 684.1 MiB/s for the bounded WAV worker, 7.11 ms for decoding 262,144 frames and constructing the waveform preview, 69.2 ns per preview read, 0.01 ms for bounded publication, 12.2 ns per playback frame with eight voices available, and 5.4 ns per playhead update. The isolated visual gate measured 116.5 us for the full scene, 295.7 us for signal views, 264.7 us for linked EQ, 162.5 us for Resonant Filter, 58.5 us for viewport rendering, 201.5 us for range selection, and 58.6 ms per Sample Player editor lifecycle. Every measurement remained within its recorded budget.
 
 The final serialized pluginval rerun produced 28 successful `runner-status.txt` files: all 14 bundles at strictness 5 and all 14 at strictness 10 reported `classification=succeeded` and status 0. The final Sample Player artifacts are `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-pluginval/zig_vst3_sample_player-strictness-5-20260720-181824-97320` and `/var/folders/2r/700z0d517dg3yqy2_px199p00000gn/T/zig-vst3-pluginval/zig_vst3_sample_player-strictness-10-20260720-183129-17131`.
+
+### Autonomous Parameter Continuity Fix
+
+- [x] Preserve accepted parameter values across blocks without requiring a new automation point.
+- [x] Preserve the pre-block value before the first in-block automation point.
+- [x] Apply later automation at its declared sample offset without anticipating the final queue value.
+- [x] Keep all parameter baselines fixed-size, per instance, allocation-free, and lock-free.
+
+The Sample Player previously ignored the processor's persisted parameter state and used declaration defaults whenever a block contained no point for a parameter. Its processor now owns one public `process.BlockParameterLatch` per declared parameter. Each block synchronizes parameters without automation from persisted state, retains the previous block value before the first automation point, and resolves later points through `valueAt` at process-segment boundaries.
+
+A deterministic stereo regression keeps hard-right pan across a quiet block, then automates to hard-left at sample offset two while the host-visible persisted state already contains the final value. The first two frames remain hard-right and the remaining frames become hard-left. The complete local suite passes 4,100 tests, including the 7-test installed-package suite and public latch usage. Native GUI and rendering gates remain within their existing budgets.

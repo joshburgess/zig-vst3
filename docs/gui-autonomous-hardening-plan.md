@@ -388,3 +388,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Direct regressions cover invalid input, suppressed delegation, transactional restoration, recovery, and the shared dimension contract.
 - The complete deterministic gate passed 82/82 steps and 3,950/3,950 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 92.8 us for the aggregate scene and 47.13 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Sample Player Parameter Continuity
+
+- The Sample Player now keeps accepted parameter values across blocks instead of falling back to declaration defaults when a block has no automation point.
+- Sixteen fixed per-instance `BlockParameterLatch` values preserve each pre-block baseline, apply automation at its declared process segment, and retain the final value for the next block without allocation or locking.
+- A deterministic stereo regression proves hard-right pan persists through a quiet block and a later hard-left point does not affect earlier frames even when persisted state already contains the final value.
+- The complete deterministic gate passed 111/111 steps and 4,100/4,100 tests. The installed-package suite passed 7/7 tests and exercises the public `beginBlock` and `valueAt` contract.

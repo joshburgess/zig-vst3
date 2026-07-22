@@ -135,6 +135,8 @@ test "installed package exposes block boundary parameter latching" {
     const view = try plugin.process.ParameterChanges.init(&changes, 4);
 
     try std.testing.expectEqual(@as(f64, 0.25), latch.beginBlock(view, 0.75));
+    try std.testing.expectEqual(@as(f64, 0.25), latch.valueAt(view, 2));
+    try std.testing.expectEqual(@as(f64, 0.75), latch.valueAt(view, 3));
     try std.testing.expectEqual(@as(f64, 0.75), latch.nextBlockValue());
     try std.testing.expectEqual(@as(f64, 0.75), latch.beginBlock(.{}, 0.75));
 }
