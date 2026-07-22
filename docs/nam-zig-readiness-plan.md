@@ -48,7 +48,7 @@ The current Rust plugin is useful as a requirements source, but not as a real-ti
 - Raw C and C++ compilation and linking in this repository's build graph.
 - Deterministic tests, ABI checks, validators, cross-target bundles, visual tests, sanitizers, and benchmarks.
 
-These facilities cover most of a basic NAM editor. They do not yet cover safe ownership and execution of a large dynamically loaded model.
+These facilities now cover the reusable plugin-framework side of a NAM editor and processor. Model parsing, tensor ownership, inference execution, and model-specific kernels remain work for a separate `zig-nam` library.
 
 ### Important gaps
 
@@ -61,10 +61,10 @@ These facilities cover most of a basic NAM editor. They do not yet cover safe ow
 | Streaming sample-rate conversion | Bounded streaming SRC and fixed-rate round-trip pipeline implemented and validated | Reusable DSP package, surfaced through `zig-vst3-plugin` | Complete |
 | Dynamic latency notification | Public coalesced component-to-controller restart path implemented and compatible with restored processor resource state | `zig-vst3` and `zig-vst3-plugin` | Complete |
 | Resource persistence | Bounded reference state, stable identity, asynchronous recovery, and relinking implemented | `zig-vst3-plugin` | Complete |
-| Consumer C kernel integration | Internal build code compiles C, but package consumers lack a documented helper and reference layout | Package build API and DSP library | P1 |
-| CPU dispatch | No portable baseline plus optimized runtime kernel selection contract | DSP library | P1 |
-| Denormal policy | No explicit reusable process-thread FTZ/DAZ or equivalent policy | `zig-vst3-plugin` or DSP library | P1 |
-| Headless golden rendering | Examples have strong tests, but no reusable model parity runner with WAV fixtures | `zig-nam` tooling | P1 |
+| Consumer C kernel integration | Public downstream recipe, installed-package test, and portable plus architecture-specific probe implemented | Package build API and DSP library | Complete |
+| CPU dispatch | Per-instance runtime NEON and AVX2 selection with a portable baseline implemented | DSP library | Complete |
+| Denormal policy | Scoped process-thread FTZ/DAZ or FZ with exact restoration implemented | `zig-vst3-plugin` or DSP library | Complete |
+| Headless golden rendering | Reusable fixed and randomized block runner with generated C++ WAV references implemented | Framework test tooling and future `zig-nam` tooling | Complete |
 | CLAP export | Out of scope for a VST3 backend | Separate backend or toolkit-neutral plugin shell | Later decision |
 
 ## P0 framework milestones
@@ -256,10 +256,18 @@ Completion evidence:
 
 ### Headless DSP fixture runner
 
-- [ ] Define a host-independent block processor test interface.
-- [ ] Feed WAV fixtures with fixed and randomized block boundaries.
-- [ ] Compare output against C++ reference renders with documented absolute, relative, and aggregate error limits.
-- [ ] Record performance by architecture, model, sample format, sample rate, and kernel backend.
+- [x] Define a host-independent block processor test interface.
+- [x] Feed WAV fixtures with fixed and randomized block boundaries.
+- [x] Compare output against C++ reference renders with documented absolute, relative, and aggregate error limits.
+- [x] Record performance by architecture, model, sample format, sample rate, and kernel backend.
+
+Completion evidence:
+
+- `dsp.BlockProcessor(Sample)` provides a host-independent mono `reset` and `processBlock` contract. `fixture_runner` renders caller-owned buffers with fixed or deterministically randomized block boundaries and does not allocate during rendering.
+- The bounded in-memory WAV decoder accepts mono PCM16, IEEE f32, and IEEE f64 fixtures. Unit tests cover format validation, truncated input, output capacity, and identical stateful results across block patterns.
+- `zig build test-dsp-fixtures` compiles a C++17 reference renderer, generates 8,192-frame 48 kHz fixtures, and compares Zig f32 and f64 output using maximum absolute, maximum relative, and RMS limits. Pointwise acceptance uses the documented absolute-or-relative rule, followed by an aggregate RMS limit.
+- Native arm64 macOS measured 1.6 to 2.4 ns per sample with exact reference output. The x86-64 binary under Rosetta measured 1.7 to 2.4 ns per sample. Its maximum errors were 2.98e-7 for f32 and 5.56e-16 for f64. Fixed and randomized renders remained bit-identical. The runner reports architecture, model, format, rate, backend, timings, and error metrics, and enforces a 100 ns per sample regression ceiling.
+- These x86-64 numbers are translated execution, not native x86-64 validation. Native Linux and Windows performance remain external checks.
 
 ## Work that belongs in `zig-nam`
 
@@ -313,6 +321,16 @@ Only after all five probes pass should a `zig-nam` repository or package begin i
 - [x] Performance measurements with fixed fixtures and recorded machine context.
 - [x] Documentation of unavailable native Windows, X11, Wayland, and CLAP coverage.
 
+Local validation on 2026-07-22:
+
+- `zig build test`, including installed-package consumers, native adapter tests, macOS accessibility tests, visual regression, and the DSP parity runner, passed.
+- `zig build raw-api-abi` passed.
+- `zig build validate-examples` passed all 47 Steinberg tests for every example in both sample formats.
+- `zig build benchmark` passed the recorded regression budgets.
+- Linux aarch64 and Windows x86-64 example bundle matrices passed with explicit cross targets.
+- The fixture runner module cross-compiled for Linux aarch64, Linux x86-64, and Windows x86-64. Cross-compilation does not count as native execution.
+- Native macOS host lifecycle testing remains a manual check. Native Windows, Linux, X11, Wayland, and CLAP host coverage remains unavailable locally.
+
 ## First execution phase
 
 The best next phase is framework work, not neural inference:
@@ -323,5 +341,7 @@ The best next phase is framework work, not neural inference:
 - [x] Add bounded SRC and dynamic latency through the Fixed-Rate Processor.
 - [x] Add bounded resource references, component-state recovery, and the Model Shell probe.
 - [x] Publish and test the downstream C kernel integration recipe.
+- [x] Add scoped denormal handling and deterministic silence-tail performance coverage.
+- [x] Add a headless C++-to-Zig fixture parity runner with randomized block boundaries.
 
 Completing this phase would make a Zig NAM effort technically credible while also benefiting convolution reverbs, cabinet loaders, spectral processors, wavetable instruments, and any plugin that swaps large prepared DSP resources.

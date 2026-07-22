@@ -2,6 +2,35 @@
 
 `zig-vst3-plugin.dsp` provides bounded processing utilities that can run inside a plugin audio callback. The current public surface includes scoped denormal control, smoothed biquads, streaming sample-rate conversion, and a two-stage fixed-rate processing pipeline.
 
+## Headless fixture parity
+
+`BlockProcessor(Sample)` is a type-erased mono processing interface for deterministic tests outside a plugin host. A processor supplies `reset` and `processBlock` methods. The fixture runner can render the same input using fixed or deterministically randomized block boundaries.
+
+```zig
+var model = Model{};
+const processor = plug.dsp.BlockProcessor(f32).init(Model, &model);
+
+try plug.dsp.fixture_runner.renderFixed(
+    f32,
+    processor,
+    input,
+    output,
+    64,
+);
+```
+
+`fixture_runner.compare` reports maximum absolute error, maximum relative error, and RMS error. A sample satisfies the pointwise limit when either its absolute error is within the near-zero bound or its relative error is within the scale-dependent bound. The complete render must also satisfy the RMS limit. Set `relative_floor` explicitly when a workload needs a denominator floor other than the default.
+
+`decodeMonoWav` reads bounded in-memory PCM16, IEEE f32, and IEEE f64 mono WAV fixtures. It is an offline test utility. It does not perform file access, allocate memory, or belong in an audio callback.
+
+The repository fixture test generates its input and C++ reference renders, then compares Zig f32 and f64 output using fixed and randomized blocks:
+
+```sh
+ZIG_GLOBAL_CACHE_DIR=.zig-global-cache zig build test-dsp-fixtures
+```
+
+The command records architecture, model, sample format, sample rate, backend, elapsed time per sample, and numerical metrics. It also enforces a 100 ns per sample regression ceiling. That ceiling detects major regressions while leaving room for translated and shared CI environments.
+
 ## Denormal handling
 
 `DenormalScope` enables flush-to-zero behavior for the current thread on aarch64 and x86-64, then restores the exact floating-point control state it observed. On x86-64 it enables both FTZ and DAZ in MXCSR. On aarch64 it enables FZ in FPCR.

@@ -329,6 +329,41 @@ pub fn build(b: *std.Build) void {
     const generate_fixtures_step = b.step("generate-sample-player-fixtures", "Generate bounded WAV and AIFF sample-player fixtures");
     generate_fixtures_step.dependOn(&b.addRunArtifact(fixture_generator).step);
 
+    const dsp_reference_renderer = b.addExecutable(.{
+        .name = "dsp-reference-renderer",
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+            .link_libc = true,
+            .link_libcpp = true,
+            .sanitize_c = .off,
+        }),
+    });
+    dsp_reference_renderer.root_module.addCSourceFile(.{
+        .file = b.path("tests/fixtures/dsp_reference_renderer.cpp"),
+        .flags = &.{ "-std=c++17", "-ffp-contract=off" },
+    });
+    const render_dsp_reference = b.addRunArtifact(dsp_reference_renderer);
+    const dsp_input_wav = render_dsp_reference.addOutputFileArg("dsp-input-f32.wav");
+    const dsp_reference_f32_wav = render_dsp_reference.addOutputFileArg("dsp-reference-f32.wav");
+    const dsp_reference_f64_wav = render_dsp_reference.addOutputFileArg("dsp-reference-f64.wav");
+
+    const dsp_fixture_parity = b.addExecutable(.{
+        .name = "dsp-fixture-parity",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/dsp_fixture_parity.zig"),
+            .target = target,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    dsp_fixture_parity.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
+    const run_dsp_fixture_parity = b.addRunArtifact(dsp_fixture_parity);
+    run_dsp_fixture_parity.addFileArg(dsp_input_wav);
+    run_dsp_fixture_parity.addFileArg(dsp_reference_f32_wav);
+    run_dsp_fixture_parity.addFileArg(dsp_reference_f64_wav);
+    const dsp_fixture_parity_step = b.step("test-dsp-fixtures", "Compare fixed and randomized blocks with C++ reference WAV renders");
+    dsp_fixture_parity_step.dependOn(&run_dsp_fixture_parity.step);
+
     const test_step = b.step("test", "Run unit tests");
     addRunArtifactDependencies(b, test_step, &.{
         vst3_tests,
@@ -346,6 +381,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/check_public_gui_examples.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_installed_package.sh"}).step);
     test_step.dependOn(generate_fixtures_step);
+    test_step.dependOn(dsp_fixture_parity_step);
 
     const sanitizer_step = addScriptCheckStep(b, .{
         .step_name = "test-vstgui-sanitizers",
