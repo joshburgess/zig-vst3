@@ -26,6 +26,8 @@ pub fn Recovery(comptime Config: type) type {
     const allow_mutable_active: bool = if (@hasDecl(Config, "mutable_active")) Config.mutable_active else false;
     const has_preparation_context = @hasDecl(Config, "PreparationContext");
     const PreparationContext = if (has_preparation_context) Config.PreparationContext else void;
+    const has_publication_metadata = @hasDecl(Config, "PublicationMetadata");
+    const PublicationMetadata = if (has_publication_metadata) Config.PublicationMetadata else void;
     const Path = @import("path.zig").BoundedPath(path_capacity);
     const Reference = reference_mod.Reference(path_capacity, metadata_capacity);
     const ReferenceState = reference_mod.State(path_capacity, metadata_capacity);
@@ -37,6 +39,9 @@ pub fn Recovery(comptime Config: type) type {
     if (Config.slot_capacity < 2) @compileError("resource recovery requires at least two exchange slots");
     if (has_preparation_context and !@hasDecl(Config, "initial_preparation_context")) {
         @compileError("resource recovery preparation contexts require Config.initial_preparation_context");
+    }
+    if (has_publication_metadata and !@hasDecl(Config, "publicationMetadata")) {
+        @compileError("resource recovery publication metadata requires Config.publicationMetadata");
     }
 
     const Exchange = exchange_mod.Exchange(struct {
@@ -55,6 +60,7 @@ pub fn Recovery(comptime Config: type) type {
         generation: u64,
         reference: ReferenceState,
         failure: ?FailureType,
+        publication_metadata: ?PublicationMetadata,
     };
 
     const Completion = struct {
@@ -66,6 +72,7 @@ pub fn Recovery(comptime Config: type) type {
         status: reference_mod.RecoveryStatus = .empty,
         resolution: reference_mod.RecoveryStatus = .empty,
         failure: ?FailureType = null,
+        publication_metadata: ?PublicationMetadata = null,
         latest_generation: u64 = 0,
 
         fn begin(self: *CompletionSelf, generation: u64, desired: ?ReferenceState) void {
@@ -76,6 +83,7 @@ pub fn Recovery(comptime Config: type) type {
             self.status = .restoring;
             self.resolution = .restoring;
             self.failure = null;
+            self.publication_metadata = null;
         }
 
         fn empty(self: *CompletionSelf, generation: u64) void {
@@ -86,6 +94,7 @@ pub fn Recovery(comptime Config: type) type {
             self.status = .empty;
             self.resolution = .empty;
             self.failure = null;
+            self.publication_metadata = null;
         }
 
         fn finishFailure(self: *CompletionSelf, generation: u64, failure: ?FailureType) void {
@@ -93,6 +102,7 @@ pub fn Recovery(comptime Config: type) type {
             defer self.unlock();
             if (generation != self.latest_generation) return;
             self.failure = failure;
+            self.publication_metadata = null;
             self.status = if (failure) |value| Config.failureStatus(value) else .failed;
             self.resolution = self.status;
         }
@@ -141,6 +151,9 @@ pub fn Recovery(comptime Config: type) type {
             self.status = .ready;
             self.resolution = resolution;
             self.failure = null;
+            self.publication_metadata = if (has_publication_metadata)
+                Config.publicationMetadata(prepared.resource)
+            else {};
             return .published;
         }
 
@@ -154,6 +167,7 @@ pub fn Recovery(comptime Config: type) type {
                 .generation = self.latest_generation,
                 .reference = self.reference,
                 .failure = self.failure,
+                .publication_metadata = self.publication_metadata,
             };
         }
 
@@ -353,6 +367,15 @@ pub fn Recovery(comptime Config: type) type {
             return self.exchange.adoptPending() != null;
         }
 
+        pub fn adoptPendingThroughAtBlockBoundary(self: *Self, maximum_generation: u64) bool {
+            const restore_generation = self.clear_before_generation.swap(0, .acq_rel);
+            if (restore_generation != 0) {
+                const retired = self.exchange.retireActiveAtBlockBoundary();
+                return (self.exchange.adoptPendingInRange(restore_generation, maximum_generation) != null) or retired;
+            }
+            return self.exchange.adoptPendingThrough(maximum_generation) != null;
+        }
+
         pub fn active(self: *const Self) ?*const ResourceType {
             const active_resource = self.exchange.active() orelse return null;
             return active_resource.resource;
@@ -525,6 +548,7 @@ test "resource recovery republishes linked content for a new preparation context
         pub const Resource = TestResource;
         pub const Failure = TestFailure;
         pub const PreparationContext = struct { multiplier: u32 };
+        pub const PublicationMetadata = u32;
         pub const initial_preparation_context: PreparationContext = .{ .multiplier = 1 };
         pub const path_capacity = 1024;
         pub const metadata_capacity = metadata_limit;
@@ -565,6 +589,10 @@ test "resource recovery republishes linked content for a new preparation context
             std.heap.page_allocator.destroy(resource);
         }
 
+        pub fn publicationMetadata(resource: *const Resource) PublicationMetadata {
+            return resource.value;
+        }
+
         pub fn failureStatus(failure: Failure) reference_mod.RecoveryStatus {
             return switch (failure) {
                 .missing => .missing,
@@ -583,13 +611,21 @@ test "resource recovery republishes linked content for a new preparation context
     defer recovery.deinit();
     try std.testing.expect(recovery.importPath(path_bytes[0..path_length]));
     recovery.waitAndPoll();
-    try std.testing.expect(recovery.adoptPendingAtBlockBoundary());
+    const first_generation = recovery.snapshot().generation;
+    try std.testing.expectEqual(@as(?u32, 7), recovery.snapshot().publication_metadata);
+    try std.testing.expect(!recovery.adoptPendingThroughAtBlockBoundary(first_generation - 1));
+    try std.testing.expect(recovery.active() == null);
+    try std.testing.expect(recovery.adoptPendingThroughAtBlockBoundary(first_generation));
     try std.testing.expectEqual(@as(u32, 7), recovery.active().?.value);
 
     try std.testing.expect(recovery.updatePreparationContext(.{ .multiplier = 3 }));
     recovery.waitAndPoll();
+    const second_generation = recovery.snapshot().generation;
+    try std.testing.expectEqual(@as(?u32, 21), recovery.snapshot().publication_metadata);
     try std.testing.expectEqual(@as(u32, 7), recovery.active().?.value);
-    try std.testing.expect(recovery.adoptPendingAtBlockBoundary());
+    try std.testing.expect(!recovery.adoptPendingThroughAtBlockBoundary(second_generation - 1));
+    try std.testing.expectEqual(@as(u32, 7), recovery.active().?.value);
+    try std.testing.expect(recovery.adoptPendingThroughAtBlockBoundary(second_generation));
     try std.testing.expectEqual(@as(u32, 21), recovery.active().?.value);
     try std.testing.expectEqual(@as(usize, 1), recovery.reclaim());
 }

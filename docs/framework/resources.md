@@ -92,6 +92,14 @@ pub fn prepare(
 }
 ```
 
+### Publication approval
+
+A runtime that changes host-visible processing properties may also declare `Config.PublicationMetadata` and `Config.publicationMetadata`. Recovery copies this bounded value into its synchronized snapshot after successful publication. Control-side code can use it to update latency or another host contract without reading the mutable runtime.
+
+`adoptPendingThroughAtBlockBoundary(generation)` leaves newer pending work untouched. A processor can therefore dispatch a host restart outside processing, publish the approved generation through an atomic value, and let the audio thread adopt only through that generation. If dispatch fails, the complete runtime remains pending and the previous active runtime remains owned by the audio thread.
+
+The Model Shell uses publication metadata for host rate, maximum block size, and latency. It approves a prepared model plus SRC runtime only after a required latency notification succeeds. This is the ordering required for dynamically loaded fixed-rate processors.
+
 Automatic directory scanning for moved files is intentionally excluded because it is unbounded and ambiguous. A caller supplies a candidate path through `relink`; matching content is recorded with the new path and a `moved` resolution.
 
 The recovery object can be used as processor component state through these public processor declarations:
@@ -170,7 +178,7 @@ Do not call `retireAllAfterProcessingStops` while the audio thread can still rea
 
 `examples/resource_swap_core.zig` prepares a bounded dummy graph in the background, publishes it through a four-slot exchange, adopts it at a mono process block boundary, and reclaims the replaced graph off-thread. Its processor starts preparation during initialization and has no editor dependency.
 
-`examples/model_shell_core.zig` loads and prewarms a bounded versioned JSON linear runtime. It persists only the path, identity, schema version, and metadata summary. Its stateful recurrence proves mutable block-to-block state and real-time reset after exclusive adoption. Tests also cover restoration without an editor, safe silence for a missing resource, changed-content rejection, and matching-content relinking.
+`examples/model_shell_core.zig` loads and prewarms a bounded versioned JSON linear runtime. The worker combines the model, host-to-model and model-to-host converters, and fixed scratch for both sample formats before publication. It persists only the path, identity, schema version, and metadata summary. Its stateful recurrence proves mutable block-to-block state and real-time reset after exclusive adoption. Tests also cover context-dependent rebuilding, latency-approved adoption, restoration without an editor, safe silence for a missing resource, changed-content rejection, and matching-content relinking.
 
 Validation commands:
 

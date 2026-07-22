@@ -205,7 +205,7 @@ Completion evidence:
 - The VST3 component-state envelope preserves legacy parameter-only state, exposes processor-owned bounded state through public hooks, and lets controllers restore the parameter section without parsing processor-private data.
 - `resource.ResourceRecovery` starts restoration on its worker, verifies identity and schema compatibility before publication, publishes without an editor polling loop, and reports explicit missing, moved, changed, unsupported, and failed states. A restore retires the previous active resource and any older pending generation at the next process-block boundary.
 - The Model Shell loads a small versioned JSON linear model and processes mono audio. Its tests prove maximum-path state round trips, editor-independent restoration, safe silence while missing, changed-file rejection, matching-content relinking, and controller compatibility.
-- The preparation worker owns all file access, JSON parsing, hashing, allocation, and destruction. Processing only adopts a fixed-slot publication and reads immutable model data.
+- The preparation worker owns all file access, JSON parsing, hashing, allocation, SRC construction, scratch sizing, prewarming, and destruction. Processing only adopts a fixed-slot publication and mutates its exclusively owned runtime state.
 - The aggregate deterministic suite, raw ABI checks, VSTGUI address and undefined-behavior sanitizers, resource thread sanitizer, and all 19 Steinberg validators pass. The Model Shell and Fixed Rate Processor each pass all 47 validator tests in both sample formats.
 - Linux aarch64 and Windows x86_64 cross-target matrices each build all 19 example bundles. These are build checks, not native host validation.
 - On the current macOS development machine, bounded reference state save and load measured 38.9 ns per round trip, and 4 KiB SHA-256 identity generation measured 2,503.8 MiB/s.
@@ -224,7 +224,9 @@ Completion evidence:
 - `resource.ResourceRecovery` accepts an optional `PreparationContext` with an explicit initial value. Existing configurations retain their two-argument preparation function and behavior.
 - `updatePreparationContext` starts a new generation for the latest source. The worker sees an owned snapshot, stale work is cancelled, and publication still passes through identity and schema validation.
 - Deterministic tests prove that the previous runtime remains active while context-specific preparation runs, then retires only after block-boundary adoption. Reclamation remains off the audio thread.
-- This closes the lifecycle gap between a model's file-declared sample rate and the host rate. The next Model Shell milestone composes it with bounded SRC, scratch, and host-visible latency.
+- Optional bounded publication metadata lets control-side code inspect host-visible properties without touching a mutable runtime. Generation-limited adoption leaves newer work pending until its host contract is approved.
+- The Model Shell now composes file-declared model rate, per-instance host rate and maximum block size, stateful inference, both sample formats, fixed scratch, exact SRC latency, and host restart ordering. A mismatched old runtime stays silent, and a replacement cannot be adopted before successful latency dispatch.
+- The Model Shell passes all 47 Steinberg validator tests. The full deterministic suite, raw ABI checks, and resource ThreadSanitizer pass. Linux aarch64 and Windows x86-64 example matrices cross-build successfully.
 
 ### Public C kernel integration
 

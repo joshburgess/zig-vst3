@@ -29,7 +29,7 @@ pub fn Exchange(comptime Config: type) type {
 
         const Slot = struct {
             state: std.atomic.Value(u8) = std.atomic.Value(u8).init(@intFromEnum(SlotState.free)),
-            generation: u64 = 0,
+            generation: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
             resource: ?*Resource = null,
         };
 
@@ -56,7 +56,7 @@ pub fn Exchange(comptime Config: type) type {
             _ = self.reclaim();
             const slot_index = self.claimFreeSlot() orelse return error.Busy;
             const slot = &self.slots[slot_index];
-            slot.generation = generation;
+            slot.generation.store(generation, .unordered);
             slot.resource = resource;
             slot.state.store(@intFromEnum(SlotState.published), .release);
             self.latest_generation.store(generation, .release);
@@ -67,25 +67,38 @@ pub fn Exchange(comptime Config: type) type {
         }
 
         pub fn adoptPending(self: *Self) ?View {
-            return self.adoptPendingAtOrAfter(0);
+            return self.adoptPendingInRange(0, std.math.maxInt(u64));
         }
 
         pub fn adoptPendingAtOrAfter(self: *Self, minimum_generation: u64) ?View {
+            return self.adoptPendingInRange(minimum_generation, std.math.maxInt(u64));
+        }
+
+        pub fn adoptPendingThrough(self: *Self, maximum_generation: u64) ?View {
+            return self.adoptPendingInRange(0, maximum_generation);
+        }
+
+        pub fn adoptPendingInRange(self: *Self, minimum_generation: u64, maximum_generation: u64) ?View {
             _ = realtime_audit.observe(.resource_adoption);
-            const next = self.pending_slot.swap(no_slot, .acq_rel);
-            if (next == no_slot) return null;
-            const slot = &self.slots[next];
-            if (slot.state.load(.acquire) != @intFromEnum(SlotState.published)) return null;
-            if (slot.generation < minimum_generation) {
-                slot.state.store(@intFromEnum(SlotState.retired), .release);
-                return null;
+            while (true) {
+                const next = self.pending_slot.load(.acquire);
+                if (next == no_slot) return null;
+                const slot = &self.slots[next];
+                if (slot.state.load(.acquire) != @intFromEnum(SlotState.published)) return null;
+                const generation = slot.generation.load(.acquire);
+                if (generation > maximum_generation) return null;
+                if (self.pending_slot.cmpxchgStrong(next, no_slot, .acq_rel, .acquire) != null) continue;
+                if (generation < minimum_generation) {
+                    slot.state.store(@intFromEnum(SlotState.retired), .release);
+                    return null;
+                }
+                if (self.active_slot != no_slot) {
+                    self.slots[self.active_slot].state.store(@intFromEnum(SlotState.retired), .release);
+                }
+                slot.state.store(@intFromEnum(SlotState.active), .release);
+                self.active_slot = next;
+                return view(slot);
             }
-            if (self.active_slot != no_slot) {
-                self.slots[self.active_slot].state.store(@intFromEnum(SlotState.retired), .release);
-            }
-            slot.state.store(@intFromEnum(SlotState.active), .release);
-            self.active_slot = next;
-            return view(slot);
         }
 
         pub fn active(self: *const Self) ?View {
@@ -101,7 +114,7 @@ pub fn Exchange(comptime Config: type) type {
             const slot = &self.slots[self.active_slot];
             if (slot.state.load(.acquire) != @intFromEnum(SlotState.active)) return null;
             return .{
-                .generation = slot.generation,
+                .generation = slot.generation.load(.acquire),
                 .resource = slot.resource orelse return null,
             };
         }
@@ -125,12 +138,12 @@ pub fn Exchange(comptime Config: type) type {
                     .acquire,
                 ) != null) continue;
                 const resource = slot.resource orelse {
-                    slot.generation = 0;
+                    slot.generation.store(0, .unordered);
                     slot.state.store(@intFromEnum(SlotState.free), .release);
                     continue;
                 };
                 slot.resource = null;
-                slot.generation = 0;
+                slot.generation.store(0, .unordered);
                 Config.destroy(resource);
                 slot.state.store(@intFromEnum(SlotState.free), .release);
                 reclaimed += 1;
@@ -178,7 +191,7 @@ pub fn Exchange(comptime Config: type) type {
 
         fn view(slot: *const Slot) ?View {
             return .{
-                .generation = slot.generation,
+                .generation = slot.generation.load(.acquire),
                 .resource = slot.resource orelse return null,
             };
         }
@@ -277,6 +290,29 @@ test "resource exchange rejects pending generations older than a restore boundar
     restored.* = .{ .value = 2 };
     try exchange.publish(2, restored);
     try std.testing.expectEqual(@as(u64, 2), exchange.adoptPendingAtOrAfter(2).?.generation);
+}
+
+test "resource exchange retains a pending generation until adoption is approved" {
+    const Model = struct { value: u8 };
+    const ModelExchange = Exchange(struct {
+        pub const Resource = Model;
+        pub const slot_capacity = 2;
+
+        pub fn destroy(resource: *Model) void {
+            std.heap.page_allocator.destroy(resource);
+        }
+    });
+
+    var exchange: ModelExchange = .{};
+    defer exchange.deinit();
+    const resource = try std.heap.page_allocator.create(Model);
+    resource.* = .{ .value = 9 };
+    try exchange.publish(4, resource);
+    try std.testing.expect(exchange.adoptPendingThrough(3) == null);
+    try std.testing.expect(exchange.hasPending());
+    const adopted = exchange.adoptPendingThrough(4).?;
+    try std.testing.expectEqual(@as(u64, 4), adopted.generation);
+    try std.testing.expectEqual(@as(u8, 9), adopted.resource.value);
 }
 
 test "resource exchange audio operations are lock free and allocation free" {

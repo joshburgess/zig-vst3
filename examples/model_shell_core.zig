@@ -4,6 +4,8 @@ const plug = @import("zig-vst3-plugin");
 const maximum_model_bytes = 4096;
 const maximum_path_bytes = 1024;
 const maximum_metadata_bytes = 96;
+const maximum_host_frames = 4096;
+const maximum_model_frames = maximum_host_frames * 8 + 2;
 
 pub const LinearModel = struct {
     gain: f32,
@@ -25,6 +27,69 @@ pub const LinearModel = struct {
     }
 };
 
+const HostPreparation = struct {
+    host_rate: f64,
+    max_block_size: u32,
+};
+
+const RuntimePublication = struct {
+    host_rate: f64,
+    max_block_size: u32,
+    latency_samples: u32,
+};
+
+pub const PreparedRuntime = struct {
+    model: LinearModel,
+    pipeline32: plug.dsp.FixedRatePipeline(f32),
+    pipeline64: plug.dsp.FixedRatePipeline(f64),
+    model32: [maximum_model_frames]f32,
+    model64: [maximum_model_frames]f64,
+    host_rate: f64,
+    max_block_size: u32,
+    latency_samples: u32,
+    resampling: bool,
+
+    fn process(self: *PreparedRuntime, comptime Sample: type, input: []const Sample, output: []Sample) bool {
+        if (input.len != output.len or input.len > self.max_block_size) return false;
+        if (!self.resampling) {
+            for (input, output) |sample, *destination| {
+                destination.* = self.model.processSample(Sample, sample);
+            }
+            return true;
+        }
+        if (Sample == f32) {
+            return self.processResampled(f32, &self.pipeline32, &self.model32, input, output);
+        }
+        return self.processResampled(f64, &self.pipeline64, &self.model64, input, output);
+    }
+
+    fn processResampled(
+        self: *PreparedRuntime,
+        comptime Sample: type,
+        pipeline: *plug.dsp.FixedRatePipeline(Sample),
+        scratch: []Sample,
+        input: []const Sample,
+        output: []Sample,
+    ) bool {
+        const model_frames = pipeline.convertInput(input, scratch) catch return false;
+        for (scratch[0..model_frames]) |*sample| {
+            sample.* = self.model.processSample(Sample, sample.*);
+        }
+        pipeline.convertOutput(scratch[0..model_frames], output) catch return false;
+        return true;
+    }
+
+    fn reset(self: *PreparedRuntime) void {
+        self.model.reset();
+        self.pipeline32.reset();
+        self.pipeline64.reset();
+    }
+
+    fn matches(self: *const PreparedRuntime, context: HostPreparation) bool {
+        return self.host_rate == context.host_rate and self.max_block_size == context.max_block_size;
+    }
+};
+
 pub const LoadFailure = enum {
     missing,
     too_large,
@@ -34,10 +99,10 @@ pub const LoadFailure = enum {
 };
 
 const ModelPath = plug.resource.BoundedPath(maximum_path_bytes);
-const PreparedModel = plug.resource.PreparedResource(LinearModel, maximum_metadata_bytes);
+const PreparedModel = plug.resource.PreparedResource(PreparedRuntime, maximum_metadata_bytes);
 
 const ModelRecovery = plug.resource.ResourceRecovery(struct {
-    pub const Resource = LinearModel;
+    pub const Resource = PreparedRuntime;
     pub const Failure = LoadFailure;
     pub const path_capacity = maximum_path_bytes;
     pub const metadata_capacity = maximum_metadata_bytes;
@@ -46,8 +111,14 @@ const ModelRecovery = plug.resource.ResourceRecovery(struct {
     pub const maximum_result_units = 1;
     pub const maximum_runtime_nanoseconds = 5 * std.time.ns_per_s;
     pub const mutable_active = true;
+    pub const PreparationContext = HostPreparation;
+    pub const initial_preparation_context: PreparationContext = .{
+        .host_rate = 48_000,
+        .max_block_size = maximum_host_frames,
+    };
+    pub const PublicationMetadata = RuntimePublication;
 
-    pub fn prepare(path: ModelPath, context: *plug.resource.job.WorkerContext) plug.resource.job.Outcome(PreparedModel, Failure) {
+    pub fn prepare(path: ModelPath, preparation: PreparationContext, context: *plug.resource.job.WorkerContext) plug.resource.job.Outcome(PreparedModel, Failure) {
         const file = std.Io.Dir.cwd().openFile(context.io, path.slice(), .{}) catch return .{ .failure = .missing };
         defer file.close(context.io);
         var bytes: [maximum_model_bytes + 1]u8 = undefined;
@@ -70,29 +141,68 @@ const ModelRecovery = plug.resource.ResourceRecovery(struct {
             return .{ .failure = .malformed };
         }
         if (parsed.value.sample_rate < 8_000 or parsed.value.sample_rate > 192_000) return .{ .failure = .unsupported };
+        if (!std.math.isFinite(preparation.host_rate) or preparation.host_rate < 8_000 or preparation.host_rate > 768_000) {
+            return .{ .failure = .unsupported };
+        }
+        if (preparation.max_block_size == 0 or preparation.max_block_size > maximum_host_frames) {
+            return .{ .failure = .unsupported };
+        }
 
-        const model = std.heap.page_allocator.create(LinearModel) catch return .{ .failure = .allocation_failed };
-        model.* = .{
-            .gain = parsed.value.gain,
-            .sample_rate = parsed.value.sample_rate,
-            .state = 0.0,
+        const runtime = std.heap.page_allocator.create(PreparedRuntime) catch return .{ .failure = .allocation_failed };
+        const pipeline32 = plug.dsp.FixedRatePipeline(f32).init(.{
+            .host_rate = preparation.host_rate,
+            .model_rate = @floatFromInt(parsed.value.sample_rate),
+        }) catch {
+            std.heap.page_allocator.destroy(runtime);
+            return .{ .failure = .unsupported };
         };
-        model.prewarm();
+        const pipeline64 = plug.dsp.FixedRatePipeline(f64).init(.{
+            .host_rate = preparation.host_rate,
+            .model_rate = @floatFromInt(parsed.value.sample_rate),
+        }) catch {
+            std.heap.page_allocator.destroy(runtime);
+            return .{ .failure = .unsupported };
+        };
+        const required_capacity = pipeline32.requiredModelCapacity(preparation.max_block_size) catch {
+            std.heap.page_allocator.destroy(runtime);
+            return .{ .failure = .unsupported };
+        };
+        if (required_capacity > maximum_model_frames) {
+            std.heap.page_allocator.destroy(runtime);
+            return .{ .failure = .unsupported };
+        }
+        const resampling = @abs(preparation.host_rate - @as(f64, @floatFromInt(parsed.value.sample_rate))) >= 0.5;
+        runtime.* = .{
+            .model = .{
+                .gain = parsed.value.gain,
+                .sample_rate = parsed.value.sample_rate,
+                .state = 0.0,
+            },
+            .pipeline32 = pipeline32,
+            .pipeline64 = pipeline64,
+            .model32 = undefined,
+            .model64 = undefined,
+            .host_rate = preparation.host_rate,
+            .max_block_size = preparation.max_block_size,
+            .latency_samples = if (resampling) pipeline32.latencySamples() else 0,
+            .resampling = resampling,
+        };
+        runtime.model.prewarm();
         var metadata_bytes: [maximum_metadata_bytes]u8 = undefined;
         const metadata = std.fmt.bufPrint(&metadata_bytes, "Linear, {} Hz, gain {d:.3}", .{
             parsed.value.sample_rate,
             parsed.value.gain,
         }) catch {
-            std.heap.page_allocator.destroy(model);
+            std.heap.page_allocator.destroy(runtime);
             return .{ .failure = .malformed };
         };
         return .{ .success = .{
             .value = .{
-                .resource = model,
+                .resource = runtime,
                 .identity = plug.resource.Identity.fromBytes(bytes[0..count]),
                 .resource_schema_version = parsed.value.version,
                 .metadata = plug.resource.BoundedMetadata(maximum_metadata_bytes).init(metadata) catch {
-                    std.heap.page_allocator.destroy(model);
+                    std.heap.page_allocator.destroy(runtime);
                     return .{ .failure = .malformed };
                 },
             },
@@ -100,8 +210,16 @@ const ModelRecovery = plug.resource.ResourceRecovery(struct {
         } };
     }
 
-    pub fn destroy(model: *LinearModel) void {
-        std.heap.page_allocator.destroy(model);
+    pub fn destroy(runtime: *PreparedRuntime) void {
+        std.heap.page_allocator.destroy(runtime);
+    }
+
+    pub fn publicationMetadata(runtime: *const PreparedRuntime) PublicationMetadata {
+        return .{
+            .host_rate = runtime.host_rate,
+            .max_block_size = runtime.max_block_size,
+            .latency_samples = runtime.latency_samples,
+        };
     }
 
     pub fn failureStatus(failure: Failure) plug.resource.RecoveryStatus {
@@ -117,9 +235,19 @@ pub const Processor = struct {
     pub const component_state_maximum_encoded_size = ModelRecovery.component_state_maximum_encoded_size;
 
     models: ModelRecovery,
+    preparation: HostPreparation,
+    approved_generation: std.atomic.Value(u64),
+    latency_samples: std.atomic.Value(u32),
+    host_requests: ?*plug.HostRequestSink,
 
     pub fn initInPlace(self: *Processor) void {
-        self.* = .{ .models = ModelRecovery.init() };
+        self.* = .{
+            .models = ModelRecovery.init(),
+            .preparation = .{ .host_rate = 48_000, .max_block_size = maximum_host_frames },
+            .approved_generation = std.atomic.Value(u64).init(0),
+            .latency_samples = std.atomic.Value(u32).init(0),
+            .host_requests = null,
+        };
     }
 
     pub fn deinit(self: *Processor) void {
@@ -136,11 +264,31 @@ pub const Processor = struct {
 
     pub fn waitForModel(self: *Processor) void {
         self.models.waitAndPoll();
+        _ = self.approvePreparedPublication();
     }
 
     pub fn maintain(self: *Processor) usize {
         self.models.poll();
+        _ = self.approvePreparedPublication();
         return self.models.reclaim();
+    }
+
+    pub fn bindHostRequests(self: *Processor, requests: *plug.HostRequestSink) void {
+        self.host_requests = requests;
+    }
+
+    pub fn prepare(self: *Processor, config: plug.plugin.PrepareConfig) void {
+        self.preparation = .{
+            .host_rate = config.sample_rate,
+            .max_block_size = config.max_block_size,
+        };
+        self.approved_generation.store(0, .release);
+        self.latency_samples.store(0, .release);
+        _ = self.models.updatePreparationContext(self.preparation);
+    }
+
+    pub fn latencySamples(self: *const Processor) u32 {
+        return self.latency_samples.load(.acquire);
     }
 
     pub fn resourceSnapshot(self: *const Processor) ModelRecovery.Snapshot {
@@ -160,11 +308,11 @@ pub const Processor = struct {
     }
 
     pub fn process(self: *Processor, _: anytype, comptime Sample: type, context: *plug.process.ProcessContext(Sample)) void {
-        _ = self.models.adoptPendingAtBlockBoundary();
-        const model = self.models.activeMutable();
+        _ = self.models.adoptPendingThroughAtBlockBoundary(self.approved_generation.load(.acquire));
+        const runtime = self.models.activeMutable();
         for (0..context.outputChannelCount()) |channel| {
             const output = context.outputChannel(channel) orelse continue;
-            if (model == null) {
+            if (runtime == null or !runtime.?.matches(self.preparation)) {
                 @memset(output, 0);
                 continue;
             }
@@ -172,12 +320,37 @@ pub const Processor = struct {
                 @memset(output, 0);
                 continue;
             };
-            for (input, output) |sample, *destination| destination.* = model.?.processSample(Sample, sample);
+            if (!runtime.?.process(Sample, input, output)) {
+                @memset(output, 0);
+                runtime.?.reset();
+            }
         }
     }
 
     pub fn reset(self: *Processor) void {
-        if (self.models.activeMutable()) |model| model.reset();
+        if (self.models.activeMutable()) |runtime| runtime.reset();
+    }
+
+    fn approvePreparedPublication(self: *Processor) bool {
+        const snapshot = self.models.snapshot();
+        if (snapshot.status != .ready) return false;
+        const metadata = snapshot.publication_metadata orelse return false;
+        if (metadata.host_rate != self.preparation.host_rate or metadata.max_block_size != self.preparation.max_block_size) {
+            return false;
+        }
+        if (snapshot.generation == self.approved_generation.load(.acquire)) return true;
+        const previous_latency = self.latency_samples.swap(metadata.latency_samples, .acq_rel);
+        if (previous_latency != metadata.latency_samples) {
+            if (self.host_requests) |requests| {
+                requests.markLatencyChanged();
+                if (!requests.dispatchPending()) {
+                    self.latency_samples.store(previous_latency, .release);
+                    return false;
+                }
+            }
+        }
+        self.approved_generation.store(snapshot.generation, .release);
+        return true;
     }
 };
 
@@ -214,8 +387,10 @@ test "model shell restores asynchronously and stays silent when a resource is mi
     defer restored.deinit();
     var state_reader = std.Io.Reader.fixed(state_bytes[0..state_writer.end]);
     try restored.readComponentState(&state_reader);
-    restored.models.preparation.wait();
+    restored.waitForModel();
     try std.testing.expectEqual(plug.resource.RecoveryStatus.ready, restored.resourceSnapshot().status);
+    try std.testing.expectEqual(restored.resourceSnapshot().generation, restored.approved_generation.load(.acquire));
+    try std.testing.expectEqual(@as(?u32, 0), if (restored.resourceSnapshot().publication_metadata) |metadata| metadata.latency_samples else null);
 
     const input = [_]f32{ 0.25, -0.5 };
     var output = [_]f32{ 0.0, 0.0 };
@@ -224,6 +399,8 @@ test "model shell restores asynchronously and stays silent when a resource is mi
     var context = try plug.process.ProcessContext(f32).init(48_000, &inputs, &outputs);
     const realtime_scope = plug.realtime_audit.Scope.enter();
     restored.process(undefined, f32, &context);
+    try std.testing.expect(restored.models.activeMutable() != null);
+    try std.testing.expect(restored.models.activeMutable().?.matches(restored.preparation));
     const first_output = output;
     restored.process(undefined, f32, &context);
     const continued_output = output;
@@ -282,4 +459,79 @@ test "model shell rejects changed restored content and accepts a matching relink
     restored.waitForModel();
     try std.testing.expectEqual(plug.resource.RecoveryStatus.ready, restored.resourceSnapshot().status);
     try std.testing.expectEqual(plug.resource.RecoveryStatus.moved, restored.resourceSnapshot().resolution);
+}
+
+test "model shell prepares model-rate conversion before latency-approved adoption" {
+    const HostProbe = struct {
+        var marks: usize = 0;
+        var dispatches: usize = 0;
+
+        fn mark(_: *anyopaque) void {
+            marks += 1;
+        }
+
+        fn dispatch(_: *anyopaque) i32 {
+            dispatches += 1;
+            return 0;
+        }
+    };
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const fixture = "{\"version\":1,\"gain\":1.0,\"sample_rate\":48000}";
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "fixed-rate.json", .data = fixture });
+    var path_bytes: [maximum_path_bytes]u8 = undefined;
+    const path_length = try temporary.dir.realPathFile(std.testing.io, "fixed-rate.json", &path_bytes);
+
+    var processor: Processor = undefined;
+    processor.initInPlace();
+    defer processor.deinit();
+    var sink_context: u8 = 0;
+    var sink = plug.HostRequestSink{
+        .context = &sink_context,
+        .mark_latency_changed = HostProbe.mark,
+        .dispatch = HostProbe.dispatch,
+    };
+    HostProbe.marks = 0;
+    HostProbe.dispatches = 0;
+    processor.bindHostRequests(&sink);
+    processor.prepare(.{ .sample_rate = 44_100, .max_block_size = 1024 });
+    try std.testing.expect(processor.importModel(path_bytes[0..path_length]));
+    processor.waitForModel();
+    try std.testing.expectEqual(@as(u32, 31), processor.latencySamples());
+    try std.testing.expectEqual(@as(usize, 1), HostProbe.marks);
+    try std.testing.expectEqual(@as(usize, 1), HostProbe.dispatches);
+
+    var input: [1024]f32 = @splat(0.0);
+    input[0] = 1.0;
+    var output: [1024]f32 = undefined;
+    const inputs = [_][]const f32{&input};
+    const outputs = [_][]f32{&output};
+    var context = try plug.process.ProcessContext(f32).init(44_100, &inputs, &outputs);
+    const scope = plug.realtime_audit.Scope.enter();
+    processor.process(undefined, f32, &context);
+    try std.testing.expect(scope.leave().clean());
+    try std.testing.expect(processor.models.activeMutable().?.resampling);
+    var has_output = false;
+    for (output) |sample| has_output = has_output or sample != 0.0;
+    try std.testing.expect(has_output);
+
+    processor.prepare(.{ .sample_rate = 96_000, .max_block_size = 257 });
+    var replacement_input: [257]f32 = @splat(0.0);
+    replacement_input[0] = 1.0;
+    var replacement_output: [257]f32 = @splat(1.0);
+    const replacement_inputs = [_][]const f32{&replacement_input};
+    const replacement_outputs = [_][]f32{&replacement_output};
+    var mismatch_context = try plug.process.ProcessContext(f32).init(96_000, &replacement_inputs, &replacement_outputs);
+    processor.process(undefined, f32, &mismatch_context);
+    for (replacement_output) |sample| try std.testing.expectEqual(@as(f32, 0.0), sample);
+
+    processor.waitForModel();
+    try std.testing.expectEqual(@as(u32, 48), processor.latencySamples());
+    try std.testing.expectEqual(@as(usize, 2), HostProbe.marks);
+    try std.testing.expectEqual(@as(usize, 2), HostProbe.dispatches);
+    processor.process(undefined, f32, &mismatch_context);
+    const active = processor.models.activeMutable().?;
+    try std.testing.expectEqual(@as(f64, 96_000), active.host_rate);
+    try std.testing.expectEqual(@as(u32, 257), active.max_block_size);
 }

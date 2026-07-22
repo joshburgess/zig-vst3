@@ -125,13 +125,16 @@ The safe transition order is:
 
 The raw VST3 shell sends a component-to-controller message. The reflected controller then asks the host to restart the component with `kLatencyChanged`. Repeated marks before dispatch produce one restart request. A failed dispatch remains pending for a later non-real-time retry.
 
+For asynchronously loaded resources, expose bounded publication metadata through `ResourceRecovery` and call `adoptPendingThroughAtBlockBoundary` with the last successfully approved generation. The Model Shell demonstrates this ordering for a file-declared model rate, per-host SRC construction, and runtime replacement.
+
 The host request sink belongs to the component. Do not retain it beyond processor teardown, invoke it after component destruction, or call `dispatchPending` from `process`.
 
 ## Reference implementation
 
-The complete public-API example is split between `examples/fixed_rate_core.zig` and `examples/fixed_rate_plugin.zig`.
+The fixed-mode public-API example is split between `examples/fixed_rate_core.zig` and `examples/fixed_rate_plugin.zig`. The context-dependent resource example is split between `examples/model_shell_core.zig` and `examples/model_shell_plugin.zig`.
 
 ```sh
 ZIG_GLOBAL_CACHE_DIR=.zig-global-cache zig build bundle-fixed-rate validate-fixed-rate
+ZIG_GLOBAL_CACHE_DIR=.zig-global-cache zig build bundle-model-shell validate-model-shell
 ZIG_GLOBAL_CACHE_DIR=.zig-global-cache zig build benchmark
 ```
