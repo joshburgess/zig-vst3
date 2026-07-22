@@ -526,13 +526,13 @@ pub fn Message(comptime max_message_id_bytes: usize, comptime max_attributes: us
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IMessage");
         }
 
-        fn getMessageID(ptr: *anyopaque) callconv(.c) types.FIDString {
+        fn getMessageID(ptr: *anyopaque) callconv(.c) ?types.FIDString {
             return @ptrCast(&owner(ptr).message_id);
         }
 
-        fn setMessageID(ptr: *anyopaque, value: types.FIDString) callconv(.c) void {
+        fn setMessageID(ptr: *anyopaque, value: ?types.FIDString) callconv(.c) void {
             const self = owner(ptr);
-            fixed_string.copyAsciiZ(&self.message_id, std.mem.span(value));
+            fixed_string.copyAsciiZ(&self.message_id, if (value) |id| std.mem.span(id) else "");
         }
 
         fn getAttributes(ptr: *anyopaque) callconv(.c) ?*ivstattributes.IAttributeList {
@@ -687,7 +687,9 @@ test "message stores id and exposes attributes" {
     const iface = message.asInterface();
 
     iface.vtable.setMessageID(iface, "parameter-change");
-    try std.testing.expectEqualStrings("parameter-change", std.mem.span(iface.vtable.getMessageID(iface)));
+    try std.testing.expectEqualStrings("parameter-change", ivstmessage.messageId(iface) orelse return error.MissingMessageId);
+    iface.vtable.setMessageID(iface, null);
+    try std.testing.expectEqualStrings("", ivstmessage.messageId(iface) orelse return error.MissingMessageId);
 
     const attrs = iface.vtable.getAttributes(iface).?;
     try std.testing.expectEqual(types.kResultOk, attrs.vtable.setInt(attrs, "id", 42));

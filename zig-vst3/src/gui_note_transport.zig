@@ -103,8 +103,7 @@ pub fn send(peer: ?*ivstmessage.IConnectionPoint, command: Command) types.tresul
 
 pub fn receive(mailbox: *Mailbox, message: ?*ivstmessage.IMessage) types.tresult {
     const iface = message orelse return types.kInvalidArgument;
-    const id = iface.vtable.getMessageID(iface);
-    if (!std.mem.eql(u8, std.mem.span(id), message_id)) return types.kResultFalse;
+    if (!ivstmessage.messageIdEquals(iface, message_id)) return types.kResultFalse;
     const attributes = iface.vtable.getAttributes(iface) orelse return types.kInvalidArgument;
     var channel: types.int64 = 0;
     var pitch: types.int64 = 0;

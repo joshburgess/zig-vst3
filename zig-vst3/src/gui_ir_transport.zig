@@ -100,7 +100,7 @@ pub fn sendClear(peer: ?*ivstmessage.IConnectionPoint, target_id: u32, generatio
 
 pub fn receive(convolver: anytype, expected_target_id: u32, message: ?*ivstmessage.IMessage) types.tresult {
     const iface = message orelse return types.kInvalidArgument;
-    if (!std.mem.eql(u8, std.mem.span(iface.vtable.getMessageID(iface)), message_id)) return types.kResultFalse;
+    if (!ivstmessage.messageIdEquals(iface, message_id)) return types.kResultFalse;
     const attributes = iface.vtable.getAttributes(iface) orelse return types.kInvalidArgument;
     var operation_value: i64 = 0;
     var target_value: i64 = 0;

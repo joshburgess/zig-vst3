@@ -16,8 +16,7 @@ pub fn send(peer: ?*ivstmessage.IConnectionPoint) types.tresult {
 
 pub fn receive(message: ?*ivstmessage.IMessage) types.tresult {
     const iface = message orelse return types.kInvalidArgument;
-    const id = iface.vtable.getMessageID(iface);
-    return if (std.mem.eql(u8, std.mem.span(id), message_id))
+    return if (ivstmessage.messageIdEquals(iface, message_id))
         types.kResultOk
     else
         types.kResultFalse;
