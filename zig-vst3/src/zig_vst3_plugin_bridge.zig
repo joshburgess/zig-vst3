@@ -529,6 +529,26 @@ pub fn collectInputEvents(data: *ivstaudioprocessor.ProcessData, storage: []plug
     return plug.process.Events.init(collector.items(), collector.frame_count) catch .{};
 }
 
+pub fn validateParameterFlushData(data: *const ivstaudioprocessor.ProcessData, bus_config: StereoAudioBuses.Config) types.tresult {
+    if (data.numSamples != 0) return types.kInvalidArgument;
+    const input_count = vst_index.nonNegativeCount(data.numInputs) orelse return types.kInvalidArgument;
+    const output_count = vst_index.nonNegativeCount(data.numOutputs) orelse return types.kInvalidArgument;
+    const maximum_input_count: usize = if (bus_config.inputLayout().hasBus()) 1 else 0;
+    const maximum_output_count: usize = if (bus_config.outputLayout().hasBus()) 1 else 0;
+    if (input_count > maximum_input_count or output_count > maximum_output_count) return types.kInvalidArgument;
+    if (input_count == 1) {
+        const inputs = data.inputs orelse return types.kInvalidArgument;
+        const channel_count = vst_index.nonNegativeCount(inputs[0].numChannels) orelse return types.kInvalidArgument;
+        if (channel_count > bus_config.inputLayout().channelCount()) return types.kInvalidArgument;
+    }
+    if (output_count == 1) {
+        const outputs = data.outputs orelse return types.kInvalidArgument;
+        const channel_count = vst_index.nonNegativeCount(outputs[0].numChannels) orelse return types.kInvalidArgument;
+        if (channel_count > bus_config.outputLayout().channelCount()) return types.kInvalidArgument;
+    }
+    return RealtimeProcessorDefaults.canProcessSampleSize(data.symbolicSampleSize);
+}
+
 pub fn writeOutputEvents(data: *ivstaudioprocessor.ProcessData, events: plug.process.Events) types.tresult {
     const output_events = data.outputEvents orelse return types.kResultOk;
     const frame_count = validFrameCount(data) catch return types.kInvalidArgument;
@@ -1656,6 +1676,32 @@ test "zig-vst3-plugin bridge collects offset zero parameter flushes" {
     try std.testing.expectEqual(@as(u32, 7), collected.items[0].id);
     try std.testing.expectEqual(@as(usize, 0), collected.items[0].sample_offset);
     try std.testing.expectEqual(@as(f64, 0.25), collected.items[0].normalized);
+}
+
+test "zig-vst3-plugin bridge validates parameter flush bus structure" {
+    var input = [_]ivstaudioprocessor.AudioBusBuffers{.{ .numChannels = 0 }};
+    var output = [_]ivstaudioprocessor.AudioBusBuffers{.{ .numChannels = 0 }};
+    var data = ivstaudioprocessor.ProcessData{
+        .numSamples = 0,
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &input,
+        .outputs = &output,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+    };
+
+    try std.testing.expectEqual(types.kResultOk, validateParameterFlushData(&data, .{}));
+    data.inputs = null;
+    try std.testing.expectEqual(types.kInvalidArgument, validateParameterFlushData(&data, .{}));
+    data.inputs = &input;
+    input[0].numChannels = -1;
+    try std.testing.expectEqual(types.kInvalidArgument, validateParameterFlushData(&data, .{}));
+    input[0].numChannels = 0;
+    data.numInputs = 2;
+    try std.testing.expectEqual(types.kInvalidArgument, validateParameterFlushData(&data, .{}));
+    data.numInputs = 1;
+    data.numSamples = 1;
+    try std.testing.expectEqual(types.kInvalidArgument, validateParameterFlushData(&data, .{}));
 }
 
 test "zig-vst3-plugin bridge drops invalid and overflowing VST3 parameter changes" {

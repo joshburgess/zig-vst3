@@ -2141,6 +2141,26 @@ test "simple stereo effect exposes offset zero state and persists the final queu
     data.inputParameterChanges = null;
     try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
     try std.testing.expectEqualSlices(f32, &.{ 0.9, 0.9 }, &output_samples);
+
+    var rejected_flush_changes = Changes{};
+    const rejected_flush_queue = rejected_flush_changes.addQueue(7) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(types.kResultOk, rejected_flush_queue.appendPoint(0, 0.1));
+    data.numInputs = 1;
+    data.numOutputs = 0;
+    data.inputs = null;
+    data.outputs = null;
+    data.numSamples = 0;
+    data.inputParameterChanges = rejected_flush_changes.asInterface();
+    try std.testing.expectEqual(types.kInvalidArgument, processor.vtable.process(processor, &data));
+
+    data.numInputs = 1;
+    data.numOutputs = 1;
+    data.inputs = &inputs;
+    data.outputs = &outputs;
+    data.numSamples = input_samples.len;
+    data.inputParameterChanges = null;
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqualSlices(f32, &.{ 0.9, 0.9 }, &output_samples);
 }
 
 var malformed_process_apply_count: usize = 0;
@@ -3281,8 +3301,8 @@ pub fn SimpleEffect(comptime Config: type) type {
             var output_event_storage: [process_output_event_capacity]plug_process.Event = undefined;
             const parameter_changes = zig_vst3_plugin_bridge.collectInputParameterChanges(data, &parameter_change_storage);
             if (data.numSamples == 0) {
-                const sample_size_result = zig_vst3_plugin_bridge.RealtimeProcessorDefaults.canProcessSampleSize(data.symbolicSampleSize);
-                if (sample_size_result != types.kResultOk) return sample_size_result;
+                const flush_result = zig_vst3_plugin_bridge.validateParameterFlushData(data, bus_config);
+                if (flush_result != types.kResultOk) return flush_result;
                 self.parameter_state.applyChanges(parameter_changes);
                 return types.kResultOk;
             }

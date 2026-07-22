@@ -409,3 +409,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The reflected processor updates persistent component state without invoking DSP. A following audio block observes the flushed value, while points outside the virtual flush boundary remain rejected.
 - Direct collector and processor regressions cover bounded collection, no-buffer dispatch, and next-block visibility. The complete deterministic gate passed 111/111 steps and 4,122/4,122 tests.
 - Raw ABI checks passed, the Bypass plugin passed all 47 Steinberg validator tests including both flush forms and bypass persistence, and Linux aarch64 and Windows x86-64 example bundle matrices passed.
+
+### Autonomous Follow-up: Parameter Flush Structure
+
+- Zero-sample flushes now validate signed bus counts, configured bus availability, bus-array presence, channel counts, declared layouts, and sample format before changing persistent parameter state.
+- The SDK no-buffer form and zero-channel form remain valid. Malformed flushes return `kInvalidArgument` and a later audio block proves that rejected input did not mutate state.
+- Direct bridge and reflected processor regressions cover valid recovery after missing arrays, negative channels, excess buses, and nonzero frame counts. The complete deterministic gate passed 111/111 steps and 4,132/4,132 tests.
+- Raw ABI checks passed, the Bypass plugin passed all 47 Steinberg validator tests, and Linux aarch64 and Windows x86-64 example bundle matrices passed.
