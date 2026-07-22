@@ -117,7 +117,13 @@ pub fn ContextMenu(comptime max_items: usize) type {
         }
 
         fn release(ptr: *anyopaque) callconv(.c) types.uint32 {
-            return funknown.decrementRefCount(&owner(ptr).ref_count, "IContextMenu");
+            const self = owner(ptr);
+            const remaining = funknown.decrementRefCount(&self.ref_count, "IContextMenu");
+            if (remaining == 0) {
+                _ = self.ref_count.load(.acquire);
+                self.clearEntries();
+            }
+            return remaining;
         }
 
         fn getItemCount(ptr: *anyopaque) callconv(.c) types.int32 {
@@ -130,6 +136,12 @@ pub fn ContextMenu(comptime max_items: usize) type {
                 if (entry.isOccupied()) count += 1;
             }
             return count;
+        }
+
+        fn clearEntries(self: *Self) void {
+            for (&self.entries) |*entry| {
+                if (entry.isOccupied()) entry.clear();
+            }
         }
 
         pub fn occupiedByIndex(self: *Self, index: types.int32) ?*Entry {
@@ -277,6 +289,30 @@ test "context menu stores items and retains targets" {
 
     try std.testing.expectEqual(types.kResultOk, iface.vtable.removeItem(iface, &item, target_iface));
     try std.testing.expectEqual(@as(types.uint32, 1), target.ref_count.load(.monotonic));
+}
+
+test "context menu final release relinquishes stored targets" {
+    const Menu = ContextMenu(3);
+    const Target = ContextMenuTarget(struct {});
+    var menu = Menu{};
+    var first_target = Target{};
+    var second_target = Target{};
+    const iface = menu.asInterface();
+    var first = ivstcontextmenu.IContextMenuItem{ .tag = 10 };
+    var second = ivstcontextmenu.IContextMenuItem{ .tag = 20 };
+    var replacement = ivstcontextmenu.IContextMenuItem{ .tag = 30 };
+
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &first, first_target.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &second, second_target.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.removeItem(iface, &first, first_target.asInterface()));
+    try std.testing.expectEqual(types.kResultOk, iface.vtable.addItem(iface, &replacement, first_target.asInterface()));
+    try std.testing.expectEqual(@as(types.uint32, 2), first_target.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(types.uint32, 2), second_target.ref_count.load(.monotonic));
+
+    try std.testing.expectEqual(@as(types.uint32, 0), iface.vtable.release(iface));
+    try std.testing.expectEqual(@as(types.uint32, 1), first_target.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(types.uint32, 1), second_target.ref_count.load(.monotonic));
+    try std.testing.expectEqual(@as(usize, 0), menu.occupiedCount());
 }
 
 test "context menu clears failed item lookups and rejects full storage" {

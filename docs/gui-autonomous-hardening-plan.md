@@ -351,3 +351,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Direct component-handler and public Gain controller regressions prove invalid targets preserve callback counters. A valid Gain target still reaches the host extension.
 - The complete deterministic gate passed 82/82 steps and 3,910/3,910 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
 - Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 95.4 us for the aggregate scene and 47.20 ms for a complete Sample Player editor lifecycle.
+
+### Autonomous Follow-up: Context Menu Target Lifetime
+
+- Final context-menu release now clears every stored item and releases its retained target. Removed slots and later slot reuse cannot hide retained references from teardown.
+- A direct lifecycle regression covers two targets, item removal, storage reuse, final release, balanced target counts, and empty post-release storage.
+- The complete deterministic gate passed 82/82 steps and 3,911/3,911 tests. The combined raw ABI, sanitizer, IR Loader validator, and Sample Player validator invocation passed 123/123 steps, with both validators passing all 47 tests.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 44/44 steps. Native visual measurements remained within budget at 86.6 us for the aggregate scene and 45.99 ms for a complete Sample Player editor lifecycle.
