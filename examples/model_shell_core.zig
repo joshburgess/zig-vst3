@@ -9,6 +9,10 @@ const maximum_model_frames = maximum_host_frames * 8 + 2;
 
 pub const resource_status_source_id = 0;
 pub const resource_metadata_source_id = 1;
+pub const resource_progress_source_id = 2;
+pub const resource_can_cancel_source_id = 3;
+pub const resource_can_retry_source_id = 4;
+pub const resource_cancellation_pending_source_id = 5;
 
 pub const LinearModel = struct {
     gain: f32,
@@ -345,8 +349,14 @@ pub const Processor = struct {
     }
 
     pub fn guiTelemetryLoad(self: *const Processor, source_id: u32) f64 {
-        if (source_id != resource_status_source_id) return 0.0;
-        return @floatFromInt(@intFromEnum(self.models.snapshot().status));
+        return switch (source_id) {
+            resource_status_source_id => @floatFromInt(@intFromEnum(self.models.snapshot().status)),
+            resource_progress_source_id => self.models.progressSnapshot().progress(),
+            resource_can_cancel_source_id => @floatFromInt(@intFromBool(self.models.progressSnapshot().canCancel())),
+            resource_can_retry_source_id => @floatFromInt(@intFromBool(self.models.progressSnapshot().canRetry())),
+            resource_cancellation_pending_source_id => @floatFromInt(@intFromBool(self.models.progressSnapshot().cancellation_pending)),
+            else => 0.0,
+        };
     }
 
     pub fn guiTelemetryLoadText(self: *const Processor, source_id: u32, output: []u8) usize {

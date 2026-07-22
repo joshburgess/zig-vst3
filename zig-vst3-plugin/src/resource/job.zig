@@ -259,9 +259,10 @@ pub fn Job(comptime Config: type) type {
             self.joinWorker();
         }
 
-        pub fn snapshot(self: *Self) Snapshot {
-            self.lock();
-            defer self.unlock();
+        pub fn snapshot(self: *const Self) Snapshot {
+            const mutable: *Self = @constCast(self);
+            mutable.lock();
+            defer mutable.unlock();
             return .{
                 .status = self.status,
                 .generation = self.generation,

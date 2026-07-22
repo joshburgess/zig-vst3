@@ -122,7 +122,7 @@ An editor built with `ReflectedEditController` can call `importResourcePath`, `r
 
 The Model Shell integration tests connect a real controller and component, import a valid model, relink identical content at a new path, retry malformed content, and reject cancellation when no job is active. This exercises the same public route that a future file picker or drop target will use.
 
-The Model Shell also exposes recovery status and bounded model metadata through the retained GUI telemetry source. Numeric status and copied text snapshots remain readable after a failed replacement, while the last valid model and its metadata stay active. An editor can therefore present recovery state without sharing the recovery object, locking a runtime, or keeping the editor open during preparation.
+The Model Shell also exposes recovery status, progress, cancellation and retry availability, and bounded model metadata through the retained GUI telemetry source. Numeric status and copied text snapshots remain readable after a failed replacement, while the last valid model and its metadata stay active. An editor can therefore present recovery state without sharing the recovery object, locking a runtime, or keeping the editor open during preparation. `ResourceRecovery.progressSnapshot` returns the bounded preparation job snapshot for this purpose.
 
 The recovery object can be used as processor component state through these public processor declarations:
 

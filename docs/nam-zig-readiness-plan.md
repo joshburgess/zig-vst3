@@ -244,7 +244,7 @@ Completion evidence:
 - `resource_path_transport` owns at most 4,096 path bytes per stack message and uses explicit target IDs. A recovery receiver applies its narrower model-specific path capacity before submitting work.
 - `ReflectedEditController` exposes import, relink, cancel, and retry helpers. `SimpleEffect` routes them through an optional `resource_path_target_id` and processor `resourcePathReceiver` without adapter-internal imports in plugin code.
 - Model Shell tests import a valid model, relink matching content, retry a malformed model, and verify idle cancellation rejection through actual VST3 connection points. File access, parsing, allocation, and runtime preparation remain on the recovery worker.
-- The retained telemetry source copies bounded status and metadata text into controller-owned buffers. Model Shell tests verify ready and failed status, preserved active metadata after replacement failure, and deterministic truncation.
+- The retained telemetry source copies bounded status and metadata text into controller-owned buffers and exposes progress, cancellation, and retry availability as scalar snapshots. Model Shell tests verify ready and failed status, preserved active metadata after replacement failure, deterministic truncation, and action availability.
 - The full deterministic suite passes 4,083 tests, including the connected controller/component integration. The Model Shell continues to pass all 47 Steinberg validator tests.
 
 ### Public C kernel integration

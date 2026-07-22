@@ -278,6 +278,7 @@ pub fn Recovery(comptime Config: type) type {
         pub const component_state_maximum_encoded_size = ReferenceState.maximum_encoded_size;
 
         pub const Snapshot = SnapshotType;
+        pub const ProgressSnapshot = PreparationJob.Snapshot;
 
         preparation: PreparationJob = .init(),
         exchange: Exchange = .{},
@@ -371,6 +372,10 @@ pub fn Recovery(comptime Config: type) type {
 
         pub fn snapshot(self: *const Self) Snapshot {
             return self.completion.snapshot();
+        }
+
+        pub fn progressSnapshot(self: *const Self) ProgressSnapshot {
+            return self.preparation.snapshot();
         }
 
         pub fn adoptPendingAtBlockBoundary(self: *Self) bool {

@@ -133,11 +133,15 @@ test "model shell controller routes bounded resource recovery commands" {
         @as(f64, @floatFromInt(@intFromEnum(core.resource.RecoveryStatus.ready))),
         telemetry.load(support.resource_status_source_id),
     );
+    try std.testing.expectEqual(@as(f64, 1.0), telemetry.load(support.resource_progress_source_id));
+    try std.testing.expectEqual(@as(f64, 0.0), telemetry.load(support.resource_can_cancel_source_id));
+    try std.testing.expectEqual(@as(f64, 0.0), telemetry.load(support.resource_can_retry_source_id));
     var text: [128]u8 = undefined;
     var text_length = telemetry.loadText(support.resource_status_source_id, &text);
     try std.testing.expectEqualStrings("ready", text[0..text_length]);
     text_length = telemetry.loadText(support.resource_metadata_source_id, &text);
     try std.testing.expectEqualStrings("Linear, 48000 Hz, gain 1.250", text[0..text_length]);
+    try std.testing.expectEqual(@as(f64, 0.0), telemetry.load(support.resource_cancellation_pending_source_id));
     var short_text: [6]u8 = undefined;
     const short_length = telemetry.loadText(support.resource_metadata_source_id, &short_text);
     try std.testing.expectEqualStrings("Linear", short_text[0..short_length]);
@@ -163,6 +167,7 @@ test "model shell controller routes bounded resource recovery commands" {
     try std.testing.expectEqualStrings("failed", text[0..text_length]);
     text_length = telemetry.loadText(support.resource_metadata_source_id, &text);
     try std.testing.expectEqualStrings("Linear, 48000 Hz, gain 1.250", text[0..text_length]);
+    try std.testing.expectEqual(@as(f64, 1.0), telemetry.load(support.resource_can_retry_source_id));
     try std.testing.expectEqual(types.kResultOk, Controller.retryResourceImport(controller, model_resource_target_id));
     processor.waitForModel();
     try std.testing.expectEqual(core.resource.RecoveryStatus.failed, processor.resourceSnapshot().status);
