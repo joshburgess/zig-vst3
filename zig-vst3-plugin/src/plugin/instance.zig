@@ -2056,6 +2056,13 @@ pub fn PluginInstance(comptime Plugin: type) type {
             return self.spec.values.applyChangesChangedCount(&self.spec.parameter_set, changes);
         }
 
+        fn blockParameterValues(self: *const Self, changes: process_api.ParameterChanges) Spec.ParameterValues {
+            var values = Spec.ParameterValues.init(&self.spec.parameter_set);
+            values.copyFrom(&self.spec.values);
+            values.applyChangesAtOffset(&self.spec.parameter_set, changes, 0);
+            return values;
+        }
+
         pub fn encodedParameterStateSize(_: *const Self) usize {
             return Spec.encoded_parameter_state_size;
         }
@@ -2437,24 +2444,34 @@ pub fn PluginInstance(comptime Plugin: type) type {
         }
 
         pub fn process(self: *Self, context: *process_api.ProcessContext(f32)) void {
-            self.applyParameterChanges(context.parameterChanges());
+            const changes = context.parameterChanges();
             if (Spec.has_process_with_parameter_view) {
-                self.plugin.processWithParameterView(context, self.parameterView());
+                var block_values = self.blockParameterValues(changes);
+                self.applyParameterChanges(changes);
+                self.plugin.processWithParameterView(context, block_values.view(&self.spec.parameter_set));
             } else if (Spec.has_process_with_parameters) {
-                self.plugin.processWithParameters(context, &self.spec.parameter_set, &self.spec.values);
-            } else if (Spec.has_process) {
-                self.plugin.process(context);
+                var block_values = self.blockParameterValues(changes);
+                self.applyParameterChanges(changes);
+                self.plugin.processWithParameters(context, &self.spec.parameter_set, &block_values);
+            } else {
+                self.applyParameterChanges(changes);
+                if (Spec.has_process) self.plugin.process(context);
             }
         }
 
         pub fn process64(self: *Self, context: *process_api.ProcessContext(f64)) void {
-            self.applyParameterChanges(context.parameterChanges());
+            const changes = context.parameterChanges();
             if (Spec.has_process64_with_parameter_view) {
-                self.plugin.process64WithParameterView(context, self.parameterView());
+                var block_values = self.blockParameterValues(changes);
+                self.applyParameterChanges(changes);
+                self.plugin.process64WithParameterView(context, block_values.view(&self.spec.parameter_set));
             } else if (Spec.has_process64_with_parameters) {
-                self.plugin.process64WithParameters(context, &self.spec.parameter_set, &self.spec.values);
-            } else if (Spec.has_process64) {
-                self.plugin.process64(context);
+                var block_values = self.blockParameterValues(changes);
+                self.applyParameterChanges(changes);
+                self.plugin.process64WithParameters(context, &self.spec.parameter_set, &block_values);
+            } else {
+                self.applyParameterChanges(changes);
+                if (Spec.has_process64) self.plugin.process64(context);
             }
         }
 

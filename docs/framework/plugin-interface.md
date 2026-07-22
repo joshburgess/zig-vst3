@@ -127,6 +127,8 @@ During VST3 processing, the shell uses the host process context sample rate when
 
 `process.ProcessContext(Sample)` carries typed audio buffers, parameter changes, input events, optional output-event storage, and sample-rate timing helpers.
 
+Block-rate state-aware hooks receive a fixed stack snapshot of the parameter state at the start of the block. The snapshot includes the previously persisted values and the latest valid change at sample offset zero. Later changes are persisted for the next block but are not exposed early through `processWithParameterView`, `processWithParameters`, or the reflected VST3 processor parameter-state argument. Raw process hooks retain the complete parameter queue in `ProcessContext` for sample-accurate handling.
+
 Use `ProcessContext(Sample).initWithOptions` in tests and host adapters when constructing contexts directly. The named fields keep input channels, output channels, and optional attachments clear at the call site:
 
 ```zig

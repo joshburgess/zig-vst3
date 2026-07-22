@@ -308,6 +308,13 @@ pub fn ParameterState(comptime Params: type) type {
             self.values.applyChanges(self.set, changes);
         }
 
+        pub fn snapshotAtOffset(self: *const Self, changes: plug.process.ParameterChanges, sample_offset: usize) Self {
+            var snapshot = Self.init(self.set);
+            snapshot.values.copyFrom(&self.values);
+            snapshot.values.applyChangesAtOffset(self.set, changes, sample_offset);
+            return snapshot;
+        }
+
         pub fn encodedSize(_: *const Self) usize {
             return plug.state.encodedSize(Params);
         }

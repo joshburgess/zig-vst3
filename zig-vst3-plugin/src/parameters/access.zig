@@ -309,6 +309,15 @@ pub fn ParameterValues(comptime Params: type) type {
             return applied;
         }
 
+        pub fn applyChangesAtOffsetCount(self: *Self, set: *const Set, changes: process.ParameterChanges, sample_offset: usize) usize {
+            var applied: usize = 0;
+            for (changes.items) |change| {
+                if (change.sample_offset != sample_offset) continue;
+                if (self.applyChange(set, change) != null) applied += 1;
+            }
+            return applied;
+        }
+
         pub fn applyChangesChangedCount(self: *Self, set: *const Set, changes: process.ParameterChanges) usize {
             var changed: usize = 0;
             for (changes.items) |change| {
@@ -319,6 +328,10 @@ pub fn ParameterValues(comptime Params: type) type {
 
         pub fn applyChanges(self: *Self, set: *const Set, changes: process.ParameterChanges) void {
             _ = self.applyChangesCount(set, changes);
+        }
+
+        pub fn applyChangesAtOffset(self: *Self, set: *const Set, changes: process.ParameterChanges, sample_offset: usize) void {
+            _ = self.applyChangesAtOffsetCount(set, changes, sample_offset);
         }
 
         fn storeNormalizedAt(self: *Self, index: usize, normalized: f64) usize {
@@ -2522,6 +2535,10 @@ test "parameter values apply reflected parameter changes by id" {
     try std.testing.expectEqual(@as(?f64, 0.25), values.loadById(&set, 2));
     try std.testing.expectEqual(@as(?f64, 0.5), values.loadById(&set, 3));
 
+    values.resetToDefaults(&set);
+    try std.testing.expectEqual(@as(usize, 1), values.applyChangesAtOffsetCount(&set, changes, 0));
+    try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));
+    try std.testing.expectEqual(@as(?f64, 0.5), values.loadById(&set, 1));
     values.resetToDefaults(&set);
     values.applyChanges(&set, changes);
     try std.testing.expectEqual(@as(?f64, 0.75), values.loadById(&set, 0));

@@ -2040,6 +2040,89 @@ test "simple stereo effect processes with setup sample rate when process context
     try std.testing.expectEqual(@as(f32, 44_100.0), output_samples[1]);
 }
 
+test "simple stereo effect exposes offset zero state and persists the final queue value" {
+    const Fixture = struct {
+        const Params = struct {
+            gain: plug_core.parameters.FloatParam = .{ .id = 7, .name = "Gain", .min = 0.0, .max = 1.0, .default = 0.25 },
+        };
+        const ParameterSet = plug_core.parameters.ParameterSet(Params);
+        const parameter_set = ParameterSet.init(.{});
+    };
+    const TestEffect = SimpleStereoEffect(struct {
+        pub const component_name = "BlockParameterState";
+        pub const controller_cid = tuid.inlineUid(0x70707070, 0x71717171, 0x72727272, 0x73737373);
+        pub const Params = Fixture.Params;
+        pub const parameter_set = &Fixture.parameter_set;
+
+        pub const Processor = struct {
+            pub fn process(_: *@This(), parameters: anytype, comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
+                const value: Sample = @floatCast(parameters.getNormalizedById(7));
+                for (0..context.outputChannelCount()) |channel| {
+                    const output = context.outputChannel(channel) orelse continue;
+                    @memset(output, value);
+                }
+            }
+        };
+    });
+
+    var component_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, TestEffect.create(@ptrCast(&ivstcomponent.icomponent_iid), &component_out));
+    const component: *ivstcomponent.IComponent = @ptrCast(@alignCast(component_out orelse return error.TestUnexpectedResult));
+    defer _ = component.vtable.release(component);
+
+    var processor_out: ?*anyopaque = null;
+    try std.testing.expectEqual(types.kResultOk, component.vtable.queryInterface(component, &ivstaudioprocessor.iaudio_processor_iid, &processor_out));
+    const processor: *ivstaudioprocessor.IAudioProcessor = @ptrCast(@alignCast(processor_out orelse return error.TestUnexpectedResult));
+    defer _ = processor.vtable.release(processor);
+
+    var setup = ivstaudioprocessor.ProcessSetup{
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+        .sampleRate = 48_000.0,
+        .maxSamplesPerBlock = 2,
+    };
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.setupProcessing(processor, &setup));
+
+    var input_samples = [_]f32{ 0.0, 0.0 };
+    var output_samples = [_]f32{ 0.0, 0.0 };
+    var input_channel_ptrs = [_][*]f32{&input_samples};
+    var output_channel_ptrs = [_][*]f32{&output_samples};
+    var inputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = input_channel_ptrs[0..].ptr },
+    }};
+    var outputs = [_]ivstaudioprocessor.AudioBusBuffers{.{
+        .numChannels = 1,
+        .channelBuffers = .{ .channelBuffers32 = output_channel_ptrs[0..].ptr },
+    }};
+    var data = ivstaudioprocessor.ProcessData{
+        .numInputs = 1,
+        .numOutputs = 1,
+        .inputs = &inputs,
+        .outputs = &outputs,
+        .numSamples = input_samples.len,
+        .symbolicSampleSize = @intFromEnum(ivstaudioprocessor.SymbolicSampleSizes.kSample32),
+    };
+
+    const Changes = vst_parameter_changes.ParameterChanges(1, 1);
+    var later_changes = Changes{};
+    const later_queue = later_changes.addQueue(7) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(types.kResultOk, later_queue.appendPoint(1, 0.75));
+    data.inputParameterChanges = later_changes.asInterface();
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqualSlices(f32, &.{ 0.25, 0.25 }, &output_samples);
+
+    data.inputParameterChanges = null;
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqualSlices(f32, &.{ 0.75, 0.75 }, &output_samples);
+
+    var boundary_changes = Changes{};
+    const boundary_queue = boundary_changes.addQueue(7) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(types.kResultOk, boundary_queue.appendPoint(0, 0.5));
+    data.inputParameterChanges = boundary_changes.asInterface();
+    try std.testing.expectEqual(types.kResultOk, processor.vtable.process(processor, &data));
+    try std.testing.expectEqualSlices(f32, &.{ 0.5, 0.5 }, &output_samples);
+}
+
 var malformed_process_apply_count: usize = 0;
 var malformed_process_last_change_count: usize = 0;
 
@@ -3162,12 +3245,14 @@ pub fn SimpleEffect(comptime Config: type) type {
                 parameter_changes: plug_process.ParameterChanges,
 
                 pub fn process(processor: @This(), comptime Sample: type, context: *plug_process.ProcessContext(Sample)) void {
-                    processor.component.parameter_state.applyChanges(processor.parameter_changes);
                     const process_parameter_count = @typeInfo(@TypeOf(Config.Processor.process)).@"fn".params.len;
                     if (comptime process_parameter_count == 3) {
+                        processor.component.parameter_state.applyChanges(processor.parameter_changes);
                         processor.component.processor_impl.process(Sample, context);
                     } else {
-                        processor.component.processor_impl.process(&processor.component.parameter_state, Sample, context);
+                        var block_parameter_state = processor.component.parameter_state.snapshotAtOffset(processor.parameter_changes, 0);
+                        processor.component.parameter_state.applyChanges(processor.parameter_changes);
+                        processor.component.processor_impl.process(&block_parameter_state, Sample, context);
                     }
                 }
             };

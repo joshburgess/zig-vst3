@@ -1872,6 +1872,43 @@ test "plugin instance passes parameter view to state-aware process hooks" {
     try std.testing.expectEqual(@as(?f64, 0.25), instance.plugin.observed);
 }
 
+test "plugin instance parameter view does not anticipate later block changes" {
+    const Gain = struct {
+        observed: ?f64 = null,
+
+        pub const name = "Instance Block Parameter View";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+
+        pub fn processWithParameterView(
+            self: *@This(),
+            _: *process_api.ProcessContext(f32),
+            view: parameters.ParameterView(Params),
+        ) void {
+            self.observed = view.loadNormalized("gain");
+        }
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const later_changes = [_]process_api.ParameterChange{
+        instance.parameterChange("gain", 1, 0.25),
+    };
+    var later_context = process_api.ProcessContext(f32){
+        .sample_rate = 48_000.0,
+        .parameter_changes = try process_api.ParameterChanges.init(&later_changes, 2),
+    };
+
+    instance.process(&later_context);
+    try std.testing.expectEqual(@as(?f64, 0.5), instance.plugin.observed);
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
+
+    var quiet_context = process_api.ProcessContext(f32){ .sample_rate = 48_000.0 };
+    instance.process(&quiet_context);
+    try std.testing.expectEqual(@as(?f64, 0.25), instance.plugin.observed);
+}
+
 test "plugin instance prefers parameter-view process hook over other process hooks" {
     const Gain = struct {
         called: enum { none, raw, parameters, view } = .none,
@@ -2042,6 +2079,42 @@ test "plugin instance passes reflected parameters to state-aware process64 hooks
     instance.process64(&context);
 
     try std.testing.expectEqual(@as(?f64, 0.75), instance.plugin.observed);
+}
+
+test "plugin instance parameter values apply only offset zero changes to the current block" {
+    const Gain = struct {
+        observed: ?f64 = null,
+
+        pub const name = "Instance Block Parameter Values64";
+        pub const vendor = "zig-vst3";
+        pub const Params = struct {
+            gain: parameters.FloatParam = parameters.FloatParam.init(0, "Gain", 0.0, 1.0, 0.5),
+        };
+
+        pub fn process64WithParameters(
+            self: *@This(),
+            _: *process_api.ProcessContext(f64),
+            set: *const parameters.ParameterSet(Params),
+            values: *const parameters.ParameterValues(Params),
+        ) void {
+            self.observed = values.view(set).loadNormalized("gain");
+        }
+    };
+    const Instance = PluginInstance(Gain);
+    var instance = try Instance.init(std.testing.allocator, .{});
+    const changes = [_]process_api.ParameterChange{
+        instance.parameterChange("gain", 0, 0.75),
+        instance.parameterChange("gain", 1, 0.25),
+    };
+    var context = process_api.ProcessContext(f64){
+        .sample_rate = 48_000.0,
+        .parameter_changes = try process_api.ParameterChanges.init(&changes, 2),
+    };
+
+    instance.process64(&context);
+
+    try std.testing.expectEqual(@as(?f64, 0.75), instance.plugin.observed);
+    try std.testing.expectEqual(@as(f64, 0.25), instance.loadParameterNormalized("gain"));
 }
 
 test "plugin instance passes parameter view to state-aware process64 hooks" {

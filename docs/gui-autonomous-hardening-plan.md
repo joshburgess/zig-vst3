@@ -395,3 +395,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Sixteen fixed per-instance `BlockParameterLatch` values preserve each pre-block baseline, apply automation at its declared process segment, and retain the final value for the next block without allocation or locking.
 - A deterministic stereo regression proves hard-right pan persists through a quiet block and a later hard-left point does not affect earlier frames even when persisted state already contains the final value.
 - The complete deterministic gate passed 111/111 steps and 4,100/4,100 tests. The installed-package suite passed 7/7 tests and exercises the public `beginBlock` and `valueAt` contract.
+
+### Autonomous Follow-up: Block-Rate Parameter Timing
+
+- Reflected VST3 processors and standalone `PluginInstance` state-aware hooks now receive a fixed stack snapshot containing persisted state plus offset-zero changes. Later points cannot affect block-rate processing before their declared offset.
+- The complete parameter queue still updates persistent state for the next block and remains available through `ProcessContext` for sample-accurate processing. Raw process hooks do not pay the snapshot cost.
+- Direct f32 and f64 regressions cover parameter views, parameter-value hooks, offset-zero changes, later points, and quiet-block persistence without allocation or locking.
+- The complete deterministic gate passed 111/111 steps and 4,112/4,112 tests. The installed-package suite passed 7/7 tests.
