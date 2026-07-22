@@ -69,7 +69,9 @@ The raw API includes fixed-capacity helper objects for tests and shell integrati
 
 These helpers favor deterministic failure behavior. Failed reads, writes, lookups, queue opens, event reads, and string writes clear their output values where that prevents stale host-visible data.
 
-`IMessage.getMessageID` and `setMessageID` use nullable `FIDString` values because the C ABI cannot enforce a non-null pointer from a host. Use `ivstmessage.messageId` or `messageIdEquals` before reading an incoming ID. The helpers reject a null ID without calling `std.mem.span`. The bounded `vst_message.Message` object treats a null setter value as an empty ID.
+Host-provided C strings are nullable at the raw ABI boundary because C cannot enforce a non-null pointer. This applies to message IDs, plug-view platform types, parameter function names, program attribute IDs, and attribute-list keys. Implementations validate the pointer before decoding it and return `kInvalidArgument` for null input. Failed getters also clear their output when stale host-visible data would be misleading.
+
+Use `ivstmessage.messageId` or `messageIdEquals` before reading an incoming message ID. The bounded `vst_message.Message` object treats a null setter value as an empty ID. `vst_message.AttributeList` rejects null keys and string values, while failed integer, floating-point, string, and binary reads leave deterministic empty outputs.
 
 ## Implement An SDK Helper Object
 

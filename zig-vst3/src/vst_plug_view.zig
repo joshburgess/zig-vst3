@@ -161,23 +161,25 @@ pub fn PlugView(comptime max_platforms: usize, comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn isPlatformTypeSupported(ptr: *anyopaque, platform: types.FIDString) callconv(.c) types.tresult {
+        fn isPlatformTypeSupported(ptr: *anyopaque, platform: ?types.FIDString) callconv(.c) types.tresult {
             const self = owner(ptr);
-            if (@hasDecl(Config, "isPlatformTypeSupported")) return Config.isPlatformTypeSupported(self, platform);
+            const platform_type = platform orelse return types.kInvalidArgument;
+            if (@hasDecl(Config, "isPlatformTypeSupported")) return Config.isPlatformTypeSupported(self, platform_type);
             for (self.platforms[0..self.safePlatformCount()]) |supported| {
-                if (std.mem.eql(u8, std.mem.span(supported), std.mem.span(platform))) return types.kResultOk;
+                if (std.mem.eql(u8, std.mem.span(supported), std.mem.span(platform_type))) return types.kResultOk;
             }
             return types.kResultFalse;
         }
 
-        fn attached(ptr: *anyopaque, parent: ?*anyopaque, platform: types.FIDString) callconv(.c) types.tresult {
+        fn attached(ptr: *anyopaque, parent: ?*anyopaque, platform: ?types.FIDString) callconv(.c) types.tresult {
             const self = owner(ptr);
-            if (isPlatformTypeSupported(ptr, platform) != types.kResultOk) return types.kInvalidArgument;
+            const platform_type = platform orelse return types.kInvalidArgument;
+            if (isPlatformTypeSupported(ptr, platform_type) != types.kResultOk) return types.kInvalidArgument;
             if (@hasDecl(Config, "attached")) {
-                const result = Config.attached(self, parent, platform);
+                const result = Config.attached(self, parent, platform_type);
                 if (result != types.kResultOk) return result;
             }
-            self.acceptAttachment(parent, platform);
+            self.acceptAttachment(parent, platform_type);
             return types.kResultOk;
         }
 
@@ -324,6 +326,8 @@ test "plug view stores platform attachment and removal" {
     try std.testing.expectEqual(types.kResultFalse, view.addPlatform(iplugview.PlatformType.kPlatformTypeWaylandSurfaceID));
     const iface = view.asInterface();
 
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.isPlatformTypeSupported(iface, null));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.attached(iface, @ptrFromInt(0x1234), null));
     try std.testing.expectEqual(types.kResultOk, iface.vtable.isPlatformTypeSupported(iface, iplugview.PlatformType.kPlatformTypeX11EmbedWindowID));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.isPlatformTypeSupported(iface, iplugview.PlatformType.kPlatformTypeWaylandSurfaceID));
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.attached(iface, null, iplugview.PlatformType.kPlatformTypeWaylandSurfaceID));

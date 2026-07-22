@@ -942,11 +942,12 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return types.kResultOk;
         }
 
-        fn getProgramInfo(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
+        fn getProgramInfo(_: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: ?vsttypes.CString, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             string128.clearPtr(out);
+            const id = attribute_id orelse return types.kInvalidArgument;
             const count = units.programCount(list_id) orelse return types.kInvalidArgument;
             const index = vst_index.bounded(program_index, count) orelse return types.kInvalidArgument;
-            const value = units.programInfo(list_id, index, std.mem.span(attribute_id)) orelse return types.kInvalidArgument;
+            const value = units.programInfo(list_id, index, std.mem.span(id)) orelse return types.kInvalidArgument;
             string128.copyPtr(out, value);
             return types.kResultOk;
         }
@@ -1176,8 +1177,9 @@ pub fn ReflectedEditController(comptime Config: type) type {
             .getParameterIDFromFunctionName = getParameterIDFromFunctionName,
         };
 
-        fn getParameterIDFromFunctionName(_: *anyopaque, _: vsttypes.UnitID, _: types.FIDString, out: *vsttypes.ParamID) callconv(.c) types.tresult {
+        fn getParameterIDFromFunctionName(_: *anyopaque, _: vsttypes.UnitID, function_name: ?types.FIDString, out: *vsttypes.ParamID) callconv(.c) types.tresult {
             out.* = vsttypes.kNoParamId;
+            if (function_name == null) return types.kInvalidArgument;
             return types.kResultFalse;
         }
 
@@ -1498,6 +1500,8 @@ test "reflected edit controller exposes configured units and programs" {
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[0]);
 
     var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramInfo(unit_info, 7, 0, null, &program_info));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[0]);
     try std.testing.expectEqual(types.kResultOk, unit_info.vtable.getProgramInfo(unit_info, 7, 0, "category", &program_info));
     try std.testing.expectEqual(@as(vsttypes.TChar, 'C'), program_info[0]);
     try std.testing.expectEqual(types.kInvalidArgument, unit_info.vtable.getProgramInfo(unit_info, 7, -1, "category", &program_info));

@@ -340,8 +340,9 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return types.kResultOk;
         }
 
-        fn setInt(ptr: *anyopaque, id: ivstattributes.AttrID, value: types.int64) callconv(.c) types.tresult {
-            const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
+        fn setInt(ptr: *anyopaque, id: ?ivstattributes.AttrID, value: types.int64) callconv(.c) types.tresult {
+            const attribute_id = id orelse return types.kInvalidArgument;
+            const entry = owner(ptr).slotFor(attribute_id) orelse return types.kResultFalse;
             entry.setInt(value);
             return types.kResultOk;
         }
@@ -351,15 +352,17 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return result;
         }
 
-        fn getInt(ptr: *anyopaque, id: ivstattributes.AttrID, out: *types.int64) callconv(.c) types.tresult {
-            const entry = owner(ptr).findEntry(id) orelse return failInt(out, types.kResultFalse);
+        fn getInt(ptr: *anyopaque, id: ?ivstattributes.AttrID, out: *types.int64) callconv(.c) types.tresult {
+            const attribute_id = id orelse return failInt(out, types.kInvalidArgument);
+            const entry = owner(ptr).findEntry(attribute_id) orelse return failInt(out, types.kResultFalse);
             if (!entry.hasKind(.int)) return failInt(out, types.kInvalidArgument);
             out.* = entry.int_value;
             return types.kResultOk;
         }
 
-        fn setFloat(ptr: *anyopaque, id: ivstattributes.AttrID, value: f64) callconv(.c) types.tresult {
-            const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
+        fn setFloat(ptr: *anyopaque, id: ?ivstattributes.AttrID, value: f64) callconv(.c) types.tresult {
+            const attribute_id = id orelse return types.kInvalidArgument;
+            const entry = owner(ptr).slotFor(attribute_id) orelse return types.kResultFalse;
             entry.setFloat(value);
             return types.kResultOk;
         }
@@ -369,22 +372,29 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return result;
         }
 
-        fn getFloat(ptr: *anyopaque, id: ivstattributes.AttrID, out: *f64) callconv(.c) types.tresult {
-            const entry = owner(ptr).findEntry(id) orelse return failFloat(out, types.kResultFalse);
+        fn getFloat(ptr: *anyopaque, id: ?ivstattributes.AttrID, out: *f64) callconv(.c) types.tresult {
+            const attribute_id = id orelse return failFloat(out, types.kInvalidArgument);
+            const entry = owner(ptr).findEntry(attribute_id) orelse return failFloat(out, types.kResultFalse);
             if (!entry.hasKind(.float)) return failFloat(out, types.kInvalidArgument);
             out.* = entry.float_value;
             return types.kResultOk;
         }
 
-        fn setString(ptr: *anyopaque, id: ivstattributes.AttrID, value: [*:0]const vsttypes.TChar) callconv(.c) types.tresult {
-            const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
-            entry.setString(value);
+        fn setString(ptr: *anyopaque, id: ?ivstattributes.AttrID, value: ?[*:0]const vsttypes.TChar) callconv(.c) types.tresult {
+            const attribute_id = id orelse return types.kInvalidArgument;
+            const text = value orelse return types.kInvalidArgument;
+            const entry = owner(ptr).slotFor(attribute_id) orelse return types.kResultFalse;
+            entry.setString(text);
             return types.kResultOk;
         }
 
-        fn getString(ptr: *anyopaque, id: ivstattributes.AttrID, out: [*]vsttypes.TChar, size: types.uint32) callconv(.c) types.tresult {
+        fn getString(ptr: *anyopaque, id: ?ivstattributes.AttrID, out: [*]vsttypes.TChar, size: types.uint32) callconv(.c) types.tresult {
             if (size == 0) return types.kInvalidArgument;
-            const entry = owner(ptr).findEntry(id) orelse {
+            const attribute_id = id orelse {
+                fixed_string.copyUtf16ZPtr(out, size, &.{});
+                return types.kInvalidArgument;
+            };
+            const entry = owner(ptr).findEntry(attribute_id) orelse {
                 fixed_string.copyUtf16ZPtr(out, size, &.{});
                 return types.kResultFalse;
             };
@@ -396,10 +406,11 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return types.kResultOk;
         }
 
-        fn setBinary(ptr: *anyopaque, id: ivstattributes.AttrID, value: ?*const anyopaque, size: types.uint32) callconv(.c) types.tresult {
+        fn setBinary(ptr: *anyopaque, id: ?ivstattributes.AttrID, value: ?*const anyopaque, size: types.uint32) callconv(.c) types.tresult {
+            const attribute_id = id orelse return types.kInvalidArgument;
             const input_result = validateBinaryInput(size, value);
             if (input_result != types.kResultOk) return input_result;
-            const entry = owner(ptr).slotFor(id) orelse return types.kResultFalse;
+            const entry = owner(ptr).slotFor(attribute_id) orelse return types.kResultFalse;
             entry.setBinary(value, size);
             return types.kResultOk;
         }
@@ -410,8 +421,9 @@ pub fn AttributeList(comptime max_entries: usize, comptime max_string_chars: usi
             return result;
         }
 
-        fn getBinary(ptr: *anyopaque, id: ivstattributes.AttrID, out: *?*const anyopaque, size: *types.uint32) callconv(.c) types.tresult {
-            const entry = owner(ptr).findEntry(id) orelse return failBinary(out, size, types.kResultFalse);
+        fn getBinary(ptr: *anyopaque, id: ?ivstattributes.AttrID, out: *?*const anyopaque, size: *types.uint32) callconv(.c) types.tresult {
+            const attribute_id = id orelse return failBinary(out, size, types.kInvalidArgument);
+            const entry = owner(ptr).findEntry(attribute_id) orelse return failBinary(out, size, types.kResultFalse);
             if (!entry.hasKind(.binary)) return failBinary(out, size, types.kInvalidArgument);
             out.* = &entry.binary_value;
             size.* = entry.binary_size;
@@ -599,22 +611,43 @@ test "attribute list rejects full storage and clears failed outputs" {
     var list = List{};
     const iface = list.asInterface();
 
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setInt(iface, null, 1));
+    var int_value: types.int64 = 77;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getInt(iface, null, &int_value));
+    try std.testing.expectEqual(@as(types.int64, 0), int_value);
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setFloat(iface, null, 1.0));
+    var float_value: f64 = 3.0;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getFloat(iface, null, &float_value));
+    try std.testing.expectEqual(@as(f64, 0), float_value);
+    const text: [2:0]vsttypes.TChar = .{ 'x', 0 };
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setString(iface, null, &text));
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setString(iface, "text", null));
+    var text_out: [2]vsttypes.TChar = .{ 'x', 'x' };
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getString(iface, null, &text_out, text_out.len));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), text_out[0]);
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.setBinary(iface, null, null, 0));
+    var binary_out: ?*const anyopaque = @ptrFromInt(0x1000);
+    var binary_size: types.uint32 = 99;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getBinary(iface, null, &binary_out, &binary_size));
+    try std.testing.expectEqual(@as(?*const anyopaque, null), binary_out);
+    try std.testing.expectEqual(@as(types.uint32, 0), binary_size);
+
     try std.testing.expectEqual(types.kResultOk, iface.vtable.setInt(iface, "one", 1));
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.setFloat(iface, "two", 2.0));
 
-    var int_value: types.int64 = 77;
+    int_value = 77;
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.getInt(iface, "missing", &int_value));
     try std.testing.expectEqual(@as(types.int64, 0), int_value);
 
-    var float_value: f64 = 3.0;
+    float_value = 3.0;
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getFloat(iface, "one", &float_value));
     try std.testing.expectEqual(@as(f64, 0), float_value);
 
     const bytes = [_]u8{ 1, 2, 3 };
     try std.testing.expectEqual(types.kResultFalse, iface.vtable.setBinary(iface, "one", &bytes, bytes.len));
 
-    var binary_out: ?*const anyopaque = @ptrFromInt(0x1000);
-    var binary_size: types.uint32 = 99;
+    binary_out = @ptrFromInt(0x1000);
+    binary_size = 99;
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getBinary(iface, "one", &binary_out, &binary_size));
     try std.testing.expectEqual(@as(?*const anyopaque, null), binary_out);
     try std.testing.expectEqual(@as(types.uint32, 0), binary_size);

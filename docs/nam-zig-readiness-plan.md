@@ -246,7 +246,7 @@ Completion evidence:
 - Model Shell tests import a valid model, relink matching content, retry a malformed model, and verify idle cancellation rejection through actual VST3 connection points. File access, parsing, allocation, and runtime preparation remain on the recovery worker.
 - The retained telemetry source copies bounded status and metadata text into controller-owned buffers and exposes progress, cancellation, and retry availability as scalar snapshots. Model Shell tests verify ready and failed status, preserved active metadata after replacement failure, deterministic truncation, and action availability.
 - `ResourceRecovery.presentationSnapshot` now reconciles recovery and worker generations before exposing status, progress, Cancel, Retry, cancellation, and metadata. Model Shell telemetry uses that single contract, and deterministic tests cover active progress, cancellation, retry, success, and installed-package consumption.
-- All message transports reject a null host-provided message ID through the shared raw API helper. This closes the same unsafe C-string boundary class previously found in host `createView` probing.
+- All message transports reject a null host-provided message ID through the shared raw API helper. The raw plug-view, parameter-function, program-info, and attribute-list interfaces also represent host-provided C strings as nullable and reject null before decoding. Failed attribute reads clear their outputs so malformed host calls cannot expose stale values.
 - The full deterministic suite passes 4,094 tests, including the connected controller/component integration. The Model Shell continues to pass all 47 Steinberg validator tests.
 
 ### Public C kernel integration

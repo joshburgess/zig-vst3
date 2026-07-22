@@ -59,7 +59,7 @@ pub const IUnitInfoVTable = extern struct {
     getProgramListCount: *const fn (*anyopaque) callconv(.c) base_types.int32,
     getProgramListInfo: *const fn (*anyopaque, base_types.int32, *ProgramListInfo) callconv(.c) base_types.tresult,
     getProgramName: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, [*]vsttypes.TChar) callconv(.c) base_types.tresult,
-    getProgramInfo: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, vsttypes.CString, [*]vsttypes.TChar) callconv(.c) base_types.tresult,
+    getProgramInfo: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, ?vsttypes.CString, [*]vsttypes.TChar) callconv(.c) base_types.tresult,
     hasProgramPitchNames: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32) callconv(.c) base_types.tresult,
     getProgramPitchName: *const fn (*anyopaque, vsttypes.ProgramListID, base_types.int32, base_types.int16, [*]vsttypes.TChar) callconv(.c) base_types.tresult,
     getSelectedUnit: *const fn (*anyopaque) callconv(.c) vsttypes.UnitID,

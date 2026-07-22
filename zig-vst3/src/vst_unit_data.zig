@@ -180,11 +180,12 @@ pub fn UnitInfo(comptime max_units: usize, comptime max_program_lists: usize, co
             return types.kInvalidArgument;
         }
 
-        fn getProgramInfo(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: vsttypes.CString, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
+        fn getProgramInfo(ptr: *anyopaque, list_id: vsttypes.ProgramListID, program_index: types.int32, attribute_id: ?vsttypes.CString, out: [*]vsttypes.TChar) callconv(.c) types.tresult {
             const self = owner(ptr);
             string128.clearPtr(out);
+            const id = attribute_id orelse return types.kInvalidArgument;
             if (@hasDecl(Config, "getProgramInfo")) {
-                const result = Config.getProgramInfo(self, list_id, program_index, attribute_id, out);
+                const result = Config.getProgramInfo(self, list_id, program_index, id, out);
                 if (result != types.kResultOk) return failProgramString(out, result);
                 return result;
             }
@@ -424,6 +425,9 @@ test "unit info exposes root unit defaults" {
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_name[1]);
 
     var program_info: vsttypes.String128 = [_]vsttypes.TChar{'x'} ** string128.code_units;
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramInfo(iface, ivstunits.kNoProgramListId, 0, null, &program_info));
+    try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[0]);
+    program_info = [_]vsttypes.TChar{'x'} ** string128.code_units;
     try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getProgramInfo(iface, ivstunits.kNoProgramListId, 0, "name", &program_info));
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[0]);
     try std.testing.expectEqual(@as(vsttypes.TChar, 0), program_info[1]);

@@ -90,14 +90,20 @@ pub fn ParameterFunctionName(comptime Config: type) type {
             return funknown.decrementRefCount(&owner(ptr).ref_count, "IParameterFunctionName");
         }
 
-        fn getParameterIDFromFunctionName(_: *anyopaque, unit_id: vsttypes.UnitID, function_name: types.FIDString, out: *vsttypes.ParamID) callconv(.c) types.tresult {
+        fn getParameterIDFromFunctionName(_: *anyopaque, unit_id: vsttypes.UnitID, function_name: ?types.FIDString, out: *vsttypes.ParamID) callconv(.c) types.tresult {
+            const name = function_name orelse return failParamIdWithResult(out, types.kInvalidArgument);
             if (@hasDecl(Config, "getParameterIDFromFunctionName")) {
-                if (Config.getParameterIDFromFunctionName(unit_id, function_name)) |id| {
+                if (Config.getParameterIDFromFunctionName(unit_id, name)) |id| {
                     out.* = id;
                     return types.kResultOk;
                 }
             }
             return failParamId(out);
+        }
+
+        fn failParamIdWithResult(out: *vsttypes.ParamID, result: types.tresult) types.tresult {
+            out.* = vsttypes.kNoParamId;
+            return result;
         }
 
         const vtable = ivstparameterfunctionname.IParameterFunctionNameVTable{
@@ -217,6 +223,8 @@ test "parameter function name maps known host function names" {
     const iface = functions.asInterface();
     var found: vsttypes.ParamID = 0;
 
+    try std.testing.expectEqual(types.kInvalidArgument, iface.vtable.getParameterIDFromFunctionName(iface, 2, null, &found));
+    try std.testing.expectEqual(vsttypes.kNoParamId, found);
     try std.testing.expectEqual(types.kResultOk, iface.vtable.getParameterIDFromFunctionName(iface, 2, ivstparameterfunctionname.FunctionNameType.kDryWetMix, &found));
     try std.testing.expectEqual(@as(vsttypes.ParamID, 12), found);
 
