@@ -124,6 +124,8 @@ The Model Shell integration tests connect a real controller and component, impor
 
 The Model Shell also exposes recovery status, progress, cancellation and retry availability, and bounded model metadata through the retained GUI telemetry source. Numeric status and copied text snapshots remain readable after a failed replacement, while the last valid model and its metadata stay active. An editor can therefore present recovery state without sharing the recovery object, locking a runtime, or keeping the editor open during preparation. `ResourceRecovery.progressSnapshot` returns the bounded preparation job snapshot for this purpose.
 
+Prefer `ResourceRecovery.presentationSnapshot` when one editor update needs status, progress, actions, and metadata together. It copies the recovery reference and reconciles the preparation job by generation. A stale job cannot enable Cancel or Retry for a newer request. Determinate progress is reported only after the matching worker publishes a nonzero work total. Earlier queued work uses an indeterminate running snapshot. Ready, failed, and empty recovery states map to validated toolkit-neutral progress states. The returned metadata remains owned by the snapshot, so callers must not retain its slice after discarding the snapshot.
+
 The recovery object can be used as processor component state through these public processor declarations:
 
 ```zig

@@ -22,6 +22,31 @@ const RuntimeExchange = plugin.resource.exchange.Exchange(struct {
     }
 });
 
+const InstalledRecovery = plugin.resource.ResourceRecovery(struct {
+    pub const Resource = u8;
+    pub const Failure = enum { unavailable };
+    pub const path_capacity = 64;
+    pub const metadata_capacity = 32;
+    pub const slot_capacity = 2;
+    pub const maximum_work_units = 1;
+    pub const maximum_result_units = 1;
+
+    pub fn prepare(_: plugin.resource.BoundedPath(path_capacity), _: *plugin.resource.job.WorkerContext) plugin.resource.job.Outcome(
+        plugin.resource.PreparedResource(Resource, metadata_capacity),
+        Failure,
+    ) {
+        return .{ .failure = .unavailable };
+    }
+
+    pub fn destroy(resource: *Resource) void {
+        std.testing.allocator.destroy(resource);
+    }
+
+    pub fn failureStatus(_: Failure) plugin.resource.RecoveryStatus {
+        return .failed;
+    }
+});
+
 test "installed package exposes DSP fixture rendering and comparison" {
     const input = [_]f32{ -1.0, -0.5, 0.0, 0.5, 1.0 };
     const expected = [_]f32{ -0.25, -0.125, 0.0, 0.125, 0.25 };
@@ -48,4 +73,15 @@ test "installed package exposes exclusive mutable runtime adoption" {
     exchange.activeMutable().?.resource.state = 0.5;
     try std.testing.expectEqual(@as(f32, 0.5), exchange.activeMutable().?.resource.state);
     try std.testing.expect(exchange.retireActiveAtBlockBoundary());
+}
+
+test "installed package exposes bounded resource presentation" {
+    var recovery = InstalledRecovery.init();
+    defer recovery.deinit();
+    const presentation = recovery.presentationSnapshot();
+    try std.testing.expectEqual(plugin.resource.RecoveryStatus.empty, presentation.status);
+    try std.testing.expectEqual(plugin.gui_progress.State.idle, presentation.progress.state);
+    try std.testing.expectEqualStrings("empty", presentation.statusText());
+    try std.testing.expectEqualStrings("", presentation.metadata());
+    try presentation.progress.validate();
 }

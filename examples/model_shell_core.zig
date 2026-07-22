@@ -349,24 +349,22 @@ pub const Processor = struct {
     }
 
     pub fn guiTelemetryLoad(self: *const Processor, source_id: u32) f64 {
+        const presentation = self.models.presentationSnapshot();
         return switch (source_id) {
-            resource_status_source_id => @floatFromInt(@intFromEnum(self.models.snapshot().status)),
-            resource_progress_source_id => self.models.progressSnapshot().progress(),
-            resource_can_cancel_source_id => @floatFromInt(@intFromBool(self.models.progressSnapshot().canCancel())),
-            resource_can_retry_source_id => @floatFromInt(@intFromBool(self.models.progressSnapshot().canRetry())),
-            resource_cancellation_pending_source_id => @floatFromInt(@intFromBool(self.models.progressSnapshot().cancellation_pending)),
+            resource_status_source_id => @floatFromInt(@intFromEnum(presentation.status)),
+            resource_progress_source_id => presentation.progress.value,
+            resource_can_cancel_source_id => @floatFromInt(@intFromBool(presentation.can_cancel)),
+            resource_can_retry_source_id => @floatFromInt(@intFromBool(presentation.can_retry)),
+            resource_cancellation_pending_source_id => @floatFromInt(@intFromBool(presentation.cancellation_pending)),
             else => 0.0,
         };
     }
 
     pub fn guiTelemetryLoadText(self: *const Processor, source_id: u32, output: []u8) usize {
-        const snapshot = self.models.snapshot();
+        const presentation = self.models.presentationSnapshot();
         const text = switch (source_id) {
-            resource_status_source_id => @tagName(snapshot.status),
-            resource_metadata_source_id => switch (snapshot.reference) {
-                .empty => "",
-                .linked => |linked| linked.metadata.slice(),
-            },
+            resource_status_source_id => presentation.statusText(),
+            resource_metadata_source_id => presentation.metadata(),
             else => "",
         };
         const count = @min(text.len, output.len);

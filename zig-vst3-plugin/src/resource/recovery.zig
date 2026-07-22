@@ -1,5 +1,6 @@
 const std = @import("std");
 const exchange_mod = @import("exchange.zig");
+const gui_progress = @import("../gui_progress.zig");
 const job_mod = @import("job.zig");
 const reference_mod = @import("reference.zig");
 
@@ -279,6 +280,27 @@ pub fn Recovery(comptime Config: type) type {
 
         pub const Snapshot = SnapshotType;
         pub const ProgressSnapshot = PreparationJob.Snapshot;
+        pub const PresentationSnapshot = struct {
+            status: reference_mod.RecoveryStatus,
+            resolution: reference_mod.RecoveryStatus,
+            generation: u64,
+            reference: ReferenceState,
+            progress: gui_progress.Snapshot,
+            can_cancel: bool,
+            can_retry: bool,
+            cancellation_pending: bool,
+
+            pub fn statusText(self: PresentationSnapshot) []const u8 {
+                return @tagName(self.status);
+            }
+
+            pub fn metadata(self: *const PresentationSnapshot) []const u8 {
+                return switch (self.reference) {
+                    .empty => "",
+                    .linked => |*linked| linked.metadata.slice(),
+                };
+            }
+        };
 
         preparation: PreparationJob = .init(),
         exchange: Exchange = .{},
@@ -378,6 +400,22 @@ pub fn Recovery(comptime Config: type) type {
             return self.preparation.snapshot();
         }
 
+        pub fn presentationSnapshot(self: *const Self) PresentationSnapshot {
+            const completion = self.completion.snapshot();
+            const job = self.preparation.snapshot();
+            const matching_job = job.generation != 0 and job.generation == completion.generation;
+            return .{
+                .status = completion.status,
+                .resolution = completion.resolution,
+                .generation = completion.generation,
+                .reference = completion.reference,
+                .progress = progressForPresentation(completion.status, completion.generation, job, matching_job),
+                .can_cancel = matching_job and job.canCancel(),
+                .can_retry = matching_job and job.canRetry(),
+                .cancellation_pending = matching_job and job.cancellation_pending,
+            };
+        }
+
         pub fn adoptPendingAtBlockBoundary(self: *Self) bool {
             const restore_generation = self.clear_before_generation.swap(0, .acq_rel);
             if (restore_generation != 0) {
@@ -464,7 +502,122 @@ pub fn Recovery(comptime Config: type) type {
             if (self.next_publication_generation == 0) self.next_publication_generation = 1;
             return self.next_publication_generation;
         }
+
+        fn progressForPresentation(
+            status: reference_mod.RecoveryStatus,
+            generation: u64,
+            job: ProgressSnapshot,
+            matching_job: bool,
+        ) gui_progress.Snapshot {
+            return switch (status) {
+                .restoring => if (matching_job and job.total_units != 0)
+                    .{
+                        .state = .running,
+                        .value = job.progress(),
+                        .generation = job.generation,
+                    }
+                else
+                    .{
+                        .mode = .indeterminate,
+                        .state = .running,
+                        .generation = generation,
+                    },
+                .ready => .{ .state = .complete, .value = 1.0, .generation = generation },
+                .missing, .changed, .unsupported, .failed => .{ .state = .failed, .generation = generation },
+                .empty, .moved => .{ .generation = generation },
+            };
+        }
     };
+}
+
+test "resource recovery presents one bounded generation to the GUI" {
+    const TestResource = struct { value: u32 };
+    const metadata_limit = 32;
+    const TestPrepared = Prepared(TestResource, metadata_limit);
+    const synchronization = struct {
+        var started = std.atomic.Value(bool).init(false);
+        var release = std.atomic.Value(bool).init(false);
+    };
+    const TestRecovery = Recovery(struct {
+        pub const Resource = TestResource;
+        pub const Failure = enum { allocation_failed };
+        pub const path_capacity = 64;
+        pub const metadata_capacity = metadata_limit;
+        pub const slot_capacity = 3;
+        pub const maximum_work_units = 4;
+        pub const maximum_result_units = 1;
+
+        pub fn prepare(_: @import("path.zig").BoundedPath(path_capacity), context: *job_mod.WorkerContext) job_mod.Outcome(TestPrepared, Failure) {
+            context.setPhase(.loading) catch return .cancelled;
+            context.setTotalUnits(4) catch return .cancelled;
+            context.advance(1, 4) catch return .cancelled;
+            synchronization.started.store(true, .release);
+            while (!synchronization.release.load(.acquire)) std.Thread.yield() catch {};
+            if (context.cancellationRequested()) return .cancelled;
+            const resource = std.heap.page_allocator.create(Resource) catch return .{ .failure = .allocation_failed };
+            resource.* = .{ .value = 42 };
+            return .{ .success = .{
+                .value = .{
+                    .resource = resource,
+                    .identity = reference_mod.Identity.fromBytes("presentation fixture"),
+                    .resource_schema_version = 1,
+                    .metadata = reference_mod.BoundedMetadata(metadata_capacity).init("ready model") catch {
+                        std.heap.page_allocator.destroy(resource);
+                        return .{ .failure = .allocation_failed };
+                    },
+                },
+                .result_units = 1,
+            } };
+        }
+
+        pub fn destroy(resource: *Resource) void {
+            std.heap.page_allocator.destroy(resource);
+        }
+
+        pub fn failureStatus(_: Failure) reference_mod.RecoveryStatus {
+            return .failed;
+        }
+    });
+
+    synchronization.started.store(false, .release);
+    synchronization.release.store(false, .release);
+    var recovery = TestRecovery.init();
+    defer recovery.deinit();
+    try std.testing.expect(recovery.importPath("model.fixture"));
+    while (!synchronization.started.load(.acquire)) std.Thread.yield() catch {};
+
+    var presentation = recovery.presentationSnapshot();
+    try std.testing.expectEqual(reference_mod.RecoveryStatus.restoring, presentation.status);
+    try std.testing.expectEqual(gui_progress.State.running, presentation.progress.state);
+    try std.testing.expectEqual(gui_progress.Mode.determinate, presentation.progress.mode);
+    try std.testing.expectEqual(@as(f64, 0.25), presentation.progress.value);
+    try std.testing.expectEqual(presentation.generation, presentation.progress.generation);
+    try std.testing.expect(presentation.can_cancel);
+    try std.testing.expect(!presentation.can_retry);
+    try std.testing.expectEqualStrings("restoring", presentation.statusText());
+    try std.testing.expectEqualStrings("", presentation.metadata());
+
+    try std.testing.expect(recovery.requestCancel());
+    presentation = recovery.presentationSnapshot();
+    try std.testing.expect(presentation.cancellation_pending);
+    synchronization.release.store(true, .release);
+    recovery.waitAndPoll();
+
+    presentation = recovery.presentationSnapshot();
+    try std.testing.expectEqual(reference_mod.RecoveryStatus.failed, presentation.status);
+    try std.testing.expectEqual(gui_progress.State.failed, presentation.progress.state);
+    try std.testing.expect(!presentation.can_cancel);
+    try std.testing.expect(presentation.can_retry);
+
+    synchronization.started.store(false, .release);
+    try std.testing.expect(recovery.retry());
+    recovery.waitAndPoll();
+    presentation = recovery.presentationSnapshot();
+    try std.testing.expectEqual(reference_mod.RecoveryStatus.ready, presentation.status);
+    try std.testing.expectEqual(gui_progress.State.complete, presentation.progress.state);
+    try std.testing.expectEqual(@as(f64, 1.0), presentation.progress.value);
+    try std.testing.expectEqualStrings("ready model", presentation.metadata());
+    try presentation.progress.validate();
 }
 
 test "resource recovery restores, detects changes, and relinks moved content" {

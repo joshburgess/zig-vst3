@@ -113,3 +113,15 @@ test "installed package builds effect and instrument editor declarations" {
     try std.testing.expectEqual(plugin.plugin.AudioBusLayout.mono, mono_spec.audio_input_layout);
     try std.testing.expectEqual(@as(u8, 1), mono_spec.audio_output_layout.channelCount());
 }
+
+test "installed package exposes bounded resource commands" {
+    try std.testing.expectEqual(@as(usize, 4096), vst3.resource_path_transport.maximum_path_bytes);
+    try std.testing.expectEqual(
+        vst3.pluginterfaces.base.types.kResultFalse,
+        vst3.resource_path_transport.sendImport(null, 1, "model.nam"),
+    );
+    try std.testing.expectEqual(
+        vst3.pluginterfaces.base.types.kResultFalse,
+        vst3.resource_path_transport.sendCancel(null, 1),
+    );
+}
