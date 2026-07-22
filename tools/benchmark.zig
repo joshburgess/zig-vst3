@@ -23,6 +23,7 @@ const Budget = struct {
     ir_preparation_ms: f64 = 500.0,
     ir_adoption_ns: f64 = 1_000_000.0,
     ir_processing_ns_per_sample: f64 = 20_000.0,
+    fixed_rate_ns_per_sample: f64 = 2_000.0,
 };
 
 const budget = Budget{};
@@ -112,6 +113,36 @@ pub fn main() !void {
     try benchAudioFileImport();
     try benchSamplePlayerPipeline();
     try benchIrConvolution();
+    try benchFixedRatePipeline();
+}
+
+fn benchFixedRatePipeline() !void {
+    const Pipeline = plug.dsp.FixedRatePipeline(f32);
+    const rates = [_]f64{ 44_100, 48_000, 88_200, 96_000 };
+    var input: [frame_count]f32 = undefined;
+    for (&input, 0..) |*sample, index| {
+        sample.* = @floatCast(@sin(std.math.tau * 997.0 * @as(f64, @floatFromInt(index)) / 48_000.0));
+    }
+    var model: [600]f32 = undefined;
+    var output: [frame_count]f32 = undefined;
+    for (rates) |host_rate| {
+        var pipeline = try Pipeline.init(.{ .host_rate = host_rate, .model_rate = 48_000 });
+        var timer = try Timer.start();
+        var checksum: f64 = 0.0;
+        const benchmark_iterations = iterations / 10;
+        for (0..benchmark_iterations) |_| {
+            const model_frames = try pipeline.convertInput(&input, &model);
+            for (model[0..model_frames]) |*sample| sample.* *= 0.5;
+            try pipeline.convertOutput(model[0..model_frames], &output);
+            checksum += output[output.len - 1];
+        }
+        const elapsed_ns = try timer.read();
+        std.mem.doNotOptimizeAway(checksum);
+        const sample_count = benchmark_iterations * frame_count;
+        const ns_per_sample = @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(sample_count));
+        std.debug.print("fixed-rate 48 kHz model at {d:.1} Hz: {d:.1} ns/sample\n", .{ host_rate, ns_per_sample });
+        if (ns_per_sample > budget.fixed_rate_ns_per_sample) return error.BenchmarkBudgetExceeded;
+    }
 }
 
 fn benchRawStream() !Benchmark {

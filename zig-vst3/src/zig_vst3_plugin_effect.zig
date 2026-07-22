@@ -3,6 +3,7 @@ const funknown = @import("funknown.zig");
 const gui_ir_transport = @import("gui_ir_transport.zig");
 const gui_note_transport = @import("gui_note_transport.zig");
 const gui_telemetry_source = @import("gui_telemetry_source.zig");
+const latency_transport = @import("latency_transport.zig");
 const ibstream = @import("pluginterfaces/base/ibstream.zig");
 const ipluginbase = @import("pluginterfaces/base/ipluginbase.zig");
 const iplugview = @import("pluginterfaces/gui/iplugview.zig");
@@ -51,6 +52,48 @@ pub const ParameterObserver = struct {
     userdata: *anyopaque,
     changed: *const fn (*anyopaque, vsttypes.ParamID, vsttypes.ParamValue) callconv(.c) void,
 };
+
+pub const HostRequestSink = struct {
+    context: *anyopaque,
+    mark_latency_changed: *const fn (*anyopaque) void,
+    dispatch: *const fn (*anyopaque) types.tresult,
+
+    pub fn markLatencyChanged(self: *HostRequestSink) void {
+        self.mark_latency_changed(self.context);
+    }
+
+    pub fn dispatchPending(self: *HostRequestSink) bool {
+        if (!plug_core.realtime_audit.observe(.host_call)) return false;
+        return self.dispatch(self.context) == types.kResultOk;
+    }
+};
+
+test "host request dispatch is rejected in a realtime audit scope" {
+    const Probe = struct {
+        var dispatch_count: usize = 0;
+
+        fn mark(_: *anyopaque) void {}
+
+        fn dispatch(_: *anyopaque) types.tresult {
+            dispatch_count += 1;
+            return types.kResultOk;
+        }
+    };
+    var context: u8 = 0;
+    var sink = HostRequestSink{
+        .context = &context,
+        .mark_latency_changed = Probe.mark,
+        .dispatch = Probe.dispatch,
+    };
+    Probe.dispatch_count = 0;
+    const scope = plug_core.realtime_audit.Scope.enter();
+    try std.testing.expect(!sink.dispatchPending());
+    const report = scope.leave();
+    try std.testing.expectEqual(@as(u32, 1), report.count(.host_call));
+    try std.testing.expectEqual(@as(usize, 0), Probe.dispatch_count);
+    try std.testing.expect(sink.dispatchPending());
+    try std.testing.expectEqual(@as(usize, 1), Probe.dispatch_count);
+}
 
 var test_data_exchange_queue_opened_count: usize = 0;
 var test_data_exchange_queue_closed_count: usize = 0;
@@ -765,8 +808,13 @@ pub fn ReflectedEditController(comptime Config: type) type {
             return result;
         }
 
-        fn notify(_: *anyopaque, _: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
-            return types.kResultFalse;
+        fn notify(ptr: *anyopaque, message: ?*ivstmessage.IMessage) callconv(.c) types.tresult {
+            if (message == null) return types.kResultFalse;
+            const latency_result = latency_transport.receive(message);
+            if (latency_result == types.kResultOk) {
+                return restartComponent(&ownerFromConnectionPoint(ptr).iface, ivsteditcontroller.RestartFlags.kLatencyChanged);
+            }
+            return latency_result;
         }
 
         const controller2_vtable = ivsteditcontroller.IEditController2VTable{
@@ -2482,6 +2530,9 @@ pub fn SimpleEffect(comptime Config: type) type {
             data_exchange_receiver: ivstdataexchange.IDataExchangeReceiver = .{ .vtable = &data_exchange_receiver_vtable },
             telemetry_source: gui_telemetry_source.Interface = .{ .vtable = &telemetry_source_vtable },
             connected_peer: ?*ivstmessage.IConnectionPoint = null,
+            connected_peer_mutex: std.Io.Mutex = .init,
+            latency_change_pending: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+            host_request_sink: HostRequestSink = undefined,
             host_application: ?*ivsthostapplication.IHostApplication = null,
             info_listener: ?*ivstchannelcontextinfo.IInfoListener = null,
             automation_state: ?*ivstautomationstate.IAutomationState = null,
@@ -2505,6 +2556,14 @@ pub fn SimpleEffect(comptime Config: type) type {
                 } else {
                     self.processor_impl = .{};
                 }
+                self.host_request_sink = .{
+                    .context = self,
+                    .mark_latency_changed = markLatencyChangedRequest,
+                    .dispatch = dispatchHostRequestsRequest,
+                };
+                if (@hasDecl(Config.Processor, "bindHostRequests")) {
+                    self.processor_impl.bindHostRequests(&self.host_request_sink);
+                }
             }
         };
 
@@ -2527,6 +2586,14 @@ pub fn SimpleEffect(comptime Config: type) type {
 
         pub fn processorInstance(iface: *ivstcomponent.IComponent) *Config.Processor {
             return &owner(iface).processor_impl;
+        }
+
+        pub fn markLatencyChanged(iface: *ivstcomponent.IComponent) void {
+            owner(iface).latency_change_pending.store(true, .release);
+        }
+
+        pub fn dispatchHostRequests(iface: *ivstcomponent.IComponent) types.tresult {
+            return dispatchPendingHostRequests(owner(iface));
         }
 
         pub fn setChannelContextInfos(iface: *ivstcomponent.IComponent, attributes: ?*ivstattributes.IAttributeList) types.tresult {
@@ -2601,6 +2668,48 @@ pub fn SimpleEffect(comptime Config: type) type {
         const ownerFromDataExchangeReceiver = interface_map.ownerFromField(Component, ivstdataexchange.IDataExchangeReceiver, "data_exchange_receiver");
         const ownerFromTelemetrySource = interface_map.ownerFromField(Component, gui_telemetry_source.Interface, "telemetry_source");
 
+        fn markLatencyChangedRequest(context: *anyopaque) void {
+            const self: *Component = @ptrCast(@alignCast(context));
+            self.latency_change_pending.store(true, .release);
+        }
+
+        fn dispatchHostRequestsRequest(context: *anyopaque) types.tresult {
+            const self: *Component = @ptrCast(@alignCast(context));
+            return dispatchPendingHostRequests(self);
+        }
+
+        fn dispatchPendingHostRequests(self: *Component) types.tresult {
+            if (!self.latency_change_pending.swap(false, .acq_rel)) return types.kResultOk;
+            const peer = retainComponentConnectionPeer(self) orelse {
+                self.latency_change_pending.store(true, .release);
+                return types.kResultFalse;
+            };
+            defer _ = peer.vtable.release(peer);
+            const result = latency_transport.send(peer);
+            if (result != types.kResultOk) self.latency_change_pending.store(true, .release);
+            return result;
+        }
+
+        fn retainComponentConnectionPeer(self: *Component) ?*ivstmessage.IConnectionPoint {
+            lockComponentPeer(self);
+            defer unlockComponentPeer(self);
+            return if (self.connected_peer) |peer| retainConnectionPeer(peer) else null;
+        }
+
+        fn releaseComponentConnectionPeer(self: *Component) void {
+            lockComponentPeer(self);
+            defer unlockComponentPeer(self);
+            releaseConnectionPeer(&self.connected_peer);
+        }
+
+        fn lockComponentPeer(self: *Component) void {
+            self.connected_peer_mutex.lockUncancelable(std.Io.Threaded.global_single_threaded.io());
+        }
+
+        fn unlockComponentPeer(self: *Component) void {
+            self.connected_peer_mutex.unlock(std.Io.Threaded.global_single_threaded.io());
+        }
+
         fn query(ptr: *anyopaque, requested_iid: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
             const base_entries = [_]interface_map.Entry{
@@ -2633,12 +2742,12 @@ pub fn SimpleEffect(comptime Config: type) type {
             const next = funknown.decrementRefCount(&self.ref_count, Config.component_name);
             if (next == 0) {
                 _ = self.ref_count.load(.acquire);
-                releaseConnectionPeer(&self.connected_peer);
+                if (@hasDecl(Config.Processor, "deinit")) self.processor_impl.deinit();
+                releaseComponentConnectionPeer(self);
                 releaseDataExchangeHandler(&self.data_exchange_handler);
                 releaseAutomationState(&self.automation_state);
                 releaseInfoListener(&self.info_listener);
                 releaseHostApplication(&self.host_application);
-                if (@hasDecl(Config.Processor, "deinit")) self.processor_impl.deinit();
                 std.heap.page_allocator.destroy(self);
             }
             return next;
@@ -2716,7 +2825,7 @@ pub fn SimpleEffect(comptime Config: type) type {
 
         fn terminate(ptr: *anyopaque) callconv(.c) types.tresult {
             const self = owner(ptr);
-            releaseConnectionPeer(&self.connected_peer);
+            releaseComponentConnectionPeer(self);
             releaseDataExchangeHandler(&self.data_exchange_handler);
             releaseAutomationState(&self.automation_state);
             releaseInfoListener(&self.info_listener);
@@ -2795,11 +2904,15 @@ pub fn SimpleEffect(comptime Config: type) type {
 
         fn componentConnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
+            lockComponentPeer(self);
+            defer unlockComponentPeer(self);
             return replaceConnectionPeer(&self.connected_peer, peer);
         }
 
         fn componentDisconnect(ptr: *anyopaque, peer: ?*ivstmessage.IConnectionPoint) callconv(.c) types.tresult {
             const self = ownerFromComponentConnectionPoint(ptr);
+            lockComponentPeer(self);
+            defer unlockComponentPeer(self);
             return disconnectConnectionPeer(&self.connected_peer, peer);
         }
 

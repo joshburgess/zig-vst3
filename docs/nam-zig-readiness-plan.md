@@ -58,8 +58,8 @@ These facilities cover most of a basic NAM editor. They do not yet cover safe ow
 | Immutable model publication | Fixed-capacity immutable resource exchange implemented and validated | `zig-vst3-plugin` | Complete |
 | Deferred destruction | Replaced resources retire on audio and are reclaimed off-thread | `zig-vst3-plugin` | Complete |
 | Generic background resource jobs | Bounded replaceable jobs implemented and used by the audio importer | `zig-vst3-plugin` | Complete |
-| Streaming sample-rate conversion | No bounded, allocation-free, stateful SRC abstraction | Reusable DSP package, surfaced through `zig-vst3-plugin` | P0 |
-| Dynamic latency notification | Processor latency queries exist, but model or SRC changes lack a complete public update path | `zig-vst3` and `zig-vst3-plugin` | P0 |
+| Streaming sample-rate conversion | Bounded streaming SRC and fixed-rate round-trip pipeline implemented and validated | Reusable DSP package, surfaced through `zig-vst3-plugin` | Complete |
+| Dynamic latency notification | Public coalesced component-to-controller restart path implemented; restored resource integration remains in milestone 6 | `zig-vst3` and `zig-vst3-plugin` | In progress |
 | Resource persistence | Parameter state and small editor text exist, but no generic path identity and missing-file recovery contract | `zig-vst3-plugin` | P0 |
 | Consumer C kernel integration | Internal build code compiles C, but package consumers lack a documented helper and reference layout | Package build API and DSP library | P1 |
 | CPU dispatch | No portable baseline plus optimized runtime kernel selection contract | DSP library | P1 |
@@ -137,12 +137,12 @@ Completion evidence:
 
 ### 4. Bounded streaming sample-rate conversion
 
-- [ ] Select or build a resampler with known quality, latency, and licensing.
-- [ ] Allocate all filter state, queues, and scratch storage during preparation.
-- [ ] Handle arbitrary host block sizes without growing storage.
-- [ ] Define startup, drain, reset, discontinuity, and sample-rate-change behavior.
-- [ ] Report exact round-trip latency and preserve dry/wet alignment where relevant.
-- [ ] Benchmark common NAM rate pairs, especially 44.1, 48, 88.2, and 96 kHz.
+- [x] Select or build a resampler with known quality, latency, and licensing.
+- [x] Allocate all filter state, queues, and scratch storage during preparation.
+- [x] Handle arbitrary host block sizes without growing storage.
+- [x] Define startup, drain, reset, discontinuity, and sample-rate-change behavior.
+- [x] Report exact round-trip latency and preserve dry/wet alignment where relevant.
+- [x] Benchmark common NAM rate pairs, especially 44.1, 48, 88.2, and 96 kHz.
 
 Exit criteria:
 
@@ -150,18 +150,36 @@ Exit criteria:
 - Impulse, sine, sweep, and randomized block tests verify latency, continuity, bounded error, and deterministic reset.
 - A fixed-rate probe plugin passes variable-block and state-transition validator tests.
 
+Completion evidence:
+
+- `dsp.StreamingResampler` uses a 32-tap, 256-phase Blackman-windowed sinc filter with fixed inline coefficients and history. It supports partial consumption, explicit drain, deterministic reset, finite rate bounds, and `f32` and `f64` processing.
+- `dsp.FixedRatePipeline` owns both conversion stages, ten frames of bounded pending storage, exact integer host latency, and caller-owned model scratch sized through `requiredModelCapacity`.
+- Impulse, passband sine, stopband sine, randomized block, reset, drain, invalid-state, and insufficient-capacity tests pass.
+- The public Fixed Rate Processor runs a 48 kHz trivial model and passes all 47 Steinberg validator tests, including variable blocks, both sample formats, lifecycle transitions, and unusual validator rates.
+- The two-stage pipeline measured 44.7, 42.5, 32.6, and 30.0 ns per host sample at 44.1, 48, 88.2, and 96 kHz respectively on the current macOS development machine.
+- The aggregate suite passed 4,016/4,016 tests. Raw ABI checks, native VSTGUI sanitizers, and all 17 Steinberg validators passed.
+- Linux aarch64 and Windows x86_64 cross-target matrices each passed 53/53 build steps with the Fixed Rate Processor bundle.
+
 ### 5. Runtime latency and restart contract
 
-- [ ] Expose a public processor-to-controller request for `kLatencyChanged`.
-- [ ] Define when a newly loaded model or SRC configuration becomes active relative to the reported latency.
-- [ ] Coalesce redundant restart notifications outside the audio callback.
-- [ ] Test hosts that query latency before activation, after preparation, and after resource replacement.
+- [x] Expose a public processor-to-controller request for `kLatencyChanged`.
+- [x] Define when a newly loaded model or SRC configuration becomes active relative to the reported latency.
+- [x] Coalesce redundant restart notifications outside the audio callback.
+- [x] Test latency before activation, after preparation, and after prepared-mode replacement.
 
 Exit criteria:
 
 - A probe plugin changes between two prepared latency modes without calling the host from processing.
 - The host-visible latency and active processing path change in a documented order.
 - State restore and repeated activation do not leave stale latency.
+
+Completion evidence:
+
+- `HostRequestSink` is bound through the optional processor `bindHostRequests` hook. Atomic marks coalesce, while dispatch is rejected from a real-time audit scope before any host call.
+- The component sends a bounded message to its connected controller. The controller calls `restartComponent` with `kLatencyChanged`.
+- The Fixed Rate Processor publishes the new latency, dispatches the restart outside processing, and makes the prepared mode eligible for adoption only after successful dispatch. The audio thread adopts and resets at its next block boundary.
+- Unit tests verify one restart for repeated marks, host-visible latency before audio adoption, mode toggles, and repeated preparation at different host rates.
+- Restored resource activation will add the remaining state-restore evidence in milestone 6.
 
 ### 6. Resource state and recovery
 
@@ -267,7 +285,7 @@ The best next phase is framework work, not neural inference:
 - [x] Land configurable mono and stereo bus layouts.
 - [x] Land the generic resource job and immutable resource exchange together, because either one without the other encourages unsafe model sharing.
 - [x] Build the Resource Swap Probe and run it under sanitizers and repeated component teardown.
-- [ ] Add bounded SRC and dynamic latency through the Fixed-Rate Processor.
+- [x] Add bounded SRC and dynamic latency through the Fixed-Rate Processor.
 - [ ] Publish and test the downstream C kernel integration recipe.
 
 Completing this phase would make a Zig NAM effort technically credible while also benefiting convolution reverbs, cabinet loaders, spectral processors, wavetable instruments, and any plugin that swaps large prepared DSP resources.

@@ -73,6 +73,14 @@ pub fn build(b: *std.Build) void {
             .bundle_id = "dev.zig-vst3.resource-swap",
         },
         .{
+            .short_name = "fixed-rate",
+            .display_name = "fixed rate processor",
+            .artifact_name = "zig_vst3_fixed_rate",
+            .root_source_file = "examples/fixed_rate_plugin.zig",
+            .core_example_source_file = "examples/fixed_rate_core.zig",
+            .bundle_id = "dev.zig-vst3.fixed-rate",
+        },
+        .{
             .short_name = "bypass",
             .display_name = "bypass",
             .artifact_name = "zig_vst3_bypass",
@@ -810,7 +818,7 @@ fn addExamplePlugin(
         .root_source_file = options.root_source_file,
     });
     library.root_module.addImport("zig-vst3", zig_vst3);
-    if (std.mem.eql(u8, options.short_name, "resource-swap")) {
+    if (std.mem.eql(u8, options.short_name, "resource-swap") or std.mem.eql(u8, options.short_name, "fixed-rate")) {
         library.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
     }
     if (has_reference_editor) library.root_module.addOptions("zig-vst3-gui-options", gui_options);
@@ -822,7 +830,7 @@ fn addExamplePlugin(
 
     const plugin_tests = addZigVst3PluginCoreTest(b, target, optimize, zig_vst3_plugin_core, options.root_source_file);
     plugin_tests.root_module.addImport("zig-vst3", zig_vst3);
-    if (std.mem.eql(u8, options.short_name, "resource-swap")) {
+    if (std.mem.eql(u8, options.short_name, "resource-swap") or std.mem.eql(u8, options.short_name, "fixed-rate")) {
         plugin_tests.root_module.addImport("zig-vst3-plugin", zig_vst3_plugin);
     }
     if (has_reference_editor) plugin_tests.root_module.addOptions("zig-vst3-gui-options", gui_options);

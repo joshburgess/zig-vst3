@@ -28,6 +28,7 @@ pub const process = core.process;
 pub const state = core.state;
 pub const units = core.units;
 pub const version = "0.2.1-dev";
+pub const HostRequestSink = vst3.zig_vst3_plugin_effect.HostRequestSink;
 
 pub fn backendVersion() []const u8 {
     return vst3.version;
@@ -42,6 +43,8 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(realtime_audit, "Scope"));
     try std.testing.expect(@hasDecl(parameters, "LogFloatParam"));
     try std.testing.expect(@hasDecl(dsp, "SmoothedBiquad"));
+    try std.testing.expect(@hasDecl(dsp, "StreamingResampler"));
+    try std.testing.expect(@hasDecl(dsp, "FixedRatePipeline"));
     try std.testing.expect(@hasDecl(resource.job, "Job"));
     try std.testing.expect(@hasDecl(resource.exchange, "Exchange"));
     try std.testing.expect(@hasDecl(parameters, "normalizedFromBipolar"));
@@ -69,6 +72,7 @@ test "zig-vst3-plugin re-exports core modules" {
     try std.testing.expect(@hasDecl(gui_progress, "Snapshot"));
     try std.testing.expect(@hasDecl(gui_range_selection, "State"));
     try std.testing.expect(@hasDecl(gui_viewport, "State"));
+    try std.testing.expect(@hasDecl(vst3.zig_vst3_plugin_effect, "HostRequestSink"));
 }
 
 test "zig-vst3-plugin runs core module tests" {

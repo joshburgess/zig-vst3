@@ -11,6 +11,7 @@ const sources = [_]Source{
     .{ .path = "resonant_filter_plugin.zig", .text = @embedFile("resonant_filter_plugin.zig") },
     .{ .path = "ir_loader_plugin.zig", .text = @embedFile("ir_loader_plugin.zig") },
     .{ .path = "sample_player_plugin.zig", .text = @embedFile("sample_player_plugin.zig") },
+    .{ .path = "fixed_rate_core.zig", .text = @embedFile("fixed_rate_core.zig") },
 };
 
 const Forbidden = struct {

@@ -107,6 +107,8 @@ pub fn deinit(self: *Plugin) void
 
 Use `processWithParameterView` for most plugins. Use the plain `process` hook when you want to read sample-accurate automation from the `ProcessContext`. Use the `process64` variants when the plugin supports 64-bit processing.
 
+A processor with runtime latency changes may also declare `bindHostRequests`. The framework supplies a component-owned `HostRequestSink`. Mark changes and dispatch them outside the audio thread, then adopt the prepared processing mode at a block boundary. See [DSP Utilities](dsp.md#dynamic-latency) for the ordering contract and Fixed Rate Processor example.
+
 `PrepareConfig` rejects non-finite or non-positive sample rates and zero maximum block sizes before `prepare` runs. The VST3 shell applies the same checks when hosts set up processing.
 
 During VST3 processing, the shell uses the host process context sample rate when it is valid. If the host omits the process context, it uses the validated sample rate from `setupProcessing`.
