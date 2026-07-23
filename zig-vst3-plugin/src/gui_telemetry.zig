@@ -13,16 +13,27 @@ pub fn ScalarSnapshot(comptime Float: type) type {
         bits: std.atomic.Value(Bits),
 
         pub fn init(value: Float) @This() {
-            return .{ .bits = std.atomic.Value(Bits).init(@bitCast(value)) };
+            const accepted = if (finite(value)) value else 0.0;
+            return .{ .bits = std.atomic.Value(Bits).init(@bitCast(accepted)) };
         }
 
         pub fn store(self: *@This(), value: Float) void {
             _ = realtime_audit.observe(.telemetry_publication);
+            if (!finite(value)) return;
             self.bits.store(@bitCast(value), .release);
         }
 
         pub fn load(self: *const @This()) Float {
             return @bitCast(self.bits.load(.acquire));
+        }
+
+        fn finite(value: Float) bool {
+            const exponent_mask: Bits = switch (Float) {
+                f32 => 0x7f80_0000,
+                f64 => 0x7ff0_0000_0000_0000,
+                else => unreachable,
+            };
+            return @as(Bits, @bitCast(value)) & exponent_mask != exponent_mask;
         }
     };
 }
@@ -50,7 +61,7 @@ pub fn SpscQueue(comptime T: type, comptime capacity: usize) type {
             _ = realtime_audit.observe(.telemetry_publication);
             const write = self.write_index.load(.monotonic);
             const read = self.read_index.load(.acquire);
-            if (write -% read == capacity) {
+            if (write -% read >= capacity) {
                 _ = self.dropped_count.fetchAdd(1, .monotonic);
                 return false;
             }
@@ -63,6 +74,10 @@ pub fn SpscQueue(comptime T: type, comptime capacity: usize) type {
             const read = self.read_index.load(.monotonic);
             const write = self.write_index.load(.acquire);
             if (read == write) return null;
+            if (write -% read > capacity) {
+                self.read_index.store(write, .release);
+                return null;
+            }
             const item = self.items[read % capacity];
             self.read_index.store(read +% 1, .release);
             return item;
@@ -159,6 +174,14 @@ test "scalar snapshot preserves the latest value" {
     try std.testing.expectEqual(@as(f64, 0.75), snapshot.load());
 }
 
+test "scalar snapshot rejects non-finite values" {
+    var snapshot = ScalarSnapshot(f64).init(std.math.nan(f64));
+    try std.testing.expectEqual(@as(f64, 0.0), snapshot.load());
+    snapshot.store(0.75);
+    snapshot.store(std.math.inf(f64));
+    try std.testing.expectEqual(@as(f64, 0.75), snapshot.load());
+}
+
 test "bounded queue preserves order and drops overflow" {
     var queue = SpscQueue(u32, 2){};
     try std.testing.expect(queue.push(10));
@@ -168,6 +191,17 @@ test "bounded queue preserves order and drops overflow" {
     try std.testing.expectEqual(@as(?u32, 10), queue.pop());
     try std.testing.expectEqual(@as(?u32, 20), queue.pop());
     try std.testing.expectEqual(@as(?u32, null), queue.pop());
+}
+
+test "bounded queue rejects malformed public cursors" {
+    var queue = SpscQueue(u32, 2){};
+    queue.read_index.store(1, .release);
+    queue.write_index.store(8, .release);
+    try std.testing.expect(!queue.push(10));
+    try std.testing.expectEqual(@as(?u32, null), queue.pop());
+    try std.testing.expectEqual(@as(usize, 8), queue.read_index.load(.acquire));
+    try std.testing.expect(queue.push(20));
+    try std.testing.expectEqual(@as(?u32, 20), queue.pop());
 }
 
 test "repaint requests coalesce until completion" {
