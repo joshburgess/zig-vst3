@@ -85,3 +85,30 @@ test "installed package exposes bounded resource presentation" {
     try std.testing.expectEqualStrings("", presentation.metadata());
     try presentation.progress.validate();
 }
+
+test "installed package exposes validated DSP and telemetry state" {
+    var filter = plugin.dsp.SmoothedBiquad(f64){};
+    filter.setImmediate(.{ .b0 = std.math.nan(f64) });
+    try std.testing.expect(filter.current.valid());
+    try std.testing.expectEqual(@as(f64, 0.5), filter.process(0.5));
+
+    const Resampler = plugin.dsp.StreamingResampler(f64);
+    var resampler = try Resampler.init(.{ .input_rate = 48_000, .output_rate = 48_000 });
+    try std.testing.expect(resampler.validState());
+    resampler.next_output_index = plugin.dsp.resampler.maximum_timeline_index;
+    resampler.input_rate = 2_000_000;
+    resampler.output_rate = 1_000;
+    try std.testing.expect(!resampler.validState());
+
+    const Pipeline = plugin.dsp.FixedRatePipeline(f64);
+    var pipeline = try Pipeline.init(.{ .host_rate = 48_000, .model_rate = 48_000 });
+    try std.testing.expect(pipeline.validState());
+    pipeline.latency_samples +%= 1;
+    try std.testing.expect(!pipeline.validState());
+
+    var snapshot = plugin.gui_telemetry.ScalarSnapshot(f64).init(std.math.nan(f64));
+    try std.testing.expectEqual(@as(f64, 0.0), snapshot.load());
+    snapshot.store(0.75);
+    snapshot.store(std.math.inf(f64));
+    try std.testing.expectEqual(@as(f64, 0.75), snapshot.load());
+}
