@@ -533,3 +533,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - All 11 headless editor lifecycle targets and raw ABI checks passed. All 19 example plugins passed all 47 Steinberg validator tests.
 - Linux aarch64 and Windows x86-64 bundle matrices each passed 59/59 steps. The C-kernel matrix passed macOS universal, Linux aarch64 and x86-64, and Windows x86-64.
 - Performance budgets passed. Representative measurements were 289.0 ns per framework process block, 1,365.9 MiB/s bounded WAV import, 7.3 ns per sample-player frame with eight voices available, 597.7 ns per IR convolution sample, and 41.3 ns per fixed-rate frame at 48 kHz.
+
+### Autonomous Follow-up: Process Audio View Integrity
+
+- Audio input and output views now validate their public channel count, frame count, and retained slice lengths before access or mutation. Malformed views report no usable channels or frames, and output fill and clear operations become no-ops.
+- Process timing helpers return zero for a malformed direct sample rate instead of reaching assertion or invalid division paths.
+- Direct regressions cover oversized channel counts, mismatched retained frame counts, rejected output writes, and non-finite sample rates. The complete deterministic gate passed 111/111 steps and 4,192/4,192 tests.

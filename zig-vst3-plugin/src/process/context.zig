@@ -40,20 +40,10 @@ fn AudioChannelType(comptime ChannelsPointer: type) type {
     return @typeInfo(@typeInfo(ChannelsPointer).pointer.child).array.child;
 }
 
-fn AudioSampleType(comptime ChannelsPointer: type) type {
-    return @typeInfo(AudioChannelType(ChannelsPointer)).pointer.child;
-}
-
 fn audioChannel(channels: anytype, channel_count: usize, index: usize) ?AudioChannelType(@TypeOf(channels)) {
-    std.debug.assert(channel_count <= max_audio_channels);
+    if (channel_count > max_audio_channels) return null;
     if (index >= channel_count) return null;
     return channels[index];
-}
-
-fn audioSample(channels: anytype, channel_count: usize, channel_index: usize, frame_index: usize) ?AudioSampleType(@TypeOf(channels)) {
-    const channel_samples = audioChannel(channels, channel_count, channel_index) orelse return null;
-    if (frame_index >= channel_samples.len) return null;
-    return channel_samples[frame_index];
 }
 
 fn processFrameCount(input_channel_count: usize, input_frame_count: usize, output_frame_count: usize) usize {
@@ -74,7 +64,7 @@ fn validateProcessFrameCounts(
 }
 
 fn framesToSeconds(frame_count: usize, sample_rate: f64) f64 {
-    std.debug.assert(sample_rate > 0.0);
+    if (!common.isPositiveFinite(sample_rate)) return 0.0;
     return @as(f64, @floatFromInt(frame_count)) / sample_rate;
 }
 
@@ -112,11 +102,14 @@ pub fn AudioInputs(comptime Sample: type) type {
         }
 
         pub fn channel(self: *const Self, index: usize) ?[]const Sample {
+            if (!self.valid()) return null;
             return audioChannel(&self.channels, self.channel_count, index);
         }
 
         pub fn sample(self: *const Self, channel_index: usize, frame_index: usize) ?Sample {
-            return audioSample(&self.channels, self.channel_count, channel_index, frame_index);
+            const channel_samples = self.channel(channel_index) orelse return null;
+            if (frame_index >= channel_samples.len) return null;
+            return channel_samples[frame_index];
         }
 
         pub fn hasChannel(self: *const Self, index: usize) bool {
@@ -128,8 +121,7 @@ pub fn AudioInputs(comptime Sample: type) type {
         }
 
         pub fn channelCount(self: *const Self) usize {
-            std.debug.assert(self.channel_count <= max_audio_channels);
-            return self.channel_count;
+            return if (self.valid()) self.channel_count else 0;
         }
 
         pub fn isEmpty(self: *const Self) bool {
@@ -141,7 +133,16 @@ pub fn AudioInputs(comptime Sample: type) type {
         }
 
         pub fn frameCount(self: *const Self) usize {
-            return self.frame_count;
+            return if (self.valid()) self.frame_count else 0;
+        }
+
+        pub fn valid(self: *const Self) bool {
+            if (self.channel_count > max_audio_channels) return false;
+            if (self.channel_count == 0) return self.frame_count == 0;
+            for (self.channels[0..self.channel_count]) |channel_samples| {
+                if (channel_samples.len != self.frame_count) return false;
+            }
+            return true;
         }
     };
 }
@@ -165,11 +166,14 @@ pub fn AudioOutputs(comptime Sample: type) type {
         }
 
         pub fn channel(self: *const Self, index: usize) ?[]Sample {
+            if (!self.valid()) return null;
             return audioChannel(&self.channels, self.channel_count, index);
         }
 
         pub fn sample(self: *const Self, channel_index: usize, frame_index: usize) ?Sample {
-            return audioSample(&self.channels, self.channel_count, channel_index, frame_index);
+            const channel_samples = self.channel(channel_index) orelse return null;
+            if (frame_index >= channel_samples.len) return null;
+            return channel_samples[frame_index];
         }
 
         pub fn setSample(self: *const Self, channel_index: usize, frame_index: usize, value: Sample) bool {
@@ -188,8 +192,7 @@ pub fn AudioOutputs(comptime Sample: type) type {
         }
 
         pub fn channelCount(self: *const Self) usize {
-            std.debug.assert(self.channel_count <= max_audio_channels);
-            return self.channel_count;
+            return if (self.valid()) self.channel_count else 0;
         }
 
         pub fn isEmpty(self: *const Self) bool {
@@ -201,7 +204,16 @@ pub fn AudioOutputs(comptime Sample: type) type {
         }
 
         pub fn frameCount(self: *const Self) usize {
-            return self.frame_count;
+            return if (self.valid()) self.frame_count else 0;
+        }
+
+        pub fn valid(self: *const Self) bool {
+            if (self.channel_count > max_audio_channels) return false;
+            if (self.channel_count == 0) return self.frame_count == 0;
+            for (self.channels[0..self.channel_count]) |channel_samples| {
+                if (channel_samples.len != self.frame_count) return false;
+            }
+            return true;
         }
 
         pub fn fill(self: *const Self, value: Sample) void {
@@ -1609,6 +1621,24 @@ test "audio input view keeps its own channel slice headers" {
     try std.testing.expectEqual(@as(f32, 0.3), inputs.channel(1).?[0]);
 }
 
+test "audio input view rejects malformed public bounds" {
+    const samples = [_]f32{ 0.1, 0.2 };
+    const channels = [_][]const f32{&samples};
+    var inputs = try AudioInputs(f32).init(&channels);
+
+    inputs.channel_count = max_audio_channels + 1;
+    try std.testing.expect(!inputs.valid());
+    try std.testing.expectEqual(@as(usize, 0), inputs.channelCount());
+    try std.testing.expectEqual(@as(usize, 0), inputs.frameCount());
+    try std.testing.expectEqual(@as(?[]const f32, null), inputs.channel(0));
+    try std.testing.expectEqual(@as(?f32, null), inputs.sample(0, 0));
+
+    inputs.channel_count = 1;
+    inputs.frame_count = samples.len + 1;
+    try std.testing.expect(!inputs.valid());
+    try std.testing.expectEqual(@as(?[]const f32, null), inputs.channel(0));
+}
+
 test "audio views reject too many channels" {
     const input_samples = [_]f32{};
     var input_channels: [max_audio_channels + 1][]const f32 = undefined;
@@ -1679,6 +1709,34 @@ test "audio output view keeps its own channel slice headers" {
 
     try std.testing.expectEqual(@as(f32, 0.8), right[0]);
     try std.testing.expectEqual(@as(f32, 9.0), replacement[0]);
+}
+
+test "audio output view rejects malformed public bounds without writing" {
+    var samples = [_]f32{ 0.1, 0.2 };
+    const channels = [_][]f32{&samples};
+    var outputs = try AudioOutputs(f32).init(&channels);
+
+    outputs.channel_count = max_audio_channels + 1;
+    try std.testing.expect(!outputs.valid());
+    try std.testing.expectEqual(@as(usize, 0), outputs.channelCount());
+    try std.testing.expect(!outputs.setSample(0, 0, 0.9));
+    outputs.fill(0.8);
+    try std.testing.expectEqual(@as(f32, 0.1), samples[0]);
+
+    outputs.channel_count = 1;
+    outputs.frame_count = samples.len + 1;
+    try std.testing.expect(!outputs.valid());
+    outputs.clear();
+    try std.testing.expectEqual(@as(f32, 0.1), samples[0]);
+}
+
+test "process timing helpers fail closed for malformed sample rate" {
+    var context = try ProcessContext(f32).init(48_000.0, &.{}, &.{});
+    context.sample_rate = std.math.nan(f64);
+
+    try std.testing.expectEqual(@as(f64, 0.0), context.sampleDurationSeconds());
+    try std.testing.expectEqual(@as(f64, 0.0), context.blockDurationSeconds());
+    try std.testing.expectEqual(@as(f64, 0.0), context.sampleOffsetSeconds(12));
 }
 
 test "process context reports usable frame count" {
