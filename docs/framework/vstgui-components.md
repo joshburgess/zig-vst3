@@ -415,6 +415,8 @@ Idle, drag hover, validating, importing, ready, empty, unsupported type, excessi
 
 `gui_file_importer.Snapshot.validate` rejects impossible path counts, progress, and cancellation states. `gui_audio_file_importer.Snapshot.validate` also enforces the shared preview, frame, channel, sample-rate, and decoded-frame limits. The native bridge validates every snapshot returned by a plugin controller before narrowing fields or exposing it to the adapter. Unknown picker and import-command values are rejected before plugin callbacks. Controller-sourced graph callbacks receive at most 256 points, and oversized results are clamped to that capacity.
 
+Adapter boolean inputs use the C contract values 0 and 1. Other integers are rejected before changing persistent editor state, invoking menu actions, or sending piano notes. Piano commands also validate channel, pitch, finite velocity, velocity range, and note-on velocity before controller or host dispatch.
+
 `FileImporter` is supported. The component gallery, production channel strip, and production IR loader use the same public declaration, bounded path callback, picker fallback, keyboard interaction, accessibility semantics, and lifecycle contract. `FileDrop` remains a source-compatible alias. New code should use `FileImporter` and `EditorDescription.file_importers`.
 
 ### IR loader ownership reference

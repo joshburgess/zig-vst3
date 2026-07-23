@@ -434,3 +434,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Import snapshot validation now bounds path counts and requires a source path for active, ready, cancelled, and failed jobs.
 - Native callbacks decode file entry-point and command integers through explicit allowlists. Unknown C values are rejected before plugin configuration hooks. Controller graph capacities and producer results are clamped to the shared 256-point contract.
 - The deterministic suite passed 4,151/4,151 tests. Raw ABI checks passed, the component gallery passed all 47 Steinberg validator tests, and the Linux aarch64 and Windows x86-64 example bundle matrices each passed 59/59 steps.
+
+### Autonomous Follow-up: Native Boolean and Note Inputs
+
+- Persistent editor booleans, checked menu actions, and piano pressed state now accept only the C values 0 and 1. Other integers are rejected before state mutation or plugin and host dispatch.
+- Piano callbacks validate channel, pitch, finite velocity, velocity range, and nonzero note-on velocity through the shared GUI note contract before resolving a controller.
+- The deterministic suite passed 4,158/4,158 tests. Raw ABI checks passed, the component gallery and Sine Synth each passed all 47 Steinberg validator tests, and the Linux aarch64 and Windows x86-64 example bundle matrices each passed 59/59 steps.

@@ -11,6 +11,7 @@ const vstgui_adapter_enabled = @import("zig-vst3-gui-options").vstgui_adapter_en
 const gui_graph = @import("zig-vst3-plugin-core").gui_graph;
 const gui_file_drop = @import("zig-vst3-plugin-core").gui_file_drop;
 const gui_file_importer = @import("zig-vst3-plugin-core").gui_file_importer;
+const gui_note_transport = @import("gui_note_transport.zig");
 const gui_progress = @import("zig-vst3-plugin-core").gui_progress;
 const gui_range_selection = @import("zig-vst3-plugin-core").gui_range_selection;
 const gui_viewport = @import("zig-vst3-plugin-core").gui_viewport;
@@ -34,6 +35,25 @@ fn fileImportCommand(raw: c_int) ?gui_file_importer.Command {
         @intFromEnum(vstgui_editor_view.FileImportCommand.reset) => .reset,
         else => null,
     };
+}
+
+fn nativeBoolean(raw: c_int) ?bool {
+    return switch (raw) {
+        0 => false,
+        1 => true,
+        else => null,
+    };
+}
+
+fn nativeNoteCommand(channel: types.int32, pitch: types.int32, velocity: f64, pressed: types.int32) ?gui_note_transport.Command {
+    const command = gui_note_transport.Command{
+        .channel = std.math.cast(i16, channel) orelse return null,
+        .pitch = std.math.cast(i16, pitch) orelse return null,
+        .velocity = velocity,
+        .pressed = nativeBoolean(pressed) orelse return null,
+    };
+    command.validate() catch return null;
+    return command;
 }
 
 pub const Parameter = struct {
@@ -1499,8 +1519,9 @@ fn NativeBridge(comptime Controller: type) type {
 
         fn storeEditorBool(userdata: ?*anyopaque, field_id: u32, value: types.int32) callconv(.c) types.int32 {
             if (comptime !Controller.hasEditorState) return -1;
+            const decoded_value = nativeBoolean(value) orelse return -1;
             const iface = controller(userdata) orelse return -1;
-            Controller.editorState(iface).set(field_id, .{ .boolean = value != 0 }) catch return -1;
+            Controller.editorState(iface).set(field_id, .{ .boolean = decoded_value }) catch return -1;
             return 0;
         }
 
@@ -1510,8 +1531,9 @@ fn NativeBridge(comptime Controller: type) type {
             item_id: u32,
             checked: types.int32,
         ) callconv(.c) types.int32 {
+            const decoded_checked = nativeBoolean(checked) orelse return -1;
             const iface = controller(userdata) orelse return -1;
-            return if (Controller.performMenuAction(iface, menu_id, item_id, checked != 0) == types.kResultOk) 0 else -1;
+            return if (Controller.performMenuAction(iface, menu_id, item_id, decoded_checked) == types.kResultOk) 0 else -1;
         }
 
         fn invokeAction(
@@ -1612,14 +1634,9 @@ fn NativeBridge(comptime Controller: type) type {
             velocity: f64,
             pressed: types.int32,
         ) callconv(.c) types.int32 {
-            if (channel < 0 or channel > 15 or pitch < 0 or pitch > 127) return -1;
+            const command = nativeNoteCommand(channel, pitch, velocity, pressed) orelse return -1;
             const iface = controller(userdata) orelse return -1;
-            return if (Controller.sendGuiNote(iface, .{
-                .channel = @intCast(channel),
-                .pitch = @intCast(pitch),
-                .velocity = velocity,
-                .pressed = pressed != 0,
-            }) == types.kResultOk) 0 else -1;
+            return if (Controller.sendGuiNote(iface, command) == types.kResultOk) 0 else -1;
         }
 
         fn subscribe(userdata: *anyopaque, editor: *anyopaque) bool {
@@ -1827,4 +1844,22 @@ test "native file import enums reject unknown values" {
     try std.testing.expectEqual(gui_file_importer.Command.reset, fileImportCommand(2).?);
     try std.testing.expectEqual(@as(?gui_file_importer.Command, null), fileImportCommand(-1));
     try std.testing.expectEqual(@as(?gui_file_importer.Command, null), fileImportCommand(3));
+}
+
+test "native editor booleans and notes reject malformed values" {
+    try std.testing.expectEqual(false, nativeBoolean(0).?);
+    try std.testing.expectEqual(true, nativeBoolean(1).?);
+    try std.testing.expectEqual(@as(?bool, null), nativeBoolean(-1));
+    try std.testing.expectEqual(@as(?bool, null), nativeBoolean(2));
+
+    const press = nativeNoteCommand(0, 60, 0.75, 1).?;
+    try std.testing.expect(press.pressed);
+    try std.testing.expectEqual(@as(i16, 60), press.pitch);
+    try std.testing.expectEqual(@as(f64, 0.75), press.velocity);
+    try std.testing.expect(nativeNoteCommand(0, 60, 0.0, 0) != null);
+    try std.testing.expectEqual(@as(?gui_note_transport.Command, null), nativeNoteCommand(16, 60, 0.75, 1));
+    try std.testing.expectEqual(@as(?gui_note_transport.Command, null), nativeNoteCommand(0, 128, 0.75, 1));
+    try std.testing.expectEqual(@as(?gui_note_transport.Command, null), nativeNoteCommand(0, 60, 0.0, 1));
+    try std.testing.expectEqual(@as(?gui_note_transport.Command, null), nativeNoteCommand(0, 60, std.math.nan(f64), 1));
+    try std.testing.expectEqual(@as(?gui_note_transport.Command, null), nativeNoteCommand(0, 60, 0.75, 2));
 }
