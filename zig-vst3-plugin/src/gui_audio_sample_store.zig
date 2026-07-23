@@ -78,7 +78,11 @@ pub fn Store(comptime maximum_frames: usize) type {
             self.staging_slot = no_slot;
             self.latest_generation.store(generation, .release);
             const replaced = self.pending_slot.swap(slot_index, .acq_rel);
-            if (replaced != no_slot) self.slots[replaced].state.store(@intFromEnum(SlotState.free), .release);
+            if (slotIndex(replaced)) |replaced_index| {
+                if (replaced_index != slot_index) {
+                    self.slots[replaced_index].state.store(@intFromEnum(SlotState.free), .release);
+                }
+            }
         }
 
         pub fn cancel(self: *Self, generation: u64) bool {
@@ -97,22 +101,27 @@ pub fn Store(comptime maximum_frames: usize) type {
         pub fn adoptPending(self: *Self) bool {
             _ = realtime_audit.observe(.decoded_audio_adoption);
             const next = self.pending_slot.swap(no_slot, .acq_rel);
-            if (next == no_slot) return false;
-            const slot = &self.slots[next];
+            const next_index = slotIndex(next) orelse return false;
+            const slot = &self.slots[next_index];
             if (slot.state.load(.acquire) != @intFromEnum(SlotState.ready)) return false;
-            if (self.active_slot != no_slot) self.slots[self.active_slot].state.store(@intFromEnum(SlotState.free), .release);
+            if (slotIndex(self.active_slot)) |active_index| {
+                if (active_index != next_index) {
+                    self.slots[active_index].state.store(@intFromEnum(SlotState.free), .release);
+                }
+            }
             slot.state.store(@intFromEnum(SlotState.reading), .release);
             self.active_slot = next;
             return true;
         }
 
         pub fn activeMetadata(self: *const Self) ?Metadata {
-            if (self.active_slot == no_slot) return null;
-            return self.slots[self.active_slot].metadata;
+            const slot = self.activeSlot() orelse return null;
+            return slot.metadata;
         }
 
         pub fn sample(self: *const Self, channel: usize, position: f64) f32 {
-            const metadata = self.activeMetadata() orelse return 0.0;
+            const slot = self.activeSlot() orelse return 0.0;
+            const metadata = slot.metadata;
             if (metadata.frames == 0 or !std.math.isFinite(position)) return 0.0;
             const bounded = std.math.clamp(position, 0.0, @as(f64, @floatFromInt(metadata.frames - 1)));
             const first: usize = @intFromFloat(@floor(bounded));
@@ -120,8 +129,8 @@ pub fn Store(comptime maximum_frames: usize) type {
             const fraction: f32 = @floatCast(bounded - @floor(bounded));
             const source_channel = @min(channel, metadata.channels - 1);
             const channels: usize = metadata.channels;
-            const first_sample = self.slots[self.active_slot].samples[first * channels + source_channel];
-            const second_sample = self.slots[self.active_slot].samples[second * channels + source_channel];
+            const first_sample = slot.samples[first * channels + source_channel];
+            const second_sample = slot.samples[second * channels + source_channel];
             return first_sample + (second_sample - first_sample) * fraction;
         }
 
@@ -142,8 +151,22 @@ pub fn Store(comptime maximum_frames: usize) type {
         }
 
         fn staging(self: *Self) ?*Slot {
-            if (self.staging_slot == no_slot) return null;
-            return &self.slots[self.staging_slot];
+            const index = slotIndex(self.staging_slot) orelse return null;
+            const slot = &self.slots[index];
+            if (slot.state.load(.acquire) != @intFromEnum(SlotState.writing)) return null;
+            return slot;
+        }
+
+        fn activeSlot(self: *const Self) ?*const Slot {
+            const index = slotIndex(self.active_slot) orelse return null;
+            const slot = &self.slots[index];
+            if (slot.state.load(.acquire) != @intFromEnum(SlotState.reading)) return null;
+            validateMetadata(slot.metadata) catch return null;
+            return slot;
+        }
+
+        fn slotIndex(index: u8) ?usize {
+            return if (index < 3) index else null;
         }
     };
 }
@@ -171,6 +194,45 @@ test "sample store adoption is allowed in realtime scope" {
     const report = scope.leave();
     try std.testing.expect(report.clean());
     try std.testing.expectEqual(@as(u32, 1), report.count(.decoded_audio_adoption));
+}
+
+test "sample store rejects malformed public slot state" {
+    var store: Store(2) = .{};
+    try store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 1 });
+    try store.write(1, 0, &.{0.5});
+    try store.commit(1);
+    try std.testing.expect(store.adoptPending());
+
+    store.active_slot = 3;
+    try std.testing.expectEqual(@as(?Metadata, null), store.activeMetadata());
+    try std.testing.expectEqual(@as(f32, 0.0), store.sample(0, 0.0));
+
+    try store.begin(.{ .generation = 2, .sample_rate = 48_000, .channels = 1, .frames = 1 });
+    try store.write(2, 0, &.{0.75});
+    try store.commit(2);
+    try std.testing.expect(store.adoptPending());
+    try std.testing.expectEqual(@as(u64, 2), store.activeMetadata().?.generation);
+
+    store.pending_slot.store(3, .release);
+    try std.testing.expect(!store.adoptPending());
+    try std.testing.expectEqual(@as(u64, 2), store.activeMetadata().?.generation);
+
+    store.staging_slot = 3;
+    try std.testing.expectError(error.InvalidGeneration, store.write(3, 0, &.{0.25}));
+    try std.testing.expectError(error.InvalidGeneration, store.commit(3));
+    try std.testing.expect(!store.cancel(3));
+}
+
+test "sample store rejects malformed active metadata" {
+    var store: Store(2) = .{};
+    try store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 1 });
+    try store.write(1, 0, &.{0.5});
+    try store.commit(1);
+    try std.testing.expect(store.adoptPending());
+
+    store.slots[store.active_slot].metadata.channels = 0;
+    try std.testing.expectEqual(@as(?Metadata, null), store.activeMetadata());
+    try std.testing.expectEqual(@as(f32, 0.0), store.sample(0, 0.0));
 }
 
 test "sample store rejects stale incomplete and oversized transfers" {

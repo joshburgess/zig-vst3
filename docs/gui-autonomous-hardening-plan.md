@@ -557,3 +557,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The step sequencer now validates its retained step count, masks, cursor, anchor, and playhead before navigation or mutation.
 - Invalid state fails closed. Select-all can repair a stale selection when the remaining structural state is valid.
 - Direct regressions cover zero step count, selection bits above the configured range, and an out-of-range cursor. The focused sequencer suite passed 4/4 tests.
+
+### Autonomous Follow-up: Audio Sample Slot Integrity
+
+- The bounded audio sample store now checks active, pending, replaced, and staging slot indices before array access. Active reads also require the expected slot state and valid bounded metadata.
+- Malformed public slot state produces no active metadata or audio. A later valid publication remains adoptable without touching the invalid prior index.
+- Direct regressions cover invalid active, pending, and staging indices plus a zero-channel active slot. The focused sample-store suite passed 9/9 tests.
