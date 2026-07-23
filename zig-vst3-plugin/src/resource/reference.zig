@@ -113,9 +113,7 @@ pub fn Reference(comptime path_capacity: usize, comptime metadata_capacity: usiz
         }
 
         pub fn write(self: *const Self, writer: anytype) !void {
-            if (self.path.length == 0) return error.InvalidPath;
-            if (self.path.length > path_capacity) return error.PathTooLong;
-            if (self.metadata.length > metadata_capacity) return error.MetadataTooLong;
+            try self.validate();
             try writer.writeAll(magic);
             try writer.writeInt(u16, format_version, .little);
             try writer.writeByte(1);
@@ -126,6 +124,12 @@ pub fn Reference(comptime path_capacity: usize, comptime metadata_capacity: usiz
             try writer.writeAll(&self.identity.sha256);
             try writer.writeAll(self.path.slice());
             try writer.writeAll(self.metadata.slice());
+        }
+
+        pub fn validate(self: *const Self) !void {
+            if (self.path.length == 0) return error.InvalidPath;
+            if (self.path.length > path_capacity) return error.PathTooLong;
+            if (self.metadata.length > metadata_capacity) return error.MetadataTooLong;
         }
 
         pub fn read(reader: anytype) !Self {
@@ -164,9 +168,9 @@ pub fn Reference(comptime path_capacity: usize, comptime metadata_capacity: usiz
             return if (std.mem.eql(u8, self.path.slice(), candidate_path)) .ready else .moved;
         }
 
-        fn valid(self: *const Self) bool {
-            return self.path.length > 0 and self.path.length <= path_capacity and
-                self.metadata.length <= metadata_capacity;
+        pub fn valid(self: *const Self) bool {
+            self.validate() catch return false;
+            return true;
         }
     };
 }
@@ -181,7 +185,20 @@ pub fn State(comptime path_capacity: usize, comptime metadata_capacity: usize) t
         empty,
         linked: Linked,
 
+        pub fn validate(self: *const Self) !void {
+            switch (self.*) {
+                .empty => {},
+                .linked => |*linked| try linked.validate(),
+            }
+        }
+
+        pub fn valid(self: *const Self) bool {
+            self.validate() catch return false;
+            return true;
+        }
+
         pub fn encodedSize(self: *const Self) usize {
+            if (!self.valid()) return maximum_encoded_size + 1;
             return switch (self.*) {
                 .empty => 1,
                 .linked => |*linked| 1 + linked.encodedSize(),
@@ -189,6 +206,7 @@ pub fn State(comptime path_capacity: usize, comptime metadata_capacity: usize) t
         }
 
         pub fn write(self: *const Self, writer: anytype) !void {
+            try self.validate();
             switch (self.*) {
                 .empty => try writer.writeByte(0),
                 .linked => |*linked| {
@@ -253,6 +271,8 @@ test "resource reference rejects malformed direct storage lengths" {
     var encoded: [Stored.maximum_encoded_size]u8 = undefined;
 
     stored.path.length = 9;
+    try std.testing.expect(!stored.valid());
+    try std.testing.expectError(error.PathTooLong, stored.validate());
     try std.testing.expectEqual(Stored.maximum_encoded_size + 1, stored.encodedSize());
     var path_writer = std.Io.Writer.fixed(&encoded);
     try std.testing.expectError(error.PathTooLong, stored.write(&path_writer));
@@ -287,10 +307,27 @@ test "resource state represents empty and linked resources" {
 
     const linked = try Reference(32, 16).init("/models/a.nam", Identity.fromBytes("fixture"), 1, "Linear");
     const state: Stored = .{ .linked = linked };
+    try std.testing.expect(state.valid());
     var linked_bytes: [Stored.maximum_encoded_size]u8 = undefined;
     var linked_writer = std.Io.Writer.fixed(&linked_bytes);
     try state.write(&linked_writer);
     var linked_reader = std.Io.Reader.fixed(linked_bytes[0..linked_writer.end]);
     const restored = try Stored.read(&linked_reader);
     try std.testing.expectEqualStrings("/models/a.nam", restored.linked.path.slice());
+}
+
+test "resource state rejects malformed linked storage transactionally" {
+    const Stored = State(8, 8);
+    const Linked = Reference(8, 8);
+    var state: Stored = .{ .linked = try Linked.init("model", Identity.fromBytes("fixture"), 1, "linear") };
+    state.linked.path.length = 9;
+
+    try std.testing.expect(!state.valid());
+    try std.testing.expectError(error.PathTooLong, state.validate());
+    try std.testing.expectEqual(Stored.maximum_encoded_size + 1, state.encodedSize());
+
+    var bytes: [Stored.maximum_encoded_size]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(error.PathTooLong, state.write(&writer));
+    try std.testing.expectEqual(@as(usize, 0), writer.end);
 }

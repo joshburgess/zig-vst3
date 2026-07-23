@@ -191,6 +191,9 @@ test "installed package exposes toolkit-neutral GUI models" {
         1,
         "Linear",
     );
+    try std.testing.expect(reference.valid());
+    const reference_state = plugin.resource.ReferenceState(64, 32){ .linked = reference };
+    try std.testing.expect(reference_state.valid());
     try std.testing.expectEqual(
         plugin.resource.RecoveryStatus.ready,
         reference.classifyCandidate("/models/example.nam", plugin.resource.Identity.fromBytes("fixture")),
