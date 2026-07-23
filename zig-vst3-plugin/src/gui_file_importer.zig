@@ -45,7 +45,11 @@ pub const Snapshot = struct {
         if (self.completed_units > self.total_units) return error.InvalidImportProgress;
         if (self.cancellation_pending and !self.canCancel()) return error.InvalidCancellationState;
         switch (self.status) {
-            .idle, .validating, .empty, .unsupported_file, .capacity_limit, .invalid_path => {
+            .idle, .empty, .unsupported_file, .capacity_limit, .invalid_path => {
+                if (self.completed_units != 0 or self.total_units != 0) return error.InvalidImportProgress;
+            },
+            .validating => {
+                if (self.path_count == 0) return error.InvalidPathCount;
                 if (self.completed_units != 0 or self.total_units != 0) return error.InvalidImportProgress;
             },
             .importing => {
@@ -112,7 +116,9 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
         }
 
         pub fn startImport(self: *Self, total_units: usize) !void {
-            if (self.status != .validating or total_units == 0) return error.InvalidImportTransition;
+            if (self.status != .validating or total_units == 0 or !self.validRetainedPaths()) {
+                return error.InvalidImportTransition;
+            }
             self.completed_units = 0;
             self.total_units = total_units;
             self.status = .importing;
@@ -165,7 +171,7 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
         }
 
         pub fn retry(self: *Self) !void {
-            if (self.zone.path_count == 0 or (self.status != .cancelled and self.status != .failed)) {
+            if (!self.validRetainedPaths() or (self.status != .cancelled and self.status != .failed)) {
                 return error.InvalidImportTransition;
             }
             self.completed_units = 0;
@@ -197,8 +203,19 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
         }
 
         pub fn path(self: *const Self, index: usize) ?[]const u8 {
-            if (index >= self.zone.path_count) return null;
-            return self.zone.paths[index].slice();
+            const path_count: usize = self.zone.path_count;
+            if (path_count > file_capacity or index >= path_count or index >= file_capacity) return null;
+            const value = self.zone.paths[index].slice();
+            return if (value.len == 0) null else value;
+        }
+
+        fn validRetainedPaths(self: *const Self) bool {
+            const path_count: usize = self.zone.path_count;
+            if (path_count == 0 or path_count > file_capacity) return false;
+            for (0..path_count) |index| {
+                if (self.zone.paths[index].slice().len == 0) return false;
+            }
+            return true;
         }
     };
 }
@@ -344,4 +361,24 @@ test "import model generated transition sequences remain bounded" {
             }
         }
     }
+}
+
+test "import model rejects malformed direct retained paths" {
+    const Importer = Model(1, 1);
+    var importer = try Importer.init(&.{".wav"});
+    try std.testing.expectEqual(Status.validating, importer.begin(.picker, &.{"/tmp/sample.wav"}));
+
+    importer.zone.path_count = 2;
+    try std.testing.expectEqual(@as(?[]const u8, null), importer.path(0));
+    try std.testing.expectError(error.InvalidImportTransition, importer.startImport(1));
+
+    importer.zone.path_count = 1;
+    importer.zone.paths[0].len = 0;
+    try std.testing.expectEqual(@as(?[]const u8, null), importer.path(0));
+    try std.testing.expectError(error.InvalidImportTransition, importer.startImport(1));
+
+    var malformed_snapshot = importer.snapshot();
+    malformed_snapshot.status = .validating;
+    malformed_snapshot.path_count = 0;
+    try std.testing.expectError(error.InvalidPathCount, malformed_snapshot.validate());
 }

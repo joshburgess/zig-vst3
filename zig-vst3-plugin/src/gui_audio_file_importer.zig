@@ -247,6 +247,7 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         pub fn copyPreview(self: *Self, output: []PreviewPoint) usize {
             self.lock();
             defer self.unlock();
+            if (self.preview_points > preview_capacity) return 0;
             const count = @min(output.len, self.preview_points);
             @memcpy(output[0..count], self.preview[0..count]);
             return count;
@@ -255,7 +256,11 @@ pub fn DecodedImporter(comptime decoded_frame_capacity: usize) type {
         pub fn copyDecoded(self: *Self, sample_offset: usize, output: []f32) usize {
             self.lock();
             defer self.unlock();
-            const sample_count = self.decoded_frames * self.channels;
+            if (self.decoded_frames > decoded_frame_capacity or self.channels == 0 or self.channels > maximum_channels) {
+                return 0;
+            }
+            const sample_count = std.math.mul(usize, self.decoded_frames, self.channels) catch return 0;
+            if (sample_count > self.decoded.len) return 0;
             if (sample_offset >= sample_count) return 0;
             const count = @min(output.len, sample_count - sample_offset);
             @memcpy(output[0..count], self.decoded[sample_offset .. sample_offset + count]);
@@ -984,6 +989,25 @@ test "audio importer acknowledges cancellation before teardown joins the worker"
     importer.deinit();
     try std.testing.expectEqual(gui_file_importer.Status.cancelled, importer.snapshot().import.status);
     try std.testing.expectEqual(Failure.cancelled, importer.snapshot().failure);
+}
+
+test "audio importer copy accessors reject malformed direct counts" {
+    var importer = DecodedImporter(4).init();
+    defer importer.deinit();
+    var preview: [preview_capacity + 1]PreviewPoint = undefined;
+    var decoded: [maximum_channels * 4]f32 = undefined;
+
+    importer.preview_points = preview_capacity + 1;
+    try std.testing.expectEqual(@as(usize, 0), importer.copyPreview(&preview));
+
+    importer.decoded_frames = 5;
+    importer.channels = 2;
+    try std.testing.expectEqual(@as(usize, 0), importer.copyDecoded(0, &decoded));
+    importer.decoded_frames = 4;
+    importer.channels = maximum_channels + 1;
+    try std.testing.expectEqual(@as(usize, 0), importer.copyDecoded(0, &decoded));
+    importer.channels = 0;
+    try std.testing.expectEqual(@as(usize, 0), importer.copyDecoded(0, &decoded));
 }
 
 fn generatedAudioResultIsBounded(info: AudioInfo, file_size: usize) bool {

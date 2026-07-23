@@ -501,3 +501,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Fixed graph series reject oversized direct counts. Preset-browser operations validate retained counts, names, search text, and unique identifiers before collection access.
 - Loading a preset now verifies that the selected identifier still exists and matches the active filter. Persistence rejects stale or filtered selections instead of storing inconsistent state.
 - Direct regressions cover oversized graph and preset counts, duplicate graph points, malformed transaction backups, oversized preset text, and recovery. The complete deterministic gate passed 111/111 steps and 4,186/4,186 tests.
+
+### Autonomous Follow-up: Importer Collection Integrity
+
+- The import model now requires a bounded nonempty retained path set before starting or retrying work. Path lookup checks both the retained count and compile-time capacity, and malformed inline paths return no value.
+- A validating snapshot without a source path is rejected. This aligns the toolkit-neutral model with the native callback contract and prevents impossible work states from reaching a decoder.
+- Audio preview and decoded-sample copy accessors validate public counters, channel counts, decoded capacity, multiplication, and backing storage before slicing.
+- Direct regressions cover oversized path counts, empty retained paths, oversized preview and frame counts, and invalid channel counts. The complete deterministic gate passed 111/111 steps and 4,188/4,188 tests.
