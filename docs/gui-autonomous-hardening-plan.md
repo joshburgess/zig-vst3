@@ -464,3 +464,8 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 
 - Viewport zoom and pan mutations now validate the supplied configuration before arithmetic, so a malformed replacement configuration is rejected without reaching invalid clamp bounds or changing state.
 - Direct regressions cover a reversed zoom range, a non-finite zoom step, and a non-finite scroll step. The complete deterministic gate passed 111/111 steps and 4,176/4,176 tests.
+
+### Autonomous Follow-up: Range Selection Mutation Validation
+
+- Range selection set, adjust, and replace mutations now validate the supplied configuration before clamp and span arithmetic. Malformed replacement configurations leave both handle values and active selection unchanged.
+- Direct regressions cover reversed bounds and a non-finite minimum span. The complete deterministic gate passed 111/111 steps and 4,177/4,177 tests.

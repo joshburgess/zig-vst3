@@ -50,6 +50,7 @@ pub const State = struct {
     }
 
     pub fn set(self: *State, config: Config, handle: Handle, target: f64) bool {
+        config.validate() catch return false;
         if (!std.math.isFinite(target)) return false;
         const previous = self.*;
         switch (handle) {
@@ -65,6 +66,7 @@ pub const State = struct {
     }
 
     pub fn replace(self: *State, config: Config, first: f64, second: f64) bool {
+        config.validate() catch return false;
         if (!std.math.isFinite(first) or !std.math.isFinite(second)) return false;
         const low = std.math.clamp(@min(first, second), config.minimum, config.maximum);
         const high = std.math.clamp(@max(first, second), config.minimum, config.maximum);
@@ -146,6 +148,41 @@ test "range selection replacement preserves direction and minimum span" {
     try std.testing.expectApproxEqAbs(0.4, state.start, 1e-12);
     try std.testing.expectApproxEqAbs(0.7, state.end, 1e-12);
     try std.testing.expectEqual(Handle.start, state.active);
+}
+
+test "range selection mutations reject invalid replacement configurations" {
+    const config = Config{
+        .minimum = 0.0,
+        .maximum = 1.0,
+        .initial_start = 0.2,
+        .initial_end = 0.8,
+        .minimum_span = 0.1,
+        .step = 0.01,
+    };
+    var state = try State.init(config);
+    const initial = state;
+    const invalid = Config{
+        .minimum = 1.0,
+        .maximum = 0.0,
+        .initial_start = 0.2,
+        .initial_end = 0.8,
+        .minimum_span = 0.1,
+        .step = 0.01,
+    };
+
+    try std.testing.expect(!state.set(invalid, .start, 0.5));
+    try std.testing.expectEqual(initial, state);
+    try std.testing.expect(!state.adjust(.{
+        .minimum = 0.0,
+        .maximum = 1.0,
+        .initial_start = 0.2,
+        .initial_end = 0.8,
+        .minimum_span = std.math.nan(f64),
+        .step = 0.01,
+    }, 0.1));
+    try std.testing.expectEqual(initial, state);
+    try std.testing.expect(!state.replace(invalid, 0.3, 0.7));
+    try std.testing.expectEqual(initial, state);
 }
 
 test "range selection generated operation sequences preserve every invariant" {
