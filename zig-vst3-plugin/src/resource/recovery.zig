@@ -295,10 +295,38 @@ pub fn Recovery(comptime Config: type) type {
             }
 
             pub fn metadata(self: *const PresentationSnapshot) []const u8 {
+                if (!self.reference.valid()) return "";
                 return switch (self.reference) {
                     .empty => "",
                     .linked => |*linked| linked.metadata.slice(),
                 };
+            }
+
+            pub fn validate(self: *const PresentationSnapshot) !void {
+                try self.reference.validate();
+                try self.progress.validate();
+                if (self.progress.generation != self.generation) return error.InvalidPresentationGeneration;
+                const expected_progress: gui_progress.State = switch (self.status) {
+                    .restoring => .running,
+                    .ready => .complete,
+                    .missing, .changed, .unsupported, .failed => .failed,
+                    .empty, .moved => .idle,
+                };
+                if (self.progress.state != expected_progress) return error.InvalidPresentationProgress;
+                if (self.can_cancel and (self.status != .restoring or self.cancellation_pending)) {
+                    return error.InvalidPresentationActions;
+                }
+                if (self.cancellation_pending and self.status != .restoring) {
+                    return error.InvalidPresentationActions;
+                }
+                if (self.can_retry and self.progress.state != .failed) {
+                    return error.InvalidPresentationActions;
+                }
+            }
+
+            pub fn valid(self: *const PresentationSnapshot) bool {
+                self.validate() catch return false;
+                return true;
             }
         };
 
@@ -587,6 +615,7 @@ test "resource recovery presents one bounded generation to the GUI" {
     while (!synchronization.started.load(.acquire)) std.Thread.yield() catch {};
 
     var presentation = recovery.presentationSnapshot();
+    try std.testing.expect(presentation.valid());
     try std.testing.expectEqual(reference_mod.RecoveryStatus.restoring, presentation.status);
     try std.testing.expectEqual(gui_progress.State.running, presentation.progress.state);
     try std.testing.expectEqual(gui_progress.Mode.determinate, presentation.progress.mode);
@@ -599,11 +628,13 @@ test "resource recovery presents one bounded generation to the GUI" {
 
     try std.testing.expect(recovery.requestCancel());
     presentation = recovery.presentationSnapshot();
+    try std.testing.expect(presentation.valid());
     try std.testing.expect(presentation.cancellation_pending);
     synchronization.release.store(true, .release);
     recovery.waitAndPoll();
 
     presentation = recovery.presentationSnapshot();
+    try std.testing.expect(presentation.valid());
     try std.testing.expectEqual(reference_mod.RecoveryStatus.failed, presentation.status);
     try std.testing.expectEqual(gui_progress.State.failed, presentation.progress.state);
     try std.testing.expect(!presentation.can_cancel);
@@ -613,11 +644,23 @@ test "resource recovery presents one bounded generation to the GUI" {
     try std.testing.expect(recovery.retry());
     recovery.waitAndPoll();
     presentation = recovery.presentationSnapshot();
+    try std.testing.expect(presentation.valid());
     try std.testing.expectEqual(reference_mod.RecoveryStatus.ready, presentation.status);
     try std.testing.expectEqual(gui_progress.State.complete, presentation.progress.state);
     try std.testing.expectEqual(@as(f64, 1.0), presentation.progress.value);
     try std.testing.expectEqualStrings("ready model", presentation.metadata());
     try presentation.progress.validate();
+
+    var malformed = presentation;
+    malformed.progress.generation +%= 1;
+    try std.testing.expectError(error.InvalidPresentationGeneration, malformed.validate());
+    malformed = presentation;
+    malformed.can_cancel = true;
+    try std.testing.expectError(error.InvalidPresentationActions, malformed.validate());
+    malformed = presentation;
+    malformed.reference.linked.path.length = TestRecovery.component_state_maximum_encoded_size;
+    try std.testing.expect(!malformed.valid());
+    try std.testing.expectEqualStrings("", malformed.metadata());
 }
 
 test "resource recovery restores, detects changes, and relinks moved content" {

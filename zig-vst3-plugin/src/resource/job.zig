@@ -371,6 +371,9 @@ pub fn Job(comptime Config: type) type {
                     },
                     .cancelled => self.status = .cancelled,
                 }
+                if (work.generation == self.generation) {
+                    self.cancelled_generation.store(0, .release);
+                }
                 const continue_running = self.queued != null and !self.shutting_down.load(.acquire);
                 if (!continue_running) self.worker_running.store(false, .release);
                 self.unlock();
@@ -573,7 +576,10 @@ test "resource job cancellation and teardown stop cooperative workers" {
     while (!synchronization.started.load(.acquire)) std.Thread.yield() catch {};
     try std.testing.expect(cancelled_job.requestCancel());
     cancelled_job.wait();
-    try std.testing.expectEqual(Status.cancelled, cancelled_job.snapshot().status);
+    const cancelled_snapshot = cancelled_job.snapshot();
+    try std.testing.expectEqual(Status.cancelled, cancelled_snapshot.status);
+    try std.testing.expect(!cancelled_snapshot.cancellation_pending);
+    try std.testing.expect(cancelled_snapshot.valid());
     cancelled_job.deinit();
 
     synchronization.started.store(false, .release);
