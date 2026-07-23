@@ -722,6 +722,13 @@ pub const Events = struct {
         return .{ .items = items };
     }
 
+    pub fn valid(self: Events, frame_count: usize) bool {
+        for (self.items) |item| {
+            item.validate(frame_count) catch return false;
+        }
+        return true;
+    }
+
     pub fn eventCount(self: Events) usize {
         return self.items.len;
     }
@@ -1454,6 +1461,8 @@ test "events validate block offsets and count kinds" {
     };
     const view = try Events.init(&items, 4);
 
+    try std.testing.expect(view.valid(4));
+    try std.testing.expect(!view.valid(3));
     try std.testing.expectEqual(@as(usize, 10), view.eventCount());
     try std.testing.expect(!view.isEmpty());
     try std.testing.expect(view.hasEvents());
@@ -2266,6 +2275,7 @@ test "events reject invalid normalized values" {
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&infinite_aftertouch, 4));
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&wide_bend, 4));
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, Events.init(&infinite_bend, 4));
+    try std.testing.expect(!(Events{ .items = &nan_cc }).valid(4));
 }
 
 test "events reject invalid MIDI metadata" {
@@ -2286,6 +2296,7 @@ test "events reject invalid MIDI metadata" {
     try std.testing.expectError(error.InvalidEventPitch, Events.init(&bad_pitch, 4));
     try std.testing.expectError(error.InvalidEventControlNumber, Events.init(&bad_control, 4));
     try std.testing.expectError(error.InvalidEventBusIndex, Events.init(&bad_bus, 4));
+    try std.testing.expect(!(Events{ .items = &bad_bus }).valid(4));
 }
 
 test "events expose stable MIDI pitch indexes" {
