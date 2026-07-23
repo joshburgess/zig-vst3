@@ -422,3 +422,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Graph and text telemetry now share explicit framework limits of 256 points and 96 bytes. Both retained consumers and reflected producers enforce those limits before invoking an ABI callback or exposing a Zig slice.
 - Regressions pass oversized capacities through both sides of the telemetry boundary, verify the callback receives only the bounded region, and clamp an oversized producer result to the same effective capacity.
 - The deterministic test suite and raw ABI checks passed. The telemetry-using Model Shell passed all 47 Steinberg validator tests, and the Linux aarch64 and Windows x86-64 example bundle matrices each passed 59/59 steps.
+
+### Autonomous Follow-up: Import Snapshot Validation
+
+- Toolkit-neutral import snapshots now reject impossible progress, cancellation, preview, channel, sample-rate, frame, and decoded-frame combinations.
+- The native editor bridge validates a controller snapshot before narrowing its fields or writing adapter-visible output. A malformed custom controller cannot trap the bridge with an oversized preview count or publish inconsistent progress.
+- The deterministic suite passed 4,144/4,144 tests. Raw ABI checks passed, the Sample Player and IR Loader each passed all 47 Steinberg validator tests, and the Linux aarch64 and Windows x86-64 example bundle matrices each passed 59/59 steps.

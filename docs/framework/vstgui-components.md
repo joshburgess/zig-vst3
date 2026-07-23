@@ -413,6 +413,8 @@ The operating-system picker is the primary action. Pointer activation, Enter, Sp
 
 Idle, drag hover, validating, importing, ready, empty, unsupported type, excessive count, invalid path, cancelled, recoverable failure, and disabled states have distinct visible text and semantic values. Active imports expose bounded progress. Cancel and Retry replace the primary action only while those commands are available. Status, icons or shapes, action labels, and accessibility values carry meaning without relying on color.
 
+`gui_file_importer.Snapshot.validate` rejects impossible progress and cancellation states. `gui_audio_file_importer.Snapshot.validate` also enforces the shared preview, frame, channel, sample-rate, and decoded-frame limits. The native bridge validates every snapshot returned by a plugin controller before narrowing fields or exposing it to the adapter.
+
 `FileImporter` is supported. The component gallery, production channel strip, and production IR loader use the same public declaration, bounded path callback, picker fallback, keyboard interaction, accessibility semantics, and lifecycle contract. `FileDrop` remains a source-compatible alias. New code should use `FileImporter` and `EditorDescription.file_importers`.
 
 ### IR loader ownership reference

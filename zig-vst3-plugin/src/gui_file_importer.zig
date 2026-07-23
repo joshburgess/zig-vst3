@@ -40,6 +40,23 @@ pub const Snapshot = struct {
             @as(f64, @floatFromInt(self.total_units));
     }
 
+    pub fn validate(self: Snapshot) !void {
+        if (self.completed_units > self.total_units) return error.InvalidImportProgress;
+        if (self.cancellation_pending and !self.canCancel()) return error.InvalidCancellationState;
+        switch (self.status) {
+            .idle, .validating, .empty, .unsupported_file, .capacity_limit, .invalid_path => {
+                if (self.completed_units != 0 or self.total_units != 0) return error.InvalidImportProgress;
+            },
+            .importing => {
+                if (self.total_units == 0) return error.InvalidImportProgress;
+            },
+            .ready => {
+                if (self.total_units == 0 or self.completed_units != self.total_units) return error.InvalidImportProgress;
+            },
+            .cancelled, .failed => {},
+        }
+    }
+
     pub fn canCancel(self: Snapshot) bool {
         return self.status == .validating or self.status == .importing;
     }
@@ -210,6 +227,32 @@ test "import model reports bounded selection failures" {
     try std.testing.expectEqual(Status.unsupported_file, importer.begin(.drop, &.{"a.aiff"}));
     const oversized = [_]u8{'a'} ** (gui_file_drop.maximum_path_bytes + 1);
     try std.testing.expectEqual(Status.invalid_path, importer.begin(.drop, &.{&oversized}));
+}
+
+test "import snapshot rejects impossible progress and cancellation" {
+    const valid = Snapshot{
+        .status = .importing,
+        .entry_point = .picker,
+        .path_count = 1,
+        .completed_units = 4,
+        .total_units = 8,
+        .generation = 3,
+        .cancellation_pending = true,
+    };
+    try valid.validate();
+
+    var malformed = valid;
+    malformed.completed_units = 9;
+    try std.testing.expectError(error.InvalidImportProgress, malformed.validate());
+    malformed = valid;
+    malformed.status = .ready;
+    malformed.cancellation_pending = false;
+    try std.testing.expectError(error.InvalidImportProgress, malformed.validate());
+    malformed = valid;
+    malformed.status = .idle;
+    malformed.completed_units = 0;
+    malformed.total_units = 0;
+    try std.testing.expectError(error.InvalidCancellationState, malformed.validate());
 }
 
 test "import model cancellation and retry preserve the copied job" {

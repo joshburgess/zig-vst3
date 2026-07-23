@@ -1545,6 +1545,7 @@ fn NativeBridge(comptime Controller: type) type {
         ) callconv(.c) types.int32 {
             const iface = controller(userdata) orelse return -1;
             const snapshot = Controller.loadFileImport(iface, drop_id) orelse return -1;
+            snapshot.validate() catch return -1;
             output.* = .{
                 .status = @enumFromInt(@intFromEnum(snapshot.import.status)),
                 .failure = @enumFromInt(@intFromEnum(snapshot.failure)),

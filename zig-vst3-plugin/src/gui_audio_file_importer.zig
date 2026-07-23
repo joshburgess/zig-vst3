@@ -7,6 +7,8 @@ pub const preview_capacity = 256;
 pub const maximum_input_bytes = 32 * 1024 * 1024;
 pub const maximum_sample_frames = 8 * 1024 * 1024;
 pub const maximum_channels = 2;
+pub const minimum_sample_rate = 8_000;
+pub const maximum_sample_rate = 384_000;
 
 pub const Failure = enum {
     none,
@@ -32,7 +34,67 @@ pub const Snapshot = struct {
     sample_frames: u64,
     preview_points: usize,
     decoded_frames: usize,
+
+    pub fn validate(self: Snapshot) !void {
+        try self.import.validate();
+        if (self.preview_points > preview_capacity or
+            self.sample_frames > maximum_sample_frames or
+            self.decoded_frames > maximum_sample_frames or
+            self.decoded_frames > self.sample_frames or
+            self.channels > maximum_channels)
+        {
+            return error.InvalidAudioImportBounds;
+        }
+        const has_metadata = self.sample_rate != 0 or self.channels != 0 or self.sample_frames != 0;
+        if (has_metadata and
+            (self.sample_rate < minimum_sample_rate or
+                self.sample_rate > maximum_sample_rate or
+                self.channels == 0 or
+                self.sample_frames == 0))
+        {
+            return error.InvalidAudioImportMetadata;
+        }
+        if (!has_metadata and (self.preview_points != 0 or self.decoded_frames != 0)) {
+            return error.InvalidAudioImportMetadata;
+        }
+        if (self.import.status == .ready and self.preview_points == 0) return error.InvalidAudioImportMetadata;
+    }
 };
+
+test "audio import snapshot validates bounded metadata" {
+    const import_snapshot = gui_file_importer.Snapshot{
+        .status = .ready,
+        .entry_point = .picker,
+        .path_count = 1,
+        .completed_units = 16,
+        .total_units = 16,
+        .generation = 4,
+        .cancellation_pending = false,
+    };
+    const valid = Snapshot{
+        .import = import_snapshot,
+        .failure = .none,
+        .sample_rate = 48_000,
+        .channels = 2,
+        .sample_frames = 8,
+        .preview_points = 8,
+        .decoded_frames = 8,
+    };
+    try valid.validate();
+
+    var malformed = valid;
+    malformed.preview_points = preview_capacity + 1;
+    try std.testing.expectError(error.InvalidAudioImportBounds, malformed.validate());
+    malformed = valid;
+    malformed.decoded_frames = 9;
+    try std.testing.expectError(error.InvalidAudioImportBounds, malformed.validate());
+    malformed = valid;
+    malformed.sample_rate = maximum_sample_rate + 1;
+    try std.testing.expectError(error.InvalidAudioImportMetadata, malformed.validate());
+    malformed = valid;
+    malformed.channels = 0;
+    try std.testing.expectError(error.InvalidAudioImportMetadata, malformed.validate());
+}
 
 const ByteOrder = enum { little, big };
 
@@ -429,7 +491,7 @@ fn parseWav(io: std.Io, file: std.Io.File, file_size: u64, header: [12]u8) !Audi
             const bits_per_sample = readU16(bytes[14..16]);
             if (audio_format != 1 or channels == 0 or channels > maximum_channels or
                 (bits_per_sample != 16 and bits_per_sample != 24 and bits_per_sample != 32) or
-                sample_rate < 8_000 or sample_rate > 384_000) return error.UnsupportedFormat;
+                sample_rate < minimum_sample_rate or sample_rate > maximum_sample_rate) return error.UnsupportedFormat;
             const expected_align = channels * (bits_per_sample / 8);
             if (block_align != expected_align or byte_rate != sample_rate * block_align) return error.Malformed;
             format = .{
@@ -545,7 +607,7 @@ fn decodeExtendedSampleRate(bytes: []const u8) !u32 {
     if (exponent == 0 or exponent == 0x7fff or mantissa & (@as(u64, 1) << 63) == 0) return error.UnsupportedFormat;
     const shift: i32 = @as(i32, exponent) - 16383 - 63;
     const value = std.math.ldexp(@as(f64, @floatFromInt(mantissa)), shift);
-    if (!std.math.isFinite(value) or value < 8_000.0 or value > 384_000.0) return error.UnsupportedFormat;
+    if (!std.math.isFinite(value) or value < minimum_sample_rate or value > maximum_sample_rate) return error.UnsupportedFormat;
     const rounded = @round(value);
     if (@abs(value - rounded) > 0.001) return error.UnsupportedFormat;
     return @intFromFloat(rounded);

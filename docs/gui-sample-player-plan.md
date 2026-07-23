@@ -123,6 +123,7 @@ Record committed milestones here with test counts, validator results, performanc
 - A three-slot fixed-capacity sample store stages controller writes and publishes only complete generations. The audio thread adopts one ready generation at block boundaries and never observes partial or stale media.
 - Sample-store writes validate every value before copying or advancing the staged offset. A non-finite chunk can be replaced by a valid chunk in the same generation, while commit remains unavailable until every finite sample arrives.
 - Controller transport validates snapshot bounds, callback lengths, finite payloads, and source identity. It cancels publication if the importer generation or media metadata changes before commit.
+- Shared importer snapshots validate progress, cancellation, preview, channel, sample-rate, frame, and decoded-frame invariants before the native editor bridge publishes them.
 - Receiver transport rejects host-supplied sample rate, channel count, frame count, and chunk offset values that do not fit the bounded framework types.
 - A direct receiver recovery test injects an extreme offset and a non-finite payload into an active transfer, then proves a valid replacement chunk can still commit and become active.
 - Note and decoded-audio routing tests reject unrelated IDs, missing attributes, malformed note values, wrong targets, and unknown operations without publishing partial state.
