@@ -140,3 +140,51 @@ test "installed package exposes block boundary parameter latching" {
     try std.testing.expectEqual(@as(f64, 0.75), latch.nextBlockValue());
     try std.testing.expectEqual(@as(f64, 0.75), latch.beginBlock(.{}, 0.75));
 }
+
+test "installed package exposes toolkit-neutral GUI models" {
+    const range = try plugin.gui_graph.Range.init(0.0, 1.0);
+    const Envelope = plugin.gui_graph.EditableEnvelope(4);
+    var envelope = try Envelope.init(range, range, .{}, &.{
+        .{ .id = 1, .position = .{ .x = 0.0, .y = 0.0 } },
+        .{ .id = 2, .position = .{ .x = 1.0, .y = 1.0 } },
+    });
+    try envelope.begin();
+    _ = try envelope.add(.{ .x = 0.5, .y = 0.25 });
+    envelope.finish();
+    try std.testing.expect(envelope.valid());
+
+    const viewport_config = plugin.gui_viewport.Config{ .initial_zoom = 2.0 };
+    var viewport = try plugin.gui_viewport.State.init(viewport_config);
+    try std.testing.expect(viewport.zoomIn(viewport_config, 0.5, 0.5));
+    try std.testing.expect(viewport.valid(viewport_config));
+
+    const selection_config = plugin.gui_range_selection.Config{
+        .minimum = 0.0,
+        .maximum = 1.0,
+        .initial_start = 0.2,
+        .initial_end = 0.8,
+        .minimum_span = 0.1,
+        .step = 0.01,
+    };
+    var selection = try plugin.gui_range_selection.State.init(selection_config);
+    try std.testing.expect(selection.set(selection_config, .start, 0.3));
+    try std.testing.expect(selection.valid(selection_config));
+
+    const Presets = plugin.gui_preset_browser.Browser(2);
+    var presets = Presets{};
+    try presets.add(try plugin.gui_preset_browser.Preset.init(1, "Clean"));
+    try presets.add(try plugin.gui_preset_browser.Preset.init(2, "Driven"));
+    try presets.setSearch("drive");
+    try std.testing.expectEqual(@as(usize, 1), presets.matchingCount());
+
+    const reference = try plugin.resource.Reference(64, 32).init(
+        "/models/example.nam",
+        plugin.resource.Identity.fromBytes("fixture"),
+        1,
+        "Linear",
+    );
+    try std.testing.expectEqual(
+        plugin.resource.RecoveryStatus.ready,
+        reference.classifyCandidate("/models/example.nam", plugin.resource.Identity.fromBytes("fixture")),
+    );
+}

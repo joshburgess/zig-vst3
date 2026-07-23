@@ -508,3 +508,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - A validating snapshot without a source path is rejected. This aligns the toolkit-neutral model with the native callback contract and prevents impossible work states from reaching a decoder.
 - Audio preview and decoded-sample copy accessors validate public counters, channel counts, decoded capacity, multiplication, and backing storage before slicing.
 - Direct regressions cover oversized path counts, empty retained paths, oversized preview and frame counts, and invalid channel counts. The complete deterministic gate passed 111/111 steps and 4,188/4,188 tests.
+
+### Autonomous Follow-up: Installed GUI Model Surface
+
+- The staged-package consumer now composes editable graphs, viewport and range-selection models, preset filtering, and persistent resource references through `@import("zig-vst3-plugin")`.
+- The test uses only copied package contents and public imports, so missing exports or accidental repository-relative dependencies fail independently of the main workspace.
+- The installed-package gate passed 9/9 build steps and 8/8 tests, including effect, instrument, DSP fixture, C kernel, and toolkit-neutral GUI consumers.
