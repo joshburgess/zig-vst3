@@ -416,3 +416,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The SDK no-buffer form and zero-channel form remain valid. Malformed flushes return `kInvalidArgument` and a later audio block proves that rejected input did not mutate state.
 - Direct bridge and reflected processor regressions cover valid recovery after missing arrays, negative channels, excess buses, and nonzero frame counts. The complete deterministic gate passed 111/111 steps and 4,132/4,132 tests.
 - Raw ABI checks passed, the Bypass plugin passed all 47 Steinberg validator tests, and Linux aarch64 and Windows x86-64 example bundle matrices passed.
+
+### Autonomous Follow-up: Telemetry Payload Bounds
+
+- Graph and text telemetry now share explicit framework limits of 256 points and 96 bytes. Both retained consumers and reflected producers enforce those limits before invoking an ABI callback or exposing a Zig slice.
+- Regressions pass oversized capacities through both sides of the telemetry boundary, verify the callback receives only the bounded region, and clamp an oversized producer result to the same effective capacity.
+- The deterministic test suite and raw ABI checks passed. The telemetry-using Model Shell passed all 47 Steinberg validator tests, and the Linux aarch64 and Windows x86-64 example bundle matrices each passed 59/59 steps.

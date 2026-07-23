@@ -1,7 +1,11 @@
 const std = @import("std");
 const types = @import("pluginterfaces/base/types.zig");
 const tuid = @import("tuid.zig");
-const gui_graph = @import("zig-vst3-plugin-core").gui_graph;
+const plug_core = @import("zig-vst3-plugin-core");
+const gui_graph = plug_core.gui_graph;
+
+pub const maximum_graph_points: usize = 256;
+pub const maximum_text_bytes: usize = plug_core.editor_state.maximum_text_bytes;
 
 pub const iid = tuid.inlineUid(0x7CB6A8A1, 0x532E49D8, 0xA32BD0B4, 0x21D827F6);
 
@@ -45,13 +49,13 @@ pub const RetainedSource = struct {
     }
 
     pub fn loadGraph(self: RetainedSource, source_id: types.uint32, output: []gui_graph.Point) usize {
-        if (output.len > std.math.maxInt(types.uint32)) return 0;
-        return @min(self.iface.vtable.loadGraph(self.iface, source_id, output.ptr, @intCast(output.len)), output.len);
+        const bounded_output = output[0..@min(output.len, maximum_graph_points)];
+        return @min(self.iface.vtable.loadGraph(self.iface, source_id, bounded_output.ptr, @intCast(bounded_output.len)), bounded_output.len);
     }
 
     pub fn loadText(self: RetainedSource, source_id: types.uint32, output: []u8) usize {
-        if (output.len > std.math.maxInt(types.uint32)) return 0;
-        return @min(self.iface.vtable.loadText(self.iface, source_id, output.ptr, @intCast(output.len)), output.len);
+        const bounded_output = output[0..@min(output.len, maximum_text_bytes)];
+        return @min(self.iface.vtable.loadText(self.iface, source_id, bounded_output.ptr, @intCast(bounded_output.len)), bounded_output.len);
     }
 };
 
@@ -64,4 +68,68 @@ pub fn query(peer: anytype) ?RetainedSource {
 test "telemetry interface has an FUnknown prefix" {
     try std.testing.expectEqual(@as(usize, 8), @typeInfo(VTable).@"struct".fields.len);
     try std.testing.expectEqual(@sizeOf(usize), @sizeOf(Interface));
+}
+
+test "retained telemetry source bounds graph and text capacities" {
+    const MockSource = struct {
+        iface: Interface,
+        graph_capacity: types.uint32 = 0,
+        text_capacity: types.uint32 = 0,
+
+        const vtable = VTable{
+            .queryInterface = queryInterface,
+            .addRef = addRef,
+            .release = release,
+            .load = load,
+            .editorOpened = editorOpened,
+            .editorClosed = editorClosed,
+            .loadGraph = loadGraph,
+            .loadText = loadText,
+        };
+
+        fn owner(ptr: *anyopaque) *@This() {
+            return @ptrCast(@alignCast(ptr));
+        }
+
+        fn queryInterface(_: *anyopaque, _: *const tuid.TUID, out: *?*anyopaque) callconv(.c) types.tresult {
+            out.* = null;
+            return types.kNoInterface;
+        }
+
+        fn addRef(_: *anyopaque) callconv(.c) types.uint32 {
+            return 1;
+        }
+
+        fn release(_: *anyopaque) callconv(.c) types.uint32 {
+            return 1;
+        }
+
+        fn load(_: *anyopaque, _: types.uint32) callconv(.c) f64 {
+            return 0.0;
+        }
+
+        fn editorOpened(_: *anyopaque) callconv(.c) void {}
+
+        fn editorClosed(_: *anyopaque) callconv(.c) void {}
+
+        fn loadGraph(ptr: *anyopaque, _: types.uint32, _: [*]gui_graph.Point, capacity: types.uint32) callconv(.c) types.uint32 {
+            owner(ptr).graph_capacity = capacity;
+            return std.math.maxInt(types.uint32);
+        }
+
+        fn loadText(ptr: *anyopaque, _: types.uint32, _: [*]u8, capacity: types.uint32) callconv(.c) types.uint32 {
+            owner(ptr).text_capacity = capacity;
+            return std.math.maxInt(types.uint32);
+        }
+    };
+
+    var mock = MockSource{ .iface = .{ .vtable = &MockSource.vtable } };
+    const source = RetainedSource{ .iface = &mock.iface };
+    var graph_output: [maximum_graph_points + 1]gui_graph.Point = undefined;
+    var text_output: [maximum_text_bytes + 1]u8 = undefined;
+
+    try std.testing.expectEqual(maximum_graph_points, source.loadGraph(1, &graph_output));
+    try std.testing.expectEqual(@as(types.uint32, maximum_graph_points), mock.graph_capacity);
+    try std.testing.expectEqual(maximum_text_bytes, source.loadText(2, &text_output));
+    try std.testing.expectEqual(@as(types.uint32, maximum_text_bytes), mock.text_capacity);
 }

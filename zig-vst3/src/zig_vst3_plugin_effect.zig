@@ -1923,7 +1923,7 @@ test "simple stereo effect clears unsupported query outputs" {
     try std.testing.expect(processor.vtable.release(processor) >= 1);
 }
 
-test "simple stereo effect exposes graph-only telemetry" {
+test "simple stereo effect exposes bounded graph and text telemetry" {
     const TestEffect = SimpleStereoEffect(struct {
         pub const component_name = "GraphTelemetryComponent";
         pub const controller_cid = tuid.inlineUid(0x5A14B7C2, 0x98E4430D, 0xB9512E6F, 0x7C83A109);
@@ -1936,9 +1936,22 @@ test "simple stereo effect exposes graph-only telemetry" {
             }
 
             pub fn guiGraphLoad(_: *@This(), source_id: u32, output: []plug_core.gui_graph.Point) usize {
-                if (source_id != 7 or output.len == 0) return 0;
-                output[0] = .{ .x = 42.0, .y = -6.0 };
-                return 1;
+                if (output.len == 0) return 0;
+                if (source_id == 7) {
+                    output[0] = .{ .x = 42.0, .y = -6.0 };
+                    return 1;
+                }
+                if (source_id == 8) {
+                    output[0] = .{ .x = @floatFromInt(output.len), .y = 0.0 };
+                    return output.len + 1;
+                }
+                return 0;
+            }
+
+            pub fn guiTelemetryLoadText(_: *@This(), source_id: u32, output: []u8) usize {
+                if (source_id != 9 or output.len == 0) return 0;
+                output[0] = @intCast(output.len);
+                return output.len + 1;
             }
         };
 
@@ -1967,6 +1980,20 @@ test "simple stereo effect exposes graph-only telemetry" {
     try std.testing.expectEqual(@as(types.uint32, 1), telemetry.vtable.loadGraph(telemetry, 7, &points, points.len));
     try std.testing.expectEqual(@as(f32, 42.0), points[0].x);
     try std.testing.expectEqual(@as(f32, -6.0), points[0].y);
+
+    var oversized_points: [gui_telemetry_source.maximum_graph_points + 1]plug_core.gui_graph.Point = undefined;
+    try std.testing.expectEqual(
+        @as(types.uint32, gui_telemetry_source.maximum_graph_points),
+        telemetry.vtable.loadGraph(telemetry, 8, &oversized_points, oversized_points.len),
+    );
+    try std.testing.expectEqual(@as(f32, @floatFromInt(gui_telemetry_source.maximum_graph_points)), oversized_points[0].x);
+
+    var oversized_text: [gui_telemetry_source.maximum_text_bytes + 1]u8 = undefined;
+    try std.testing.expectEqual(
+        @as(types.uint32, gui_telemetry_source.maximum_text_bytes),
+        telemetry.vtable.loadText(telemetry, 9, &oversized_text, oversized_text.len),
+    );
+    try std.testing.expectEqual(@as(u8, gui_telemetry_source.maximum_text_bytes), oversized_text[0]);
 }
 
 test "simple stereo effect processes with setup sample rate when process context is absent" {
@@ -2960,8 +2987,9 @@ pub fn SimpleEffect(comptime Config: type) type {
             capacity: types.uint32,
         ) callconv(.c) types.uint32 {
             if (comptime @hasDecl(Config.Processor, "guiGraphLoad")) {
-                const count = ownerFromTelemetrySource(ptr).processor_impl.guiGraphLoad(source_id, output[0..capacity]);
-                return @intCast(@min(count, capacity));
+                const bounded_capacity = @min(capacity, gui_telemetry_source.maximum_graph_points);
+                const count = ownerFromTelemetrySource(ptr).processor_impl.guiGraphLoad(source_id, output[0..bounded_capacity]);
+                return @intCast(@min(count, bounded_capacity));
             }
             return 0;
         }
@@ -2973,8 +3001,9 @@ pub fn SimpleEffect(comptime Config: type) type {
             capacity: types.uint32,
         ) callconv(.c) types.uint32 {
             if (comptime @hasDecl(Config.Processor, "guiTelemetryLoadText")) {
-                const count = ownerFromTelemetrySource(ptr).processor_impl.guiTelemetryLoadText(source_id, output[0..capacity]);
-                return @intCast(@min(count, capacity));
+                const bounded_capacity = @min(capacity, gui_telemetry_source.maximum_text_bytes);
+                const count = ownerFromTelemetrySource(ptr).processor_impl.guiTelemetryLoadText(source_id, output[0..bounded_capacity]);
+                return @intCast(@min(count, bounded_capacity));
             }
             return 0;
         }
