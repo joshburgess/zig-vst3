@@ -563,3 +563,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The bounded audio sample store now checks active, pending, replaced, and staging slot indices before array access. Active reads also require the expected slot state and valid bounded metadata.
 - Malformed public slot state produces no active metadata or audio. A later valid publication remains adoptable without touching the invalid prior index.
 - Direct regressions cover invalid active, pending, and staging indices plus a zero-channel active slot. The focused sample-store suite passed 9/9 tests.
+
+### Autonomous Follow-up: Sample Player Realtime State
+
+- Sample-player note attacks now require a MIDI-range note and a valid prepared output rate. Playback clamps the root note before pitch conversion and discards malformed retained voices before interpolation or loop arithmetic.
+- An invalid direct output rate resets active voices and produces silence. Playhead queries reject malformed voice positions and output-rate state.
+- Direct regressions cover notes outside 0–127, a non-finite voice position, and a zero output rate. The focused player and sample-store suite passed 20/20 tests.

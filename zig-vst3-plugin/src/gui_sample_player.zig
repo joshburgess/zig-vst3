@@ -66,6 +66,7 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
         }
 
         pub fn noteOn(self: *Self, note: i16, velocity: f64, playback: Playback) void {
+            if (!self.outputRateValid() or note < 0 or note > 127) return;
             const metadata = self.store.activeMetadata() orelse return;
             if (metadata.frames == 0 or !std.math.isFinite(velocity) or velocity <= 0.0) {
                 self.noteOff(note, playback);
@@ -99,6 +100,10 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
         }
 
         pub fn processFrame(self: *Self, playback: Playback) [2]f32 {
+            if (!self.outputRateValid()) {
+                self.reset();
+                return .{ 0.0, 0.0 };
+            }
             const metadata = self.store.activeMetadata() orelse return .{ 0.0, 0.0 };
             if (metadata.frames == 0) return .{ 0.0, 0.0 };
             const bounds = frameBounds(metadata.frames, playback.start, playback.end);
@@ -116,6 +121,10 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
                     continue;
                 }
                 if (voice.stage == .idle) continue;
+                if (!voiceValid(voice.*)) {
+                    voice.* = .{};
+                    continue;
+                }
                 const level = self.advanceEnvelope(voice, playback.envelope);
                 if (voice.stage == .idle) continue;
                 const left = self.store.sample(0, voice.position);
@@ -125,7 +134,7 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
                 output[1] += right * amplitude * right_pan;
 
                 const semitones = @as(f64, @floatFromInt(voice.note)) -
-                    @as(f64, @floatFromInt(playback.root_note)) +
+                    @as(f64, @floatFromInt(std.math.clamp(playback.root_note, 0, 127))) +
                     std.math.clamp(finiteOr(playback.coarse_semitones, 0.0), -48.0, 48.0) +
                     std.math.clamp(finiteOr(playback.fine_cents, 0.0), -100.0, 100.0) / 100.0;
                 const rate = @as(f64, @floatFromInt(metadata.sample_rate)) / self.output_sample_rate *
@@ -137,6 +146,7 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
         }
 
         pub fn playhead(self: *const Self) ?f64 {
+            if (!self.outputRateValid()) return null;
             const metadata = self.store.activeMetadata() orelse return null;
             if (metadata.frames <= 1) return null;
             var newest: ?Voice = null;
@@ -145,7 +155,13 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
                 if (newest == null or voice.age > newest.?.age) newest = voice;
             }
             const voice = newest orelse return null;
+            if (!voiceValid(voice)) return null;
             return std.math.clamp(voice.position / @as(f64, @floatFromInt(metadata.frames - 1)), 0.0, 1.0);
+        }
+
+        fn outputRateValid(self: *const Self) bool {
+            return std.math.isFinite(self.output_sample_rate) and
+                self.output_sample_rate >= 8_000.0 and self.output_sample_rate <= 384_000.0;
         }
 
         fn voiceForAttack(self: *Self, requested_limit: usize) usize {
@@ -202,6 +218,12 @@ pub fn Player(comptime maximum_frames: usize, comptime voice_count: usize) type 
                 return;
             }
             if ((!reverse and voice.position > bounds.end) or (reverse and voice.position < bounds.start)) voice.* = .{};
+        }
+
+        fn voiceValid(voice: Voice) bool {
+            return voice.note >= 0 and voice.note <= 127 and
+                std.math.isFinite(voice.velocity) and voice.velocity >= 0.0 and voice.velocity <= 1.0 and
+                std.math.isFinite(voice.position) and std.math.isFinite(voice.level);
         }
     };
 }
@@ -458,6 +480,29 @@ test "sample player contains non-finite public playback inputs" {
         try std.testing.expect(std.math.isFinite(frame[1]));
         try std.testing.expect(player.playhead() != null);
     }
+}
+
+test "sample player rejects malformed retained realtime state" {
+    var player = Player(2, 1){};
+    try player.store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 2 });
+    try player.store.write(1, 0, &.{ 0.5, 1.0 });
+    try player.store.commit(1);
+    try std.testing.expect(player.adoptPending());
+
+    player.noteOn(-1, 1.0, .{});
+    try std.testing.expectEqual(@as(?f64, null), player.playhead());
+    player.noteOn(128, 1.0, .{});
+    try std.testing.expectEqual(@as(?f64, null), player.playhead());
+
+    player.noteOn(60, 1.0, .{ .loop_enabled = true });
+    player.voices[0].position = std.math.nan(f64);
+    try std.testing.expectEqual(@as([2]f32, .{ 0.0, 0.0 }), player.processFrame(.{ .loop_enabled = true }));
+    try std.testing.expectEqual(@as(?f64, null), player.playhead());
+
+    player.noteOn(60, 1.0, .{});
+    player.output_sample_rate = 0.0;
+    try std.testing.expectEqual(@as([2]f32, .{ 0.0, 0.0 }), player.processFrame(.{}));
+    try std.testing.expectEqual(@as(?f64, null), player.playhead());
 }
 
 test "sample player generated lifecycle sequences remain finite and bounded" {
