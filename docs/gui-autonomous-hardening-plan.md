@@ -545,3 +545,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The bounded piano model now validates its retained note range and current selection before navigation, toggling, release iteration, or bitset access.
 - Malformed direct state fails closed. Selecting a valid in-range note remains an explicit recovery path for a stale selection.
 - Direct regressions cover zero note count, a range above MIDI note 127, and an out-of-range selection. The focused piano suite passed 4/4 tests.
+
+### Autonomous Follow-up: Output Event Storage Integrity
+
+- Output event writers now validate their public retained count and every exposed event before querying capacity, appending, or publishing an event view.
+- Malformed state reports no events or remaining capacity and rejects appends. Clear remains a bounded recovery path.
+- Direct regressions cover an oversized count and a retained event outside the process block. The complete deterministic gate passed with 4,194 tests.

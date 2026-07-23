@@ -1050,6 +1050,7 @@ pub const EventWriter = struct {
     }
 
     pub fn appendAllCount(self: *EventWriter, source: Events) !usize {
+        if (!self.valid()) return error.InvalidState;
         for (source.items) |event| {
             try event.validate(self.frame_count);
         }
@@ -1069,12 +1070,14 @@ pub const EventWriter = struct {
     }
 
     fn appendValidated(self: *EventWriter, event: Event) !void {
+        if (!self.valid()) return error.InvalidState;
         if (self.count >= self.storage.len) return error.EventStorageFull;
         self.storage[self.count] = event;
         self.count += 1;
     }
 
     pub fn canAppend(self: *const EventWriter, event_count: usize) bool {
+        if (!self.valid()) return false;
         return event_count <= self.remainingCapacity();
     }
 
@@ -1101,8 +1104,7 @@ pub const EventWriter = struct {
     }
 
     pub fn eventCount(self: *const EventWriter) usize {
-        std.debug.assert(self.count <= self.storage.len);
-        return self.count;
+        return if (self.valid()) self.count else 0;
     }
 
     pub fn isEmpty(self: *const EventWriter) bool {
@@ -1114,6 +1116,7 @@ pub const EventWriter = struct {
     }
 
     pub fn isFull(self: *const EventWriter) bool {
+        if (!self.valid()) return true;
         return self.count >= self.storage.len;
     }
 
@@ -1122,6 +1125,7 @@ pub const EventWriter = struct {
     }
 
     pub fn remainingCapacity(self: *const EventWriter) usize {
+        if (!self.valid()) return 0;
         return self.storage.len - self.eventCount();
     }
 
@@ -1399,6 +1403,14 @@ pub const EventWriter = struct {
 
     pub fn events(self: *const EventWriter) Events {
         return .{ .items = self.storage[0..self.eventCount()] };
+    }
+
+    pub fn valid(self: *const EventWriter) bool {
+        if (self.count > self.storage.len) return false;
+        for (self.storage[0..self.count]) |event| {
+            event.validate(self.frame_count) catch return false;
+        }
+        return true;
     }
 };
 
@@ -2525,6 +2537,31 @@ test "event writer validates offsets and capacity" {
     var empty_writer = EventWriter.init(&empty_storage, 4);
     try std.testing.expectError(error.EventOutsideBlock, empty_writer.append(Event.noteOn(4, 0, 60, 1.0)));
     try std.testing.expectError(error.EventValueOutsideNormalizedRange, empty_writer.append(Event.noteOn(0, 0, 60, -0.25)));
+}
+
+test "event writer rejects malformed retained state and clear recovers" {
+    var storage = [_]Event{Event.noteOn(0, 0, 60, 1.0)};
+    var writer = EventWriter.init(&storage, 4);
+
+    writer.count = storage.len + 1;
+    try std.testing.expect(!writer.valid());
+    try std.testing.expectEqual(@as(usize, 0), writer.eventCount());
+    try std.testing.expectEqual(@as(usize, 0), writer.remainingCapacity());
+    try std.testing.expect(writer.isFull());
+    try std.testing.expect(!writer.canAppend(0));
+    try std.testing.expectError(error.InvalidState, writer.append(Event.noteOn(1, 0, 64, 1.0)));
+    try std.testing.expectError(error.InvalidState, writer.appendAllCount(.{}));
+    try std.testing.expectEqual(@as(usize, 0), writer.clearCount());
+    try std.testing.expect(writer.valid());
+    try std.testing.expectEqual(storage.len, writer.remainingCapacity());
+
+    writer.count = 1;
+    storage[0] = Event.noteOn(4, 0, 60, 1.0);
+    try std.testing.expect(!writer.valid());
+    try std.testing.expectEqual(@as(?Event, null), writer.first());
+    writer.clear();
+    try writer.append(Event.noteOn(3, 0, 60, 1.0));
+    try std.testing.expect(writer.valid());
 }
 
 test "event writer queries written events by offset" {
