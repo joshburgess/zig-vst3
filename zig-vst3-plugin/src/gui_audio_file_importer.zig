@@ -41,6 +41,7 @@ pub const Snapshot = struct {
             self.sample_frames > maximum_sample_frames or
             self.decoded_frames > maximum_sample_frames or
             self.decoded_frames > self.sample_frames or
+            self.preview_points > self.sample_frames or
             self.channels > maximum_channels)
         {
             return error.InvalidAudioImportBounds;
@@ -57,7 +58,34 @@ pub const Snapshot = struct {
         if (!has_metadata and (self.preview_points != 0 or self.decoded_frames != 0)) {
             return error.InvalidAudioImportMetadata;
         }
-        if (self.import.status == .ready and self.preview_points == 0) return error.InvalidAudioImportMetadata;
+        if (self.import.status == .ready) {
+            if (self.import.generation == 0 or
+                !has_metadata or
+                self.preview_points == 0 or
+                (self.decoded_frames != 0 and self.decoded_frames != self.sample_frames))
+            {
+                return error.InvalidAudioImportMetadata;
+            }
+        } else if (self.preview_points != 0 or self.decoded_frames != 0) {
+            return error.InvalidAudioImportState;
+        }
+
+        const failure_matches_status = switch (self.import.status) {
+            .cancelled => self.failure == .cancelled,
+            .failed => self.failure == .open_failed or
+                self.failure == .malformed or
+                self.failure == .truncated or
+                self.failure == .worker_unavailable,
+            .unsupported_file => self.failure == .none or self.failure == .unsupported_format,
+            .capacity_limit => self.failure == .none or self.failure == .too_large,
+            else => self.failure == .none,
+        };
+        if (!failure_matches_status) return error.InvalidAudioImportState;
+    }
+
+    pub fn valid(self: Snapshot) bool {
+        self.validate() catch return false;
+        return true;
     }
 };
 
@@ -94,6 +122,22 @@ test "audio import snapshot validates bounded metadata" {
     malformed = valid;
     malformed.channels = 0;
     try std.testing.expectError(error.InvalidAudioImportMetadata, malformed.validate());
+    malformed = valid;
+    malformed.failure = .malformed;
+    try std.testing.expectError(error.InvalidAudioImportState, malformed.validate());
+    malformed = valid;
+    malformed.import.status = .failed;
+    try std.testing.expectError(error.InvalidAudioImportState, malformed.validate());
+    malformed = valid;
+    malformed.import.status = .failed;
+    malformed.failure = .truncated;
+    malformed.preview_points = 0;
+    malformed.decoded_frames = 0;
+    try malformed.validate();
+    malformed = valid;
+    malformed.decoded_frames = 7;
+    try std.testing.expectError(error.InvalidAudioImportMetadata, malformed.validate());
+    try std.testing.expect(valid.valid());
 }
 
 const ByteOrder = enum { little, big };

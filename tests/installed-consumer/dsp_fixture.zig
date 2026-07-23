@@ -160,3 +160,29 @@ test "installed package exposes bounded audio handoff metadata" {
     try impulse.validate(64);
     try std.testing.expect(impulse.valid(64));
 }
+
+test "installed package exposes coherent audio import snapshots" {
+    const snapshot = plugin.gui_audio_file_importer.Snapshot{
+        .import = .{
+            .status = .ready,
+            .entry_point = .picker,
+            .path_count = 1,
+            .completed_units = 16,
+            .total_units = 16,
+            .generation = 1,
+            .cancellation_pending = false,
+        },
+        .failure = .none,
+        .sample_rate = 48_000,
+        .channels = 2,
+        .sample_frames = 8,
+        .preview_points = 8,
+        .decoded_frames = 8,
+    };
+    try snapshot.validate();
+    try std.testing.expect(snapshot.valid());
+
+    var malformed = snapshot;
+    malformed.failure = .truncated;
+    try std.testing.expect(!malformed.valid());
+}
