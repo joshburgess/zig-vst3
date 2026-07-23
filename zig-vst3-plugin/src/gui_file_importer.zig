@@ -44,6 +44,7 @@ pub const Snapshot = struct {
         if (self.path_count > gui_file_drop.maximum_files) return error.InvalidPathCount;
         if (self.completed_units > self.total_units) return error.InvalidImportProgress;
         if (self.cancellation_pending and !self.canCancel()) return error.InvalidCancellationState;
+        if (self.path_count != 0 and self.generation == 0) return error.InvalidImportGeneration;
         switch (self.status) {
             .idle, .empty, .unsupported_file, .capacity_limit, .invalid_path => {
                 if (self.completed_units != 0 or self.total_units != 0) return error.InvalidImportProgress;
@@ -64,6 +65,11 @@ pub const Snapshot = struct {
                 if (self.path_count == 0) return error.InvalidPathCount;
             },
         }
+    }
+
+    pub fn valid(self: Snapshot) bool {
+        self.validate() catch return false;
+        return true;
     }
 
     pub fn canCancel(self: Snapshot) bool {
@@ -136,7 +142,13 @@ pub fn Model(comptime file_capacity: usize, comptime extension_capacity: usize) 
                 return error.InvalidImportTransition;
             }
             self.cancel_requested.store(false, .release);
-            self.status = if (preview_point_count == 0) .empty else .ready;
+            if (preview_point_count == 0) {
+                self.completed_units = 0;
+                self.total_units = 0;
+                self.status = .empty;
+            } else {
+                self.status = .ready;
+            }
         }
 
         pub fn fail(self: *Self) !void {
@@ -282,6 +294,10 @@ test "import snapshot rejects impossible progress and cancellation" {
     malformed = valid;
     malformed.path_count = gui_file_drop.maximum_files + 1;
     try std.testing.expectError(error.InvalidPathCount, malformed.validate());
+    malformed = valid;
+    malformed.generation = 0;
+    try std.testing.expectError(error.InvalidImportGeneration, malformed.validate());
+    try std.testing.expect(valid.valid());
 }
 
 test "import model cancellation and retry preserve the copied job" {
@@ -305,7 +321,10 @@ test "import model cancellation and retry preserve the copied job" {
     try importer.startImport(1);
     try importer.advance(1);
     try importer.complete(0);
-    try std.testing.expectEqual(Status.empty, importer.snapshot().status);
+    const empty = importer.snapshot();
+    try std.testing.expectEqual(Status.empty, empty.status);
+    try empty.validate();
+    try std.testing.expectEqual(@as(f64, 0.0), empty.progress());
 }
 
 test "import model rejects invalid transitions without losing progress" {
@@ -349,8 +368,8 @@ test "import model generated transition sequences remain bounded" {
                 else => importer.reset(),
             }
             const snapshot = importer.snapshot();
-            const valid = snapshot.path_count <= 1 and
-                snapshot.completed_units <= snapshot.total_units and
+            const valid = snapshot.valid() and
+                snapshot.path_count <= 1 and
                 snapshot.progress() >= 0.0 and snapshot.progress() <= 1.0 and
                 (!snapshot.cancellation_pending or snapshot.canCancel()) and
                 (!snapshot.canRetry() or snapshot.path_count == 1);

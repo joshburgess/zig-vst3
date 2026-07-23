@@ -185,4 +185,5 @@ test "installed package exposes coherent audio import snapshots" {
     var malformed = snapshot;
     malformed.failure = .truncated;
     try std.testing.expect(!malformed.valid());
+    try std.testing.expect(snapshot.import.valid());
 }
