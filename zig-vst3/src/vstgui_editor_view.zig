@@ -816,6 +816,17 @@ fn logicalDimension(physical: types.int32, scale: f32) ?types.int32 {
     return @intFromFloat(@round(logical));
 }
 
+fn rectDimension(start: types.int32, end: types.int32) ?types.int32 {
+    const dimension = @as(i64, end) - @as(i64, start);
+    if (dimension < 1 or dimension > std.math.maxInt(types.int32)) return null;
+    return @intCast(dimension);
+}
+
+fn rectEnd(start: types.int32, dimension: types.int32) ?types.int32 {
+    if (dimension < 1) return null;
+    return std.math.cast(types.int32, @as(i64, start) + @as(i64, dimension));
+}
+
 const TelemetryState = struct {
     source: ?gui_telemetry_source.RetainedSource,
     provider: ?TelemetrySourceProvider,
@@ -896,8 +907,8 @@ const View = vst_plug_view.PlugView(1, struct {
     }
 
     pub fn onSize(self: anytype, rect: *iplugview.ViewRect) types.tresult {
-        const width = rect.right - rect.left;
-        const height = rect.bottom - rect.top;
+        const width = rectDimension(rect.left, rect.right) orelse return types.kResultFalse;
+        const height = rectDimension(rect.top, rect.bottom) orelse return types.kResultFalse;
         const state = binding(self) orelse return types.kResultFalse;
         const minimum_width = scaledDimension(state.minimum_width, state.content_scale) orelse return types.kResultFalse;
         const minimum_height = scaledDimension(state.minimum_height, state.content_scale) orelse return types.kResultFalse;
@@ -952,10 +963,12 @@ const View = vst_plug_view.PlugView(1, struct {
         const minimum_height = scaledDimension(state.minimum_height, state.content_scale) orelse return types.kResultFalse;
         const maximum_width = scaledDimension(state.maximum_width, state.content_scale) orelse return types.kResultFalse;
         const maximum_height = scaledDimension(state.maximum_height, state.content_scale) orelse return types.kResultFalse;
-        const width = std.math.clamp(rect.right - rect.left, minimum_width, maximum_width);
-        const height = std.math.clamp(rect.bottom - rect.top, minimum_height, maximum_height);
-        rect.right = std.math.cast(types.int32, @as(i64, rect.left) + width) orelse return types.kInvalidArgument;
-        rect.bottom = std.math.cast(types.int32, @as(i64, rect.top) + height) orelse return types.kInvalidArgument;
+        const raw_width = @as(i64, rect.right) - @as(i64, rect.left);
+        const raw_height = @as(i64, rect.bottom) - @as(i64, rect.top);
+        const width: types.int32 = @intCast(std.math.clamp(raw_width, minimum_width, maximum_width));
+        const height: types.int32 = @intCast(std.math.clamp(raw_height, minimum_height, maximum_height));
+        rect.right = rectEnd(rect.left, width) orelse return types.kInvalidArgument;
+        rect.bottom = rectEnd(rect.top, height) orelse return types.kInvalidArgument;
         return types.kResultOk;
     }
 
@@ -969,9 +982,11 @@ const View = vst_plug_view.PlugView(1, struct {
         }
         const previous_scale = state.content_scale;
         const previous_rect = self.rect;
+        const scaled_right = rectEnd(self.rect.left, scaled_width) orelse return types.kInvalidArgument;
+        const scaled_bottom = rectEnd(self.rect.top, scaled_height) orelse return types.kInvalidArgument;
         state.content_scale = factor;
-        self.rect.right = self.rect.left + scaled_width;
-        self.rect.bottom = self.rect.top + scaled_height;
+        self.rect.right = scaled_right;
+        self.rect.bottom = scaled_bottom;
         if (self.frame) |frame| {
             const result = frame.vtable.resizeView(frame, &self.iface, &self.rect);
             if (result != types.kResultOk) {
@@ -1323,6 +1338,23 @@ pub fn drawAsset(
         return zig_vstgui_canvas_draw_asset(canvas, asset_id, left, top, right, bottom, alpha) == 0;
     }
     return false;
+}
+
+test "view rectangle arithmetic rejects invalid and overflowing coordinates" {
+    try std.testing.expectEqual(@as(?types.int32, 640), rectDimension(10, 650));
+    try std.testing.expectEqual(@as(?types.int32, null), rectDimension(10, 10));
+    try std.testing.expectEqual(@as(?types.int32, null), rectDimension(10, 9));
+    try std.testing.expectEqual(
+        @as(?types.int32, null),
+        rectDimension(std.math.minInt(types.int32), std.math.maxInt(types.int32)),
+    );
+
+    try std.testing.expectEqual(@as(?types.int32, 650), rectEnd(10, 640));
+    try std.testing.expectEqual(@as(?types.int32, null), rectEnd(10, 0));
+    try std.testing.expectEqual(
+        @as(?types.int32, null),
+        rectEnd(std.math.maxInt(types.int32), 1),
+    );
 }
 
 test "telemetry source can connect after the editor opens" {
