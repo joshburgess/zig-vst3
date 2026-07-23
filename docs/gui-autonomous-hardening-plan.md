@@ -593,3 +593,11 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - IR editor commands, rollback, reset, snapshots, decoded copies, and preview construction now validate retained sample rate, channel count, frame counts, peaks, and rollback bounds before slice arithmetic.
 - Malformed state publishes an empty snapshot and no decoded data. Clear remains an explicit recovery path, and an invalid rollback is discarded without replacing the edited buffer.
 - Direct regressions cover oversized edited and rollback frame counts plus an invalid channel count. The focused editor and importer suite passed 17/17 tests.
+
+### Autonomous Follow-up: Realtime State Release Gates
+
+- The complete deterministic gate passed 111/111 steps and 4,202/4,202 tests. Native address and undefined-behavior sanitizers passed, the resource ThreadSanitizer passed 31/31 tests, and the GUI ThreadSanitizer completed four adapter concurrency runs.
+- All 11 headless editor lifecycle targets passed 39/39 steps and 2,120/2,120 tests. Raw ABI checks passed 123/123 steps, and all 19 example plugins passed all 47 Steinberg validator tests.
+- Linux aarch64 and Windows x86-64 bundle matrices each passed 59/59 steps. The C-kernel matrix passed macOS universal, Linux aarch64 and x86-64, and Windows x86-64.
+- Performance budgets passed. Representative measurements were 437.7 ns per framework process block, 1,458.5 MiB/s bounded WAV import, 9.0 ns per sample-player frame with eight voices available, 589.8 ns per IR convolution sample, and 39.7 ns per fixed-rate frame at 48 kHz.
+- No REAPER or pluginval process was launched during this autonomous pass.
