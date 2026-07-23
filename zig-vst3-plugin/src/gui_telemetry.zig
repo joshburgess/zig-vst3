@@ -107,7 +107,12 @@ pub const EditorActivity = struct {
     open_count: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
 
     pub fn opened(self: *EditorActivity) void {
-        _ = self.open_count.fetchAdd(1, .release);
+        var current = self.open_count.load(.acquire);
+        while (current != std.math.maxInt(usize)) {
+            if (self.open_count.cmpxchgWeak(current, current + 1, .acq_rel, .acquire)) |observed| {
+                current = observed;
+            } else return;
+        }
     }
 
     pub fn closed(self: *EditorActivity) void {
@@ -222,6 +227,17 @@ test "editor activity tracks multiple views without underflow" {
     activity.closed();
     activity.closed();
     try std.testing.expect(!activity.active());
+}
+
+test "editor activity saturates instead of wrapping inactive" {
+    var activity = EditorActivity{};
+    activity.open_count.store(std.math.maxInt(usize), .release);
+    activity.opened();
+    try std.testing.expect(activity.active());
+    try std.testing.expectEqual(std.math.maxInt(usize), activity.open_count.load(.acquire));
+    activity.closed();
+    try std.testing.expect(activity.active());
+    try std.testing.expectEqual(std.math.maxInt(usize) - 1, activity.open_count.load(.acquire));
 }
 
 test "meter bank gates lock-free production by editor activity" {
