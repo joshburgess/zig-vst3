@@ -514,3 +514,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The staged-package consumer now composes editable graphs, viewport and range-selection models, preset filtering, and persistent resource references through `@import("zig-vst3-plugin")`.
 - The test uses only copied package contents and public imports, so missing exports or accidental repository-relative dependencies fail independently of the main workspace.
 - The installed-package gate passed 9/9 build steps and 8/8 tests, including effect, instrument, DSP fixture, C kernel, and toolkit-neutral GUI consumers.
+
+### Autonomous Follow-up: Fixed-Rate Pending State
+
+- Fixed-rate output conversion now rejects an oversized direct pending-frame count before slicing inline storage or subtracting capacity.
+- Reset and successful reconfiguration clear pending model frames. This prevents buffered data from an old rate configuration from entering a rebuilt model runtime.
+- Focused fixed-rate and resampler coverage passed 12/12 tests, including randomized blocks, ratio boundaries, deterministic reset, malformed state, and reconfiguration recovery. The complete deterministic gate passed 111/111 steps and 4,189/4,189 tests.

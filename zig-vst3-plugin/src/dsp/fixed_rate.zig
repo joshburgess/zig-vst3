@@ -58,6 +58,7 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
             self.host_rate = config.host_rate;
             self.model_rate = config.model_rate;
             self.latency_samples = @intFromFloat(latency);
+            self.pending_model_count = 0;
             self.configured = true;
         }
 
@@ -105,11 +106,13 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
 
         pub fn convertOutput(self: *Self, model_input: []const Sample, host_output: []Sample) error{
             NotConfigured,
+            InvalidState,
             OutputUnderflow,
             PendingOverflow,
             StreamTooLong,
         }!void {
             if (!self.configured) return error.NotConfigured;
+            if (self.pending_model_count > self.pending_model.len) return error.InvalidState;
             var produced: usize = 0;
             if (self.pending_model_count > 0) {
                 const pending_result = self.to_host.process(self.pending_model[0..self.pending_model_count], host_output) catch |err| switch (err) {
@@ -257,4 +260,19 @@ test "fixed-rate pipeline bounds ratios and caller scratch" {
     var pipeline = try Pipeline.init(.{ .host_rate = 48_000, .model_rate = 48_000 });
     var short_model: [4]f32 = undefined;
     try std.testing.expectError(error.InsufficientModelCapacity, pipeline.convertInput(&.{ 1, 2, 3, 4 }, &short_model));
+}
+
+test "fixed-rate pipeline rejects malformed pending state and reconfiguration clears it" {
+    const Pipeline = FixedRatePipeline(f64);
+    const config = Config{ .host_rate = 48_000, .model_rate = 48_000 };
+    var pipeline = try Pipeline.init(config);
+    pipeline.pending_model_count = maximum_pending_model_frames + 1;
+    try std.testing.expectError(error.InvalidState, pipeline.convertOutput(&.{}, &.{}));
+
+    pipeline.reset();
+    try std.testing.expectEqual(@as(usize, 0), pipeline.pending_model_count);
+    pipeline.pending_model[0] = 0.25;
+    pipeline.pending_model_count = 1;
+    try pipeline.configure(config);
+    try std.testing.expectEqual(@as(usize, 0), pipeline.pending_model_count);
 }

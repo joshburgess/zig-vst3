@@ -175,6 +175,7 @@ Completion evidence:
 
 - `dsp.StreamingResampler` uses a 32-tap, 256-phase Blackman-windowed sinc filter with fixed inline coefficients and history. It supports partial consumption, explicit drain, deterministic reset, finite rate bounds, and `f32` and `f64` processing.
 - `dsp.FixedRatePipeline` owns both conversion stages, ten frames of bounded pending storage, exact integer host latency, and caller-owned model scratch sized through `requiredModelCapacity`.
+- Output conversion rejects malformed direct pending counts before slicing fixed storage. Reset and successful reconfiguration clear pending model frames, so old-rate data cannot leak into a rebuilt runtime.
 - Impulse, passband sine, stopband sine, randomized block, reset, drain, invalid-state, and insufficient-capacity tests pass.
 - A deterministic boundary matrix covers both directions at the exact 8:1 ratio limit, non-integer 12,345.678 Hz host conversion, and rates up to 1 MHz across randomized block sizes. Every conversion remains finite and within caller-provided scratch bounds.
 - The public Fixed Rate Processor runs a 48 kHz trivial model and passes all 47 Steinberg validator tests, including variable blocks, both sample formats, lifecycle transitions, and unusual validator rates.
