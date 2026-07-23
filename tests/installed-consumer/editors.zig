@@ -188,3 +188,35 @@ test "installed package exposes toolkit-neutral GUI models" {
         reference.classifyCandidate("/models/example.nam", plugin.resource.Identity.fromBytes("fixture")),
     );
 }
+
+test "installed package exposes bounded realtime models" {
+    const Piano = plugin.gui_piano.Keyboard(24);
+    var piano = try Piano.init(48, 24);
+    _ = try piano.press(60, 0.75);
+    try std.testing.expect(piano.valid());
+
+    const Sequencer = plugin.gui_step_sequencer.Sequencer(8);
+    var sequencer = try Sequencer.init(8, 0b0101, 0b0001);
+    try std.testing.expect(sequencer.moveCursor(.next, false));
+    try std.testing.expect(sequencer.valid());
+
+    var output_samples = [_]f32{ 0.0, 0.0 };
+    const output_channels = [_][]f32{&output_samples};
+    const outputs = try plugin.process.AudioOutputs(f32).init(&output_channels);
+    try std.testing.expect(outputs.valid());
+    outputs.fill(0.25);
+    try std.testing.expectEqual(@as(f32, 0.25), output_samples[1]);
+
+    var event_storage: [2]plugin.process.Event = undefined;
+    var event_writer = plugin.process.EventWriter.init(&event_storage, 2);
+    try event_writer.append(plugin.process.Event.noteOn(0, 0, 60, 1.0));
+    try std.testing.expect(event_writer.valid());
+
+    var player: plugin.gui_sample_player.Player(2, 1) = .{};
+    try player.store.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 2 });
+    try player.store.write(1, 0, &.{ 0.5, 1.0 });
+    try player.store.commit(1);
+    try std.testing.expect(player.adoptPending());
+    player.noteOn(60, 1.0, .{ .envelope = .{ .attack_seconds = 0.0, .sustain = 1.0 } });
+    try std.testing.expectEqual(@as(f32, 0.5), player.processFrame(.{ .envelope = .{ .attack_seconds = 0.0, .sustain = 1.0 } })[0]);
+}
