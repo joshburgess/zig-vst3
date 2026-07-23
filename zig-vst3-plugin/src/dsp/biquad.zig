@@ -143,11 +143,13 @@ pub const Coefficients = struct {
         const denominator_imaginary = -self.a1 * sine - self.a2 * sine2;
         const numerator = numerator_real * numerator_real + numerator_imaginary * numerator_imaginary;
         const denominator = denominator_real * denominator_real + denominator_imaginary * denominator_imaginary;
-        if (denominator <= std.math.floatEps(f64) or !std.math.isFinite(numerator)) return .{};
-        return .{
+        if (denominator <= std.math.floatEps(f64) or
+            !std.math.isFinite(numerator) or !std.math.isFinite(denominator)) return .{};
+        const result = ComplexResponse{
             .real = (numerator_real * denominator_real + numerator_imaginary * denominator_imaginary) / denominator,
             .imaginary = (numerator_imaginary * denominator_real - numerator_real * denominator_imaginary) / denominator,
         };
+        return if (result.valid()) result else .{};
     }
 
     pub fn magnitude(self: Coefficients, sample_rate: f64, frequency_hz: f64) f64 {
@@ -190,7 +192,17 @@ pub const ComplexResponse = struct {
     imaginary: f64 = 0.0,
 
     pub fn magnitude(self: ComplexResponse) f64 {
-        return @sqrt(self.real * self.real + self.imaginary * self.imaginary);
+        if (!self.valid()) return 0.0;
+        const scale = @max(@abs(self.real), @abs(self.imaginary));
+        if (scale == 0.0) return 0.0;
+        const real = self.real / scale;
+        const imaginary = self.imaginary / scale;
+        const result = scale * @sqrt(real * real + imaginary * imaginary);
+        return if (std.math.isFinite(result)) result else 0.0;
+    }
+
+    pub fn valid(self: ComplexResponse) bool {
+        return std.math.isFinite(self.real) and std.math.isFinite(self.imaginary);
     }
 };
 
@@ -320,6 +332,27 @@ test "complex response magnitude matches direct evaluation" {
     inline for (.{ 100.0, 1_000.0, 2_000.0, 8_000.0 }) |frequency| {
         try std.testing.expectApproxEqAbs(coefficients.magnitude(48_000.0, frequency), coefficients.response(48_000.0, frequency).magnitude(), 0.0000001);
     }
+}
+
+test "biquad response contains extreme public values" {
+    const extreme = Coefficients{
+        .b0 = std.math.floatMax(f64),
+        .b1 = std.math.floatMax(f64),
+        .b2 = std.math.floatMax(f64),
+        .a1 = std.math.floatMax(f64),
+        .a2 = std.math.floatMax(f64),
+    };
+    const response = extreme.response(48_000.0, 1_000.0);
+    try std.testing.expect(response.valid());
+    try std.testing.expect(std.math.isFinite(response.magnitude()));
+    try std.testing.expectEqual(@as(f64, 0.0), (ComplexResponse{
+        .real = std.math.floatMax(f64),
+        .imaginary = std.math.floatMax(f64),
+    }).magnitude());
+    try std.testing.expectEqual(@as(f64, 0.0), (ComplexResponse{
+        .real = std.math.nan(f64),
+        .imaginary = 1.0,
+    }).magnitude());
 }
 
 test "unity filters preserve f32 and f64 samples" {
