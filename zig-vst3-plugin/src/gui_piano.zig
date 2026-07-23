@@ -34,8 +34,13 @@ pub fn Keyboard(comptime capacity: usize) type {
         }
 
         pub fn contains(self: Self, pitch: u8) bool {
+            if (!self.rangeValid()) return false;
             return pitch >= self.first_note and
                 @as(usize, pitch) < @as(usize, self.first_note) + @as(usize, self.note_count);
+        }
+
+        pub fn valid(self: Self) bool {
+            return self.rangeValid() and self.contains(self.selected_note);
         }
 
         pub fn select(self: *Self, pitch: u8) !void {
@@ -44,6 +49,7 @@ pub fn Keyboard(comptime capacity: usize) type {
         }
 
         pub fn moveSelection(self: *Self, direction: enum { previous, next }) bool {
+            if (!self.valid()) return false;
             const next = switch (direction) {
                 .previous => if (self.selected_note == self.first_note)
                     @as(u8, @intCast(@as(usize, self.first_note) + @as(usize, self.note_count) - 1))
@@ -79,6 +85,7 @@ pub fn Keyboard(comptime capacity: usize) type {
         }
 
         pub fn toggleSelected(self: *Self, velocity: f64) !NoteChange {
+            if (!self.valid()) return error.InvalidState;
             return if (self.isPressed(self.selected_note))
                 (try self.release(self.selected_note)).?
             else
@@ -86,6 +93,7 @@ pub fn Keyboard(comptime capacity: usize) type {
         }
 
         pub fn releaseAll(self: *Self, output: []NoteChange) usize {
+            if (!self.rangeValid()) return 0;
             var count: usize = 0;
             var pitch: usize = self.first_note;
             const end = @as(usize, self.first_note) + @as(usize, self.note_count);
@@ -111,6 +119,11 @@ pub fn Keyboard(comptime capacity: usize) type {
             const bit: u6 = @intCast(pitch % 64);
             const mask = @as(u64, 1) << bit;
             if (pressed) self.active[word] |= mask else self.active[word] &= ~mask;
+        }
+
+        fn rangeValid(self: Self) bool {
+            if (self.note_count == 0 or @as(usize, self.note_count) > capacity) return false;
+            return @as(usize, self.first_note) + @as(usize, self.note_count) <= maximum_midi_notes;
         }
     };
 }
@@ -166,6 +179,33 @@ test "keyboard releases the highest MIDI note without counter overflow" {
     try std.testing.expectEqual(@as(u8, 127), released[0].pitch);
     try std.testing.expect(!released[0].pressed);
     try std.testing.expect(!piano.isPressed(127));
+}
+
+test "keyboard rejects malformed direct state" {
+    const Piano = Keyboard(24);
+    var piano = try Piano.init(48, 24);
+
+    piano.note_count = 0;
+    try std.testing.expect(!piano.valid());
+    try std.testing.expect(!piano.contains(48));
+    try std.testing.expect(!piano.moveSelection(.next));
+    try std.testing.expectError(error.InvalidState, piano.toggleSelected(0.5));
+    var releases: [24]NoteChange = undefined;
+    try std.testing.expectEqual(@as(usize, 0), piano.releaseAll(&releases));
+
+    piano.note_count = 24;
+    piano.first_note = 120;
+    try std.testing.expect(!piano.valid());
+    try std.testing.expectError(error.NoteOutsideRange, piano.press(127, 0.5));
+
+    piano.first_note = 48;
+    piano.selected_note = 80;
+    try std.testing.expect(!piano.valid());
+    try std.testing.expect(!piano.moveSelection(.previous));
+    try std.testing.expectError(error.InvalidState, piano.toggleSelected(0.5));
+
+    try piano.select(60);
+    try std.testing.expect(piano.valid());
 }
 
 test "computer mapping and note names follow MIDI conventions" {

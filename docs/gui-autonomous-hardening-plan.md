@@ -539,3 +539,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Audio input and output views now validate their public channel count, frame count, and retained slice lengths before access or mutation. Malformed views report no usable channels or frames, and output fill and clear operations become no-ops.
 - Process timing helpers return zero for a malformed direct sample rate instead of reaching assertion or invalid division paths.
 - Direct regressions cover oversized channel counts, mismatched retained frame counts, rejected output writes, and non-finite sample rates. The complete deterministic gate passed 111/111 steps and 4,192/4,192 tests.
+
+### Autonomous Follow-up: Piano State Integrity
+
+- The bounded piano model now validates its retained note range and current selection before navigation, toggling, release iteration, or bitset access.
+- Malformed direct state fails closed. Selecting a valid in-range note remains an explicit recovery path for a stale selection.
+- Direct regressions cover zero note count, a range above MIDI note 127, and an out-of-range selection. The focused piano suite passed 4/4 tests.
