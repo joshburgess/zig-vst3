@@ -87,12 +87,13 @@ pub fn Keyboard(comptime capacity: usize) type {
 
         pub fn releaseAll(self: *Self, output: []NoteChange) usize {
             var count: usize = 0;
-            var pitch = self.first_note;
+            var pitch: usize = self.first_note;
             const end = @as(usize, self.first_note) + @as(usize, self.note_count);
-            while (@as(usize, pitch) < end and count < output.len) : (pitch += 1) {
-                if (!self.isPressed(pitch)) continue;
-                self.setPressed(pitch, false);
-                output[count] = .{ .pitch = pitch, .velocity = 0.0, .pressed = false };
+            while (pitch < end and count < output.len) : (pitch += 1) {
+                const midi_pitch: u8 = @intCast(pitch);
+                if (!self.isPressed(midi_pitch)) continue;
+                self.setPressed(midi_pitch, false);
+                output[count] = .{ .pitch = midi_pitch, .velocity = 0.0, .pressed = false };
                 count += 1;
             }
             return count;
@@ -153,6 +154,18 @@ test "keyboard tracks selection presses and bounded release" {
     try std.testing.expect(!releases[0].pressed);
     try std.testing.expect(!piano.isPressed(releases[0].pitch));
     try std.testing.expect(piano.isPressed(64));
+}
+
+test "keyboard releases the highest MIDI note without counter overflow" {
+    const Piano = Keyboard(1);
+    var piano = try Piano.init(127, 1);
+    _ = try piano.press(127, 1.0);
+
+    var released: [1]NoteChange = undefined;
+    try std.testing.expectEqual(@as(usize, 1), piano.releaseAll(&released));
+    try std.testing.expectEqual(@as(u8, 127), released[0].pitch);
+    try std.testing.expect(!released[0].pressed);
+    try std.testing.expect(!piano.isPressed(127));
 }
 
 test "computer mapping and note names follow MIDI conventions" {
