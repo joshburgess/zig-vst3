@@ -77,6 +77,7 @@ pub const State = struct {
     }
 
     pub fn setZoom(self: *State, config: Config, requested: f64, anchor_x: f64, anchor_y: f64) bool {
+        config.validate() catch return false;
         const next = std.math.clamp(requested, config.minimum_zoom, config.maximum_zoom);
         if (!std.math.isFinite(next) or next == self.zoom) return false;
         if (config.axes.includesHorizontal() and !std.math.isFinite(anchor_x)) return false;
@@ -106,6 +107,7 @@ pub const State = struct {
     }
 
     pub fn pan(self: *State, config: Config, x_steps: f64, y_steps: f64) bool {
+        config.validate() catch return false;
         var changed = false;
         const span = 1.0 / self.zoom;
         if (config.axes.includesHorizontal() and std.math.isFinite(x_steps)) {
@@ -171,6 +173,19 @@ test "viewport rejects non-finite active anchors without changing state" {
     try std.testing.expect(!state.setZoom(config, 4.0, std.math.nan(f64), 0.5));
     try std.testing.expectEqual(initial, state);
     try std.testing.expect(!state.setZoom(config, 4.0, 0.5, std.math.inf(f64)));
+    try std.testing.expectEqual(initial, state);
+}
+
+test "viewport mutations reject invalid replacement configurations" {
+    const config = Config{ .axes = .both, .initial_zoom = 2.0, .initial_x_offset = 0.25, .initial_y_offset = 0.25 };
+    var state = try State.init(config);
+    const initial = state;
+
+    try std.testing.expect(!state.setZoom(.{ .minimum_zoom = 4.0, .maximum_zoom = 2.0 }, 3.0, 0.5, 0.5));
+    try std.testing.expectEqual(initial, state);
+    try std.testing.expect(!state.zoomIn(.{ .zoom_step = std.math.nan(f64) }, 0.5, 0.5));
+    try std.testing.expectEqual(initial, state);
+    try std.testing.expect(!state.pan(.{ .scroll_step = std.math.inf(f64) }, 1.0, 1.0));
     try std.testing.expectEqual(initial, state);
 }
 

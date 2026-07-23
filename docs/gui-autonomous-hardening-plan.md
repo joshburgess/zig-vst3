@@ -459,3 +459,8 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 
 - The toolkit-neutral piano model now widens its release iterator, so a valid range ending at MIDI note 127 cannot overflow after processing its final note.
 - A direct regression presses and releases note 127 through the bounded `releaseAll` contract. The complete deterministic gate passed 111/111 steps and 4,175/4,175 tests.
+
+### Autonomous Follow-up: Viewport Mutation Validation
+
+- Viewport zoom and pan mutations now validate the supplied configuration before arithmetic, so a malformed replacement configuration is rejected without reaching invalid clamp bounds or changing state.
+- Direct regressions cover a reversed zoom range, a non-finite zoom step, and a non-finite scroll step. The complete deterministic gate passed 111/111 steps and 4,176/4,176 tests.
