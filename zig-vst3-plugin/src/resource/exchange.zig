@@ -61,7 +61,7 @@ pub fn Exchange(comptime Config: type) type {
             slot.state.store(@intFromEnum(SlotState.published), .release);
             self.latest_generation.store(generation, .release);
             const replaced = self.pending_slot.swap(slot_index, .acq_rel);
-            if (replaced != no_slot) {
+            if (validSlotIndex(replaced)) {
                 self.slots[replaced].state.store(@intFromEnum(SlotState.retired), .release);
             }
         }
@@ -83,6 +83,10 @@ pub fn Exchange(comptime Config: type) type {
             while (true) {
                 const next = self.pending_slot.load(.acquire);
                 if (next == no_slot) return null;
+                if (!validSlotIndex(next)) {
+                    _ = self.pending_slot.cmpxchgStrong(next, no_slot, .acq_rel, .acquire);
+                    return null;
+                }
                 const slot = &self.slots[next];
                 if (slot.state.load(.acquire) != @intFromEnum(SlotState.published)) return null;
                 const generation = slot.generation.load(.acquire);
@@ -92,7 +96,7 @@ pub fn Exchange(comptime Config: type) type {
                     slot.state.store(@intFromEnum(SlotState.retired), .release);
                     return null;
                 }
-                if (self.active_slot != no_slot) {
+                if (validSlotIndex(self.active_slot)) {
                     self.slots[self.active_slot].state.store(@intFromEnum(SlotState.retired), .release);
                 }
                 slot.state.store(@intFromEnum(SlotState.active), .release);
@@ -102,7 +106,7 @@ pub fn Exchange(comptime Config: type) type {
         }
 
         pub fn active(self: *const Self) ?View {
-            if (self.active_slot == no_slot) return null;
+            if (!validSlotIndex(self.active_slot)) return null;
             const slot = &self.slots[self.active_slot];
             if (slot.state.load(.acquire) != @intFromEnum(SlotState.active)) return null;
             return view(slot);
@@ -110,7 +114,7 @@ pub fn Exchange(comptime Config: type) type {
 
         pub fn activeMutable(self: *Self) ?MutableView {
             if (!mutable_active) @compileError("mutable active resources require Config.mutable_active = true");
-            if (self.active_slot == no_slot) return null;
+            if (!validSlotIndex(self.active_slot)) return null;
             const slot = &self.slots[self.active_slot];
             if (slot.state.load(.acquire) != @intFromEnum(SlotState.active)) return null;
             return .{
@@ -121,7 +125,10 @@ pub fn Exchange(comptime Config: type) type {
 
         pub fn retireActiveAtBlockBoundary(self: *Self) bool {
             _ = realtime_audit.observe(.resource_adoption);
-            if (self.active_slot == no_slot) return false;
+            if (!validSlotIndex(self.active_slot)) {
+                self.active_slot = no_slot;
+                return false;
+            }
             self.slots[self.active_slot].state.store(@intFromEnum(SlotState.retired), .release);
             self.active_slot = no_slot;
             return true;
@@ -152,18 +159,18 @@ pub fn Exchange(comptime Config: type) type {
         }
 
         pub fn hasPending(self: *const Self) bool {
-            return self.pending_slot.load(.acquire) != no_slot;
+            return validSlotIndex(self.pending_slot.load(.acquire));
         }
 
         pub fn retireAllAfterProcessingStops(self: *Self) void {
             const pending = self.pending_slot.swap(no_slot, .acq_rel);
-            if (pending != no_slot) {
+            if (validSlotIndex(pending)) {
                 self.slots[pending].state.store(@intFromEnum(SlotState.retired), .release);
             }
-            if (self.active_slot != no_slot) {
+            if (validSlotIndex(self.active_slot)) {
                 self.slots[self.active_slot].state.store(@intFromEnum(SlotState.retired), .release);
-                self.active_slot = no_slot;
             }
+            self.active_slot = no_slot;
         }
 
         pub fn deinit(self: *Self) void {
@@ -194,6 +201,10 @@ pub fn Exchange(comptime Config: type) type {
                 .generation = slot.generation.load(.acquire),
                 .resource = slot.resource orelse return null,
             };
+        }
+
+        fn validSlotIndex(index: u8) bool {
+            return index < slot_capacity;
         }
     };
 }
@@ -262,6 +273,35 @@ test "resource exchange reports bounded capacity and stale generations" {
     stale.* = .{ .value = 3 };
     try std.testing.expectError(error.InvalidGeneration, exchange.publish(1, stale));
     std.heap.page_allocator.destroy(stale);
+    try std.testing.expect(exchange.retireActiveAtBlockBoundary());
+    try std.testing.expectEqual(@as(usize, 1), exchange.reclaim());
+}
+
+test "resource exchange contains malformed public slot indices" {
+    const Model = struct { value: u8 };
+    const ModelExchange = Exchange(struct {
+        pub const Resource = Model;
+        pub const slot_capacity = 2;
+
+        pub fn destroy(resource: *Model) void {
+            std.heap.page_allocator.destroy(resource);
+        }
+    });
+
+    var exchange: ModelExchange = .{};
+    defer exchange.deinit();
+    exchange.pending_slot.store(9, .release);
+    exchange.active_slot = 9;
+    try std.testing.expect(!exchange.hasPending());
+    try std.testing.expectEqual(@as(?ModelExchange.View, null), exchange.adoptPending());
+    try std.testing.expectEqual(@as(?ModelExchange.View, null), exchange.active());
+    try std.testing.expect(!exchange.retireActiveAtBlockBoundary());
+
+    exchange.pending_slot.store(9, .release);
+    const resource = try std.heap.page_allocator.create(Model);
+    resource.* = .{ .value = 7 };
+    try exchange.publish(1, resource);
+    try std.testing.expectEqual(@as(u8, 7), exchange.adoptPending().?.resource.value);
     try std.testing.expect(exchange.retireActiveAtBlockBoundary());
     try std.testing.expectEqual(@as(usize, 1), exchange.reclaim());
 }
