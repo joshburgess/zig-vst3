@@ -160,6 +160,7 @@ Completion evidence:
 - `dsp.StreamingResampler` uses a 32-tap, 256-phase Blackman-windowed sinc filter with fixed inline coefficients and history. It supports partial consumption, explicit drain, deterministic reset, finite rate bounds, and `f32` and `f64` processing.
 - `dsp.FixedRatePipeline` owns both conversion stages, ten frames of bounded pending storage, exact integer host latency, and caller-owned model scratch sized through `requiredModelCapacity`.
 - Impulse, passband sine, stopband sine, randomized block, reset, drain, invalid-state, and insufficient-capacity tests pass.
+- A deterministic boundary matrix covers both directions at the exact 8:1 ratio limit, non-integer 12,345.678 Hz host conversion, and rates up to 1 MHz across randomized block sizes. Every conversion remains finite and within caller-provided scratch bounds.
 - The public Fixed Rate Processor runs a 48 kHz trivial model and passes all 47 Steinberg validator tests, including variable blocks, both sample formats, lifecycle transitions, and unusual validator rates.
 - The two-stage pipeline measured 44.7, 42.5, 32.6, and 30.0 ns per host sample at 44.1, 48, 88.2, and 96 kHz respectively on the current macOS development machine.
 - The aggregate suite passed 4,016/4,016 tests. Raw ABI checks, native VSTGUI sanitizers, and all 17 Steinberg validators passed.
@@ -384,7 +385,7 @@ Only after all five probes pass should a `zig-nam` repository or package begin i
 
 Local validation on 2026-07-22:
 
-- `zig build test`, including 4,159 deterministic tests, installed-package consumers, native adapter tests, macOS accessibility tests, visual regression, the 512 KiB resource recovery fixture, and the DSP parity runner, passed.
+- `zig build test`, including 4,160 deterministic tests, installed-package consumers, native adapter tests, macOS accessibility tests, visual regression, the 512 KiB resource recovery fixture, and the DSP parity runner, passed.
 - `zig build test-resource-thread-sanitizer test-dsp-fixtures test-dsp-fixture-builds test-c-kernel test-c-kernel-builds` passed. The resource sanitizer ran 29 tests, the fixture runner cross-compiled for Linux aarch64, Linux x86-64, and Windows x86-64, and the C kernel matrix built macOS universal, Linux aarch64/x86-64, and Windows x86-64 bundles.
 - `zig build raw-api-abi` passed.
 - `zig build validate-examples` passed all 47 Steinberg tests for every example in both sample formats.

@@ -201,6 +201,39 @@ test "fixed-rate pipeline processes randomized host blocks without discontinuiti
     }
 }
 
+test "fixed-rate pipeline covers arbitrary rates through its ratio boundaries" {
+    const Pipeline = FixedRatePipeline(f64);
+    const rate_pairs = [_][2]f64{
+        .{ 8_000, 64_000 },
+        .{ 64_000, 8_000 },
+        .{ 12_345.678, 48_000 },
+        .{ 176_400, 22_050 },
+        .{ 125_000, 1_000_000 },
+        .{ 1_000_000, 125_000 },
+    };
+    for (rate_pairs, 0..) |rates, pair_index| {
+        var pipeline = try Pipeline.init(.{ .host_rate = rates[0], .model_rate = rates[1] });
+        var random = std.Random.DefaultPrng.init(0x5241_5445_5041_4952 + pair_index);
+        var input: [257]f64 = undefined;
+        var output: [257]f64 = undefined;
+        var model: [2060]f64 = undefined;
+        var absolute_frame: usize = 0;
+        for (0..100) |_| {
+            const frame_count = random.random().intRangeAtMost(usize, 1, input.len);
+            for (input[0..frame_count], 0..) |*sample, frame| {
+                const phase = @as(f64, @floatFromInt(absolute_frame + frame)) * 0.013;
+                sample.* = 0.5 * @sin(phase);
+            }
+            const required = try pipeline.requiredModelCapacity(frame_count);
+            try std.testing.expect(required <= model.len);
+            const model_frames = try pipeline.convertInput(input[0..frame_count], &model);
+            try pipeline.convertOutput(model[0..model_frames], output[0..frame_count]);
+            for (output[0..frame_count]) |sample| try std.testing.expect(std.math.isFinite(sample));
+            absolute_frame += frame_count;
+        }
+    }
+}
+
 test "fixed-rate pipeline reset reproduces the same block stream" {
     const Pipeline = FixedRatePipeline(f32);
     var pipeline = try Pipeline.init(.{ .host_rate = 44_100, .model_rate = 48_000 });
