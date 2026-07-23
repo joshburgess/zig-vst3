@@ -205,6 +205,7 @@ Completion evidence:
 - `resource.Reference` stores a bounded path, SHA-256 identity, byte length, schema version, and bounded metadata summary. `ReferenceState` represents empty and linked resources in a versioned binary format.
 - The VST3 component-state envelope preserves legacy parameter-only state, exposes processor-owned bounded state through public hooks, and lets controllers restore the parameter section without parsing processor-private data.
 - `resource.ResourceRecovery` starts restoration on its worker, verifies identity and schema compatibility before publication, publishes without an editor polling loop, and reports explicit missing, moved, changed, unsupported, and failed states. A restore retires the previous active resource and any older pending generation at the next process-block boundary.
+- A generated 512 KiB model-sized fixture is read in 16 KiB worker chunks, hashed incrementally, allocated off-thread, published through the fixed-slot exchange, adopted at a block boundary, and reclaimed off-thread. This proves that inline path and handoff bounds do not impose a small limit on heap-owned prepared resources.
 - The Model Shell loads a small versioned JSON linear model and processes mono audio. Its tests prove maximum-path state round trips, editor-independent restoration, safe silence while missing, changed-file rejection, matching-content relinking, and controller compatibility.
 - The preparation worker owns all file access, JSON parsing, hashing, allocation, SRC construction, scratch sizing, prewarming, and destruction. Processing only adopts a fixed-slot publication and mutates its exclusively owned runtime state.
 - The aggregate deterministic suite, raw ABI checks, VSTGUI address and undefined-behavior sanitizers, resource thread sanitizer, and all 19 Steinberg validators pass. The Model Shell and Fixed Rate Processor each pass all 47 validator tests in both sample formats.
@@ -383,7 +384,8 @@ Only after all five probes pass should a `zig-nam` repository or package begin i
 
 Local validation on 2026-07-22:
 
-- `zig build test`, including installed-package consumers, native adapter tests, macOS accessibility tests, visual regression, and the DSP parity runner, passed.
+- `zig build test`, including 4,159 deterministic tests, installed-package consumers, native adapter tests, macOS accessibility tests, visual regression, the 512 KiB resource recovery fixture, and the DSP parity runner, passed.
+- `zig build test-resource-thread-sanitizer test-dsp-fixtures test-dsp-fixture-builds test-c-kernel test-c-kernel-builds` passed. The resource sanitizer ran 29 tests, the fixture runner cross-compiled for Linux aarch64, Linux x86-64, and Windows x86-64, and the C kernel matrix built macOS universal, Linux aarch64/x86-64, and Windows x86-64 bundles.
 - `zig build raw-api-abi` passed.
 - `zig build validate-examples` passed all 47 Steinberg tests for every example in both sample formats.
 - `zig build benchmark` passed the recorded regression budgets.

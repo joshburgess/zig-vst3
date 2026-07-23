@@ -712,6 +712,114 @@ test "resource recovery restores, detects changes, and relinks moved content" {
     try std.testing.expectEqual(@as(usize, 2), recovery.reclaim());
 }
 
+test "resource recovery streams and publishes a heap-owned model-sized resource" {
+    const resource_bytes = 512 * 1024;
+    const chunk_bytes = 16 * 1024;
+    const metadata_limit = 32;
+    const TestResource = struct { bytes: []u8 };
+    const TestPrepared = Prepared(TestResource, metadata_limit);
+    const TestFailure = enum { missing, invalid, allocation_failed };
+    const TestRecovery = Recovery(struct {
+        pub const Resource = TestResource;
+        pub const Failure = TestFailure;
+        pub const path_capacity = 1024;
+        pub const metadata_capacity = metadata_limit;
+        pub const slot_capacity = 3;
+        pub const maximum_work_units = resource_bytes;
+        pub const maximum_result_units = resource_bytes;
+
+        pub fn prepare(path: @import("path.zig").BoundedPath(path_capacity), context: *job_mod.WorkerContext) job_mod.Outcome(TestPrepared, Failure) {
+            const file = std.Io.Dir.cwd().openFile(context.io, path.slice(), .{}) catch return .{ .failure = .missing };
+            defer file.close(context.io);
+            const length_u64 = file.length(context.io) catch return .{ .failure = .invalid };
+            if (length_u64 == 0 or length_u64 > maximum_work_units) return .{ .failure = .invalid };
+            const length: usize = @intCast(length_u64);
+            context.setTotalUnits(length) catch return .cancelled;
+            context.setPhase(.loading) catch return .cancelled;
+
+            const resource = std.heap.page_allocator.create(Resource) catch return .{ .failure = .allocation_failed };
+            resource.bytes = std.heap.page_allocator.alloc(u8, length) catch {
+                std.heap.page_allocator.destroy(resource);
+                return .{ .failure = .allocation_failed };
+            };
+            var hasher = reference_mod.IdentityHasher{};
+            var offset: usize = 0;
+            while (offset < length) {
+                if (context.cancellationRequested()) {
+                    destroy(resource);
+                    return .cancelled;
+                }
+                const amount = @min(chunk_bytes, length - offset);
+                const destination = resource.bytes[offset .. offset + amount];
+                const count = file.readPositionalAll(context.io, destination, offset) catch {
+                    destroy(resource);
+                    return .{ .failure = .invalid };
+                };
+                if (count != amount) {
+                    destroy(resource);
+                    return .{ .failure = .invalid };
+                }
+                hasher.update(destination) catch {
+                    destroy(resource);
+                    return .{ .failure = .invalid };
+                };
+                offset += amount;
+                context.advance(offset, length) catch {
+                    destroy(resource);
+                    return .cancelled;
+                };
+            }
+            return .{ .success = .{
+                .value = .{
+                    .resource = resource,
+                    .identity = hasher.final(),
+                    .resource_schema_version = 1,
+                    .metadata = reference_mod.BoundedMetadata(metadata_capacity).init("generated model fixture") catch unreachable,
+                },
+                .result_units = length,
+            } };
+        }
+
+        pub fn destroy(resource: *Resource) void {
+            std.heap.page_allocator.free(resource.bytes);
+            std.heap.page_allocator.destroy(resource);
+        }
+
+        pub fn failureStatus(failure: Failure) reference_mod.RecoveryStatus {
+            return switch (failure) {
+                .missing => .missing,
+                .invalid => .unsupported,
+                .allocation_failed => .failed,
+            };
+        }
+    });
+
+    const fixture = try std.testing.allocator.alloc(u8, resource_bytes);
+    defer std.testing.allocator.free(fixture);
+    for (fixture, 0..) |*byte, index| byte.* = @truncate(index *% 131 +% 17);
+
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    try temporary.dir.writeFile(std.testing.io, .{ .sub_path = "model.fixture", .data = fixture });
+    var path_bytes: [1024]u8 = undefined;
+    const path_length = try temporary.dir.realPathFile(std.testing.io, "model.fixture", &path_bytes);
+
+    var recovery = TestRecovery.init();
+    defer recovery.deinit();
+    try std.testing.expect(recovery.importPath(path_bytes[0..path_length]));
+    recovery.waitAndPoll();
+    const snapshot = recovery.snapshot();
+    try std.testing.expectEqual(reference_mod.RecoveryStatus.ready, snapshot.status);
+    try std.testing.expectEqual(@as(u64, resource_bytes), snapshot.reference.linked.identity.byte_length);
+    try std.testing.expect(snapshot.reference.linked.identity.eql(reference_mod.Identity.fromBytes(fixture)));
+    try std.testing.expect(recovery.adoptPendingAtBlockBoundary());
+    const active = recovery.active().?;
+    try std.testing.expectEqual(resource_bytes, active.bytes.len);
+    try std.testing.expectEqualSlices(u8, fixture[0..64], active.bytes[0..64]);
+    try std.testing.expect(recovery.retireActiveAtBlockBoundary());
+    try std.testing.expectEqual(@as(usize, 1), recovery.reclaim());
+}
+
 test "resource recovery republishes linked content for a new preparation context" {
     const metadata_limit = 16;
     const TestResource = struct { value: u32 };
