@@ -83,6 +83,7 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
 
         pub fn convertInput(self: *Self, input: []const Sample, model_output: []Sample) error{
             NotConfigured,
+            InvalidState,
             CapacityOverflow,
             InsufficientModelCapacity,
             StreamTooLong,
@@ -92,12 +93,14 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
             if (model_output.len < required) return error.InsufficientModelCapacity;
             const result = self.to_model.process(input, model_output) catch |err| switch (err) {
                 error.NotConfigured => return error.NotConfigured,
+                error.InvalidState => return error.InvalidState,
                 error.StreamTooLong => return error.StreamTooLong,
                 error.Draining => unreachable,
             };
             if (result.consumed != input.len) return error.InsufficientModelCapacity;
             const remainder = self.to_model.process(&.{}, model_output[result.produced..]) catch |err| switch (err) {
                 error.NotConfigured => return error.NotConfigured,
+                error.InvalidState => return error.InvalidState,
                 error.StreamTooLong => return error.StreamTooLong,
                 error.Draining => unreachable,
             };
@@ -117,6 +120,7 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
             if (self.pending_model_count > 0) {
                 const pending_result = self.to_host.process(self.pending_model[0..self.pending_model_count], host_output) catch |err| switch (err) {
                     error.NotConfigured => return error.NotConfigured,
+                    error.InvalidState => return error.InvalidState,
                     error.StreamTooLong => return error.StreamTooLong,
                     error.Draining => unreachable,
                 };
@@ -133,6 +137,7 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
 
             const result = self.to_host.process(model_input, host_output[produced..]) catch |err| switch (err) {
                 error.NotConfigured => return error.NotConfigured,
+                error.InvalidState => return error.InvalidState,
                 error.StreamTooLong => return error.StreamTooLong,
                 error.Draining => unreachable,
             };
@@ -148,6 +153,7 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
             if (produced < host_output.len) {
                 const ready = self.to_host.process(&.{}, host_output[produced..]) catch |err| switch (err) {
                     error.NotConfigured => return error.NotConfigured,
+                    error.InvalidState => return error.InvalidState,
                     error.StreamTooLong => return error.StreamTooLong,
                     error.Draining => unreachable,
                 };

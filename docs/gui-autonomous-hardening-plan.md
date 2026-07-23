@@ -520,3 +520,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Fixed-rate output conversion now rejects an oversized direct pending-frame count before slicing inline storage or subtracting capacity.
 - Reset and successful reconfiguration clear pending model frames. This prevents buffered data from an old rate configuration from entering a rebuilt model runtime.
 - Focused fixed-rate and resampler coverage passed 12/12 tests, including randomized blocks, ratio boundaries, deterministic reset, malformed state, and reconfiguration recovery. The complete deterministic gate passed 111/111 steps and 4,189/4,189 tests.
+
+### Autonomous Follow-up: Resampler Retained State
+
+- Streaming resampler process, drain, and latency entry points validate retained input rate, output rate, and delay values before division or float-to-integer conversion.
+- Unconfigured instances retain `NotConfigured` behavior. Corrupted configured state returns `InvalidState`, and the fixed-rate pipeline propagates that distinction through both conversion stages.
+- Direct regressions cover invalid output-rate state across process, drain start, drain continuation, and latency queries. The focused fixed-rate and resampler suite passed 12/12 tests, and the complete deterministic gate passed 111/111 steps and 4,189/4,189 tests.

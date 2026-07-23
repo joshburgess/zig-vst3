@@ -174,6 +174,7 @@ Exit criteria:
 Completion evidence:
 
 - `dsp.StreamingResampler` uses a 32-tap, 256-phase Blackman-windowed sinc filter with fixed inline coefficients and history. It supports partial consumption, explicit drain, deterministic reset, finite rate bounds, and `f32` and `f64` processing.
+- Resampler processing, drain, and latency queries validate retained rate and delay state before division, float-to-integer conversion, or sample production. Malformed state returns `InvalidState` and never reaches the hot-path arithmetic.
 - `dsp.FixedRatePipeline` owns both conversion stages, ten frames of bounded pending storage, exact integer host latency, and caller-owned model scratch sized through `requiredModelCapacity`.
 - Output conversion rejects malformed direct pending counts before slicing fixed storage. Reset and successful reconfiguration clear pending model frames, so old-rate data cannot leak into a rebuilt runtime.
 - Impulse, passband sine, stopband sine, randomized block, reset, drain, invalid-state, and insufficient-capacity tests pass.

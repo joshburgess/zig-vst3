@@ -70,12 +70,13 @@ pub fn StreamingResampler(comptime Sample: type) type {
         }
 
         pub fn latencyOutputSamples(self: *const Self) f64 {
-            if (!self.configured) return 0.0;
+            if (!self.validState()) return 0.0;
             return self.delay_input_samples * self.output_rate / self.input_rate;
         }
 
-        pub fn process(self: *Self, input: []const Sample, output: []Sample) error{ NotConfigured, Draining, StreamTooLong }!ProcessResult {
+        pub fn process(self: *Self, input: []const Sample, output: []Sample) error{ NotConfigured, InvalidState, Draining, StreamTooLong }!ProcessResult {
             if (!self.configured) return error.NotConfigured;
+            if (!self.validState()) return error.InvalidState;
             if (self.drain_target != null) return error.Draining;
 
             var consumed: usize = 0;
@@ -89,8 +90,9 @@ pub fn StreamingResampler(comptime Sample: type) type {
             return .{ .consumed = consumed, .produced = produced };
         }
 
-        pub fn beginDrain(self: *Self) error{NotConfigured}!void {
+        pub fn beginDrain(self: *Self) error{ NotConfigured, InvalidState }!void {
             if (!self.configured) return error.NotConfigured;
+            if (!self.validState()) return error.InvalidState;
             if (self.drain_target != null) return;
             if (self.input_count == 0) {
                 self.drain_target = 0;
@@ -102,8 +104,9 @@ pub fn StreamingResampler(comptime Sample: type) type {
             self.drain_target = @intFromFloat(last_output_index + 1.0);
         }
 
-        pub fn drain(self: *Self, output: []Sample) error{ NotConfigured, DrainNotStarted, StreamTooLong }!DrainResult {
+        pub fn drain(self: *Self, output: []Sample) error{ NotConfigured, InvalidState, DrainNotStarted, StreamTooLong }!DrainResult {
             if (!self.configured) return error.NotConfigured;
+            if (!self.validState()) return error.InvalidState;
             const target = self.drain_target orelse return error.DrainNotStarted;
             var produced: usize = 0;
             while (produced < output.len and self.next_output_index < target) {
@@ -113,6 +116,16 @@ pub fn StreamingResampler(comptime Sample: type) type {
                 if (ready == 0) try self.push(0.0);
             }
             return .{ .produced = produced, .finished = self.next_output_index >= target };
+        }
+
+        pub fn validState(self: *const Self) bool {
+            if (!self.configured) return false;
+            (Config{
+                .input_rate = self.input_rate,
+                .output_rate = self.output_rate,
+                .delay_input_samples = self.delay_input_samples,
+            }).validate() catch return false;
+            return true;
         }
 
         fn push(self: *Self, sample: Sample) error{StreamTooLong}!void {
@@ -344,4 +357,13 @@ test "streaming resampler rejects invalid configuration and state transitions" {
     _ = try resampler.process(&.{1.0}, &output);
     try resampler.beginDrain();
     try std.testing.expectError(error.Draining, resampler.process(&.{1.0}, &output));
+
+    var malformed = try Resampler.init(.{ .input_rate = 48_000, .output_rate = 48_000 });
+    malformed.output_rate = 0.0;
+    try std.testing.expect(!malformed.validState());
+    try std.testing.expectEqual(@as(f64, 0.0), malformed.latencyOutputSamples());
+    try std.testing.expectError(error.InvalidState, malformed.process(&.{1.0}, &output));
+    try std.testing.expectError(error.InvalidState, malformed.beginDrain());
+    malformed.drain_target = 1;
+    try std.testing.expectError(error.InvalidState, malformed.drain(&output));
 }
