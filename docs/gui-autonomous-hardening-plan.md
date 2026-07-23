@@ -621,3 +621,16 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - DSP parity passed for `f32` and `f64` with fixed and randomized block boundaries. The fixture runner also cross-compiled for Linux aarch64, Linux x86-64, and Windows x86-64.
 - Performance budgets passed. Representative measurements were 279.9 ns per framework process block, 1,388.2 MiB/s bounded WAV import, 9.1 ns per sample-player frame with eight voices available, 591.8 ns per IR convolution sample, and 44.8 ns per fixed-rate frame at 48 kHz.
 - No REAPER or pluginval process was launched during this autonomous pass. Manual host checks remain deferred.
+
+### Autonomous Follow-up: Persistent Snapshot Integrity
+
+- IR editor snapshots now validate nested import state, frame capacity, sample metadata, finite peaks, and edited-state coherence. Decoded import snapshots validate status, failure, metadata, preview, and decoded-frame relationships.
+- Sample and convolution handoff metadata now has a public bounded validation contract. Staging validates metadata before overflow-safe chunk arithmetic.
+- Empty generic imports now clear work progress. Generated lifecycle transitions call the public snapshot validator after every operation.
+- Resource recovery now validates both retained and presentation snapshots. Editor activity counts saturate instead of wrapping to inactive.
+- The staged-package consumer exercises these contracts through installed public imports. The deterministic gate passed 111/111 steps and 4,220/4,220 tests.
+- Raw ABI, native GUI sanitizers, resource and GUI ThreadSanitizer, all headless editor lifecycles, DSP parity, C-kernel builds, and performance budgets passed in a 185/185-step gate with 2,161/2,161 tests.
+- All 19 native plugins passed all 47 Steinberg validator tests. Linux aarch64 and Windows x86-64 matrices each passed 59/59 steps.
+- Representative measurements were 292.9 ns per framework block, 1,323.2 MiB/s bounded WAV import, 9.4 ns per sample-player frame, 589.8 ns per IR sample, and 45.2 ns per fixed-rate frame at 48 kHz.
+- Commits: `0974ff5`, `ae15cce`, `3374f60`, `ac52df3`, `a480e85`, and `de9c49b`.
+- No REAPER or pluginval process was launched. Manual host checks remain deferred.

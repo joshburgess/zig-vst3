@@ -419,13 +419,14 @@ Only after all five probes pass should a `zig-nam` repository or package begin i
 
 Local validation on 2026-07-23:
 
-- `zig build test` passed 111/111 steps and 4,213/4,213 tests. This included installed-package consumers, native adapter tests, automated macOS accessibility tests, visual regression, resource recovery, and fixed and randomized DSP parity.
-- Native address and undefined-behavior sanitizers passed. The resource ThreadSanitizer passed 33/33 tests, and the GUI ThreadSanitizer completed four adapter concurrency runs.
+- `zig build test` passed 111/111 steps and 4,220/4,220 tests. This included installed-package consumers, native adapter tests, automated macOS accessibility tests, visual regression, resource recovery, and fixed and randomized DSP parity.
+- Public IR editor, decoded import, generic import, audio handoff, and resource recovery snapshots now validate retained coherence. Installed-package tests exercise these contracts directly.
+- Native address and undefined-behavior sanitizers passed. The resource ThreadSanitizer passed 34/34 tests, and the GUI ThreadSanitizer completed four adapter concurrency runs.
 - `zig build raw-api-abi` passed 123/123 steps. All 11 headless editor lifecycle targets passed 39/39 steps and 2,120/2,120 tests.
 - `zig build validate-examples` passed all 47 Steinberg tests for all 19 examples in both sample formats.
 - Linux aarch64 and Windows x86-64 example matrices each passed 59/59 steps. The C-kernel matrix built and inspected macOS universal, Linux aarch64/x86-64, and Windows x86-64 bundles.
 - DSP fixture parity passed for `f32` and `f64`. The fixture runner cross-compiled for Linux aarch64, Linux x86-64, and Windows x86-64.
-- `zig build benchmark` passed all regression budgets. The current run measured 279.9 ns per framework block, 1,388.2 MiB/s bounded WAV import, 9.1 ns per sample-player frame, 591.8 ns per IR convolution sample, and 44.8 ns per fixed-rate frame at 48 kHz.
+- `zig build benchmark` passed all regression budgets. The current run measured 292.9 ns per framework block, 1,323.2 MiB/s bounded WAV import, 9.4 ns per sample-player frame, 589.8 ns per IR convolution sample, and 45.2 ns per fixed-rate frame at 48 kHz.
 - Cross-compilation does not count as native execution. Native macOS host lifecycle testing remains manual, and native Windows, Linux, X11, Wayland, and CLAP host coverage remains unavailable locally.
 
 ## First execution phase
