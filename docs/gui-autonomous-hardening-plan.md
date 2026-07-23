@@ -440,3 +440,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Persistent editor booleans, checked menu actions, and piano pressed state now accept only the C values 0 and 1. Other integers are rejected before state mutation or plugin and host dispatch.
 - Piano callbacks validate channel, pitch, finite velocity, velocity range, and nonzero note-on velocity through the shared GUI note contract before resolving a controller.
 - The deterministic suite passed 4,158/4,158 tests. Raw ABI checks passed, the component gallery and Sine Synth each passed all 47 Steinberg validator tests, and the Linux aarch64 and Windows x86-64 example bundle matrices each passed 59/59 steps.
+
+### Autonomous Follow-up: Native Editor Rectangle Arithmetic
+
+- Native editor size, constraint, and content-scale callbacks now widen host coordinates before subtraction and use checked reconstruction for rectangle endpoints.
+- Empty, inverted, full-range, and overflowing coordinates are rejected before native resize work. Direct regressions cover both dimension and endpoint overflow.
+- The complete deterministic gate passed 111/111 steps and 4,167/4,167 tests. The native address and undefined-behavior sanitizer target passed, the resource ThreadSanitizer target passed 29/29 tests, and all 11 headless editor lifecycle targets passed 39/39 steps and 2,114/2,114 tests.
+- Warm rendering remained within budget at 94.1 us for the aggregate scene, 258.6 us for maximum signal views, 226.7 us for linked EQ, 141.3 us for Resonant Filter, and 46.96 ms for a complete Sample Player editor lifecycle.
