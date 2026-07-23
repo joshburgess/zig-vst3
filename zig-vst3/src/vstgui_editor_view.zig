@@ -827,6 +827,14 @@ fn rectEnd(start: types.int32, dimension: types.int32) ?types.int32 {
     return std.math.cast(types.int32, @as(i64, start) + @as(i64, dimension));
 }
 
+fn nativeFocusState(raw: types.TBool) ?types.int32 {
+    return switch (raw) {
+        0 => 0,
+        1 => 1,
+        else => null,
+    };
+}
+
 const TelemetryState = struct {
     source: ?gui_telemetry_source.RetainedSource,
     provider: ?TelemetrySourceProvider,
@@ -953,7 +961,8 @@ const View = vst_plug_view.PlugView(1, struct {
 
     pub fn onFocus(self: anytype, state: types.TBool) types.tresult {
         const editor_state = binding(self) orelse return types.kResultFalse;
-        zig_vstgui_editor_set_focus(editor_state.editor, state);
+        const focus_state = nativeFocusState(state) orelse return types.kInvalidArgument;
+        zig_vstgui_editor_set_focus(editor_state.editor, focus_state);
         return types.kResultOk;
     }
 
@@ -1355,6 +1364,13 @@ test "view rectangle arithmetic rejects invalid and overflowing coordinates" {
         @as(?types.int32, null),
         rectEnd(std.math.maxInt(types.int32), 1),
     );
+}
+
+test "native focus state rejects malformed booleans" {
+    try std.testing.expectEqual(@as(?types.int32, 0), nativeFocusState(0));
+    try std.testing.expectEqual(@as(?types.int32, 1), nativeFocusState(1));
+    try std.testing.expectEqual(@as(?types.int32, null), nativeFocusState(2));
+    try std.testing.expectEqual(@as(?types.int32, null), nativeFocusState(std.math.maxInt(types.TBool)));
 }
 
 test "telemetry source can connect after the editor opens" {

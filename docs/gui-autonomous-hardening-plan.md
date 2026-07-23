@@ -449,3 +449,8 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The GUI ThreadSanitizer completed four adapter concurrency runs. Raw ABI checks passed 123/123 steps, all 19 example plugins passed all 47 Steinberg validator tests, and the Linux aarch64 and Windows x86-64 bundle matrices each passed 59/59 steps.
 - Warm rendering remained within budget at 94.1 us for the aggregate scene, 258.6 us for maximum signal views, 226.7 us for linked EQ, 141.3 us for Resonant Filter, and 46.96 ms for a complete Sample Player editor lifecycle.
 - The budgeted microbenchmarks passed. Representative results were 283.4 ns per framework process block, 1,381.2 MiB/s bounded WAV import, 7.2 ns per sample-player frame with eight voices available, and 593.8 ns per IR convolution sample.
+
+### Autonomous Follow-up: Native Focus Boolean
+
+- The VST3 focus callback now accepts only the SDK `TBool` values 0 and 1. Malformed bytes are rejected before native focus state changes.
+- Direct boundary cases cover both valid values, the first invalid value, and the maximum byte value. The complete deterministic gate passed 111/111 steps and 4,174/4,174 tests.
