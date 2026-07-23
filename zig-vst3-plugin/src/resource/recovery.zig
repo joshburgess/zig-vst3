@@ -66,6 +66,47 @@ pub fn Recovery(comptime Config: type) type {
         reference: ReferenceState,
         failure: ?FailureType,
         publication_metadata: ?PublicationMetadata,
+
+        pub fn validate(self: *const @This()) !void {
+            try self.reference.validate();
+            if (self.status != .empty and self.generation == 0) {
+                return error.InvalidRecoveryGeneration;
+            }
+            if (self.status == .empty and
+                (self.reference != .empty or
+                    self.resolution != .empty or
+                    self.failure != null or
+                    self.publication_metadata != null))
+            {
+                return error.InvalidRecoveryState;
+            }
+            if (self.status == .ready) {
+                if (self.reference != .linked or
+                    (self.resolution != .ready and self.resolution != .moved) or
+                    self.failure != null or
+                    self.publication_metadata == null)
+                {
+                    return error.InvalidRecoveryState;
+                }
+            } else if (self.publication_metadata != null) {
+                return error.InvalidRecoveryState;
+            }
+            if (self.status != .ready and self.resolution != self.status) {
+                return error.InvalidRecoveryState;
+            }
+            if (self.failure) |failure| {
+                if (self.status != Config.failureStatus(failure)) {
+                    return error.InvalidRecoveryFailure;
+                }
+            } else if (self.status == .missing or self.status == .moved) {
+                return error.InvalidRecoveryFailure;
+            }
+        }
+
+        pub fn valid(self: *const @This()) bool {
+            self.validate() catch return false;
+            return true;
+        }
     };
 
     const Completion = struct {
@@ -614,6 +655,8 @@ test "resource recovery presents one bounded generation to the GUI" {
     try std.testing.expect(recovery.importPath("model.fixture"));
     while (!synchronization.started.load(.acquire)) std.Thread.yield() catch {};
 
+    var retained = recovery.snapshot();
+    try std.testing.expect(retained.valid());
     var presentation = recovery.presentationSnapshot();
     try std.testing.expect(presentation.valid());
     try std.testing.expectEqual(reference_mod.RecoveryStatus.restoring, presentation.status);
@@ -633,6 +676,8 @@ test "resource recovery presents one bounded generation to the GUI" {
     synchronization.release.store(true, .release);
     recovery.waitAndPoll();
 
+    retained = recovery.snapshot();
+    try std.testing.expect(retained.valid());
     presentation = recovery.presentationSnapshot();
     try std.testing.expect(presentation.valid());
     try std.testing.expectEqual(reference_mod.RecoveryStatus.failed, presentation.status);
@@ -643,6 +688,8 @@ test "resource recovery presents one bounded generation to the GUI" {
     synchronization.started.store(false, .release);
     try std.testing.expect(recovery.retry());
     recovery.waitAndPoll();
+    retained = recovery.snapshot();
+    try std.testing.expect(retained.valid());
     presentation = recovery.presentationSnapshot();
     try std.testing.expect(presentation.valid());
     try std.testing.expectEqual(reference_mod.RecoveryStatus.ready, presentation.status);
@@ -661,6 +708,16 @@ test "resource recovery presents one bounded generation to the GUI" {
     malformed.reference.linked.path.length = TestRecovery.component_state_maximum_encoded_size;
     try std.testing.expect(!malformed.valid());
     try std.testing.expectEqualStrings("", malformed.metadata());
+
+    var malformed_retained = retained;
+    malformed_retained.generation = 0;
+    try std.testing.expectError(error.InvalidRecoveryGeneration, malformed_retained.validate());
+    malformed_retained = retained;
+    malformed_retained.status = .restoring;
+    try std.testing.expectError(error.InvalidRecoveryState, malformed_retained.validate());
+    malformed_retained = retained;
+    malformed_retained.reference = .empty;
+    try std.testing.expectError(error.InvalidRecoveryState, malformed_retained.validate());
 }
 
 test "resource recovery restores, detects changes, and relinks moved content" {

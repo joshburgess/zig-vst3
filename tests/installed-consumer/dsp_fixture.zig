@@ -78,6 +78,9 @@ test "installed package exposes exclusive mutable runtime adoption" {
 test "installed package exposes bounded resource presentation" {
     var recovery = InstalledRecovery.init();
     defer recovery.deinit();
+    const retained = recovery.snapshot();
+    try retained.validate();
+    try std.testing.expect(retained.valid());
     const presentation = recovery.presentationSnapshot();
     try std.testing.expectEqual(plugin.resource.RecoveryStatus.empty, presentation.status);
     try std.testing.expectEqual(plugin.gui_progress.State.idle, presentation.progress.state);
