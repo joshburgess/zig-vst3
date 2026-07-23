@@ -112,3 +112,31 @@ test "installed package exposes validated DSP and telemetry state" {
     snapshot.store(std.math.inf(f64));
     try std.testing.expectEqual(@as(f64, 0.75), snapshot.load());
 }
+
+test "installed package exposes validated IR editor snapshots" {
+    const snapshot = plugin.gui_ir_editor.Snapshot{
+        .import = .{
+            .status = .ready,
+            .entry_point = .picker,
+            .path_count = 1,
+            .completed_units = 4,
+            .total_units = 4,
+            .generation = 1,
+            .cancellation_pending = false,
+        },
+        .sample_rate = 48_000,
+        .channels = 1,
+        .sample_frames = 4,
+        .decoded_frames = 4,
+        .original_frames = 4,
+        .original_peak = 0.5,
+        .edited_peak = 0.5,
+        .edited = false,
+    };
+    try snapshot.validate(4);
+    try std.testing.expect(snapshot.valid(4));
+
+    var malformed = snapshot;
+    malformed.original_frames = 3;
+    try std.testing.expect(!malformed.valid(4));
+}

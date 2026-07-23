@@ -23,6 +23,62 @@ pub const Snapshot = struct {
     original_peak: f32,
     edited_peak: f32,
     edited: bool,
+
+    pub fn validate(self: Snapshot, frame_capacity: usize) !void {
+        try self.import.validate();
+        if (frame_capacity == 0 or
+            self.decoded_frames > frame_capacity or
+            self.original_frames > frame_capacity or
+            self.sample_frames > frame_capacity)
+        {
+            return error.InvalidIrEditorBounds;
+        }
+        if (!validPeak(self.original_peak) or !validPeak(self.edited_peak)) {
+            return error.InvalidIrEditorPeak;
+        }
+
+        const empty = self.sample_frames == 0 and
+            self.decoded_frames == 0 and
+            self.original_frames == 0;
+        if (empty) {
+            if (self.import.status != .idle or
+                self.sample_rate != 0 or
+                self.channels != 0 or
+                self.original_peak != 0.0 or
+                self.edited_peak != 0.0 or
+                self.edited)
+            {
+                return error.InvalidIrEditorState;
+            }
+            return;
+        }
+
+        if (self.import.status != .ready or
+            self.import.generation == 0 or
+            self.import.completed_units != self.decoded_frames or
+            self.import.total_units != self.decoded_frames or
+            self.sample_rate < 8_000 or
+            self.sample_rate > 384_000 or
+            self.channels == 0 or
+            self.channels > maximum_channels or
+            self.sample_frames != self.decoded_frames or
+            self.decoded_frames == 0 or
+            self.original_frames == 0 or
+            self.decoded_frames > self.original_frames)
+        {
+            return error.InvalidIrEditorState;
+        }
+        if (!self.edited and
+            (self.decoded_frames != self.original_frames or self.edited_peak != self.original_peak))
+        {
+            return error.InvalidIrEditorState;
+        }
+    }
+
+    pub fn valid(self: Snapshot, frame_capacity: usize) bool {
+        self.validate(frame_capacity) catch return false;
+        return true;
+    }
 };
 
 pub fn Editor(comptime frame_capacity: usize) type {
@@ -534,4 +590,42 @@ test "IR editor rejects malformed public bounds and clear recovers" {
     try std.testing.expect(!editor.reset());
     try std.testing.expect(editor.clear());
     try std.testing.expect(editor.valid());
+}
+
+test "IR editor snapshot rejects malformed retained state" {
+    const samples = [_]f32{ 0.25, 0.5, -0.25, -0.5 };
+    const importer = TestImporter{ .samples = &samples };
+    var editor = Editor(4){};
+    try editor.loadFrom(&importer);
+
+    const valid = editor.snapshot();
+    try valid.validate(4);
+    try std.testing.expect(valid.valid(4));
+
+    var malformed = valid;
+    malformed.decoded_frames = 5;
+    try std.testing.expectError(error.InvalidIrEditorBounds, malformed.validate(4));
+    malformed = valid;
+    malformed.edited_peak = std.math.nan(f32);
+    try std.testing.expectError(error.InvalidIrEditorPeak, malformed.validate(4));
+    malformed = valid;
+    malformed.import.status = .idle;
+    malformed.import.path_count = 0;
+    malformed.import.completed_units = 0;
+    malformed.import.total_units = 0;
+    try std.testing.expectError(error.InvalidIrEditorState, malformed.validate(4));
+    malformed = valid;
+    malformed.edited = false;
+    malformed.decoded_frames -= 1;
+    malformed.sample_frames -= 1;
+    malformed.import.completed_units -= 1;
+    malformed.import.total_units -= 1;
+    try std.testing.expectError(error.InvalidIrEditorState, malformed.validate(4));
+
+    try std.testing.expect(editor.clear());
+    const empty = editor.snapshot();
+    try empty.validate(4);
+    malformed = empty;
+    malformed.channels = 1;
+    try std.testing.expectError(error.InvalidIrEditorState, malformed.validate(4));
 }
