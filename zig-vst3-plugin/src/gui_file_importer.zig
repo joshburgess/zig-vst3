@@ -36,7 +36,7 @@ pub const Snapshot = struct {
 
     pub fn progress(self: Snapshot) f64 {
         if (self.total_units == 0) return 0.0;
-        return @as(f64, @floatFromInt(self.completed_units)) /
+        return @as(f64, @floatFromInt(@min(self.completed_units, self.total_units))) /
             @as(f64, @floatFromInt(self.total_units));
     }
 
@@ -266,6 +266,7 @@ test "import snapshot rejects impossible progress and cancellation" {
     var malformed = valid;
     malformed.completed_units = 9;
     try std.testing.expectError(error.InvalidImportProgress, malformed.validate());
+    try std.testing.expectEqual(@as(f64, 1.0), malformed.progress());
     malformed = valid;
     malformed.status = .ready;
     malformed.cancellation_pending = false;
