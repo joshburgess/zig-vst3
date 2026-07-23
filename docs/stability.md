@@ -22,9 +22,9 @@ The intended direction is stable plugin declarations, reflected parameter metada
 
 ### VSTGUI component API
 
-The reviewed authoring surface is `@import("zig-vst3").vstgui`. Parameter descriptions, standard control kinds, explicit theme and layout selection, and the `create*View` functions are exercised by both the component gallery and the Voice Mix editor. Changes to that subset should update both editors and the author guide in the same commit.
+The reviewed authoring surface is `@import("zig-vst3").vstgui`. Parameter descriptions, standard controls, composition, themes, layouts, meters, graphs, assets, fonts, drawing callbacks, and the `create*View` functions are exercised by the component gallery and production editors. The Parametric EQ and IR Loader independently use the public asset, font, canvas, and drawing callback contracts. Changes to the supported subset should update its consumers and the author guide in the same commit.
 
-Meters, assets, font selection, custom drawing callbacks, and native accessibility bridges remain experimental. The gallery exercises their current implementation, but a second production editor has not yet established a compatibility-worthy contract for them. See [VSTGUI Component Authoring](framework/vstgui-components.md#api-status) for the exact boundary.
+Native assistive-technology bridges remain experimental. macOS behavior is integration-tested and Windows support is cross-compiled, but native VoiceOver, Narrator, X11, Wayland, and AT-SPI workflows retain the verification limits listed in [VSTGUI Component Authoring](framework/vstgui-components.md#api-status).
 
 ## Compatibility Expectations
 
