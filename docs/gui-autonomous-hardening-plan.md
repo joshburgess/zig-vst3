@@ -601,3 +601,23 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Linux aarch64 and Windows x86-64 bundle matrices each passed 59/59 steps. The C-kernel matrix passed macOS universal, Linux aarch64 and x86-64, and Windows x86-64.
 - Performance budgets passed. Representative measurements were 437.7 ns per framework process block, 1,458.5 MiB/s bounded WAV import, 9.0 ns per sample-player frame with eight voices available, 589.8 ns per IR convolution sample, and 39.7 ns per fixed-rate frame at 48 kHz.
 - No REAPER or pluginval process was launched during this autonomous pass.
+
+### Autonomous Follow-up: DSP and Resource State Integrity
+
+- Biquad coefficients, retained delay state, and complex responses now reject non-finite values. Extreme finite responses use scaled magnitude arithmetic instead of overflowing intermediate squares.
+- Linear, exponential, and logarithmic smoothers contain malformed retained values at every public access and mutation boundary.
+- Streaming resamplers bound their retained timeline before integer conversion. Fixed-rate pipelines verify both conversion stages, matching rates, pending storage, and reported latency before processing.
+- Resource jobs validate progress, cancellation, result, status, and failure coherence. Fixed-slot resource exchange validates pending and active indices before every array access.
+- Telemetry snapshots reject non-finite values, queue readers recover from malformed public cursors, importer progress is bounded, and process-segment cursors terminate safely.
+- Public parameter-change and event collections expose full block validation. Parameter latches reject malformed changes and repair invalid retained normalized values.
+- The staged-package consumer exercises the DSP, telemetry, parameter-change, event, resource, and C-kernel contracts through installed public imports. Its gate passed 9/9 steps and 10/10 tests.
+
+### Autonomous Follow-up: DSP State Release Gates
+
+- The complete deterministic gate passed 111/111 steps and 4,213/4,213 tests. Raw ABI checks passed 123/123 steps.
+- Native address and undefined-behavior sanitizers passed. The resource ThreadSanitizer passed 33/33 tests, and the GUI ThreadSanitizer completed four adapter concurrency runs.
+- All 11 headless editor lifecycle targets passed 39/39 steps and 2,120/2,120 tests. All 19 native example plugins passed all 47 Steinberg validator tests.
+- Linux aarch64 and Windows x86-64 example matrices each passed 59/59 steps. The C-kernel matrix passed macOS universal, Linux aarch64 and x86-64, and Windows x86-64.
+- DSP parity passed for `f32` and `f64` with fixed and randomized block boundaries. The fixture runner also cross-compiled for Linux aarch64, Linux x86-64, and Windows x86-64.
+- Performance budgets passed. Representative measurements were 279.9 ns per framework process block, 1,388.2 MiB/s bounded WAV import, 9.1 ns per sample-player frame with eight voices available, 591.8 ns per IR convolution sample, and 44.8 ns per fixed-rate frame at 48 kHz.
+- No REAPER or pluginval process was launched during this autonomous pass. Manual host checks remain deferred.

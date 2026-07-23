@@ -349,6 +349,22 @@ Completion evidence:
 - Native arm64 macOS measured 1.6 to 2.4 ns per sample with exact reference output. The x86-64 binary under Rosetta measured 1.7 to 2.4 ns per sample. Its maximum errors were 2.98e-7 for f32 and 5.56e-16 for f64. Fixed and randomized renders remained bit-identical. The runner reports architecture, model, format, rate, backend, timings, and error metrics, and enforces a 100 ns per sample regression ceiling.
 - These x86-64 numbers are translated execution, not native x86-64 validation. Native Linux and Windows performance remain external checks.
 
+### Retained runtime state integrity
+
+- [x] Validate public fixed-capacity slot and queue indices before storage access.
+- [x] Validate resampler timelines and fixed-rate stage coherence before integer conversion or processing.
+- [x] Contain non-finite coefficient, smoother, telemetry, parameter, and retained DSP state.
+- [x] Expose public block validation for parameter changes and events.
+- [x] Exercise the contracts from a staged installed-package consumer.
+
+Completion evidence:
+
+- Resource jobs and exchanges validate lifecycle coherence, progress, cancellation, generations, active slots, pending slots, and publication state before use.
+- Streaming resamplers reject malformed timelines before float-to-integer conversion. Fixed-rate pipelines verify both conversion stages, matching rates, pending capacity, and exact latency.
+- Biquad filters, parameter smoothers, atomic parameter values, block latches, and telemetry snapshots contain non-finite retained values without sending them into model or GUI paths.
+- Parameter-change and event collections expose whole-block validation. Segment iterators terminate safely when direct public cursors or boundaries are malformed.
+- The staged-package consumer passed 10/10 tests using only installed public imports. The full deterministic suite passed 4,213/4,213 tests, including fixed and randomized DSP parity.
+
 ## Work that belongs in `zig-nam`
 
 The following capabilities should not be added to `zig-vst3` or the general plugin framework:
@@ -401,16 +417,16 @@ Only after all five probes pass should a `zig-nam` repository or package begin i
 - [x] Performance measurements with fixed fixtures and recorded machine context.
 - [x] Documentation of unavailable native Windows, X11, Wayland, and CLAP coverage.
 
-Local validation on 2026-07-22:
+Local validation on 2026-07-23:
 
-- `zig build test`, including 4,160 deterministic tests, installed-package consumers, native adapter tests, macOS accessibility tests, visual regression, the 512 KiB resource recovery fixture, and the DSP parity runner, passed.
-- `zig build test-resource-thread-sanitizer test-dsp-fixtures test-dsp-fixture-builds test-c-kernel test-c-kernel-builds` passed. The resource sanitizer ran 29 tests, the fixture runner cross-compiled for Linux aarch64, Linux x86-64, and Windows x86-64, and the C kernel matrix built macOS universal, Linux aarch64/x86-64, and Windows x86-64 bundles.
-- `zig build raw-api-abi` passed.
-- `zig build validate-examples` passed all 47 Steinberg tests for every example in both sample formats.
-- `zig build benchmark` passed the recorded regression budgets.
-- Linux aarch64 and Windows x86-64 example bundle matrices passed with explicit cross targets.
-- `zig build test-dsp-fixture-builds` cross-compiles the fixture runner for Linux aarch64, Linux x86-64, and Windows x86-64. Cross-compilation does not count as native execution.
-- Native macOS host lifecycle testing remains a manual check. Native Windows, Linux, X11, Wayland, and CLAP host coverage remains unavailable locally.
+- `zig build test` passed 111/111 steps and 4,213/4,213 tests. This included installed-package consumers, native adapter tests, automated macOS accessibility tests, visual regression, resource recovery, and fixed and randomized DSP parity.
+- Native address and undefined-behavior sanitizers passed. The resource ThreadSanitizer passed 33/33 tests, and the GUI ThreadSanitizer completed four adapter concurrency runs.
+- `zig build raw-api-abi` passed 123/123 steps. All 11 headless editor lifecycle targets passed 39/39 steps and 2,120/2,120 tests.
+- `zig build validate-examples` passed all 47 Steinberg tests for all 19 examples in both sample formats.
+- Linux aarch64 and Windows x86-64 example matrices each passed 59/59 steps. The C-kernel matrix built and inspected macOS universal, Linux aarch64/x86-64, and Windows x86-64 bundles.
+- DSP fixture parity passed for `f32` and `f64`. The fixture runner cross-compiled for Linux aarch64, Linux x86-64, and Windows x86-64.
+- `zig build benchmark` passed all regression budgets. The current run measured 279.9 ns per framework block, 1,388.2 MiB/s bounded WAV import, 9.1 ns per sample-player frame, 591.8 ns per IR convolution sample, and 44.8 ns per fixed-rate frame at 48 kHz.
+- Cross-compilation does not count as native execution. Native macOS host lifecycle testing remains manual, and native Windows, Linux, X11, Wayland, and CLAP host coverage remains unavailable locally.
 
 ## First execution phase
 
