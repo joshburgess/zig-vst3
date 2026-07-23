@@ -183,13 +183,18 @@ pub const BlockSegment = struct {
     }
 };
 
-/// Advance a block-segment cursor up to `boundary`, clamp it to the block, and return the spanned segment.
+/// Return an empty terminal segment when the public cursor or boundary is invalid.
 pub fn advanceBlockSegment(next_start: *usize, frame_count: usize, boundary: usize) BlockSegment {
     const start = next_start.*;
-    std.debug.assert(start < frame_count);
-    std.debug.assert(boundary > start);
+    if (start >= frame_count) {
+        next_start.* = frame_count;
+        return .{ .start_offset = frame_count, .end_offset = frame_count };
+    }
+    if (boundary <= start) {
+        next_start.* = frame_count;
+        return .{ .start_offset = start, .end_offset = start };
+    }
     next_start.* = @min(boundary, frame_count);
-    std.debug.assert(next_start.* > start and next_start.* <= frame_count);
     return .{ .start_offset = start, .end_offset = next_start.* };
 }
 
@@ -717,6 +722,29 @@ test "block parameter latch applies boundary changes and defers later changes" {
     latch.reset(std.math.nan(f64));
     try std.testing.expectEqual(@as(f64, 0.0), latch.currentBlockValue());
     try std.testing.expectEqual(@as(f64, 0.0), latch.nextBlockValue());
+}
+
+test "block segment advancement contains malformed public cursors" {
+    var cursor: usize = 8;
+    try std.testing.expectEqual(
+        BlockSegment{ .start_offset = 4, .end_offset = 4 },
+        advanceBlockSegment(&cursor, 4, 12),
+    );
+    try std.testing.expectEqual(@as(usize, 4), cursor);
+
+    cursor = 2;
+    try std.testing.expectEqual(
+        BlockSegment{ .start_offset = 2, .end_offset = 2 },
+        advanceBlockSegment(&cursor, 4, 2),
+    );
+    try std.testing.expectEqual(@as(usize, 4), cursor);
+
+    cursor = 1;
+    try std.testing.expectEqual(
+        BlockSegment{ .start_offset = 1, .end_offset = 4 },
+        advanceBlockSegment(&cursor, 4, std.math.maxInt(usize)),
+    );
+    try std.testing.expectEqual(@as(usize, 4), cursor);
 }
 
 test "parameter changes validate generated boundary cases" {
