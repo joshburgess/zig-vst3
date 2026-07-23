@@ -127,16 +127,33 @@ pub fn Job(comptime Config: type) type {
 
             pub fn progress(self: Snapshot) f64 {
                 if (self.total_units == 0) return 0.0;
-                return @as(f64, @floatFromInt(self.completed_units)) /
+                return @as(f64, @floatFromInt(@min(self.completed_units, self.total_units))) /
                     @as(f64, @floatFromInt(self.total_units));
             }
 
             pub fn canCancel(self: Snapshot) bool {
-                return self.status == .queued or self.status == .validating or self.status == .loading;
+                return !self.cancellation_pending and
+                    (self.status == .queued or self.status == .validating or self.status == .loading);
             }
 
             pub fn canRetry(self: Snapshot) bool {
                 return self.status == .cancelled or self.status == .failed;
+            }
+
+            pub fn valid(self: Snapshot) bool {
+                if ((self.total_units == 0 and self.completed_units != 0) or
+                    self.completed_units > self.total_units)
+                {
+                    return false;
+                }
+                if (self.framework_failure != .none and self.status != .failed) return false;
+                if (self.failure != null and self.status != .failed) return false;
+                if (self.cancellation_pending and
+                    self.status != .queued and self.status != .validating and self.status != .loading)
+                {
+                    return false;
+                }
+                return !self.result_available or self.status == .ready;
             }
         };
 
@@ -628,4 +645,42 @@ test "resource job enforces work and result limits" {
     const reset_snapshot = resource_job.snapshot();
     try std.testing.expectEqual(Status.idle, reset_snapshot.status);
     try std.testing.expect(!reset_snapshot.cancellation_pending);
+}
+
+test "resource job snapshots contain malformed presentation state" {
+    const SnapshotJob = Job(struct {
+        pub const Request = void;
+        pub const Result = void;
+        pub const Failure = enum { unavailable };
+        pub const maximum_work_units = 4;
+        pub const maximum_result_units = 1;
+
+        pub fn run(_: Request, _: *WorkerContext) Outcome(Result, Failure) {
+            return .{ .success = .{ .value = {}, .result_units = 1 } };
+        }
+    });
+
+    const valid = SnapshotJob.Snapshot{
+        .status = .loading,
+        .generation = 1,
+        .completed_units = 2,
+        .total_units = 4,
+        .framework_failure = .none,
+        .failure = null,
+        .cancellation_pending = false,
+        .result_available = false,
+    };
+    try std.testing.expect(valid.valid());
+    try std.testing.expectApproxEqAbs(@as(f64, 0.5), valid.progress(), 0.0001);
+    try std.testing.expect(valid.canCancel());
+
+    var malformed = valid;
+    malformed.completed_units = 8;
+    try std.testing.expect(!malformed.valid());
+    try std.testing.expectEqual(@as(f64, 1.0), malformed.progress());
+    malformed = valid;
+    malformed.cancellation_pending = true;
+    try std.testing.expect(!malformed.canCancel());
+    malformed.status = .ready;
+    try std.testing.expect(!malformed.valid());
 }
