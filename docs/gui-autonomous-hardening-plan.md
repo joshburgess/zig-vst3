@@ -494,3 +494,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Resource-reference serialization validates path and metadata lengths before writing any bytes. Invalid references report an oversized encoded form, reject recovery classification, and return a specific error without partial output.
 - Editor-state serialization validates every retained value before writing its header. File-drop extension counts and lengths are checked before slicing configuration storage.
 - Direct regressions cover oversized and empty path lengths, oversized metadata, text, envelope, extension count, and extension length values. The complete deterministic gate passed 111/111 steps and 4,184/4,184 tests.
+
+### Autonomous Follow-up: Bounded GUI Collections
+
+- Editable graph envelopes validate public collection counts, ranges, snap settings, point ordering, identifiers, selections, and transaction backups before mutation. Accessors fail closed, and cancellation discards malformed backup metadata without replacing valid live points.
+- Fixed graph series reject oversized direct counts. Preset-browser operations validate retained counts, names, search text, and unique identifiers before collection access.
+- Loading a preset now verifies that the selected identifier still exists and matches the active filter. Persistence rejects stale or filtered selections instead of storing inconsistent state.
+- Direct regressions cover oversized graph and preset counts, duplicate graph points, malformed transaction backups, oversized preset text, and recovery. The complete deterministic gate passed 111/111 steps and 4,186/4,186 tests.

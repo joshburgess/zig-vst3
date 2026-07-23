@@ -129,16 +129,19 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
         }
 
         pub fn slice(self: *const Self) []const EditablePoint {
+            if (self.point_count > capacity) return &.{};
             return self.points[0..self.point_count];
         }
 
         pub fn selected(self: *const Self) ?EditablePoint {
+            if (!self.valid()) return null;
             const index = self.indexOf(self.selected_id orelse return null) orelse return null;
             return self.points[index];
         }
 
         pub fn begin(self: *Self) !void {
             if (self.transaction_active) return error.TransactionActive;
+            if (!self.valid()) return error.InvalidEnvelopeState;
             @memcpy(self.transaction_points[0..self.point_count], self.points[0..self.point_count]);
             self.transaction_count = self.point_count;
             self.transaction_selection = self.selected_id;
@@ -152,6 +155,17 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
 
         pub fn cancel(self: *Self) void {
             if (!self.transaction_active) return;
+            if (self.transaction_count > capacity or !self.x_range.valid() or !self.y_range.valid() or
+                !validPointStorage(self.transaction_points[0..@min(self.transaction_count, capacity)], self.x_range, self.y_range) or
+                (self.transaction_selection != null and
+                    !containsId(self.transaction_points[0..@min(self.transaction_count, capacity)], self.transaction_selection.?)))
+            {
+                self.transaction_count = 0;
+                self.transaction_selection = null;
+                self.transaction_next_id = 1;
+                self.transaction_active = false;
+                return;
+            }
             @memcpy(self.points[0..self.transaction_count], self.transaction_points[0..self.transaction_count]);
             self.point_count = self.transaction_count;
             self.selected_id = self.transaction_selection;
@@ -160,11 +174,13 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
         }
 
         pub fn select(self: *Self, id: ?PointId) !void {
+            if (!self.valid()) return error.InvalidEnvelopeState;
             if (id) |value| _ = self.indexOf(value) orelse return error.PointNotFound;
             self.selected_id = id;
         }
 
         pub fn selectAdjacent(self: *Self, direction: enum { previous, next }) ?EditablePoint {
+            if (!self.valid()) return null;
             if (self.point_count == 0) {
                 self.selected_id = null;
                 return null;
@@ -228,9 +244,11 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
 
         fn requireTransaction(self: *const Self) !void {
             if (!self.transaction_active) return error.NoActiveTransaction;
+            if (!self.valid()) return error.InvalidEnvelopeState;
         }
 
         fn indexOf(self: *const Self, id: PointId) ?usize {
+            if (self.point_count > capacity) return null;
             for (self.points[0..self.point_count], 0..) |point, index| {
                 if (point.id == id) return index;
             }
@@ -250,6 +268,29 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
             return error.NoPointIdAvailable;
         }
 
+        pub fn valid(self: *const Self) bool {
+            if (!self.x_range.valid() or !self.y_range.valid() or !self.snap.valid() or
+                self.point_count > capacity or self.transaction_count > capacity or self.next_id == 0)
+            {
+                return false;
+            }
+            if (!validPointStorage(self.points[0..self.point_count], self.x_range, self.y_range)) return false;
+            if (self.selected_id) |id| {
+                if (self.indexOf(id) == null) return false;
+            }
+            if (self.transaction_active) {
+                if (self.transaction_next_id == 0 or
+                    !validPointStorage(self.transaction_points[0..self.transaction_count], self.x_range, self.y_range))
+                {
+                    return false;
+                }
+                if (self.transaction_selection) |id| {
+                    if (!containsId(self.transaction_points[0..self.transaction_count], id)) return false;
+                }
+            }
+            return true;
+        }
+
         fn snapPoint(self: *const Self, position: Point) !Point {
             if (!position.finite()) return error.InvalidPoint;
             return .{
@@ -263,6 +304,29 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
             if (step == 0.0) return clamped;
             const snapped_value = range.minimum + @round((clamped - range.minimum) / step) * step;
             return std.math.clamp(snapped_value, range.minimum, range.maximum);
+        }
+
+        fn validPointStorage(source: []const EditablePoint, x_range: Range, y_range: Range) bool {
+            for (source, 0..) |point, index| {
+                if (point.id == 0 or !point.position.finite() or
+                    point.position.x < x_range.minimum or point.position.x > x_range.maximum or
+                    point.position.y < y_range.minimum or point.position.y > y_range.maximum)
+                {
+                    return false;
+                }
+                if (index > 0 and source[index - 1].position.x > point.position.x) return false;
+                for (source[0..index]) |previous| {
+                    if (previous.id == point.id) return false;
+                }
+            }
+            return true;
+        }
+
+        fn containsId(source: []const EditablePoint, id: PointId) bool {
+            for (source) |point| {
+                if (point.id == id) return true;
+            }
+            return false;
         }
     };
 }
@@ -285,6 +349,7 @@ pub fn FixedSeries(comptime capacity: usize) type {
         }
 
         pub fn slice(self: *const @This()) []const Point {
+            if (self.count > capacity) return &.{};
             return self.points[0..self.count];
         }
     };
@@ -572,6 +637,9 @@ test "fixed series rejects overflow and invalid points" {
     try std.testing.expectError(error.InvalidPoint, Series.init(&.{.{ .x = 0, .y = std.math.inf(f64) }}));
     const series = try Series.init(&.{ .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 0 } });
     try std.testing.expectEqual(@as(usize, 2), series.slice().len);
+    var malformed = series;
+    malformed.count = 3;
+    try std.testing.expectEqual(@as(usize, 0), malformed.slice().len);
 }
 
 test "editable envelopes reject directly constructed invalid ranges" {
@@ -585,6 +653,34 @@ test "editable envelopes reject directly constructed invalid ranges" {
         error.InvalidRange,
         Envelope.init(valid, .{ .minimum = 0.0, .maximum = std.math.nan(f64) }, .{}, &.{}),
     );
+}
+
+test "editable envelope rejects malformed direct collection state" {
+    const Envelope = EditableEnvelope(2);
+    const range = try Range.init(0.0, 1.0);
+    var envelope = try Envelope.init(range, range, .{}, &.{
+        .{ .id = 1, .position = .{ .x = 0.0, .y = 0.0 } },
+        .{ .id = 2, .position = .{ .x = 1.0, .y = 1.0 } },
+    });
+    envelope.point_count = 3;
+    try std.testing.expect(!envelope.valid());
+    try std.testing.expectEqual(@as(usize, 0), envelope.slice().len);
+    try std.testing.expectEqual(@as(?EditablePoint, null), envelope.selected());
+    try std.testing.expectError(error.InvalidEnvelopeState, envelope.begin());
+    try std.testing.expectEqual(@as(?EditablePoint, null), envelope.selectAdjacent(.next));
+
+    envelope.point_count = 2;
+    envelope.points[1].id = 1;
+    try std.testing.expect(!envelope.valid());
+    try std.testing.expectError(error.InvalidEnvelopeState, envelope.select(1));
+
+    envelope.points[1] = .{ .id = 2, .position = .{ .x = 1.0, .y = 1.0 } };
+    try std.testing.expect(envelope.valid());
+    try envelope.begin();
+    envelope.transaction_count = 3;
+    envelope.cancel();
+    try std.testing.expect(!envelope.transaction_active);
+    try std.testing.expect(envelope.valid());
 }
 
 test "snapshot series is activity gated and bounded" {
