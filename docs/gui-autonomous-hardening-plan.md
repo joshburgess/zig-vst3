@@ -526,3 +526,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Streaming resampler process, drain, and latency entry points validate retained input rate, output rate, and delay values before division or float-to-integer conversion.
 - Unconfigured instances retain `NotConfigured` behavior. Corrupted configured state returns `InvalidState`, and the fixed-rate pipeline propagates that distinction through both conversion stages.
 - Direct regressions cover invalid output-rate state across process, drain start, drain continuation, and latency queries. The focused fixed-rate and resampler suite passed 12/12 tests, and the complete deterministic gate passed 111/111 steps and 4,189/4,189 tests.
+
+### Autonomous Follow-up: Collection Hardening Release Gates
+
+- Native address and undefined-behavior sanitizers passed. The GUI ThreadSanitizer completed four adapter concurrency runs, and the resource ThreadSanitizer passed.
+- All 11 headless editor lifecycle targets and raw ABI checks passed. All 19 example plugins passed all 47 Steinberg validator tests.
+- Linux aarch64 and Windows x86-64 bundle matrices each passed 59/59 steps. The C-kernel matrix passed macOS universal, Linux aarch64 and x86-64, and Windows x86-64.
+- Performance budgets passed. Representative measurements were 289.0 ns per framework process block, 1,365.9 MiB/s bounded WAV import, 7.3 ns per sample-player frame with eight voices available, 597.7 ns per IR convolution sample, and 41.3 ns per fixed-rate frame at 48 kHz.
