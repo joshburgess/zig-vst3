@@ -16,14 +16,17 @@ pub const Range = struct {
     maximum: f64,
 
     pub fn init(minimum: f64, maximum: f64) !Range {
-        if (!std.math.isFinite(minimum) or !std.math.isFinite(maximum) or maximum <= minimum) {
-            return error.InvalidRange;
-        }
-        return .{ .minimum = minimum, .maximum = maximum };
+        const result = Range{ .minimum = minimum, .maximum = maximum };
+        if (!result.valid()) return error.InvalidRange;
+        return result;
+    }
+
+    pub fn valid(self: Range) bool {
+        return std.math.isFinite(self.minimum) and std.math.isFinite(self.maximum) and self.maximum > self.minimum;
     }
 
     pub fn normalizeClamped(self: Range, value: f64) f64 {
-        if (!std.math.isFinite(value)) return 0.0;
+        if (!self.valid() or !std.math.isFinite(value)) return 0.0;
         return std.math.clamp((value - self.minimum) / (self.maximum - self.minimum), 0.0, 1.0);
     }
 };
@@ -101,6 +104,7 @@ pub fn EditableEnvelope(comptime capacity: usize) type {
             snap: Snap,
             source: []const EditablePoint,
         ) !Self {
+            if (!x_range.valid() or !y_range.valid()) return error.InvalidRange;
             if (!snap.valid()) return error.InvalidSnap;
             if (source.len > capacity) return error.TooManyPoints;
             var result = Self{ .x_range = x_range, .y_range = y_range, .snap = snap };
@@ -554,6 +558,8 @@ pub fn SpectrumAnalyzer(comptime fft_size: usize) type {
 test "ranges reject invalid bounds and clamp finite values" {
     try std.testing.expectError(error.InvalidRange, Range.init(1.0, 1.0));
     try std.testing.expectError(error.InvalidRange, Range.init(std.math.nan(f64), 1.0));
+    try std.testing.expectEqual(@as(f64, 0.0), (Range{ .minimum = 1.0, .maximum = 0.0 }).normalizeClamped(0.5));
+    try std.testing.expectEqual(@as(f64, 0.0), (Range{ .minimum = 0.0, .maximum = std.math.inf(f64) }).normalizeClamped(0.5));
     const range = try Range.init(-1.0, 1.0);
     try std.testing.expectEqual(@as(f64, 0.0), range.normalizeClamped(-2.0));
     try std.testing.expectEqual(@as(f64, 0.5), range.normalizeClamped(0.0));
@@ -566,6 +572,19 @@ test "fixed series rejects overflow and invalid points" {
     try std.testing.expectError(error.InvalidPoint, Series.init(&.{.{ .x = 0, .y = std.math.inf(f64) }}));
     const series = try Series.init(&.{ .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 0 } });
     try std.testing.expectEqual(@as(usize, 2), series.slice().len);
+}
+
+test "editable envelopes reject directly constructed invalid ranges" {
+    const Envelope = EditableEnvelope(2);
+    const valid = try Range.init(0.0, 1.0);
+    try std.testing.expectError(
+        error.InvalidRange,
+        Envelope.init(.{ .minimum = 1.0, .maximum = 0.0 }, valid, .{}, &.{}),
+    );
+    try std.testing.expectError(
+        error.InvalidRange,
+        Envelope.init(valid, .{ .minimum = 0.0, .maximum = std.math.nan(f64) }, .{}, &.{}),
+    );
 }
 
 test "snapshot series is activity gated and bounded" {
