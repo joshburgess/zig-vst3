@@ -575,3 +575,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The staged-package consumer now exercises the public piano, step sequencer, process audio view, output event writer, sample store, and sample player contracts.
 - The test composes and runs these models only through `@import("zig-vst3-plugin")`, so missing exports and repository-relative dependencies fail at the package boundary.
 - The installed-package gate passed 9/9 build steps and 9/9 tests.
+
+### Autonomous Follow-up: Atomic Parameter State
+
+- Atomic normalized-value reads now clamp malformed direct bit patterns instead of asserting that all callers preserved the constructor invariant.
+- Direct regressions cover NaN, positive infinity, and a negative value written through the public atomic field.
+- The complete deterministic gate passed 111/111 steps and 4,199/4,199 tests.
