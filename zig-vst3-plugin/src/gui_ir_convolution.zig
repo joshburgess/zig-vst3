@@ -99,11 +99,13 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         pub fn reprepareForSampleRate(self: *Self, sample_rate: u32) StageError!bool {
             try self.setTargetSampleRate(sample_rate);
             const pending = self.pending_slot.load(.acquire);
-            const source_index = if (pending != no_slot and self.slots[pending].state.load(.acquire) == @intFromEnum(SlotState.ready))
-                pending
+            const source_index = if (slotIndex(pending)) |pending_index|
+                if (self.slots[pending_index].state.load(.acquire) == @intFromEnum(SlotState.ready))
+                    pending_index
+                else
+                    self.activeSlotIndex() orelse return false
             else
-                self.active_slot;
-            if (source_index == no_slot) return false;
+                self.activeSlotIndex() orelse return false;
             const source = &self.slots[source_index];
             if (source.prepared_sample_rate == sample_rate) return false;
 
@@ -124,7 +126,11 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             destination.state.store(@intFromEnum(SlotState.ready), .release);
             self.staging_slot = no_slot;
             const replaced = self.pending_slot.swap(destination_index, .acq_rel);
-            if (replaced != no_slot) self.slots[replaced].state.store(@intFromEnum(SlotState.free), .release);
+            if (slotIndex(replaced)) |replaced_index| {
+                if (replaced_index != destination_index) {
+                    self.slots[replaced_index].state.store(@intFromEnum(SlotState.free), .release);
+                }
+            }
             return true;
         }
 
@@ -166,7 +172,11 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             self.staging_slot = no_slot;
             self.latest_generation.store(generation, .release);
             const replaced = self.pending_slot.swap(slot_index, .acq_rel);
-            if (replaced != no_slot) self.slots[replaced].state.store(@intFromEnum(SlotState.free), .release);
+            if (slotIndex(replaced)) |replaced_index| {
+                if (replaced_index != slot_index) {
+                    self.slots[replaced_index].state.store(@intFromEnum(SlotState.free), .release);
+                }
+            }
         }
 
         pub fn cancel(self: *Self, generation: u64) bool {
@@ -185,10 +195,14 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         pub fn adoptPending(self: *Self) bool {
             _ = realtime_audit.observe(.decoded_audio_adoption);
             const next = self.pending_slot.swap(no_slot, .acq_rel);
-            if (next == no_slot) return false;
-            const next_slot = &self.slots[next];
+            const next_index = slotIndex(next) orelse return false;
+            const next_slot = &self.slots[next_index];
             if (next_slot.state.load(.acquire) != @intFromEnum(SlotState.ready)) return false;
-            if (self.active_slot != no_slot) self.slots[self.active_slot].state.store(@intFromEnum(SlotState.free), .release);
+            if (self.activeSlotIndex()) |active_index| {
+                if (active_index != next_index) {
+                    self.slots[active_index].state.store(@intFromEnum(SlotState.free), .release);
+                }
+            }
             next_slot.state.store(@intFromEnum(SlotState.reading), .release);
             self.active_slot = next;
             self.resetProcessing();
@@ -196,14 +210,19 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         }
 
         pub fn activeMetadata(self: *const Self) ?Metadata {
-            if (self.active_slot == no_slot) return null;
-            return self.slots[self.active_slot].metadata;
+            const slot = self.activeSlot() orelse return null;
+            return slot.metadata;
         }
 
         pub fn processFrame(self: *Self, left: f32, right: f32) [2]f32 {
+            if (self.input_fill >= partition_size or self.output_index >= partition_size or
+                self.history_head >= partition_count)
+            {
+                self.resetProcessing();
+            }
             const output = .{ self.output_block[0][self.output_index], self.output_block[1][self.output_index] };
-            self.input_block[0][self.input_fill] = left;
-            self.input_block[1][self.input_fill] = right;
+            self.input_block[0][self.input_fill] = if (std.math.isFinite(left)) left else 0.0;
+            self.input_block[1][self.input_fill] = if (std.math.isFinite(right)) right else 0.0;
             self.advanceSample();
             return output;
         }
@@ -235,8 +254,10 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         }
 
         fn staging(self: *Self) ?*Slot {
-            if (self.staging_slot == no_slot) return null;
-            return &self.slots[self.staging_slot];
+            const index = slotIndex(self.staging_slot) orelse return null;
+            const slot = &self.slots[index];
+            if (slot.state.load(.acquire) != @intFromEnum(SlotState.writing)) return null;
+            return slot;
         }
 
         fn prepare(self: *Self, slot: *Slot) StageError!void {
@@ -288,7 +309,7 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         }
 
         fn renderBlock(self: *Self) void {
-            const slot = if (self.active_slot == no_slot) null else &self.slots[self.active_slot];
+            const slot = self.activeSlot();
             if (slot == null or slot.?.prepared_partitions == 0) {
                 self.output_block = @splat(@splat(0.0));
                 return;
@@ -314,6 +335,33 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
                 }
             }
             self.history_head = (self.history_head + 1) % partition_count;
+        }
+
+        fn activeSlot(self: *const Self) ?*const Slot {
+            const index = self.activeSlotIndex() orelse return null;
+            const slot = &self.slots[index];
+            validateMetadata(slot.metadata) catch return null;
+            if (slot.received_samples > slot.raw.len or slot.prepared_frames > maximum_frames or
+                slot.prepared_partitions > partition_count)
+            {
+                return null;
+            }
+            if (slot.prepared_frames != 0 and
+                (slot.prepared_sample_rate < 8_000 or slot.prepared_sample_rate > 384_000))
+            {
+                return null;
+            }
+            return slot;
+        }
+
+        fn activeSlotIndex(self: *const Self) ?usize {
+            const index = slotIndex(self.active_slot) orelse return null;
+            if (self.slots[index].state.load(.acquire) != @intFromEnum(SlotState.reading)) return null;
+            return index;
+        }
+
+        fn slotIndex(index: u8) ?usize {
+            return if (index < 3) index else null;
         }
 
         fn fft(self: *const Self, values: *[fft_size]Complex, inverse: bool) void {
@@ -468,4 +516,49 @@ test "partitioned convolver recovers after a rejected non-finite chunk" {
     }
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), output[8], 0.0001);
     try std.testing.expectApproxEqAbs(@as(f32, 0.5), output[9], 0.0001);
+}
+
+test "partitioned convolver rejects malformed public slot state" {
+    const Convolver = PartitionedConvolver(16, 8);
+    var convolver = Convolver.init(48_000);
+    try convolver.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 1 });
+    try convolver.write(1, 0, &.{1.0});
+    try convolver.commit(1);
+    try std.testing.expect(convolver.adoptPending());
+
+    convolver.active_slot = 3;
+    try std.testing.expectEqual(@as(?Metadata, null), convolver.activeMetadata());
+    try std.testing.expect(!try convolver.reprepareForSampleRate(96_000));
+
+    try convolver.begin(.{ .generation = 2, .sample_rate = 48_000, .channels = 1, .frames = 1 });
+    try convolver.write(2, 0, &.{0.5});
+    try convolver.commit(2);
+    try std.testing.expect(convolver.adoptPending());
+    try std.testing.expectEqual(@as(u64, 2), convolver.activeMetadata().?.generation);
+
+    convolver.pending_slot.store(3, .release);
+    try std.testing.expect(!convolver.adoptPending());
+    try std.testing.expectEqual(@as(u64, 2), convolver.activeMetadata().?.generation);
+
+    convolver.staging_slot = 3;
+    try std.testing.expectError(error.InvalidGeneration, convolver.write(3, 0, &.{0.25}));
+    try std.testing.expectError(error.InvalidGeneration, convolver.commit(3));
+    try std.testing.expect(!convolver.cancel(3));
+}
+
+test "partitioned convolver recovers malformed processing cursors" {
+    const Convolver = PartitionedConvolver(16, 8);
+    var convolver = Convolver.init(48_000);
+
+    convolver.input_fill = 8;
+    convolver.output_index = 8;
+    convolver.history_head = Convolver.partitions;
+    const output = convolver.processFrame(std.math.nan(f32), std.math.inf(f32));
+
+    try std.testing.expectEqual(@as([2]f32, .{ 0.0, 0.0 }), output);
+    try std.testing.expectEqual(@as(usize, 1), convolver.input_fill);
+    try std.testing.expectEqual(@as(usize, 1), convolver.output_index);
+    try std.testing.expectEqual(@as(usize, 0), convolver.history_head);
+    try std.testing.expectEqual(@as(f32, 0.0), convolver.input_block[0][0]);
+    try std.testing.expectEqual(@as(f32, 0.0), convolver.input_block[1][0]);
 }

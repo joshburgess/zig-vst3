@@ -581,3 +581,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Atomic normalized-value reads now clamp malformed direct bit patterns instead of asserting that all callers preserved the constructor invariant.
 - Direct regressions cover NaN, positive infinity, and a negative value written through the public atomic field.
 - The complete deterministic gate passed 111/111 steps and 4,199/4,199 tests.
+
+### Autonomous Follow-up: Convolution Runtime Integrity
+
+- The partitioned convolver now validates active, pending, replaced, and staging slot indices before access. Active slots require the reading state, bounded metadata, prepared counts, and a valid prepared rate.
+- Malformed processing cursors reset at the next frame boundary. Non-finite input samples are replaced with silence before entering retained blocks.
+- Direct regressions cover invalid slot indices, publication recovery, out-of-range processing cursors, and non-finite input. The focused convolver suite passed 10/10 tests.
