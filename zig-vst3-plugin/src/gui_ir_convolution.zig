@@ -8,6 +8,18 @@ pub const Metadata = struct {
     sample_rate: u32,
     channels: u8,
     frames: usize,
+
+    pub fn validate(self: Metadata, maximum_frames: usize) StageError!void {
+        if (self.generation == 0) return error.InvalidGeneration;
+        if (self.sample_rate < 8_000 or self.sample_rate > 384_000) return error.InvalidSampleRate;
+        if (self.channels == 0 or self.channels > maximum_channels) return error.InvalidChannelCount;
+        if (self.frames > maximum_frames) return error.TooManyFrames;
+    }
+
+    pub fn valid(self: Metadata, maximum_frames: usize) bool {
+        self.validate(maximum_frames) catch return false;
+        return true;
+    }
 };
 
 pub const StageError = error{
@@ -136,7 +148,7 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
 
         pub fn begin(self: *Self, metadata: Metadata) StageError!void {
             if (self.staging_slot != no_slot) return error.Busy;
-            try validateMetadata(metadata);
+            try metadata.validate(maximum_frames);
             if (metadata.generation <= self.latest_generation.load(.acquire)) return error.InvalidGeneration;
             const slot_index = self.claimFreeSlot() orelse return error.Busy;
             const slot = &self.slots[slot_index];
@@ -151,8 +163,13 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         pub fn write(self: *Self, generation: u64, sample_offset: usize, samples: []const f32) StageError!void {
             const slot = self.staging() orelse return error.InvalidGeneration;
             if (slot.metadata.generation != generation) return error.InvalidGeneration;
+            try slot.metadata.validate(maximum_frames);
             const expected_samples = slot.metadata.frames * slot.metadata.channels;
-            if (sample_offset != slot.received_samples or samples.len == 0 or sample_offset + samples.len > expected_samples) {
+            if (sample_offset != slot.received_samples or
+                samples.len == 0 or
+                sample_offset > expected_samples or
+                samples.len > expected_samples - sample_offset)
+            {
                 return error.InvalidChunk;
             }
             for (samples) |sample_value| {
@@ -166,6 +183,7 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             const slot_index = self.staging_slot;
             const slot = self.staging() orelse return error.InvalidGeneration;
             if (slot.metadata.generation != generation) return error.InvalidGeneration;
+            try slot.metadata.validate(maximum_frames);
             if (slot.received_samples != slot.metadata.frames * slot.metadata.channels) return error.Incomplete;
             try self.prepare(slot);
             slot.state.store(@intFromEnum(SlotState.ready), .release);
@@ -235,13 +253,6 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
             self.output_block = @splat(@splat(0.0));
             self.overlap = @splat(@splat(0.0));
             self.output_index = 0;
-        }
-
-        fn validateMetadata(metadata: Metadata) StageError!void {
-            if (metadata.generation == 0) return error.InvalidGeneration;
-            if (metadata.sample_rate < 8_000 or metadata.sample_rate > 384_000) return error.InvalidSampleRate;
-            if (metadata.channels == 0 or metadata.channels > maximum_channels) return error.InvalidChannelCount;
-            if (metadata.frames > maximum_frames) return error.TooManyFrames;
         }
 
         fn claimFreeSlot(self: *Self) ?u8 {
@@ -340,7 +351,7 @@ pub fn PartitionedConvolver(comptime maximum_frames: usize, comptime partition_s
         fn activeSlot(self: *const Self) ?*const Slot {
             const index = self.activeSlotIndex() orelse return null;
             const slot = &self.slots[index];
-            validateMetadata(slot.metadata) catch return null;
+            slot.metadata.validate(maximum_frames) catch return null;
             if (slot.received_samples > slot.raw.len or slot.prepared_frames > maximum_frames or
                 slot.prepared_partitions > partition_count)
             {
@@ -498,6 +509,30 @@ test "partitioned convolver rejects malformed staging sequences" {
     try convolver.write(2, 0, &.{1.0});
     try std.testing.expectError(error.Incomplete, convolver.commit(2));
     try std.testing.expect(convolver.cancel(2));
+}
+
+test "partitioned convolver metadata exposes public bounded validation" {
+    const valid = Metadata{ .generation = 1, .sample_rate = 48_000, .channels = 2, .frames = 16 };
+    try valid.validate(16);
+    try std.testing.expect(valid.valid(16));
+
+    var malformed = valid;
+    malformed.sample_rate = 7_999;
+    try std.testing.expectError(error.InvalidSampleRate, malformed.validate(16));
+    malformed = valid;
+    malformed.channels = 3;
+    try std.testing.expectError(error.InvalidChannelCount, malformed.validate(16));
+}
+
+test "partitioned convolver rejects overflowing chunk offsets" {
+    const Convolver = PartitionedConvolver(16, 8);
+    var convolver = Convolver.init(48_000);
+    try convolver.begin(.{ .generation = 1, .sample_rate = 48_000, .channels = 1, .frames = 2 });
+    convolver.slots[convolver.staging_slot].received_samples = std.math.maxInt(usize);
+    try std.testing.expectError(
+        error.InvalidChunk,
+        convolver.write(1, std.math.maxInt(usize), &.{0.5}),
+    );
 }
 
 test "partitioned convolver recovers after a rejected non-finite chunk" {

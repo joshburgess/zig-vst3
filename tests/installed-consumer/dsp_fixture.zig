@@ -140,3 +140,23 @@ test "installed package exposes validated IR editor snapshots" {
     malformed.original_frames = 3;
     try std.testing.expect(!malformed.valid(4));
 }
+
+test "installed package exposes bounded audio handoff metadata" {
+    const sample = plugin.gui_audio_sample_store.Metadata{
+        .generation = 1,
+        .sample_rate = 48_000,
+        .channels = 2,
+        .frames = 32,
+    };
+    try sample.validate(32);
+    try std.testing.expect(sample.valid(32));
+
+    const impulse = plugin.gui_ir_convolution.Metadata{
+        .generation = 1,
+        .sample_rate = 48_000,
+        .channels = 1,
+        .frames = 64,
+    };
+    try impulse.validate(64);
+    try std.testing.expect(impulse.valid(64));
+}
