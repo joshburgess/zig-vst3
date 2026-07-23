@@ -587,3 +587,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - The partitioned convolver now validates active, pending, replaced, and staging slot indices before access. Active slots require the reading state, bounded metadata, prepared counts, and a valid prepared rate.
 - Malformed processing cursors reset at the next frame boundary. Non-finite input samples are replaced with silence before entering retained blocks.
 - Direct regressions cover invalid slot indices, publication recovery, out-of-range processing cursors, and non-finite input. The focused convolver suite passed 10/10 tests.
+
+### Autonomous Follow-up: IR Editor State Integrity
+
+- IR editor commands, rollback, reset, snapshots, decoded copies, and preview construction now validate retained sample rate, channel count, frame counts, peaks, and rollback bounds before slice arithmetic.
+- Malformed state publishes an empty snapshot and no decoded data. Clear remains an explicit recovery path, and an invalid rollback is discarded without replacing the edited buffer.
+- Direct regressions cover oversized edited and rollback frame counts plus an invalid channel count. The focused editor and importer suite passed 17/17 tests.

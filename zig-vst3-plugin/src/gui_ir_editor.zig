@@ -92,6 +92,7 @@ pub fn Editor(comptime frame_capacity: usize) type {
         }
 
         pub fn apply(self: *Self, command: Command, selection_start: f64, selection_end: f64) !bool {
+            if (!self.valid()) return error.InvalidState;
             if (self.edited_frames == 0 or self.channels == 0) return error.Empty;
             if (!std.math.isFinite(selection_start) or !std.math.isFinite(selection_end) or
                 selection_start < 0.0 or selection_end > 1.0 or selection_end < selection_start)
@@ -131,6 +132,10 @@ pub fn Editor(comptime frame_capacity: usize) type {
 
         pub fn rollbackLastEdit(self: *Self) void {
             if (!self.has_rollback) return;
+            if (!self.valid()) {
+                self.has_rollback = false;
+                return;
+            }
             const sample_count = self.rollback_frames * self.channels;
             @memcpy(self.edited[0..sample_count], self.rollback[0..sample_count]);
             self.edited_frames = self.rollback_frames;
@@ -141,6 +146,7 @@ pub fn Editor(comptime frame_capacity: usize) type {
         }
 
         pub fn reset(self: *Self) bool {
+            if (!self.valid()) return false;
             self.has_rollback = false;
             return self.resetEdited();
         }
@@ -171,6 +177,7 @@ pub fn Editor(comptime frame_capacity: usize) type {
         }
 
         pub fn snapshot(self: *const Self) Snapshot {
+            if (!self.valid()) return emptySnapshot();
             const ready = self.edited_frames != 0;
             return .{
                 .import = .{
@@ -194,6 +201,7 @@ pub fn Editor(comptime frame_capacity: usize) type {
         }
 
         pub fn copyDecoded(self: *const Self, sample_offset: usize, output: []f32) usize {
+            if (!self.valid()) return 0;
             const sample_count = self.edited_frames * self.channels;
             if (sample_offset >= sample_count) return 0;
             const count = @min(output.len, sample_count - sample_offset);
@@ -202,6 +210,7 @@ pub fn Editor(comptime frame_capacity: usize) type {
         }
 
         pub fn copyPreview(self: *const Self, output: []@import("gui_audio_file_importer.zig").PreviewPoint) usize {
+            if (!self.valid()) return 0;
             if (self.edited_frames == 0 or output.len == 0) return 0;
             const count = @min(output.len, preview_capacity, self.edited_frames);
             for (0..count) |index| {
@@ -288,6 +297,46 @@ pub fn Editor(comptime frame_capacity: usize) type {
             self.rollback_generation = self.generation;
             self.has_rollback = true;
         }
+
+        pub fn valid(self: *const Self) bool {
+            const empty = self.original_frames == 0 and self.edited_frames == 0;
+            if (empty) {
+                if (self.channels != 0 or self.sample_rate != 0) return false;
+            } else {
+                if (self.sample_rate < 8_000 or self.sample_rate > 384_000) return false;
+                if (self.channels == 0 or self.channels > maximum_channels) return false;
+                if (self.original_frames == 0 or self.edited_frames == 0) return false;
+                if (self.original_frames > frame_capacity or self.edited_frames > frame_capacity) return false;
+            }
+            if (!validPeak(self.original_peak) or !validPeak(self.edited_peak)) return false;
+            if (self.has_rollback) {
+                if (self.rollback_frames == 0 or self.rollback_frames > frame_capacity) return false;
+                if (!validPeak(self.rollback_peak)) return false;
+            }
+            return true;
+        }
+
+        fn emptySnapshot() Snapshot {
+            return .{
+                .import = .{
+                    .status = .idle,
+                    .entry_point = .picker,
+                    .path_count = 0,
+                    .completed_units = 0,
+                    .total_units = 0,
+                    .generation = 0,
+                    .cancellation_pending = false,
+                },
+                .sample_rate = 0,
+                .channels = 0,
+                .sample_frames = 0,
+                .decoded_frames = 0,
+                .original_frames = 0,
+                .original_peak = 0.0,
+                .edited_peak = 0.0,
+                .edited = false,
+            };
+        }
     };
 }
 
@@ -305,6 +354,10 @@ fn peak(samples: []const f32) f32 {
     var result: f32 = 0.0;
     for (samples) |sample| result = @max(result, @abs(sample));
     return result;
+}
+
+fn validPeak(value: f32) bool {
+    return std.math.isFinite(value) and value >= 0.0;
 }
 
 const TestImporter = struct {
@@ -452,4 +505,33 @@ test "IR editor refuses replacement while publication rollback is pending" {
     editor.commitLastEdit();
     try editor.loadFrom(&importer);
     try std.testing.expect(!editor.snapshot().edited);
+}
+
+test "IR editor rejects malformed public bounds and clear recovers" {
+    const samples = [_]f32{ 0.25, 0.5, -0.25, -0.5 };
+    const importer = TestImporter{ .samples = &samples };
+    var editor = Editor(4){};
+    try editor.loadFrom(&importer);
+
+    editor.edited_frames = 5;
+    try std.testing.expect(!editor.valid());
+    try std.testing.expectError(error.InvalidState, editor.apply(.reverse, 0.0, 1.0));
+    var decoded: [4]f32 = undefined;
+    try std.testing.expectEqual(@as(usize, 0), editor.copyDecoded(0, &decoded));
+    try std.testing.expectEqual(@as(usize, 0), editor.snapshot().decoded_frames);
+    try std.testing.expect(editor.clear());
+    try std.testing.expect(editor.valid());
+
+    try editor.loadFrom(&importer);
+    try std.testing.expect(try editor.apply(.reverse, 0.0, 1.0));
+    editor.rollback_frames = 5;
+    try std.testing.expect(!editor.valid());
+    editor.rollbackLastEdit();
+    try std.testing.expect(editor.valid());
+
+    editor.channels = maximum_channels + 1;
+    try std.testing.expect(!editor.valid());
+    try std.testing.expect(!editor.reset());
+    try std.testing.expect(editor.clear());
+    try std.testing.expect(editor.valid());
 }
