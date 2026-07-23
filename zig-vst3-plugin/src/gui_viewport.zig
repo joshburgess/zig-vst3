@@ -60,24 +60,38 @@ pub const State = struct {
         };
     }
 
+    pub fn valid(self: State, config: Config) bool {
+        config.validate() catch return false;
+        if (!std.math.isFinite(self.zoom) or
+            self.zoom < config.minimum_zoom or self.zoom > config.maximum_zoom)
+        {
+            return false;
+        }
+        validateOffset(self.x_offset, config.axes.includesHorizontal(), self.zoom) catch return false;
+        validateOffset(self.y_offset, config.axes.includesVertical(), self.zoom) catch return false;
+        return true;
+    }
+
     pub fn visibleSpan(self: State, active: bool) f64 {
-        return if (active) 1.0 / self.zoom else 1.0;
+        return if (active and std.math.isFinite(self.zoom) and self.zoom >= 1.0) 1.0 / self.zoom else 1.0;
     }
 
     pub fn project(self: State, config: Config, normalized: f64, horizontal: bool) f64 {
+        if (!self.valid(config) or !std.math.isFinite(normalized)) return 0.0;
         const active = if (horizontal) config.axes.includesHorizontal() else config.axes.includesVertical();
         const offset = if (horizontal) self.x_offset else self.y_offset;
         return (normalized - offset) / self.visibleSpan(active);
     }
 
     pub fn unproject(self: State, config: Config, visible: f64, horizontal: bool) f64 {
+        if (!self.valid(config) or !std.math.isFinite(visible)) return 0.0;
         const active = if (horizontal) config.axes.includesHorizontal() else config.axes.includesVertical();
         const offset = if (horizontal) self.x_offset else self.y_offset;
         return offset + visible * self.visibleSpan(active);
     }
 
     pub fn setZoom(self: *State, config: Config, requested: f64, anchor_x: f64, anchor_y: f64) bool {
-        config.validate() catch return false;
+        if (!self.valid(config)) return false;
         const next = std.math.clamp(requested, config.minimum_zoom, config.maximum_zoom);
         if (!std.math.isFinite(next) or next == self.zoom) return false;
         if (config.axes.includesHorizontal() and !std.math.isFinite(anchor_x)) return false;
@@ -107,7 +121,7 @@ pub const State = struct {
     }
 
     pub fn pan(self: *State, config: Config, x_steps: f64, y_steps: f64) bool {
-        config.validate() catch return false;
+        if (!self.valid(config)) return false;
         var changed = false;
         const span = 1.0 / self.zoom;
         if (config.axes.includesHorizontal() and std.math.isFinite(x_steps)) {
@@ -187,6 +201,27 @@ test "viewport mutations reject invalid replacement configurations" {
     try std.testing.expectEqual(initial, state);
     try std.testing.expect(!state.pan(.{ .scroll_step = std.math.inf(f64) }, 1.0, 1.0));
     try std.testing.expectEqual(initial, state);
+}
+
+test "viewport operations reject malformed direct state and reset recovers" {
+    const config = Config{ .axes = .both, .initial_zoom = 2.0, .initial_x_offset = 0.25, .initial_y_offset = 0.25 };
+    var state = State{ .zoom = 0.0, .x_offset = std.math.nan(f64), .y_offset = 2.0 };
+    const malformed = state;
+
+    try std.testing.expect(!state.valid(config));
+    try std.testing.expectEqual(@as(f64, 1.0), state.visibleSpan(true));
+    try std.testing.expectEqual(@as(f64, 0.0), state.project(config, 0.5, true));
+    try std.testing.expectEqual(@as(f64, 0.0), state.unproject(config, 0.5, true));
+    try std.testing.expect(!state.setZoom(config, 4.0, 0.5, 0.5));
+    try std.testing.expectEqual(malformed.zoom, state.zoom);
+    try std.testing.expect(std.math.isNan(state.x_offset));
+    try std.testing.expectEqual(malformed.y_offset, state.y_offset);
+    try std.testing.expect(!state.pan(config, 1.0, 1.0));
+    try std.testing.expectEqual(malformed.zoom, state.zoom);
+    try std.testing.expect(std.math.isNan(state.x_offset));
+    try std.testing.expectEqual(malformed.y_offset, state.y_offset);
+    try std.testing.expect(state.reset(config));
+    try std.testing.expect(state.valid(config));
 }
 
 test "viewport generated transitions preserve finite bounded state" {

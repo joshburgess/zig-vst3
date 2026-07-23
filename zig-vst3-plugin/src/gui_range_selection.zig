@@ -45,12 +45,21 @@ pub const State = struct {
         return .{ .start = config.initial_start, .end = config.initial_end };
     }
 
+    pub fn valid(self: State, config: Config) bool {
+        config.validate() catch return false;
+        const scale = @max(1.0, @max(@abs(self.start), @abs(self.end)));
+        const tolerance = 8.0 * std.math.floatEps(f64) * scale;
+        return std.math.isFinite(self.start) and std.math.isFinite(self.end) and
+            self.start >= config.minimum and self.end <= config.maximum and
+            self.end >= self.start and self.end - self.start + tolerance >= config.minimum_span;
+    }
+
     pub fn selectHandle(self: *State, handle: Handle) void {
         self.active = handle;
     }
 
     pub fn set(self: *State, config: Config, handle: Handle, target: f64) bool {
-        config.validate() catch return false;
+        if (!self.valid(config)) return false;
         if (!std.math.isFinite(target)) return false;
         const previous = self.*;
         switch (handle) {
@@ -183,6 +192,27 @@ test "range selection mutations reject invalid replacement configurations" {
     try std.testing.expectEqual(initial, state);
     try std.testing.expect(!state.replace(invalid, 0.3, 0.7));
     try std.testing.expectEqual(initial, state);
+}
+
+test "range selection set rejects malformed direct state and replace recovers" {
+    const config = Config{
+        .minimum = 0.0,
+        .maximum = 1.0,
+        .initial_start = 0.2,
+        .initial_end = 0.8,
+        .minimum_span = 0.1,
+        .step = 0.01,
+    };
+    var state = State{ .start = 0.9, .end = 0.1, .active = .start };
+    const malformed = state;
+
+    try std.testing.expect(!state.valid(config));
+    try std.testing.expect(!state.set(config, .start, 0.5));
+    try std.testing.expectEqual(malformed, state);
+    try std.testing.expect(!state.adjust(config, 0.1));
+    try std.testing.expectEqual(malformed, state);
+    try std.testing.expect(state.replace(config, 0.3, 0.7));
+    try std.testing.expect(state.valid(config));
 }
 
 test "range selection generated operation sequences preserve every invariant" {
