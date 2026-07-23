@@ -112,7 +112,7 @@ const RawCoefficients = struct {
             .a1 = self.a1 * inverse,
             .a2 = self.a2 * inverse,
         };
-        if (!result.finite()) return error.InvalidConfig;
+        if (!result.valid()) return error.InvalidConfig;
         return result;
     }
 };
@@ -129,7 +129,7 @@ pub const Coefficients = struct {
     }
 
     pub fn response(self: Coefficients, sample_rate: f64, frequency_hz: f64) ComplexResponse {
-        if (!self.finite() or !std.math.isFinite(sample_rate) or sample_rate <= 0.0 or
+        if (!self.valid() or !std.math.isFinite(sample_rate) or sample_rate <= 0.0 or
             !std.math.isFinite(frequency_hz)) return .{};
         const frequency = std.math.clamp(frequency_hz, 0.0, sample_rate * 0.5);
         const omega = std.math.tau * frequency / sample_rate;
@@ -160,7 +160,7 @@ pub const Coefficients = struct {
         return 20.0 * std.math.log10(linear);
     }
 
-    fn finite(self: Coefficients) bool {
+    pub fn valid(self: Coefficients) bool {
         return std.math.isFinite(self.b0) and std.math.isFinite(self.b1) and
             std.math.isFinite(self.b2) and std.math.isFinite(self.a1) and
             std.math.isFinite(self.a2);
@@ -212,13 +212,23 @@ pub fn SmoothedBiquad(comptime Sample: type) type {
         }
 
         pub fn setImmediate(self: *Self, coefficients: Coefficients) void {
-            self.current = coefficients;
-            self.target = coefficients;
+            const accepted = if (coefficients.valid()) coefficients else Coefficients.identity();
+            self.current = accepted;
+            self.target = accepted;
             self.step = .{ .b0 = 0.0 };
             self.remaining = 0;
         }
 
         pub fn setTarget(self: *Self, coefficients: Coefficients, transition_samples: usize) void {
+            if (!coefficients.valid()) {
+                self.setImmediate(.{});
+                self.reset();
+                return;
+            }
+            if (!self.current.valid() or !self.target.valid() or !self.step.valid()) {
+                self.setImmediate(.{});
+                self.reset();
+            }
             if (std.meta.eql(coefficients, self.target)) return;
             self.target = coefficients;
             if (transition_samples == 0) {
@@ -230,6 +240,11 @@ pub fn SmoothedBiquad(comptime Sample: type) type {
         }
 
         pub fn process(self: *Self, input: Sample) Sample {
+            if (!std.math.isFinite(input)) {
+                self.setImmediate(.{});
+                self.reset();
+                return 0.0;
+            }
             if (self.remaining > 0) {
                 self.current.addScaled(self.step);
                 self.remaining -= 1;
@@ -243,6 +258,11 @@ pub fn SmoothedBiquad(comptime Sample: type) type {
             const output = b0 * input + self.z1;
             self.z1 = b1 * input - a1 * output + self.z2;
             self.z2 = b2 * input - a2 * output;
+            if (!std.math.isFinite(output) or !std.math.isFinite(self.z1) or !std.math.isFinite(self.z2)) {
+                self.setImmediate(.{});
+                self.reset();
+                return 0.0;
+            }
             return output;
         }
     };
@@ -322,4 +342,22 @@ test "coefficient transition reaches its target in bounded samples" {
     try std.testing.expectEqual(@as(usize, 0), filter.remaining);
     try std.testing.expectApproxEqAbs(target.b0, filter.current.b0, 0.0000001);
     try std.testing.expectApproxEqAbs(target.a2, filter.current.a2, 0.0000001);
+}
+
+test "smoothed biquad contains malformed public state" {
+    var filter = SmoothedBiquad(f64){};
+    filter.setImmediate(.{ .b0 = std.math.nan(f64) });
+    try std.testing.expectEqual(@as(f64, 0.25), filter.process(0.25));
+
+    filter.current.a1 = std.math.inf(f64);
+    filter.z1 = std.math.nan(f64);
+    try std.testing.expectEqual(@as(f64, 0.0), filter.process(0.5));
+    try std.testing.expect(filter.current.valid());
+    try std.testing.expectEqual(@as(f64, 0.0), filter.z1);
+    try std.testing.expectEqual(@as(f64, 0.0), filter.z2);
+
+    filter.setTarget(.{ .a2 = std.math.nan(f64) }, 64);
+    try std.testing.expectEqual(@as(usize, 0), filter.remaining);
+    try std.testing.expectEqual(@as(f64, 0.0), filter.process(std.math.inf(f64)));
+    try std.testing.expectEqual(@as(f64, 0.75), filter.process(0.75));
 }
