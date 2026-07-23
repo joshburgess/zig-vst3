@@ -4,6 +4,7 @@ pub const tap_count = 32;
 pub const phase_count = 256;
 pub const left_radius = tap_count / 2 - 1;
 pub const right_radius = tap_count / 2;
+pub const maximum_timeline_index: u64 = std.math.maxInt(i64);
 
 pub const Config = struct {
     input_rate: f64,
@@ -36,7 +37,7 @@ pub fn StreamingResampler(comptime Sample: type) type {
     return struct {
         const Self = @This();
 
-        coefficients: [phase_count][tap_count]Sample = undefined,
+        coefficients: [phase_count][tap_count]Sample = @splat(@splat(0.0)),
         history: [tap_count]Sample = @splat(0.0),
         input_rate: f64 = 0.0,
         output_rate: f64 = 0.0,
@@ -90,7 +91,7 @@ pub fn StreamingResampler(comptime Sample: type) type {
             return .{ .consumed = consumed, .produced = produced };
         }
 
-        pub fn beginDrain(self: *Self) error{ NotConfigured, InvalidState }!void {
+        pub fn beginDrain(self: *Self) error{ NotConfigured, InvalidState, StreamTooLong }!void {
             if (!self.configured) return error.NotConfigured;
             if (!self.validState()) return error.InvalidState;
             if (self.drain_target != null) return;
@@ -101,6 +102,11 @@ pub fn StreamingResampler(comptime Sample: type) type {
             const last_input: f64 = @floatFromInt(self.input_count - 1);
             const last_output_time = last_input + self.delay_input_samples + right_radius;
             const last_output_index = @floor(last_output_time * self.output_rate / self.input_rate);
+            if (!std.math.isFinite(last_output_index) or last_output_index < 0.0 or
+                last_output_index >= @as(f64, @floatFromInt(maximum_timeline_index)))
+            {
+                return error.StreamTooLong;
+            }
             self.drain_target = @intFromFloat(last_output_index + 1.0);
         }
 
@@ -125,11 +131,20 @@ pub fn StreamingResampler(comptime Sample: type) type {
                 .output_rate = self.output_rate,
                 .delay_input_samples = self.delay_input_samples,
             }).validate() catch return false;
+            if (self.input_count > maximum_timeline_index or
+                self.next_output_index > maximum_timeline_index or
+                !self.validOutputPosition(self.next_output_index))
+            {
+                return false;
+            }
+            if (self.drain_target) |target| {
+                if (target > maximum_timeline_index or self.next_output_index > target) return false;
+            }
             return true;
         }
 
         fn push(self: *Self, sample: Sample) error{StreamTooLong}!void {
-            if (self.input_count == std.math.maxInt(u64)) return error.StreamTooLong;
+            if (self.input_count == maximum_timeline_index) return error.StreamTooLong;
             self.history[self.input_count % tap_count] = if (std.math.isFinite(sample)) sample else 0.0;
             self.input_count += 1;
         }
@@ -183,6 +198,13 @@ pub fn StreamingResampler(comptime Sample: type) type {
 
         fn outputInputTime(self: *const Self, output_index: u64) f64 {
             return @as(f64, @floatFromInt(output_index)) * self.input_rate / self.output_rate;
+        }
+
+        fn validOutputPosition(self: *const Self, output_index: u64) bool {
+            const center = self.outputInputTime(output_index) - self.delay_input_samples;
+            const minimum: f64 = @floatFromInt(std.math.minInt(i64) + left_radius);
+            const maximum: f64 = @floatFromInt(std.math.maxInt(i64) - right_radius);
+            return std.math.isFinite(center) and center >= minimum and center <= maximum;
         }
 
         fn buildCoefficients(self: *Self) void {
@@ -240,6 +262,27 @@ test "streaming resampler reports and renders its causal impulse latency" {
     }
     try std.testing.expectEqual(@as(usize, right_radius), peak_index);
     try std.testing.expectApproxEqAbs(@as(f64, 0.94), output[peak_index], 0.01);
+}
+
+test "streaming resampler rejects malformed public timeline state" {
+    const Resampler = StreamingResampler(f64);
+    var resampler = try Resampler.init(.{ .input_rate = 48_000, .output_rate = 48_000 });
+    try std.testing.expect(resampler.validState());
+
+    resampler.input_count = maximum_timeline_index + 1;
+    try std.testing.expect(!resampler.validState());
+    try std.testing.expectError(error.InvalidState, resampler.process(&.{}, &.{}));
+
+    try resampler.configure(.{ .input_rate = 2_000_000, .output_rate = 1_000 });
+    resampler.next_output_index = maximum_timeline_index;
+    try std.testing.expect(!resampler.validState());
+    try std.testing.expectEqual(@as(f64, 0.0), resampler.latencyOutputSamples());
+
+    try resampler.configure(.{ .input_rate = 48_000, .output_rate = 48_000 });
+    resampler.drain_target = 4;
+    resampler.next_output_index = 5;
+    try std.testing.expect(!resampler.validState());
+    try std.testing.expectError(error.InvalidState, resampler.drain(&.{}));
 }
 
 test "streaming resampler is independent of input block boundaries" {
