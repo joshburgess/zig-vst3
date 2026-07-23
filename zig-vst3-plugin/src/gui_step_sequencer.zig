@@ -20,8 +20,8 @@ pub fn Sequencer(comptime capacity: usize) type {
 
         pub fn init(step_count: u6, active: u32, selection: u32) !Self {
             if (step_count == 0 or step_count > capacity) return error.InvalidStepCount;
-            const valid = maskFor(step_count);
-            if (active & ~valid != 0 or selection & ~valid != 0) return error.StepOutsideRange;
+            const valid_steps = maskFor(step_count);
+            if (active & ~valid_steps != 0 or selection & ~valid_steps != 0) return error.StepOutsideRange;
             const cursor: u5 = if (selection == 0) 0 else @intCast(@ctz(selection));
             return .{
                 .step_count = step_count,
@@ -41,6 +41,7 @@ pub fn Sequencer(comptime capacity: usize) type {
         }
 
         pub fn select(self: *Self, step: u5, mode: enum { replace, toggle, extend }) !void {
+            if (!self.valid()) return error.InvalidState;
             if (!self.contains(step)) return error.StepOutsideRange;
             switch (mode) {
                 .replace => {
@@ -57,15 +58,18 @@ pub fn Sequencer(comptime capacity: usize) type {
         }
 
         pub fn selectAll(self: *Self) void {
+            if (!self.structuralStateValid()) return;
             self.selection = maskFor(self.step_count);
         }
 
         pub fn clearSelection(self: *Self) void {
+            if (!self.structuralStateValid()) return;
             self.selection = 0;
             self.anchor = self.cursor;
         }
 
         pub fn moveCursor(self: *Self, direction: enum { previous, next }, extend: bool) bool {
+            if (!self.valid()) return false;
             const previous = self.cursor;
             self.cursor = switch (direction) {
                 .previous => if (self.cursor == 0) @intCast(self.step_count - 1) else self.cursor - 1,
@@ -77,6 +81,7 @@ pub fn Sequencer(comptime capacity: usize) type {
         }
 
         pub fn toggleSelection(self: *Self) u32 {
+            if (!self.valid()) return 0;
             const affected = if (self.selection == 0) bit(self.cursor) else self.selection;
             const enable = self.active & affected != affected;
             if (enable) self.active |= affected else self.active &= ~affected;
@@ -84,6 +89,7 @@ pub fn Sequencer(comptime capacity: usize) type {
         }
 
         pub fn paint(self: *Self, step: u5, enabled: bool) !bool {
+            if (!self.valid()) return error.InvalidState;
             if (!self.contains(step)) return error.StepOutsideRange;
             const mask = bit(step);
             const changed = (self.active & mask != 0) != enabled;
@@ -95,6 +101,7 @@ pub fn Sequencer(comptime capacity: usize) type {
         }
 
         pub fn setPlayhead(self: *Self, step: ?u5) !bool {
+            if (!self.valid()) return error.InvalidState;
             if (step) |value| if (!self.contains(value)) return error.StepOutsideRange;
             const changed = self.playhead != step;
             self.playhead = step;
@@ -102,7 +109,25 @@ pub fn Sequencer(comptime capacity: usize) type {
         }
 
         fn contains(self: Self, step: u5) bool {
-            return step < self.step_count;
+            return self.stepCountValid() and step < self.step_count;
+        }
+
+        pub fn valid(self: Self) bool {
+            if (!self.structuralStateValid()) return false;
+            return self.selection & ~maskFor(self.step_count) == 0;
+        }
+
+        fn structuralStateValid(self: Self) bool {
+            if (!self.stepCountValid()) return false;
+            const valid_steps = maskFor(self.step_count);
+            if (self.active & ~valid_steps != 0) return false;
+            if (!self.contains(self.cursor) or !self.contains(self.anchor)) return false;
+            if (self.playhead) |step| if (!self.contains(step)) return false;
+            return true;
+        }
+
+        fn stepCountValid(self: Self) bool {
+            return self.step_count > 0 and self.step_count <= capacity;
         }
     };
 }
@@ -159,4 +184,30 @@ test "sequencer validates bounded state and painting" {
     try std.testing.expect(try model.paint(2, true));
     try std.testing.expect(!try model.paint(2, true));
     try std.testing.expectError(error.StepOutsideRange, model.setPlayhead(4));
+}
+
+test "sequencer rejects malformed direct state and selection can recover" {
+    const Model = Sequencer(8);
+    var model = try Model.init(4, 0b0101, 0b0010);
+
+    model.step_count = 0;
+    try std.testing.expect(!model.valid());
+    try std.testing.expect(!model.moveCursor(.next, false));
+    try std.testing.expectEqual(@as(u32, 0), model.toggleSelection());
+    try std.testing.expectError(error.InvalidState, model.paint(0, true));
+    try std.testing.expectError(error.InvalidState, model.setPlayhead(0));
+    model.selectAll();
+    try std.testing.expectEqual(@as(u32, 0b0010), model.selection);
+
+    model.step_count = 4;
+    model.selection = 1 << 8;
+    try std.testing.expect(!model.valid());
+    model.selectAll();
+    try std.testing.expect(model.valid());
+    try std.testing.expectEqual(@as(u32, 0b1111), model.selection);
+
+    model.cursor = 7;
+    try std.testing.expect(!model.valid());
+    model.clearSelection();
+    try std.testing.expectEqual(@as(u32, 0b1111), model.selection);
 }

@@ -551,3 +551,9 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Output event writers now validate their public retained count and every exposed event before querying capacity, appending, or publishing an event view.
 - Malformed state reports no events or remaining capacity and rejects appends. Clear remains a bounded recovery path.
 - Direct regressions cover an oversized count and a retained event outside the process block. The complete deterministic gate passed with 4,194 tests.
+
+### Autonomous Follow-up: Step Sequencer State Integrity
+
+- The step sequencer now validates its retained step count, masks, cursor, anchor, and playhead before navigation or mutation.
+- Invalid state fails closed. Select-all can repair a stale selection when the remaining structural state is valid.
+- Direct regressions cover zero step count, selection bits above the configured range, and an out-of-range cursor. The focused sequencer suite passed 4/4 tests.
