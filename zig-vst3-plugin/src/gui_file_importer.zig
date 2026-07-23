@@ -41,6 +41,7 @@ pub const Snapshot = struct {
     }
 
     pub fn validate(self: Snapshot) !void {
+        if (self.path_count > gui_file_drop.maximum_files) return error.InvalidPathCount;
         if (self.completed_units > self.total_units) return error.InvalidImportProgress;
         if (self.cancellation_pending and !self.canCancel()) return error.InvalidCancellationState;
         switch (self.status) {
@@ -48,12 +49,16 @@ pub const Snapshot = struct {
                 if (self.completed_units != 0 or self.total_units != 0) return error.InvalidImportProgress;
             },
             .importing => {
+                if (self.path_count == 0) return error.InvalidPathCount;
                 if (self.total_units == 0) return error.InvalidImportProgress;
             },
             .ready => {
+                if (self.path_count == 0) return error.InvalidPathCount;
                 if (self.total_units == 0 or self.completed_units != self.total_units) return error.InvalidImportProgress;
             },
-            .cancelled, .failed => {},
+            .cancelled, .failed => {
+                if (self.path_count == 0) return error.InvalidPathCount;
+            },
         }
     }
 
@@ -253,6 +258,12 @@ test "import snapshot rejects impossible progress and cancellation" {
     malformed.completed_units = 0;
     malformed.total_units = 0;
     try std.testing.expectError(error.InvalidCancellationState, malformed.validate());
+    malformed = valid;
+    malformed.path_count = 0;
+    try std.testing.expectError(error.InvalidPathCount, malformed.validate());
+    malformed = valid;
+    malformed.path_count = gui_file_drop.maximum_files + 1;
+    try std.testing.expectError(error.InvalidPathCount, malformed.validate());
 }
 
 test "import model cancellation and retry preserve the copied job" {

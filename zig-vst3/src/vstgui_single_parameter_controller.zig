@@ -10,6 +10,7 @@ const vsttypes = @import("pluginterfaces/vst/vsttypes.zig");
 const vstgui_adapter_enabled = @import("zig-vst3-gui-options").vstgui_adapter_enabled;
 const gui_graph = @import("zig-vst3-plugin-core").gui_graph;
 const gui_file_drop = @import("zig-vst3-plugin-core").gui_file_drop;
+const gui_file_importer = @import("zig-vst3-plugin-core").gui_file_importer;
 const gui_progress = @import("zig-vst3-plugin-core").gui_progress;
 const gui_range_selection = @import("zig-vst3-plugin-core").gui_range_selection;
 const gui_viewport = @import("zig-vst3-plugin-core").gui_viewport;
@@ -17,6 +18,23 @@ const gui_telemetry_source = @import("gui_telemetry_source.zig");
 const editor_state = @import("zig-vst3-plugin-core").editor_state;
 
 const ProtocolView = vst_plug_view.PlugView(4, struct {});
+
+fn fileImportEntryPoint(raw: c_int) ?gui_file_importer.EntryPoint {
+    return switch (raw) {
+        @intFromEnum(vstgui_editor_view.FileImportEntryPoint.drop) => .drop,
+        @intFromEnum(vstgui_editor_view.FileImportEntryPoint.picker) => .picker,
+        else => null,
+    };
+}
+
+fn fileImportCommand(raw: c_int) ?gui_file_importer.Command {
+    return switch (raw) {
+        @intFromEnum(vstgui_editor_view.FileImportCommand.cancel) => .cancel,
+        @intFromEnum(vstgui_editor_view.FileImportCommand.retry) => .retry,
+        @intFromEnum(vstgui_editor_view.FileImportCommand.reset) => .reset,
+        else => null,
+    };
+}
 
 pub const Parameter = struct {
     id: vsttypes.ParamID,
@@ -1527,13 +1545,14 @@ fn NativeBridge(comptime Controller: type) type {
             count: types.uint32,
         ) callconv(.c) types.int32 {
             if (count == 0 or count > vstgui_editor_view.max_drop_files) return -1;
+            const decoded_entry_point = fileImportEntryPoint(@intFromEnum(entry_point)) orelse return -1;
             const iface = controller(userdata) orelse return -1;
             var slices: [vstgui_editor_view.max_drop_files][]const u8 = undefined;
             for (0..count) |index| slices[index] = std.mem.span(paths[index]);
             return if (Controller.handleFileImport(
                 iface,
                 drop_id,
-                @enumFromInt(@intFromEnum(entry_point)),
+                decoded_entry_point,
                 slices[0..count],
             ) == types.kResultOk) 0 else -1;
         }
@@ -1566,10 +1585,11 @@ fn NativeBridge(comptime Controller: type) type {
             command: vstgui_editor_view.FileImportCommand,
         ) callconv(.c) types.int32 {
             const iface = controller(userdata) orelse return -1;
+            const decoded_command = fileImportCommand(@intFromEnum(command)) orelse return -1;
             return if (Controller.performFileImportCommand(
                 iface,
                 drop_id,
-                @enumFromInt(@intFromEnum(command)),
+                decoded_command,
             ) == types.kResultOk) 0 else -1;
         }
 
@@ -1580,7 +1600,9 @@ fn NativeBridge(comptime Controller: type) type {
             capacity: types.uint32,
         ) callconv(.c) types.uint32 {
             const iface = controller(userdata) orelse return 0;
-            return @intCast(Controller.loadGuiGraph(iface, source_id, output[0..capacity]));
+            const bounded_capacity = @min(capacity, vstgui_editor_view.max_graph_points);
+            const count = Controller.loadGuiGraph(iface, source_id, output[0..bounded_capacity]);
+            return @intCast(@min(count, bounded_capacity));
         }
 
         fn sendNote(
@@ -1792,4 +1814,17 @@ test "graph axes reject non-finite and invalid logarithmic ranges" {
     try std.testing.expect(!validGraphAxis(.{ .minimum = 0.0, .maximum = std.math.inf(f64) }));
     try std.testing.expect(!validGraphAxis(.{ .minimum = 1.0, .maximum = 1.0 }));
     try std.testing.expect(!validGraphAxis(.{ .minimum = 0.0, .maximum = 20_000.0, .scale = .logarithmic }));
+}
+
+test "native file import enums reject unknown values" {
+    try std.testing.expectEqual(gui_file_importer.EntryPoint.drop, fileImportEntryPoint(0).?);
+    try std.testing.expectEqual(gui_file_importer.EntryPoint.picker, fileImportEntryPoint(1).?);
+    try std.testing.expectEqual(@as(?gui_file_importer.EntryPoint, null), fileImportEntryPoint(-1));
+    try std.testing.expectEqual(@as(?gui_file_importer.EntryPoint, null), fileImportEntryPoint(2));
+
+    try std.testing.expectEqual(gui_file_importer.Command.cancel, fileImportCommand(0).?);
+    try std.testing.expectEqual(gui_file_importer.Command.retry, fileImportCommand(1).?);
+    try std.testing.expectEqual(gui_file_importer.Command.reset, fileImportCommand(2).?);
+    try std.testing.expectEqual(@as(?gui_file_importer.Command, null), fileImportCommand(-1));
+    try std.testing.expectEqual(@as(?gui_file_importer.Command, null), fileImportCommand(3));
 }
