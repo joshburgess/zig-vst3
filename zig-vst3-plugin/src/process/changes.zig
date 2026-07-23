@@ -40,29 +40,42 @@ pub const BlockParameterLatch = struct {
         };
     }
 
+    pub fn valid(self: BlockParameterLatch) bool {
+        return common.isNormalized(self.current_normalized) and
+            common.isNormalized(self.next_normalized);
+    }
+
     /// Starts a block and returns its offset-zero value. Later changes become the next block baseline.
     pub fn beginBlock(self: *BlockParameterLatch, changes: ParameterChanges, persisted_normalized: f64) f64 {
         const baseline = if (changes.has(self.parameter_id))
-            self.next_normalized
+            common.clampNormalized(self.next_normalized)
         else
             common.clampNormalized(persisted_normalized);
-        const current = changes.latestNormalizedForIdAtOffset(self.parameter_id, 0) orelse baseline;
+        const current = common.clampNormalized(
+            changes.latestNormalizedForIdAtOffset(self.parameter_id, 0) orelse baseline,
+        );
         self.current_normalized = current;
-        self.next_normalized = changes.latestNormalized(self.parameter_id) orelse current;
+        self.next_normalized = common.clampNormalized(
+            changes.latestNormalized(self.parameter_id) orelse current,
+        );
         return current;
     }
 
     /// Returns the current block baseline or the latest change at or before `sample_offset`.
     pub fn valueAt(self: *const BlockParameterLatch, changes: ParameterChanges, sample_offset: usize) f64 {
-        return changes.normalizedAtOrBeforeOr(self.parameter_id, sample_offset, self.current_normalized);
+        return changes.normalizedAtOrBeforeOr(
+            self.parameter_id,
+            sample_offset,
+            common.clampNormalized(self.current_normalized),
+        );
     }
 
     pub fn currentBlockValue(self: *const BlockParameterLatch) f64 {
-        return self.current_normalized;
+        return common.clampNormalized(self.current_normalized);
     }
 
     pub fn nextBlockValue(self: *const BlockParameterLatch) f64 {
-        return self.next_normalized;
+        return common.clampNormalized(self.next_normalized);
     }
 
     pub fn reset(self: *BlockParameterLatch, normalized: f64) void {
@@ -95,6 +108,7 @@ fn changeSampleOffset(change: ?ParameterChange) ?usize {
 
 fn changeNormalized(change: ?ParameterChange) ?f64 {
     const item = change orelse return null;
+    if (!common.isNormalized(item.normalized)) return null;
     return item.normalized;
 }
 
@@ -270,6 +284,13 @@ pub const ParameterChanges = struct {
             try item.validate(frame_count);
         }
         return .{ .items = items };
+    }
+
+    pub fn valid(self: ParameterChanges, frame_count: usize) bool {
+        for (self.items) |item| {
+            item.validate(frame_count) catch return false;
+        }
+        return true;
     }
 
     pub fn changeCount(self: ParameterChanges) usize {
@@ -697,6 +718,7 @@ test "parameter changes validate block offsets and normalized values" {
 
 test "block parameter latch applies boundary changes and defers later changes" {
     var latch = BlockParameterLatch.init(7, 0.0);
+    try std.testing.expect(latch.valid());
     const first_changes = [_]ParameterChange{
         .{ .id = 7, .sample_offset = 0, .normalized = 0.25 },
         .{ .id = 7, .sample_offset = 3, .normalized = 0.75 },
@@ -722,6 +744,35 @@ test "block parameter latch applies boundary changes and defers later changes" {
     latch.reset(std.math.nan(f64));
     try std.testing.expectEqual(@as(f64, 0.0), latch.currentBlockValue());
     try std.testing.expectEqual(@as(f64, 0.0), latch.nextBlockValue());
+}
+
+test "parameter changes and latch contain malformed public state" {
+    const malformed_items = [_]ParameterChange{
+        .{ .id = 7, .sample_offset = 0, .normalized = std.math.nan(f64) },
+        .{ .id = 7, .sample_offset = 2, .normalized = std.math.inf(f64) },
+    };
+    const malformed = ParameterChanges{ .items = &malformed_items };
+    try std.testing.expect(!malformed.valid(4));
+    try std.testing.expectEqual(@as(?f64, null), malformed.firstNormalized(7));
+    try std.testing.expectEqual(@as(?f64, null), malformed.latestNormalized(7));
+    try std.testing.expectEqual(@as(f64, 0.5), malformed.normalizedAtOrBeforeOr(7, 3, 0.5));
+
+    const outside_block = ParameterChanges{ .items = &.{
+        .{ .id = 7, .sample_offset = 4, .normalized = 0.5 },
+    } };
+    try std.testing.expect(!outside_block.valid(4));
+
+    var latch = BlockParameterLatch{
+        .parameter_id = 7,
+        .current_normalized = std.math.nan(f64),
+        .next_normalized = std.math.inf(f64),
+    };
+    try std.testing.expect(!latch.valid());
+    try std.testing.expectEqual(@as(f64, 0.0), latch.currentBlockValue());
+    try std.testing.expectEqual(@as(f64, 1.0), latch.nextBlockValue());
+    try std.testing.expectEqual(@as(f64, 0.0), latch.valueAt(.{}, 0));
+    try std.testing.expectEqual(@as(f64, 1.0), latch.beginBlock(malformed, 0.75));
+    try std.testing.expect(latch.valid());
 }
 
 test "block segment advancement contains malformed public cursors" {
