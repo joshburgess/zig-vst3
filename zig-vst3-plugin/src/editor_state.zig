@@ -118,7 +118,9 @@ pub fn Store(comptime schema_version: u16, comptime fields: []const Field) type 
 
         pub fn get(self: *const Self, id: u32) ?Value {
             const index = fieldIndex(id) orelse return null;
-            return self.values[index];
+            const value = self.values[index];
+            validateValue(value) catch return null;
+            return value;
         }
 
         pub fn set(self: *Self, id: u32, value: Value) !void {
@@ -142,7 +144,15 @@ pub fn Store(comptime schema_version: u16, comptime fields: []const Field) type 
             self.values[index] = fields[index].default;
         }
 
+        pub fn valid(self: *const Self) bool {
+            for (self.values) |value| {
+                validateValue(value) catch return false;
+            }
+            return true;
+        }
+
         pub fn encodedSize(self: *const Self) usize {
+            if (!self.valid()) return maximumEncodedSize() + 1;
             var size = encoded_header_size;
             for (self.values) |value| size += encoded_entry_header_size + valuePayloadSize(value);
             return size;
@@ -562,9 +572,14 @@ test "editor state rejects malformed direct bounded values before writing" {
     const State = Store(1, &.{
         .{ .id = 1, .default = .{ .text = comptime Text.init("default") catch unreachable } },
         .{ .id = 2, .default = .{ .envelope = comptime Envelope.init(&.{}) catch unreachable } },
+        .{ .id = 3, .default = .{ .scalar = 0.5 } },
     });
     var state = State.init();
+    try std.testing.expect(state.valid());
     state.values[0].text.len = maximum_text_bytes + 1;
+    try std.testing.expect(!state.valid());
+    try std.testing.expectEqual(@as(?Value, null), state.get(1));
+    try std.testing.expectEqual(State.maximumEncodedSize() + 1, state.encodedSize());
     try std.testing.expectEqual(@as(usize, 0), state.values[0].text.slice().len);
     var bytes: [State.maximumEncodedSize()]u8 = undefined;
     var text_writer = std.Io.Writer.fixed(&bytes);
@@ -573,8 +588,17 @@ test "editor state rejects malformed direct bounded values before writing" {
 
     state.values[0].text = try Text.init("valid");
     state.values[1].envelope.len = maximum_envelope_points + 1;
+    try std.testing.expect(!state.valid());
+    try std.testing.expectEqual(@as(?Value, null), state.get(2));
     try std.testing.expectEqual(@as(usize, 0), state.values[1].envelope.slice().len);
     var envelope_writer = std.Io.Writer.fixed(&bytes);
     try std.testing.expectError(error.EditorStateEnvelopeTooLarge, state.write(&envelope_writer));
     try std.testing.expectEqual(@as(usize, 0), envelope_writer.end);
+
+    state.values[1].envelope = try Envelope.init(&.{});
+    state.values[2].scalar = std.math.nan(f64);
+    try std.testing.expect(!state.valid());
+    try std.testing.expectEqual(@as(?Value, null), state.get(3));
+    try state.reset(3);
+    try std.testing.expect(state.valid());
 }
