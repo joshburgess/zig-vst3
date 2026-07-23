@@ -69,11 +69,12 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
         }
 
         pub fn latencySamples(self: *const Self) u32 {
-            return if (self.configured) self.latency_samples else 0;
+            return if (self.validState()) self.latency_samples else 0;
         }
 
-        pub fn requiredModelCapacity(self: *const Self, host_frames: usize) error{ NotConfigured, CapacityOverflow }!usize {
+        pub fn requiredModelCapacity(self: *const Self, host_frames: usize) error{ NotConfigured, InvalidState, CapacityOverflow }!usize {
             if (!self.configured) return error.NotConfigured;
+            if (!self.validState()) return error.InvalidState;
             const scaled = @as(f64, @floatFromInt(host_frames)) * self.model_rate / self.host_rate;
             if (!std.math.isFinite(scaled) or scaled > @as(f64, @floatFromInt(std.math.maxInt(usize) - 2))) {
                 return error.CapacityOverflow;
@@ -89,6 +90,7 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
             StreamTooLong,
         }!usize {
             if (!self.configured) return error.NotConfigured;
+            if (!self.validState()) return error.InvalidState;
             const required = try self.requiredModelCapacity(input.len);
             if (model_output.len < required) return error.InsufficientModelCapacity;
             const result = self.to_model.process(input, model_output) catch |err| switch (err) {
@@ -115,7 +117,7 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
             StreamTooLong,
         }!void {
             if (!self.configured) return error.NotConfigured;
-            if (self.pending_model_count > self.pending_model.len) return error.InvalidState;
+            if (!self.validState()) return error.InvalidState;
             var produced: usize = 0;
             if (self.pending_model_count > 0) {
                 const pending_result = self.to_host.process(self.pending_model[0..self.pending_model_count], host_output) catch |err| switch (err) {
@@ -160,6 +162,22 @@ pub fn FixedRatePipeline(comptime Sample: type) type {
                 produced += ready.produced;
             }
             if (produced != host_output.len) return error.OutputUnderflow;
+        }
+
+        pub fn validState(self: *const Self) bool {
+            if (!self.configured or self.pending_model_count > self.pending_model.len) return false;
+            const config = Config{ .host_rate = self.host_rate, .model_rate = self.model_rate };
+            config.validate() catch return false;
+            if (!self.to_model.validState() or !self.to_host.validState()) return false;
+            if (self.to_model.input_rate != self.host_rate or self.to_model.output_rate != self.model_rate or
+                self.to_host.input_rate != self.model_rate or self.to_host.output_rate != self.host_rate)
+            {
+                return false;
+            }
+            const radius: f64 = resampler.right_radius;
+            const latency = @ceil(radius + radius * self.host_rate / self.model_rate);
+            if (!std.math.isFinite(latency) or latency > std.math.maxInt(u32)) return false;
+            return self.latency_samples == @as(u32, @intFromFloat(latency));
         }
     };
 }
@@ -281,4 +299,25 @@ test "fixed-rate pipeline rejects malformed pending state and reconfiguration cl
     pipeline.pending_model_count = 1;
     try pipeline.configure(config);
     try std.testing.expectEqual(@as(usize, 0), pipeline.pending_model_count);
+}
+
+test "fixed-rate pipeline rejects malformed public configuration state" {
+    const Pipeline = FixedRatePipeline(f64);
+    var pipeline = try Pipeline.init(.{ .host_rate = 48_000, .model_rate = 48_000 });
+    try std.testing.expect(pipeline.validState());
+
+    pipeline.host_rate = 0.0;
+    try std.testing.expect(!pipeline.validState());
+    try std.testing.expectEqual(@as(u32, 0), pipeline.latencySamples());
+    try std.testing.expectError(error.InvalidState, pipeline.requiredModelCapacity(64));
+
+    try pipeline.configure(.{ .host_rate = 48_000, .model_rate = 48_000 });
+    pipeline.to_model.output_rate = 96_000;
+    try std.testing.expect(!pipeline.validState());
+    try std.testing.expectError(error.InvalidState, pipeline.convertInput(&.{}, &.{}));
+
+    try pipeline.configure(.{ .host_rate = 48_000, .model_rate = 48_000 });
+    pipeline.latency_samples +%= 1;
+    try std.testing.expect(!pipeline.validState());
+    try std.testing.expectError(error.InvalidState, pipeline.convertOutput(&.{}, &.{}));
 }
