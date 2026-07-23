@@ -71,6 +71,7 @@ pub fn BoundedMetadata(comptime capacity: usize) type {
         }
 
         pub fn slice(self: *const Self) []const u8 {
+            if (self.length > capacity) return &.{};
             return self.bytes[0..self.length];
         }
     };
@@ -107,10 +108,14 @@ pub fn Reference(comptime path_capacity: usize, comptime metadata_capacity: usiz
         }
 
         pub fn encodedSize(self: *const Self) usize {
+            if (!self.valid()) return maximum_encoded_size + 1;
             return maximum_encoded_size - path_capacity - metadata_capacity + self.path.length + self.metadata.length;
         }
 
         pub fn write(self: *const Self, writer: anytype) !void {
+            if (self.path.length == 0) return error.InvalidPath;
+            if (self.path.length > path_capacity) return error.PathTooLong;
+            if (self.metadata.length > metadata_capacity) return error.MetadataTooLong;
             try writer.writeAll(magic);
             try writer.writeInt(u16, format_version, .little);
             try writer.writeByte(1);
@@ -154,8 +159,14 @@ pub fn Reference(comptime path_capacity: usize, comptime metadata_capacity: usiz
         }
 
         pub fn classifyCandidate(self: *const Self, candidate_path: []const u8, candidate_identity: Identity) RecoveryStatus {
+            if (!self.valid()) return .failed;
             if (!self.identity.eql(candidate_identity)) return .changed;
             return if (std.mem.eql(u8, self.path.slice(), candidate_path)) .ready else .moved;
+        }
+
+        fn valid(self: *const Self) bool {
+            return self.path.length > 0 and self.path.length <= path_capacity and
+                self.metadata.length <= metadata_capacity;
         }
     };
 }
@@ -234,6 +245,28 @@ test "resource identity detects changed and moved files" {
     try std.testing.expectEqual(RecoveryStatus.ready, stored.classifyCandidate("/models/a.nam", original));
     try std.testing.expectEqual(RecoveryStatus.moved, stored.classifyCandidate("/models/b.nam", original));
     try std.testing.expectEqual(RecoveryStatus.changed, stored.classifyCandidate("/models/a.nam", Identity.fromBytes("replacement model")));
+}
+
+test "resource reference rejects malformed direct storage lengths" {
+    const Stored = Reference(8, 8);
+    var stored = try Stored.init("model", Identity.fromBytes("fixture"), 1, "linear");
+    var encoded: [Stored.maximum_encoded_size]u8 = undefined;
+
+    stored.path.length = 9;
+    try std.testing.expectEqual(Stored.maximum_encoded_size + 1, stored.encodedSize());
+    var path_writer = std.Io.Writer.fixed(&encoded);
+    try std.testing.expectError(error.PathTooLong, stored.write(&path_writer));
+    try std.testing.expectEqual(RecoveryStatus.failed, stored.classifyCandidate("model", stored.identity));
+
+    stored.path.length = 5;
+    stored.metadata.length = 9;
+    var metadata_writer = std.Io.Writer.fixed(&encoded);
+    try std.testing.expectError(error.MetadataTooLong, stored.write(&metadata_writer));
+
+    stored.metadata.length = 6;
+    stored.path.length = 0;
+    var empty_path_writer = std.Io.Writer.fixed(&encoded);
+    try std.testing.expectError(error.InvalidPath, stored.write(&empty_path_writer));
 }
 
 test "streamed identity matches one-shot identity" {

@@ -40,6 +40,7 @@ pub const Text = struct {
     }
 
     pub fn slice(self: *const Text) []const u8 {
+        if (self.len > maximum_text_bytes) return &.{};
         return self.bytes[0..self.len];
     }
 };
@@ -58,6 +59,7 @@ pub const Envelope = struct {
     }
 
     pub fn slice(self: *const Envelope) []const Point {
+        if (self.len > maximum_envelope_points) return &.{};
         return self.points[0..self.len];
     }
 };
@@ -147,6 +149,7 @@ pub fn Store(comptime schema_version: u16, comptime fields: []const Field) type 
         }
 
         pub fn write(self: *const Self, writer: anytype) !void {
+            for (self.values) |value| try validateValue(value);
             if (self.encodedSize() > maximumEncodedSize()) return error.EditorStateTooLarge;
             try writer.writeAll(magic);
             try writer.writeInt(u16, wire_version, .little);
@@ -553,4 +556,25 @@ test "editor state generated mutations remain bounded and transactional" {
             try std.testing.expectEqual(@as(i64, 99), destination.get(2).?.integer);
         }
     }
+}
+
+test "editor state rejects malformed direct bounded values before writing" {
+    const State = Store(1, &.{
+        .{ .id = 1, .default = .{ .text = comptime Text.init("default") catch unreachable } },
+        .{ .id = 2, .default = .{ .envelope = comptime Envelope.init(&.{}) catch unreachable } },
+    });
+    var state = State.init();
+    state.values[0].text.len = maximum_text_bytes + 1;
+    try std.testing.expectEqual(@as(usize, 0), state.values[0].text.slice().len);
+    var bytes: [State.maximumEncodedSize()]u8 = undefined;
+    var text_writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(error.EditorStateTextTooLong, state.write(&text_writer));
+    try std.testing.expectEqual(@as(usize, 0), text_writer.end);
+
+    state.values[0].text = try Text.init("valid");
+    state.values[1].envelope.len = maximum_envelope_points + 1;
+    try std.testing.expectEqual(@as(usize, 0), state.values[1].envelope.slice().len);
+    var envelope_writer = std.Io.Writer.fixed(&bytes);
+    try std.testing.expectError(error.EditorStateEnvelopeTooLarge, state.write(&envelope_writer));
+    try std.testing.expectEqual(@as(usize, 0), envelope_writer.end);
 }

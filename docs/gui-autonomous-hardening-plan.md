@@ -487,3 +487,10 @@ Record commit IDs, test counts, artifact paths, benchmark measurements, API deci
 - Viewport projection, zoom, and pan now validate directly constructed public state before division or clamp arithmetic. Malformed state fails closed, while reset remains a recovery path.
 - Range-selection set and adjust operations reject malformed current state transactionally. Replacement remains a bounded recovery path, and invariant checks tolerate only representation error at the configured minimum span.
 - Direct regressions cover zero and non-finite viewport zoom, reversed range handles, rejection without mutation, and recovery. The complete deterministic gate passed 111/111 steps and 4,180/4,180 tests.
+
+### Autonomous Follow-up: Bounded Inline Storage
+
+- Resource paths, resource metadata, file-drop paths, editor text, and editor envelopes now fail closed when directly constructed public length fields exceed their inline capacity.
+- Resource-reference serialization validates path and metadata lengths before writing any bytes. Invalid references report an oversized encoded form, reject recovery classification, and return a specific error without partial output.
+- Editor-state serialization validates every retained value before writing its header. File-drop extension counts and lengths are checked before slicing configuration storage.
+- Direct regressions cover oversized and empty path lengths, oversized metadata, text, envelope, extension count, and extension length values. The complete deterministic gate passed 111/111 steps and 4,184/4,184 tests.

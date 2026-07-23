@@ -30,6 +30,7 @@ pub const Path = struct {
     }
 
     pub fn slice(self: *const Path) []const u8 {
+        if (self.len == 0 or self.len > maximum_path_bytes) return &.{};
         return self.bytes[0..self.len];
     }
 };
@@ -104,7 +105,9 @@ pub fn DropZone(comptime file_capacity: usize, comptime extension_capacity: usiz
         }
 
         fn accepts(self: *const Self, path: []const u8) bool {
+            if (self.extension_count == 0 or self.extension_count > extension_capacity) return false;
             for (self.extensions[0..self.extension_count], self.extension_lengths[0..self.extension_count]) |extension, length| {
+                if (length < 2 or length > maximum_extension_bytes) return false;
                 if (path.len >= length and std.ascii.eqlIgnoreCase(path[path.len - length ..], extension[0..length])) return true;
             }
             return false;
@@ -141,4 +144,20 @@ test "drop zone rejects malformed and duplicate extensions" {
     try std.testing.expectError(error.InvalidExtension, Zone.init(&.{"wav"}));
     try std.testing.expectError(error.InvalidExtension, Zone.init(&.{".wave file"}));
     try std.testing.expectError(error.DuplicateExtension, Zone.init(&.{ ".wav", ".WAV" }));
+}
+
+test "file drop rejects malformed direct bounded storage" {
+    var path = try Path.init("sample.wav");
+    path.len = maximum_path_bytes + 1;
+    try std.testing.expectEqual(@as(usize, 0), path.slice().len);
+    path.len = 0;
+    try std.testing.expectEqual(@as(usize, 0), path.slice().len);
+
+    const Zone = DropZone(1, 1);
+    var zone = try Zone.init(&.{".wav"});
+    zone.extension_count = 2;
+    try std.testing.expectEqual(Status.rejected_type, zone.inspect(&.{"sample.wav"}));
+    zone.extension_count = 1;
+    zone.extension_lengths[0] = maximum_extension_bytes + 1;
+    try std.testing.expectEqual(Status.rejected_type, zone.inspect(&.{"sample.wav"}));
 }

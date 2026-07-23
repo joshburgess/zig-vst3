@@ -19,6 +19,7 @@ pub fn BoundedPath(comptime capacity: usize) type {
         }
 
         pub fn slice(self: *const Self) []const u8 {
+            if (self.length == 0 or self.length > capacity) return &.{};
             return self.bytes[0..self.length];
         }
     };
@@ -32,4 +33,12 @@ test "bounded path owns validated inline storage" {
     try std.testing.expectError(error.InvalidPath, BoundedPath(16).init(""));
     try std.testing.expectError(error.InvalidPath, BoundedPath(16).init("bad\x00path"));
     try std.testing.expectError(error.PathTooLong, BoundedPath(4).init("model"));
+}
+
+test "bounded path slice rejects malformed direct lengths" {
+    var path = try BoundedPath(4).init("path");
+    path.length = 5;
+    try std.testing.expectEqual(@as(usize, 0), path.slice().len);
+    path.length = 0;
+    try std.testing.expectEqual(@as(usize, 0), path.slice().len);
 }
