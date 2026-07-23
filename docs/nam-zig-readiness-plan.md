@@ -31,6 +31,22 @@ Its plugin adds:
 
 The current Rust plugin is useful as a requirements source, but not as a real-time design template. Its process callback locks the shared model, copies an input block on the resampled path, and may grow vectors and deques. A Zig implementation must replace those behaviors with bounded, ownership-safe mechanisms.
 
+### Source-to-contract audit
+
+The completion audit on 2026-07-22 checked the pinned source directly rather than relying on the earlier capability list:
+
+| Reference source | Reusable requirement | Framework contract |
+| --- | --- | --- |
+| `nam-plugin/src/lib.rs` | Mono effect layout | Public mono input and output bus declarations with validator coverage |
+| `nam-plugin/src/lib.rs` | Background path loading and restoration | Bounded resource commands, persistent references, asynchronous recovery, and editor-independent startup |
+| `nam-plugin/src/lib.rs` | Host-rate to model-rate conversion | Fixed-capacity streaming SRC, caller-owned model scratch, exact latency, and restart ordering |
+| `nam-core/src/dsp.rs` and architecture implementations | Persistent mutable inference state, reset, and prewarm | Exclusive audio-thread runtime ownership after off-thread preparation and block-boundary adoption |
+| `nam-core/src/get_dsp.rs` | Dynamic architecture parsing and heap-owned weights | Off-thread caller-defined preparation with bounded work and result declarations; parsing remains in `zig-nam` |
+| `nam-core/csrc/fast_kernels.c` and `build.rs` | Optimized C kernels | Consumer-owned C compilation, scoped flags, runtime dispatch, and portable fallbacks |
+| `nam-core` audio and model fixtures | Numerical parity | Host-independent fixed and randomized block rendering with C++ reference WAV comparison |
+
+The largest model fixture committed at the audited revision is 407,452 bytes. Framework validation now streams and publishes a generated 512 KiB prepared resource, so the Model Shell's intentionally small JSON limit is not a framework limit. No additional VST3 or general plugin-framework prerequisite was found. The next implementation boundary is a separate `zig-nam` package, not more model-specific code in this repository.
+
 ## Current readiness
 
 ### Capabilities already present
