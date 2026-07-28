@@ -247,6 +247,21 @@ test "installed core package exposes format-neutral processor and editor contrac
     try std.testing.expect(@hasDecl(core.lv2, "StateMapPath"));
     try std.testing.expect(@hasDecl(core.lv2, "StateMakePath"));
     try std.testing.expect(@hasDecl(core.lv2, "StateFreePath"));
+    try std.testing.expect(@hasDecl(core.lv2, "PatchProperty"));
+    try std.testing.expect(@hasDecl(core.lv2, "PatchValue"));
+    try std.testing.expect(@hasDecl(core.lv2, "PatchValueKind"));
+    try std.testing.expect(@hasDecl(core.lv2, "AtomBool"));
+    try std.testing.expect(@hasDecl(core.lv2, "AtomUrid"));
+    const patch_property = core.lv2.PatchProperty{
+        .uri = "https://example.test/property",
+        .value_kind = .double,
+        .readable = true,
+    };
+    try std.testing.expect(patch_property.readable);
+    try std.testing.expectEqual(
+        @as(f64, 0.5),
+        (core.lv2.PatchValue{ .double = 0.5 }).double,
+    );
     try std.testing.expectEqual(
         @as(u8, 64),
         core.plugin.AudioBusLayout.ambisonic_seventh_order
@@ -892,4 +907,66 @@ test "installed core package runs an LV2 audio control descriptor" {
             "pgm:UIInterface",
         ) != null,
     );
+}
+
+test "installed core package compiles typed LV2 Patch declarations" {
+    const Probe = struct {
+        mode: i32 = 3,
+
+        pub const name = "Installed LV2 Patch Probe";
+        pub const vendor = "zig-vst3";
+        pub const audio_input_layout: core.plugin.AudioBusLayout = .mono;
+        pub const audio_output_layout: core.plugin.AudioBusLayout = .mono;
+        pub const event_input = true;
+        pub const event_output = true;
+        pub const lv2_patch_response_capacity = 256;
+        pub const lv2_patch_properties = &[_]core.lv2.PatchProperty{
+            .{
+                .uri = "https://example.test/installed-patch#mode",
+                .value_kind = .int,
+                .readable = true,
+                .writable = true,
+            },
+        };
+        pub const Params = struct {};
+
+        pub fn process(
+            _: *@This(),
+            _: *core.process.ProcessContext(f32),
+        ) void {}
+
+        pub fn readLv2PatchProperty(
+            self: *const @This(),
+            property_index: usize,
+        ) !core.lv2.PatchValue {
+            if (property_index != 0)
+                return error.UnknownPatchProperty;
+            return .{ .int = self.mode };
+        }
+
+        pub fn writeLv2PatchProperty(
+            self: *@This(),
+            property_index: usize,
+            value: core.lv2.PatchValue,
+        ) !void {
+            if (property_index != 0)
+                return error.UnknownPatchProperty;
+            self.mode = switch (value) {
+                .int => |item| item,
+                else => return error.InvalidPatchValue,
+            };
+        }
+    };
+    const Adapter = core.lv2.CoreAdapter(
+        Probe,
+        "https://example.test/installed-patch",
+        16,
+    );
+    try std.testing.expect(Adapter.patch_enabled);
+    try std.testing.expect(Adapter.patch_readable);
+    try std.testing.expect(Adapter.patch_writable);
+    try std.testing.expect(Adapter.event_input_port != null);
+    try std.testing.expect(Adapter.event_output_port != null);
+    try std.testing.expect(@sizeOf(Adapter) > 0);
+    try std.testing.expect(Adapter.descriptorAt(0) != null);
 }

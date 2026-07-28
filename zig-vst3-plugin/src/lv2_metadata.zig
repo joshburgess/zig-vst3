@@ -45,6 +45,12 @@ pub fn Generator(
     const requires_state_make_path =
         @hasDecl(Adapter, "state_make_path_required") and
         Adapter.state_make_path_required;
+    const has_patch =
+        @hasDecl(Adapter, "patch_enabled") and Adapter.patch_enabled;
+    const has_readable_patch =
+        @hasDecl(Adapter, "patch_readable") and Adapter.patch_readable;
+    const has_writable_patch =
+        @hasDecl(Adapter, "patch_writable") and Adapter.patch_writable;
     _ = plugin_api.PluginSpec(Plugin);
 
     return struct {
@@ -103,6 +109,7 @@ pub fn Generator(
                     "@prefix lv2:  <http://lv2plug.in/ns/lv2core#> .\n" ++
                     "@prefix midi: <http://lv2plug.in/ns/ext/midi#> .\n" ++
                     "@prefix opts: <http://lv2plug.in/ns/ext/options#> .\n" ++
+                    "@prefix patch: <http://lv2plug.in/ns/ext/patch#> .\n" ++
                     "@prefix pgm:  <http://kxstudio.sf.net/ns/lv2ext/programs#> .\n" ++
                     "@prefix state: <http://lv2plug.in/ns/ext/state#> .\n" ++
                     "@prefix time: <http://lv2plug.in/ns/ext/time#> .\n" ++
@@ -143,6 +150,14 @@ pub fn Generator(
                 try writer.writeAll(" , work:interface");
             if (has_programs)
                 try writer.writeAll(" , pgm:Interface");
+            if (has_readable_patch) {
+                try writer.writeAll(" ;\n    patch:readable ");
+                try writePatchPropertyList(writer, true);
+            }
+            if (has_writable_patch) {
+                try writer.writeAll(" ;\n    patch:writable ");
+                try writePatchPropertyList(writer, false);
+            }
             try writer.writeAll(
                 " ;\n    opts:supportedOption bufsz:minBlockLength ,\n" ++
                     "                         bufsz:maxBlockLength ,\n" ++
@@ -247,13 +262,15 @@ pub fn Generator(
                 try writeFixedIndexedPort(
                     writer,
                     index,
-                    "midi_input",
-                    "MIDI Input",
+                    if (has_patch) "events_input" else "midi_input",
+                    if (has_patch) "Events Input" else "MIDI Input",
                 );
                 try writer.writeAll(
                     " ;\n        atom:bufferType atom:Sequence ;\n" ++
-                        "        atom:supports midi:MidiEvent , time:Position\n",
+                        "        atom:supports midi:MidiEvent , time:Position",
                 );
+                if (has_patch) try writer.writeAll(" , patch:Message");
+                try writer.writeByte('\n');
             }
             if (Adapter.event_output_port) |index| {
                 try beginPort(writer, &first);
@@ -263,13 +280,15 @@ pub fn Generator(
                 try writeFixedIndexedPort(
                     writer,
                     index,
-                    "midi_output",
-                    "MIDI Output",
+                    if (has_patch) "events_output" else "midi_output",
+                    if (has_patch) "Events Output" else "MIDI Output",
                 );
                 try writer.writeAll(
                     " ;\n        atom:bufferType atom:Sequence ;\n" ++
-                        "        atom:supports midi:MidiEvent\n",
+                        "        atom:supports midi:MidiEvent",
                 );
+                if (has_patch) try writer.writeAll(" , patch:Message");
+                try writer.writeByte('\n');
             }
             const set = ParameterSet.init(initial_parameters);
             inline for (fields, 0..) |field, parameter_index| {
@@ -389,6 +408,35 @@ pub fn Generator(
                     }
                 }
             }
+            if (has_patch) {
+                inline for (Plugin.lv2_patch_properties, 0..) |property, index| {
+                    if (!validUri(property.uri))
+                        return error.InvalidLv2MetadataUri;
+                    for (Plugin.lv2_patch_properties[0..index]) |previous| {
+                        if (std.mem.eql(u8, previous.uri, property.uri))
+                            return error.DuplicateLv2PatchProperty;
+                    }
+                }
+            }
+        }
+
+        fn writePatchPropertyList(
+            writer: *std.Io.Writer,
+            readable: bool,
+        ) !void {
+            var first = true;
+            for (Plugin.lv2_patch_properties) |property| {
+                const included = if (readable)
+                    property.readable
+                else
+                    property.writable;
+                if (!included) continue;
+                if (!first) try writer.writeAll(" , ");
+                try writer.writeByte('<');
+                try writer.writeAll(property.uri);
+                try writer.writeByte('>');
+                first = false;
+            }
         }
 
         fn parameterIndex(symbol: []const u8) ?usize {
@@ -402,10 +450,18 @@ pub fn Generator(
             if (std.mem.eql(u8, symbol, "latency"))
                 return true;
             if (Adapter.event_input_port != null and
-                std.mem.eql(u8, symbol, "midi_input"))
+                std.mem.eql(
+                    u8,
+                    symbol,
+                    if (has_patch) "events_input" else "midi_input",
+                ))
                 return true;
             if (Adapter.event_output_port != null and
-                std.mem.eql(u8, symbol, "midi_output"))
+                std.mem.eql(
+                    u8,
+                    symbol,
+                    if (has_patch) "events_output" else "midi_output",
+                ))
                 return true;
             for (0..Adapter.input_channels) |index| {
                 if (audioSymbolEquals(
@@ -571,6 +627,18 @@ test "LV2 metadata generator writes ports workers and presets" {
         pub const vendor = "zig-vst3";
         pub const audio_input_layout: plugin_api.AudioBusLayout = .mono;
         pub const audio_output_layout: plugin_api.AudioBusLayout = .stereo;
+        const PatchMetadataProperty = struct {
+            uri: []const u8,
+            readable: bool,
+            writable: bool,
+        };
+        pub const lv2_patch_properties = &[_]PatchMetadataProperty{
+            .{
+                .uri = "https://example.test/metadata#resource",
+                .readable = true,
+                .writable = true,
+            },
+        };
         pub const Params = struct {
             gain: parameters.FloatParam = .{
                 .id = 0,
@@ -598,6 +666,9 @@ test "LV2 metadata generator writes ports workers and presets" {
         pub const programs_enabled = true;
         pub const portable_state_paths_enabled = true;
         pub const state_make_path_required = true;
+        pub const patch_enabled = true;
+        pub const patch_readable = true;
+        pub const patch_writable = true;
     };
     const Generated = Generator(
         Probe,
@@ -650,6 +721,31 @@ test "LV2 metadata generator writes ports workers and presets" {
             plugin,
             "state:mapPath , state:freePath , state:makePath",
         ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "patch:readable <https://example.test/metadata#resource>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "patch:writable <https://example.test/metadata#resource>",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(
+            u8,
+            plugin,
+            "atom:supports midi:MidiEvent , time:Position , patch:Message",
+        ) != null,
+    );
+    try std.testing.expect(
+        std.mem.indexOf(u8, plugin, "lv2:symbol \"events_input\"") !=
+            null,
     );
     try std.testing.expect(
         std.mem.indexOf(u8, plugin, "lv2:symbol \"output_2\"") != null,

@@ -134,6 +134,12 @@ export fn zig_lv2_layout_value(index: u32) usize {
         125 => @alignOf(lv2.StateFreePath),
         126 => @offsetOf(lv2.StateFreePath, "handle"),
         127 => @offsetOf(lv2.StateFreePath, "free_path"),
+        128 => @sizeOf(lv2.AtomBool),
+        129 => @alignOf(lv2.AtomBool),
+        130 => @offsetOf(lv2.AtomBool, "body"),
+        131 => @sizeOf(lv2.AtomUrid),
+        132 => @alignOf(lv2.AtomUrid),
+        133 => @offsetOf(lv2.AtomUrid, "body"),
         else => std.math.maxInt(usize),
     };
 }

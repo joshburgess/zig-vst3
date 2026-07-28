@@ -5,6 +5,261 @@ const DescriptorFunction = *const fn (
     index: u32,
 ) callconv(.c) ?*const core.lv2.Descriptor;
 
+const PatchIds = struct {
+    sequence: core.lv2.Urid,
+    chunk: core.lv2.Urid,
+    object: core.lv2.Urid,
+    int: core.lv2.Urid,
+    path: core.lv2.Urid,
+    urid: core.lv2.Urid,
+    get: core.lv2.Urid,
+    set: core.lv2.Urid,
+    property: core.lv2.Urid,
+    sequence_number: core.lv2.Urid,
+    subject: core.lv2.Urid,
+    value: core.lv2.Urid,
+    plugin: core.lv2.Urid,
+    mode: core.lv2.Urid,
+    resource: core.lv2.Urid,
+};
+
+const PatchSequence = extern struct {
+    sequence: core.lv2.AtomSequence,
+    storage: [1024]u8,
+
+    fn empty(ids: PatchIds) PatchSequence {
+        var result = std.mem.zeroes(PatchSequence);
+        result.sequence = .{
+            .atom = .{
+                .size = @sizeOf(core.lv2.AtomSequenceBody),
+                .type = ids.sequence,
+            },
+            .body = .{ .unit = 0, .pad = 0 },
+        };
+        return result;
+    }
+
+    fn resetOutput(self: *PatchSequence, ids: PatchIds) void {
+        self.* = std.mem.zeroes(PatchSequence);
+        self.sequence.atom = .{
+            .size = @sizeOf(core.lv2.AtomSequenceBody) +
+                self.storage.len,
+            .type = ids.chunk,
+        };
+    }
+};
+
+const PatchBuilder = struct {
+    buffer: *PatchSequence,
+    event: *core.lv2.AtomEvent,
+    payload_start: usize,
+    cursor: usize,
+
+    fn init(
+        buffer: *PatchSequence,
+        ids: PatchIds,
+        frame_offset: i64,
+        message_type: core.lv2.Urid,
+    ) PatchBuilder {
+        buffer.* = PatchSequence.empty(ids);
+        const bytes: [*]u8 = @ptrCast(&buffer.sequence.body);
+        const event_offset = @sizeOf(core.lv2.AtomSequenceBody);
+        const event: *core.lv2.AtomEvent = @ptrCast(
+            @alignCast(bytes + event_offset),
+        );
+        event.* = .{
+            .time = .{ .frames = frame_offset },
+            .body = .{
+                .size = @sizeOf(core.lv2.AtomObjectBody),
+                .type = ids.object,
+            },
+        };
+        const payload_start = event_offset +
+            @sizeOf(core.lv2.AtomEvent);
+        const object: *core.lv2.AtomObjectBody = @ptrCast(
+            @alignCast(bytes + payload_start),
+        );
+        object.* = .{ .id = 0, .otype = message_type };
+        var result = PatchBuilder{
+            .buffer = buffer,
+            .event = event,
+            .payload_start = payload_start,
+            .cursor = payload_start +
+                @sizeOf(core.lv2.AtomObjectBody),
+        };
+        result.finish();
+        return result;
+    }
+
+    fn append(
+        self: *PatchBuilder,
+        key: core.lv2.Urid,
+        value_type: core.lv2.Urid,
+        value: []const u8,
+    ) !void {
+        const raw_size = @sizeOf(core.lv2.AtomPropertyBody) +
+            value.len;
+        const padded_size = std.mem.alignForward(
+            usize,
+            raw_size,
+            8,
+        );
+        const bytes: [*]u8 = @ptrCast(&self.buffer.sequence.body);
+        if (self.cursor + padded_size >
+            @sizeOf(core.lv2.AtomSequenceBody) +
+                self.buffer.storage.len)
+            return error.PatchMessageTooLarge;
+        const property: *core.lv2.AtomPropertyBody = @ptrCast(
+            @alignCast(bytes + self.cursor),
+        );
+        property.* = .{
+            .key = key,
+            .context = 0,
+            .value = .{
+                .size = @intCast(value.len),
+                .type = value_type,
+            },
+        };
+        @memcpy(
+            bytes[self.cursor + @sizeOf(core.lv2.AtomPropertyBody) .. self.cursor + @sizeOf(core.lv2.AtomPropertyBody) +
+                value.len],
+            value,
+        );
+        @memset(
+            bytes[self.cursor + raw_size .. self.cursor + padded_size],
+            0,
+        );
+        self.cursor += padded_size;
+        self.finish();
+    }
+
+    fn appendString(
+        self: *PatchBuilder,
+        key: core.lv2.Urid,
+        value_type: core.lv2.Urid,
+        value: []const u8,
+    ) !void {
+        var terminated: [257]u8 = @splat(0);
+        if (value.len > terminated.len - 1)
+            return error.PatchMessageTooLarge;
+        @memcpy(terminated[0..value.len], value);
+        try self.append(
+            key,
+            value_type,
+            terminated[0 .. value.len + 1],
+        );
+    }
+
+    fn finish(self: *PatchBuilder) void {
+        const payload_size = self.cursor - self.payload_start;
+        self.event.body.size = @intCast(payload_size);
+        self.buffer.sequence.atom.size = @intCast(self.cursor);
+    }
+};
+
+const PatchResponse = struct {
+    frame_offset: i64,
+    property: core.lv2.Urid,
+    sequence_number: ?i32,
+    subject: ?core.lv2.Urid,
+    value_type: core.lv2.Urid,
+    value: []const u8,
+};
+
+fn readPatchResponse(
+    buffer: *const PatchSequence,
+    ids: PatchIds,
+) !PatchResponse {
+    if (buffer.sequence.atom.type != ids.sequence or
+        buffer.sequence.atom.size < @sizeOf(core.lv2.AtomSequenceBody) +
+            @sizeOf(core.lv2.AtomEvent) +
+            @sizeOf(core.lv2.AtomObjectBody))
+        return error.InvalidPatchResponse;
+    const bytes: [*]const u8 = @ptrCast(&buffer.sequence.body);
+    const event_offset = @sizeOf(core.lv2.AtomSequenceBody);
+    const event: *const core.lv2.AtomEvent = @ptrCast(
+        @alignCast(bytes + event_offset),
+    );
+    if (event.body.type != ids.object)
+        return error.InvalidPatchResponse;
+    const payload_start = event_offset + @sizeOf(core.lv2.AtomEvent);
+    const payload_size: usize = event.body.size;
+    if (payload_start + payload_size > buffer.sequence.atom.size)
+        return error.InvalidPatchResponse;
+    const object: *align(1) const core.lv2.AtomObjectBody =
+        @ptrCast(bytes + payload_start);
+    if (object.otype != ids.set) return error.InvalidPatchResponse;
+    var property_urid: ?core.lv2.Urid = null;
+    var sequence_number: ?i32 = null;
+    var subject: ?core.lv2.Urid = null;
+    var value_type: ?core.lv2.Urid = null;
+    var value: []const u8 = &.{};
+    var cursor: usize =
+        payload_start + @sizeOf(core.lv2.AtomObjectBody);
+    const payload_end = payload_start + payload_size;
+    while (cursor < payload_end) {
+        if (payload_end - cursor <
+            @sizeOf(core.lv2.AtomPropertyBody))
+            return error.InvalidPatchResponse;
+        const property: *align(1) const core.lv2.AtomPropertyBody =
+            @ptrCast(bytes + cursor);
+        const raw_size = @sizeOf(core.lv2.AtomPropertyBody) +
+            property.value.size;
+        const padded_size = std.mem.alignForward(
+            usize,
+            raw_size,
+            8,
+        );
+        if (padded_size > payload_end - cursor)
+            return error.InvalidPatchResponse;
+        const body = bytes[cursor +
+            @sizeOf(core.lv2.AtomPropertyBody) .. cursor + raw_size];
+        if (property.key == ids.property) {
+            if (property_urid != null or
+                property.value.type != ids.urid or
+                body.len != @sizeOf(core.lv2.Urid))
+                return error.InvalidPatchResponse;
+            property_urid = @as(
+                *align(1) const core.lv2.Urid,
+                @ptrCast(body.ptr),
+            ).*;
+        } else if (property.key == ids.sequence_number) {
+            if (sequence_number != null or
+                property.value.type != ids.int or
+                body.len != @sizeOf(i32))
+                return error.InvalidPatchResponse;
+            sequence_number = @as(
+                *align(1) const i32,
+                @ptrCast(body.ptr),
+            ).*;
+        } else if (property.key == ids.subject) {
+            if (subject != null or
+                property.value.type != ids.urid or
+                body.len != @sizeOf(core.lv2.Urid))
+                return error.InvalidPatchResponse;
+            subject = @as(
+                *align(1) const core.lv2.Urid,
+                @ptrCast(body.ptr),
+            ).*;
+        } else if (property.key == ids.value) {
+            if (value_type != null) return error.InvalidPatchResponse;
+            value_type = property.value.type;
+            value = body;
+        }
+        cursor += padded_size;
+    }
+    return .{
+        .frame_offset = event.time.frames,
+        .property = property_urid orelse
+            return error.InvalidPatchResponse,
+        .sequence_number = sequence_number,
+        .subject = subject,
+        .value_type = value_type orelse
+            return error.InvalidPatchResponse,
+        .value = value,
+    };
+}
+
 const StateHost = struct {
     parameter_bytes: [4096]u8 = undefined,
     parameter_size: usize = 0,
@@ -333,6 +588,35 @@ pub fn main(init: std.process.Init) !void {
         .handle = null,
         .map = StateHost.map,
     };
+    const patch_ids = PatchIds{
+        .sequence = StateHost.map(null, core.lv2.atom_sequence_uri),
+        .chunk = StateHost.map(null, core.lv2.atom_chunk_uri),
+        .object = StateHost.map(null, core.lv2.atom_object_uri),
+        .int = StateHost.map(null, core.lv2.atom_int_uri),
+        .path = StateHost.map(null, core.lv2.atom_path_uri),
+        .urid = StateHost.map(null, core.lv2.atom_urid_uri),
+        .get = StateHost.map(null, core.lv2.patch_get_uri),
+        .set = StateHost.map(null, core.lv2.patch_set_uri),
+        .property = StateHost.map(null, core.lv2.patch_property_uri),
+        .sequence_number = StateHost.map(
+            null,
+            core.lv2.patch_sequence_number_uri,
+        ),
+        .subject = StateHost.map(null, core.lv2.patch_subject_uri),
+        .value = StateHost.map(null, core.lv2.patch_value_uri),
+        .plugin = StateHost.map(
+            null,
+            "https://zig-vst3.dev/tests/lv2-component-state",
+        ),
+        .mode = StateHost.map(
+            null,
+            "https://zig-vst3.dev/tests/lv2-component-state#mode",
+        ),
+        .resource = StateHost.map(
+            null,
+            "https://zig-vst3.dev/tests/lv2-component-state#resource",
+        ),
+    };
     var map_feature = core.lv2.Feature{
         .URI = core.lv2.urid_map_uri,
         .data = &urid_map,
@@ -406,14 +690,19 @@ pub fn main(init: std.process.Init) !void {
         @ptrCast(@alignCast(raw_state));
     const input = [_]f32{ 0.25, -0.5 };
     var output = [_]f32{0.0} ** input.len;
+    var event_input = PatchSequence.empty(patch_ids);
+    var event_output = std.mem.zeroes(PatchSequence);
     var gain: f32 = 1.5;
     var latency: f32 = 0;
     descriptor.connect_port(handle, 0, @constCast(&input));
     descriptor.connect_port(handle, 1, &output);
-    descriptor.connect_port(handle, 2, &gain);
-    descriptor.connect_port(handle, 3, &latency);
+    descriptor.connect_port(handle, 2, &event_input);
+    descriptor.connect_port(handle, 3, &event_output);
+    descriptor.connect_port(handle, 4, &gain);
+    descriptor.connect_port(handle, 5, &latency);
 
     if (descriptor.activate) |activate| activate(handle);
+    event_output.resetOutput(patch_ids);
     descriptor.run(handle, input.len);
     if (!worker_host.request_pending or worker_host.work_count != 0)
         return error.WorkerWasNotScheduled;
@@ -421,7 +710,7 @@ pub fn main(init: std.process.Init) !void {
         return error.WorkerRespondedSynchronously;
     try std.testing.expectEqualSlices(
         f32,
-        &[_]f32{ 0.375, -0.75 },
+        &[_]f32{ 7.375, 6.25 },
         &output,
     );
     if (end_run(handle) != .success)
@@ -442,10 +731,11 @@ pub fn main(init: std.process.Init) !void {
         worker_joined = true;
         return error.WorkerDidNotRespond;
     }
+    event_output.resetOutput(patch_ids);
     descriptor.run(handle, input.len);
     try std.testing.expectEqualSlices(
         f32,
-        &[_]f32{ 0.375, -0.75 },
+        &[_]f32{ 7.375, 6.25 },
         &output,
     );
     worker_host.allow_response.store(true, .release);
@@ -462,14 +752,359 @@ pub fn main(init: std.process.Init) !void {
     if (worker_host.delivery_count != 1)
         return error.WorkerResponseWasNotDelivered;
 
+    event_output.resetOutput(patch_ids);
     descriptor.run(handle, input.len);
     try std.testing.expectEqualSlices(
         f32,
-        &[_]f32{ 3.375, 2.25 },
+        &[_]f32{ 10.375, 9.25 },
         &output,
     );
     if (end_run(handle) != .success)
         return error.WorkerEndRunFailed;
+
+    var patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        1,
+        patch_ids.set,
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.mode),
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.plugin),
+    );
+    const next_mode: i32 = 11;
+    try patch.append(
+        patch_ids.value,
+        patch_ids.int,
+        std.mem.asBytes(&next_mode),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 10.375, 13.25 },
+        &output,
+    );
+    if (event_output.sequence.atom.size !=
+        @sizeOf(core.lv2.AtomSequenceBody))
+        return error.UnexpectedPatchSetResponse;
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.get,
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.mode),
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.plugin),
+    );
+    const sequence_number: i32 = 37;
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&sequence_number),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    const mode_response = try readPatchResponse(
+        &event_output,
+        patch_ids,
+    );
+    if (mode_response.frame_offset != 0 or
+        mode_response.property != patch_ids.mode or
+        mode_response.sequence_number != sequence_number or
+        mode_response.subject != patch_ids.plugin or
+        mode_response.value_type != patch_ids.int or
+        mode_response.value.len != @sizeOf(i32) or
+        @as(
+            *align(1) const i32,
+            @ptrCast(mode_response.value.ptr),
+        ).* != next_mode)
+        return error.InvalidModePatchResponse;
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.set,
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.resource),
+    );
+    try patch.appendString(
+        patch_ids.value,
+        patch_ids.path,
+        "/restored/original.wav",
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.get,
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.resource),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    const path_response = try readPatchResponse(
+        &event_output,
+        patch_ids,
+    );
+    if (path_response.property != patch_ids.resource or
+        path_response.sequence_number != null or
+        path_response.value_type != patch_ids.path or
+        path_response.value.len == 0 or
+        path_response.value[path_response.value.len - 1] != 0 or
+        !std.mem.eql(
+            u8,
+            path_response.value[0 .. path_response.value.len - 1],
+            "/restored/original.wav",
+        ))
+        return error.InvalidPathPatchResponse;
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.set,
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.mode),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0.0} ** input.len),
+        &output,
+    );
+    if (event_output.sequence.atom.size !=
+        @sizeOf(core.lv2.AtomSequenceBody))
+        return error.MalformedPatchProducedOutput;
+
+    const foreign_property = StateHost.map(
+        null,
+        "https://example.test/foreign-property",
+    );
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.set,
+    );
+    try patch.append(
+        patch_ids.subject,
+        patch_ids.urid,
+        std.mem.asBytes(&foreign_property),
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.mode),
+    );
+    const ignored_mode: i32 = 99;
+    try patch.append(
+        patch_ids.value,
+        patch_ids.int,
+        std.mem.asBytes(&ignored_mode),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 14.375, 13.25 },
+        &output,
+    );
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.set,
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&foreign_property),
+    );
+    try patch.append(
+        patch_ids.value,
+        patch_ids.int,
+        std.mem.asBytes(&ignored_mode),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 14.375, 13.25 },
+        &output,
+    );
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.set,
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.mode),
+    );
+    try patch.appendString(
+        patch_ids.value,
+        patch_ids.path,
+        "/wrong/type",
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0.0} ** input.len),
+        &output,
+    );
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.set,
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.mode),
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.mode),
+    );
+    try patch.append(
+        patch_ids.value,
+        patch_ids.int,
+        std.mem.asBytes(&ignored_mode),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0.0} ** input.len),
+        &output,
+    );
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.get,
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.mode),
+    );
+    const no_response: i32 = 0;
+    try patch.append(
+        patch_ids.sequence_number,
+        patch_ids.int,
+        std.mem.asBytes(&no_response),
+    );
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    if (event_output.sequence.atom.size !=
+        @sizeOf(core.lv2.AtomSequenceBody))
+        return error.ZeroSequenceProducedPatchResponse;
+    try std.testing.expectEqualSlices(
+        f32,
+        &[_]f32{ 14.375, 13.25 },
+        &output,
+    );
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    patch = PatchBuilder.init(
+        &event_input,
+        patch_ids,
+        0,
+        patch_ids.get,
+    );
+    try patch.append(
+        patch_ids.property,
+        patch_ids.urid,
+        std.mem.asBytes(&patch_ids.mode),
+    );
+    event_output.resetOutput(patch_ids);
+    event_output.sequence.atom.size =
+        @sizeOf(core.lv2.AtomSequenceBody) + 24;
+    descriptor.run(handle, input.len);
+    try std.testing.expectEqualSlices(
+        f32,
+        &([_]f32{0.0} ** input.len),
+        &output,
+    );
+    if (event_output.sequence.atom.size !=
+        @sizeOf(core.lv2.AtomSequenceBody))
+        return error.SmallPatchOutputWasNotCleared;
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    event_output.resetOutput(patch_ids);
+    descriptor.run(handle, input.len);
+    const retained_response = try readPatchResponse(
+        &event_output,
+        patch_ids,
+    );
+    if (retained_response.value_type != patch_ids.int or
+        retained_response.value.len != @sizeOf(i32) or
+        @as(
+            *align(1) const i32,
+            @ptrCast(retained_response.value.ptr),
+        ).* != next_mode)
+        return error.FailedPatchRunsMutatedState;
+    if (end_run(handle) != .success)
+        return error.WorkerEndRunFailed;
+
+    event_input = PatchSequence.empty(patch_ids);
     if (descriptor.deactivate) |deactivate| deactivate(handle);
     if (state.save(
         handle,
@@ -550,6 +1185,7 @@ pub fn main(init: std.process.Init) !void {
     state_host.component_bytes[4] = 0;
     gain = 0.5;
     if (descriptor.activate) |activate| activate(handle);
+    event_output.resetOutput(patch_ids);
     descriptor.run(handle, input.len);
     if (descriptor.deactivate) |deactivate| deactivate(handle);
     if (state.restore(
@@ -631,6 +1267,7 @@ pub fn main(init: std.process.Init) !void {
 
     gain = 0.25;
     if (descriptor.activate) |activate| activate(handle);
+    event_output.resetOutput(patch_ids);
     descriptor.run(handle, input.len);
     if (descriptor.deactivate) |deactivate| deactivate(handle);
     var before_failure = StateHost{};

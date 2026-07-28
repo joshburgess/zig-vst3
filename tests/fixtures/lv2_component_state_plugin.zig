@@ -21,9 +21,25 @@ const ComponentStateProbe = struct {
     pub const vendor = "zig-vst3";
     pub const audio_input_layout: core.plugin.AudioBusLayout = .mono;
     pub const audio_output_layout: core.plugin.AudioBusLayout = .mono;
-    pub const event_input = false;
+    pub const event_input = true;
+    pub const event_output = true;
     pub const component_state_maximum_encoded_size = 265;
     pub const lv2_state_requires_make_path = true;
+    pub const lv2_patch_response_capacity = 1024;
+    pub const lv2_patch_properties = &[_]core.lv2.PatchProperty{
+        .{
+            .uri = "https://zig-vst3.dev/tests/lv2-component-state#mode",
+            .value_kind = .int,
+            .readable = true,
+            .writable = true,
+        },
+        .{
+            .uri = "https://zig-vst3.dev/tests/lv2-component-state#resource",
+            .value_kind = .path,
+            .readable = true,
+            .writable = true,
+        },
+    };
     pub const lv2_worker_maximum_request_size = @sizeOf(u32);
     pub const lv2_worker_maximum_response_size = @sizeOf(u32);
     pub const Params = struct {
@@ -53,7 +69,7 @@ const ComponentStateProbe = struct {
         const gain: f32 = @floatCast(parameters.load("gain"));
         for (input, output) |sample, *destination|
             destination.* = sample * gain +
-                @as(f32, @floatFromInt(self.worker_value));
+                @as(f32, @floatFromInt(self.worker_value + self.mode));
     }
 
     pub fn bindLv2WorkerSchedule(
@@ -93,6 +109,48 @@ const ComponentStateProbe = struct {
 
     pub fn endLv2WorkerRun(self: *@This()) !void {
         self.worker_end_run_count += 1;
+    }
+
+    pub fn readLv2PatchProperty(
+        self: *const @This(),
+        property_index: usize,
+    ) !core.lv2.PatchValue {
+        return switch (property_index) {
+            0 => .{ .int = @intCast(self.mode) },
+            1 => .{ .path = if (self.resource_path_length == 0)
+                "/samples/original.wav"
+            else
+                self.resource_path[0..self.resource_path_length] },
+            else => error.UnknownPatchProperty,
+        };
+    }
+
+    pub fn writeLv2PatchProperty(
+        self: *@This(),
+        property_index: usize,
+        value: core.lv2.PatchValue,
+    ) !void {
+        switch (property_index) {
+            0 => {
+                const mode = switch (value) {
+                    .int => |item| item,
+                    else => return error.InvalidPatchValue,
+                };
+                if (mode < 0) return error.InvalidPatchValue;
+                self.mode = @intCast(mode);
+            },
+            1 => {
+                const path = switch (value) {
+                    .path => |item| item,
+                    else => return error.InvalidPatchValue,
+                };
+                if (path.len == 0 or path.len > self.resource_path.len)
+                    return error.InvalidPatchValue;
+                @memcpy(self.resource_path[0..path.len], path);
+                self.resource_path_length = path.len;
+            },
+            else => return error.UnknownPatchProperty,
+        }
     }
 
     pub fn writeComponentState(

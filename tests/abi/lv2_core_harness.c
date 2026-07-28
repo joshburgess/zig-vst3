@@ -134,6 +134,16 @@ typedef struct {
 	int64_t body;
 } LV2_Atom_Long;
 
+typedef struct {
+	LV2_Atom atom;
+	int32_t body;
+} LV2_Atom_Bool;
+
+typedef struct {
+	LV2_Atom atom;
+	LV2_URID body;
+} LV2_Atom_URID;
+
 typedef enum {
 	LV2_OPTIONS_INSTANCE = 0,
 	LV2_OPTIONS_RESOURCE = 1,
@@ -408,6 +418,12 @@ int main(void)
 		_Alignof(LV2_State_Free_Path),
 		offsetof(LV2_State_Free_Path, handle),
 		offsetof(LV2_State_Free_Path, free_path),
+		sizeof(LV2_Atom_Bool),
+		_Alignof(LV2_Atom_Bool),
+		offsetof(LV2_Atom_Bool, body),
+		sizeof(LV2_Atom_URID),
+		_Alignof(LV2_Atom_URID),
+		offsetof(LV2_Atom_URID, body),
 	};
 	const size_t count = sizeof(expected) / sizeof(expected[0]);
 	for (size_t index = 0; index < count; ++index) {

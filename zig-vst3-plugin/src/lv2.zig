@@ -40,6 +40,8 @@ pub const atom_blank_uri =
     "http://lv2plug.in/ns/ext/atom#Blank";
 pub const atom_object_uri =
     "http://lv2plug.in/ns/ext/atom#Object";
+pub const atom_bool_uri =
+    "http://lv2plug.in/ns/ext/atom#Bool";
 pub const atom_float_uri =
     "http://lv2plug.in/ns/ext/atom#Float";
 pub const atom_double_uri =
@@ -48,8 +50,30 @@ pub const atom_int_uri =
     "http://lv2plug.in/ns/ext/atom#Int";
 pub const atom_long_uri =
     "http://lv2plug.in/ns/ext/atom#Long";
+pub const atom_path_uri =
+    "http://lv2plug.in/ns/ext/atom#Path";
+pub const atom_string_uri =
+    "http://lv2plug.in/ns/ext/atom#String";
+pub const atom_uri_uri =
+    "http://lv2plug.in/ns/ext/atom#URI";
+pub const atom_urid_uri =
+    "http://lv2plug.in/ns/ext/atom#URID";
 pub const midi_event_uri =
     "http://lv2plug.in/ns/ext/midi#MidiEvent";
+pub const patch_message_uri =
+    "http://lv2plug.in/ns/ext/patch#Message";
+pub const patch_get_uri =
+    "http://lv2plug.in/ns/ext/patch#Get";
+pub const patch_set_uri =
+    "http://lv2plug.in/ns/ext/patch#Set";
+pub const patch_property_uri =
+    "http://lv2plug.in/ns/ext/patch#property";
+pub const patch_sequence_number_uri =
+    "http://lv2plug.in/ns/ext/patch#sequenceNumber";
+pub const patch_subject_uri =
+    "http://lv2plug.in/ns/ext/patch#subject";
+pub const patch_value_uri =
+    "http://lv2plug.in/ns/ext/patch#value";
 pub const time_position_uri =
     "http://lv2plug.in/ns/ext/time#Position";
 pub const time_bar_uri =
@@ -134,6 +158,11 @@ pub const AtomPropertyBody = extern struct {
     value: Atom,
 };
 
+pub const AtomBool = extern struct {
+    atom: Atom,
+    body: i32,
+};
+
 pub const AtomFloat = extern struct {
     atom: Atom,
     body: f32,
@@ -152,6 +181,43 @@ pub const AtomInt = extern struct {
 pub const AtomLong = extern struct {
     atom: Atom,
     body: i64,
+};
+
+pub const AtomUrid = extern struct {
+    atom: Atom,
+    body: Urid,
+};
+
+pub const PatchValueKind = enum {
+    boolean,
+    int,
+    long,
+    float,
+    double,
+    string,
+    path,
+    uri,
+    urid,
+};
+
+/// String-like values borrow storage only for the enclosing patch callback.
+pub const PatchValue = union(PatchValueKind) {
+    boolean: bool,
+    int: i32,
+    long: i64,
+    float: f32,
+    double: f64,
+    string: []const u8,
+    path: []const u8,
+    uri: []const u8,
+    urid: Urid,
+};
+
+pub const PatchProperty = struct {
+    uri: [:0]const u8,
+    value_kind: PatchValueKind,
+    readable: bool = false,
+    writable: bool = false,
 };
 
 pub const OptionsContext = enum(c_int) {
@@ -618,6 +684,68 @@ pub fn CoreAdapterWithParameters(
         @compileError(
             "LV2 component state maximum size must be 1 through 64 KiB",
         );
+    const patch_properties = if (@hasDecl(
+        Plugin,
+        "lv2_patch_properties",
+    ))
+        Plugin.lv2_patch_properties
+    else
+        &[_]PatchProperty{};
+    if (patch_properties.len > 256)
+        @compileError("LV2 Patch property count exceeds 256");
+    const patch_access = comptime blk: {
+        var readable = false;
+        var writable = false;
+        for (patch_properties, 0..) |property, property_index| {
+            if (!validPluginUri(property.uri))
+                @compileError(
+                    "LV2 Patch property URI must be absolute ASCII",
+                );
+            if (!property.readable and !property.writable)
+                @compileError(
+                    "LV2 Patch properties must be readable or writable",
+                );
+            readable = readable or property.readable;
+            writable = writable or property.writable;
+            for (patch_properties[0..property_index]) |previous| {
+                if (std.mem.eql(u8, previous.uri, property.uri))
+                    @compileError(
+                        "LV2 Patch property URIs must be unique",
+                    );
+            }
+        }
+        break :blk .{ .readable = readable, .writable = writable };
+    };
+    const has_readable_patch_properties = patch_access.readable;
+    const has_writable_patch_properties = patch_access.writable;
+    const has_patch_properties = patch_properties.len != 0;
+    const declares_patch_reader = @hasDecl(
+        Plugin,
+        "readLv2PatchProperty",
+    );
+    const declares_patch_writer = @hasDecl(
+        Plugin,
+        "writeLv2PatchProperty",
+    );
+    if (has_readable_patch_properties != declares_patch_reader)
+        @compileError(
+            "Readable LV2 Patch properties require readLv2PatchProperty",
+        );
+    if (has_writable_patch_properties != declares_patch_writer)
+        @compileError(
+            "Writable LV2 Patch properties require writeLv2PatchProperty",
+        );
+    const patch_response_capacity = if (has_readable_patch_properties and
+        @hasDecl(Plugin, "lv2_patch_response_capacity"))
+        Plugin.lv2_patch_response_capacity
+    else
+        0;
+    if (has_readable_patch_properties and
+        (patch_response_capacity < 64 or
+            patch_response_capacity > 64 * 1024))
+        @compileError(
+            "Readable LV2 Patch properties require a 64 byte through 64 KiB response capacity",
+        );
     const declares_worker_request_size = @hasDecl(
         Plugin,
         "lv2_worker_maximum_request_size",
@@ -690,6 +818,10 @@ pub fn CoreAdapterWithParameters(
         main_output_channel_count + auxiliary_output_channel_count;
     const has_event_input = Spec.event_input;
     const has_event_output = Spec.event_output;
+    if (has_patch_properties and !has_event_input)
+        @compileError("LV2 Patch properties require an event input");
+    if (has_readable_patch_properties and !has_event_output)
+        @compileError("Readable LV2 Patch properties require an event output");
     const event_port_count =
         @as(usize, @intFromBool(has_event_input)) +
         @as(usize, @intFromBool(has_event_output));
@@ -735,6 +867,9 @@ pub fn CoreAdapterWithParameters(
             has_lv2_component_state_paths;
         pub const state_make_path_required =
             requires_lv2_state_make_path;
+        pub const patch_enabled = has_patch_properties;
+        pub const patch_readable = has_readable_patch_properties;
+        pub const patch_writable = has_writable_patch_properties;
         pub const input_channels = input_channel_count;
         pub const output_channels = output_channel_count;
         pub const parameters = parameter_count;
@@ -754,10 +889,24 @@ pub fn CoreAdapterWithParameters(
         midi_event_type: Urid = 0,
         atom_blank_type: Urid = 0,
         atom_object_type: Urid = 0,
+        atom_bool_type: Urid = 0,
         atom_float_type: Urid = 0,
         atom_double_type: Urid = 0,
         atom_int_type: Urid = 0,
         atom_long_type: Urid = 0,
+        atom_path_type: Urid = 0,
+        atom_string_type: Urid = 0,
+        atom_uri_type: Urid = 0,
+        atom_urid_type: Urid = 0,
+        patch_get_type: Urid = 0,
+        patch_set_type: Urid = 0,
+        patch_property_key: Urid = 0,
+        patch_sequence_number_key: Urid = 0,
+        patch_subject_key: Urid = 0,
+        patch_value_key: Urid = 0,
+        patch_subject: Urid = 0,
+        patch_property_urids: [patch_properties.len]Urid =
+            @splat(0),
         time_position_type: Urid = 0,
         time_bar_key: Urid = 0,
         time_bar_beat_key: Urid = 0,
@@ -935,6 +1084,62 @@ pub fn CoreAdapterWithParameters(
                 );
                 self.atom_blank_type = map.map(map.handle, atom_blank_uri);
                 self.atom_object_type = map.map(map.handle, atom_object_uri);
+                if (comptime has_patch_properties) {
+                    self.atom_bool_type = map.map(
+                        map.handle,
+                        atom_bool_uri,
+                    );
+                    self.atom_path_type = map.map(
+                        map.handle,
+                        atom_path_uri,
+                    );
+                    self.atom_string_type = map.map(
+                        map.handle,
+                        atom_string_uri,
+                    );
+                    self.atom_uri_type = map.map(
+                        map.handle,
+                        atom_uri_uri,
+                    );
+                    self.atom_urid_type = map.map(
+                        map.handle,
+                        atom_urid_uri,
+                    );
+                    self.patch_get_type = map.map(
+                        map.handle,
+                        patch_get_uri,
+                    );
+                    self.patch_set_type = map.map(
+                        map.handle,
+                        patch_set_uri,
+                    );
+                    self.patch_property_key = map.map(
+                        map.handle,
+                        patch_property_uri,
+                    );
+                    self.patch_sequence_number_key = map.map(
+                        map.handle,
+                        patch_sequence_number_uri,
+                    );
+                    self.patch_subject_key = map.map(
+                        map.handle,
+                        patch_subject_uri,
+                    );
+                    self.patch_value_key = map.map(
+                        map.handle,
+                        patch_value_uri,
+                    );
+                    self.patch_subject = map.map(
+                        map.handle,
+                        plugin_uri,
+                    );
+                    inline for (patch_properties, 0..) |property, index| {
+                        self.patch_property_urids[index] = map.map(
+                            map.handle,
+                            property.uri,
+                        );
+                    }
+                }
                 self.atom_float_type = map.map(map.handle, atom_float_uri);
                 self.atom_double_type = map.map(map.handle, atom_double_uri);
                 self.atom_int_type = map.map(map.handle, atom_int_uri);
@@ -988,6 +1193,24 @@ pub fn CoreAdapterWithParameters(
                     self.midi_event_type == 0 or
                     self.atom_blank_type == 0 or
                     self.atom_object_type == 0 or
+                    (has_patch_properties and
+                        (self.atom_bool_type == 0 or
+                            self.atom_path_type == 0 or
+                            self.atom_string_type == 0 or
+                            self.atom_uri_type == 0 or
+                            self.atom_urid_type == 0 or
+                            self.patch_get_type == 0 or
+                            self.patch_set_type == 0 or
+                            self.patch_property_key == 0 or
+                            self.patch_sequence_number_key == 0 or
+                            self.patch_subject_key == 0 or
+                            self.patch_value_key == 0 or
+                            self.patch_subject == 0 or
+                            std.mem.indexOfScalar(
+                                Urid,
+                                &self.patch_property_urids,
+                                0,
+                            ) != null)) or
                     self.atom_float_type == 0 or
                     self.atom_double_type == 0 or
                     self.atom_int_type == 0 or
@@ -1757,20 +1980,41 @@ pub fn CoreAdapterWithParameters(
             var input_events: [maximum_event_count]process_api.Event =
                 undefined;
             var position_updates: [maximum_event_count]TimedPositionUpdate = undefined;
+            var patch_requests: [maximum_event_count]TimedPatchRequest =
+                undefined;
             const input = try self.readInputEvents(
                 sample_count,
                 &input_events,
                 &position_updates,
+                &patch_requests,
             );
             var output_event_storage: [maximum_event_count]process_api.Event = undefined;
+            var patch_response_storage: [patch_response_capacity]u8 =
+                undefined;
+            var patch_response_size: usize = 0;
             try self.readControlChanges(&changes);
             var output_event_count: usize = 0;
             var frame_cursor: usize = 0;
             var position_index: usize = 0;
+            var patch_index: usize = 0;
             var controls_pending = true;
-            while (position_index < input.position_count) {
-                const boundary =
-                    position_updates[position_index].sample_offset;
+            while (position_index < input.position_count or
+                patch_index < input.patch_count)
+            {
+                const position_boundary = if (position_index <
+                    input.position_count)
+                    position_updates[position_index].sample_offset
+                else
+                    sample_count;
+                const patch_boundary = if (patch_index <
+                    input.patch_count)
+                    patch_requests[patch_index].sample_offset
+                else
+                    sample_count;
+                const boundary = @min(
+                    position_boundary,
+                    patch_boundary,
+                );
                 if (boundary > frame_cursor) {
                     try self.processSegment(
                         frame_cursor,
@@ -1797,6 +2041,19 @@ pub fn CoreAdapterWithParameters(
                         position_updates[position_index].update,
                     );
                     position_index += 1;
+                }
+                while (patch_index < input.patch_count and
+                    patch_requests[patch_index].sample_offset ==
+                        frame_cursor)
+                {
+                    try self.applyPatchRequest(
+                        patch_requests[patch_index],
+                        &output_event_storage,
+                        &output_event_count,
+                        &patch_response_storage,
+                        &patch_response_size,
+                    );
+                    patch_index += 1;
                 }
             }
             if (frame_cursor < sample_count) {
@@ -1904,6 +2161,7 @@ pub fn CoreAdapterWithParameters(
             sample_count: usize,
             storage: *[maximum_event_count]process_api.Event,
             position_storage: *[maximum_event_count]TimedPositionUpdate,
+            patch_storage: *[maximum_event_count]TimedPatchRequest,
         ) !InputReadResult {
             const port = event_input_port orelse return .{};
             const raw = self.ports[port] orelse return .{};
@@ -1919,6 +2177,7 @@ pub fn CoreAdapterWithParameters(
             var offset: usize = @sizeOf(AtomSequenceBody);
             var count: usize = 0;
             var position_count: usize = 0;
+            var patch_count: usize = 0;
             var previous_frame: ?i64 = null;
             const bytes: [*]const u8 = @ptrCast(&sequence.body);
             while (offset < body_size) {
@@ -1981,6 +2240,14 @@ pub fn CoreAdapterWithParameters(
                             .update = update,
                         };
                         position_count += 1;
+                    } else if (try self.readPatchRequest(
+                        @intCast(event.time.frames),
+                        bytes[offset + @sizeOf(AtomEvent) .. offset + @sizeOf(AtomEvent) + payload_size],
+                    )) |request| {
+                        if (patch_count >= patch_storage.len)
+                            return error.EventStorageFull;
+                        patch_storage[patch_count] = request;
+                        patch_count += 1;
                     } else {
                         if (count >= storage.len)
                             return error.EventStorageFull;
@@ -2008,6 +2275,7 @@ pub fn CoreAdapterWithParameters(
             return .{
                 .event_count = count,
                 .position_count = position_count,
+                .patch_count = patch_count,
             };
         }
 
@@ -2048,6 +2316,479 @@ pub fn CoreAdapterWithParameters(
                 offset += padded_size;
             }
             return update;
+        }
+
+        fn readPatchRequest(
+            self: *const Self,
+            sample_offset: usize,
+            payload: []const u8,
+        ) !?TimedPatchRequest {
+            if (comptime !has_patch_properties) return null;
+            if (payload.len < @sizeOf(AtomObjectBody))
+                return error.InvalidPatch;
+            const object: *align(1) const AtomObjectBody =
+                @ptrCast(payload.ptr);
+            const kind: PatchRequestKind =
+                if (object.otype == self.patch_get_type)
+                    .get
+                else if (object.otype == self.patch_set_type)
+                    .set
+                else
+                    return null;
+
+            var property_urid: ?Urid = null;
+            var sequence_number: ?i32 = null;
+            var subject_matches = true;
+            var subject: ?Urid = null;
+            var raw_value: ?RawPatchValue = null;
+            var offset: usize = @sizeOf(AtomObjectBody);
+            while (offset < payload.len) {
+                if (payload.len - offset < @sizeOf(AtomPropertyBody))
+                    return error.InvalidPatch;
+                const property: *align(1) const AtomPropertyBody =
+                    @ptrCast(payload.ptr + offset);
+                const value_size: usize = property.value.size;
+                const raw_size = std.math.add(
+                    usize,
+                    @sizeOf(AtomPropertyBody),
+                    value_size,
+                ) catch return error.InvalidPatch;
+                const padded_size = alignAtomSize(raw_size) orelse
+                    return error.InvalidPatch;
+                if (padded_size > payload.len - offset)
+                    return error.InvalidPatch;
+                const value =
+                    payload[offset + @sizeOf(AtomPropertyBody) .. offset + @sizeOf(AtomPropertyBody) + value_size];
+                if (property.key == self.patch_property_key) {
+                    if (property_urid != null)
+                        return error.InvalidPatch;
+                    property_urid = try self.readPatchUrid(
+                        property.value.type,
+                        value,
+                    );
+                } else if (property.key ==
+                    self.patch_sequence_number_key)
+                {
+                    if (sequence_number != null)
+                        return error.InvalidPatch;
+                    sequence_number = try self.readPatchInt(
+                        property.value.type,
+                        value,
+                    );
+                } else if (property.key == self.patch_subject_key) {
+                    if (subject != null) return error.InvalidPatch;
+                    subject = try self.readPatchUrid(
+                        property.value.type,
+                        value,
+                    );
+                    subject_matches = subject.? == self.patch_subject;
+                } else if (property.key == self.patch_value_key) {
+                    if (raw_value != null) return error.InvalidPatch;
+                    raw_value = .{
+                        .atom_type = property.value.type,
+                        .body = value,
+                    };
+                }
+                offset += padded_size;
+            }
+            const property_id = property_urid orelse
+                return error.InvalidPatch;
+            const property_index = self.patchPropertyIndex(property_id);
+            if (!subject_matches or property_index == null)
+                return .{
+                    .sample_offset = sample_offset,
+                    .kind = kind,
+                    .property_index = null,
+                    .sequence_number = sequence_number,
+                    .subject = subject,
+                };
+            const index = property_index.?;
+            return switch (kind) {
+                .get => blk: {
+                    if (raw_value != null) return error.InvalidPatch;
+                    break :blk .{
+                        .sample_offset = sample_offset,
+                        .kind = .get,
+                        .property_index = index,
+                        .sequence_number = sequence_number,
+                        .subject = subject,
+                    };
+                },
+                .set => .{
+                    .sample_offset = sample_offset,
+                    .kind = .set,
+                    .property_index = index,
+                    .value = try self.readPatchValue(
+                        patch_properties[index].value_kind,
+                        raw_value orelse return error.InvalidPatch,
+                    ),
+                    .sequence_number = sequence_number,
+                    .subject = subject,
+                },
+            };
+        }
+
+        fn patchPropertyIndex(
+            self: *const Self,
+            property: Urid,
+        ) ?usize {
+            for (self.patch_property_urids, 0..) |candidate, index| {
+                if (candidate == property) return index;
+            }
+            return null;
+        }
+
+        fn readPatchValue(
+            self: *const Self,
+            kind: PatchValueKind,
+            raw: RawPatchValue,
+        ) !PatchValue {
+            return switch (kind) {
+                .boolean => .{ .boolean = (try self.readPatchIntType(
+                    self.atom_bool_type,
+                    raw,
+                )) != 0 },
+                .int => .{ .int = try self.readPatchIntType(
+                    self.atom_int_type,
+                    raw,
+                ) },
+                .long => .{ .long = try self.readPatchLongType(
+                    self.atom_long_type,
+                    raw,
+                ) },
+                .float => .{ .float = try self.readPatchFloatType(
+                    self.atom_float_type,
+                    raw,
+                ) },
+                .double => .{ .double = try self.readPatchDoubleType(
+                    self.atom_double_type,
+                    raw,
+                ) },
+                .string => .{ .string = try self.readPatchStringType(
+                    self.atom_string_type,
+                    raw,
+                ) },
+                .path => blk: {
+                    const value = try self.readPatchStringType(
+                        self.atom_path_type,
+                        raw,
+                    );
+                    if (!std.fs.path.isAbsolute(value))
+                        return error.InvalidPatch;
+                    break :blk .{ .path = value };
+                },
+                .uri => .{ .uri = try self.readPatchStringType(
+                    self.atom_uri_type,
+                    raw,
+                ) },
+                .urid => .{ .urid = try self.readPatchUrid(
+                    raw.atom_type,
+                    raw.body,
+                ) },
+            };
+        }
+
+        fn readPatchInt(
+            self: *const Self,
+            atom_type: Urid,
+            body: []const u8,
+        ) !i32 {
+            return self.readPatchIntType(
+                self.atom_int_type,
+                .{ .atom_type = atom_type, .body = body },
+            );
+        }
+
+        fn readPatchUrid(
+            self: *const Self,
+            atom_type: Urid,
+            body: []const u8,
+        ) !Urid {
+            if (atom_type != self.atom_urid_type or
+                body.len != @sizeOf(Urid))
+                return error.InvalidPatch;
+            const value = @as(
+                *align(1) const Urid,
+                @ptrCast(body.ptr),
+            ).*;
+            if (value == 0) return error.InvalidPatch;
+            return value;
+        }
+
+        fn readPatchIntType(
+            _: *const Self,
+            expected_type: Urid,
+            raw: RawPatchValue,
+        ) !i32 {
+            if (raw.atom_type != expected_type or
+                raw.body.len != @sizeOf(i32))
+                return error.InvalidPatch;
+            return @as(
+                *align(1) const i32,
+                @ptrCast(raw.body.ptr),
+            ).*;
+        }
+
+        fn readPatchLongType(
+            _: *const Self,
+            expected_type: Urid,
+            raw: RawPatchValue,
+        ) !i64 {
+            if (raw.atom_type != expected_type or
+                raw.body.len != @sizeOf(i64))
+                return error.InvalidPatch;
+            return @as(
+                *align(1) const i64,
+                @ptrCast(raw.body.ptr),
+            ).*;
+        }
+
+        fn readPatchFloatType(
+            _: *const Self,
+            expected_type: Urid,
+            raw: RawPatchValue,
+        ) !f32 {
+            if (raw.atom_type != expected_type or
+                raw.body.len != @sizeOf(f32))
+                return error.InvalidPatch;
+            const value = @as(
+                *align(1) const f32,
+                @ptrCast(raw.body.ptr),
+            ).*;
+            if (!std.math.isFinite(value)) return error.InvalidPatch;
+            return value;
+        }
+
+        fn readPatchDoubleType(
+            _: *const Self,
+            expected_type: Urid,
+            raw: RawPatchValue,
+        ) !f64 {
+            if (raw.atom_type != expected_type or
+                raw.body.len != @sizeOf(f64))
+                return error.InvalidPatch;
+            const value = @as(
+                *align(1) const f64,
+                @ptrCast(raw.body.ptr),
+            ).*;
+            if (!std.math.isFinite(value)) return error.InvalidPatch;
+            return value;
+        }
+
+        fn readPatchStringType(
+            _: *const Self,
+            expected_type: Urid,
+            raw: RawPatchValue,
+        ) ![]const u8 {
+            if (raw.atom_type != expected_type or raw.body.len == 0 or
+                raw.body[raw.body.len - 1] != 0)
+                return error.InvalidPatch;
+            const value = raw.body[0 .. raw.body.len - 1];
+            if (std.mem.indexOfScalar(u8, value, 0) != null or
+                !std.unicode.utf8ValidateSlice(value))
+                return error.InvalidPatch;
+            return value;
+        }
+
+        fn applyPatchRequest(
+            self: *Self,
+            request: TimedPatchRequest,
+            output_events: *[maximum_event_count]process_api.Event,
+            output_event_count: *usize,
+            response_storage: *[patch_response_capacity]u8,
+            response_size: *usize,
+        ) !void {
+            if (comptime !has_patch_properties) return;
+            const property_index = request.property_index orelse return;
+            const property = patch_properties[property_index];
+            switch (request.kind) {
+                .set => {
+                    if (!property.writable) return;
+                    if (comptime has_writable_patch_properties) {
+                        try self.runtime.instance.plugin
+                            .writeLv2PatchProperty(
+                            property_index,
+                            request.value orelse
+                                return error.InvalidPatch,
+                        );
+                    }
+                },
+                .get => {
+                    if (!property.readable or
+                        request.sequence_number == 0)
+                        return;
+                    if (comptime has_readable_patch_properties) {
+                        const value = try self.runtime.instance.plugin
+                            .readLv2PatchProperty(property_index);
+                        if (std.meta.activeTag(value) !=
+                            property.value_kind)
+                            return error.InvalidPatchValue;
+                        const payload = try self.appendPatchSetResponse(
+                            response_storage,
+                            response_size,
+                            property_index,
+                            request.sequence_number,
+                            request.subject,
+                            value,
+                        );
+                        if (output_event_count.* >= output_events.len)
+                            return error.EventStorageFull;
+                        output_events[output_event_count.*] =
+                            process_api.Event.dataEvent(
+                                request.sample_offset,
+                                self.atom_object_type,
+                                payload,
+                            );
+                        output_event_count.* += 1;
+                    }
+                },
+            }
+        }
+
+        fn appendPatchSetResponse(
+            self: *const Self,
+            storage: *[patch_response_capacity]u8,
+            used: *usize,
+            property_index: usize,
+            sequence_number: ?i32,
+            subject: ?Urid,
+            value: PatchValue,
+        ) ![]const u8 {
+            const start = alignAtomSize(used.*) orelse
+                return error.EventStorageFull;
+            if (start > storage.len or
+                @sizeOf(AtomObjectBody) > storage.len - start)
+                return error.EventStorageFull;
+            @memset(storage[used.*..start], 0);
+            const object: *align(1) AtomObjectBody =
+                @ptrCast(storage[start..].ptr);
+            object.* = .{ .id = 0, .otype = self.patch_set_type };
+            var cursor = start + @sizeOf(AtomObjectBody);
+            if (subject) |item| {
+                try appendPatchAtomProperty(
+                    storage,
+                    &cursor,
+                    self.patch_subject_key,
+                    self.atom_urid_type,
+                    std.mem.asBytes(&item),
+                );
+            }
+            const property_urid =
+                self.patch_property_urids[property_index];
+            try appendPatchAtomProperty(
+                storage,
+                &cursor,
+                self.patch_property_key,
+                self.atom_urid_type,
+                std.mem.asBytes(&property_urid),
+            );
+            if (sequence_number) |number| {
+                try appendPatchAtomProperty(
+                    storage,
+                    &cursor,
+                    self.patch_sequence_number_key,
+                    self.atom_int_type,
+                    std.mem.asBytes(&number),
+                );
+            }
+            try self.appendPatchValueProperty(
+                storage,
+                &cursor,
+                value,
+            );
+            used.* = cursor;
+            return storage[start..cursor];
+        }
+
+        fn appendPatchValueProperty(
+            self: *const Self,
+            storage: *[patch_response_capacity]u8,
+            cursor: *usize,
+            value: PatchValue,
+        ) !void {
+            switch (value) {
+                .boolean => |item| {
+                    const encoded: i32 = @intFromBool(item);
+                    try appendPatchAtomProperty(
+                        storage,
+                        cursor,
+                        self.patch_value_key,
+                        self.atom_bool_type,
+                        std.mem.asBytes(&encoded),
+                    );
+                },
+                .int => |item| try appendPatchAtomProperty(
+                    storage,
+                    cursor,
+                    self.patch_value_key,
+                    self.atom_int_type,
+                    std.mem.asBytes(&item),
+                ),
+                .long => |item| try appendPatchAtomProperty(
+                    storage,
+                    cursor,
+                    self.patch_value_key,
+                    self.atom_long_type,
+                    std.mem.asBytes(&item),
+                ),
+                .float => |item| {
+                    if (!std.math.isFinite(item))
+                        return error.InvalidPatchValue;
+                    try appendPatchAtomProperty(
+                        storage,
+                        cursor,
+                        self.patch_value_key,
+                        self.atom_float_type,
+                        std.mem.asBytes(&item),
+                    );
+                },
+                .double => |item| {
+                    if (!std.math.isFinite(item))
+                        return error.InvalidPatchValue;
+                    try appendPatchAtomProperty(
+                        storage,
+                        cursor,
+                        self.patch_value_key,
+                        self.atom_double_type,
+                        std.mem.asBytes(&item),
+                    );
+                },
+                .string => |item| try appendPatchStringProperty(
+                    storage,
+                    cursor,
+                    self.patch_value_key,
+                    self.atom_string_type,
+                    item,
+                ),
+                .path => |item| try appendPatchStringProperty(
+                    storage,
+                    cursor,
+                    self.patch_value_key,
+                    self.atom_path_type,
+                    blk: {
+                        if (!std.fs.path.isAbsolute(item))
+                            return error.InvalidPatchValue;
+                        break :blk item;
+                    },
+                ),
+                .uri => |item| try appendPatchStringProperty(
+                    storage,
+                    cursor,
+                    self.patch_value_key,
+                    self.atom_uri_type,
+                    item,
+                ),
+                .urid => |item| {
+                    if (item == 0) return error.InvalidPatchValue;
+                    try appendPatchAtomProperty(
+                        storage,
+                        cursor,
+                        self.patch_value_key,
+                        self.atom_urid_type,
+                        std.mem.asBytes(&item),
+                    );
+                },
+            }
         }
 
         fn readTimeProperty(
@@ -2705,10 +3446,112 @@ const TimedPositionUpdate = struct {
     update: PositionUpdate,
 };
 
+const PatchRequestKind = enum {
+    get,
+    set,
+};
+
+const RawPatchValue = struct {
+    atom_type: Urid,
+    body: []const u8,
+};
+
+const TimedPatchRequest = struct {
+    sample_offset: usize,
+    kind: PatchRequestKind,
+    property_index: ?usize,
+    value: ?PatchValue = null,
+    sequence_number: ?i32 = null,
+    subject: ?Urid = null,
+};
+
 const InputReadResult = struct {
     event_count: usize = 0,
     position_count: usize = 0,
+    patch_count: usize = 0,
 };
+
+fn appendPatchAtomProperty(
+    storage: anytype,
+    cursor: *usize,
+    key: Urid,
+    atom_type: Urid,
+    body: []const u8,
+) !void {
+    const raw_size = std.math.add(
+        usize,
+        @sizeOf(AtomPropertyBody),
+        body.len,
+    ) catch return error.EventStorageFull;
+    const padded_size = alignAtomSize(raw_size) orelse
+        return error.EventStorageFull;
+    if (cursor.* > storage.len or
+        padded_size > storage.len - cursor.*)
+        return error.EventStorageFull;
+    const property: *align(1) AtomPropertyBody =
+        @ptrCast(storage[cursor.*..].ptr);
+    property.* = .{
+        .key = key,
+        .context = 0,
+        .value = .{
+            .size = @intCast(body.len),
+            .type = atom_type,
+        },
+    };
+    @memcpy(
+        storage[cursor.* + @sizeOf(AtomPropertyBody) .. cursor.* + @sizeOf(AtomPropertyBody) + body.len],
+        body,
+    );
+    @memset(
+        storage[cursor.* + raw_size .. cursor.* + padded_size],
+        0,
+    );
+    cursor.* += padded_size;
+}
+
+fn appendPatchStringProperty(
+    storage: anytype,
+    cursor: *usize,
+    key: Urid,
+    atom_type: Urid,
+    value: []const u8,
+) !void {
+    if (!std.unicode.utf8ValidateSlice(value) or
+        std.mem.indexOfScalar(u8, value, 0) != null)
+        return error.InvalidPatchValue;
+    const body_size = std.math.add(
+        usize,
+        value.len,
+        1,
+    ) catch return error.EventStorageFull;
+    const raw_size = std.math.add(
+        usize,
+        @sizeOf(AtomPropertyBody),
+        body_size,
+    ) catch return error.EventStorageFull;
+    const padded_size = alignAtomSize(raw_size) orelse
+        return error.EventStorageFull;
+    if (cursor.* > storage.len or
+        padded_size > storage.len - cursor.*)
+        return error.EventStorageFull;
+    const property: *align(1) AtomPropertyBody =
+        @ptrCast(storage[cursor.*..].ptr);
+    property.* = .{
+        .key = key,
+        .context = 0,
+        .value = .{
+            .size = @intCast(body_size),
+            .type = atom_type,
+        },
+    };
+    const start = cursor.* + @sizeOf(AtomPropertyBody);
+    @memcpy(storage[start .. start + value.len], value);
+    @memset(
+        storage[start + value.len .. cursor.* + padded_size],
+        0,
+    );
+    cursor.* += padded_size;
+}
 
 const WorkerRespondContext = struct {
     respond: WorkerRespondFunction,

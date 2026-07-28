@@ -217,6 +217,45 @@ A plugin may declare both `allow_dynamic_process_mode = true` and `lv2_freewheel
 
 The adapter exposes the LV2 State interface through `extension_data`. When the host supplies the standard URID map feature, parameter state is stored under the plugin URI plus `#parameterState` as a portable POD Atom Chunk. A plugin that declares `component_state_maximum_encoded_size`, `writeComponentState`, and `readComponentState` receives a second property under `#componentState`. Component state is limited to 64 KiB. Resource-backed plugins may add `writeLv2ComponentState` and `readLv2ComponentState`. These hooks receive `StatePathFeatures`, which maps absolute paths to portable abstract paths, resolves abstract paths during restore, creates host-managed paths when `lv2_state_requires_make_path` is true, and returns `OwnedStatePath` values that must be released with `deinit`. Generated metadata requires `state:mapPath` and `state:freePath`, plus `state:makePath` when declared. The adapter rejects missing or misaligned required features before state access. Restore validates both properties before mutation, rejects unread trailing bytes, and restores the previous parameter snapshot when component or path decoding fails. A successful component restore invokes `afterComponentStateRestore` when present. Missing parameter state resets parameters to defaults; missing component state leaves the current component payload unchanged.
 
+Plugins can expose dynamic LV2 properties with `lv2_patch_properties`, `readLv2PatchProperty`, and `writeLv2PatchProperty`:
+
+```zig
+pub const event_input = true;
+pub const event_output = true;
+pub const lv2_patch_response_capacity = 1024;
+pub const lv2_patch_properties = &[_]plug.lv2.PatchProperty{
+    .{
+        .uri = "https://example.test/plugin#resource",
+        .value_kind = .path,
+        .readable = true,
+        .writable = true,
+    },
+};
+
+pub fn readLv2PatchProperty(
+    self: *const @This(),
+    index: usize,
+) !plug.lv2.PatchValue {
+    if (index != 0) return error.UnknownPatchProperty;
+    return .{ .path = self.resource_path };
+}
+
+pub fn writeLv2PatchProperty(
+    self: *@This(),
+    index: usize,
+    value: plug.lv2.PatchValue,
+) !void {
+    if (index != 0) return error.UnknownPatchProperty;
+    const path = switch (value) {
+        .path => |item| item,
+        else => return error.InvalidPatchValue,
+    };
+    try self.setResourcePath(path);
+}
+```
+
+Writable properties require an event input. Readable properties also require an event output and an explicit aggregate response capacity from 64 bytes through 64 KiB. The adapter handles property-specific `patch:Set` and `patch:Get` objects. Sets take effect at their event frame before the following audio segment. Gets return a `patch:Set` at the same frame and preserve an explicit subject and sequence number. Sequence number zero suppresses the response. Supported values are Bool, Int, Long, Float, Double, String, Path, URI, and URID Atoms. String-like input borrows host storage only for the write callback, and Path values must be absolute. The adapter validates the complete input sequence before invoking a property hook, ignores unknown properties and foreign subjects, bounds response serialization, and clears connected outputs when a recognized message is malformed or a response does not fit. Generated metadata lists readable and writable properties and marks both event ports as supporting `patch:Message`. General Put, Patch, Insert, Delete, Copy, and Move requests are not part of this typed property boundary.
+
 Plugins with declared program lists expose the KXStudio LV2 Programs interface automatically. Each nonnegative `ProgramList.id` is the LV2 bank number and each program's declaration index is its program number. Enumeration uses fixed instance storage, so descriptors and names remain valid for the required lifetime. A valid selection applies the program's normalized parameter snapshot on the next run and updates connected writable control ports immediately when their storage is valid. If a port cannot be written safely, the selected value remains active until the host sends a different control value. Invalid selections are ignored, partial programs retain unspecified values, and successful state restore clears any pending program override.
 
 The optional LV2 Worker extension is enabled when a plugin declares `lv2_worker_maximum_request_size`, `lv2_worker_maximum_response_size`, `bindLv2WorkerSchedule`, `runLv2Worker`, and `applyLv2WorkerResponse`. Both size limits must be between 1 byte and 64 KiB. The binding hook receives an instance-owned `WorkerScheduleSink`; its `schedule` method accepts work only while the adapter is inside `run` and returns the host's Worker status. A missing host schedule feature leaves the plugin usable but makes scheduling return `unknown`.
@@ -1012,7 +1051,7 @@ zig build test
 zig build validate-examples
 ```
 
-The checked examples in `examples/*_core.zig` cover the public framework API. The bundled VST3 examples in `zig-vst3/src/*_plugin.zig` exercise the reusable VST3 shells. `examples/mono_gain_lv2.zig` and `zig build test-lv2` cover the LV2 core adapter, shared-library entry points, declaration-driven bundle metadata and factory presets, independent C ABI layout for core, Atom, Options, Worker, State path, and UI declarations, bounded MIDI input and output, segmented sample-offset time Position transport, block-size option queries and inactive reconfiguration, block-boundary freewheeling transitions, immediate offline and delayed threaded Worker delivery, parameter and component state, portable external and generated resource paths, malformed-state rollback, simultaneous UI instances, repeated close and reopen lifecycles, automation in both directions, touch, idle, show, hide, resize, malformed host inputs, three dynamically loaded libraries, and nine cross-target libraries.
+The checked examples in `examples/*_core.zig` cover the public framework API. The bundled VST3 examples in `zig-vst3/src/*_plugin.zig` exercise the reusable VST3 shells. `examples/mono_gain_lv2.zig` and `zig build test-lv2` cover the LV2 core adapter, shared-library entry points, declaration-driven bundle metadata and factory presets, independent C ABI layout for core, Atom, Options, Worker, State path, and UI declarations, bounded MIDI input and output, segmented sample-offset time Position transport, typed Patch Set and Get properties, block-size option queries and inactive reconfiguration, block-boundary freewheeling transitions, immediate offline and delayed threaded Worker delivery, parameter and component state, portable external and generated resource paths, malformed-state rollback, simultaneous UI instances, repeated close and reopen lifecycles, automation in both directions, touch, idle, show, hide, resize, malformed host inputs, three dynamically loaded libraries, and nine cross-target libraries.
 
 ## Current Limits
 
