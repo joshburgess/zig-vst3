@@ -3,6 +3,7 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    validateCrossMsvcPrerequisites(b, target);
     const native_vstgui = target.result.os.tag == b.graph.host.result.os.tag and
         (target.result.os.tag == .macos or target.result.os.tag == .linux or target.result.os.tag == .windows);
     const gui_options = b.addOptions();
@@ -2847,6 +2848,7 @@ pub fn build(b: *std.Build) void {
     addExamplePluginTestDependencies(b, test_step, &example_plugins);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_pluginval_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_validator_runner.sh"}).step);
+    test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_msvc_prerequisite_diagnostic.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_gui_lifecycle_soak_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_vstgui_sanitizer_soak_runner.sh"}).step);
     test_step.dependOn(&b.addSystemCommand(&.{"scripts/test_vstgui_thread_sanitizer_runner.sh"}).step);
@@ -3725,6 +3727,27 @@ fn addCKernelSources(module: *std.Build.Module, target: std.Build.ResolvedTarget
         }),
         else => {},
     }
+}
+
+fn validateCrossMsvcPrerequisites(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .windows or
+        target.result.abi != .msvc or
+        b.graph.host.result.os.tag == .windows or
+        b.libc_file != null)
+    {
+        return;
+    }
+
+    std.debug.panic(
+        "Windows MSVC C-kernel cross-builds require an MSVC libc configuration. " ++
+            "Generate one with `zig libc` in a Visual Studio Developer Command Prompt, " ++
+            "copy it to this machine, and pass `--libc <path>`. " ++
+            "Use `-Dtarget=x86_64-windows-gnu` when MSVC compatibility is not required.",
+        .{},
+    );
 }
 
 fn hasReferenceEditor(short_name: []const u8) bool {
