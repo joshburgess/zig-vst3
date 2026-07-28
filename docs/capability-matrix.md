@@ -6,6 +6,8 @@ This matrix tracks `zig-vst3` against plugin product requirements, public format
 
 For VST3 plugin authoring, `zig-vst3-plugin` already covers the core processor lifecycle, 32-bit and 64-bit audio, sample-accurate automation, input and output events, state, units and programs, latency and tail reporting, resources, and an optional VSTGUI editor path. It also has unusually strong bounded realtime data structures and automated VST3 validation.
 
+ARA host-contract fixtures cover phase-safe controller reservation, reentrant product extension hooks, extension failure rollback, generation-checked observer publication, two-phase archive ownership, legacy restore, corrupt-input rollback, and retry after failed decoding. External ARA-host behavior remains unconfirmed.
+
 The largest remaining plugin-authoring gaps are:
 
 1. AUv3 and AAX wrappers, plus remaining LV2 extensions and external-host coverage for LV2 and AUv2.

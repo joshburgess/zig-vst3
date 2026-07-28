@@ -76,8 +76,15 @@ pub fn Factory(
     return struct {
         const Self = @This();
 
+        const SlotPhase = enum {
+            free,
+            attaching,
+            occupied,
+            detaching,
+        };
+
         const Slot = struct {
-            occupied: bool = false,
+            phase: SlotPhase = .free,
             controller: ControllerType = undefined,
             extension: ControllerExtension = undefined,
         };
@@ -133,7 +140,7 @@ pub fn Factory(
             defer state.mutex.unlock();
             var count: usize = 0;
             for (&state.slots) |*slot| {
-                if (slot.occupied) count += 1;
+                if (slot.phase != .free) count += 1;
             }
             return count;
         }
@@ -146,7 +153,7 @@ pub fn Factory(
             state.initialized = false;
             state.generation = 0;
             state.last_error = null;
-            for (&state.slots) |*slot| slot.occupied = false;
+            for (&state.slots) |*slot| slot.phase = .free;
         }
 
         fn initializeARAWithConfiguration(
@@ -180,7 +187,7 @@ pub fn Factory(
                 return;
             }
             for (&state.slots) |*slot| {
-                if (slot.occupied) {
+                if (slot.phase != .free) {
                     state.last_error = error.ActiveControllers;
                     return;
                 }
@@ -194,46 +201,64 @@ pub fn Factory(
             properties_pointer: [*c]const raw.ARADocumentProperties,
         ) callconv(.c) [*c]const raw.ARADocumentControllerInstance {
             lockState();
-            defer state.mutex.unlock();
             if (!state.initialized) {
                 state.last_error = error.NotInitialized;
+                state.mutex.unlock();
                 return null;
             }
             if (host_pointer == null or properties_pointer == null) {
                 state.last_error = error.InvalidProperties;
+                state.mutex.unlock();
                 return null;
             }
             const host: *const raw.ARADocumentControllerHostInstance =
                 @ptrCast(host_pointer);
             const properties: *const raw.ARADocumentProperties =
                 @ptrCast(properties_pointer);
+            var reserved_slot: ?*Slot = null;
             for (&state.slots) |*slot| {
-                if (slot.occupied) continue;
-                slot.occupied = true;
-                slot.controller.initWithRelease(
-                    &factory,
-                    host,
-                    properties,
-                    @ptrCast(slot),
-                    releaseController,
-                ) catch |failure| {
-                    slot.occupied = false;
-                    state.last_error = failure;
-                    return null;
-                };
-                slot.extension =
-                    ControllerExtension.init(&slot.controller);
-                slot.extension.attach() catch {
-                    slot.extension.detach() catch {};
-                    slot.occupied = false;
-                    state.last_error =
-                        error.ControllerExtensionFailed;
-                    return null;
-                };
-                return slot.controller.documentControllerInstance();
+                if (slot.phase != .free) continue;
+                slot.phase = .attaching;
+                reserved_slot = slot;
+                break;
             }
-            state.last_error = error.ControllerPoolExhausted;
-            return null;
+            const slot = reserved_slot orelse {
+                state.last_error = error.ControllerPoolExhausted;
+                state.mutex.unlock();
+                return null;
+            };
+            state.mutex.unlock();
+
+            slot.controller.initWithRelease(
+                &factory,
+                host,
+                properties,
+                @ptrCast(slot),
+                releaseController,
+            ) catch |failure| {
+                releaseReservation(slot, failure);
+                return null;
+            };
+            slot.extension =
+                ControllerExtension.init(&slot.controller);
+            slot.extension.attach() catch {
+                slot.extension.detach() catch {};
+                releaseReservation(
+                    slot,
+                    error.ControllerExtensionFailed,
+                );
+                return null;
+            };
+
+            lockState();
+            if (slot.phase != .attaching) {
+                state.last_error = error.InvalidController;
+                state.mutex.unlock();
+                return null;
+            }
+            slot.phase = .occupied;
+            state.mutex.unlock();
+            return slot.controller.documentControllerInstance();
         }
 
         fn releaseController(
@@ -243,15 +268,43 @@ pub fn Factory(
             const opaque_slot = context orelse return;
             const slot: *Slot = @ptrCast(@alignCast(opaque_slot));
             lockState();
-            defer state.mutex.unlock();
-            if (&slot.controller != controller or !slot.occupied) {
+            if (&slot.controller != controller or
+                slot.phase != .occupied)
+            {
                 state.last_error = error.InvalidController;
+                state.mutex.unlock();
                 return;
             }
+            slot.phase = .detaching;
+            state.mutex.unlock();
+
+            var detach_failure: ?Error = null;
             slot.extension.detach() catch {
-                state.last_error = error.ControllerExtensionFailed;
+                detach_failure = error.ControllerExtensionFailed;
             };
-            slot.occupied = false;
+
+            lockState();
+            if (slot.phase != .detaching) {
+                state.last_error = error.InvalidController;
+                state.mutex.unlock();
+                return;
+            }
+            slot.phase = .free;
+            if (detach_failure) |failure| {
+                state.last_error = failure;
+            }
+            state.mutex.unlock();
+        }
+
+        fn releaseReservation(slot: *Slot, failure: Error) void {
+            lockState();
+            if (slot.phase == .attaching) {
+                slot.phase = .free;
+                state.last_error = failure;
+            } else {
+                state.last_error = error.InvalidController;
+            }
+            state.mutex.unlock();
         }
 
         fn lockState() void {
@@ -375,6 +428,11 @@ test "ARA factory exports its validated analyzeable content types" {
 }
 
 test "ARA factory owns controller extension lifecycle" {
+    const ReentryProbe = struct {
+        var active_count: *const fn () usize = undefined;
+        var attaching_count: usize = 0;
+        var detaching_count: usize = 0;
+    };
     const ExtensionDefinition = struct {
         pub fn Type(comptime ControllerType: type) type {
             return struct {
@@ -389,11 +447,15 @@ test "ARA factory owns controller extension lifecycle" {
                 fn attach(self: *@This()) !void {
                     _ = self.controller;
                     @This().attach_count += 1;
+                    ReentryProbe.attaching_count =
+                        ReentryProbe.active_count();
                 }
 
                 fn detach(self: *@This()) !void {
                     _ = self.controller;
                     @This().detach_count += 1;
+                    ReentryProbe.detaching_count =
+                        ReentryProbe.active_count();
                 }
             };
         }
@@ -412,6 +474,9 @@ test "ARA factory owns controller extension lifecycle" {
     TestFactory.resetForTesting();
     TestExtension.attach_count = 0;
     TestExtension.detach_count = 0;
+    ReentryProbe.active_count = TestFactory.activeControllerCount;
+    ReentryProbe.attaching_count = 0;
+    ReentryProbe.detaching_count = 0;
 
     var assert_function: raw.ARAAssertFunction = null;
     var configuration = raw.ARAInterfaceConfiguration{
@@ -437,6 +502,15 @@ test "ARA factory owns controller extension lifecycle" {
         @as(usize, 1),
         TestExtension.attach_count,
     );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        ReentryProbe.attaching_count,
+    );
+    TestFactory.factory.uninitializeARA.?();
+    try std.testing.expectEqual(
+        error.ActiveControllers,
+        TestFactory.takeLastError().?,
+    );
     const instance: *const raw.ARADocumentControllerInstance =
         @ptrCast(instance_pointer);
     const api: *const raw.ARADocumentControllerInterface =
@@ -447,6 +521,132 @@ test "ARA factory owns controller extension lifecycle" {
     try std.testing.expectEqual(
         @as(usize, 1),
         TestExtension.detach_count,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        ReentryProbe.detaching_count,
+    );
+    TestFactory.factory.uninitializeARA.?();
+    try std.testing.expect(TestFactory.takeLastError() == null);
+}
+
+test "ARA factory rolls back extension failures and recycles slots" {
+    const ExtensionDefinition = struct {
+        pub fn Type(comptime ControllerType: type) type {
+            return struct {
+                var fail_attach = false;
+                var fail_detach = false;
+                var attach_count: usize = 0;
+                var detach_count: usize = 0;
+                controller: *ControllerType,
+
+                fn init(controller: *ControllerType) @This() {
+                    return .{ .controller = controller };
+                }
+
+                fn attach(self: *@This()) !void {
+                    _ = self.controller;
+                    @This().attach_count += 1;
+                    if (@This().fail_attach)
+                        return error.InjectedAttachFailure;
+                }
+
+                fn detach(self: *@This()) !void {
+                    _ = self.controller;
+                    @This().detach_count += 1;
+                    if (@This().fail_detach)
+                        return error.InjectedDetachFailure;
+                }
+            };
+        }
+    };
+    const TestExtension =
+        ExtensionDefinition.Type(controller_api.Controller(.{}));
+    const TestFactory = Factory(.{
+        .factory_id = "org.zig-vst3.ara.extension-failure.factory.v1",
+        .plugin_name = "ARA Extension Failure Test",
+        .manufacturer_name = "zig-vst3",
+        .information_url = "https://example.invalid",
+        .version = "1.0.0",
+        .document_archive_id = "org.zig-vst3.ara.extension-failure.archive.v1",
+        .controller_extension = ExtensionDefinition,
+    }, .{}, 1);
+    TestFactory.resetForTesting();
+    TestExtension.fail_attach = true;
+    TestExtension.fail_detach = false;
+    TestExtension.attach_count = 0;
+    TestExtension.detach_count = 0;
+
+    var assert_function: raw.ARAAssertFunction = null;
+    var configuration = raw.ARAInterfaceConfiguration{
+        .structSize = @sizeOf(raw.ARAInterfaceConfiguration),
+        .desiredApiGeneration = ara.current_generation,
+        .assertFunctionAddress = &assert_function,
+    };
+    TestFactory.factory.initializeARAWithConfiguration.?(
+        &configuration,
+    );
+    var host = testHost();
+    var properties = raw.ARADocumentProperties{
+        .structSize = @sizeOf(raw.ARADocumentProperties),
+        .name = "Session",
+    };
+    try std.testing.expect(
+        TestFactory.factory.createDocumentControllerWithDocument.?(
+            &host,
+            &properties,
+        ) == null,
+    );
+    try std.testing.expectEqual(
+        error.ControllerExtensionFailed,
+        TestFactory.takeLastError().?,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        TestFactory.activeControllerCount(),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        TestExtension.detach_count,
+    );
+
+    TestExtension.fail_attach = false;
+    TestExtension.fail_detach = true;
+    const first =
+        TestFactory.factory.createDocumentControllerWithDocument.?(
+            &host,
+            &properties,
+        );
+    try std.testing.expect(first != null);
+    const first_instance: *const raw.ARADocumentControllerInstance =
+        @ptrCast(first);
+    const first_api: *const raw.ARADocumentControllerInterface =
+        @ptrCast(first_instance.documentControllerInterface);
+    first_api.destroyDocumentController.?(
+        first_instance.documentControllerRef,
+    );
+    try std.testing.expectEqual(
+        error.ControllerExtensionFailed,
+        TestFactory.takeLastError().?,
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        TestFactory.activeControllerCount(),
+    );
+
+    TestExtension.fail_detach = false;
+    const second =
+        TestFactory.factory.createDocumentControllerWithDocument.?(
+            &host,
+            &properties,
+        );
+    try std.testing.expect(second != null);
+    const second_instance: *const raw.ARADocumentControllerInstance =
+        @ptrCast(second);
+    const second_api: *const raw.ARADocumentControllerInterface =
+        @ptrCast(second_instance.documentControllerInterface);
+    second_api.destroyDocumentController.?(
+        second_instance.documentControllerRef,
     );
     TestFactory.factory.uninitializeARA.?();
     try std.testing.expect(TestFactory.takeLastError() == null);

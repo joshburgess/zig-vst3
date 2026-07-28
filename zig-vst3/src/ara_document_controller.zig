@@ -3145,12 +3145,35 @@ pub fn Controller(comptime limits: model_api.Limits) type {
         }
 
         fn publishModelObservers(self: *Self) void {
-            for (&self.model_observers) |*slot| {
+            const PendingObserver = struct {
+                id: ModelObserverId,
+                sink: ModelPublicationSink,
+            };
+            var pending: [limits.model_observers]PendingObserver =
+                undefined;
+            var pending_count: usize = 0;
+            for (&self.model_observers, 0..) |*slot, index| {
                 const sink = slot.sink orelse continue;
-                sink.changed(
-                    sink.context,
+                pending[pending_count] = .{
+                    .id = .{
+                        .index = @intCast(index),
+                        .generation = slot.generation,
+                    },
+                    .sink = sink,
+                };
+                pending_count += 1;
+            }
+            const revision = self.document.currentRevision();
+            for (pending[0..pending_count]) |observer| {
+                const slot =
+                    &self.model_observers[observer.id.index];
+                if (slot.generation != observer.id.generation or
+                    slot.sink == null)
+                    continue;
+                observer.sink.changed(
+                    observer.sink.context,
                     self,
-                    self.document.currentRevision(),
+                    revision,
                 );
             }
         }
@@ -3623,6 +3646,125 @@ test "ARA controller publishes complete playback render descriptions" {
     controller.removeModelPublicationSink(observer_id);
 }
 
+test "ARA model publication contains reentrant observer changes" {
+    const TestController = Controller(.{
+        .audio_sources = 1,
+        .model_observers = 3,
+        .name_bytes = 32,
+        .persistent_id_bytes = 32,
+    });
+    const ObserverState = struct {
+        first_id: ?TestController.ModelObserverId = null,
+        second_id: ?TestController.ModelObserverId = null,
+        replacement_id: ?TestController.ModelObserverId = null,
+        first_calls: usize = 0,
+        second_calls: usize = 0,
+        replacement_calls: usize = 0,
+        failed: bool = false,
+
+        fn first(
+            context: ?*anyopaque,
+            controller: *TestController,
+            _: u64,
+        ) void {
+            const self: *@This() =
+                @ptrCast(@alignCast(context orelse return));
+            self.first_calls += 1;
+            controller.removeModelPublicationSink(
+                self.second_id orelse {
+                    self.failed = true;
+                    return;
+                },
+            );
+            controller.removeModelPublicationSink(
+                self.first_id orelse {
+                    self.failed = true;
+                    return;
+                },
+            );
+            self.replacement_id =
+                controller.addModelPublicationSink(.{
+                    .context = self,
+                    .changed = replacement,
+                }) catch {
+                    self.failed = true;
+                    return;
+                };
+        }
+
+        fn second(
+            context: ?*anyopaque,
+            _: *TestController,
+            _: u64,
+        ) void {
+            const self: *@This() =
+                @ptrCast(@alignCast(context orelse return));
+            self.second_calls += 1;
+        }
+
+        fn replacement(
+            context: ?*anyopaque,
+            _: *TestController,
+            _: u64,
+        ) void {
+            const self: *@This() =
+                @ptrCast(@alignCast(context orelse return));
+            self.replacement_calls += 1;
+        }
+    };
+
+    var controller = TestController{
+        .host = testHost(),
+        .factory = @ptrFromInt(0x1000),
+    };
+    var observer = ObserverState{};
+    observer.first_id = try controller.addModelPublicationSink(.{
+        .context = &observer,
+        .changed = ObserverState.first,
+    });
+    observer.second_id = try controller.addModelPublicationSink(.{
+        .context = &observer,
+        .changed = ObserverState.second,
+    });
+
+    try controller.document.beginEditing();
+    const source = try controller.document.createAudioSource(
+        null,
+        .{
+            .name = "Take",
+            .persistent_id = "source-1",
+            .sample_count = 8,
+            .sample_rate = 48_000.0,
+            .channel_count = 1,
+        },
+    );
+    try controller.finishEditing();
+    try std.testing.expect(!observer.failed);
+    try std.testing.expectEqual(@as(usize, 1), observer.first_calls);
+    try std.testing.expectEqual(@as(usize, 0), observer.second_calls);
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        observer.replacement_calls,
+    );
+
+    try controller.document.beginEditing();
+    try controller.document.updateAudioSource(
+        source,
+        .{
+            .name = "Retake",
+            .persistent_id = "source-1",
+            .sample_count = 16,
+            .sample_rate = 48_000.0,
+            .channel_count = 1,
+        },
+    );
+    try controller.finishEditing();
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        observer.replacement_calls,
+    );
+}
+
 test "ARA document-data notifications flush only on host request" {
     const TestController = Controller(.{});
     const Observer = struct {
@@ -3987,7 +4129,7 @@ test "ARA controller round trips bounded versioned archives" {
             .name = "Edit",
             .persistentID = "modification-1",
         };
-    _ = api.createAudioModification.?(
+    const modification = api.createAudioModification.?(
         controller_ref,
         source,
         null,
@@ -4009,6 +4151,19 @@ test "ARA controller round trips bounded versioned archives" {
         archive.length > archive_magic_prefix.len + 1,
     );
     try std.testing.expectEqual(@as(f32, 1.0), archive.store_progress);
+    const stored_length = archive.length;
+    const stored_bytes = archive.bytes;
+    const stored_revision = controller.document.currentRevision();
+    const stored_source_id =
+        controller.document.findAudioSourceByPersistentId(
+            "source-1",
+        ) orelse return error.MissingStoredSource;
+    const stored_modification_id =
+        controller.document.findAudioModificationByPersistentId(
+            "modification-1",
+        ) orelse return error.MissingStoredModification;
+    try std.testing.expect(source != null);
+    try std.testing.expect(modification != null);
 
     const reader_ref: raw.ARAArchiveReaderHostRef =
         @ptrCast(&archive);
@@ -4027,8 +4182,85 @@ test "ARA controller round trips bounded versioned archives" {
         archive.restore_progress,
     );
 
+    archive.bytes = stored_bytes;
+    archive.length = stored_length;
+    try std.testing.expectEqual(
+        raw.kARATrue,
+        api.beginRestoringDocumentFromArchive.?(
+            controller_ref,
+            reader_ref,
+        ),
+    );
+    try std.testing.expectEqual(
+        raw.kARAFalse,
+        api.beginRestoringDocumentFromArchive.?(
+            controller_ref,
+            reader_ref,
+        ),
+    );
+    try std.testing.expectEqual(
+        error.InvalidArchive,
+        controller.takeLastError().?,
+    );
+    const wrong_reader: raw.ARAArchiveReaderHostRef =
+        @ptrFromInt(0x1234);
+    try std.testing.expectEqual(
+        raw.kARAFalse,
+        api.endRestoringDocumentFromArchive.?(
+            controller_ref,
+            wrong_reader,
+        ),
+    );
+    try std.testing.expectEqual(
+        error.InvalidArchive,
+        controller.takeLastError().?,
+    );
+    try std.testing.expectEqual(
+        raw.kARATrue,
+        api.endRestoringDocumentFromArchive.?(
+            controller_ref,
+            reader_ref,
+        ),
+    );
+
+    archive.bytes[0] ^= 0xff;
+    try std.testing.expectEqual(
+        raw.kARATrue,
+        api.beginRestoringDocumentFromArchive.?(
+            controller_ref,
+            reader_ref,
+        ),
+    );
+    try std.testing.expectEqual(
+        raw.kARAFalse,
+        api.endRestoringDocumentFromArchive.?(
+            controller_ref,
+            reader_ref,
+        ),
+    );
+    try std.testing.expectEqual(
+        error.InvalidArchive,
+        controller.takeLastError().?,
+    );
+    archive.bytes = stored_bytes;
+    try std.testing.expectEqual(
+        raw.kARATrue,
+        api.beginRestoringDocumentFromArchive.?(
+            controller_ref,
+            reader_ref,
+        ),
+    );
+    try std.testing.expectEqual(
+        raw.kARATrue,
+        api.endRestoringDocumentFromArchive.?(
+            controller_ref,
+            reader_ref,
+        ),
+    );
+
+    archive.bytes = stored_bytes;
     archive.bytes[archive_magic_prefix.len] = 1;
-    archive.length -= 4;
+    archive.length = stored_length - 4;
     api.beginEditing.?(controller_ref);
     try std.testing.expectEqual(
         raw.kARATrue,
@@ -4040,7 +4272,26 @@ test "ARA controller round trips bounded versioned archives" {
     );
     api.endEditing.?(controller_ref);
 
-    archive.bytes[0] ^= 0xff;
+    for (0..stored_length) |truncated_length| {
+        archive.bytes = stored_bytes;
+        archive.length = truncated_length;
+        api.beginEditing.?(controller_ref);
+        try std.testing.expectEqual(
+            raw.kARAFalse,
+            api.restoreObjectsFromArchive.?(
+                controller_ref,
+                reader_ref,
+                null,
+            ),
+        );
+        try std.testing.expect(controller.takeLastError() != null);
+        api.endEditing.?(controller_ref);
+    }
+
+    archive.bytes = stored_bytes;
+    archive.bytes[archive_magic_prefix.len] =
+        archive_version + 1;
+    archive.length = stored_length;
     api.beginEditing.?(controller_ref);
     try std.testing.expectEqual(
         raw.kARAFalse,
@@ -4055,6 +4306,55 @@ test "ARA controller round trips bounded versioned archives" {
         controller.takeLastError().?,
     );
     api.endEditing.?(controller_ref);
+
+    archive.bytes = stored_bytes;
+    archive.bytes[stored_length] = 0;
+    archive.length = stored_length + 1;
+    api.beginEditing.?(controller_ref);
+    try std.testing.expectEqual(
+        raw.kARAFalse,
+        api.restoreObjectsFromArchive.?(
+            controller_ref,
+            reader_ref,
+            null,
+        ),
+    );
+    try std.testing.expectEqual(
+        error.InvalidArchive,
+        controller.takeLastError().?,
+    );
+    api.endEditing.?(controller_ref);
+
+    archive.bytes = stored_bytes;
+    archive.bytes[0] ^= 0xff;
+    archive.length = stored_length;
+    api.beginEditing.?(controller_ref);
+    try std.testing.expectEqual(
+        raw.kARAFalse,
+        api.restoreObjectsFromArchive.?(
+            controller_ref,
+            reader_ref,
+            null,
+        ),
+    );
+    try std.testing.expectEqual(
+        error.InvalidArchive,
+        controller.takeLastError().?,
+    );
+    api.endEditing.?(controller_ref);
+
+    try std.testing.expectEqual(
+        stored_revision,
+        controller.document.currentRevision(),
+    );
+    try std.testing.expect(
+        controller.document.audioSource(stored_source_id) != null,
+    );
+    try std.testing.expect(
+        controller.document.audioModification(
+            stored_modification_id,
+        ) != null,
+    );
 }
 
 test "ARA controller reads host audio and closes readers safely" {
